@@ -1,0 +1,2011 @@
+
+ADMIN PANELVISUAL DEVELOPER SPECIFICATION
+Final structure + reference images + section-by-section functional requirements
+Purpose: This document is prepared so the developer can understand not only the requested screens, but also what every section must control, what data it must display, which actions are required, and how the sections connect with each other. The screenshots below are visual references; the written requirements are the functional source of truth.
+1. FINAL ADMIN PANEL STRUCTURE
+SCOPE NOTE: This document is for the ADMIN PANEL only. Do not add end-user/mobile room screens, app-side room UI, or user-facing room configuration as separate modules. Room-related items are included only where they are Admin Panel management, moderation, monitoring, or configuration functions.
+Dashboard
+Overview, KPIs, alerts, financial summary, active rooms, users, hosts and risk alerts
+Approval Center
+User/host/agency/merchant applications, high-risk financial approvals
+User Management
+Users Directory
+User Wallet
+User Detail / Props / Permissions
+Hosts & Agencies
+Host Management
+Agencies & Creator Finance
+Rooms
+Live Rooms
+Party Rooms
+Room Settings / Moderation / Members
+Resellers & Merchants
+Coin Sellers / Resellers
+Merchant Management
+Seller/Merchant Country Mapping
+Recharge & Withdrawals
+Offline Recharge
+Withdrawal Center & External Settlement
+Transaction Ledger
+Refunds & Risk Center
+Coin Refund & Correction Center
+Reseller Coin Correction
+Downstream Review
+Virtual Economy
+Coins, Diamonds, Gifts, Games, rates, economy configuration
+Engagement & PK
+PK events, game announcements, high-value bet/gift banners, rankings
+Content & Banners
+Banners, gift effects, frames, entry effects, room themes, promotional assets
+Moderation & Support
+Reports, bans, freezes, support cases, room/user moderation
+System Administration
+Roles, permissions, audit logs, country settings, financial thresholds, system configuration
+SCOPE: This document is ONLY for the ADMIN PANEL. Do not build or document end-user app screens here. Any room-related item included below refers strictly to an Admin Panel management function (search, monitoring, moderation, settings and permissions), not the user-facing room UI.
+2. IMPORTANT DEVELOPER RULE
+Do not hard-code policies that the Admin is expected to change. Coin rates, host targets, payout periods, country assignments, seller/merchant availability, withdrawal limits, refund thresholds, approval limits, room limits and similar business rules should be configurable from the Admin Panel.
+3. User Management — User Detail & Admin Controls
+
+Reference image — developer UI/functional reference
+What this section does
+Central control page for an individual account. Admin must be able to inspect identity, agency/BD relationship, owned props and account status from one place.
+Required controls / actions
+Search/open any user by User ID.
+View country, nickname, status, Special ID and expiry.
+View parent Agency / BD relationship.
+View owned avatar frames, rides, VIP, chat bubbles and badges.
+Ban, freeze/restrict, grant/remove Special ID, grant props and manage Admin permissions.
+Reset avatar, nickname, room name, room cover, family avatar and password where permitted.
+Add/remove agency or host identity where applicable.
+Open recent dynamics and full financial/transaction history.
+Required data model / visible data
+User ID, country, status, parent agency/BD, props, permissions, audit history.
+Developer note: Keep the visual layout close to the reference where practical, but prioritize the functional requirements above. All financial and permission-sensitive actions must be logged.
+4. Host Management — Live Video & Social Audio
+
+Reference image — developer UI/functional reference
+What this section does
+Manage Live Video Hosts and Social Audio Hosts, including targets, payout policy, agency share and applications.
+Required controls / actions
+Separate Live Video and Social Audio tabs.
+Admin can edit minimum target and target tiers.
+Admin can change daily/weekly payout mode.
+Admin can change agency share and backup/secondary share.
+Create/edit/delete target tiers and compensation values.
+Approve/reject host applications.
+Bind/unbind host to agency and transfer host between agencies.
+Search by host name, username, ID or agency.
+Required data model / visible data
+Host ID, category, agency, target, achieved coins, payout tier, status, application state.
+Developer note: Keep the visual layout close to the reference where practical, but prioritize the functional requirements above. All financial and permission-sensitive actions must be logged.
+5. Agencies & Creator Finance
+
+Reference image — developer UI/functional reference
+What this section does
+Manage authorized agencies, audio agencies/syndicates, creator rosters, applications and agency settlements.
+Required controls / actions
+Authorized agency list and licensing applications.
+Separate Live Video and Social Audio agency categories.
+Approve/reject agency applications.
+Open agency detail and creator roster.
+Bind/unbind/transfer hosts.
+Configure agency commission/share and settlement rules.
+View monthly gross agency volume and active creator counts.
+Country-based agency management.
+Required data model / visible data
+Agency ID, owner, country, type, host count, financial volume, application status, settlement data.
+Developer note: Keep the visual layout close to the reference where practical, but prioritize the functional requirements above. All financial and permission-sensitive actions must be logged.
+6. Rooms Management (Admin Panel Only)
+
+Reference image — developer UI/functional reference
+What this section does
+Central management of all platform rooms. This replaces separate Audio Agencies/Live Rooms navigation with one Rooms module.
+Required controls / actions
+Top-level tabs: Live Rooms and Party Rooms.
+Search by room title, Room ID or host.
+Filters for Active, Closed and Paused.
+Filters by room category such as PK Battle, Entertainment, Games and Talk Show.
+Open room detail and moderation tools.
+Close, pause, reopen or restrict a room according to permissions.
+View host, viewers, gifts, room activity and moderation status.
+Open Room Settings for owner-level configuration.
+Required data model / visible data
+Room ID, title, owner/host, type, category, country, status, viewers, gifts, activity.
+Developer note: Keep the visual layout close to the reference where practical, but prioritize the functional requirements above. All financial and permission-sensitive actions must be logged.
+7. Coin Seller / Reseller Management
+
+Reference image — developer UI/functional reference
+What this section does
+Manage Coin Sellers/Resellers without forcing fixed packages. Admin must be able to assign any coin amount according to the configured business policy.
+Required controls / actions
+Search reseller by User ID/handle.
+Add/remove reseller role.
+Assign custom coin balance/credit.
+Issue coins with a custom amount instead of fixed packages.
+View current balance, issued coins, distributed coins and limits.
+Set country for the reseller.
+Enable/disable reseller.
+Open correction history and transaction ledger.
+Required data model / visible data
+Seller ID, country, status, balance, issued coins, distributed coins, limits, audit history.
+Developer note: Keep the visual layout close to the reference where practical, but prioritize the functional requirements above. All financial and permission-sensitive actions must be logged.
+8. Merchant Management
+
+Reference image — developer UI/functional reference
+What this section does
+Manage Merchants who can receive/issue configured coin allocations and participate in external settlement.
+Required controls / actions
+Add Merchant by user/account reference.
+Search and open Merchant profile.
+Enable/disable Merchant.
+Assign custom coin allocation.
+Configure country, payment methods and settlement limits.
+View sales/issuance performance.
+Link Merchant to withdrawal settlement.
+Open corrections and transaction history.
+Required data model / visible data
+Merchant ID, country, status, balance/allocation, payment methods, settlement limits, history.
+Developer note: Keep the visual layout close to the reference where practical, but prioritize the functional requirements above. All financial and permission-sensitive actions must be logged.
+9. Offline Recharge — Country-Based Seller/Merchant Routing
+
+Reference image — developer UI/functional reference
+What this section does
+Review manual/offline recharge requests and control which Coin Sellers/Merchants are shown for each country.
+Required controls / actions
+Search by user or payment reference.
+Pending / Approved / Rejected tabs.
+Country selector at the top.
+For every country, Admin can maintain a separate Seller/Merchant list.
+Only approved sellers/merchants for the user's country should be shown to that user.
+Admin can add/remove/activate/deactivate a seller or merchant from a country.
+Review payment proof/reference before approval.
+Record the final coin amount and transaction ID.
+Required data model / visible data
+User, country, amount, requested coins, payment method, payment reference, assigned seller/merchant, status.
+Developer note: Keep the visual layout close to the reference where practical, but prioritize the functional requirements above. All financial and permission-sensitive actions must be logged.
+10. Withdrawal Center & External Settlement
+
+Reference image — developer UI/functional reference
+What this section does
+Manage withdrawals where the platform records the withdrawal but the actual fiat payout is completed externally by an authorized Coin Seller or Merchant.
+Required controls / actions
+Configurable withdrawal holding period (default example: 15 days).
+Diamond-to-USD conversion rate.
+Minimum/maximum withdrawal limits.
+Pending, Holding, Approved, Assigned, Payment Submitted, Verified, Paid/Settled, Held and Rejected statuses.
+Assign an approved withdrawal to a country-authorized Seller/Merchant.
+Seller/Merchant submits payment proof and reference.
+Admin verifies the external payment before marking Paid/Settled.
+Full withdrawal history and audit trail.
+Required data model / visible data
+Host/user, country, diamonds, USD, rate, request date, release date, assigned seller/merchant, proof, settlement status.
+Developer note: Keep the visual layout close to the reference where practical, but prioritize the functional requirements above. All financial and permission-sensitive actions must be logged.
+11. Immutable Transaction Ledger
+
+Reference image — developer UI/functional reference
+What this section does
+Single source of truth for the complete financial/economy chain from recharge to coins, gifts/games, host earnings, diamonds and final external settlement.
+Required controls / actions
+Search by Transaction ID, Chain ID, User ID, Seller ID, Merchant ID, Host ID or Withdrawal ID.
+Filter by transaction type, country, date and status.
+Full Chain Trace for every linked financial event.
+Append-only history; corrections create new reversal/adjustment records.
+Show sender, receiver, amount, rate, source, destination and operator.
+Link refunds, reversals, withdrawals and settlements.
+Export audit reports.
+Required data model / visible data
+Txn ID, Chain ID, type, status, source, destination, coins, diamonds, fiat, operator, linked records.
+Developer note: Keep the visual layout close to the reference where practical, but prioritize the functional requirements above. All financial and permission-sensitive actions must be logged.
+12. Coin Refund & Correction Center
+
+Reference image — developer UI/functional reference
+What this section does
+Correct excess or incorrect coins for Users, Coin Sellers and Merchants. Supports both automatic correction and manual custom adjustment.
+Required controls / actions
+Account type selector: User / Coin Seller / Merchant.
+Search by account ID, username, refund ID, original transaction ID or Chain ID.
+Automatic duplicate/over-credit detection.
+Manual custom adjustment: 100, 200, 45 or any amount.
+Add or deduct coins with a mandatory reason.
+Show old balance and new balance before confirmation.
+Downstream Review if coins were already transferred/spent.
+High-value corrections can require Finance/Super Admin approval.
+Required data model / visible data
+Account, original transaction, original balance, correction amount, new balance, reason, operator, approval, status.
+Developer note: Keep the visual layout close to the reference where practical, but prioritize the functional requirements above. All financial and permission-sensitive actions must be logged.
+13. Reseller Coin Correction Center
+
+Reference image — developer UI/functional reference
+What this section does
+Dedicated controlled workflow for excess reseller credit, duplicate issuance, wrong package/rate or other reseller-side corrections.
+Required controls / actions
+Search reseller handle or Correction ID.
+Automatic excess-credit detection.
+Manual custom deduction/addition.
+Downstream Review when coins have already moved to other users.
+Finance/Super Admin approval for high-risk corrections.
+Correction status workflow and full audit trail.
+Link every correction to the immutable ledger.
+Required data model / visible data
+Reseller ID, trigger, excess amount, original transaction, downstream impact, correction amount, approval and status.
+Developer note: Keep the visual layout close to the reference where practical, but prioritize the functional requirements above. All financial and permission-sensitive actions must be logged.
+14. CROSS-MODULE FLOW
+User → Recharge → Coin Seller/Merchant → Coins → Gifts/Games/Transfers → Host Earnings → Diamonds → Withdrawal Request → 15-day/configured holding period → Seller/Merchant External Settlement → Payment Verification → Paid/Settled → Immutable Ledger.
+User/Seller/Merchant receives excess coins → Refund & Correction Center → Automatic/Manual calculation → Downstream Review if necessary → Approval → Correction → Ledger.
+Host application → Approval Center → Host Management → Agency binding → Target/payout policy → Earnings → Withdrawal.
+Rooms → Admin Panel room directory → search/filter → open room details → moderation/status controls → audit log.
+Country configuration → Seller/Merchant list → Offline Recharge + Withdrawal Settlement → Only country-authorized settlement partners are available.
+15. PERMISSION STRUCTURE
+Role
+Access
+Super Admin
+Full access, policy/rate changes, financial approvals, system settings.
+Finance Admin
+Withdrawals, settlements, refunds, reseller corrections, ledger and reconciliation.
+Operations Admin
+Users, hosts, agencies, rooms, moderation and support.
+Content Admin
+Banners, effects, room themes and promotional assets.
+Room Moderator
+Room/member moderation only; no financial controls.
+Read Only / Auditor
+View and export permitted records; no modification.
+16. FINAL DEVELOPER CHECKLIST
+Every financial action creates an immutable ledger event.
+No silent deletion/editing of historical financial transactions.
+Country-based Seller/Merchant routing works across recharge and withdrawal.
+All policies/rates/targets/limits are Admin-configurable.
+Refunds support User, Coin Seller and Merchant accounts.
+Reseller corrections support automatic and manual workflows.
+High-risk financial actions support configurable approval thresholds.
+Rooms are grouped under one Rooms module with Live Rooms and Party Rooms.
+Room owner/admin permissions are enforced at API level, not only in the UI.
+Search, filters, export and audit history are available for major management sections.
+Every screenshot is a visual reference; the written controls in this document are the required behavior.
+17. User & Merchant Refund Requests
+
+Reference image — User & Merchant Refund Requests
+What this section does
+This section is the central refund-request workflow for Users and Merchants. It must allow authorized Admin/Finance staff to review refund requests, verify the original transaction, choose a full or partial refund, apply a custom amount, and safely reverse or correct the related coin/payment records.
+Required account types
+User Refunds
+Coin Seller / Reseller Refunds
+Merchant Refunds
+Required filters and search
+Search by requester name, User ID, Seller ID, Merchant ID or Refund Request ID.
+Search by original Transaction ID / Chain ID.
+Filter by country.
+Filter by account type: User / Coin Seller / Merchant.
+Filter by status: Pending Review, Approved, Rejected, Partially Refunded, Fully Refunded, Held and Cancelled.
+Filter by date range and refund reason.
+Refund review screen
+Show requester profile and account type.
+Show original transaction details, payment method, amount, coins and timestamp.
+Show current balance and affected downstream transfers/gifts where applicable.
+Show requested refund amount and maximum refundable amount.
+Show refund reason, user notes and uploaded proof/evidence.
+Show whether the transaction has already been spent, transferred or settled.
+Refund actions
+Full Refund — refund the complete eligible amount.
+Partial Refund — refund a selected portion only.
+Custom Amount — Admin can enter an exact amount such as 45, 100, 200 or any permitted value.
+Coin Refund — return/deduct the exact coin amount.
+Fiat Refund — record the applicable fiat refund amount where the payment channel supports it.
+Approve Refund.
+Reject Refund with mandatory reason.
+Put on Hold for additional verification.
+Cancel an unprocessed request.
+Create a manual correction when the original refund request is incorrect.
+Automatic refund / correction logic
+The system should support configurable automatic rules. For example, if duplicate coin credit, duplicate recharge or a verified over-credit is detected, the system can create a refund/correction request automatically. The Admin must be able to enable/disable these rules and define thresholds.
+Automatic duplicate transaction detection.
+Automatic excess coin detection.
+Automatic calculation of refundable balance.
+Automatic creation of a correction/refund request.
+Automatic approval only below a configurable low-risk threshold, if enabled.
+Mandatory Finance/Super Admin approval above the configured threshold.
+Downstream impact protection
+If refunded coins have already been gifted, transferred or converted, do not silently remove the balance.
+Open a Downstream Review showing all affected accounts and transactions.
+Calculate the net amount that can safely be reversed.
+Create linked reversal/correction transactions for every affected balance.
+Require higher-level approval for high-risk or cross-account corrections.
+Security & audit requirements
+Every refund must have a unique Refund ID.
+Every refund must link to the original Transaction ID and Chain ID.
+Record old balance, refund amount and new balance.
+Record operator/Admin ID, approval Admin ID and timestamps.
+Refund records must not be hard-deleted.
+A rejected or cancelled request remains visible in the audit history.
+Large refunds and cross-account corrections require configurable multi-step approval.
+Developer workflow
+Refund Request → Identity & Transaction Verification → Eligibility Check → Downstream Review → Full/Partial/Custom Refund Selection → Approval Rules → Execute Refund/Correction → Update Balances → Write Immutable Ledger Event → Notify relevant account → Close Request.
+Recommended UI buttons
+Review Request | Full Refund | Partial Refund | Custom Amount | Approve | Reject | Hold | Cancel | Downstream Review | View Original Transaction | View Chain Trace | View Account | View Audit Log
+18. Updated Developer Checklist — Refund Module
+User, Coin Seller/Reseller and Merchant refund workflows are supported.
+Full, partial and custom-value refunds are supported.
+Automatic refund/correction rules are configurable.
+Country and account-type filtering is available.
+Original transaction and downstream impact are visible before approval.
+High-value refunds can require Finance/Super Admin approval.
+Every refund creates an immutable audit/ledger record.
+Refunds never silently delete financial history.
+20. Global & Country / Region Asset Control
+
+Reference image — Add New Virtual Asset / Asset Configuration
+
+Reference image — ZeParty Asset Library
+Purpose
+Expand the Asset Library so the Super Admin can control every virtual asset in the app from one Admin Panel. The same asset can have a Global configuration for the entire platform or a Country/Region-specific configuration that overrides the Global configuration only for selected markets.
+Top-Level Scope Selector
+Global — applies to the entire app and all countries/regions unless a more specific override exists.
+Country — select one country and configure assets specifically for users of that country.
+Region — select a defined region/group of countries and configure assets for that region.
+Country/Region inheritance must be explicit and visible so Admin knows which configuration is currently active.
+Priority rule: Country override > Region override > Global default.
+Admin must be able to reset a Country/Region override and fall back to Global.
+Asset Categories to Control
+Gifts
+VIP / SVIP Frames
+Profile Frames
+Entry Effects / Entry Animations
+Entry Sounds / Audio Effects
+Chat Bubbles / Chat Tags
+Badges
+Rides
+Room Themes
+Game Assets / Game Effects
+Lucky Wheel / Jackpot assets
+PK / Event effects
+Gift animations, gift sounds and gift PNG/MP4 assets
+Premium or limited-time promotional assets
+Per-Asset Controls
+Asset Name and Unique Asset ID.
+Category and Sub-Category / Format.
+Upload/replace media: PNG, JPG/WebP, GIF, MP4, audio and other approved formats.
+Coin price.
+Free/Paid status.
+Duration in seconds.
+Audio volume.
+Priority/order.
+Combo Pack enable/disable.
+Publish state: Draft, Scheduled, Active, Paused, Archived.
+Room availability: Live, Party, Both or configurable room types.
+Role/Level eligibility.
+VIP/SVIP eligibility.
+Country/Region availability.
+Start/end date for temporary campaigns.
+Display frequency/cooldown where applicable.
+Maximum purchase/use limits where applicable.
+Global vs Country/Region Override
+When an Admin changes an asset under Global, the change applies platform-wide. When the Admin selects a Country or Region, the Admin can override the Global value only for that scope. The UI must clearly show whether each field is inherited from Global or overridden locally.
+Example: Global Gift A = 1,000 coins.
+Pakistan override = 800 coins.
+UAE override = 1,200 coins.
+All other countries continue using the Global 1,000-coin price.
+If Pakistan override is removed, Pakistan automatically returns to the Global value.
+Country / Region Management
+Search and select country by name/code.
+Create/manage region groups such as South Asia, Middle East, Europe, etc.
+Assign countries to a region.
+View all overrides for the selected country/region.
+Copy Global configuration to a selected country/region as a starting template.
+Copy one country's configuration to another country only with explicit confirmation.
+Enable/disable a complete asset category for a country/region.
+Asset Library Actions
+Add Asset
+Edit Asset
+Duplicate Asset
+Replace Media
+Change Price
+Change Availability
+Schedule Publish
+Pause / Resume
+Archive
+Delete only when safe and permitted; financial/history-linked assets should be archived instead.
+Preview Asset
+View Global Configuration
+View Country/Region Overrides
+Reset Override to Global
+View Audit History
+Bulk Controls
+Bulk activate/deactivate selected assets.
+Bulk change country/region availability.
+Bulk change prices where permitted.
+Bulk schedule assets.
+Bulk assign room availability.
+Bulk copy Global configuration to selected countries/regions.
+Bulk reset country/region overrides.
+Required Search & Filters
+Search by Asset ID or Asset Name.
+Filter by Global / Country / Region.
+Filter by country.
+Filter by category and sub-category.
+Filter by publish status.
+Filter by room availability.
+Filter by VIP/SVIP eligibility.
+Filter by active/scheduled/paused/archived.
+Safety, Permissions & Audit
+Only authorized Admin roles can change global financial values such as gift prices.
+High-impact changes can require Finance/Super Admin approval.
+Every price/media/availability change must create an audit record.
+Audit record must contain Asset ID, scope, country/region, old value, new value, Admin ID and timestamp.
+Do not silently overwrite Global settings when editing a Country/Region override.
+Show a confirmation summary before publishing high-impact changes.
+Support rollback/reset of the latest configuration change where technically safe.
+Developer Data Model
+Recommended configuration model: Asset Master → Global Configuration → Region Override(s) → Country Override(s). Each override stores only changed fields and inherits all other fields from its parent scope.
+Developer Workflow
+Open Asset Library → Select Global/Country/Region → Search Asset → Open Asset → Edit configuration → Preview effective configuration → Confirm → Approval if required → Publish → Write Audit Log.
+Effective Configuration Preview
+Before saving, show the Admin the final values that users in the selected scope will receive. For example: Global Price 1,000 → Region Override 900 → Country Override 800 → Effective Price 800.
+21. Updated Admin Panel Scope
+This section is Admin Panel functionality only. It does not add a separate end-user asset screen. The mobile/app screens shown in the reference images are visual references for the assets and controls that the Admin Panel must manage.
+
+22. Gift Catalog — Complete Admin Control
+
+Reference image — Create Gift
+
+Reference image — Gift Catalog
+The Gift Catalog must be a complete Admin Panel module. The Admin/Super Admin must be able to create, edit, price, publish, schedule, disable, duplicate, preview and control every gift without requiring a developer for routine changes. The Global/Country/Region scope system defined in Section 20 must apply to gifts as well.
+22.1 Gift Creation Form
+Gift Name — required.
+Unique Gift ID / Asset ID — system-generated or manually configurable, but must be unique.
+Emoji / Icon — optional display icon.
+Gift Thumbnail / Preview Image — upload and replace.
+Gift Animation — support approved animated formats such as GIF/WebP/MP4/Lottie where supported.
+Gift Sound — upload optional sound effect.
+Diamond/Coin Price — required and editable.
+Category — Basic, Romantic, Premium, Celebration, Luxury, Ultra, Fun, or custom Admin-created categories.
+Sub-Category — configurable by Admin.
+Gift Type — Static, Animated, Full-Screen, Combo, Special Event, etc.
+Active / Inactive — controls whether the gift is visible in-app.
+Room Availability — Live Rooms, Party Rooms, Both, or selected room types.
+Country / Region / Global scope selector.
+VIP/SVIP or Role eligibility.
+Start Date / End Date for scheduled or limited-time gifts.
+Priority / Display Order.
+Combo Pack — enable/disable and configure combo behavior.
+Cooldown / Usage Limit — optional.
+Preview before publishing.
+22.2 Gift Catalog Controls
+Search by gift name, Gift ID or Asset ID.
+Filter by category and sub-category.
+Filter by Global / Region / Country.
+Filter by Active, Inactive, Draft, Scheduled, Paused and Archived.
+Filter by Live Room / Party Room / Both.
+Sort by price, name, priority, creation date and last update.
+Edit gift.
+Duplicate gift.
+Preview gift.
+Activate / Deactivate gift.
+Pause / Resume gift.
+Schedule gift publication.
+Archive gift.
+Replace image, animation or sound without changing the Gift ID.
+Change gift price.
+Change display priority.
+View usage statistics and total gifts sent.
+View revenue/coin consumption generated by the gift.
+22.3 Global / Country / Region Gift Pricing
+Global Gift Price — default price for the entire app.
+Region Gift Price — overrides Global for the selected region.
+Country Gift Price — overrides Region/Global for the selected country.
+Country users must receive the effective configuration assigned to their country.
+If no Country override exists, use the Region override when available; otherwise use Global.
+Admin must see the Effective Price before saving.
+Example: Global = 200 coins, Middle East = 250 coins, Pakistan = 180 coins.
+Removing an override must restore inheritance from the higher-level scope.
+22.4 Gift Media & Animation Management
+Upload Gift PNG/WEBP thumbnail.
+Upload animated gift media.
+Upload MP4 animation where supported.
+Upload gift sound/audio.
+Set animation duration.
+Set audio volume.
+Enable/disable sound.
+Enable/disable animation.
+Set preview media separately from delivery animation if required.
+Validate file size, format and dimensions before publishing.
+22.5 Gift Availability & Eligibility
+Available in all rooms.
+Live Rooms only.
+Party Rooms only.
+Selected room categories.
+All users.
+VIP only.
+SVIP only.
+Selected user roles/levels.
+Selected countries.
+Selected regions.
+Event-only availability.
+Scheduled availability.
+22.6 Bulk Gift Management
+Bulk activate/deactivate.
+Bulk pause/resume.
+Bulk archive.
+Bulk change country/region availability.
+Bulk assign room availability.
+Bulk update priority.
+Bulk schedule publication.
+Bulk reset Country/Region settings to Global.
+22.7 Gift Audit & Safety
+Every price change must be logged.
+Every media replacement must be logged.
+Every Global/Country/Region override must be logged.
+Audit log must record Admin ID, action, old value, new value, scope and timestamp.
+High-impact price changes may require Super Admin/Finance approval.
+Deleted gifts should normally be archived so historical transactions remain intact.
+Before publishing, show a final configuration summary.
+22.8 Recommended Gift Detail Page
+Clicking a gift card should open a detailed Admin view containing:
+Gift preview.
+Gift ID and name.
+Current Global configuration.
+Region overrides.
+Country overrides.
+Effective price by country.
+Media files and versions.
+Room availability.
+Eligibility.
+Schedule.
+Usage/sending statistics.
+Revenue/coin statistics.
+Edit, Duplicate, Preview, Pause, Archive and Reset Override actions.
+Complete audit history.
+22.9 Developer Acceptance Criteria
+Admin can create a gift without developer intervention.
+Admin can change the gift price without changing application code.
+Admin can replace gift media without changing the Gift ID.
+Admin can control Global, Region and Country configurations independently.
+Users receive the correct effective gift configuration based on country/region.
+Admin can disable a gift instantly.
+Scheduled gifts automatically become active/inactive according to schedule.
+All sensitive changes are auditable.
+
+23. Virtual Items Catalog — Complete Admin Control
+
+Reference image — Virtual Items Catalog
+
+Reference image — Edit Virtual Asset
+The Virtual Items Catalog must give Admin/Super Admin complete control over non-gift virtual assets. This module covers avatar/profile frames, rides or mounts, badges, chat bubbles, and other virtual profile items. Routine changes must be possible from the Admin Panel without developer intervention.
+23.1 Supported Virtual Item Types
+Avatar Frames / Profile Frames.
+VIP Frames and SVIP Frames.
+Rides / Mounts.
+Chat Bubbles.
+Badges / Achievement Badges.
+Level Frames.
+Host/Agency/Manager Frames and badges.
+Special Event Items.
+Limited-Time Items.
+Any future virtual item type configurable by Admin.
+23.2 Add New Virtual Item Form
+Item Name — required.
+Unique Item ID / Asset ID — required and unique.
+Item Category — Frame, Ride, Badge, Chat Bubble, Event Item, etc.
+Sub-Category.
+Rarity — Common, Rare, Epic, Legendary, Mythic, Unique or custom.
+Coin/Diamond Price — fully editable.
+Thumbnail/Icon upload.
+Animation/media upload where applicable.
+Sound/audio upload for supported items.
+Publish State — Draft, Active, Paused, Scheduled, Archived.
+Global / Region / Country scope.
+Room Availability — Live Rooms, Party Rooms, Both, or selected room types.
+Role/Level Eligibility — All, VIP/SVIP, Host, Agency, Manager, selected levels, etc.
+Start Date / End Date.
+Duration / Expiry — permanent or time-limited.
+Priority / Display Order.
+Preview before publishing.
+23.3 Edit Virtual Asset — Complete Controls
+Edit Item Name.
+Change Price.
+Change Category/Sub-Category.
+Change Rarity.
+Replace thumbnail/icon.
+Replace animation/media.
+Replace sound.
+Change Global/Region/Country availability.
+Change room availability.
+Change role/level eligibility.
+Change duration/expiry.
+Change priority.
+Activate / Deactivate.
+Pause / Resume.
+Schedule / Unschedule.
+Archive / Restore.
+Duplicate asset to create a new item.
+Preview current configuration before saving.
+23.4 Global / Region / Country Control
+Global configuration is the default for the entire application.
+Region configuration overrides Global for the selected region.
+Country configuration overrides Region and Global for the selected country.
+Admin can set a different price, availability, eligibility and media configuration per scope.
+Users must receive the effective configuration for their country.
+Admin can remove a Country/Region override and restore inherited settings.
+Show an Effective Configuration preview before saving.
+23.5 Item-Specific Pricing & Availability
+Set separate prices for Global, Region and Country.
+Enable/disable an item by country.
+Enable/disable an item by region.
+Limit an item to Live Rooms, Party Rooms or Both.
+Limit to selected user roles or levels.
+Set permanent or temporary availability.
+Set event-only availability.
+23.6 Catalog Search, Filters & Management
+Search by Item Name, Item ID or Asset ID.
+Filter by item category.
+Filter by rarity.
+Filter by price range.
+Filter by Global/Region/Country.
+Filter by Active, Inactive, Draft, Scheduled, Paused and Archived.
+Sort by name, price, rarity, priority and creation/update date.
+Bulk activate/deactivate.
+Bulk pause/resume.
+Bulk archive.
+Bulk update country/region availability.
+Bulk update room availability.
+23.7 Asset Usage & Ownership Controls
+View how many users currently own the item.
+View how many users are actively using the item.
+Search users who own a specific item.
+View item grant history.
+Admin can grant an item to a selected user.
+Admin can revoke an item from a selected user, subject to permission.
+Admin can set expiry for granted items.
+View item usage statistics.
+23.8 Media & Technical Validation
+Validate supported image/media formats.
+Validate file size and dimensions.
+Preview uploaded media before publishing.
+Prevent publishing when required media is missing.
+Keep asset version history when media is replaced.
+Do not break historical ownership records when an asset is archived.
+23.9 Audit, Permissions & Approval
+Log every price change.
+Log every media replacement.
+Log every Global/Region/Country override.
+Log every activation, deactivation, archive and restore action.
+Record Admin ID, timestamp, old value and new value.
+Optional Super Admin approval for high-impact price or mass changes.
+Role-based permissions for Create, Edit, Grant, Revoke, Delete/Archive and Pricing.
+23.10 Developer Acceptance Criteria
+Admin can create all supported virtual item types from the Admin Panel.
+Admin can edit price and item properties without code changes.
+Admin can upload/replace media and preview it before publishing.
+Admin can control Global, Region and Country configurations.
+Country users receive the correct effective item configuration.
+Admin can activate, pause, schedule, archive and restore items.
+Admin can grant/revoke items from users according to permissions.
+All sensitive changes are recorded in the audit log.
+
+24. Store Management — Complete Admin Control
+
+Reference image — Create Store Item
+
+Reference image — Store Management
+Store Management must be fully configurable from the Admin Panel. Admin/Super Admin must be able to create, price, publish, pause, schedule, feature, localize and manage virtual store items without developer intervention. The store must support country/region-specific configuration while retaining a Global default.
+24.1 Store Item Types
+Outfits / Clothing.
+Frames and profile decorations.
+Rides / Cars / Mounts.
+Badges.
+Chat Bubbles.
+Special effects and other purchasable virtual items.
+Limited-time and event items.
+Future item categories must be configurable by Admin.
+24.2 Create Store Item
+Item Name — required.
+Unique Item ID / SKU — required and unique.
+Category and Sub-Category.
+Thumbnail / icon upload.
+Animation/media upload where applicable.
+Price in Coins/Diamonds — fully editable.
+Duration — permanent, 1 day, 7 days, 30 days, custom expiry.
+Global / Region / Country availability.
+Live Room / Party Room / Both availability where applicable.
+Role/Level eligibility.
+Start Date / End Date.
+Featured in Store Banner toggle.
+Display Priority / Sort Order.
+Draft / Active / Paused / Scheduled / Archived state.
+Preview before publishing.
+24.3 Global / Region / Country
+Global is the default configuration for the complete application.
+Region can override Global settings.
+Country can override Region and Global settings.
+Admin can set different item price per country or region.
+Admin can enable/disable an item for selected countries.
+Admin can select which country users can see the item.
+Admin can remove an override and restore inherited settings.
+Show Effective Configuration before saving.
+24.4 Item Management
+Edit item name, category, price, duration and eligibility.
+Replace thumbnail, animation, sound or other media.
+Activate / Deactivate.
+Pause / Resume.
+Schedule / Unschedule.
+Feature / Unfeature.
+Archive / Restore.
+Duplicate item.
+Change display priority.
+Bulk activate/deactivate.
+Bulk pause/resume.
+Bulk archive.
+Bulk update country/region availability.
+24.5 Store Analytics
+Total Items.
+Active Items.
+Featured Items.
+Total Purchases.
+Revenue / coin volume.
+Sales by item.
+Sales by country/region.
+Sales by category.
+Daily / weekly / monthly sales.
+Top-selling and low-performing items.
+Item ownership and active usage counts.
+24.6 User Ownership & Corrections
+Search a user by User ID.
+View items owned by the user.
+Grant an item manually.
+Revoke an item where authorized.
+Set or change expiry for granted items.
+View purchase and grant history.
+Process approved purchase corrections/refunds through the authorized refund workflow.
+24.7 Store Banner & Promotion
+Select items for store banner.
+Set banner display order.
+Set start/end date for promotion.
+Country/region-specific featured items.
+Create limited-time offers.
+Enable/disable featured placement.
+Preview store presentation before publishing.
+24.8 Search, Filters & Sorting
+Search by item name, Item ID/SKU or category.
+Filter by category.
+Filter by Global/Region/Country.
+Filter by Active, Paused, Scheduled and Archived.
+Filter by price range.
+Filter by duration.
+Filter by featured/non-featured.
+Sort by price, purchases, revenue, priority and date.
+24.9 Audit & Permissions
+Log every price, availability, media and duration change.
+Record Admin ID, timestamp, old value and new value.
+Role-based permissions for Create, Edit, Price, Publish, Feature, Grant, Revoke and Archive.
+Optional Super Admin approval for high-impact price or bulk changes.
+Maintain item version history.
+24.10 Developer Acceptance Criteria
+Admin can manage every store item from the Admin Panel.
+No routine price or availability change should require developer intervention.
+Country users receive the correct effective store configuration.
+Global, Region and Country overrides work predictably.
+Featured items and promotions can be controlled from the panel.
+All sensitive changes are auditable.
+
+25. Virtual Asset — Complete Edit & Control
+
+Reference image — Edit Asset
+The Asset Edit screen must provide full Admin/Super Admin control over every virtual asset. Routine changes must not require developer intervention.
+25.1 Asset Identity & Media
+Edit Item/Asset Name and unique Asset ID/SKU.
+Change category and sub-category.
+Replace thumbnail, PNG, GIF, animation, video or audio media as applicable.
+Preview the asset before saving.
+25.2 Price & Availability
+Edit price in Coins/Diamonds.
+Set free/promotional price where authorized.
+Set permanent or time-limited duration.
+Enable/disable availability.
+Set Global, Region or Country availability.
+Set Live Room, Party Room or Both where applicable.
+Set role/level eligibility.
+25.3 Publishing & Display
+Draft, Active, Paused, Scheduled and Archived states.
+Start/end date and time.
+Priority/display order.
+Featured toggle.
+Store/banner placement.
+Preview before publish.
+25.4 Asset Actions
+Save changes.
+Duplicate asset.
+Deactivate/reactivate.
+Archive/restore.
+Bulk update supported fields.
+Version history with rollback.
+25.5 Audit & Permissions
+Log Admin ID, timestamp, old value and new value for every change.
+Role-based permissions for price, media, publish and archive actions.
+Optional Super Admin approval for high-impact or bulk changes.
+
+26. Games — Complete Admin Economics & Configuration
+
+Reference image — Game Economics & Configuration
+This section is strictly for Admin Panel game management. It gives the owner controlled configuration of game economics, outcomes, limits, events and versions. All changes must be validated and audited.
+26.1 Game Configuration
+Create, edit, duplicate, pause, resume and archive games.
+Game name, unique Game ID, category, icon/media and description.
+Active/inactive status and maintenance mode.
+Global, Region and Country configuration.
+Live Room / Party Room availability where applicable.
+26.2 Economics & House Edge
+Configure entry fee / participation cost.
+Configure prize pool and payout rules.
+Configure outcome probabilities.
+Configure payout multiplier for each outcome.
+Automatically calculate total probability.
+Automatically calculate RTP and house edge.
+Block saving when probability totals are invalid.
+Show clear warning when configured economics create an unintended negative house edge.
+Set minimum/maximum bet or entry limits.
+Set maximum single-round payout/exposure.
+26.3 Prize Outcome Distribution Matrix
+Add, edit and remove outcomes.
+Outcome name.
+Probability percentage.
+Payout multiplier/value.
+Automatic contribution calculation.
+Active/inactive toggle per outcome.
+Probability validation must equal the configured required total before publishing.
+Preview expected results before activation.
+26.4 General Settings
+Minimum and maximum entry amount.
+Daily/user limits where applicable.
+Cooldown between rounds.
+Maximum players/participants.
+Game visibility.
+Supported currency/coin type.
+Responsible configuration limits and safety controls.
+26.5 Limits & Event Rules
+Daily/weekly event limits.
+Per-user participation limits.
+Event start/end date and time.
+Special event prize rules.
+Country/region-specific event configuration.
+Emergency pause switch.
+26.6 Global / Region / Country Override
+Global = default configuration for the whole app.
+Region can override Global.
+Country can override Region and Global.
+Different entry fees, prizes, limits and availability can be configured per country.
+Admin can view the effective configuration inherited by a selected country.
+Remove override to return to the parent configuration.
+26.7 Version History & Audit
+Store every published configuration as a version.
+Record who changed it, when, and what changed.
+Compare old vs new values.
+Rollback to a previous approved version.
+Require Super Admin approval for sensitive economic changes.
+26.8 Game Monitoring & Analytics
+Rounds played.
+Active players.
+Total entry/coin volume.
+Total payouts.
+Net platform result.
+RTP performance.
+House-edge performance.
+Results by game, country and region.
+Flag unusual payout or outcome patterns for review.
+26.9 Developer Acceptance Criteria
+Owner/Admin can manage the game without developer intervention.
+Invalid probability/economic configurations cannot be published.
+Global/Region/Country overrides work consistently.
+All economic changes are versioned and auditable.
+Emergency pause takes effect immediately.
+Analytics clearly reconcile entries, payouts and net results.
+
+27. Economy Policy Settings — Complete Owner Control
+
+Reference image — Economy Policy Settings: Conversion Rates & Revenue Shares
+
+Reference image — Policy Effective Date, Version History & Audit Log
+The Economy Policy module must allow the owner/Super Admin to control the platform's financial rules without developer intervention. Every policy must support validation, effective dates, versioning, country/region overrides, approval and audit history.
+27.1 Global / Region / Country Policy
+Top-level selector: Global / Region / Country.
+Global controls the default policy for the entire app.
+Region can override Global.
+Country can override Region and Global.
+Admin can search/select a country and configure its own economy policy.
+Show Effective Policy so Admin can see which value is currently inherited.
+Allow reset/remove override to return to parent policy.
+Country-specific currency, conversion and payout rules must be supported.
+27.2 Coin & Diamond Conversion
+Coins per 1 USD — fully editable.
+Diamonds per 1 USD — fully editable.
+Separate user purchase/recharge conversion from creator withdrawal conversion.
+Separate coin-to-diamond and diamond-to-USD conversion where required.
+Minimum and maximum transaction limits.
+Rounding rules and decimal precision.
+Effective date/time for every conversion change.
+Preview the financial impact before publishing.
+27.3 Platform & Revenue Shares
+Platform Share (%).
+Agency Commission Share (%).
+Host/Creator Share (%).
+Host Backup/Guarantee Share (%), if enabled.
+Room Owner Reward Share (%).
+Reseller/Coin Seller commission or margin.
+Merchant commission/margin.
+Manager/Agency/other configurable share types.
+Custom share components that the owner can enable/disable.
+Automatic validation that configured shares do not exceed 100%.
+27.4 Recharge & Coin Seller Economics
+Country-specific coin seller rate.
+Seller purchase cost / assigned coins.
+Seller selling rate or allowed margin.
+Seller commission percentage or fixed amount.
+Manual coin allocation to a seller.
+Seller balance, issued coins, sold coins and remaining balance.
+Maximum daily/monthly seller allocation.
+Seller status: Active, Suspended, Blocked.
+Full seller transaction and adjustment history.
+27.5 Merchant Economics
+Merchant can be assigned by User ID.
+Custom coin allocation without forced package tiers.
+Custom commission/margin.
+Sales target and settlement period.
+Country/region-specific merchant rules.
+Merchant balance and issued/sold coins.
+Manual credit/debit correction with reason.
+Merchant suspension and reactivation.
+Merchant transaction history.
+27.6 Creator / Host Earnings
+Host earning conversion rate.
+Minimum withdrawal.
+Maximum withdrawal per day/period.
+Settlement cycle configurable by Admin.
+Agency deduction rules.
+Room owner reward rules.
+Bonuses and incentives.
+Earning caps or eligibility rules.
+Country-specific earning policies.
+27.7 Withdrawal & Settlement Policy
+Settlement provider: Coin Seller / Merchant / other approved settlement route.
+Settlement cycle: daily, weekly, biweekly, or custom.
+The app must support a 15-day settlement model when configured.
+Admin can set settlement start/end dates and payout windows.
+Minimum and maximum payout.
+Country-specific payout method and limits.
+Pending, Approved, Held, Paid and Rejected statuses.
+Manual hold/release with reason.
+Settlement reconciliation against the transaction ledger.
+27.8 Refund, Correction & Financial Adjustment Rules
+User refund policy.
+Coin Seller correction policy.
+Merchant correction policy.
+Automatic refund/correction rules for duplicate or excessive credit.
+Manual adjustment with custom amount, e.g. 100, 200, 45 coins or any authorized amount.
+Full or partial refund.
+Mandatory reason and reference transaction.
+Approval requirement for high-value adjustments.
+Every adjustment must create an immutable audit record.
+27.9 Taxes, Fees & Payment Costs
+Optional payment gateway fee percentage/fixed fee.
+Optional tax/VAT/GST configuration by country.
+Optional withdrawal processing fee.
+Optional reseller/merchant service fee.
+Configure who absorbs each fee: platform, seller, merchant or user.
+Show estimated net amount before publishing a policy.
+27.10 Policy Effective Date & Scheduling
+Set exact effective date and time.
+Schedule future policy changes.
+Current policy remains active until the effective timestamp.
+Historical transactions retain the policy version active at their transaction time.
+Prevent overlapping active versions for the same scope.
+Allow draft policies before publication.
+27.11 Policy Version History
+Automatic version number for every published policy.
+View complete old/new values.
+Compare two policy versions.
+Show Created By, Approved By, Created At and Applied From.
+Rollback to an earlier approved version.
+Keep historical versions read-only.
+Filter history by Global, Region or Country.
+27.12 Approval & Security
+Maker-checker workflow for sensitive financial changes.
+Super Admin/Finance approval for conversion-rate, share and settlement changes.
+Optional two-person approval for high-risk changes.
+Permission matrix for View, Create Draft, Edit, Approve, Publish and Rollback.
+Confirmation screen showing financial impact before publication.
+Audit every failed and successful policy publication.
+27.13 Financial Simulation / Preview
+Preview how a $1, $10, $100, $1,000 and custom transaction is distributed.
+Show platform share, host share, agency share, seller/merchant margin and fees.
+Preview recharge and withdrawal outcomes.
+Preview country-specific policy before activating it.
+Flag negative or impossible platform margins.
+Flag share totals above 100%.
+Show estimated daily/monthly impact from current transaction volume.
+27.14 Reports & Analytics
+Revenue by day/week/month.
+Revenue by country and region.
+Platform share report.
+Host/creator payout report.
+Agency commission report.
+Coin seller and merchant margin report.
+Recharge volume and withdrawal volume.
+Refund/correction report.
+Policy-change impact report.
+Export financial reports.
+27.15 Developer Acceptance Criteria
+Owner/Super Admin can change economy rules without developer intervention.
+Global/Region/Country inheritance is deterministic and visible.
+All percentages and conversions are validated before publishing.
+Future policy changes can be scheduled.
+Historical transactions never change because a new policy is published.
+All financial adjustments and policy changes are auditable.
+High-risk changes require configured approval.
+The system must prevent invalid share totals and unsafe financial configurations.
+
+28. PK & Events — Complete Admin Control
+
+Reference image — PK & Events Admin Dashboard
+
+Reference image — Create PK Event
+This section is for the Admin Panel only. It gives the Owner/Super Admin complete control over PK battles and platform events. The developer must not add room-management features here; all controls below are administrative controls for configuring, monitoring, moderating and settling events.
+28.1 Event Scope
+Scope selector: Global / Region / Country.
+Global event applies to the whole app.
+Region event applies to selected region(s).
+Country event applies only to selected country/countries.
+Country policy overrides Region, and Region overrides Global.
+Admin can duplicate a Global event and create a country-specific version.
+Show the currently effective scope and inherited settings.
+28.2 Create / Edit Event
+Event Name.
+Event ID (unique, auto-generated or manually defined).
+Event Type: PK Battle, Ranking Event, Recharge Event, Gift Event, Creator Event, Special Event, Custom.
+Scope: Global / Region / Country.
+Start Date & Time.
+End Date & Time.
+Timezone.
+Event status: Draft, Scheduled, Live, Paused, Completed, Cancelled.
+Banner/cover image upload.
+Event description and rules.
+Eligibility rules.
+Minimum account/creator level if required.
+Country/region eligibility.
+Save Draft and Publish Event.
+28.3 PK Battle Configuration
+Create a PK battle template.
+Select Host/Creator 1 and Host/Creator 2, or allow eligible hosts to join.
+Battle duration in minutes/seconds.
+Preparation/countdown duration.
+Scoring start and end time.
+Maximum number of participants/sides where supported.
+Allow gifts to generate PK points.
+Configure point conversion: coins/gifts to PK points.
+Configure tie-breaker rule.
+Configure winner rule.
+Configure draw/no-winner rule.
+Enable/disable rematch.
+Enable/disable spectator participation if supported.
+28.4 PK Scoring & Anti-Abuse
+Admin can set the score value of each eligible gift.
+Optional separate score multipliers by gift/category.
+Maximum points per user per battle if required.
+Maximum gift contribution per user if required.
+Detect suspicious or duplicate scoring.
+Flag abnormal score spikes.
+Freeze scoring for an individual participant if fraud is detected.
+Manual score correction with mandatory reason.
+Every manual score adjustment must be logged.
+28.5 PK Rewards & Prize Pool
+Prize pool in coins.
+Optional diamond or cash-equivalent reward configuration.
+Winner reward.
+Runner-up reward.
+Participation reward.
+Bonus reward.
+Country-specific reward pool.
+Reward distribution percentage or fixed amounts.
+Validate that total configured rewards do not exceed the prize pool.
+Hold rewards until result verification is complete.
+Approve and release rewards from Admin Panel.
+28.6 Event Ranking
+Individual ranking.
+Host/Creator ranking.
+Agency ranking if enabled for the event.
+Country ranking.
+Region ranking.
+Gift/coin contribution ranking.
+PK points ranking.
+Configurable ranking period.
+Tie-breaker configuration.
+Admin can hide/remove fraudulent entries.
+Export ranking data.
+28.7 Event Moderation Controls
+Warn participant.
+Mute participant.
+Kick/remove participant from the event.
+Suspend participation.
+Disqualify participant.
+Reset/freeze score when fraud is confirmed.
+Cancel an event.
+Pause/resume an event.
+End an event manually.
+All moderation actions require a reason and are stored in audit logs.
+28.8 Scheduling & Automation
+Schedule an event for a future date/time.
+Recurring event templates where required.
+Automatic event start.
+Automatic event end.
+Automatic ranking finalization.
+Automatic reward calculation.
+Automatic reward release after configured approval/verification.
+Reminder/notification configuration.
+Prevent overlapping events when the same hosts or event slot are restricted.
+28.9 Country / Region Customization
+Different PK rules by country.
+Different prize pools by country.
+Different gift scoring by country.
+Different event duration by country.
+Different eligibility rules by country.
+Different event banner/content by country.
+Different reward currency/settlement configuration where supported.
+Admin can view Global defaults and Country overrides side-by-side.
+28.10 Live PK Monitoring
+Live event status.
+Host 1 and Host 2.
+Current score for both sides.
+Remaining time.
+Total gifts/coins contributed.
+Participant count.
+Flagged transactions.
+Quick moderation actions: Warn, Mute, Kick.
+Pause/Resume and End Event controls.
+Open full event audit trail.
+28.11 Event Financial Tracking
+Total coins spent during the event.
+Total gifts sent.
+Total diamonds/earnings generated where applicable.
+Prize pool.
+Platform share.
+Host/creator share.
+Agency share where applicable.
+Refunds/corrections.
+Net event revenue.
+Country-wise financial breakdown.
+Link every financial figure to the Transaction Ledger.
+28.12 Refunds & Corrections for Events
+Refund a user's event gift/coin transaction when an approved technical error occurs.
+Full or partial refund.
+Manual correction with any authorized amount.
+Automatic correction for duplicate transactions.
+Recalculate affected PK score after an approved refund.
+Recalculate rankings if a refunded transaction affected ranking.
+Do not silently delete transactions; preserve the original transaction and create an adjustment record.
+28.13 Event Notifications
+Event scheduled notification.
+Event starting notification.
+Event ending notification.
+Winner announcement.
+Reward issued notification.
+Event cancelled/paused notification.
+Country-specific notification content.
+Admin can enable/disable each notification type.
+28.14 Event Analytics & Reports
+Active, scheduled and completed event counts.
+Total participants.
+Total gifts/coins used.
+Total rewards distributed.
+Event revenue.
+Top hosts.
+Top contributors.
+Top countries/regions.
+Fraud/flagged activity report.
+PK performance by date.
+Export CSV/Excel report.
+28.15 Event Versioning & Audit
+Every event configuration change creates an audit entry.
+Store old and new values.
+Show who changed the event and when.
+Policy/configuration version number.
+Rollback to a previously approved event configuration where safe.
+Historical completed events must retain their original rules and reward configuration.
+28.16 Permissions & Approval
+Super Admin: full access.
+Event Admin: create/edit/manage events according to permission.
+Moderator: moderation only.
+Finance Admin: approve/release financial rewards and refunds.
+Viewer: read-only.
+Sensitive actions such as reward release, large refunds, score correction and event cancellation can require Super Admin/Finance approval.
+28.17 Developer Acceptance Criteria
+Everything in this section must be controllable from the Admin Panel without developer intervention.
+Global/Region/Country scope must work consistently.
+PK scoring, rewards and eligibility must be configurable.
+Financial calculations must connect to the existing economy and transaction ledger.
+No event transaction may be permanently erased through the Admin UI.
+All sensitive actions must be permission-controlled and audited.
+Completed event results must remain historically reproducible using the rules active at that time.
+
+29. Global Rankings Engine — Complete Admin Control
+
+Reference image — Global Rankings Engine
+This section is for the Admin Panel only. The Owner/Super Admin must be able to control all leaderboard categories, ranking periods, scoring rules, country/region visibility, rewards, resets, moderation and ranking history without developer intervention.
+29.1 Ranking Scope
+Scope selector: Global / Region / Country.
+Global ranking applies across the entire app.
+Region ranking applies to selected region(s).
+Country ranking applies only to selected country/countries.
+Country settings override Region settings, and Region settings override Global defaults.
+Allow the Admin to switch between Global, Region and Country views from the top of the page.
+29.2 Ranking Timeframes
+Hourly.
+Daily.
+Weekly.
+Monthly.
+Custom date range.
+Admin can enable or disable individual timeframes.
+Configure exact start/end time and timezone.
+Configure automatic reset after each ranking period.
+Completed ranking periods must remain available in history.
+29.3 Ranking Categories
+Wealth / Coins Spent.
+Charm / Gifts Received.
+Top Host / Creator.
+Top Agency.
+PK Winner / PK Points.
+VIP / SVIP ranking where required.
+Top Gifter.
+Top Referrer / Invite ranking.
+Country ranking.
+Region ranking.
+Custom ranking category.
+Admin can create, edit, activate, deactivate and delete custom ranking categories.
+29.4 Ranking Score Configuration
+Configure the source metric for every category.
+Coins spent can generate Wealth score.
+Eligible gifts received can generate Charm score.
+PK points can generate PK ranking score.
+Configure score multipliers by category.
+Configure country-specific score rules.
+Configure minimum qualifying activity.
+Configure maximum qualifying score if required.
+Exclude refunded, reversed, fraudulent or disputed transactions automatically.
+Manual score adjustment requires a reason and audit entry.
+29.5 Ranking Eligibility
+Minimum account level.
+VIP/SVIP eligibility.
+Host/creator eligibility.
+Agency eligibility.
+Country eligibility.
+Region eligibility.
+Account status requirement.
+Ban/suspension exclusion.
+Admin can manually include or exclude an account with a recorded reason.
+29.6 Leaderboard Display Controls
+Rank number.
+User/Host/Agency name.
+Avatar/profile image.
+Country flag where enabled.
+Ranking category.
+Performance score.
+Coins/points/gifts metric.
+Rank change compared with previous period.
+Top 3 special placement.
+Configure how many leaderboard records are displayed.
+Search by user ID, name, host ID or agency ID.
+29.7 Rewards & Prizes
+Enable/disable rewards for each ranking category.
+Configure reward type: Coins, Diamonds, VIP/SVIP, Frame, Badge, Gift/Asset or custom reward.
+Configure fixed reward per rank.
+Configure percentage-based reward pool.
+Configure Top 1 / Top 2 / Top 3 / Top 10 / Top 100 rewards.
+Country-specific rewards.
+Reward approval before release.
+Automatic reward distribution after finalization.
+Hold rewards for fraud review when required.
+Full reward distribution history.
+29.8 Ranking Finalization & Reset
+Preview final leaderboard before closing a period.
+Freeze leaderboard.
+Run final fraud/transaction validation.
+Finalize ranking.
+Distribute approved rewards.
+Reset the active period automatically.
+Manual reset option for Super Admin only.
+Do not delete historical ranking results when resetting.
+29.9 Fraud & Ranking Corrections
+Detect suspicious score increases.
+Flag abnormal gift/coin activity.
+Exclude reversed/refunded transactions.
+Freeze a ranking entry.
+Remove fraudulent score.
+Correct score manually.
+Disqualify a participant.
+Recalculate leaderboard after an approved correction.
+All corrections require reason, operator and timestamp.
+29.10 Country & Region Ranking Management
+Select a country and view its ranking.
+Create country-only ranking categories.
+Use different scoring rules per country.
+Use different reward rules per country.
+Enable/disable rankings by country.
+Configure country-specific ranking reset time.
+Region administrator can be given limited access if permissions allow.
+Global Admin can compare countries and regions.
+29.11 Live Ranking Monitoring
+Current active timeframe.
+Number of ranking records.
+Top users/hosts/agencies.
+Current score.
+Last score update.
+Recent score changes.
+Flagged entries.
+Quick actions: View Profile, Freeze Score, Correct Score, Disqualify.
+29.12 Ranking Analytics & Reports
+Total participants.
+Total coins contributing to ranking.
+Total gifts contributing to ranking.
+Total PK points.
+Top users/hosts/agencies.
+Country-wise ranking statistics.
+Region-wise ranking statistics.
+Reward cost.
+Ranking engagement trend.
+Export CSV/Excel reports.
+29.13 Ranking History
+Store every completed Hourly, Daily, Weekly and Monthly leaderboard.
+Search historical ranking by date, category, country and region.
+View final scores and rewards.
+View who finalized the ranking.
+View all score corrections made after calculation.
+Historical records must remain immutable except through a controlled correction workflow.
+29.14 Permissions & Audit
+Super Admin: full ranking control.
+Ranking Admin: create/configure rankings according to permission.
+Moderator: fraud review and disqualification only.
+Finance Admin: reward approval/release.
+Viewer: read-only access.
+Log every create, edit, publish, reset, correction, disqualification and reward action.
+Sensitive actions can require two-person approval.
+29.15 Developer Acceptance Criteria
+All ranking settings must be manageable from the Admin Panel.
+No developer intervention should be required to change ranking categories, periods, scoring or rewards.
+Global/Region/Country inheritance must work correctly.
+Refunded/reversed/fraudulent transactions must not continue contributing to rankings.
+Historical rankings must remain available after every reset.
+Every financial or score-changing action must be auditable.
+Ranking calculations must be reproducible from the transaction and scoring records.
+
+30. Referral System & Rewards — Complete Admin Control
+
+Reference image — Referral System & Rewards Admin Panel
+This section is for the Admin Panel only. The Owner/Super Admin must be able to configure referral codes, invite rewards, milestones, country/region rules, fraud checks, reward approval, corrections and referral history without developer intervention.
+30.1 Referral Scope
+Scope selector: Global / Region / Country.
+Global referral policy applies across the full app.
+Region policy applies to selected region(s).
+Country policy applies only to selected country/countries.
+Country settings override Region settings, and Region settings override Global defaults.
+Admin can view inherited Global settings and local overrides.
+30.2 Referral Code Management
+Create unique referral/invite codes.
+Automatically generate or manually define a code.
+Assign code to a user, host, agency or approved campaign.
+Set code status: Active, Paused, Expired, Disabled.
+Set start and expiry date.
+Set maximum total uses.
+Set maximum uses per invited user/device/account where required.
+Search by referral code, inviter ID, invitee ID or campaign.
+30.3 Referral Reward Configuration
+Configure reward type: Coins, Diamonds, VIP/SVIP, Badge, Frame, Gift/Asset or custom reward.
+Configure inviter reward.
+Configure invited-user reward.
+Configure reward amount.
+Configure fixed or milestone-based rewards.
+Configure delayed reward release.
+Configure reward expiry if required.
+Enable/disable rewards independently.
+30.4 Referral Milestones
+Create multiple invite milestones.
+Example: 1 successful invite, 10 invites, 50 invites, 100 invites, 300 invites.
+Define what counts as a successful invite.
+Optional requirements: account registration, profile completion, first recharge, minimum activity, host verification or other approved activity.
+Configure a different reward for each milestone.
+Prevent the same milestone from being rewarded twice.
+Show progress and completion status.
+30.5 Country & Region Referral Rules
+Different reward amount by country.
+Different reward amount by region.
+Different eligibility requirements by country.
+Different milestone targets by country.
+Different referral code campaigns by country.
+Only show/activate country-specific referral campaigns for users in that country.
+Admin can create a Global campaign and override it for selected countries.
+30.6 Anti-Abuse & Fraud Protection
+Device/IP/account relationship checks where legally and technically appropriate.
+Detect self-referral.
+Detect duplicate accounts or suspicious account clusters.
+Detect repeated referrals from the same device.
+Detect abnormal referral velocity.
+Detect suspicious recharge/activity patterns.
+Hold suspicious rewards for manual review.
+Mark checks as Cleared, Flagged, Blocked or Under Review.
+Do not permanently erase referral records used for fraud decisions.
+30.7 Referral Review & Manual Actions
+Review referral details.
+View inviter and invitee profiles.
+View referral code/campaign.
+View qualification progress.
+View anti-abuse checks.
+Approve reward.
+Reject reward.
+Hold reward.
+Clear fraud flag.
+Block referral.
+Manually correct reward amount with mandatory reason.
+30.8 Automatic Reward Engine
+Automatically detect when a referral milestone is completed.
+Run eligibility and anti-abuse checks before reward issuance.
+Automatically issue approved rewards.
+Put failed/suspicious cases into Pending Review.
+Create a transaction/reference ID for every reward.
+Prevent duplicate reward issuance using an idempotent reward record.
+30.9 Referral Dashboard & Statistics
+Total referral codes.
+Active campaigns.
+Total invites.
+Successful invites.
+Pending referrals.
+Flagged referrals.
+Completed referrals.
+Total coins rewarded.
+Total diamonds rewarded.
+Total reward value.
+Top inviters.
+Country-wise referral performance.
+Region-wise referral performance.
+30.10 Search & Filters
+Search by referral code.
+Search by inviter username/ID.
+Search by invitee username/ID.
+Filter by Global / Region / Country.
+Filter by campaign.
+Filter by status: Pending, Completed, Rejected, Flagged, Blocked.
+Filter by date range.
+Filter by reward type.
+Filter by anti-abuse status.
+30.11 Referral Campaigns
+Create campaign name and campaign ID.
+Campaign banner/image upload.
+Campaign description and rules.
+Campaign scope: Global / Region / Country.
+Campaign start/end date.
+Reward configuration.
+Milestone configuration.
+Maximum campaign budget.
+Maximum number of rewarded referrals.
+Pause/resume campaign.
+Duplicate campaign as a new version.
+30.12 Referral Reward Budget Controls
+Set maximum daily reward budget.
+Set maximum campaign reward budget.
+Set maximum reward per user.
+Automatically stop new reward issuance when budget is reached.
+Notify Admin when budget reaches configurable thresholds.
+Track committed, paid and remaining reward budget.
+30.13 Referral Refund & Correction
+Full reward reversal.
+Partial reward correction.
+Manual coin/diamond correction.
+Reverse reward when a referral is later found fraudulent.
+Recalculate milestone progress after a reversal.
+Link every reversal to the original reward transaction.
+Never delete the original financial record; create an adjustment entry.
+30.14 Referral History & Audit Log
+Store every referral event.
+Store inviter and invitee IDs.
+Store code/campaign ID.
+Store qualification events.
+Store anti-abuse result.
+Store reward amount and type.
+Store approval/rejection/hold decision.
+Store operator, timestamp and reason for every manual action.
+Historical referral records must remain available.
+30.15 Permissions & Approval
+Super Admin: full referral control.
+Referral Admin: campaign and referral management according to permission.
+Fraud/Moderator: review and flag referrals.
+Finance Admin: approve/release high-value rewards and reversals.
+Viewer: read-only.
+Large reward changes, bulk corrections and campaign budget changes can require Super Admin/Finance approval.
+30.16 Reports & Export
+Referral performance report.
+Campaign report.
+Country/region report.
+Top inviter report.
+Reward cost report.
+Fraud/abuse report.
+Pending review report.
+Daily/weekly/monthly referral report.
+Export CSV/Excel.
+30.17 Developer Acceptance Criteria
+All referral settings must be controllable from the Admin Panel.
+No developer intervention should be required to change rewards, milestones, campaigns or country rules.
+Global/Region/Country inheritance must work correctly.
+Anti-abuse checks must run before automatic reward issuance.
+Duplicate rewards must be technically prevented.
+Every reward and correction must be traceable to an immutable transaction/reference record.
+Referral history must remain available after campaigns expire.
+All sensitive actions must be permission-controlled and audited.
+
+31. Banners & Homepage / App Content — Complete Admin Control
+This section is for the Admin Panel only. The Owner/Super Admin must be able to create, edit, schedule, publish, pause, disable and target promotional banners and featured app content without developer intervention.
+
+Reference screenshot 1 — Banners & Homepage Admin Panel
+
+Reference screenshot 2 — Banners & Homepage Admin Panel
+
+Reference screenshot 3 — Banners & Homepage Admin Panel
+31.1 Banner Scope & Targeting
+Scope selector: Global / Region / Country.
+Global banner applies across the full app.
+Region banner applies only to selected region(s).
+Country banner applies only to selected country/countries.
+Country settings override Region settings, and Region settings override Global defaults.
+Target audience: All Users, New Users, Existing Users, VIP/SVIP, Hosts, Agents/Agencies, Coin Sellers, or custom segments.
+Optional targeting by user level, VIP level, host level, agency, gender/age segment where legally and operationally appropriate.
+31.2 Banner Creation
+Banner ID and Banner Title.
+Upload desktop/mobile banner artwork with image validation.
+Optional thumbnail and preview image.
+Placement selector: Home Carousel, Home Top, Home Middle, Event Area, Recharge Page, Profile Area, Live Area, Room Area, Store, Referral Area, or other configured app locations.
+Target URL/deep link or internal app destination.
+CTA text and CTA action.
+Optional announcement text.
+Priority/order number.
+Status: Draft, Scheduled, Active, Paused, Disabled, Expired.
+Start date/time and end date/time.
+Timezone selection.
+Click/open tracking enabled.
+31.3 Scheduling & Publishing
+Schedule banners for future activation.
+Automatic activation at start date/time.
+Automatic expiry at end date/time.
+Pause/resume without deleting the banner.
+Publish immediately option.
+Schedule multiple banners for the same placement.
+Priority rules for simultaneous banners.
+Conflict detection when two banners target the same placement/time.
+Preview before publishing.
+Draft mode for unfinished banners.
+31.4 Banner Management Actions
+Edit banner.
+Duplicate banner.
+Preview banner.
+Enable/disable banner.
+Pause/resume banner.
+Change schedule.
+Change placement.
+Change target audience.
+Change Global/Region/Country scope.
+Reorder banner priority.
+Archive expired banners.
+Restore archived banners where permitted.
+Delete only with permission and confirmation; financial/analytics history must not be silently deleted.
+31.5 Homepage Content Control
+Manage homepage carousel slides.
+Manage featured content blocks.
+Manage promotional cards.
+Manage event announcements.
+Manage recharge/coin offers shown on homepage.
+Manage referral promotions.
+Manage VIP/SVIP promotions.
+Manage store promotions.
+Manage seasonal/festival campaigns.
+Configure content visibility by Global/Region/Country.
+31.6 Country & Region Content
+Create a country-specific banner without changing the Global banner.
+Create region-specific campaigns.
+Select one or multiple countries.
+Show country-specific language/content where translations are configured.
+Configure country-specific start/end dates.
+Configure country-specific CTA/deep link.
+View inherited Global banner settings before applying an override.
+31.7 Banner Frequency & Display Rules
+Set maximum impressions per user.
+Set maximum clicks/opens per user where required.
+Set daily/weekly display frequency.
+Optional cooldown after a user closes a banner.
+Optional first-login display.
+Optional display only once.
+Optional display until CTA is completed.
+Priority and fallback logic when multiple banners are eligible.
+31.8 Analytics
+Impressions.
+Unique viewers.
+Clicks/opens.
+Click-through rate.
+Conversion count.
+Conversion rate.
+Revenue/coin impact where applicable.
+Performance by Global/Region/Country.
+Performance by placement.
+Performance by audience segment.
+Daily/weekly/monthly performance history.
+31.9 Search & Filters
+Search by Banner ID or title.
+Filter by placement.
+Filter by Global/Region/Country.
+Filter by status.
+Filter by target audience.
+Filter by active/scheduled/expired.
+Filter by date range.
+Sort by priority, start date, end date, impressions, clicks or performance.
+31.10 Safety & Validation
+Validate image dimensions, file type and file size.
+Prevent broken media from being published.
+Require mandatory title, placement and schedule fields.
+Warn before publishing overlapping high-priority banners.
+Require confirmation for disabling an active campaign.
+Role-based permission for publish, delete and bulk actions.
+31.11 Audit Log & Version History
+Record every create, edit, publish, pause, disable, delete and schedule action.
+Record Admin ID, timestamp and action details.
+Keep previous banner versions.
+Allow authorized Admins to review version history.
+Record Global/Region/Country scope changes.
+Record target audience changes.
+Record schedule and placement changes.
+31.12 Bulk Management
+Bulk enable/disable.
+Bulk pause/resume.
+Bulk schedule update.
+Bulk country/region assignment.
+Bulk placement update.
+Bulk priority update.
+Bulk archive expired campaigns.
+Bulk actions require confirmation and must be logged.
+31.13 Developer Acceptance Criteria
+All banner and homepage promotional controls must be manageable from the Admin Panel.
+No developer intervention should be required for normal banner creation, editing, scheduling or targeting.
+Global/Region/Country inheritance and overrides must work correctly.
+Scheduled banners must activate and expire automatically.
+Only eligible users should receive targeted banners.
+Analytics must remain linked to the correct Banner ID and version.
+Every administrative action must be auditable.
+Expired banners must not remain visible after their configured end time.
+
+32. System Announcements — Complete Admin Control
+This section is for the Admin Panel only. The Owner/Super Admin must be able to create, publish, schedule, target, pin, edit, disable and audit system announcements without developer intervention.
+
+Reference screenshot 1 — System Announcements Admin Panel
+
+Reference screenshot 2 — System Announcements Admin Panel
+32.1 Announcement Creation
+Announcement ID must be generated automatically and remain unique.
+Title / headline field.
+Announcement content with a rich-text editor supporting headings, bold, links and basic formatting.
+Announcement type: Maintenance, Feature, Promotion, Policy, Security, System Update, Event, Warning, General or Custom.
+Optional image/media attachment.
+Optional internal deep link / CTA button.
+CTA label and destination.
+Target audience selector.
+Global / Region / Country scope selector.
+Priority level.
+Draft, Scheduled, Published, Paused, Expired and Archived states.
+32.2 Global / Region / Country Targeting
+Global: announcement is shown across the entire app.
+Region: announcement is shown only in selected region(s).
+Country: announcement is shown only in selected country/countries.
+Allow multiple countries to be selected.
+Country-level announcement overrides a Global announcement when both apply to the same audience and placement.
+Allow country-specific language/content where translations are configured.
+Show the selected scope clearly in Admin Panel before publishing.
+32.3 Target Audience
+All Users.
+New Users.
+Existing Users.
+Hosts only.
+Agents / Agencies.
+Coin Sellers / Resellers.
+VIP / SVIP users.
+Specific user segment or selected user IDs where permitted.
+Allow audience rules to be combined with country/region targeting.
+32.4 Publish & Scheduling
+Publish immediately.
+Schedule future publish date/time.
+Set expiry date/time.
+Automatic activation at the scheduled time.
+Automatic expiry after the configured end time.
+Pause and resume an active announcement.
+Save as draft.
+Preview before publishing.
+Timezone selection for scheduled announcements.
+32.5 Pin / Display Priority
+Pin announcement to the top of the in-app announcements list.
+Set display priority/order.
+Allow multiple pinned announcements with defined priority.
+Optional banner/notification placement.
+Optional homepage announcement placement.
+Optional notification center placement.
+Optional popup display for urgent announcements.
+32.6 Notification & Delivery Controls
+Choose whether an announcement is only visible in the announcement center or also delivered as a push notification.
+Configure push notification title and message separately from the full announcement.
+Optional deep link from notification into a specific app page.
+Set notification delivery time.
+Optional one-time notification per user.
+Optional repeat notification rules for important system notices.
+Track delivery, open and click results.
+32.7 Announcement Management Actions
+Edit.
+Duplicate.
+Preview.
+Publish.
+Pause.
+Resume.
+Pin / Unpin.
+Change audience.
+Change Global/Region/Country scope.
+Change schedule.
+Archive.
+Delete only with authorized permission and confirmation.
+32.8 Search & Filters
+Search by announcement ID or title.
+Filter by type.
+Filter by Global / Region / Country.
+Filter by target audience.
+Filter by Draft / Scheduled / Published / Paused / Expired / Archived.
+Filter by date range.
+Sort by priority, publish date, expiry date and engagement.
+32.9 Analytics
+Total published announcements.
+Impressions / eligible users.
+Unique viewers.
+Push notifications sent.
+Push delivery rate.
+Open/view rate.
+CTA clicks.
+Click-through rate.
+Performance by country/region.
+Performance by audience segment.
+Historical performance by announcement version.
+32.10 Audit Log & Version History
+Record who created the announcement.
+Record who edited, published, paused, resumed, pinned or deleted it.
+Record exact date/time of every action.
+Store previous versions of title, content, audience, scope and schedule.
+Record Global/Region/Country changes.
+Record publish and expiry changes.
+Authorized Admins can view version history and audit details.
+32.11 Safety & Validation
+Required fields must be validated before publishing.
+Prevent publishing an empty title or content.
+Validate media type and size.
+Warn when a new announcement conflicts with an existing high-priority announcement.
+Require confirmation before disabling an active announcement.
+Role-based permissions for publishing, deleting and bulk actions.
+Emergency announcement option for urgent platform-wide notices.
+32.12 Bulk Management
+Bulk archive expired announcements.
+Bulk pause/resume.
+Bulk publish where permitted.
+Bulk change target audience.
+Bulk change Global/Region/Country scope.
+Bulk delete only for authorized roles.
+Every bulk action must be recorded in the audit log.
+32.13 Developer Acceptance Criteria
+All normal announcement operations must be controllable from the Admin Panel without developer intervention.
+Global, Region and Country targeting must work independently.
+Scheduled announcements must automatically activate and expire.
+Pinned announcements must appear in the configured priority order.
+Targeted users must only receive announcements for which they are eligible.
+Push notification delivery and engagement must be tracked when enabled.
+Every administrative action must be auditable.
+Historical announcement versions must remain available for authorized review.
+
+33. Room Theme Approval — Content & Banners
+Add a dedicated 'Room Theme Approval' option under the Admin Panel's Content & Banners section. This is an Admin Panel moderation and publishing workflow only; it does not give the Admin direct room-management controls.
+
+Reference screenshot — Content & Banners navigation
+33.1 Navigation
+Under Content & Banners, add: Banners & Home, Announcements, Room Theme Approval, Notifications.
+Room Theme Approval must open a dedicated Admin Panel page.
+The menu item should show a pending-count badge when themes are waiting for review.
+33.2 Theme Submission Review
+Display Theme ID and unique asset ID.
+Display theme name, creator/submitter ID and submission date/time.
+Show theme preview image/video before approval.
+Show all uploaded theme assets used by the submission.
+Show theme category and intended placement.
+Show Global / Region / Country scope requested by the submitter.
+Show any requested coin price or free/premium status.
+Show theme description and optional creator notes.
+33.3 Approval Workflow
+Statuses: Pending Review, Under Review, Approved, Rejected, Changes Required, Published, Disabled and Archived.
+Actions: Approve, Reject, Request Changes, Preview, Disable and Archive.
+Approval must require confirmation before publishing.
+Rejection must support a mandatory reason.
+Request Changes must allow the Admin to enter a correction note.
+Approved themes can be scheduled for future publication.
+A theme can be approved but kept unpublished until its configured publish date.
+33.4 Global / Region / Country Control
+Global: approved theme is available across the full app.
+Region: approved theme is available only in selected region(s).
+Country: approved theme is available only in selected country/countries.
+Allow one theme to have different availability rules by country.
+Country-level settings override Region settings, and Region settings override Global defaults.
+Allow Admin to change the scope after approval without requiring a new upload.
+33.5 Theme Configuration
+Theme name and display name.
+Theme ID / asset ID.
+Theme category.
+Preview media.
+Theme media/assets upload and replacement.
+Free / Premium status.
+Coin price where applicable.
+Start and end date/time.
+Priority/order.
+Active / inactive toggle.
+Supported app version.
+Optional tags for search and filtering.
+33.6 Preview & Quality Checks
+Full-screen preview before approval.
+Preview on supported room layouts.
+Validate required image/video dimensions and file formats.
+Validate file size limits.
+Detect missing or broken media before approval.
+Show a warning if assets are incompatible with the selected app version.
+Do not allow an incomplete theme to be published.
+33.7 Search & Filters
+Search by Theme ID, theme name, creator ID or submission ID.
+Filter by Pending, Approved, Rejected, Changes Required, Published, Disabled and Archived.
+Filter by Global / Region / Country.
+Filter by category.
+Filter by free/premium.
+Filter by submission date and approval date.
+Sort by newest, oldest, priority and status.
+33.8 Audit Log & Version History
+Record who submitted, reviewed, approved, rejected, edited, published, disabled or archived the theme.
+Record exact date/time of every action.
+Store approval/rejection reasons and Admin notes.
+Keep previous versions when theme assets or configuration are changed.
+Show complete version history to authorized Admins.
+Do not remove historical approval records when a theme is later disabled.
+33.9 Notifications
+Notify authorized Admins when a new theme is submitted.
+Notify the submitter when a theme is approved, rejected or requires changes where a notification channel exists.
+Optional internal Admin notification for high-priority submissions.
+Record notification status in the audit trail.
+33.10 Developer Acceptance Criteria
+Room Theme Approval must appear under Content & Banners in the Admin Panel.
+Admin must be able to review the complete theme before approval.
+No theme may become publicly available without passing the configured approval workflow.
+Global/Region/Country availability must be configurable from the Admin Panel.
+Admin must be able to approve, reject, request changes, publish, disable and archive themes.
+Every approval-related action must be recorded in the audit log.
+The workflow must work without developer intervention for normal theme approvals.
+
+34. Owner Control & Developer-Independence — Final Gap Analysis
+Purpose: This section explains exactly what the Owner/Super Admin should be able to control from the Admin Panel and identifies the remaining functions that cannot safely be replaced by an Admin Panel alone. The goal is to eliminate developer dependency for routine business, content, financial, moderation and operational changes.
+34.1 What the Owner/Super Admin Can Control From This Admin Panel
+Users: search, inspect, ban/freeze/restrict, permissions, props, identity-related fields and transaction history.
+Hosts: applications, targets, payout tiers, agency binding/transfer and earning rules.
+Agencies: applications, creator rosters, commissions, settlements and country management.
+Rooms: search, monitor, pause/close/reopen/restrict and moderation from the Admin Panel.
+Coin Sellers/Resellers: role, country, coin allocation, balance/limits, enable/disable and corrections.
+Merchants: allocation, country, payment methods, settlement limits, sales and corrections.
+Offline recharge: country-specific seller/merchant routing, proof review and approval.
+Withdrawals: holding period, conversion rate, limits, assignment, proof verification and settlement status.
+Financial ledger: transaction search, chain trace, refunds, reversals, corrections and exports.
+Refunds: full, partial and custom corrections for users, sellers and merchants with approval workflows.
+Economy: coin/diamond rates, platform/host/agency/seller/merchant shares, fees, limits and effective dates.
+Gifts: price, media, animation, sound, room availability, eligibility, schedules and country/region overrides.
+Virtual items: frames, rides, badges, chat bubbles and other assets, including grant/revoke and expiry.
+Store: products, prices, durations, featured items, promotions, country/region availability and analytics.
+Games: entry fees, outcomes, probabilities, payouts, limits, RTP/house edge, events and emergency pause.
+PK/events: event rules, scoring, prize pools, rankings, rewards, moderation and scheduling.
+Rankings: categories, periods, scoring, eligibility, rewards, resets, fraud corrections and history.
+Referrals: codes, campaigns, milestones, rewards, budgets, fraud checks and corrections.
+Banners/homepage: creation, targeting, scheduling, placement, priority, analytics and country/region control.
+Announcements: creation, audience, scope, scheduling, pinning, push delivery and audit.
+Room themes: review, approve/reject, pricing, publication, scope, media validation and version history.
+Audit/versioning: review who changed sensitive settings, when, old value, new value and approval.
+Global/Region/Country inheritance: maintain different business/content configurations without changing application code.
+34.2 Missing Admin Modules That Should Be Added
+Dashboard & Command Center
+Real-time KPIs for users, hosts, rooms, coins, diamonds, recharge, withdrawals, refunds, revenue, events and risk.
+Custom date/country/region filters and drill-down into the underlying records.
+Operational alerts: payment failures, abnormal withdrawals, suspicious coin movement, failed jobs, storage issues and high-risk approvals.
+Configurable dashboard widgets and saved views.
+Approval Center
+One unified queue for host/agency applications, financial approvals, high-value refunds, reseller corrections, withdrawals, reward releases, room themes and sensitive policy changes.
+Approve, reject, hold, request changes and assign reviewer.
+Configurable approval thresholds by amount, action type and country.
+Two-person/maker-checker approval for high-risk actions.
+Notifications Center
+Create and manage push, in-app and system notifications separately from announcements.
+Global/Region/Country targeting, audience targeting, scheduling, templates, deep links, frequency limits and delivery analytics.
+Notification history, failed delivery log and retry controls.
+Moderation & Safety Center
+Unified reports queue for users, hosts, rooms, chat, gifts, media, fraud and abuse.
+Configurable ban/restriction rules and durations.
+Warning, mute, freeze, kick, suspend, permanent ban and appeal workflow.
+Evidence attachments, moderator notes and case history.
+Automated rule engine for repeat violations.
+Customer Support / Ticketing
+Create, assign, prioritize, tag and close tickets.
+User/account/transaction/withdrawal/refund context inside the ticket.
+Canned responses, internal notes, escalation and SLA timers.
+Ticket audit history and export.
+Localization & Country Configuration
+Country list, region groups, timezone, currency, language and country activation.
+Translation management for app text, banners, announcements, notifications, event content and policy labels.
+Fallback language and Global/Region/Country inheritance.
+Country-specific feature enable/disable flags.
+Feature Flags / Remote Configuration
+Enable/disable existing app features without releasing a new app build.
+Global/Region/Country/user-segment feature flags.
+Percentage rollout and staged rollout.
+Emergency kill switch for risky features.
+Configuration versioning and rollback.
+Payment Provider & Settlement Configuration
+Manage configured payment-provider credentials/settings through a secure secret-management interface.
+Enable/disable payment methods by country.
+Set payment limits, fees, maintenance state and display order.
+Provider health/status and reconciliation tools.
+Important: adding a completely new payment provider still requires a developer integration unless a generic provider framework already exists.
+System Jobs / Automation Center
+View scheduled jobs for banners, policies, events, rankings, rewards, withdrawals and settlements.
+Run, pause, retry or cancel supported jobs.
+Job history, failure reason, retry count and execution time.
+Configure automatic cleanup/archive tasks where supported.
+API / Webhook Operations Center
+View API requests, webhook deliveries, failures and retry status.
+Replay failed webhook deliveries where safe.
+Manage endpoint enable/disable status and event subscriptions for already-supported integrations.
+API key creation/revocation only if the platform's security model supports it.
+Do not expose secret values in normal Admin UI.
+System Health & Infrastructure Visibility
+Database, cache, storage, queue and service health dashboards.
+Error-rate, latency and uptime monitoring.
+Read-only deployment/build/version information.
+Maintenance mode and emergency read-only mode.
+Developer/DevOps intervention remains required for server-level failures, code deployments and infrastructure changes.
+34.3 Global Admin Settings That Must Be Centralized
+Global / Region / Country selector should be available consistently across all modules that support overrides.
+Effective Configuration Preview should show the final value a selected country/user will receive.
+Global > Region > Country inheritance must use one consistent rule across assets, economy, events, rankings, referrals and content.
+Reset Override to Global/Region must be available.
+All configurable values should have validation, min/max limits and safe defaults.
+All changes must support audit history and, where sensitive, approval.
+Future effective dates and rollback should be supported for policies and other scheduled configurations.
+34.4 Things the Admin Panel Cannot Safely Replace
+Writing brand-new application features that are not already represented by configurable modules.
+Fixing application source-code bugs, crashes or logic defects.
+Changing the database schema or performing migrations that are not supported by an existing migration system.
+Adding a completely new third-party payment provider, SDK, API or external service integration unless a generic integration framework already exists.
+Changing server infrastructure, cloud networking, DNS, CDN, storage architecture or production environment configuration outside the supported Admin controls.
+Changing mobile app native code, permissions, SDK versions or OS-level integrations.
+Publishing a new iOS/Android application build to the App Store/Google Play; the release/build pipeline still requires authorized technical/release operations.
+Changing unsupported media/asset formats that the application itself does not implement.
+Recovering corrupted database/storage data or performing low-level disaster recovery.
+Performing security-engineering changes such as source-code vulnerability fixes, dependency upgrades or cryptographic implementation changes.
+Creating a new business module that has no backend/data model/API support.
+Changing the core transaction engine or ledger rules beyond the configuration options explicitly implemented in the Admin Panel.
+34.5 How to Minimize Developer Dependency Even Further
+Build a generic configurable CRUD framework so the Owner can create future categories, asset types, reward types, ranking categories and event types without code changes.
+Build a remote feature-flag system with Global/Region/Country/user-segment targeting and emergency kill switches.
+Build a policy/rules engine instead of hard-coded business rules.
+Build a generic workflow/approval engine with configurable stages and thresholds.
+Build a generic notification template engine with localization and scheduling.
+Build a generic media/asset pipeline with validation, preview, versioning and CDN publication.
+Build a generic country/region configuration service used by every module.
+Build a generic audit/version service used by every sensitive configuration.
+Build safe rollback for configuration changes.
+Build a reconciliation engine for coins, diamonds, gifts, withdrawals, refunds, rewards and settlements.
+Build an admin-only maintenance mode and emergency disable switches for every high-risk feature.
+Expose system version/build information and feature compatibility checks so Admin can see when a configuration requires a newer app version.
+34.6 Final Owner-vs-Developer Boundary
+OWNER/SUPER ADMIN = business rules, prices, rates, commissions, targets, limits, countries, content, gifts, virtual assets, store items, games, PK/events, rankings, referrals, banners, announcements, room-theme approvals, users, hosts, agencies, sellers, merchants, refunds, withdrawals, moderation, notifications, permissions and operational workflows.
+DEVELOPER/TECHNICAL TEAM = source-code changes, new backend capabilities, new integrations, database/infrastructure changes, native mobile changes, security fixes, unsupported media/code support, deployment/build/release work and technical incident recovery.
+34.7 Final Acceptance Requirement
+The developer must not hard-code any business value that is listed as Admin-configurable. Before final delivery, the developer must demonstrate each configurable control in a staging environment and provide a written checklist confirming that changing the value in Admin Panel changes the live application behavior without code modification or database manual editing.
+The developer must also provide an Admin-only emergency control for each high-risk module: payments/recharge, withdrawals, gifts, games, PK/events, rankings, referrals, banners, announcements, room themes and notifications.
