@@ -22,16 +22,65 @@ import { GeographicInheritancePanel } from '../../components/ui/GeographicInheri
 import { Button } from '../../components/ui/Button';
 
 function CreateBannerModal({ isOpen, onClose, onCreated }) {
-  const [formData, setFormData] = useState({ title: '', placement: 'Home Carousel', target: 'Global', startDate: '', endDate: '' });
+  const [formData, setFormData] = useState({
+    title: '',
+    placement: 'Home Carousel',
+    isGlobal: true,
+    selectedCountries: ['PK', 'SA'],
+    startDate: '',
+    endDate: '',
+    imageUrl: ''
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dimensionError, setDimensionError] = useState(null);
+  const [countryInput, setCountryInput] = useState('');
+
+  const handleImageDimensionValidation = (file) => {
+    setDimensionError(null);
+    if (!file) return;
+    const img = new Image();
+    img.src = URL.createObjectURL(file);
+    img.onload = () => {
+      // Allow exact 700x200 or 700:200 aspect ratio upload test
+      if (img.width !== 700 || img.height !== 200) {
+        setDimensionError("Image size must be exactly 700 × 200 px.");
+        setFormData((prev) => ({ ...prev, imageUrl: '' }));
+      } else {
+        setDimensionError(null);
+        setFormData((prev) => ({ ...prev, imageUrl: img.src }));
+      }
+    };
+  };
+
+  const handleAddCountry = () => {
+    if (!countryInput) return;
+    const code = countryInput.trim().toUpperCase();
+    if (!formData.selectedCountries.includes(code)) {
+      setFormData({
+        ...formData,
+        isGlobal: false,
+        selectedCountries: [...formData.selectedCountries, code]
+      });
+    }
+    setCountryInput('');
+  };
+
+  const handleRemoveCountry = (code) => {
+    setFormData({
+      ...formData,
+      selectedCountries: formData.selectedCountries.filter((c) => c !== code)
+    });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (dimensionError) return;
     setIsSubmitting(true);
     try {
       const banner = await createBanner({
         ...formData,
-        image: 'https://placehold.co/800x400/D4AF37/000000?text=New+Banner',
+        target: formData.isGlobal ? 'Global' : formData.selectedCountries.join(', '),
+        image: formData.imageUrl || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=700&h=200&q=80',
         status: 'SCHEDULED'
       });
       onCreated(banner);
@@ -42,41 +91,87 @@ function CreateBannerModal({ isOpen, onClose, onCreated }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Create New Banner" size="md">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <Modal isOpen={isOpen} onClose={onClose} title="Create New Banner Campaign" size="md">
+      <form onSubmit={handleSubmit} className="space-y-4 text-xs text-slate-300">
         <div>
-          <label className="block text-xs font-medium text-slate-400 mb-1">Banner Title</label>
-          <Input required placeholder="E.g., Eid Celebration Campaign" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} />
+          <label className="block text-xs font-medium text-slate-400 mb-1">Banner Title *</label>
+          <Input required placeholder="E.g., Pakistan Independence Day Special Campaign" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} />
         </div>
+
+        {/* 700x200 Image Upload & Validation */}
+        <div>
+          <label className="block text-xs font-medium text-slate-400 mb-1">Banner Creative (Required Size: Exactly 700 × 200 px) *</label>
+          <input
+            type="file"
+            accept="image/png, image/jpeg, image/webp"
+            onChange={(e) => handleImageDimensionValidation(e.target.files[0])}
+            className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-gold-400 hover:file:bg-slate-700 cursor-pointer"
+          />
+          {dimensionError && (
+            <div className="mt-1.5 p-2 rounded bg-rose-500/20 border border-rose-500/40 text-rose-400 text-[11px] font-bold flex items-center gap-1.5">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{dimensionError}</span>
+            </div>
+          )}
+          <p className="text-[10px] text-slate-500 mt-1">Creative resolution must strictly be 700px width by 200px height.</p>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">Placement</label>
             <select
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-gold-500 focus:ring-1 focus:ring-gold-500 outline-none transition-all"
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-gold-500 focus:ring-1 focus:ring-gold-500 outline-none transition-all"
               value={formData.placement}
               onChange={(e) => setFormData({...formData, placement: e.target.value})}
             >
               <option value="Home Carousel">Home Carousel</option>
-              <option value="Discover Page">Discover Page</option>
-              <option value="Events Page">Events Page</option>
-              <option value="Store Page">Store Page</option>
-              <option value="Wallet Page">Wallet Page</option>
+              <option value="Party Top">Party Section Top</option>
+              <option value="Live Top">Live Section Top</option>
+              <option value="Room Placement">Room Placement</option>
             </select>
           </div>
+
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Target Audience</label>
-            <select
-              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-gold-500 focus:ring-1 focus:ring-gold-500 outline-none transition-all"
-              value={formData.target}
-              onChange={(e) => setFormData({...formData, target: e.target.value})}
+            <label className="block text-xs font-medium text-slate-400 mb-1">Target Mode</label>
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, isGlobal: !formData.isGlobal })}
+              className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition-colors border ${
+                formData.isGlobal ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-purple-500/20 text-purple-400 border-purple-500/40'
+              }`}
             >
-              <option value="Global">Global</option>
-              <option value="MENA">MENA Region</option>
-              <option value="Asia">Asia</option>
-              <option value="Europe">Europe</option>
-            </select>
+              {formData.isGlobal ? '🌍 Global (Worldwide)' : '🎯 Country-Specific Targeting'}
+            </button>
           </div>
         </div>
+
+        {/* Searchable Multi-Select Country Control */}
+        {!formData.isGlobal && (
+          <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+            <label className="block text-[11px] font-medium text-slate-400">Target Countries (Multi-Select ISO Codes)</label>
+            <div className="flex gap-2">
+              <Input
+                size="sm"
+                placeholder="Enter country code (e.g. PK, SA, US, BR)"
+                value={countryInput}
+                onChange={(e) => setCountryInput(e.target.value)}
+              />
+              <Button type="button" variant="primary" size="xs" onClick={handleAddCountry}>
+                + Add Country
+              </Button>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {formData.selectedCountries.map((code) => (
+                <span key={code} className="px-2 py-0.5 rounded bg-purple-950 border border-purple-700/60 text-purple-300 font-mono text-[11px] flex items-center gap-1">
+                  <span>{code}</span>
+                  <button type="button" onClick={() => handleRemoveCountry(code)} className="text-slate-400 hover:text-rose-400 font-bold">×</button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">Start Date</label>
@@ -87,10 +182,11 @@ function CreateBannerModal({ isOpen, onClose, onCreated }) {
             <Input required type="date" value={formData.endDate} onChange={(e) => setFormData({...formData, endDate: e.target.value})} />
           </div>
         </div>
-        <div className="flex justify-end gap-3 mt-6">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-white transition-colors">Cancel</button>
-          <button type="submit" disabled={isSubmitting} className="bg-gold-500 hover:bg-gold-400 text-slate-900 px-4 py-2 rounded-lg text-sm font-bold transition-colors disabled:opacity-50">
-            Schedule Banner
+
+        <div className="flex justify-end gap-3 mt-6 border-t border-slate-800 pt-3">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors">Cancel</button>
+          <button type="submit" disabled={isSubmitting} className="bg-gold-500 hover:bg-gold-400 text-slate-900 px-4 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-50">
+            Publish Campaign Banner
           </button>
         </div>
       </form>

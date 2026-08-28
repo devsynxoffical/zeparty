@@ -28,6 +28,7 @@ import { getCountryShortName } from '../../constants/countries.data';
 import { usePermission } from '../../hooks/usePermission';
 import { useAuditLog } from '../../context/AuditLogContext';
 import { MOCK_AGENCIES_LIST } from '../../mocks/hosts.mock';
+import { MOCK_BD_CENTERS } from '../../mocks/bdCenters.mock';
 
 export function AgenciesPage() {
   const { logAdminAction } = useAuditLog();
@@ -41,7 +42,12 @@ export function AgenciesPage() {
   
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [bdCenterFilter, setBdCenterFilter] = useState('all');
   const [selectedAgency, setSelectedAgency] = useState(null);
+  
+  // BD Center Modal State
+  const [isBDCenterModalOpen, setIsBDCenterModalOpen] = useState(false);
+  const [bdCenterAssignModal, setBdCenterAssignModal] = useState({ open: false, agency: null, bdCenterId: '' });
   
   // Modals
   const [transferModal, setTransferModal] = useState({ open: false, agency: null });
@@ -480,22 +486,24 @@ export function AgenciesPage() {
           containerClassName="flex-1 max-w-md"
         />
 
-        {activeTab === 'applications' && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-bold">Status:</span>
-            {['all', 'pending', 'approved', 'rejected'].map((st) => (
-              <button
-                key={st}
-                onClick={() => setStatusFilter(st)}
-                className={`px-2 py-1 rounded text-xs font-medium uppercase border ${
-                  statusFilter === st ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-                }`}
-              >
-                {st}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {activeTab === 'applications' && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-bold">Status:</span>
+              {['all', 'pending', 'approved', 'rejected'].map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setStatusFilter(st)}
+                  className={`px-2 py-1 rounded text-xs font-medium uppercase border ${
+                    statusFilter === st ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </Card>
 
       {/* Table */}

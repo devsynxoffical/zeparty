@@ -9,7 +9,8 @@ import { getLogsForTarget, logEvent } from '../../services/modules/auditLogs.ser
 import {
   ArrowLeft, Mail, Globe, Phone, Building, ShieldCheck, ShieldAlert,
   Smartphone, Lock, RefreshCw, Key, Award, Sparkles, AlertTriangle,
-  Coins, Diamond, CheckCircle, XCircle, Slash
+  Coins, Diamond, CheckCircle, XCircle, Slash, MessageSquare, Heart,
+  Share2, Trash2, FileText
 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
@@ -18,6 +19,8 @@ import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { DataTable } from '../../components/tables/DataTable';
 import { MOCK_USERS } from '../../mocks/users.mock';
+import { MOCK_BD_CENTERS } from '../../mocks/bdCenters.mock';
+import { getUserPosts, deleteUserPost } from '../../services/modules/posts.service';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryName } from '../../constants/countries.data';
 import { formatDate, formatNumber, timeAgo, avatarColor } from '../../utils/format';
@@ -41,12 +44,40 @@ export function UserDetailPage() {
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
+  // Posts State
+  const [userPosts, setUserPosts] = useState([]);
+  const [isLoadingPosts, setIsLoadingPosts] = useState(false);
+  const [postToDelete, setPostToDelete] = useState(null);
+
+  // BD Center Assignment State
+  const [selectedBDCenter, setSelectedBDCenter] = useState(user.bdCenterId || 'bdc-101');
+
   // Modals state
-  const [modalAction, setModalAction] = useState(null); // 'ban' | 'freeze' | 'reset' | 'grant_prop' | 'revoke_session'
+  const [modalAction, setModalAction] = useState(null); // 'ban' | 'freeze' | 'reset' | 'grant_prop' | 'revoke_session' | 'change_country'
   const [actionReason, setActionReason] = useState('');
   const [selectedProp, setSelectedProp] = useState('avatarFrame');
   const [propValue, setPropValue] = useState('');
   const [targetSessionId, setTargetSessionId] = useState(null);
+
+  // Country Change state
+  const [newCountry, setNewCountry] = useState(user.country || 'PK');
+  const [newRegion, setNewRegion] = useState(user.region || 'South Asia');
+
+  const handleCountryChange = async () => {
+    setUser({ ...user, country: newCountry, region: newRegion });
+    await logAdminAction({
+      action: 'USER_COUNTRY_CHANGED',
+      module: 'User Management',
+      targetType: 'USER',
+      targetId: user.id,
+      targetName: user.displayName,
+      reason: actionReason || `Country updated to ${newCountry} (${newRegion})`,
+      riskLevel: 'HIGH',
+      status: 'SUCCESS'
+    });
+    setModalAction(null);
+    setActionReason('');
+  };
 
   useEffect(() => {
     if (user) {
@@ -54,8 +85,34 @@ export function UserDetailPage() {
         setHistory(data);
         setIsLoadingHistory(false);
       });
+      setIsLoadingPosts(true);
+      getUserPosts(user.id).then((posts) => {
+        setUserPosts(posts);
+        setIsLoadingPosts(false);
+      });
     }
   }, [user]);
+
+  const handleDeletePost = async () => {
+    if (!postToDelete) return;
+    await deleteUserPost(postToDelete.id, actionReason || 'Violation of content policy');
+    setUserPosts((prev) => prev.filter((p) => p.id !== postToDelete.id));
+
+    await logEvent({
+      action: 'DELETE_USER_POST',
+      targetId: user.id,
+      targetType: 'POST',
+      operatorName: 'Super Admin',
+      reason: actionReason || 'Moderation content removal',
+      riskLevel: 'MEDIUM',
+      status: 'SUCCESS',
+    });
+
+    setPostToDelete(null);
+    setActionReason('');
+    const freshLogs = await getLogsForTarget(user.id);
+    setHistory(freshLogs);
+  };
 
   const handleApplyControl = async (newStatus, actionLabel, defaultReason = 'Platform security alignment and moderation compliance') => {
     const finalReason = actionReason || defaultReason;
@@ -282,6 +339,13 @@ export function UserDetailPage() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setModalAction('change_country')}
+            >
+              <Globe className="h-4 w-4 mr-1 text-sky-400" /> Change Country
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setModalAction('grant_prop')}
             >
               <Sparkles className="h-4 w-4 mr-1 text-gold-400" /> Grant Item
@@ -310,6 +374,7 @@ export function UserDetailPage() {
           { id: 'overview', label: 'Overview & Profile' },
           { id: 'bank', label: 'Bank & Payout Details' },
           { id: 'agency_host', label: 'Agency & Host Relation' },
+          { id: 'posts', label: `Posts (${userPosts.length})` },
           { id: 'props', label: 'Owned Props & Perks' },
           { id: 'devices', label: 'Devices & Sessions' },
           { id: 'history', label: 'Activity & Audit Logs' },
@@ -450,11 +515,48 @@ export function UserDetailPage() {
       {activeTab === 'agency_host' && (
         <div className="grid md:grid-cols-2 gap-6">
           <Card className="p-5">
-            <h2 className="text-sm font-bold text-white mb-3">Agency Assignment</h2>
+            <h2 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+              <Building className="h-4 w-4 text-gold-400" /> Agency & BD Center Relationship
+            </h2>
             <InfoRow label="Parent Agency" value={user.agencyName || 'Independent User'} />
             <InfoRow label="Agency ID" value={user.agencyId || 'None'} />
             <InfoRow label="Parent BO (Branch Office)" value={user.parentBO || 'None'} />
             <InfoRow label="Agency Commission" value={user.agencyId ? '20%' : '0%'} />
+            <div className="pt-3 border-t border-slate-700/60 mt-3">
+              <label className="text-xs text-slate-400 mb-1.5 block font-semibold">Assigned BD Center</label>
+              <div className="flex gap-2">
+                <select
+                  value={selectedBDCenter}
+                  onChange={(e) => setSelectedBDCenter(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 text-white rounded-lg text-xs px-3 py-1.5 flex-1"
+                >
+                  {MOCK_BD_CENTERS.map((bdc) => (
+                    <option key={bdc.id} value={bdc.id}>
+                      {bdc.name} ({bdc.code}) - {bdc.managerName}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  variant="primary"
+                  size="xs"
+                  onClick={async () => {
+                    await logEvent({
+                      action: 'UPDATE_USER_BD_CENTER',
+                      targetId: user.id,
+                      targetType: 'USER',
+                      operatorName: 'Super Admin',
+                      reason: `Assigned BD Center ${selectedBDCenter}`,
+                      riskLevel: 'MEDIUM',
+                      status: 'SUCCESS'
+                    });
+                    const fresh = await getLogsForTarget(user.id);
+                    setHistory(fresh);
+                  }}
+                >
+                  Save BD Relation
+                </Button>
+              </div>
+            </div>
           </Card>
 
           <Card className="p-5">
@@ -464,6 +566,79 @@ export function UserDetailPage() {
             <InfoRow label="Live Host Policy" value="Min 120K target required" />
           </Card>
         </div>
+      )}
+
+      {/* Posts Tab */}
+      {activeTab === 'posts' && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-gold-400" /> User Created Posts ({userPosts.length})
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Source of truth for all content posts created by user @{user.username}.
+              </p>
+            </div>
+          </div>
+
+          {isLoadingPosts ? (
+            <div className="p-8 text-center text-slate-400">Loading user posts...</div>
+          ) : userPosts.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 bg-slate-900/50 rounded-xl border border-slate-800">
+              <FileText className="h-10 w-10 text-slate-600 mx-auto mb-2" />
+              <p className="text-sm font-medium text-slate-300">No Posts Found</p>
+              <p className="text-xs text-slate-500 mt-1">This user has not published any posts or dynamics yet.</p>
+            </div>
+          ) : (
+            <div className="grid md:grid-cols-2 gap-4">
+              {userPosts.map((post) => (
+                <div key={post.id} className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col justify-between space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[11px] font-mono text-gold-400">{post.id}</span>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={post.visibility === 'public' ? 'success' : 'warning'}>
+                          {post.visibility.toUpperCase()}
+                        </Badge>
+                        <Badge variant={post.status === 'active' ? 'purple' : 'danger'}>
+                          {post.status.toUpperCase()}
+                        </Badge>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-200 line-clamp-3 mb-2">{post.content}</p>
+                    {post.mediaUrl && (
+                      <div className="rounded-lg overflow-hidden border border-slate-700/50 max-h-40 mb-2">
+                        <img src={post.mediaUrl} alt="Post Media" className="w-full h-36 object-cover" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-700/40">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-rose-400" /> {post.likesCount}</span>
+                        <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3 text-sky-400" /> {post.commentsCount}</span>
+                        <span className="flex items-center gap-1"><Share2 className="h-3 w-3 text-emerald-400" /> {post.sharesCount}</span>
+                      </div>
+                      <span>{new Date(post.createdAt).toLocaleDateString()}</span>
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <Button
+                        variant="danger"
+                        size="xs"
+                        onClick={() => setPostToDelete(post)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete Post
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
       )}
 
       {/* Props Tab */}
@@ -536,6 +711,50 @@ export function UserDetailPage() {
       )}
 
       {/* Modals for Controls */}
+      {postToDelete && (
+        <Modal
+          isOpen={true}
+          onClose={() => setPostToDelete(null)}
+          title="Confirm User Post Deletion"
+        >
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-300">
+              <p className="font-bold flex items-center gap-1 mb-1">
+                <AlertTriangle className="h-4 w-4 text-red-400" /> Permanent Post Deletion
+              </p>
+              This will remove Post ID <code className="font-mono text-white">{postToDelete.id}</code> created by <strong className="text-white">@{user.username}</strong> from the user profile and public feeds.
+            </div>
+
+            <div className="p-3 bg-slate-900 rounded-lg border border-slate-700/60 text-xs text-slate-300 italic">
+              "{postToDelete.content}"
+            </div>
+
+            <Input
+              id="deletePostReason"
+              label="Reason for Post Removal (Audit Log Required)"
+              placeholder="e.g. Inappropriate content or copyright policy violation"
+              value={actionReason}
+              onChange={(e) => setActionReason(e.target.value)}
+              required
+            />
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setPostToDelete(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleDeletePost}
+                disabled={!actionReason}
+              >
+                Delete Post & Record Audit Log
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {modalAction === 'ban' && (
         <Modal
           isOpen={true}
@@ -651,6 +870,57 @@ export function UserDetailPage() {
               </Button>
               <Button variant="primary" size="sm" onClick={handleGrantProp} disabled={!propValue}>
                 Grant Item
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Change Country & Region Modal */}
+      {modalAction === 'change_country' && (
+        <Modal
+          isOpen={true}
+          onClose={() => setModalAction(null)}
+          title={`Change Registered Country — @${user.username}`}
+        >
+          <div className="space-y-4 text-xs text-slate-300">
+            <p>
+              Updating country automatically reconfigures available rooms, coin sellers, recharge channels, and localized event availability for <strong className="text-white">{user.displayName}</strong>.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">ISO Country Code</label>
+                <Input
+                  size="sm"
+                  value={newCountry}
+                  onChange={(e) => setNewCountry(e.target.value.toUpperCase())}
+                  placeholder="PK, US, BR, SA..."
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">Assigned Sub-Region</label>
+                <Input
+                  size="sm"
+                  value={newRegion}
+                  onChange={(e) => setNewRegion(e.target.value)}
+                  placeholder="e.g. South Asia, MENA, LATAM"
+                />
+              </div>
+            </div>
+            <Input
+              label="Audit Reason for Change"
+              placeholder="e.g. Verified passport relocation request"
+              value={actionReason}
+              onChange={(e) => setActionReason(e.target.value)}
+              required
+            />
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setModalAction(null)}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleCountryChange} disabled={!actionReason}>
+                Confirm Country Change
               </Button>
             </div>
           </div>

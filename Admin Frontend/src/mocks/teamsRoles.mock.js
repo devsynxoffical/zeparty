@@ -14,6 +14,7 @@ export const MODULE_PERMISSIONS = [
       { id: 'edit_users', label: 'Edit Users' },
       { id: 'suspend_users', label: 'Suspend Users' },
       { id: 'ban_users', label: 'Ban Users' },
+      { id: 'delete_user_posts', label: 'Delete User Posts' },
       { id: 'manage_balances', label: 'Adjust Balances' },
       { id: 'grant_user_props', label: 'Grant Special Props' },
       { id: 'manage_user_devices', label: 'Manage Devices & Sessions' },
@@ -22,7 +23,7 @@ export const MODULE_PERMISSIONS = [
   {
     id: 'hosts_agencies',
     label: 'HOSTS & AGENCIES',
-    description: 'Host applications, live hosts, agencies, performance, and commission',
+    description: 'Host applications, live hosts, agencies, BD Centers, performance, and commission',
     permissions: [
       { id: 'view_hosts', label: 'View Hosts' },
       { id: 'review_hosts', label: 'Review Host Applications' },
@@ -31,16 +32,18 @@ export const MODULE_PERMISSIONS = [
       { id: 'review_agencies', label: 'Review Agencies' },
       { id: 'approve_reject_agencies', label: 'Approve/Reject Agencies' },
       { id: 'manage_agency_finance', label: 'Manage Agency Finance' },
+      { id: 'manage_bd_centers', label: 'Manage BD Centers' },
     ],
   },
   {
     id: 'live_rooms',
     label: 'LIVE ROOMS & PK',
-    description: 'Live room streaming oversight, moderation, PK battles, and events',
+    description: 'Live room streaming oversight, moderation, room DP deletion, PK battles, and events',
     permissions: [
       { id: 'view_live_rooms', label: 'View Live Rooms' },
       { id: 'view_room_details', label: 'View Room Details' },
       { id: 'moderation_actions', label: 'Room Moderation Actions' },
+      { id: 'delete_room_dp', label: 'Delete Room DP' },
       { id: 'view_pk_events', label: 'View PK & Events' },
       { id: 'manage_pk_events', label: 'Manage PK & Events' },
     ],

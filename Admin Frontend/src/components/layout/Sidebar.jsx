@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
+  Building,
   AlertTriangle,
   Banknote,
   BarChart3,
@@ -83,6 +84,7 @@ const NAV_GROUPS = [
       { id: 'audio-hosts', label: 'AUDIO HOSTS', path: '/admin/hosts?type=audio' },
       { id: 'agencies', label: 'Live Video Agencies', path: '/admin/agencies?type=live' },
       { id: 'audio-agencies', label: 'AUDIO AGENCIES', path: '/admin/agencies?type=audio' },
+      { id: 'bd-centers', label: 'BD Center', path: '/admin/bd-centers' },
     ],
   },
   {
@@ -135,6 +137,7 @@ const NAV_GROUPS = [
     children: [
       { id: 'assets', label: 'Asset Management', path: '/admin/assets' },
       { id: 'gifts', label: 'Gift Catalog', path: '/admin/gifts' },
+      { id: 'emojis', label: 'App Emoji & Reactions', path: '/admin/emojis' },
       { id: 'vip-store', label: 'VIP / SVIP Levels', path: '/admin/vip-store' },
       { id: 'items', label: 'Virtual Items (Frames/Rides)', path: '/admin/items' },
       { id: 'store', label: 'Virtual Store', path: '/admin/store' },

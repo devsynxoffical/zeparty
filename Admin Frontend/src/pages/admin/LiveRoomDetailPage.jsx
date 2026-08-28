@@ -4,11 +4,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Mic, MicOff, StopCircle, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Users, Mic, MicOff, StopCircle, ShieldAlert, AlertTriangle, Image, Trash2, Upload } from 'lucide-react';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { DataTable } from '../../components/tables/DataTable';
-import { ConfirmDialog } from '../../components/ui/Modal';
+import { ConfirmDialog, Modal } from '../../components/ui/Modal';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
 import { useAuditLog } from '../../context/AuditLogContext';
 import { getLiveRooms, endStream } from '../../services/modules/liveRooms.service';
 import { getLogsForTarget } from '../../services/modules/auditLogs.service';
@@ -21,6 +23,9 @@ export function LiveRoomDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [closeModal, setCloseModal] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [deleteDpModal, setDeleteDpModal] = useState(false);
+  const [editDpModal, setEditDpModal] = useState(false);
+  const [newDpUrl, setNewDpUrl] = useState('');
   const [participants, setParticipants] = useState([]);
   const [roomMuted, setRoomMuted] = useState(false);
   const [warningActive, setWarningActive] = useState(false);
@@ -97,6 +102,22 @@ export function LiveRoomDetailPage() {
       </div>
     );
   }
+
+  const handleDeleteRoomDp = async () => {
+    await addLog('ROOM_DP_DELETED', room.id, 'Live Rooms', `Deleted Room DP image for room "${room.title}". Room record preserved.`);
+    setRoom({ ...room, coverImage: null, dpDeleted: true });
+    setDeleteDpModal(false);
+    refreshHistory();
+  };
+
+  const handleUpdateRoomDp = async () => {
+    if (!newDpUrl) return;
+    await addLog('ROOM_DP_UPDATED', room.id, 'Live Rooms', `Updated Room DP image for room "${room.title}".`);
+    setRoom({ ...room, coverImage: newDpUrl, dpDeleted: false });
+    setEditDpModal(false);
+    setNewDpUrl('');
+    refreshHistory();
+  };
 
   const handleForceClose = async () => {
     setIsClosing(true);
@@ -209,6 +230,48 @@ export function LiveRoomDetailPage() {
         </div>
 
         <div className="space-y-6">
+          {/* Room Display Picture (DP) Control Card */}
+          <Card>
+            <CardHeader title="Room Display Picture (DP)" description="Manage room cover image and avatar" />
+            <div className="p-4 space-y-3">
+              <div className="flex flex-col items-center justify-center p-3 rounded-xl bg-slate-950 border border-slate-700/60 relative">
+                {room.coverImage && !room.dpDeleted ? (
+                  <div className="relative w-full h-32 rounded-lg overflow-hidden border border-slate-700">
+                    <img src={room.coverImage} alt="Room DP" className="w-full h-full object-cover" />
+                    <Badge variant="success" className="absolute top-2 right-2">Active DP</Badge>
+                  </div>
+                ) : (
+                  <div className="w-full h-32 rounded-lg border-2 border-dashed border-slate-700 flex flex-col items-center justify-center text-slate-500 bg-slate-900/60">
+                    <Image className="h-8 w-8 mb-1 text-slate-600" />
+                    <span className="text-xs font-semibold text-slate-400">Default Placeholder DP</span>
+                    <span className="text-[10px] text-amber-400 mt-0.5 font-mono">Room active without custom DP</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="flex-1"
+                  onClick={() => setEditDpModal(true)}
+                >
+                  <Upload className="h-3.5 w-3.5 mr-1 text-gold-400" /> Change DP
+                </Button>
+                {room.coverImage && !room.dpDeleted && (
+                  <Button
+                    variant="danger"
+                    size="xs"
+                    className="flex-1"
+                    onClick={() => setDeleteDpModal(true)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete DP
+                  </Button>
+                )}
+              </div>
+            </div>
+          </Card>
+
           <Card>
             <CardHeader title="Room Details" />
             <div className="p-4 space-y-4">
@@ -257,6 +320,47 @@ export function LiveRoomDetailPage() {
         confirmVariant="danger"
         isLoading={isClosing}
       />
+
+      {/* Delete Room DP Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={deleteDpModal}
+        onClose={() => setDeleteDpModal(false)}
+        onConfirm={handleDeleteRoomDp}
+        title="Delete Room Display Picture (DP)"
+        description={`Are you sure you want to delete the Display Picture for room "${room.title}"? The cover image will be removed and reset to the default placeholder. The room record, host, and live stream remain active.`}
+        confirmLabel="Delete Room DP"
+        confirmVariant="danger"
+      />
+
+      {/* Edit Room DP Modal */}
+      {editDpModal && (
+        <Modal
+          isOpen={true}
+          onClose={() => setEditDpModal(false)}
+          title="Update Room Display Picture"
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-slate-300">
+              Enter a new image URL for Room <strong className="text-white">"{room.title}"</strong>:
+            </p>
+            <Input
+              label="Image URL"
+              placeholder="https://images.unsplash.com/..."
+              value={newDpUrl}
+              onChange={(e) => setNewDpUrl(e.target.value)}
+              required
+            />
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setEditDpModal(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleUpdateRoomDp} disabled={!newDpUrl}>
+                Save Room DP
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

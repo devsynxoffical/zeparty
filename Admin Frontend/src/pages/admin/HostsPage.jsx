@@ -15,6 +15,7 @@ import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
+import { MOCK_BD_CENTERS } from '../../mocks/bdCenters.mock';
 import {
   getHostApplications,
   approveHostApplication,
@@ -158,7 +159,11 @@ export function HostsPage() {
   
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [bdCenterFilter, setBdCenterFilter] = useState('all');
   const [selectedHost, setSelectedHost] = useState(null);
+  
+  // BD Center Modal State
+  const [isBDCenterModalOpen, setIsBDCenterModalOpen] = useState(false);
   
   // Modals
   const [warnHost, setWarnHost] = useState(null);
@@ -166,7 +171,7 @@ export function HostsPage() {
   const [editTargetHost, setEditTargetHost] = useState(null);
   const [newTargetCoins, setNewTargetCoins] = useState('');
   const [newPayoutTier, setNewPayoutTier] = useState('');
-  const [agencyModal, setAgencyModal] = useState({ open: false, host: null, newAgencyName: '', action: 'bind' });
+  const [agencyModal, setAgencyModal] = useState({ open: false, host: null, newAgencyName: '', bdCenterId: '', action: 'bind' });
   const [feedback, setFeedback] = useState(null);
 
   useEffect(() => {
@@ -605,22 +610,24 @@ export function HostsPage() {
           containerClassName="flex-1 max-w-md"
         />
 
-        {activeTab === 'applications' && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-bold">Status:</span>
-            {['all', 'pending', 'approved', 'rejected'].map((st) => (
-              <button
-                key={st}
-                onClick={() => setStatusFilter(st)}
-                className={`px-2 py-1 rounded text-xs font-medium uppercase border ${
-                  statusFilter === st ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-                }`}
-              >
-                {st}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {activeTab === 'applications' && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-bold">Status:</span>
+              {['all', 'pending', 'approved', 'rejected'].map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setStatusFilter(st)}
+                  className={`px-2 py-1 rounded text-xs font-medium uppercase border ${
+                    statusFilter === st ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {st}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </Card>
 
       {/* Data tables */}

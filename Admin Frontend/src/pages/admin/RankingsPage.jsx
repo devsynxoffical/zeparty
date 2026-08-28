@@ -100,6 +100,32 @@ export function RankingsPage() {
     showFeedback(`Leaderboard is now ${newVal ? 'FROZEN' : 'ACTIVE'}.`);
   };
 
+  const [showCreateEventModal, setShowCreateEventModal] = useState(false);
+  const [eventForm, setEventForm] = useState({
+    name: 'Weekly Top Agency — Pakistan',
+    type: 'Weekly Top Agency',
+    metric: 'Attributed Recharge',
+    top1Reward: '5,000 USD + Platinum Agency Frame',
+    top2Reward: '2,500 USD + Gold Agency Frame',
+    top3Reward: '1,000 USD + Silver Agency Frame',
+    distributionMode: 'Manual Admin Approval'
+  });
+
+  const handleCreateEvent = async (e) => {
+    e.preventDefault();
+    await logAdminAction({
+      action: 'CREATE_REWARD_EVENT',
+      module: 'Rankings & Events',
+      targetType: 'REWARD_EVENT',
+      targetId: `evt-${Date.now()}`,
+      reason: `Created ${eventForm.type}: ${eventForm.name}`,
+      riskLevel: 'HIGH',
+      status: 'SUCCESS'
+    });
+    showFeedback(`Reward Event "${eventForm.name}" created & published!`);
+    setShowCreateEventModal(false);
+  };
+
   const handleSaveInheritance = async () => {
     await logAdminAction({
       action: 'RANKINGS_INHERITANCE_UPDATED',
@@ -204,6 +230,9 @@ export function RankingsPage() {
         </div>
 
         <div className="flex gap-2">
+          <Button variant="primary" size="sm" onClick={() => setShowCreateEventModal(true)}>
+            <Award className="h-4 w-4 mr-1" /> Create Reward Event
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setConfigModal(true)}>
             Score Rules Configuration
           </Button>
@@ -295,6 +324,57 @@ export function RankingsPage() {
               </Button>
             </div>
           </div>
+        </Modal>
+      )}
+      {/* Create Reward Event Modal */}
+      {showCreateEventModal && (
+        <Modal isOpen={true} onClose={() => setShowCreateEventModal(false)} title="Create Ranking Reward Event">
+          <form onSubmit={handleCreateEvent} className="space-y-3 text-xs text-slate-300">
+            <div>
+              <label className="text-[11px] text-slate-400 mb-1 block">Event Title *</label>
+              <Input size="sm" value={eventForm.name} onChange={(e) => setEventForm({ ...eventForm, name: e.target.value })} required />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">Event Type</label>
+                <select
+                  className="w-full bg-slate-900 border border-slate-700 text-white text-xs rounded-lg p-2"
+                  value={eventForm.type}
+                  onChange={(e) => setEventForm({ ...eventForm, type: e.target.value })}
+                >
+                  <option value="Weekly Top Agency">Weekly Top Agency</option>
+                  <option value="Weekly Top Game">Weekly Top Game</option>
+                  <option value="Custom Ranking Event">Custom Ranking Event</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">Ranking Metric</label>
+                <Input size="sm" value={eventForm.metric} onChange={(e) => setEventForm({ ...eventForm, metric: e.target.value })} />
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <p className="font-bold text-gold-400">Independent Rank Reward Settings</p>
+              <div>
+                <label className="text-[10px] text-slate-400 mb-0.5 block">Top 1 Reward (First Place)</label>
+                <Input size="sm" value={eventForm.top1Reward} onChange={(e) => setEventForm({ ...eventForm, top1Reward: e.target.value })} required />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-400 mb-0.5 block">Top 2 Reward (Second Place)</label>
+                <Input size="sm" value={eventForm.top2Reward} onChange={(e) => setEventForm({ ...eventForm, top2Reward: e.target.value })} required />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-400 mb-0.5 block">Top 3 Reward (Third Place)</label>
+                <Input size="sm" value={eventForm.top3Reward} onChange={(e) => setEventForm({ ...eventForm, top3Reward: e.target.value })} required />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowCreateEventModal(false)}>Cancel</Button>
+              <Button type="submit" variant="primary" size="sm">Publish Reward Event</Button>
+            </div>
+          </form>
         </Modal>
       )}
     </div>

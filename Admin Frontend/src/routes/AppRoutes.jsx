@@ -34,6 +34,8 @@ import { EconomySettingsPage } from '../pages/admin/EconomySettingsPage';
 import { LeaderboardsPage } from '../pages/admin/LeaderboardsPage';
 import { HostsPage } from '../pages/admin/HostsPage';
 import { AgenciesPage } from '../pages/admin/AgenciesPage';
+import { BDCentersPage } from '../pages/admin/BDCentersPage';
+import { EmojiManagementPage } from '../pages/admin/EmojiManagementPage';
 import { CoinSellersPage } from '../pages/admin/CoinSellersPage';
 import { GamesPage } from '../pages/admin/GamesPage';
 import { AnnouncementsPage } from '../pages/admin/AnnouncementsPage';
@@ -112,9 +114,12 @@ export function AppRoutes() {
         <Route path="live-rooms" element={<ModuleRouteGuard requiredPermission="view_live_rooms"><LiveRoomsPage /></ModuleRouteGuard>} />
         <Route path="live-rooms/:id" element={<ModuleRouteGuard requiredPermission="view_room_details"><LiveRoomDetailPage /></ModuleRouteGuard>} />
 
-        {/* Hosts & Agencies */}
+        {/* Gifts, Assets & Emojis */}
+        <Route path="gifts" element={<ModuleRouteGuard requiredPermission="view_gifts"><GiftsPage /></ModuleRouteGuard>} />
+        <Route path="emojis" element={<ModuleRouteGuard requiredPermission="view_gifts"><EmojiManagementPage /></ModuleRouteGuard>} />
         <Route path="hosts" element={<ModuleRouteGuard requiredPermission="view_hosts"><HostsPage /></ModuleRouteGuard>} />
         <Route path="agencies" element={<ModuleRouteGuard requiredPermission="view_agencies"><AgenciesPage /></ModuleRouteGuard>} />
+        <Route path="bd-centers" element={<ModuleRouteGuard requiredPermission="manage_bd_centers"><BDCentersPage /></ModuleRouteGuard>} />
 
         {/* Resellers & Merchants */}
         <Route path="coin-sellers" element={<ModuleRouteGuard requiredPermission="view_sellers"><CoinSellersPage /></ModuleRouteGuard>} />
