@@ -32,6 +32,16 @@ export function AuthProvider({ children }) {
     setSession(newSession);
   }, []);
 
+  const setOwnerSession = useCallback((ownerData) => {
+    const ownerSession = {
+      admin: ownerData.owner || ownerData,
+      token: ownerData.accessToken || 'mock_owner_jwt_token',
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    };
+    saveSession(ownerSession);
+    setSession(ownerSession);
+  }, []);
+
   const logout = useCallback(async () => {
     await logoutAdmin();
     clearSession();
@@ -45,9 +55,10 @@ export function AuthProvider({ children }) {
       isAuthenticated: session !== null,
       isLoading,
       login,
+      setOwnerSession,
       logout,
     }),
-    [session, isLoading, login, logout]
+    [session, isLoading, login, setOwnerSession, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

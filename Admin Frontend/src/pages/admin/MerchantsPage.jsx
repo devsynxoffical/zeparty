@@ -108,7 +108,57 @@ export function MerchantsPage() {
   const [configModal, setConfigModal] = useState({ open: false, merchant: null });
   const [allocationModal, setAllocationModal] = useState({ open: false, merchant: null, newAllocation: '' });
   const [historyModal, setHistoryModal] = useState({ open: false, merchant: null });
+  const [adjustModal, setAdjustModal] = useState({ open: false, type: 'DEDUCTION', amount: '', reason: '' });
   const [feedback, setFeedback] = useState(null);
+
+  const handleExecuteMerchantAdjustment = () => {
+    const merchant = historyModal.merchant;
+    if (!merchant) return;
+
+    if (!adjustModal.amount || Number(adjustModal.amount) <= 0) {
+      alert('Please enter a valid positive coin amount.');
+      return;
+    }
+
+    const amt = Number(adjustModal.amount);
+    const isDeduct = adjustModal.type === 'DEDUCTION';
+    const noteReason = adjustModal.reason.trim() || (isDeduct ? 'Manual coin deduction correction' : 'Manual coin credit adjustment');
+
+    const updatedMerchants = merchants.map((m) => {
+      if (m.id === merchant.id) {
+        const newAllocation = isDeduct ? Math.max(0, (m.coinAllocation || 0) - amt) : (m.coinAllocation || 0) + amt;
+        const newHistory = [
+          {
+            date: new Date().toISOString().split('T')[0],
+            type: isDeduct ? 'MANUAL_COIN_DEDUCTION' : 'MANUAL_COIN_CREDIT',
+            details: `Manual adjustment (${isDeduct ? 'Deducted' : 'Added'} ${amt.toLocaleString()} coins): ${noteReason}`,
+          },
+          ...(m.history || []),
+        ];
+        return {
+          ...m,
+          coinAllocation: newAllocation,
+          history: newHistory,
+        };
+      }
+      return m;
+    });
+
+    setMerchants(updatedMerchants);
+    const updatedMerchant = updatedMerchants.find((m) => m.id === merchant.id);
+    setHistoryModal({ open: true, merchant: updatedMerchant });
+    setAdjustModal({ open: false, type: 'DEDUCTION', amount: '', reason: '' });
+
+    logAdminAction({
+      action: 'MERCHANT_PAYMENT_ADJUSTED',
+      module: 'Merchants',
+      targetType: 'merchant',
+      targetId: merchant.id,
+      targetName: merchant.merchantName,
+      reason: `Manual adjustment (${isDeduct ? 'Deducted' : 'Added'} ${amt} coins): ${noteReason}`,
+      riskLevel: 'HIGH',
+    });
+  };
 
   const [editForm, setEditForm] = useState({});
   const [newForm, setNewForm] = useState({
@@ -638,20 +688,89 @@ export function MerchantsPage() {
 
       {/* Transaction & Correction History Modal */}
       {historyModal.open && (
-        <Modal isOpen={true} onClose={() => setHistoryModal({ open: false, merchant: null })} title={`Merchant Corrections & Transaction History: ${historyModal.merchant?.merchantName}`} size="md">
+        <Modal isOpen={true} onClose={() => setHistoryModal({ open: false, merchant: null })} title={`Merchant Corrections & Transaction History: ${historyModal.merchant?.merchantName}`} size="lg">
           <div className="space-y-4 text-xs text-slate-300">
-            <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg flex justify-between items-center">
-              <div>
-                <p className="font-bold text-white">{historyModal.merchant?.merchantName}</p>
-                <p className="text-slate-400">Ref: {historyModal.merchant?.userRef}</p>
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-white text-base">{historyModal.merchant?.merchantName}</p>
+                    <Badge variant="warning">Audit Logged</Badge>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Ref: {historyModal.merchant?.userRef}</p>
+                </div>
+
+                <Button
+                  variant="danger"
+                  size="sm"
+                  className="shrink-0 whitespace-nowrap"
+                  onClick={() => setAdjustModal({ open: true, type: 'DEDUCTION', amount: '', reason: '' })}
+                >
+                  Adjust Payment / Deduct Coins
+                </Button>
               </div>
-              <Badge variant="warning">Audit Logged</Badge>
+
+              <div className="bg-slate-950 px-3 py-2 rounded-lg border border-slate-800 text-xs font-mono text-slate-400">
+                Current Coin Allocation: <strong className="text-emerald-400 font-mono ml-1">{formatNumber(historyModal.merchant?.coinAllocation)} coins</strong>
+              </div>
             </div>
+
+            {/* Adjust Payment Inline Form */}
+            {adjustModal.open && (
+              <div className="p-3.5 bg-slate-950 border border-rose-500/30 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white text-xs">Manual Payment / Coin Adjustment</span>
+                  <button
+                    onClick={() => setAdjustModal({ open: false, type: 'DEDUCTION', amount: '', reason: '' })}
+                    className="text-slate-400 hover:text-white text-xs font-bold"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] text-slate-400 font-semibold mb-1">Adjustment Action</label>
+                    <select
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white text-xs"
+                      value={adjustModal.type}
+                      onChange={(e) => setAdjustModal({ ...adjustModal, type: e.target.value })}
+                    >
+                      <option value="DEDUCTION">Deduct Mistaken Coins (-)</option>
+                      <option value="CREDIT">Add Coin Credit (+)</option>
+                    </select>
+                  </div>
+                  <Input
+                    label="Coin Amount *"
+                    type="number"
+                    value={adjustModal.amount}
+                    onChange={(e) => setAdjustModal({ ...adjustModal, amount: e.target.value })}
+                    placeholder="e.g. 1000000"
+                  />
+                </div>
+
+                <Input
+                  label="Adjustment Reason / Audit Note *"
+                  value={adjustModal.reason}
+                  onChange={(e) => setAdjustModal({ ...adjustModal, reason: e.target.value })}
+                  placeholder="e.g. Corrected mistaken duplicate coin allocation"
+                />
+
+                <div className="flex justify-end pt-1">
+                  <Button variant="danger" size="xs" onClick={handleExecuteMerchantAdjustment}>
+                    Execute Adjustment & Audit Log
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
               {historyModal.merchant?.history?.map((h, i) => (
                 <div key={i} className="p-2.5 bg-slate-900/80 border border-slate-800 rounded-lg flex justify-between items-center">
                   <div>
-                    <span className="font-bold text-emerald-400">{h.type}</span>
+                    <span className={`font-bold ${h.type?.includes('DEDUCTION') ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {h.type}
+                    </span>
                     <p className="text-slate-300 text-[11px] mt-0.5">{h.details}</p>
                     <p className="text-slate-500 text-[10px]">{h.date}</p>
                   </div>

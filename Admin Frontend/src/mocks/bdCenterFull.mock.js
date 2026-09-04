@@ -198,3 +198,38 @@ export const MOCK_APP_EMOJIS = [
     usageCount: 12800
   }
 ];
+
+export const BD_COMMISSION_POLICY_CONFIG = {
+  policyTitle: 'Z PARTY — BD MONTHLY COMMISSION POLICY',
+  minimumMonthlySending: 500000,
+  bdCommissionRate: 5.0, // 5%
+  salaryBasis: 'Agency Host Policy basic total salary',
+  startingBDSalary: 2.00,
+  belowMinimumCommission: 0.00,
+  ruleText: 'Policy Rule: BD commission is calculated monthly at 5% of the Basic Total Salary. A BD becomes eligible only when the agency\'s monthly sending reaches 500,000 or more. Sending below 500,000 earns no BD commission. Final approval is subject to valid activity and Admin Panel records.'
+};
+
+export const MOCK_BD_COMMISSION_POLICY_TIERS = [
+  { level: 1, name: 'BD Level 1', targetSending: 500000, basicTotalSalary: 40.00, bdRate: 5.0, bdCommission: 2.00 },
+  { level: 2, name: 'BD Level 2', targetSending: 750000, basicTotalSalary: 60.00, bdRate: 5.0, bdCommission: 3.00 },
+  { level: 3, name: 'BD Level 3', targetSending: 1000000, basicTotalSalary: 80.00, bdRate: 5.0, bdCommission: 4.00 },
+  { level: 4, name: 'BD Level 4', targetSending: 1500000, basicTotalSalary: 120.00, bdRate: 5.0, bdCommission: 6.00 },
+  { level: 5, name: 'BD Level 5', targetSending: 2000000, basicTotalSalary: 160.00, bdRate: 5.0, bdCommission: 8.00 },
+  { level: 6, name: 'BD Level 6', targetSending: 2500000, basicTotalSalary: 200.00, bdRate: 5.0, bdCommission: 10.00 },
+  { level: 7, name: 'BD Level 7', targetSending: 3000000, basicTotalSalary: 240.00, bdRate: 5.0, bdCommission: 12.00 },
+  { level: 8, name: 'BD Level 8', targetSending: 3500000, basicTotalSalary: 280.00, bdRate: 5.0, bdCommission: 14.00 },
+  { level: 9, name: 'BD Level 9', targetSending: 4000000, basicTotalSalary: 320.00, bdRate: 5.0, bdCommission: 16.00 },
+  { level: 10, name: 'BD Level 10', targetSending: 4500000, basicTotalSalary: 360.00, bdRate: 5.0, bdCommission: 18.00 },
+  { level: 11, name: 'BD Level 11', targetSending: 5000000, basicTotalSalary: 400.00, bdRate: 5.0, bdCommission: 20.00 },
+  { level: 12, name: 'BD Level 12', targetSending: 6000000, basicTotalSalary: 480.00, bdRate: 5.0, bdCommission: 24.00 },
+  { level: 13, name: 'BD Level 13', targetSending: 7000000, basicTotalSalary: 560.00, bdRate: 5.0, bdCommission: 28.00 },
+  { level: 14, name: 'BD Level 14', targetSending: 8000000, basicTotalSalary: 640.00, bdRate: 5.0, bdCommission: 32.00 },
+  { level: 15, name: 'BD Level 15', targetSending: 9000000, basicTotalSalary: 720.00, bdRate: 5.0, bdCommission: 36.00 },
+  { level: 16, name: 'BD Level 16', targetSending: 10000000, basicTotalSalary: 800.00, bdRate: 5.0, bdCommission: 40.00 },
+  { level: 17, name: 'BD Level 17', targetSending: 15000000, basicTotalSalary: 1200.00, bdRate: 5.0, bdCommission: 60.00 },
+  { level: 18, name: 'BD Level 18', targetSending: 20000000, basicTotalSalary: 1600.00, bdRate: 5.0, bdCommission: 80.00 },
+  { level: 19, name: 'BD Level 19', targetSending: 30000000, basicTotalSalary: 2400.00, bdRate: 5.0, bdCommission: 120.00 },
+  { level: 20, name: 'BD Level 20', targetSending: 40000000, basicTotalSalary: 3200.00, bdRate: 5.0, bdCommission: 160.00 },
+  { level: 21, name: 'BD Level 21', targetSending: 50000000, basicTotalSalary: 4000.00, bdRate: 5.0, bdCommission: 200.00 }
+];
+

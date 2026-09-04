@@ -34,6 +34,7 @@ import { StatCard } from '../../components/ui/StatCard';
 import { usePermission } from '../../hooks/usePermission';
 import { Avatar } from '../../components/common/Avatar';
 import { formatDate } from '../../utils/format';
+import { MasterOwnerControlPage } from './MasterOwnerControlPage';
 
 import {
   createAdmin,
@@ -52,7 +53,7 @@ import {
 } from '../../services/modules/teamsRoles.service';
 
 export function TeamsRolesPage() {
-  const { canPerformAction } = usePermission();
+  const { isOwner, canPerformAction } = usePermission();
   const [activeTab, setActiveTab] = useState('admins'); // 'admins' | 'teams' | 'roles'
 
   // Data states
@@ -150,7 +151,7 @@ export function TeamsRolesPage() {
   // Permission Matrix checkbox toggle
   const handleTogglePermission = (permId) => {
     const role = roles.find((r) => r.id === selectedRoleId);
-    if (role?.isSuperAdmin) {
+    if (role?.isSuperAdmin && !isOwner) {
       showToast('Super Admin role has full unrestricted system access.', 'warning');
       return;
     }
@@ -166,7 +167,7 @@ export function TeamsRolesPage() {
   // Select all permissions for a module
   const handleSelectModuleAll = (moduleId) => {
     const role = roles.find((r) => r.id === selectedRoleId);
-    if (role?.isSuperAdmin) return;
+    if (role?.isSuperAdmin && !isOwner) return;
 
     const moduleObj = modules.find((m) => m.id === moduleId);
     if (!moduleObj) return;
@@ -182,7 +183,7 @@ export function TeamsRolesPage() {
   // Clear all permissions for a module
   const handleClearModuleAll = (moduleId) => {
     const role = roles.find((r) => r.id === selectedRoleId);
-    if (role?.isSuperAdmin) return;
+    if (role?.isSuperAdmin && !isOwner) return;
 
     const moduleObj = modules.find((m) => m.id === moduleId);
     if (!moduleObj) return;
@@ -229,7 +230,7 @@ export function TeamsRolesPage() {
   };
 
   const handleToggleAdminStatusClick = (admin) => {
-    if (admin.isSuperAdmin) {
+    if (admin.isSuperAdmin && !isOwner) {
       showToast('Action Prohibited: Super Admin account cannot be disabled.', 'error');
       return;
     }
@@ -245,7 +246,7 @@ export function TeamsRolesPage() {
   };
 
   const handleDeleteAdminClick = (admin) => {
-    if (admin.isSuperAdmin) {
+    if (admin.isSuperAdmin && !isOwner) {
       showToast('Action Prohibited: Super Admin account cannot be deleted.', 'error');
       return;
     }
@@ -439,6 +440,24 @@ export function TeamsRolesPage() {
             {roles.length}
           </span>
         </button>
+
+        {isOwner && (
+          <button
+            onClick={() => setActiveTab('owner')}
+            className={[
+              'flex items-center gap-2 px-5 py-3 text-sm font-bold border-b-2 transition-colors duration-150',
+              activeTab === 'owner'
+                ? 'border-amber-500 text-amber-400 font-extrabold bg-amber-500/10'
+                : 'border-transparent text-amber-500/70 hover:text-amber-300 hover:border-amber-500/30',
+            ].join(' ')}
+          >
+            <ShieldAlert className="h-4 w-4 text-amber-400" />
+            <span>OWNER CONTROL</span>
+            <span className="ml-1.5 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] text-amber-300 border border-amber-500/40">
+              ROOT
+            </span>
+          </button>
+        )}
       </div>
 
       {/* ============================================================ */}
@@ -853,13 +872,6 @@ export function TeamsRolesPage() {
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
                   Configurable Roles
                 </h3>
-                <button
-                  onClick={handleOpenAddRole}
-                  className="text-xs text-gold-400 hover:text-gold-300 font-semibold flex items-center gap-1"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  New Role
-                </button>
               </div>
 
               <div className="space-y-2">
@@ -910,7 +922,7 @@ export function TeamsRolesPage() {
                             {selectedRoleObj?.name} Permission Matrix
                           </h2>
                           {selectedRoleObj?.isSuperAdmin && (
-                            <Badge variant="primary">Full Access Unlocked</Badge>
+                            <Badge variant="primary">Super Admin Access</Badge>
                           )}
                         </div>
                         <p className="text-xs text-slate-400 mt-0.5">
@@ -954,7 +966,7 @@ export function TeamsRolesPage() {
                           variant="primary"
                           size="sm"
                           isLoading={isSaving}
-                          disabled={!matrixDirty || selectedRoleObj?.isSuperAdmin}
+                          disabled={!matrixDirty || (selectedRoleObj?.isSuperAdmin && !isOwner)}
                           onClick={handleSaveMatrix}
                           leftIcon={Check}
                         >
@@ -993,7 +1005,7 @@ export function TeamsRolesPage() {
                             <button
                               type="button"
                               onClick={() => handleSelectModuleAll(mod.id)}
-                              disabled={selectedRoleObj?.isSuperAdmin}
+                              disabled={selectedRoleObj?.isSuperAdmin && !isOwner}
                               className="text-gold-400 hover:text-gold-300 font-medium disabled:opacity-50"
                             >
                               Select All
@@ -1002,7 +1014,7 @@ export function TeamsRolesPage() {
                             <button
                               type="button"
                               onClick={() => handleClearModuleAll(mod.id)}
-                              disabled={selectedRoleObj?.isSuperAdmin}
+                              disabled={selectedRoleObj?.isSuperAdmin && !isOwner}
                               className="text-slate-400 hover:text-slate-300 font-medium disabled:opacity-50"
                             >
                               Clear All
@@ -1021,13 +1033,13 @@ export function TeamsRolesPage() {
                                   isChecked
                                     ? 'bg-gold-500/10 border-gold-500/40 text-gold-200'
                                     : 'bg-slate-800/40 border-slate-700/50 text-slate-400 hover:bg-slate-800 hover:text-slate-200',
-                                  selectedRoleObj?.isSuperAdmin ? 'cursor-not-allowed opacity-80' : '',
+                                  selectedRoleObj?.isSuperAdmin && !isOwner ? 'cursor-not-allowed opacity-80' : '',
                                 ].join(' ')}
                               >
                                 <input
                                   type="checkbox"
                                   checked={isChecked}
-                                  disabled={selectedRoleObj?.isSuperAdmin}
+                                  disabled={selectedRoleObj?.isSuperAdmin && !isOwner}
                                   onChange={() => handleTogglePermission(perm.id)}
                                   className="h-4 w-4 rounded border-slate-700 bg-slate-900 text-gold-500 focus:ring-gold-500 focus:ring-offset-slate-900 cursor-pointer"
                                 />
@@ -1043,6 +1055,15 @@ export function TeamsRolesPage() {
               </Card>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* TAB 4: ROOT OWNER CONTROL PANEL                               */}
+      {/* ============================================================ */}
+      {activeTab === 'owner' && (
+        <div className="pt-2">
+          <MasterOwnerControlPage />
         </div>
       )}
 

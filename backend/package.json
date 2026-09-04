@@ -1,21 +1,41 @@
 {
-  "name": "backend",
+  "name": "zeparty-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Shared Node.js + Express.js backend for ZeParty Flutter Mobile App and React Admin Dashboard",
+  "main": "src/server.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "test": "node tests/auth.test.js",
+    "test:all": "node --test tests/auth_unit.test.js tests/rbac_security.test.js tests/wallet_ledger.test.js tests/approval_workflow.test.js tests/policy_engine.test.js tests/auto_restore.test.js tests/host_agency.test.js tests/bd_reseller.test.js tests/merchant.test.js tests/gifts.test.js tests/assets.test.js tests/store.test.js",
+    "test:phase6": "node --test tests/wallet_ledger.test.js tests/approval_workflow.test.js",
+    "test:phase7": "node --test tests/policy_engine.test.js tests/auto_restore.test.js",
+    "test:phase8": "node --test tests/host_agency.test.js tests/bd_reseller.test.js tests/merchant.test.js",
+    "test:phase9": "node --test tests/gifts.test.js tests/assets.test.js tests/store.test.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "npx prisma migrate dev",
+    "prisma:seed": "npx prisma db seed",
+    "prisma:studio": "npx prisma studio"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
   "dependencies": {
-    "cookie-parser": "^1.4.7",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "helmet": "^8.3.0",
-    "morgan": "^1.11.0"
+    "@prisma/client": "^6.0.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pino": "^9.1.0",
+    "pino-http": "^10.1.0",
+    "redis": "^4.6.14",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.2",
+    "prisma": "^6.0.0"
   }
 }

@@ -94,6 +94,7 @@ const NAV_GROUPS = [
     children: [
       { id: 'live-rooms', label: 'Live Rooms', path: '/admin/live-rooms?type=live' },
       { id: 'party-rooms', label: 'Party Rooms', path: '/admin/live-rooms?type=party' },
+      { id: 'room-pins', label: 'Room Pin Management', path: '/admin/room-pin-management' },
     ],
   },
   {
@@ -341,11 +342,44 @@ function SidebarBrand({ isCollapsed }) {
 }
 
 function SidebarNavList({ isCollapsed, onMobileClose }) {
-  const { isSuperAdmin } = usePermission();
+  const { isOwner, isSuperAdmin, hasModuleAccess, canAccessRoute } = usePermission();
+
+  const filteredNavGroups = NAV_GROUPS.map((group) => {
+    if (group.ownerOnly && !isOwner) {
+      return null;
+    }
+
+    if (group.path) {
+      const isVisible = isOwner || isSuperAdmin || canAccessRoute(group.path) || hasModuleAccess(group.id);
+      return isVisible ? group : null;
+    }
+
+    if (group.children && group.children.length > 0) {
+      const visibleChildren = group.children.filter((child) => {
+        return (
+          isOwner ||
+          isSuperAdmin ||
+          hasModuleAccess(child.id) ||
+          canAccessRoute(child.path)
+        );
+      });
+
+      if (visibleChildren.length === 0) {
+        return null;
+      }
+
+      return {
+        ...group,
+        children: visibleChildren,
+      };
+    }
+
+    return null;
+  }).filter(Boolean);
 
   return (
     <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1 scrollbar-thin">
-      {NAV_GROUPS.map((group) => (
+      {filteredNavGroups.map((group) => (
         <SidebarItem
           key={group.id}
           group={group}

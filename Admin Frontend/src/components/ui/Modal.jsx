@@ -8,6 +8,7 @@ import { Button } from './Button';
 
 export function Modal({
   isOpen,
+  open,
   onClose,
   title,
   description,
@@ -16,17 +17,19 @@ export function Modal({
   size = 'md',
   className = '',
 }) {
+  const isModalOpen = isOpen !== undefined ? isOpen : open;
+
   // Close on Escape key
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isModalOpen) return;
     const handler = (e) => {
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [isOpen, onClose]);
+  }, [isModalOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isModalOpen) return null;
 
   const sizeClasses = {
     sm: 'max-w-md',
@@ -94,6 +97,7 @@ export function Modal({
 // ---- Confirm Dialog ----
 export function ConfirmDialog({
   isOpen,
+  open,
   onClose,
   onConfirm,
   title,
@@ -102,8 +106,9 @@ export function ConfirmDialog({
   confirmVariant = 'danger',
   isLoading = false,
 }) {
+  const isModalOpen = isOpen !== undefined ? isOpen : open;
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={title} size="sm">
+    <Modal isOpen={isModalOpen} onClose={onClose} title={title} size="sm">
       <p className="text-sm text-slate-300">{description}</p>
       <div className="mt-5 flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onClose} disabled={isLoading}>

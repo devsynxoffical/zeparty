@@ -155,12 +155,12 @@ export function AdminLogin() {
             </Button>
           </form>
 
-          <div className="mt-4 rounded-lg bg-slate-950/60 border border-slate-800 px-3 py-2.5">
-            <p className="text-[11px] text-slate-500 text-center">
-              <span className="font-medium text-slate-400">Dev mode:</span>{' '}
-              username <code className="text-gold-400">admin</code> /{' '}
-              password <code className="text-gold-400">admin123</code>
+          <div className="mt-4 rounded-lg bg-slate-950/60 border border-slate-800 px-3 py-2.5 space-y-1">
+            <p className="text-[11px] text-slate-400 text-center">
+              <span className="font-semibold text-slate-300">Super Admin:</span>{' '}
+              username <code className="text-gold-400">admin</code> / password <code className="text-gold-400">admin123</code>
             </p>
+
           </div>
         </div>
 

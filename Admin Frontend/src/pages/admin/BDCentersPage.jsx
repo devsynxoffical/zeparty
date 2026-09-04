@@ -30,7 +30,9 @@ import {
   MOCK_TARGET_POLICIES,
   MOCK_SALARY_PLANS,
   MOCK_PAYOUTS,
-  MOCK_BD_REACTIONS
+  MOCK_BD_REACTIONS,
+  BD_COMMISSION_POLICY_CONFIG,
+  MOCK_BD_COMMISSION_POLICY_TIERS
 } from '../../mocks/bdCenterFull.mock';
 import { MOCK_ACTIVE_HOSTS, MOCK_AGENCIES_LIST } from '../../mocks/hosts.mock';
 import { useAuditLog } from '../../context/AuditLogContext';
@@ -56,13 +58,102 @@ export function BDCentersPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editCenter, setEditCenter] = useState(null);
   const [statusActionCenter, setStatusActionCenter] = useState(null); // { center, newStatus }
+  const [statusReason, setStatusReason] = useState('');
   const [selectedApp, setSelectedApp] = useState(null); // for approval queue
   const [selectedRosterCenter, setSelectedRosterCenter] = useState(null);
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [showSalaryModal, setShowSalaryModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showLockPeriodModal, setShowLockPeriodModal] = useState(false);
   const [payoutModal, setPayoutModal] = useState(null); // payout object
   const [showAddReactionModal, setShowAddReactionModal] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  const [simSending, setSimSending] = useState(1500000);
+
+  const [transferForm, setTransferForm] = useState({
+    memberType: 'Agency',
+    memberName: 'Golden Phoenix Agency',
+    targetBdCenterId: 'bd-1',
+    reason: ''
+  });
+
+  const [lockPeriodForm, setLockPeriodForm] = useState({
+    period: '2026-08 (Current)',
+    reason: 'Monthly Audit Verification Complete'
+  });
+
+  // BD Simulator Tier Calculation
+  const simTier = useMemo(() => {
+    if (!simSending || simSending < BD_COMMISSION_POLICY_CONFIG.minimumMonthlySending) return null;
+    const sorted = [...MOCK_BD_COMMISSION_POLICY_TIERS].sort((a, b) => b.targetSending - a.targetSending);
+    return sorted.find((t) => simSending >= t.targetSending) || MOCK_BD_COMMISSION_POLICY_TIERS[0];
+  }, [simSending]);
+
+  // CSV Export for BD Policy Matrix
+  const handleExportPolicyCSV = () => {
+    let csv = "Level,Level_Name,Monthly_Sending_Target,Basic_Total_Salary,BD_Rate,BD_Monthly_Commission\n";
+    MOCK_BD_COMMISSION_POLICY_TIERS.forEach(t => {
+      csv += `${t.level},"${t.name}",${t.targetSending},${t.basicTotalSalary},${t.bdRate}%,${t.bdCommission}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Z_Party_BD_Monthly_Commission_Policy_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    showFeedback('BD Commission Policy Matrix CSV exported!');
+  };
+
+  // Edit BD Center submit
+  const handleEditCenterSubmit = async (e) => {
+    e.preventDefault();
+    if (!editCenter) return;
+    await updateBDCenter(editCenter.id, editCenter);
+    await logAdminAction({
+      action: 'UPDATE_BD_CENTER',
+      module: 'BD Center',
+      targetType: 'BD_CENTER',
+      targetId: editCenter.id,
+      reason: `Updated details for ${editCenter.name}`,
+      riskLevel: 'MEDIUM',
+      status: 'SUCCESS'
+    });
+    showFeedback(`BD Center "${editCenter.name}" updated successfully!`);
+    setEditCenter(null);
+    loadCenters();
+  };
+
+  // Transfer Team Member submit
+  const handleTransferSubmit = (e) => {
+    e.preventDefault();
+    logAdminAction({
+      action: 'TRANSFER_TEAM_MEMBER',
+      module: 'BD Center Team',
+      targetType: 'TEAM_ATTRIBUTION',
+      targetId: transferForm.memberName,
+      reason: `Re-attributed ${transferForm.memberType} "${transferForm.memberName}" to target BD Center. ${transferForm.reason}`,
+      riskLevel: 'HIGH',
+      status: 'SUCCESS'
+    });
+    showFeedback(`${transferForm.memberType} "${transferForm.memberName}" transferred successfully!`);
+    setShowTransferModal(false);
+  };
+
+  // Lock Salary Period submit
+  const handleLockPeriodSubmit = (e) => {
+    e.preventDefault();
+    logAdminAction({
+      action: 'LOCK_BD_SALARY_PERIOD',
+      module: 'BD Center Salary',
+      targetType: 'SALARY_LOCK',
+      targetId: lockPeriodForm.period,
+      reason: lockPeriodForm.reason,
+      riskLevel: 'HIGH',
+      status: 'SUCCESS'
+    });
+    showFeedback(`Salary period ${lockPeriodForm.period} locked successfully!`);
+    setShowLockPeriodModal(false);
+  };
 
   // Form states
   const [formData, setFormData] = useState({
@@ -649,7 +740,7 @@ export function BDCentersPage() {
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">Manage partner attribution for Agents, Agencies, Sellers, Merchants, and Hosts.</p>
               </div>
-              <Button variant="outline" size="sm" onClick={() => showFeedback('Team member re-attribution dialog ready.')}>
+              <Button variant="outline" size="sm" onClick={() => setShowTransferModal(true)}>
                 <RefreshCw className="h-4 w-4 mr-1 text-purple-400" /> Transfer Team Member
               </Button>
             </div>
@@ -713,43 +804,176 @@ export function BDCentersPage() {
         </div>
       )}
 
-      {/* TAB 6: SALARY & COMMISSION PLANS */}
+      {/* TAB 6: SALARY & COMMISSION PLANS — Z PARTY BD MONTHLY COMMISSION POLICY */}
       {activeTab === 'salary' && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
+        <div className="space-y-6">
+          {/* Header & Controls */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <h3 className="text-base font-bold text-white">Configurable BD Salary & Commission Plans</h3>
-              <p className="text-xs text-slate-400">Fixed salary, commission percentage, tier bonus, and penalty rules.</p>
+              <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                <DollarSign className="h-5 w-5 text-gold-400" />
+                Z PARTY — BD MONTHLY COMMISSION POLICY
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Official BD Monthly Salary & Commission Policy Matrix (21 Tiers). Minimum Monthly Sending threshold required.
+              </p>
             </div>
-            <Button variant="primary" size="sm" onClick={() => setShowSalaryModal(true)}>
-              <Plus className="h-4 w-4 mr-1" /> Create Salary Plan
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleExportPolicyCSV}>
+                <Download className="h-4 w-4 mr-1 text-gold-400" /> Export Policy Matrix
+              </Button>
+              <Button variant="primary" size="sm" onClick={() => setShowSalaryModal(true)}>
+                <Plus className="h-4 w-4 mr-1" /> Add Custom Tier
+              </Button>
+            </div>
           </div>
 
+          {/* Top Summary Cards — Inputs & Quick Summary */}
           <div className="grid md:grid-cols-2 gap-4">
-            {salaryPlans.map((s) => (
-              <Card key={s.id} className="p-4 space-y-2">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-bold text-white text-sm">{s.name}</h4>
-                    <p className="text-xs text-slate-400">Cycle: {s.payoutCycle}</p>
-                  </div>
-                  <Badge variant="purple">{s.status}</Badge>
+            {/* POLICY INPUT */}
+            <Card className="p-4 bg-slate-900 border-gold-500/30">
+              <div className="bg-gradient-to-r from-gold-600/20 to-amber-600/10 p-2.5 rounded-lg border border-gold-500/20 mb-3">
+                <h4 className="text-xs font-bold text-gold-400 uppercase tracking-wider text-center">POLICY INPUT</h4>
+              </div>
+              <div className="space-y-2.5 text-xs font-mono">
+                <div className="flex justify-between items-center p-2 rounded bg-slate-950 border border-slate-800">
+                  <span className="text-slate-300 font-sans font-semibold">Minimum Monthly Sending</span>
+                  <span className="text-gold-400 font-bold">{formatNumber(BD_COMMISSION_POLICY_CONFIG.minimumMonthlySending)}</span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                  <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                    <p className="text-[10px] text-slate-500">Fixed Salary</p>
-                    <p className="text-gold-400 font-bold">${s.fixedSalary} USD</p>
-                  </div>
-                  <div className="p-2 rounded bg-slate-900 border border-slate-800">
-                    <p className="text-[10px] text-slate-500">Commission %</p>
-                    <p className="text-emerald-400 font-bold">{s.commissionRate}%</p>
-                  </div>
+                <div className="flex justify-between items-center p-2 rounded bg-slate-950 border border-slate-800">
+                  <span className="text-slate-300 font-sans font-semibold">BD Commission Rate</span>
+                  <span className="text-emerald-400 font-bold">{BD_COMMISSION_POLICY_CONFIG.bdCommissionRate}%</span>
                 </div>
-                <p className="text-[11px] text-amber-400 font-medium">Penalty Rule: {s.penaltyRule}</p>
-              </Card>
-            ))}
+                <div className="flex justify-between items-center p-2 rounded bg-slate-950 border border-slate-800">
+                  <span className="text-slate-300 font-sans font-semibold">Salary Basis</span>
+                  <span className="text-purple-300 font-sans text-right text-[11px] max-w-[200px]">
+                    {BD_COMMISSION_POLICY_CONFIG.salaryBasis}
+                  </span>
+                </div>
+              </div>
+            </Card>
+
+            {/* QUICK SUMMARY */}
+            <Card className="p-4 bg-slate-900 border-emerald-500/30">
+              <div className="bg-gradient-to-r from-emerald-600/20 to-teal-600/10 p-2.5 rounded-lg border border-emerald-500/20 mb-3">
+                <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider text-center">QUICK SUMMARY</h4>
+              </div>
+              <div className="space-y-2.5 text-xs font-mono">
+                <div className="flex justify-between items-center p-2 rounded bg-slate-950 border border-slate-800">
+                  <span className="text-slate-300 font-sans font-semibold">Commission Starts At</span>
+                  <span className="text-gold-400 font-bold">{formatNumber(BD_COMMISSION_POLICY_CONFIG.minimumMonthlySending)} Sending</span>
+                </div>
+                <div className="flex justify-between items-center p-2 rounded bg-slate-950 border border-slate-800">
+                  <span className="text-slate-300 font-sans font-semibold">Starting BD Salary</span>
+                  <span className="text-emerald-400 font-bold">${BD_COMMISSION_POLICY_CONFIG.startingBDSalary.toFixed(2)} / Month</span>
+                </div>
+                <div className="flex justify-between items-center p-2 rounded bg-slate-950 border border-slate-800">
+                  <span className="text-slate-300 font-sans font-semibold">Below Minimum</span>
+                  <span className="text-red-400 font-bold">${BD_COMMISSION_POLICY_CONFIG.belowMinimumCommission.toFixed(2)} Commission</span>
+                </div>
+              </div>
+            </Card>
           </div>
+
+          {/* Interactive Calculator / Simulator */}
+          <Card className="p-4 bg-slate-900 border-purple-500/30">
+            <h4 className="text-xs font-bold text-purple-300 uppercase tracking-wider mb-3 flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-purple-400" /> Dynamic BD Commission Simulator
+            </h4>
+            <div className="grid md:grid-cols-3 gap-4 items-center">
+              <div>
+                <label className="text-[11px] text-slate-400 block mb-1">Agency Monthly Sending Volume (Coins)</label>
+                <input
+                  type="number"
+                  step="50000"
+                  value={simSending}
+                  onChange={(e) => setSimSending(Number(e.target.value))}
+                  className="w-full bg-slate-950 border border-purple-500/40 text-white rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-purple-400"
+                />
+              </div>
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                <span className="text-[10px] text-slate-400 block">Qualification Status</span>
+                {simTier ? (
+                  <Badge variant="success" className="text-xs">{simTier.name}</Badge>
+                ) : (
+                  <Badge variant="danger" className="text-xs">Ineligible (&lt; 500k)</Badge>
+                )}
+              </div>
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                <span className="text-[10px] text-slate-400 block">Calculated BD Monthly Commission</span>
+                <p className="text-lg font-bold font-mono text-gold-400">
+                  {simTier ? `$${simTier.bdCommission.toFixed(2)} USD` : '$0.00 USD'}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          {/* Main 21-Level Policy Matrix Table */}
+          <Card className="p-0 overflow-hidden border border-gold-500/20">
+            <div className="bg-gradient-to-r from-gold-600/30 via-slate-900 to-amber-600/20 p-3 border-b border-slate-800 flex justify-between items-center">
+              <h4 className="text-xs font-bold text-gold-300 uppercase tracking-wider">
+                BD TIER LEVEL POLICY MATRIX (LEVEL 1 — 21)
+              </h4>
+              <span className="text-[11px] text-slate-400 font-mono">21 Active Levels Configured</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-950 text-gold-400 border-b border-slate-800 font-mono uppercase text-[11px]">
+                  <tr>
+                    <th className="p-3">Level</th>
+                    <th className="p-3 text-right">Monthly Sending Target</th>
+                    <th className="p-3 text-right">Basic Total Salary</th>
+                    <th className="p-3 text-center">BD Rate</th>
+                    <th className="p-3 text-right">BD Monthly Commission</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80 text-slate-200 font-mono">
+                  {MOCK_BD_COMMISSION_POLICY_TIERS.map((tier) => (
+                    <tr
+                      key={tier.level}
+                      className={`hover:bg-slate-900/60 transition-colors ${
+                        simTier?.level === tier.level ? 'bg-gold-500/15 border-l-4 border-l-gold-400' : ''
+                      }`}
+                    >
+                      <td className="p-3 font-bold text-gold-300 font-sans flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded bg-gold-500/20 border border-gold-500/30 text-[11px]">
+                          {tier.name}
+                        </span>
+                        {simTier?.level === tier.level && (
+                          <Badge variant="purple" className="text-[10px]">Active Simulated Level</Badge>
+                        )}
+                      </td>
+                      <td className="p-3 text-right font-bold text-white">
+                        {formatNumber(tier.targetSending)}
+                      </td>
+                      <td className="p-3 text-right text-emerald-400 font-semibold">
+                        ${tier.basicTotalSalary.toFixed(2)}
+                      </td>
+                      <td className="p-3 text-center text-purple-300 font-bold">
+                        {tier.bdRate}%
+                      </td>
+                      <td className="p-3 text-right text-gold-400 font-bold text-sm">
+                        ${tier.bdCommission.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {/* Footer Policy Rule Box */}
+          <Card className="p-4 bg-slate-900/90 border border-gold-500/30">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="h-5 w-5 text-gold-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold text-gold-300 uppercase tracking-wider">Policy Rule & Mandatory Terms</h4>
+                <p className="text-xs text-slate-300 italic leading-relaxed">
+                  "{BD_COMMISSION_POLICY_CONFIG.ruleText}"
+                </p>
+              </div>
+            </div>
+          </Card>
         </div>
       )}
 
@@ -767,18 +991,7 @@ export function BDCentersPage() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => {
-                  logAdminAction({
-                    action: 'LOCK_BD_SALARY_PERIOD',
-                    module: 'BD Center',
-                    targetType: 'SALARY_LOCK',
-                    targetId: '2026-08',
-                    reason: 'Locked salary calculations for 2026-08 payout period',
-                    riskLevel: 'HIGH',
-                    status: 'SUCCESS'
-                  });
-                  showFeedback('Salary period locked for review & payout execution!');
-                }}
+                onClick={() => setShowLockPeriodModal(true)}
               >
                 <Lock className="h-4 w-4 mr-1" /> Lock Salary Period
               </Button>
@@ -1040,6 +1253,291 @@ export function BDCentersPage() {
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
               <Button type="button" variant="outline" size="sm" onClick={() => setPayoutModal(null)}>Cancel</Button>
               <Button type="submit" variant="primary" size="sm">Confirm Disbursal</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Roster View Modal (Eye Button) */}
+      {selectedRosterCenter && (
+        <Modal isOpen={true} onClose={() => setSelectedRosterCenter(null)} title={`Team Roster — ${selectedRosterCenter.name}`}>
+          <div className="space-y-4 text-xs text-slate-300">
+            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex justify-between items-center">
+              <div>
+                <p className="font-bold text-white text-sm">{selectedRosterCenter.name}</p>
+                <p className="text-slate-400 text-[11px]">Manager: {selectedRosterCenter.managerName} ({selectedRosterCenter.managerEmail})</p>
+              </div>
+              <Badge variant="purple">{selectedRosterCenter.region}</Badge>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="font-bold text-gold-400 uppercase text-[11px]">Attributed Syndicates & Agencies</h4>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2.5 rounded bg-slate-900 border border-slate-800">
+                  <p className="font-bold text-white">Active Agencies</p>
+                  <p className="text-lg font-mono text-purple-400">{selectedRosterCenter.activeAgenciesCount || 4}</p>
+                </div>
+                <div className="p-2.5 rounded bg-slate-900 border border-slate-800">
+                  <p className="font-bold text-white">Active Hosts</p>
+                  <p className="text-lg font-mono text-gold-400">{selectedRosterCenter.activeHostsCount || 12}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-800">
+              <Button variant="outline" size="sm" onClick={() => setSelectedRosterCenter(null)}>Close Roster</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit BD Center Modal (Settings Gear Button) */}
+      {editCenter && (
+        <Modal isOpen={true} onClose={() => setEditCenter(null)} title={`Edit BD Center — ${editCenter.name}`}>
+          <form onSubmit={handleEditCenterSubmit} className="space-y-3 text-xs text-slate-300">
+            <div>
+              <label className="text-[11px] text-slate-400 mb-1 block">BD Center Name *</label>
+              <Input
+                size="sm"
+                value={editCenter.name}
+                onChange={(e) => setEditCenter({ ...editCenter, name: e.target.value })}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">Manager Name *</label>
+                <Input
+                  size="sm"
+                  value={editCenter.managerName}
+                  onChange={(e) => setEditCenter({ ...editCenter, managerName: e.target.value })}
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">Manager Email</label>
+                <Input
+                  size="sm"
+                  type="email"
+                  value={editCenter.managerEmail || ''}
+                  onChange={(e) => setEditCenter({ ...editCenter, managerEmail: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-400 mb-1 block">Monthly Target (Coins)</label>
+              <Input
+                size="sm"
+                type="number"
+                value={editCenter.targetCoins || 15000000}
+                onChange={(e) => setEditCenter({ ...editCenter, targetCoins: Number(e.target.value) })}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <Button type="button" variant="outline" size="sm" onClick={() => setEditCenter(null)}>Cancel</Button>
+              <Button type="submit" variant="primary" size="sm">Save Changes</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Freeze / Suspend / Restore Modal (Lock Button) */}
+      {statusActionCenter && (
+        <Modal
+          isOpen={true}
+          onClose={() => setStatusActionCenter(null)}
+          title={`Confirm Account Action — ${statusActionCenter.center.name}`}
+        >
+          <div className="space-y-4 text-xs text-slate-300">
+            <p>
+              Are you sure you want to change status of <strong>"{statusActionCenter.center.name}"</strong> to{' '}
+              <strong className="text-gold-400">{statusActionCenter.newStatus}</strong>?
+            </p>
+            <div>
+              <label className="text-[11px] text-slate-400 mb-1 block">Audit Reason</label>
+              <input
+                type="text"
+                value={statusReason}
+                onChange={(e) => setStatusReason(e.target.value)}
+                placeholder="Reason for freezing/suspending account..."
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg p-2.5 focus:outline-none"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <Button variant="ghost" size="sm" onClick={() => setStatusActionCenter(null)}>Cancel</Button>
+              <Button
+                variant={statusActionCenter.newStatus === 'ACTIVE' ? 'success' : 'danger'}
+                size="sm"
+                onClick={() => handleConfirmStatusAction(statusReason)}
+              >
+                Confirm Status Update
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Create Target Policy Modal (+ Create Target Policy Button) */}
+      {showTargetModal && (
+        <Modal isOpen={true} onClose={() => setShowTargetModal(false)} title="Create Database BD Target Policy">
+          <form onSubmit={handleCreateTargetPolicy} className="space-y-3 text-xs text-slate-300">
+            <div>
+              <label className="text-[11px] text-slate-400 mb-1 block">Policy Title *</label>
+              <Input
+                size="sm"
+                value={targetForm.name}
+                onChange={(e) => setTargetForm({ ...targetForm, name: e.target.value })}
+                placeholder="e.g. Q3 Growth Target Tier 1"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">Metric</label>
+                <select
+                  value={targetForm.metric}
+                  onChange={(e) => setTargetForm({ ...targetForm, metric: e.target.value })}
+                  className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg p-2 focus:outline-none"
+                >
+                  <option value="recharge">Gross Recharge Volume (Coins)</option>
+                  <option value="hosts">Active Hosts Recrypted</option>
+                  <option value="agencies">Active Agencies Recrypted</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">Target Value</label>
+                <Input
+                  size="sm"
+                  type="number"
+                  value={targetForm.targetValue}
+                  onChange={(e) => setTargetForm({ ...targetForm, targetValue: Number(e.target.value) })}
+                  required
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowTargetModal(false)}>Cancel</Button>
+              <Button type="submit" variant="primary" size="sm">Publish Target Policy</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Add Custom Tier / Salary Plan Modal (+ Add Custom Tier Button) */}
+      {showSalaryModal && (
+        <Modal isOpen={true} onClose={() => setShowSalaryModal(false)} title="Add Custom Policy Tier">
+          <form onSubmit={handleCreateSalaryPlan} className="space-y-3 text-xs text-slate-300">
+            <div>
+              <label className="text-[11px] text-slate-400 mb-1 block">Tier Level Name *</label>
+              <Input
+                size="sm"
+                value={salaryForm.name}
+                onChange={(e) => setSalaryForm({ ...salaryForm, name: e.target.value })}
+                placeholder="e.g. BD Level 22 (Custom)"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">Fixed Base Salary (USD)</label>
+                <Input
+                  size="sm"
+                  type="number"
+                  value={salaryForm.fixedSalary}
+                  onChange={(e) => setSalaryForm({ ...salaryForm, fixedSalary: Number(e.target.value) })}
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-400 mb-1 block">Commission Rate (%)</label>
+                <Input
+                  size="sm"
+                  type="number"
+                  step="0.1"
+                  value={salaryForm.commissionRate}
+                  onChange={(e) => setSalaryForm({ ...salaryForm, commissionRate: Number(e.target.value) })}
+                  required
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowSalaryModal(false)}>Cancel</Button>
+              <Button type="submit" variant="primary" size="sm">Save Custom Tier</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Transfer Team Member Modal (Transfer Team Member Button) */}
+      {showTransferModal && (
+        <Modal isOpen={true} onClose={() => setShowTransferModal(false)} title="Transfer Team Member / Syndicate">
+          <form onSubmit={handleTransferSubmit} className="space-y-3 text-xs text-slate-300">
+            <div>
+              <label className="text-[11px] text-slate-400 mb-1 block">Member Type</label>
+              <select
+                value={transferForm.memberType}
+                onChange={(e) => setTransferForm({ ...transferForm, memberType: e.target.value })}
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg p-2 focus:outline-none"
+              >
+                <option value="Agency">Agency / Syndicate</option>
+                <option value="Host">Individual Host</option>
+                <option value="Coin Seller">Coin Seller</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-400 mb-1 block">Target BD Center</label>
+              <select
+                value={transferForm.targetBdCenterId}
+                onChange={(e) => setTransferForm({ ...transferForm, targetBdCenterId: e.target.value })}
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg p-2 focus:outline-none"
+              >
+                <option value="bd-1">APAC BD Center (Asia Pacific)</option>
+                <option value="bd-2">LATAM BD Center (Latin America)</option>
+                <option value="bd-3">MENA BD Center (Middle East)</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-400 mb-1 block">Transfer Reason / Audit Notes</label>
+              <textarea
+                rows={2}
+                value={transferForm.reason}
+                onChange={(e) => setTransferForm({ ...transferForm, reason: e.target.value })}
+                placeholder="Reason for re-attribution..."
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg p-2.5 focus:outline-none"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowTransferModal(false)}>Cancel</Button>
+              <Button type="submit" variant="primary" size="sm">Execute Transfer</Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Lock Salary Period Modal (Lock Salary Period Button) */}
+      {showLockPeriodModal && (
+        <Modal isOpen={true} onClose={() => setShowLockPeriodModal(false)} title="Lock Salary Calculation Period">
+          <form onSubmit={handleLockPeriodSubmit} className="space-y-4 text-xs text-slate-300">
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-start gap-2">
+              <Lock className="h-5 w-5 shrink-0 mt-0.5" />
+              <p>
+                Locking period <strong>"{lockPeriodForm.period}"</strong> will freeze calculated target achievements and disallow further manual salary adjustments for this cycle.
+              </p>
+            </div>
+            <div>
+              <label className="text-[11px] text-slate-400 mb-1 block">Audit Reason</label>
+              <input
+                type="text"
+                value={lockPeriodForm.reason}
+                onChange={(e) => setLockPeriodForm({ ...lockPeriodForm, reason: e.target.value })}
+                placeholder="Reason for locking cycle..."
+                className="w-full bg-slate-900 border border-slate-700 text-white rounded-lg p-2.5 focus:outline-none"
+                required
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowLockPeriodModal(false)}>Cancel</Button>
+              <Button type="submit" variant="primary" size="sm">Confirm Lock Period</Button>
             </div>
           </form>
         </Modal>

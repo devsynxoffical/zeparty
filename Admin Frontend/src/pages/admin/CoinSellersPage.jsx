@@ -70,7 +70,60 @@ export function CoinSellersPage() {
 
   const [countryModal, setCountryModal] = useState({ open: false, seller: null, newCountry: 'US' });
   const [historyModal, setHistoryModal] = useState({ open: false, seller: null });
+  const [adjustModal, setAdjustModal] = useState({ open: false, type: 'DEDUCTION', amount: '', reason: '' });
   const [feedback, setFeedback] = useState(null);
+
+  const handleExecuteAdjustment = () => {
+    const seller = historyModal.seller;
+    if (!seller) return;
+
+    if (!adjustModal.amount || Number(adjustModal.amount) <= 0) {
+      alert('Please enter a valid positive coin amount.');
+      return;
+    }
+
+    const amt = Number(adjustModal.amount);
+    const isDeduct = adjustModal.type === 'DEDUCTION';
+    const noteReason = adjustModal.reason.trim() || (isDeduct ? 'Manual coin deduction correction' : 'Manual coin credit adjustment');
+
+    const updatedSellers = sellers.map((s) => {
+      if (s.id === seller.id) {
+        const newBalance = isDeduct ? Math.max(0, (s.currentBalance || 0) - amt) : (s.currentBalance || 0) + amt;
+        const newTotal = isDeduct ? Math.max(0, (s.totalIssued || 0) - amt) : (s.totalIssued || 0) + amt;
+        const newHistory = [
+          {
+            date: new Date().toISOString().split('T')[0],
+            type: isDeduct ? 'MANUAL_COIN_DEDUCTION' : 'MANUAL_COIN_CREDIT',
+            amount: isDeduct ? -amt : amt,
+            note: noteReason,
+          },
+          ...(s.correctionsHistory || []),
+        ];
+        return {
+          ...s,
+          currentBalance: newBalance,
+          totalIssued: newTotal,
+          correctionsHistory: newHistory,
+        };
+      }
+      return s;
+    });
+
+    setSellers(updatedSellers);
+    const updatedSeller = updatedSellers.find((s) => s.id === seller.id);
+    setHistoryModal({ open: true, seller: updatedSeller });
+    setAdjustModal({ open: false, type: 'DEDUCTION', amount: '', reason: '' });
+
+    logAdminAction({
+      action: 'RESELLER_PAYMENT_ADJUSTED',
+      module: 'CoinSellers',
+      targetType: 'reseller',
+      targetId: seller.id,
+      targetName: seller.sellerName,
+      reason: `Manual adjustment (${isDeduct ? 'Deducted' : 'Added'} ${amt} coins): ${noteReason}`,
+      riskLevel: 'HIGH',
+    });
+  };
 
   const filtered = useMemo(() => {
     return sellers.filter((s) => {
@@ -591,31 +644,118 @@ export function CoinSellersPage() {
           isOpen={true}
           onClose={() => setHistoryModal({ open: false, seller: null })}
           title={`Reseller History & Transaction Ledger: ${historyModal.seller?.sellerName}`}
-          size="md"
+          size="lg"
         >
           <div className="space-y-4 text-xs">
-            <div className="p-3 bg-slate-900 border border-slate-800 rounded-lg flex justify-between items-center text-slate-300">
-              <div>
-                <p className="font-bold text-white">@{historyModal.seller?.username}</p>
-                <p className="text-[11px] text-slate-400">Total Issued: {formatNumber(historyModal.seller?.totalIssued)} coins</p>
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-slate-300 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-bold text-white text-base">
+                      @{historyModal.seller?.username ? historyModal.seller.username.replace(/^@+/, '') : 'seller'}
+                    </p>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 whitespace-nowrap">
+                      {historyModal.seller?.profitPercent || 10}% Profit Tier
+                    </span>
+                    <Badge variant="purple">Logged & Audited</Badge>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">{historyModal.seller?.sellerName}</p>
+                </div>
+
+                <Button
+                  variant="danger"
+                  size="sm"
+                  className="shrink-0 whitespace-nowrap"
+                  onClick={() => setAdjustModal({ open: true, type: 'DEDUCTION', amount: '', reason: '' })}
+                >
+                  Adjust Payment / Deduct Coins
+                </Button>
               </div>
-              <Badge variant="purple">Logged & Audited</Badge>
+
+              <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-slate-400">
+                <div className="bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
+                  Total Issued: <strong className="text-gold-400 font-mono ml-1">{formatNumber(historyModal.seller?.totalIssued)} coins</strong>
+                </div>
+                <div className="bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
+                  Available Balance: <strong className="text-emerald-400 font-mono ml-1">{formatNumber(historyModal.seller?.currentBalance)} coins</strong>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              {historyModal.seller?.correctionsHistory?.map((h, i) => (
-                <div key={i} className="p-2.5 bg-slate-900/80 border border-slate-800 rounded-lg flex justify-between items-center">
+            {/* Adjust Payment Inline Form */}
+            {adjustModal.open && (
+              <div className="p-3.5 bg-slate-950 border border-rose-500/30 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white text-xs">Manual Payment / Coin Adjustment</span>
+                  <button
+                    onClick={() => setAdjustModal({ open: false, type: 'DEDUCTION', amount: '', reason: '' })}
+                    className="text-slate-400 hover:text-white text-xs font-bold"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <span className="font-bold text-emerald-400">{h.type}</span>
-                    <p className="text-slate-300 text-[11px] mt-0.5">{h.note}</p>
-                    <p className="text-slate-500 text-[10px]">{h.date}</p>
+                    <label className="block text-[11px] text-slate-400 font-semibold mb-1">Adjustment Action</label>
+                    <select
+                      className="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-white text-xs"
+                      value={adjustModal.type}
+                      onChange={(e) => setAdjustModal({ ...adjustModal, type: e.target.value })}
+                    >
+                      <option value="DEDUCTION">Deduct Mistaken Coins (-)</option>
+                      <option value="CREDIT">Add Coin Credit (+)</option>
+                    </select>
                   </div>
-                  {h.amount > 0 && <span className="font-mono text-gold-400 font-bold">🪙 +{formatNumber(h.amount)}</span>}
+                  <Input
+                    label="Coin Amount *"
+                    type="number"
+                    value={adjustModal.amount}
+                    onChange={(e) => setAdjustModal({ ...adjustModal, amount: e.target.value })}
+                    placeholder="e.g. 500000"
+                  />
+                </div>
+
+                <Input
+                  label="Adjustment Reason / Audit Note *"
+                  value={adjustModal.reason}
+                  onChange={(e) => setAdjustModal({ ...adjustModal, reason: e.target.value })}
+                  placeholder="e.g. Corrected mistaken duplicate coin grant"
+                />
+
+                <div className="flex justify-end pt-1">
+                  <Button variant="danger" size="xs" onClick={handleExecuteAdjustment}>
+                    Execute Adjustment & Audit Log
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Detailed Transaction & Payment History Stream */}
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Historical Allocation & Payment Log</p>
+              {historyModal.seller?.correctionsHistory?.map((h, i) => (
+                <div key={i} className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg flex justify-between items-center">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`font-bold text-xs ${h.amount < 0 || h.type?.includes('DEDUCTION') ? 'text-rose-400' : 'text-emerald-400'}`}>
+                        {h.type}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">{h.date}</span>
+                    </div>
+                    <p className="text-slate-300 text-[11px] mt-0.5">{h.note}</p>
+                  </div>
+                  {h.amount !== undefined && (
+                    <span className={`font-mono font-bold text-xs ${h.amount < 0 || h.type?.includes('DEDUCTION') ? 'text-rose-400' : 'text-gold-400'}`}>
+                      🪙 {h.amount > 0 ? '+' : ''}{formatNumber(h.amount)}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
 
-            <div className="flex justify-end pt-2">
+            <div className="flex justify-between items-center pt-2 border-t border-slate-800">
+              <span className="text-[11px] text-slate-500 italic">Audit Log ID: AUD-{historyModal.seller?.id || '001'}</span>
               <Button variant="ghost" size="sm" onClick={() => setHistoryModal({ open: false, seller: null })}>
                 Close Ledger
               </Button>

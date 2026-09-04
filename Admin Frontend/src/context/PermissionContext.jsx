@@ -57,53 +57,75 @@ const ROUTE_PERMISSIONS = {
 export function PermissionProvider({ children }) {
   const { admin } = useAuth();
 
+  const isOwner = useMemo(() => {
+    if (!admin) return false;
+    return Boolean(admin.isOwner);
+  }, [admin]);
+
   const isSuperAdmin = useMemo(() => {
     if (!admin) return false;
     return Boolean(
-      admin.isSuperAdmin || admin.role === 'super_admin' || admin.roleId === 'super_admin'
+      admin.isOwner || admin.isSuperAdmin || admin.role === 'super_admin' || admin.roleId === 'super_admin'
     );
   }, [admin]);
 
+  const effectiveModules = useMemo(() => {
+    if (!admin) return [];
+    if (isOwner) return ['*'];
+    if (Array.isArray(admin.effectiveModules)) return admin.effectiveModules;
+    if (isSuperAdmin) return ['*'];
+    return [];
+  }, [admin, isOwner, isSuperAdmin]);
+
   const userPermissions = useMemo(() => {
     if (!admin) return [];
-    if (isSuperAdmin) return ALL_PERMISSION_IDS;
-
-    if (Array.isArray(admin.permissions)) {
-      return admin.permissions;
-    }
+    if (isOwner) return ALL_PERMISSION_IDS;
+    if (Array.isArray(admin.effectivePermissions)) return admin.effectivePermissions;
+    if (Array.isArray(admin.permissions)) return admin.permissions;
 
     const roleObj = MOCK_ROLES.find(
       (r) => r.id === admin.role || r.id === admin.roleId
     );
 
     return roleObj ? roleObj.permissions : [];
-  }, [admin, isSuperAdmin]);
+  }, [admin, isOwner]);
 
   const hasPermission = (permissionId) => {
     if (!admin) return false;
-    if (isSuperAdmin) return true;
+    if (isOwner) return true;
     if (!permissionId) return true;
-    return userPermissions.includes(permissionId);
+
+    if (userPermissions.includes('*')) return true;
+
+    const normalizedReq = permissionId.toUpperCase();
+    return userPermissions.some(
+      (p) => p === '*' || p.toUpperCase() === normalizedReq || p.toLowerCase() === permissionId.toLowerCase()
+    );
   };
 
   const hasModuleAccess = (moduleId) => {
     if (!admin) return false;
-    if (isSuperAdmin) return true;
-    return true; // Expandable per specific role checks
+    if (isOwner) return true;
+    if (effectiveModules.includes('*')) return true;
+    return effectiveModules.includes(moduleId);
   };
 
   const canAccessRoute = (pathname) => {
     if (!admin) return false;
-    if (isSuperAdmin) return true;
+    if (isOwner) return true;
+
+    if (pathname.includes('owner-control') || pathname.includes('owner')) {
+      return isOwner;
+    }
 
     if (ROUTE_PERMISSIONS.hasOwnProperty(pathname)) {
       const required = ROUTE_PERMISSIONS[pathname];
-      return required ? userPermissions.includes(required) : true;
+      return required ? hasPermission(required) : true;
     }
 
     for (const [routeKey, requiredPerm] of Object.entries(ROUTE_PERMISSIONS)) {
       if (routeKey !== '/admin' && pathname.startsWith(routeKey)) {
-        return requiredPerm ? userPermissions.includes(requiredPerm) : true;
+        return requiredPerm ? hasPermission(requiredPerm) : true;
       }
     }
 
@@ -112,14 +134,16 @@ export function PermissionProvider({ children }) {
 
   const value = useMemo(
     () => ({
+      isOwner,
       isSuperAdmin,
+      effectiveModules,
       userPermissions,
       hasPermission,
       hasModuleAccess,
       canAccessRoute,
       canPerformAction: hasPermission,
     }),
-    [isSuperAdmin, userPermissions, admin]
+    [isOwner, isSuperAdmin, effectiveModules, userPermissions, admin]
   );
 
   return (

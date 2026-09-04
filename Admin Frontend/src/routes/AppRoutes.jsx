@@ -7,8 +7,7 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { AdminLayout } from '../layouts/AdminLayout';
 import { PublicLayout } from '../layouts/PublicLayout';
-import { ProtectedRoute } from './ProtectedRoute';
-import { ModuleRouteGuard } from './ModuleRouteGuard';
+import { ProtectedRoute, ModuleRouteGuard } from './ProtectedRoute';
 
 // Public Pages
 import { HomePage } from '../pages/public/HomePage';
@@ -25,6 +24,7 @@ import { UsersPage } from '../pages/admin/UsersPage';
 import { UserDetailPage } from '../pages/admin/UserDetailPage';
 import { LiveRoomsPage } from '../pages/admin/LiveRoomsPage';
 import { LiveRoomDetailPage } from '../pages/admin/LiveRoomDetailPage';
+import { RoomPinManagementPage } from '../pages/admin/RoomPinManagementPage';
 import { RechargePlansPage } from '../pages/admin/RechargePlansPage';
 import { OfflineRechargePage } from '../pages/admin/OfflineRechargePage';
 import { WithdrawalsPage } from '../pages/admin/WithdrawalsPage';
@@ -80,10 +80,12 @@ import { ScheduledJobsPage } from '../pages/admin/ScheduledJobsPage';
 import { AssetsPage } from '../pages/admin/AssetsPage';
 import { RoomThemeApprovalPage } from '../pages/admin/RoomThemeApprovalPage';
 
+import { MasterOwnerControlPage } from '../pages/admin/MasterOwnerControlPage';
+
 export function AppRoutes() {
   return (
     <Routes>
-      {/* Admin Login */}
+      {/* Unified Admin & Owner Login */}
       <Route path="/admin/login" element={<AdminLogin />} />
 
       {/* Public Website */}
@@ -110,9 +112,10 @@ export function AppRoutes() {
         <Route path="users/:id" element={<ModuleRouteGuard requiredPermission="view_user_details"><UserDetailPage /></ModuleRouteGuard>} />
         <Route path="wallet" element={<ModuleRouteGuard requiredPermission="view_users"><WalletPage /></ModuleRouteGuard>} />
 
-        {/* Live Rooms */}
+        {/* Live Rooms & Pin Management */}
         <Route path="live-rooms" element={<ModuleRouteGuard requiredPermission="view_live_rooms"><LiveRoomsPage /></ModuleRouteGuard>} />
         <Route path="live-rooms/:id" element={<ModuleRouteGuard requiredPermission="view_room_details"><LiveRoomDetailPage /></ModuleRouteGuard>} />
+        <Route path="room-pin-management" element={<ModuleRouteGuard requiredPermission="view_live_rooms"><RoomPinManagementPage /></ModuleRouteGuard>} />
 
         {/* Gifts, Assets & Emojis */}
         <Route path="gifts" element={<ModuleRouteGuard requiredPermission="view_gifts"><GiftsPage /></ModuleRouteGuard>} />
@@ -166,7 +169,8 @@ export function AppRoutes() {
         <Route path="reports" element={<ModuleRouteGuard requiredPermission="view_reports"><ReportsPage /></ModuleRouteGuard>} />
         <Route path="support" element={<ModuleRouteGuard requiredPermission="view_support"><SupportPage /></ModuleRouteGuard>} />
 
-        {/* Governance & Administration */}
+        {/* Master Control & Governance */}
+        <Route path="master-control" element={<MasterOwnerControlPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />
         <Route path="teams-roles" element={<ModuleRouteGuard requiredPermission="view_admins"><TeamsRolesPage /></ModuleRouteGuard>} />
         <Route path="audit-logs" element={<ModuleRouteGuard requiredPermission="view_audit_logs"><AuditLogsPage /></ModuleRouteGuard>} />

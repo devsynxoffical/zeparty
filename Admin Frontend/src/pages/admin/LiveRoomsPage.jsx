@@ -6,7 +6,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Radio, Search, Eye, StopCircle, Users, Gift, Play, Pause, AlertTriangle, MessageSquare, Flame
+  Radio, Search, Eye, StopCircle, Users, Gift, Play, Pause, AlertTriangle, MessageSquare, Flame, Pin
 } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -219,6 +219,13 @@ export function LiveRoomsPage() {
           >
             <Eye className="h-3.5 w-3.5" />
           </button>
+          <button
+            title="Pin Room to Top"
+            onClick={() => navigate('/admin/room-pin-management')}
+            className="p-1.5 rounded-lg text-gold-400 hover:text-gold-300 hover:bg-slate-700 transition-colors"
+          >
+            <Pin className="h-3.5 w-3.5 fill-gold-400/20" />
+          </button>
           {row.status === 'active' && (
             <>
               <button
@@ -265,22 +272,33 @@ export function LiveRoomsPage() {
           </p>
         </div>
 
-        {/* Tab Buttons */}
-        <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-800">
-          <button
-            onClick={() => setSearchParams({ type: 'live' })}
-            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${activeTab === 'live' ? 'bg-red-600 text-white shadow-lg shadow-red-600/10' : 'text-slate-400 hover:text-white'
-              }`}
+        {/* Tab Buttons & Pin Management Shortcut */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/admin/room-pin-management')}
+            className="border-gold-500/30 text-gold-400 hover:bg-gold-500/10"
           >
-            Live Video Rooms
-          </button>
-          <button
-            onClick={() => setSearchParams({ type: 'party' })}
-            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${activeTab === 'party' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/10' : 'text-slate-400 hover:text-white'
-              }`}
-          >
-            Social Audio / Party Rooms
-          </button>
+            <Pin className="h-4 w-4 mr-1.5 fill-gold-400/20" /> Room Pin Management
+          </Button>
+
+          <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-800">
+            <button
+              onClick={() => setSearchParams({ type: 'live' })}
+              className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${activeTab === 'live' ? 'bg-red-600 text-white shadow-lg shadow-red-600/10' : 'text-slate-400 hover:text-white'
+                }`}
+            >
+              Live Video Rooms
+            </button>
+            <button
+              onClick={() => setSearchParams({ type: 'party' })}
+              className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${activeTab === 'party' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/10' : 'text-slate-400 hover:text-white'
+                }`}
+            >
+              Social Audio / Party Rooms
+            </button>
+          </div>
         </div>
       </div>
 
