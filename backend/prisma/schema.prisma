@@ -90,6 +90,43 @@ enum WalletLedgerType {
   ADMIN_ADJUSTMENT
   SWAP
   RESELLER_ALLOCATION
+  REFUND
+  CHARGEBACK_REVERSAL
+  SETTLEMENT_PAYOUT
+  COMMISSION_PAYOUT
+  SETTLEMENT_ADJUSTMENT
+}
+
+enum SettlementEntityType {
+  HOST
+  AGENCY
+  BD_CENTER
+}
+
+enum SettlementStatus {
+  OPEN
+  CALCULATING
+  CALCULATED
+  PENDING_APPROVAL
+  APPROVED
+  PROCESSING
+  PAID
+  CANCELLED
+  REJECTED
+}
+
+enum SettlementAdjustmentType {
+  BONUS
+  PENALTY
+  CHARGEBACK_DEDUCTION
+  CORRECTION
+}
+
+enum ChargebackStatus {
+  RECEIVED
+  INVESTIGATING
+  RESOLVED
+  REJECTED
 }
 
 enum RechargeStatus {
@@ -170,10 +207,16 @@ enum RoomAvailability {
 }
 
 enum GameKey {
-  SLOTS
+  FISHING_STAR
+  TEEN_PATTI
+  DRAGON_TIGER
+  ROULETTE
+  DELICIOUS
   ROCKET
-  WHEEL
-  DICE
+  FRUIT_PARTY_JACKPOT
+  BOUNTY_FOOTBALL
+  GREEDY_LION
+  DOUBLE_SEVEN_77
 }
 
 enum GameRoundStatus {
@@ -190,6 +233,7 @@ enum PKStatus {
 
 enum ReportStatus {
   PENDING
+  UNDER_REVIEW
   RESOLVED
   DISMISSED
 }
@@ -197,6 +241,8 @@ enum ReportStatus {
 enum SupportTicketStatus {
   OPEN
   IN_PROGRESS
+  WAITING_ON_USER
+  RESOLVED
   CLOSED
 }
 
@@ -217,6 +263,10 @@ enum ModerationActionType {
   KICK
   BAN_ROOM
   SUSPEND_ACCOUNT
+  BAN_ACCOUNT
+  DELETE_CONTENT
+  RESTRICT_FEATURE
+  WARN
 }
 
 enum RestrictionType {
@@ -224,6 +274,19 @@ enum RestrictionType {
   MUTE
   MIC_BLOCK
   WITHDRAWAL_BLOCK
+  CHAT_BLOCK
+  POST_BLOCK
+  COMMENT_BLOCK
+  LIVE_BLOCK
+  ROOM_BLOCK
+}
+
+enum AnnouncementTarget {
+  ALL
+  HOSTS
+  AGENCIES
+  VIP_USERS
+  SELLERS
 }
 
 // ==========================================
@@ -242,6 +305,7 @@ model SystemInitCheck {
 
 model User {
   id                String     @id @default(uuid())
+  firebaseUid       String?    @unique
   phone             String?    @unique
   email             String?    @unique
   username          String     @unique
@@ -272,6 +336,7 @@ model User {
   coinSeller               CoinSeller?
   merchant                 Merchant?
   roomsCreated             Room[]              @relation("RoomCreator")
+  roomMemberships          RoomMember[]
   roomSeatOccupations      RoomSeat[]
   giftTransactionsSent     GiftTransaction[]   @relation("GiftSender")
   giftTransactionsReceived GiftTransaction[]   @relation("GiftRecipient")
@@ -281,6 +346,7 @@ model User {
   offlineRecharges         OfflineRecharge[]
   withdrawalRequests       WithdrawalRequest[]
   coinRefunds              CoinRefund[]
+  chargebacks              Chargeback[]
   p2pAsSeller              P2PEscrowOrder[]    @relation("EscrowSeller")
   p2pAsBuyer               P2PEscrowOrder[]    @relation("EscrowBuyer")
   posts                    Post[]
@@ -290,9 +356,13 @@ model User {
   followers                Follow[]            @relation("Following")
   sentMessages             Message[]           @relation("MessageSender")
   notifications            Notification[]
+  notificationPreference   NotificationPreference?
   supportTickets           SupportTicket[]
   reportsSubmitted         Report[]            @relation("Reporter")
   reportsReceived          Report[]            @relation("ReportedUser")
+  restrictions             Restriction[]       @relation("UserRestrictions")
+  settlementRecords        SettlementRecord[]  @relation("UserSettlementRecords")
+  settlementAdjustments    SettlementAdjustment[] @relation("UserSettlementAdjustments")
 
   @@index([status])
   @@index([countryCode])
@@ -312,6 +382,10 @@ model UserProfile {
   vipLevel            Int      @default(0)
   svipLevel           Int      @default(0)
   nobleRank           String?
+  isPrivate           Boolean  @default(false)
+  followersCount      Int      @default(0)
+  followingCount      Int      @default(0)
+  postsCount          Int      @default(0)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }
@@ -339,11 +413,14 @@ model UserDevice {
   macAddress  String?
   deviceModel String?
   appVersion  String?
+  isActive    Boolean  @default(true)
   isBlocked   Boolean  @default(false)
   lastSeenAt  DateTime @default(now())
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  @@index([userId])
+  @@unique([userId, deviceToken])
+  @@index([userId, isActive])
   @@index([deviceToken])
 }
 
@@ -397,10 +474,14 @@ model Admin {
   reviewedApprovals   AdminApproval[]           @relation("ApprovalReviewer")
   auditLogs           AuditLog[]
   assignedTickets     SupportTicket[]
+  assignedReports     Report[]                  @relation("ReportAssignedAdmin")
+  adminRestrictions   Restriction[]             @relation("AdminCreatedRestrictions")
+  moderationActions   ModerationAction[]
   moduleAccess        AdminModuleAccess[]
   ownerGrants         OwnerGrant[]
   teamMemberships     TeamMember[]
   permissionOverrides AdminPermissionOverride[]
+  broadcasts          NotificationBroadcast[]   @relation("AdminNotificationBroadcasts")
 
   @@index([status])
   @@index([isOwner])
@@ -757,8 +838,10 @@ model OnlineRecharge {
   gatewayTxId   String         @unique
   amountUSD     Decimal        @db.Decimal(10, 2)
   coinsCredited BigInt
+  planId        String?
   status        RechargeStatus @default(PENDING)
   createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@index([userId])
 }
@@ -811,6 +894,26 @@ model CoinRefund {
   @@index([userId])
 }
 
+model Chargeback {
+  id                String           @id @default(uuid())
+  disputeId         String           @unique
+  userId            String
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  gateway           String // "STRIPE", "PAYPAL", "BRAINTREE"
+  amountUSD         Decimal          @db.Decimal(10, 2)
+  coinsInvolved     BigInt           @default(0)
+  status            ChargebackStatus @default(RECEIVED)
+  reason            String?
+  adminNotes        String?
+  resolvedByAdminId String?
+  resolvedAt        DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}
+
 model P2PEscrowOrder {
   id                String       @id @default(uuid())
   sellerId          String
@@ -845,6 +948,7 @@ model Room {
   category            RoomCategory @default(CHAT)
   isPrivate           Boolean      @default(false)
   roomPin             String?
+  agoraChannelName    String?
   isPinnedTop         Boolean      @default(false)
   pinnedPosition      Int? // 1, 2, or 3
   currentViewersCount Int          @default(0)
@@ -853,6 +957,7 @@ model Room {
   endedAt             DateTime?
 
   seats             RoomSeat[]
+  members           RoomMember[]
   moderationActions RoomModeration[]
   giftTransactions  GiftTransaction[]
   pkEventsAsRoomA   PKEvent[]         @relation("PKRoomA")
@@ -874,6 +979,19 @@ model RoomSeat {
   updatedAt      DateTime @updatedAt
 
   @@unique([roomId, seatIndex])
+}
+
+model RoomMember {
+  id        String   @id @default(uuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt  DateTime @default(now())
+
+  @@unique([roomId, userId])
+  @@index([roomId])
+  @@index([userId])
 }
 
 model RoomModeration {
@@ -1067,6 +1185,7 @@ model Post {
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   content       String
   mediaUrls     Json? // Array of image/video URLs
+  visibility    String    @default("PUBLIC") // "PUBLIC", "FOLLOWERS", "PRIVATE"
   likesCount    Int       @default(0)
   commentsCount Int       @default(0)
   createdAt     DateTime  @default(now())
@@ -1076,18 +1195,24 @@ model Post {
   likes    Like[]
 
   @@index([userId])
+  @@index([visibility, createdAt(sort: Desc)])
 }
 
 model Comment {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   postId    String
-  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   Comment[] @relation("CommentReplies")
   content   String
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
 
   @@index([postId])
+  @@index([parentId])
 }
 
 model Like {
@@ -1099,6 +1224,7 @@ model Like {
   createdAt DateTime @default(now())
 
   @@unique([userId, postId])
+  @@index([postId])
 }
 
 model Follow {
@@ -1106,9 +1232,22 @@ model Follow {
   follower    User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
   followingId String
   following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+  status      String   @default("ACCEPTED") // "ACCEPTED", "PENDING", "REJECTED"
   createdAt   DateTime @default(now())
 
   @@id([followerId, followingId])
+  @@index([followingId])
+}
+
+model UserBlock {
+  id        String   @id @default(uuid())
+  blockerId String
+  blockedId String
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
 }
 
 model Message {
@@ -1124,17 +1263,63 @@ model Message {
   @@index([recipientId])
 }
 
-model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title     String
-  body      String
-  type      String // "SYSTEM", "GIFT", "PK", "WALLET"
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
+model NotificationPreference {
+  id         String   @id @default(uuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  social     Boolean  @default(true)
+  live       Boolean  @default(true)
+  pk         Boolean  @default(true)
+  games      Boolean  @default(true)
+  events     Boolean  @default(true)
+  finance    Boolean  @default(true)
+  moderation Boolean  @default(true)
+  support    Boolean  @default(true)
+  marketing  Boolean  @default(true)
+  system     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([userId])
+}
+
+model Notification {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title          String
+  body           String
+  type           String    // "SYSTEM", "SOCIAL", "GIFT", "PK", "LIVE", "FINANCE", "MODERATION", "SUPPORT", "MARKETING"
+  category       String?   // "Follower", "Gift", "Invitation", "Call", "Recharge", "System", etc.
+  dataJson       Json?     // Deep link and entity payload
+  sourceType     String?   // "POST", "ROOM", "TRANSACTION", "TICKET", "REPORT", "CAMPAIGN"
+  sourceId       String?   // Underlying entity ID
+  isRead         Boolean   @default(false)
+  readAt         DateTime?
+  deliveryStatus String    @default("DELIVERED") // "PENDING", "DELIVERED", "FAILED", "SIMULATED"
+  createdAt      DateTime  @default(now())
+
+  @@index([userId, isRead, createdAt(sort: Desc)])
+  @@index([userId, type])
+  @@index([sourceType, sourceId])
+}
+
+model NotificationBroadcast {
+  id             String   @id @default(uuid())
+  adminId        String?
+  admin          Admin?   @relation("AdminNotificationBroadcasts", fields: [adminId], references: [id])
+  title          String
+  body           String
+  type           String   @default("Push") // "Push", "Promotional", "Transactional"
+  audience       String   @default("All Users") // "All Users", "Active Users", "VIP Users", "Hosts Only"
+  recipientCount Int      @default(0)
+  status         String   @default("SENT") // "DRAFT", "SCHEDULED", "SENDING", "SENT", "FAILED", "CANCELLED"
+  metadataJson   Json?
+  sentAt         DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  @@index([adminId])
+  @@index([status, createdAt(sort: Desc)])
 }
 
 // ==========================================
@@ -1146,51 +1331,106 @@ model SupportTicket {
   userId          String
   user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   subject         String
+  category        String              @default("GENERAL") // "ACCOUNT", "PAYMENT", "LIVE_ROOM", "REPORT_APPEAL", "BUG", "GENERAL"
+  priority        String              @default("MEDIUM") // "LOW", "MEDIUM", "HIGH", "URGENT"
   message         String
   status          SupportTicketStatus @default(OPEN)
   assignedAdminId String?
   assignedAdmin   Admin?              @relation(fields: [assignedAdminId], references: [id])
+  resolutionNotes String?
+  resolvedAt      DateTime?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
+  messages        SupportTicketMessage[]
+
   @@index([userId])
   @@index([status])
+  @@index([priority])
+  @@index([assignedAdminId])
+}
+
+model SupportTicketMessage {
+  id              String        @id @default(uuid())
+  ticketId        String
+  ticket          SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderType      String        // "USER", "ADMIN"
+  senderId        String        // User ID or Admin ID
+  message         String
+  attachmentsJson Json?
+  isInternalNote  Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+
+  @@index([ticketId, createdAt])
 }
 
 model Report {
-  id               String       @id @default(uuid())
-  reporterUserId   String
-  reporter         User         @relation("Reporter", fields: [reporterUserId], references: [id])
-  reportedUserId   String?
-  reportedUser     User?        @relation("ReportedUser", fields: [reportedUserId], references: [id])
-  reportedRoomId   String?
-  violationType    String
-  screenshotUrl    String?
-  status           ReportStatus @default(PENDING)
-  adminActionTaken String?
-  createdAt        DateTime     @default(now())
+  id                String       @id @default(uuid())
+  reporterUserId    String
+  reporter          User         @relation("Reporter", fields: [reporterUserId], references: [id])
+  reportedUserId    String?
+  reportedUser      User?        @relation("ReportedUser", fields: [reportedUserId], references: [id])
+  reportedRoomId    String?
+  reportedPostId    String?
+  reportedCommentId String?
+  reportedMessageId String?
+  violationType     String
+  description       String?
+  screenshotUrl     String?
+  priority          String       @default("MEDIUM") // "LOW", "MEDIUM", "HIGH", "URGENT"
+  status            ReportStatus @default(PENDING)
+  assignedAdminId   String?
+  assignedAdmin     Admin?       @relation("ReportAssignedAdmin", fields: [assignedAdminId], references: [id])
+  resolutionAction  String?
+  resolutionNotes   String?
+  resolvedAt        DateTime?
+  adminActionTaken  String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   @@index([reporterUserId])
-  @@index([status])
+  @@index([reportedUserId])
+  @@index([reportedPostId])
+  @@index([reportedCommentId])
+  @@index([reportedRoomId])
+  @@index([status, priority])
 }
 
 model ModerationAction {
-  id         String   @id @default(uuid())
-  adminId    String
-  targetType String // "USER", "ROOM", "POST"
-  targetId   String
-  action     String
-  reason     String
-  createdAt  DateTime @default(now())
+  id           String   @id @default(uuid())
+  adminId      String
+  admin        Admin    @relation(fields: [adminId], references: [id])
+  targetType   String   // "USER", "ROOM", "POST", "COMMENT", "MESSAGE"
+  targetId     String
+  action       String
+  reason       String
+  metadataJson Json?
+  createdAt    DateTime @default(now())
+
+  @@index([adminId])
+  @@index([targetType, targetId])
 }
 
 model Restriction {
-  id        String          @id @default(uuid())
-  targetId  String // User ID or Device MAC
-  type      RestrictionType
-  reason    String
-  expiresAt DateTime?
-  createdAt DateTime        @default(now())
+  id               String          @id @default(uuid())
+  userId           String?
+  user             User?           @relation("UserRestrictions", fields: [userId], references: [id], onDelete: Cascade)
+  targetId         String          // User ID or Device MAC
+  type             RestrictionType
+  reason           String
+  startsAt         DateTime        @default(now())
+  expiresAt        DateTime?
+  status           String          @default("ACTIVE") // "ACTIVE", "EXPIRED", "LIFTED"
+  liftedAt         DateTime?
+  liftedByAdminId  String?
+  liftReason       String?
+  createdByAdminId String?
+  createdByAdmin   Admin?          @relation("AdminCreatedRestrictions", fields: [createdByAdminId], references: [id])
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([userId, status, expiresAt])
+  @@index([targetId, type, status])
 }
 
 model BlockedDevice {
@@ -1244,11 +1484,141 @@ model PolicyConfiguration {
 }
 
 model PaymentProvider {
-  id         String   @id @default(uuid())
-  name       String   @unique // "STRIPE", "BRAINTREE", "PAYPAL"
-  apiKey     String
-  apiSecret  String
-  webhookUrl String?
-  isActive   Boolean  @default(true)
-  updatedAt  DateTime @updatedAt
+  id                     String   @id @default(uuid())
+  name                   String   @unique // "STRIPE", "BRAINTREE", "PAYPAL", "BINANCE_PAY", "EASYPAISA", "JAZZCASH"
+  apiKey                 String?
+  apiSecret              String?
+  encryptedApiKey        String?
+  encryptedApiSecret     String?
+  webhookUrl             String?
+  webhookSecret          String?
+  encryptedWebhookSecret String?
+  feeDescription         String?
+  limitsDescription      String?
+  isSandbox              Boolean  @default(true)
+  isActive               Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 }
+
+model Banner {
+  id             String    @id @default(uuid())
+  title          String
+  imageUrl       String
+  destinationUrl String?
+  position       Int       @default(0)
+  isActive       Boolean   @default(true)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([isActive, position])
+}
+
+model Announcement {
+  id             String             @id @default(uuid())
+  title          String
+  body           String
+  targetAudience AnnouncementTarget @default(ALL)
+  isActive       Boolean            @default(true)
+  startsAt       DateTime?
+  endsAt         DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([isActive, targetAudience])
+}
+
+// ==========================================
+// DOMAIN O: SETTLEMENTS, PAYROLL & COMMISSIONS
+// ==========================================
+
+model SettlementPeriod {
+  id              String               @id @default(uuid())
+  periodCode      String               @unique // e.g., "2026-08-W1", "2026-08-M", "HOST-2026-09-01_2026-09-15"
+  entityType      SettlementEntityType
+  startDate       DateTime             // Inclusive [startDate, endDate)
+  endDate         DateTime             // Exclusive
+  status          SettlementStatus     @default(OPEN)
+  grossTotalCoins BigInt               @default(0)
+  grossTotalUSD   Decimal              @default(0.00) @db.Decimal(14, 2)
+  netPayableUSD   Decimal              @default(0.00) @db.Decimal(14, 2)
+  policyVersion   String               @default("v3.0.0")
+  calculatedBy    String?
+  calculatedAt    DateTime?
+  approvedBy      String?
+  approvedAt      DateTime?
+  paidAt          DateTime?
+  metadataJson    Json?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  records         SettlementRecord[]
+
+  @@index([entityType, status])
+  @@index([startDate, endDate])
+}
+
+model SettlementRecord {
+  id                   String               @id @default(uuid())
+  settlementPeriodId   String
+  settlementPeriod     SettlementPeriod     @relation(fields: [settlementPeriodId], references: [id], onDelete: Cascade)
+  recipientType        SettlementEntityType
+  recipientId          String               // HostProfile ID, Agency ID, or BDCenter ID
+  userId               String               // User ID who owns recipient wallet
+  user                 User                 @relation("UserSettlementRecords", fields: [userId], references: [id], onDelete: Cascade)
+  grossDiamondsOrCoins BigInt               @default(0)
+  grossEarningsUSD     Decimal              @default(0.00) @db.Decimal(12, 2)
+  commissionUSD        Decimal              @default(0.00) @db.Decimal(12, 2)
+  deductionsUSD        Decimal              @default(0.00) @db.Decimal(12, 2)
+  adjustmentsUSD       Decimal              @default(0.00) @db.Decimal(12, 2)
+  netPayableUSD        Decimal              @default(0.00) @db.Decimal(12, 2)
+  status               SettlementStatus     @default(CALCULATED)
+  paidTransactionId    String?
+  ledgerReferenceId    String?
+  policyVersion        String               @default("v3.0.0")
+  approvalId           String?
+  metadataJson         Json?
+  paidAt               DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  allocations          SettlementAllocation[]
+  adjustments          SettlementAdjustment[]
+
+  @@unique([settlementPeriodId, recipientType, recipientId])
+  @@index([userId, status])
+  @@index([recipientType, recipientId])
+}
+
+model SettlementAllocation {
+  id                    String           @id @default(uuid())
+  settlementRecordId    String
+  settlementRecord      SettlementRecord @relation(fields: [settlementRecordId], references: [id], onDelete: Cascade)
+  sourceTransactionType String           // "GIFT_TRANSACTION", "BASE_SALARY", "ADJUSTMENT", "AUDIO_ROOM"
+  sourceTransactionId   String           // e.g. GiftTransaction.id or unique reference
+  amountCoinsOrDiamonds BigInt           @default(0)
+  amountUSD             Decimal          @default(0.00) @db.Decimal(12, 2)
+  settledAt             DateTime         @default(now())
+
+  @@unique([sourceTransactionType, sourceTransactionId])
+  @@index([settlementRecordId])
+}
+
+model SettlementAdjustment {
+  id                 String                   @id @default(uuid())
+  settlementRecordId String
+  settlementRecord   SettlementRecord         @relation(fields: [settlementRecordId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User                     @relation("UserSettlementAdjustments", fields: [userId], references: [id], onDelete: Cascade)
+  amountUSD          Decimal                  @db.Decimal(12, 2)
+  type               SettlementAdjustmentType @default(CORRECTION)
+  reason             String
+  approvedByAdminId  String?
+  createdAt          DateTime                 @default(now())
+
+  @@index([settlementRecordId])
+  @@index([userId])
+}
+

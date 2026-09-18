@@ -885,6 +885,120 @@ export async function removeTeamMember(req, res, next) {
   }
 }
 
+export async function getAuditLogs(req, res, next) {
+  try {
+    const {
+      page = 1,
+      limit = 50,
+      search = '',
+      action = '',
+      targetEntity = '',
+      module = '',
+      targetEntityId = '',
+      targetId = '',
+      targetType = '',
+      adminId = '',
+      operatorId = '',
+      dateFrom = '',
+      dateTo = '',
+      startDate = '',
+      endDate = '',
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+    const skip = (pageNum - 1) * limitNum;
+
+    const where = {};
+    if (action) {
+      where.action = { contains: action, mode: 'insensitive' };
+    }
+
+    const effectiveModule = targetEntity || module || targetType;
+    if (effectiveModule && effectiveModule !== 'ALL' && effectiveModule !== 'All Modules') {
+      where.targetEntity = { contains: effectiveModule, mode: 'insensitive' };
+    }
+
+    const effectiveTargetId = targetEntityId || targetId;
+    if (effectiveTargetId) {
+      where.targetEntityId = effectiveTargetId;
+    }
+
+    const effectiveAdminId = adminId || operatorId;
+    if (effectiveAdminId) {
+      where.adminId = effectiveAdminId;
+    }
+
+    const effectiveDateFrom = dateFrom || startDate;
+    const effectiveDateTo = dateTo || endDate;
+    if (effectiveDateFrom || effectiveDateTo) {
+      where.createdAt = {};
+      if (effectiveDateFrom) {
+        where.createdAt.gte = new Date(effectiveDateFrom);
+      }
+      if (effectiveDateTo) {
+        where.createdAt.lte = new Date(effectiveDateTo);
+      }
+    }
+
+    if (search) {
+      where.OR = [
+        { adminName: { contains: search, mode: 'insensitive' } },
+        { action: { contains: search, mode: 'insensitive' } },
+        { targetEntity: { contains: search, mode: 'insensitive' } },
+        { targetEntityId: { contains: search, mode: 'insensitive' } },
+        { reason: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [total, logs] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({
+        where,
+        take: limitNum,
+        skip,
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Audit logs retrieved successfully',
+      data: logs,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum) || 1,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAuditLogById(req, res, next) {
+  try {
+    const { id } = req.params;
+    const log = await prisma.auditLog.findUnique({
+      where: { id },
+    });
+    if (!log) {
+      return res.status(404).json({
+        success: false,
+        message: 'Audit log entry not found',
+        error: { code: 'NOT_FOUND' },
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      data: log,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getAdmins,
   getAdminById,
@@ -904,4 +1018,8 @@ export default {
   deleteTeam,
   addTeamMember,
   removeTeamMember,
+  getAuditLogs,
+  getAuditLogById,
 };
+
+

@@ -1,17 +1,48 @@
 import { z } from 'zod';
 
 export const createSellerSchema = z.object({
-  userId: z.string().min(1, 'User ID is required'),
+  userId: z.string().optional(),
+  username: z.string().optional(),
+  email: z.string().email().optional(),
+  country: z.string().optional(),
+  countryCode: z.string().optional(),
   businessName: z.string().min(2, 'Business name must be at least 2 characters').max(100),
   profitMarginPercent: z.coerce.number().min(0, 'Profit margin must be >= 0').max(100, 'Profit margin must be <= 100').default(10.0),
   creditLimitUSD: z.coerce.number().min(0, 'Credit limit must be >= 0').default(1000.00),
+  initialCredit: z.union([z.string(), z.number()]).optional(),
+  initialCoins: z.union([z.string(), z.number()]).optional(),
 });
 
-export const updateSellerStatusSchema = z.object({
-  sellerStatus: z.enum(['ACTIVE', 'SUSPENDED'], {
-    required_error: 'Valid seller status is required (ACTIVE, SUSPENDED)',
-  }),
-  reason: z.string().max(500).optional().nullable(),
+export const updateSellerStatusSchema = z.preprocess(
+  (val) => {
+    if (!val || typeof val !== 'object') return val;
+    const rawStatus = val.sellerStatus || val.status;
+    if (!rawStatus) return val;
+    let normalized = String(rawStatus).toUpperCase().trim();
+    if (normalized === 'INACTIVE' || normalized === 'BANNED' || normalized === 'SUSPEND' || normalized === 'SUSPENDED') {
+      normalized = 'SUSPENDED';
+    } else if (normalized === 'ACTIVE' || normalized === 'ACTIVATE') {
+      normalized = 'ACTIVE';
+    }
+    return {
+      ...val,
+      sellerStatus: normalized,
+    };
+  },
+  z.object({
+    sellerStatus: z.enum(['ACTIVE', 'SUSPENDED'], {
+      required_error: 'Valid seller status is required (ACTIVE, SUSPENDED)',
+    }),
+    reason: z.string().max(500).optional().nullable(),
+  })
+);
+
+export const updateSellerSchema = z.object({
+  businessName: z.string().min(2).max(100).optional(),
+  profitMarginPercent: z.coerce.number().min(0).max(100).optional(),
+  creditLimitUSD: z.coerce.number().min(0).optional(),
+  sellerStatus: z.enum(['ACTIVE', 'SUSPENDED']).optional(),
+  countryCode: z.string().length(2).optional(),
 });
 
 export const allocateSellerCoinsSchema = z.object({

@@ -4,7 +4,7 @@
 
 import React, { createContext, useContext, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { MOCK_ROLES, ALL_PERMISSION_IDS } from '../mocks/teamsRoles.mock';
+import { DEFAULT_ROLES, ALL_PERMISSION_IDS } from '../constants/permissions';
 
 export const PermissionContext = createContext(null);
 
@@ -83,7 +83,7 @@ export function PermissionProvider({ children }) {
     if (Array.isArray(admin.effectivePermissions)) return admin.effectivePermissions;
     if (Array.isArray(admin.permissions)) return admin.permissions;
 
-    const roleObj = MOCK_ROLES.find(
+    const roleObj = DEFAULT_ROLES.find(
       (r) => r.id === admin.role || r.id === admin.roleId
     );
 

@@ -10,7 +10,9 @@ export async function findMerchantById(id, db = prisma) {
           id: true,
           username: true,
           email: true,
+          countryCode: true,
           profile: true,
+          wallet: true,
         },
       },
     },
@@ -21,6 +23,18 @@ export async function findMerchantByUserId(userId, db = prisma) {
   if (!userId) return null;
   return await db.merchant.findUnique({
     where: { userId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          countryCode: true,
+          profile: true,
+          wallet: true,
+        },
+      },
+    },
   });
 }
 
@@ -36,13 +50,16 @@ export async function findMerchants(
   db = prisma
 ) {
   const where = {};
-  if (status) where.status = status;
+  if (status) {
+    where.status = status.toUpperCase();
+  }
 
   if (search) {
     where.OR = [
       { companyName: { contains: search, mode: 'insensitive' } },
       { user: { username: { contains: search, mode: 'insensitive' } } },
       { user: { email: { contains: search, mode: 'insensitive' } } },
+      { user: { id: { contains: search, mode: 'insensitive' } } },
     ];
   }
 
@@ -59,7 +76,9 @@ export async function findMerchants(
             id: true,
             username: true,
             email: true,
+            countryCode: true,
             profile: true,
+            wallet: true,
           },
         },
       },
@@ -89,6 +108,18 @@ export async function createMerchant(data, db = prisma) {
       totalSpentUSD: data.totalSpentUSD !== undefined ? data.totalSpentUSD : 0.00,
       status: data.status || 'ACTIVE',
     },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          countryCode: true,
+          profile: true,
+          wallet: true,
+        },
+      },
+    },
   });
 }
 
@@ -100,6 +131,35 @@ export async function updateMerchant(id, data, db = prisma) {
   return await db.merchant.update({
     where: { id },
     data: updateData,
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          countryCode: true,
+          profile: true,
+          wallet: true,
+        },
+      },
+    },
+  });
+}
+
+export async function deleteMerchant(id, db = prisma) {
+  return await db.$transaction(async (tx) => {
+    const merchant = await tx.merchant.findUnique({ where: { id } });
+    if (!merchant) return null;
+
+    // Revert user userType to USER
+    await tx.user.update({
+      where: { id: merchant.userId },
+      data: { userType: 'USER' },
+    }).catch(() => {});
+
+    return await tx.merchant.delete({
+      where: { id },
+    });
   });
 }
 
@@ -110,4 +170,5 @@ export default {
   findMerchants,
   createMerchant,
   updateMerchant,
+  deleteMerchant,
 };

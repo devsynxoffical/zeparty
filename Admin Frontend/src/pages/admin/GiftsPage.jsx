@@ -11,11 +11,12 @@ import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Modal, ConfirmDialog } from '../../components/ui/Modal';
 import { Select } from '../../components/ui/Select';
-import { GIFT_CATEGORIES } from '../../mocks/gifts.mock';
+const GIFT_CATEGORIES = ['Basic', 'Premium', 'Special', 'Exclusive', 'Luxury', 'Animated', 'Lucky', 'Event'];
 import {
   getGifts,
   createGift,
   updateGift,
+  deleteGift,
 } from '../../services/modules/gifts.service';
 import { GeographicInheritancePanel } from '../../components/ui/GeographicInheritancePanel';
 import { useAuditLog } from '../../context/AuditLogContext';
@@ -120,35 +121,49 @@ export function GiftsPage() {
     setTimeout(() => setFeedback(null), 3500);
   };
 
-  // Load on mount
-  useEffect(() => {
+  const fetchGiftsData = () => {
+    setIsLoading(true);
     getGifts()
       .then((data) => {
         const formatted = data.map((g) => ({
           ...g,
           scope: g.scope || 'GLOBAL',
           overrideValue: g.overrideValue || '',
-          inheritedValue: g.inheritedValue || `${g.diamondPrice} diamonds`
+          inheritedValue: g.inheritedValue || `${g.diamondPrice || g.coinValue || 0} diamonds`
         }));
         setGifts(formatted);
       })
       .finally(() => setIsLoading(false));
+  };
+
+  // Load on mount
+  useEffect(() => {
+    fetchGiftsData();
   }, []);
 
   // Save callback from modal
   function handleSave(updated, mode) {
-    if (mode === 'create') {
-      setGifts((prev) => [updated, ...prev]);
-    } else {
-      setGifts((prev) => prev.map((g) => (g.id === updated.id ? updated : g)));
-    }
+    fetchGiftsData();
   }
 
   async function handleDelete() {
     if (!deleteModal.gift) return;
     setIsDeleting(true);
     try {
-      setGifts((prev) => prev.filter((g) => g.id !== deleteModal.gift.id));
+      await deleteGift(deleteModal.gift.id);
+      await logAdminAction({
+        action: 'GIFT_DELETED',
+        module: 'Virtual Store',
+        targetType: 'gift',
+        targetId: deleteModal.gift.id,
+        targetName: deleteModal.gift.name,
+        reason: 'Gift deleted by administrator',
+        riskLevel: 'HIGH',
+      });
+      fetchGiftsData();
+      showFeedback(`Gift "${deleteModal.gift.name}" deleted.`);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to delete gift');
     } finally {
       setIsDeleting(false);
       setDeleteModal({ open: false, gift: null });
@@ -159,37 +174,35 @@ export function GiftsPage() {
     setInheritanceModal({ open: true, gift });
     setScope(gift.scope || 'GLOBAL');
     setOverrideValue(gift.overrideValue || '');
-    setInheritedValue(gift.inheritedValue || `${gift.diamondPrice} diamonds`);
+    setInheritedValue(gift.inheritedValue || `${gift.diamondPrice || gift.coinValue || 0} diamonds`);
   };
 
   const handleSaveInheritance = async () => {
     const { gift } = inheritanceModal;
     if (!gift) return;
 
-    setGifts((prev) => prev.map((g) => {
-      if (g.id === gift.id) {
-        return {
-          ...g,
-          scope,
-          overrideValue,
-          diamondPrice: overrideValue && !isNaN(parseInt(overrideValue)) ? parseInt(overrideValue) : g.diamondPrice
-        };
-      }
-      return g;
-    }));
+    try {
+      const newPrice = overrideValue && !isNaN(parseInt(overrideValue)) ? parseInt(overrideValue) : (gift.diamondPrice || gift.coinValue);
+      await updateGift(gift.id, {
+        coinValue: newPrice,
+      });
 
-    await logAdminAction({
-      action: 'GIFT_PRICING_INHERITANCE_UPDATED',
-      module: 'Virtual Store',
-      targetType: 'gift',
-      targetId: gift.id,
-      targetName: gift.name,
-      reason: `Set scope to ${scope} with override: ${overrideValue}`,
-      riskLevel: 'MEDIUM',
-    });
+      await logAdminAction({
+        action: 'GIFT_PRICING_INHERITANCE_UPDATED',
+        module: 'Virtual Store',
+        targetType: 'gift',
+        targetId: gift.id,
+        targetName: gift.name,
+        reason: `Set scope to ${scope} with override: ${overrideValue}`,
+        riskLevel: 'MEDIUM',
+      });
 
-    showFeedback(`Inheritance pricing updated for ${gift.name}.`);
-    setInheritanceModal({ open: false, gift: null });
+      fetchGiftsData();
+      showFeedback(`Inheritance pricing updated for ${gift.name}.`);
+      setInheritanceModal({ open: false, gift: null });
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to save inheritance');
+    }
   };
 
   const handleResetScope = (resetScope) => {

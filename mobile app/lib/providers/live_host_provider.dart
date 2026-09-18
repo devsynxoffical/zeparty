@@ -13,49 +13,7 @@ class LiveHostProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get auditLogs => List.unmodifiable(_auditLogs);
 
   LiveHostProvider() {
-    _initMockData();
-  }
-
-  void _initMockData() {
-    final now = DateTime.now();
-    _applications.add(LiveHostApplicationModel(
-      id: 'app_lh_101',
-      userId: 'user_1001',
-      legalName: 'Danial Khan',
-      displayName: 'Danial Official Live',
-      dateOfBirth: '1998-05-12',
-      gender: 'Male',
-      country: 'GLOBAL',
-      city: 'Capital City',
-      languages: 'English, Urdu',
-      category: 'Music & Talk',
-      schedule: 'Daily 20:00 - 23:00 GMT',
-      phoneOrEmail: '+1234567890',
-      govIdType: 'National ID',
-      govIdNumber: 'ID-99882211',
-      frontIdUrl: 'https://example.com/id_front.jpg',
-      backIdUrl: 'https://example.com/id_back.jpg',
-      selfieUrl: 'https://example.com/selfie.jpg',
-      status: 'Approved',
-      submittedAt: now.subtract(const Duration(days: 30)),
-    ));
-
-    _activeLiveHost = LiveHostModel(
-      liveHostId: 'lh_9901',
-      userId: 'user_1001',
-      displayName: 'Danial Official Live',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-      countryCode: 'GLOBAL',
-      status: 'Active',
-      approvalDate: now.subtract(const Duration(days: 30)),
-      currentLevel: 4,
-      achievedDiamonds: 260000,
-      completedValidDays: 10,
-      dailyLiveMinutes: 75, // Requires 60 mins (1h) verified live streaming per valid day
-      isTodayValid: true,
-      pendingSalaryUsd: 20.0,
-      availableSalaryUsd: 80.0,
-    );
+    // Clean initial state for authentic live host data
   }
 
   LiveHostApplicationModel? getApplicationByUserId(String userId) {

@@ -3,7 +3,7 @@
 // 2026 Developer Specification Alignment
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sparkles, CheckCircle, XCircle, RefreshCw, Eye, Archive, Ban, FileText, AlertCircle, Save } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -12,69 +12,55 @@ import { DataTable } from '../../components/tables/DataTable';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { useAuditLog } from '../../context/AuditLogContext';
-
-const INITIAL_THEMES = [
-  {
-    id: 'thm-001',
-    themeName: 'Cyberpunk Neon Party',
-    assetId: 'ast-902',
-    creator: 'PixelVibe Studio',
-    category: 'Entertainment',
-    scope: 'GLOBAL',
-    priceUSD: 4.99,
-    status: 'pending',
-    submittedAt: '2026-08-23T10:30:00Z',
-    imageUrl: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=300&auto=format&fit=crop',
-    filesCount: 12,
-    version: '1.0.0',
-    auditTrail: [
-      { action: 'Submitted', operator: 'PixelVibe Studio', timestamp: '2026-08-23T10:30:00Z', note: 'Initial release bundle' }
-    ]
-  },
-  {
-    id: 'thm-002',
-    themeName: 'Classical Luxury VIP Room',
-    assetId: 'ast-883',
-    creator: 'Royal Designs',
-    category: 'Talk Show',
-    scope: 'REGION (Asia)',
-    priceUSD: 0.00, // Free
-    status: 'under_review',
-    submittedAt: '2026-08-22T14:15:00Z',
-    imageUrl: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=300&auto=format&fit=crop',
-    filesCount: 8,
-    version: '2.1.0',
-    auditTrail: [
-      { action: 'Submitted', operator: 'Royal Designs', timestamp: '2026-08-22T09:00:00Z', note: 'Uploaded asset file' },
-      { action: 'Assigned Reviewer', operator: 'Operations Manager', timestamp: '2026-08-22T14:15:00Z', note: 'Auto-assigned for initial QA checks' }
-    ]
-  },
-  {
-    id: 'thm-003',
-    themeName: 'Spooky Halloween Haunted Stage',
-    assetId: 'ast-741',
-    creator: 'SpookyCreations',
-    category: 'PK Battle',
-    scope: 'COUNTRY (US)',
-    priceUSD: 2.99,
-    status: 'approved',
-    submittedAt: '2026-08-20T08:00:00Z',
-    imageUrl: 'https://images.unsplash.com/photo-1508349937151-22b68b72d5b1?q=80&w=300&auto=format&fit=crop',
-    filesCount: 15,
-    version: '1.0.1',
-    auditTrail: [
-      { action: 'Approved', operator: 'Content Admin Sarah', timestamp: '2026-08-21T11:00:00Z', note: 'Staging preview matches mobile viewport' }
-    ]
-  }
-];
+import apiClient from '../../services/api';
 
 export function RoomThemeApprovalPage() {
   const { logAdminAction } = useAuditLog();
-  const [themes, setThemes] = useState(INITIAL_THEMES);
+  const [themes, setThemes] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedTheme, setSelectedTheme] = useState(null);
   const [actionModal, setActionModal] = useState({ open: false, theme: null, actionType: null });
   const [inputNote, setInputNote] = useState('');
   const [feedback, setFeedback] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    apiClient
+      .get('/v1/admin/assets', { params: { category: 'THEME' } })
+      .then((res) => {
+        if (!isMounted) return;
+        const items = res.data?.data || [];
+        const formatted = items.map((a) => ({
+          id: a.id,
+          themeName: a.name,
+          assetId: a.id,
+          creator: a.creatorName || a.uploadedBy || 'System Artist',
+          category: a.category || 'Entertainment',
+          scope: a.scope || 'GLOBAL',
+          priceUSD: Number(a.priceUSD || a.priceCoins || 0),
+          status: a.status?.toLowerCase() || 'approved',
+          submittedAt: a.createdAt,
+          imageUrl: a.url || a.thumbnailUrl || 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?q=80&w=300&auto=format&fit=crop',
+          filesCount: a.filesCount || 1,
+          version: a.version || '1.0.0',
+          auditTrail: a.auditTrail || [
+            { action: 'Created', operator: 'System', timestamp: a.createdAt || new Date().toISOString(), note: 'Asset catalog entry' }
+          ]
+        }));
+        setThemes(formatted);
+      })
+      .catch(() => {
+        if (isMounted) setThemes([]);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const showFeedback = (msg) => {
     setFeedback(msg);
@@ -281,7 +267,7 @@ export function RoomThemeApprovalPage() {
       )}
 
       <Card className="p-5">
-        <DataTable columns={columns} data={themes} isLoading={false} />
+        <DataTable columns={columns} data={themes} isLoading={isLoading} emptyTitle="No room themes submitted" emptyDescription="All uploaded themes and stage designs will appear here for review." />
       </Card>
 
       {/* Details Modal */}

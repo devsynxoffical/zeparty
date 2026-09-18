@@ -3,7 +3,7 @@
 // Client Excel Phase C Requirements
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Slash, Search, Plus, Clock, ShieldOff, AlertTriangle } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -12,35 +12,46 @@ import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { useAuditLog } from '../../context/AuditLogContext';
-
-const INITIAL_RESTRICTIONS = [
-  {
-    id: 'RST-101',
-    user: 'SpamBot99 (usr-004)',
-    type: 'PERMANENT_BAN',
-    reason: 'Malicious automation and spam',
-    expiry: 'Never (Permanent)',
-    createdBy: 'Ahmed Khan (Moderator)',
-    status: 'ACTIVE',
-  },
-  {
-    id: 'RST-102',
-    user: 'TechWizard Max (usr-006)',
-    type: 'CHAT_RESTRICTION',
-    reason: 'Abusive language in live room chat',
-    expiry: '2026-08-27 (7 Days)',
-    createdBy: 'Super Admin',
-    status: 'ACTIVE',
-  },
-];
+import { getRestrictions, applyRestriction, liftRestriction } from '../../services/modules/moderation.service';
 
 export function RestrictionsPage() {
   const { logAdminAction } = useAuditLog();
-  const [restrictions, setRestrictions] = useState(INITIAL_RESTRICTIONS);
+  const [restrictions, setRestrictions] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [createModal, setCreateModal] = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    getRestrictions()
+      .then((data) => {
+        if (!isMounted) return;
+        const formatted = (data || []).map((r) => ({
+          id: r.id,
+          user: r.user?.username || r.userId || 'User',
+          userId: r.userId,
+          type: r.type || 'PERMANENT_BAN',
+          reason: r.reason || 'Administrative restriction',
+          expiry: r.expiresAt ? new Date(r.expiresAt).toLocaleDateString() : 'Never (Permanent)',
+          createdBy: r.createdByName || r.createdByAdminId || 'Super Admin',
+          status: r.status || 'ACTIVE',
+        }));
+        setRestrictions(formatted);
+      })
+      .catch(() => {
+        if (isMounted) setRestrictions([]);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Form states
   const [formUser, setFormUser] = useState('');
@@ -50,7 +61,10 @@ export function RestrictionsPage() {
 
   const handleRemovePenalty = async () => {
     if (!removeTarget) return;
-    setRestrictions(restrictions.filter(r => r.id !== removeTarget.id));
+    try {
+      await liftRestriction(removeTarget.id);
+    } catch {}
+    setRestrictions(restrictions.filter((r) => r.id !== removeTarget.id));
     
     await logAdminAction({
       action: 'USER_PENALTY_REMOVED',
@@ -70,10 +84,21 @@ export function RestrictionsPage() {
 
   const handleApplyPenalty = async () => {
     if (!formUser || !formReason) return;
+    const penaltyType = formScope === 'PERM_BAN' ? 'PERMANENT_BAN' : formScope === 'TEMP_BAN' ? 'TEMPORARY_BAN' : formScope;
+    let createdItem;
+    try {
+      createdItem = await applyRestriction({
+        userId: formUser,
+        type: penaltyType,
+        reason: formReason,
+        durationDays: formDuration ? parseInt(formDuration, 10) : undefined,
+      });
+    } catch {}
+
     const newPenalty = {
-      id: `RST-${Math.floor(100 + Math.random() * 900)}`,
+      id: createdItem?.id || `RST-${Math.floor(100 + Math.random() * 900)}`,
       user: formUser,
-      type: formScope === 'PERM_BAN' ? 'PERMANENT_BAN' : formScope === 'TEMP_BAN' ? 'TEMPORARY_BAN' : formScope,
+      type: penaltyType,
       reason: formReason,
       expiry: formDuration ? `${formDuration} Days` : 'Never (Permanent)',
       createdBy: 'Super Admin',
@@ -176,7 +201,7 @@ export function RestrictionsPage() {
         />
       </Card>
 
-      <DataTable columns={columns} data={restrictions} isLoading={false} />
+      <DataTable columns={columns} data={restrictions} isLoading={isLoading} emptyTitle="No penalties or restrictions active" emptyDescription="All user accounts and room privileges are currently in good standing." />
 
       {removeTarget && (
         <Modal

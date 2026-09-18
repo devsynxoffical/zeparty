@@ -18,6 +18,7 @@ import {
   getRechargePlans,
   createRechargePlan,
   updateRechargePlan,
+  deleteRechargePlan,
 } from '../../services/modules/monetization.service';
 
 // ── Plan Form Modal ───────────────────────────────────────────
@@ -131,8 +132,8 @@ export function RechargePlansPage() {
   const [deleteModal, setDeleteModal] = useState({ open: false, plan: null });
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Load on mount
-  useEffect(() => {
+  const fetchPlansData = () => {
+    setIsLoading(true);
     getRechargePlans()
       .then((data) => {
         const enriched = (data || []).map((p, i) => ({
@@ -142,21 +143,25 @@ export function RechargePlansPage() {
         setPlans(enriched);
       })
       .finally(() => setIsLoading(false));
+  };
+
+  // Load on mount
+  useEffect(() => {
+    fetchPlansData();
   }, []);
 
   function handleSave(updated, mode) {
-    if (mode === 'create') {
-      setPlans((prev) => [updated, ...prev]);
-    } else {
-      setPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-    }
+    fetchPlansData();
   }
 
   async function handleDelete() {
     if (!deleteModal.plan) return;
     setIsDeleting(true);
     try {
-      setPlans((prev) => prev.filter((p) => p.id !== deleteModal.plan.id));
+      await deleteRechargePlan(deleteModal.plan.id);
+      fetchPlansData();
+    } catch (err) {
+      console.error('Failed to delete recharge plan:', err);
     } finally {
       setIsDeleting(false);
       setDeleteModal({ open: false, plan: null });

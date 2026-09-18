@@ -3,9 +3,15 @@ import 'package:flutter/material.dart';
 import '../models/gift_model.dart';
 import '../models/live_gift_event_model.dart';
 import '../models/user_model.dart';
+import '../core/repositories/gift_repository.dart';
+import '../core/services/socket_service.dart';
+import '../core/utils/performance_utils.dart';
 import 'wallet_provider.dart';
 
 class LiveGiftProvider extends ChangeNotifier {
+  final GiftRepository _giftRepository = GiftRepository.instance;
+  final SocketService _socketService = SocketService.instance;
+
   String? _activeRoomId;
   String? get activeRoomId => _activeRoomId;
 
@@ -19,6 +25,72 @@ class LiveGiftProvider extends ChangeNotifier {
 
   final Map<String, LiveGiftEventModel> _activeComboMap = {};
   final Map<String, Timer> _comboResetTimers = {};
+
+  final Set<String> _processedTransactionIds = {};
+  final Set<String> _activeSendingIdempotencyKeys = {};
+
+  List<GiftModel> _catalogGifts = [];
+  List<GiftModel> get catalogGifts =>
+      _catalogGifts.isNotEmpty ? List.unmodifiable(_catalogGifts) : GiftModel.defaultCatalog;
+
+  bool _isLoadingCatalog = false;
+  bool get isLoadingCatalog => _isLoadingCatalog;
+
+  bool _isSending = false;
+  bool get isSending => _isSending;
+
+  String? _lastError;
+  String? get lastError => _lastError;
+
+  StreamSubscription<Map<String, dynamic>>? _socketGiftSubscription;
+
+  LiveGiftProvider() {
+    _initSocketListener();
+    fetchCatalog();
+  }
+
+  void _initSocketListener() {
+    _socketGiftSubscription?.cancel();
+    _socketGiftSubscription = _socketService.onGiftSent.listen((data) {
+      final txId = data['transactionId']?.toString() ?? '';
+      if (txId.isNotEmpty && _processedTransactionIds.contains(txId)) {
+        // Already processed locally (e.g. sender triggered local animation on REST response)
+        return;
+      }
+      if (txId.isNotEmpty) {
+        _processedTransactionIds.add(txId);
+      }
+
+      try {
+        final event = LiveGiftEventModel.fromSocketJson(data);
+        receiveGiftEvent(event);
+      } catch (e) {
+        debugPrint('[LiveGiftProvider] Error parsing socket gift event: $e');
+      }
+    });
+  }
+
+  /// Fetch live gift catalog from backend API
+  Future<void> fetchCatalog({String? category, bool refresh = false}) async {
+    if (_isLoadingCatalog) return;
+    _isLoadingCatalog = true;
+    _lastError = null;
+    if (refresh) notifyListeners();
+
+    try {
+      final gifts = await _giftRepository.fetchGifts(category: category);
+      if (gifts.isNotEmpty) {
+        _catalogGifts = gifts;
+      }
+      _isLoadingCatalog = false;
+      notifyListeners();
+    } catch (e) {
+      _isLoadingCatalog = false;
+      _lastError = 'Failed to load gift catalog';
+      debugPrint('[LiveGiftProvider] Catalog fetch error: $e');
+      notifyListeners();
+    }
+  }
 
   void setActiveRoom(String roomId) {
     if (_activeRoomId != roomId) {
@@ -38,30 +110,93 @@ class LiveGiftProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Sends a gift with pre-animation wallet validation & deduction,
-  /// combo aggregation, and realtime event broadcasting.
-  bool sendGift({
+  /// Send gift to backend atomically, with server-side validation, ledger posting,
+  /// host diamond reward, Socket.IO emission, and wallet reconciliation.
+  Future<bool> sendGift({
     required WalletProvider walletProvider,
     required GiftModel gift,
     required UserModel sender,
     required UserModel receiver,
     required String roomId,
     int quantity = 1,
-  }) {
-    final totalCost = gift.diamondPrice * quantity;
+  }) async {
+    final unitPrice = gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice;
+    final totalCost = unitPrice * quantity;
 
-    // 1. Wallet Validation & Pre-animation Coin Deduction
-    final success = walletProvider.spendDiamonds(totalCost, gift.name);
-    if (!success) {
-      return false; // Insufficient balance
+    // Quick client-side check to prevent needless network roundtrips if balance is clearly low
+    if (walletProvider.coins < totalCost) {
+      _lastError = 'Insufficient coin balance ($totalCost required, ${walletProvider.coins} available)';
+      notifyListeners();
+      return false;
     }
 
+    final idempotencyKey = PerformanceUtils.generateIdempotencyKey('gift_${gift.id}');
+    if (_activeSendingIdempotencyKeys.contains(idempotencyKey)) {
+      return false; // Prevent double taps
+    }
+    _activeSendingIdempotencyKeys.add(idempotencyKey);
+    _isSending = true;
+    _lastError = null;
+    notifyListeners();
+
+    try {
+      final response = await _giftRepository.sendGift(
+        giftId: gift.id,
+        recipientUserId: receiver.id,
+        quantity: quantity,
+        roomId: roomId,
+        idempotencyKey: idempotencyKey,
+      );
+
+      _isSending = false;
+      _activeSendingIdempotencyKeys.remove(idempotencyKey);
+
+      final txId = response['transactionId']?.toString() ?? '';
+      if (txId.isNotEmpty) {
+        _processedTransactionIds.add(txId);
+      }
+
+      // Authoritative server balance reconciliation
+      walletProvider.fetchWallet();
+
+      // Trigger local animation & combo aggregation
+      _enqueueLocalComboEvent(
+        txId: txId.isNotEmpty ? txId : idempotencyKey,
+        gift: gift,
+        sender: sender,
+        receiver: receiver,
+        roomId: roomId,
+        quantity: quantity,
+      );
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _isSending = false;
+      _activeSendingIdempotencyKeys.remove(idempotencyKey);
+      _lastError = e.toString();
+      debugPrint('[LiveGiftProvider] sendGift error: $e');
+
+      // Reconcile wallet just in case
+      walletProvider.fetchWallet();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  void _enqueueLocalComboEvent({
+    required String txId,
+    required GiftModel gift,
+    required UserModel sender,
+    required UserModel receiver,
+    required String roomId,
+    required int quantity,
+  }) {
     final comboKey = '${sender.id}_${gift.id}_${receiver.id}';
     final now = DateTime.now();
 
     LiveGiftEventModel event;
 
-    // 2. Combo Aggregation Check (within 2.5s combo window)
     if (_activeComboMap.containsKey(comboKey)) {
       final existing = _activeComboMap[comboKey]!;
       final newComboCount = existing.comboCount + quantity;
@@ -74,14 +209,15 @@ class LiveGiftProvider extends ChangeNotifier {
       _activeComboMap[comboKey] = event;
       _comboResetTimers[comboKey]?.cancel();
     } else {
-      final eventId = 'gift_${now.millisecondsSinceEpoch}_${sender.id.hashCode.abs()}';
       event = LiveGiftEventModel(
-        eventId: eventId,
+        eventId: txId,
         giftId: gift.id,
         giftName: gift.name,
         giftIcon: gift.icon,
+        iconUrl: gift.iconUrl,
+        animationUrl: gift.svgaAssetUrl,
         animationLevel: gift.animationLevel,
-        giftValue: gift.diamondPrice,
+        giftValue: gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice,
         quantity: quantity,
         comboCount: quantity,
         senderId: sender.id,
@@ -97,32 +233,24 @@ class LiveGiftProvider extends ChangeNotifier {
       _activeComboMap[comboKey] = event;
     }
 
-    // 3. Set Combo Reset Timer (2.5 seconds)
     _comboResetTimers[comboKey] = Timer(const Duration(milliseconds: 2500), () {
       _activeComboMap.remove(comboKey);
       _comboResetTimers.remove(comboKey);
     });
 
-    // 4. Realtime Stream Broadcast
     _eventStreamController.add(event);
-
-    // 5. Enqueue into Priority Queue
     _enqueueEvent(event);
-
-    notifyListeners();
-    return true;
   }
 
   /// Receive realtime gift event from remote socket/server
   void receiveGiftEvent(LiveGiftEventModel event) {
-    if (_activeRoomId != null && event.roomId != _activeRoomId) return;
+    if (_activeRoomId != null && event.roomId.isNotEmpty && event.roomId != _activeRoomId) return;
     _eventStreamController.add(event);
     _enqueueEvent(event);
     notifyListeners();
   }
 
   void _enqueueEvent(LiveGiftEventModel event) {
-    // Insert higher level gifts ahead of lower level gifts
     int insertIndex = _eventQueue.length;
     for (int i = 0; i < _eventQueue.length; i++) {
       if (event.animationLevel.index > _eventQueue[i].animationLevel.index) {
@@ -154,6 +282,7 @@ class LiveGiftProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _socketGiftSubscription?.cancel();
     for (final timer in _comboResetTimers.values) {
       timer.cancel();
     }

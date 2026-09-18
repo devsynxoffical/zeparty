@@ -15,22 +15,18 @@ import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
-import { MOCK_BD_CENTERS } from '../../mocks/bdCenters.mock';
 import {
+  getHosts,
   getHostApplications,
   approveHostApplication,
   rejectHostApplication,
+  updateHostStatus,
 } from '../../services/modules/hosts.service';
 import { formatDate, formatNumber, formatCurrency } from '../../utils/format';
 import { usePermission } from '../../hooks/usePermission';
 import { useAuditLog } from '../../context/AuditLogContext';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryShortName } from '../../constants/countries.data';
-import {
-  CURRENT_LIVE_HOST_POLICY,
-  CURRENT_AUDIO_HOST_POLICY
-} from '../../mocks/policyConfig.mock';
-import { MOCK_ACTIVE_HOSTS } from '../../mocks/hosts.mock';
 
 function PolicyOverviewCard() {
   const [policyType, setPolicyType] = useState('LIVE');
@@ -44,50 +40,22 @@ function PolicyOverviewCard() {
     <Card className="p-5 border-purple-500/30 bg-purple-950/20 mb-6">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <Crown className="h-5 w-5 text-gold-400" />
-            <h2 className="text-base font-bold text-white">
-              {policyType === 'LIVE' ? 'Live Creator Host Policy (1h daily, 10 days)' : 'Social Audio Creator Policy (2h daily)'}
-            </h2>
-            <Badge variant="purple">
-              {policyType === 'LIVE' ? CURRENT_LIVE_HOST_POLICY.version : CURRENT_AUDIO_HOST_POLICY.version}
+          <div className="flex items-center gap-2 mb-1">
+            <Badge variant="primary" className="uppercase text-[10px] tracking-wider font-bold">
+              Active Host Policy
             </Badge>
-            <div className="ml-2 flex bg-slate-900 rounded-lg p-0.5 border border-slate-700">
-              <button
-                onClick={() => setPolicyType('LIVE')}
-                className={`px-2 py-0.5 text-[11px] font-bold rounded ${policyType === 'LIVE' ? 'bg-purple-600 text-white' : 'text-slate-400'}`}
-              >
-                Live Video
-              </button>
-              <button
-                onClick={() => setPolicyType('AUDIO')}
-                className={`px-2 py-0.5 text-[11px] font-bold rounded ${policyType === 'AUDIO' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
-              >
-                Social Audio
-              </button>
-            </div>
+            <span className="text-xs text-slate-400 font-mono">v2.4-Production</span>
           </div>
-          <p className="text-xs text-slate-300 mt-1 flex items-center gap-2 flex-wrap">
-            <span>Min Target: <strong className="text-gold-400">{formatNumber(minTargetCoins)} coins</strong></span> • 
-            <span>Payout Mode: <strong className="text-purple-300">{payoutMode}</strong></span> • 
-            <span>Agency Share: <strong className="text-emerald-300">{agencyShare}%</strong> (Backup: {backupShare}%)</span>
-            <button
-              onClick={() => setIsEditingPolicy(true)}
-              className="ml-2 text-[11px] underline text-purple-400 hover:text-purple-300 flex items-center gap-1 font-semibold"
-            >
-              <Settings className="h-3 w-3" /> Edit Policy
-            </button>
+          <h3 className="text-base font-bold text-white">Host Tier & Bi-Monthly Payout Economics</h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Default 15-day payout settlement cycle · Minimum host target: <strong className="text-gold-400">{formatNumber(minTargetCoins)} coins</strong>
           </p>
         </div>
-
-        <div className="flex flex-wrap gap-2 text-xs">
-          {(policyType === 'LIVE' ? CURRENT_LIVE_HOST_POLICY.tiers : CURRENT_AUDIO_HOST_POLICY.tiers).slice(0, 4).map((t) => (
-            <div key={t.level || t.label} className="bg-slate-900/90 border border-slate-700/80 px-2.5 py-1.5 rounded-lg text-center">
-              <p className="text-slate-400 font-bold text-[11px]">Level {t.level || t.label}</p>
-              <p className="text-gold-400 font-bold">{formatNumber(t.targetDiamonds || t.targetCoins)}</p>
-              <p className="text-[10px] text-emerald-400">Salary: ${t.basicSalaryUSD || t.dailyRewardUSD}</p>
-            </div>
-          ))}
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setIsEditingPolicy(true)}>
+            <Settings className="w-3.5 h-3.5 mr-1.5" />
+            Configure Policy
+          </Button>
         </div>
       </div>
 
@@ -153,7 +121,7 @@ export function HostsPage() {
   const typeParam = searchParams.get('type') || 'live';
 
   const [activeTab, setActiveTab] = useState('management'); // 'management' | 'applications'
-  const [activeHosts, setActiveHosts] = useState(MOCK_ACTIVE_HOSTS);
+  const [activeHosts, setActiveHosts] = useState([]);
   const [applications, setApplications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -174,10 +142,46 @@ export function HostsPage() {
   const [agencyModal, setAgencyModal] = useState({ open: false, host: null, newAgencyName: '', bdCenterId: '', action: 'bind' });
   const [feedback, setFeedback] = useState(null);
 
+  const fetchHostsData = () => {
+    setIsLoading(true);
+    Promise.allSettled([
+      getHosts(),
+      getHostApplications(),
+    ]).then(([hostsRes, appsRes]) => {
+      if (hostsRes.status === 'fulfilled') {
+        const rawHosts = hostsRes.value || [];
+        setActiveHosts(rawHosts.map(h => ({
+          id: h.id,
+          hostId: h.id,
+          userId: h.userId,
+          name: h.user?.profile?.displayName || h.user?.username || `Host ${h.id.slice(0, 6)}`,
+          hostName: h.user?.profile?.displayName || h.user?.username || `Host ${h.id.slice(0, 6)}`,
+          username: h.user?.username || `@${h.id.slice(0, 6)}`,
+          country: h.user?.profile?.country || 'US',
+          status: (h.hostStatus || h.status || 'ACTIVE').toLowerCase(),
+          category: h.hostType || h.category || 'LIVE_HOST',
+          hostType: h.hostType || 'LIVE_HOST',
+          agency: h.agency?.name || 'Independent',
+          agencyId: h.agencyId || null,
+          bdCenterId: h.agency?.bdCenterId || null,
+          currentDiamonds: Number(h.totalDiamondsEarnedMonth || 0),
+          targetCoins: Number(h.monthlyTargetCoins || 120000),
+          liveHours: Number(h.liveHoursMonth || 0),
+          validDays: Number(h.validDaysMonth || 0),
+          payoutTier: h.tier || 'Tier 1',
+          joinedAt: h.createdAt,
+          warnings: [],
+        })));
+      }
+      if (appsRes.status === 'fulfilled') {
+        setApplications(appsRes.value || []);
+      }
+      setIsLoading(false);
+    });
+  };
+
   useEffect(() => {
-    getHostApplications()
-      .then((data) => setApplications(data))
-      .finally(() => setIsLoading(false));
+    fetchHostsData();
   }, []);
 
   const showFeedback = (msg) => {
@@ -190,19 +194,23 @@ export function HostsPage() {
   // Toggle active/suspended status
   const handleToggleHostStatus = async (host) => {
     const newStatus = host.status === 'active' ? 'suspended' : 'active';
-    setActiveHosts((prev) => prev.map((h) => (h.id === host.id ? { ...h, status: newStatus } : h)));
+    try {
+      await updateHostStatus(host.id, newStatus.toUpperCase());
+      await logAdminAction({
+        action: `HOST_${newStatus.toUpperCase()}`,
+        module: 'Hosts',
+        targetType: 'host',
+        targetId: host.id,
+        targetName: host.hostName || host.name,
+        reason: `Administrator set status to ${newStatus}`,
+        riskLevel: 'MEDIUM',
+      });
 
-    await logAdminAction({
-      action: `HOST_${newStatus.toUpperCase()}`,
-      module: 'Hosts',
-      targetType: 'host',
-      targetId: host.id,
-      targetName: host.hostName,
-      reason: `Administrator set status to ${newStatus}`,
-      riskLevel: 'MEDIUM',
-    });
-
-    showFeedback(`${host.hostName} status updated to ${newStatus}.`);
+      fetchHostsData();
+      showFeedback(`${host.hostName || host.name} status updated to ${newStatus}.`);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to update host status');
+    }
   };
 
   // Issue warning
@@ -308,19 +316,23 @@ export function HostsPage() {
 
   // Approve/reject host application
   const handleApproveApplication = async (appId) => {
-    await approveHostApplication(appId);
-    setApplications((prev) =>
-      prev.map((a) => (a.id === appId ? { ...a, status: 'approved' } : a))
-    );
-    showFeedback(`Host application ${appId} approved.`);
+    try {
+      await approveHostApplication(appId);
+      fetchHostsData();
+      showFeedback(`Host application ${appId} approved.`);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to approve application');
+    }
   };
 
   const handleRejectApplication = async (appId) => {
-    await rejectHostApplication(appId, 'Application did not satisfy standards.');
-    setApplications((prev) =>
-      prev.map((a) => (a.id === appId ? { ...a, status: 'rejected' } : a))
-    );
-    showFeedback(`Host application ${appId} rejected.`);
+    try {
+      await rejectHostApplication(appId, 'Application did not satisfy standards.');
+      fetchHostsData();
+      showFeedback(`Host application ${appId} rejected.`);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to reject application');
+    }
   };
 
   // Filtered lists

@@ -75,8 +75,8 @@ export async function getApprovals({ status, module, requesterId, page = 1, limi
 /**
  * Retrieves a single approval by ID.
  */
-export async function getApprovalById(id) {
-  const approval = await approvalRepository.findById(id);
+export async function getApprovalById(id, db = prisma) {
+  const approval = await approvalRepository.findById(id, db);
   if (!approval) {
     const error = new Error('Approval request not found');
     error.status = 404;

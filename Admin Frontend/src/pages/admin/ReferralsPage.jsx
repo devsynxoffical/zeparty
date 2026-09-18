@@ -3,7 +3,7 @@
 // 2026 Developer Specification Alignment
 // ============================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Share2, Search, Gift, ShieldAlert, CheckCircle, ShieldX, Globe, Settings } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -15,37 +15,50 @@ import { GeographicInheritancePanel } from '../../components/ui/GeographicInheri
 import { useAuditLog } from '../../context/AuditLogContext';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryShortName } from '../../constants/countries.data';
-
-const INITIAL_REFERRALS = [
-  {
-    id: 'REF-801',
-    referralCode: 'ZE-LUNA-88',
-    inviter: 'StarQueen Luna (usr-001)',
-    invitee: 'NewUser_99',
-    rewardEarnedCoins: 200,
-    status: 'COMPLETED',
-    fraudRisk: 'CLEARED',
-    date: '2026-08-19',
-    country: 'US',
-  },
-  {
-    id: 'REF-802',
-    referralCode: 'ZE-SPAM-99',
-    inviter: 'SuspiciousInviter (usr-821)',
-    invitee: 'Bot_001a',
-    rewardEarnedCoins: 200,
-    status: 'SUSPICIOUS',
-    fraudRisk: 'FLAGGED',
-    date: '2026-08-20',
-    country: 'CN',
-  },
-];
+import apiClient from '../../services/api';
 
 export function ReferralsPage() {
   const { logAdminAction } = useAuditLog();
-  const [referrals, setReferrals] = useState(INITIAL_REFERRALS);
+  const [referrals, setReferrals] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedRef, setSelectedRef] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    apiClient
+      .get('/v1/admin/users', { params: { limit: 50 } })
+      .then((res) => {
+        if (!isMounted) return;
+        // Referrals are tracked if user has referredById
+        const users = res.data?.data || [];
+        const formatted = users
+          .filter((u) => u.referredById || u.referralCode)
+          .map((u) => ({
+            id: `REF-${u.id.slice(0, 6)}`,
+            referralCode: u.referralCode || `ZE-${u.username.toUpperCase()}`,
+            inviter: u.referredBy?.username || u.referredById || 'System Host',
+            invitee: u.username,
+            rewardEarnedCoins: Number(u.referralCoins || 0),
+            status: u.status === 'ACTIVE' ? 'COMPLETED' : 'SUSPICIOUS',
+            fraudRisk: u.status === 'ACTIVE' ? 'CLEARED' : 'FLAGGED',
+            date: u.createdAt ? new Date(u.createdAt).toISOString().slice(0, 10) : '',
+            country: u.country || 'US',
+          }));
+        setReferrals(formatted);
+      })
+      .catch(() => {
+        if (isMounted) setReferrals([]);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   
   // Inheritance config state
   const [scope, setScope] = useState('GLOBAL');
@@ -214,7 +227,7 @@ export function ReferralsPage() {
         />
       </Card>
 
-      <DataTable columns={columns} data={filtered} isLoading={false} />
+      <DataTable columns={columns} data={filtered} isLoading={isLoading} emptyTitle="No referral records found" emptyDescription="No user referral conversions recorded yet." />
 
       {/* Rewards Configuration Modal */}
       {configModal && (

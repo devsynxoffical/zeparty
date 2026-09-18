@@ -33,4 +33,10 @@ router.delete('/teams/:id', requirePermission('manage_admins'), adminController.
 router.post('/teams/:id/members', requirePermission('manage_admins'), adminController.addTeamMember);
 router.delete('/teams/:id/members/:adminId', requirePermission('manage_admins'), adminController.removeTeamMember);
 
+// Audit Logs Route
+router.get('/audit-logs', requirePermission('view_audit_logs'), adminController.getAuditLogs);
+router.get('/audit-logs/:id', requirePermission('view_audit_logs'), adminController.getAuditLogById);
+
 export default router;
+
+

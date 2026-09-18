@@ -15,6 +15,7 @@ router.get('/transactions', requirePermission('view_ledger'), financeController.
 router.get('/recharge/plans', requirePermission('view_recharge_plans'), financeController.getRechargePlans);
 router.post('/recharge/plans', requirePermission('manage_recharge_plans'), financeController.createRechargePlan);
 router.patch('/recharge/plans/:id', requirePermission('manage_recharge_plans'), financeController.updateRechargePlan);
+router.delete('/recharge/plans/:id', requirePermission('manage_recharge_plans'), financeController.deleteRechargePlan);
 
 // Offline Recharge Verification
 router.get('/recharge/offline', requirePermission('view_offline_recharge'), financeController.getOfflineRecharges);
@@ -49,10 +50,21 @@ router.post(
 // Coin Dispute Refunds
 router.get('/refunds/coins', requirePermission('view_refunds'), financeController.getCoinRefunds);
 router.post(
+  '/refunds/coins',
+  idempotencyMiddleware,
+  financeController.submitCoinRefund
+);
+router.post(
   '/refunds/coins/:id/process',
   requirePermission('approve_refunds'),
   idempotencyMiddleware,
   financeController.processCoinRefund
+);
+router.post(
+  '/refunds/coins/:id/reject',
+  requirePermission('approve_refunds'),
+  idempotencyMiddleware,
+  financeController.rejectCoinRefund
 );
 
 export default router;

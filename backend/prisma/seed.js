@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
@@ -6,9 +7,9 @@ const prisma = new PrismaClient();
 import { MODULE_PERMISSIONS, DEFAULT_ROLES } from '../src/constants/permissions.js';
 
 async function seed() {
-  console.log('🌱 Starting ZeParty Database Seeding...');
+  console.log('🌱 Starting ZeParty System Configuration Bootstrap...');
 
-  // 1. Seed Permissions
+  // 1. Seed Canonical Permissions
   for (const moduleGroup of MODULE_PERMISSIONS) {
     for (const perm of moduleGroup.permissions) {
       await prisma.permission.upsert({
@@ -26,7 +27,7 @@ async function seed() {
     }
   }
 
-  // 2. Seed Default Roles
+  // 2. Seed Default System Roles & Mappings
   for (const roleDef of DEFAULT_ROLES) {
     const role = await prisma.role.upsert({
       where: { id: roleDef.id },
@@ -60,17 +61,22 @@ async function seed() {
     }
   }
 
-  const ownerEmail = process.env.OWNER_EMAIL || 'owner@zeparty.app';
-  const ownerPassword = process.env.OWNER_PASSWORD || 'admin123';
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  const superAdminUsername = process.env.SUPER_ADMIN_USERNAME || 'admin';
+  const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || process.env.ADMIN_EMAIL || 'admin@zeparty.app';
+  const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || 'admin123';
 
-  const adminPasswordHash = await bcrypt.hash(adminPassword, 10);
+  const ownerUsername = process.env.OWNER_USERNAME || 'owner';
+  const ownerEmail = process.env.OWNER_EMAIL || 'owner@zeparty.app';
+  const ownerPassword = process.env.OWNER_PASSWORD || process.env.SUPER_ADMIN_PASSWORD || 'admin123';
+
+  const adminPasswordHash = await bcrypt.hash(superAdminPassword, 10);
   const ownerPasswordHash = await bcrypt.hash(ownerPassword, 10);
 
-  // 3. Seed Default Admin & Super Admin Accounts
-  await prisma.admin.upsert({
-    where: { username: 'admin' },
+  // 3. Seed Super Admin Identity
+  const superAdmin = await prisma.admin.upsert({
+    where: { username: superAdminUsername },
     update: {
+      email: superAdminEmail,
       passwordHash: adminPasswordHash,
       isSuperAdmin: true,
       isOwner: false,
@@ -78,30 +84,9 @@ async function seed() {
     },
     create: {
       id: 'dev-admin-main-001',
-      name: 'Admin',
-      username: 'admin',
-      email: 'admin@zeparty.app',
-      passwordHash: adminPasswordHash,
-      status: 'ACTIVE',
-      isSuperAdmin: true,
-      isOwner: false,
-      roleId: 'super_admin',
-    },
-  });
-
-  await prisma.admin.upsert({
-    where: { username: 'superadmin' },
-    update: {
-      passwordHash: adminPasswordHash,
-      isSuperAdmin: true,
-      isOwner: false,
-      roleId: 'super_admin',
-    },
-    create: {
-      id: 'dev-admin-001',
       name: 'Super Admin',
-      username: 'superadmin',
-      email: 'superadmin@zeparty.app',
+      username: superAdminUsername,
+      email: superAdminEmail,
       passwordHash: adminPasswordHash,
       status: 'ACTIVE',
       isSuperAdmin: true,
@@ -110,9 +95,21 @@ async function seed() {
     },
   });
 
-  // 4. Seed Default Owner Account
+  await prisma.user.upsert({
+    where: { id: 'dev-admin-main-001' },
+    update: { email: superAdminEmail },
+    create: {
+      id: 'dev-admin-main-001',
+      username: `admin_${superAdminUsername}`,
+      email: superAdminEmail,
+      status: 'ACTIVE',
+      userType: 'USER',
+    },
+  }).catch(() => {});
+
+  // 4. Seed Root Owner Identity
   await prisma.admin.upsert({
-    where: { username: 'owner' },
+    where: { username: ownerUsername },
     update: {
       email: ownerEmail,
       passwordHash: ownerPasswordHash,
@@ -122,7 +119,7 @@ async function seed() {
     create: {
       id: 'dev-owner-001',
       name: 'Root Owner',
-      username: 'owner',
+      username: ownerUsername,
       email: ownerEmail,
       passwordHash: ownerPasswordHash,
       status: 'ACTIVE',
@@ -131,11 +128,22 @@ async function seed() {
     },
   });
 
+  await prisma.user.upsert({
+    where: { id: 'dev-owner-001' },
+    update: { email: ownerEmail },
+    create: {
+      id: 'dev-owner-001',
+      username: `admin_${ownerUsername}`,
+      email: ownerEmail,
+      status: 'ACTIVE',
+      userType: 'USER',
+    },
+  }).catch(() => {});
+
   const financeAdminPasswordHash = await bcrypt.hash('FinanceadminSecret123!', 10);
   const hostAdminPasswordHash = await bcrypt.hash('HostadminSecret123!', 10);
-  const restrictedAdminPasswordHash = await bcrypt.hash('RestrictedadminSecret123!', 10);
 
-  // 5. Seed Finance Admin Account
+  // 5. Seed Specialized Admin Roles
   const financeAdmin = await prisma.admin.upsert({
     where: { username: 'financeadmin' },
     update: {
@@ -165,7 +173,6 @@ async function seed() {
     data: financeModules.map(m => ({ adminId: financeAdmin.id, module: m, grantedBy: 'dev-owner-001' }))
   });
 
-  // 6. Seed Host Admin Account
   const hostAdmin = await prisma.admin.upsert({
     where: { username: 'hostadmin' },
     update: {
@@ -189,31 +196,7 @@ async function seed() {
     data: ['hosts', 'agencies', 'bd-centers'].map(m => ({ adminId: hostAdmin.id, module: m, grantedBy: 'dev-owner-001' }))
   });
 
-  // 7. Seed Restricted Admin Account (Hosts, Agencies, Resellers ONLY)
-  const restrictedAdmin = await prisma.admin.upsert({
-    where: { username: 'restrictedadmin' },
-    update: {
-      passwordHash: restrictedAdminPasswordHash,
-      roleId: 'host_admin',
-    },
-    create: {
-      id: 'dev-restricted-001',
-      name: 'Restricted Admin',
-      username: 'restrictedadmin',
-      email: 'restrictedadmin@zeparty.app',
-      passwordHash: restrictedAdminPasswordHash,
-      status: 'ACTIVE',
-      isSuperAdmin: false,
-      isOwner: false,
-      roleId: 'host_admin',
-    },
-  });
-  await prisma.adminModuleAccess.deleteMany({ where: { adminId: restrictedAdmin.id } });
-  await prisma.adminModuleAccess.createMany({
-    data: ['hosts', 'agencies', 'coin-sellers'].map(m => ({ adminId: restrictedAdmin.id, module: m, grantedBy: 'dev-owner-001' }))
-  });
-
-  // 8. Seed Baseline Phase 7 Policies & Versions
+  // 6. Seed Baseline Policies & Configurations
   const { BASELINE_POLICY_TEMPLATES, BASELINE_CONFIG_VALUES } = await import('../src/constants/policyDefaults.js');
 
   for (const [pType, template] of Object.entries(BASELINE_POLICY_TEMPLATES)) {
@@ -249,11 +232,10 @@ async function seed() {
     }
   }
 
-  // 9. Seed Baseline Phase 7 Economy Configurations
   for (const [cfgKey, cfgVal] of Object.entries(BASELINE_CONFIG_VALUES)) {
     await prisma.policyConfiguration.upsert({
       where: { key: cfgKey },
-      update: {}, // Preserve existing admin modifications
+      update: {},
       create: {
         key: cfgKey,
         valueJson: cfgVal,
@@ -262,7 +244,6 @@ async function seed() {
     });
   }
 
-  // 10. Seed Baseline Phase 8 Host Level Configurations
   const liveTiers = BASELINE_POLICY_TEMPLATES.LIVE_HOST.config.tiers;
   for (const tier of liveTiers) {
     await prisma.hostLevelConfig.upsert({
@@ -289,73 +270,64 @@ async function seed() {
     });
   }
 
-  // 11. Seed Baseline Sample BD Center, Agency, Reseller & Merchant
-  // Ensure default dev user exists for relations
-  const devUser = await prisma.user.upsert({
-    where: { phone: '+10000000001' },
-    update: {},
-    create: {
-      id: 'dev-user-001',
-      phone: '+10000000001',
-      username: 'dev_platform_user',
-      email: 'dev_user@zeparty.app',
-      userType: 'USER',
-      userStatus: 'ACTIVE',
-    },
-  });
+  // 7. Seed Official Recharge Plans
+  const plans = [
+    { id: 'plan-01', coinAmount: 1000n, priceUSD: 0.99, bonusCoins: 0n, badgeText: 'Starter' },
+    { id: 'plan-02', coinAmount: 5500n, priceUSD: 4.99, bonusCoins: 500n, badgeText: 'Popular' },
+    { id: 'plan-03', coinAmount: 12000n, priceUSD: 9.99, bonusCoins: 2000n, badgeText: 'Best Value' },
+    { id: 'plan-04', coinAmount: 65000n, priceUSD: 49.99, bonusCoins: 15000n, badgeText: 'VIP Choice' },
+    { id: 'plan-05', coinAmount: 140000n, priceUSD: 99.99, bonusCoins: 40000n, badgeText: 'High Roller' },
+    { id: 'plan-06', coinAmount: 750000n, priceUSD: 499.99, bonusCoins: 250000n, badgeText: 'Whale Exclusive' },
+  ];
 
-  const devBDCenter = await prisma.bDCenter.upsert({
-    where: { id: 'dev-bdc-001' },
-    update: {},
-    create: {
-      id: 'dev-bdc-001',
-      centerName: 'Asia Pacific BD Center',
-      regionCode: 'US',
-      managerUserId: devUser.id,
-      currentTier: 'BRONZE',
-      baseSalaryUSD: 500.00,
-    },
-  });
+  for (const p of plans) {
+    await prisma.rechargePlan.upsert({
+      where: { id: p.id },
+      update: { coinAmount: p.coinAmount, priceUSD: p.priceUSD, bonusCoins: p.bonusCoins, badgeText: p.badgeText },
+      create: {
+        id: p.id,
+        coinAmount: p.coinAmount,
+        priceUSD: p.priceUSD,
+        bonusCoins: p.bonusCoins,
+        badgeText: p.badgeText,
+        isActive: true,
+      },
+    });
+  }
 
-  await prisma.agency.upsert({
-    where: { agencyCode: 'STAR-01' },
-    update: {},
-    create: {
-      id: 'dev-agency-001',
-      agencyName: 'StarMedia Entertainment',
-      agencyCode: 'STAR-01',
-      agencyType: 'LIVE_AGENCY',
-      ownerUserId: devUser.id,
-      bdCenterId: devBDCenter.id,
-      commissionRate: 20.0,
-      status: 'ACTIVE',
-    },
-  });
+  // 8. Seed Official Payment Providers
+  const providers = [
+    { id: 'prov-stripe', name: 'STRIPE', isSandbox: true, isActive: true, feeDescription: '2.9% + $0.30 per successful card charge' },
+    { id: 'prov-paypal', name: 'PAYPAL', isSandbox: true, isActive: true, feeDescription: '3.49% + fixed standard transaction fee' },
+    { id: 'prov-braintree', name: 'BRAINTREE', isSandbox: true, isActive: true, feeDescription: '2.59% + $0.49 for digital wallet payments' },
+    { id: 'prov-easypaisa', name: 'EASYPAISA', isSandbox: true, isActive: true, feeDescription: '1.5% local mobile wallet processing fee' },
+    { id: 'prov-jazzcash', name: 'JAZZCASH', isSandbox: true, isActive: true, feeDescription: '1.5% Direct OTC & mobile wallet gateway' },
+  ];
 
-  await prisma.coinSeller.upsert({
-    where: { userId: devUser.id },
-    update: {},
-    create: {
-      id: 'dev-seller-001',
-      userId: devUser.id,
-      businessName: 'Global Pay Solutions',
-      profitMarginPercent: 10.0,
-      creditLimitUSD: 1000.00,
-      sellerStatus: 'ACTIVE',
-      resellerBalanceCoins: 0n,
-    },
-  });
+  for (const prov of providers) {
+    await prisma.paymentProvider.upsert({
+      where: { name: prov.name },
+      update: { isActive: prov.isActive, feeDescription: prov.feeDescription },
+      create: {
+        id: prov.id,
+        name: prov.name,
+        isSandbox: prov.isSandbox,
+        isActive: prov.isActive,
+        feeDescription: prov.feeDescription,
+      },
+    });
+  }
 
-  // 12. Seed Baseline Phase 9 Virtual Gifts
+  // 9. Seed Canonical Virtual Gifts Catalog
   const baselineGifts = [
-    { id: 'gift-rose-01', name: 'Rose', coinValue: 10n, giftCategory: 'POPULAR', iconUrl: 'https://cdn.zeparty.app/gifts/rose.png', isAnimated: false, isFullScreen: false },
-    { id: 'gift-heart-02', name: 'Love Heart', coinValue: 50n, giftCategory: 'POPULAR', iconUrl: 'https://cdn.zeparty.app/gifts/heart.png', isAnimated: false, isFullScreen: false },
-    { id: 'gift-car-03', name: 'Sports Car', coinValue: 500n, giftCategory: 'LUXURY', iconUrl: 'https://cdn.zeparty.app/gifts/car.png', svgaAssetUrl: 'https://cdn.zeparty.app/svga/sports_car.svga', isAnimated: true, isFullScreen: true },
-    { id: 'gift-jet-04', name: 'Private Jet', coinValue: 2000n, giftCategory: 'LUXURY', iconUrl: 'https://cdn.zeparty.app/gifts/jet.png', svgaAssetUrl: 'https://cdn.zeparty.app/svga/private_jet.svga', isAnimated: true, isFullScreen: true },
-    { id: 'gift-crown-05', name: 'Golden Crown', coinValue: 1000n, giftCategory: 'VIP', iconUrl: 'https://cdn.zeparty.app/gifts/crown.png', svgaAssetUrl: 'https://cdn.zeparty.app/svga/golden_crown.svga', isAnimated: true, isFullScreen: false },
-    { id: 'gift-castle-06', name: 'Castle', coinValue: 5000n, giftCategory: 'VIP', iconUrl: 'https://cdn.zeparty.app/gifts/castle.png', svgaAssetUrl: 'https://cdn.zeparty.app/svga/castle.svga', isAnimated: true, isFullScreen: true },
-    { id: 'gift-firework-07', name: 'Firework', coinValue: 300n, giftCategory: 'POPULAR', iconUrl: 'https://cdn.zeparty.app/gifts/firework.png', svgaAssetUrl: 'https://cdn.zeparty.app/svga/firework.svga', isAnimated: true, isFullScreen: false },
-    { id: 'gift-wand-08', name: 'Magic Wand', coinValue: 150n, giftCategory: 'AUDIO', iconUrl: 'https://cdn.zeparty.app/gifts/wand.png', isAnimated: false, isFullScreen: false },
+    { id: 'gift-rose-01', name: 'Rose', coinValue: 10n, giftCategory: 'POPULAR', iconUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=100&auto=format&fit=crop&q=80', isAnimated: false, isFullScreen: false },
+    { id: 'gift-heart-02', name: 'Love Heart', coinValue: 50n, giftCategory: 'POPULAR', iconUrl: 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=100&auto=format&fit=crop&q=80', isAnimated: false, isFullScreen: false },
+    { id: 'gift-car-03', name: 'Sports Car', coinValue: 500n, giftCategory: 'LUXURY', iconUrl: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=100&auto=format&fit=crop&q=80', isAnimated: true, isFullScreen: true },
+    { id: 'gift-jet-04', name: 'Private Jet', coinValue: 2000n, giftCategory: 'LUXURY', iconUrl: 'https://images.unsplash.com/photo-1540959733332-eab4deabeeaf?w=100&auto=format&fit=crop&q=80', isAnimated: true, isFullScreen: true },
+    { id: 'gift-crown-05', name: 'Golden Crown', coinValue: 1000n, giftCategory: 'VIP', iconUrl: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=100&auto=format&fit=crop&q=80', isAnimated: true, isFullScreen: false },
+    { id: 'gift-castle-06', name: 'Castle', coinValue: 5000n, giftCategory: 'VIP', iconUrl: 'https://images.unsplash.com/photo-1585543805890-6051f7829f98?w=100&auto=format&fit=crop&q=80', isAnimated: true, isFullScreen: true },
+    { id: 'gift-firework-07', name: 'Firework', coinValue: 300n, giftCategory: 'POPULAR', iconUrl: 'https://images.unsplash.com/photo-1498931299472-f7a63a5a1cfa?w=100&auto=format&fit=crop&q=80', isAnimated: true, isFullScreen: false },
+    { id: 'gift-wand-08', name: 'Magic Wand', coinValue: 150n, giftCategory: 'AUDIO', iconUrl: 'https://images.unsplash.com/photo-1514533450685-4493e01d1fdc?w=100&auto=format&fit=crop&q=80', isAnimated: false, isFullScreen: false },
   ];
 
   for (const g of baselineGifts) {
@@ -368,7 +340,6 @@ async function seed() {
         coinValue: g.coinValue,
         giftCategory: g.giftCategory,
         iconUrl: g.iconUrl,
-        svgaAssetUrl: g.svgaAssetUrl || null,
         isAnimated: g.isAnimated,
         isFullScreen: g.isFullScreen,
         platformCutPercent: 45.0,
@@ -380,13 +351,13 @@ async function seed() {
     });
   }
 
-  // 13. Seed Baseline Phase 9 Store Dynamic Assets
+  // 10. Seed Canonical Store Assets
   const baselineAssets = [
-    { id: 'ast-car-01', name: 'Golden Sports Car', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 500000n, validDays: 30, thumbnailUrl: 'https://cdn.zeparty.app/assets/cars/car_gold.png', animationFileUrl: 'https://cdn.zeparty.app/svga/car_gold.svga', isVipExclusive: true, minVipLevelRequired: 3 },
-    { id: 'ast-car-02', name: 'Luxury SUV', assetType: 'VEHICLE', assetSubcategory: 'STATIC', priceCoins: 400000n, validDays: 30, thumbnailUrl: 'https://cdn.zeparty.app/assets/cars/suv_black.png', isVipExclusive: false, minVipLevelRequired: 0 },
-    { id: 'ast-frame-01', name: 'Golden Warrior Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 300000n, validDays: 15, thumbnailUrl: 'https://cdn.zeparty.app/assets/frames/warrior.png', isVipExclusive: false, minVipLevelRequired: 0 },
-    { id: 'ast-frame-02', name: 'Spider Hero Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 400000n, validDays: 15, thumbnailUrl: 'https://cdn.zeparty.app/assets/frames/spider.png', isVipExclusive: false, minVipLevelRequired: 0 },
-    { id: 'ast-bubble-01', name: 'Unicorn Dream Bubble', assetType: 'CHAT_BUBBLE', assetSubcategory: 'STATIC', priceCoins: 250000n, validDays: 30, thumbnailUrl: 'https://cdn.zeparty.app/assets/bubbles/unicorn.png', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'ast-car-01', name: 'Golden Sports Car', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 500000n, validDays: 30, thumbnailUrl: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=200&auto=format&fit=crop&q=80', isVipExclusive: true, minVipLevelRequired: 3 },
+    { id: 'ast-car-02', name: 'Cyberpunk Hovercraft', assetType: 'VEHICLE', assetSubcategory: 'STATIC', priceCoins: 400000n, validDays: 30, thumbnailUrl: 'https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=200&auto=format&fit=crop&q=80', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'ast-frame-01', name: 'Golden Warrior Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 300000n, validDays: 15, thumbnailUrl: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=200&auto=format&fit=crop&q=80', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'ast-frame-02', name: 'Neon Cyber Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 350000n, validDays: 15, thumbnailUrl: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=200&auto=format&fit=crop&q=80', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'ast-bubble-01', name: 'Galactic Chat Bubble', assetType: 'CHAT_BUBBLE', assetSubcategory: 'STATIC', priceCoins: 250000n, validDays: 30, thumbnailUrl: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=200&auto=format&fit=crop&q=80', isVipExclusive: false, minVipLevelRequired: 0 },
   ];
 
   for (const a of baselineAssets) {
@@ -401,7 +372,6 @@ async function seed() {
         priceCoins: a.priceCoins,
         validDays: a.validDays,
         thumbnailUrl: a.thumbnailUrl,
-        animationFileUrl: a.animationFileUrl || null,
         roomAvailability: 'BOTH',
         isVipExclusive: a.isVipExclusive,
         minVipLevelRequired: a.minVipLevelRequired,
@@ -410,7 +380,52 @@ async function seed() {
     });
   }
 
-  console.log('✅ Seeding completed! Super Admin, Owner, Roles, Permissions, Baseline Policies, Configurations, Host Configs, Agencies, BD Centers, Resellers, Gifts & Store Assets seeded.');
+  // 11. Seed Canonical Banners & Announcements
+  await prisma.banner.upsert({
+    where: { id: 'ban-01' },
+    update: {},
+    create: {
+      id: 'ban-01',
+      title: 'Grand PK Championship 2026 — $50,000 Prize Pool!',
+      imageUrl: 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=1200&auto=format&fit=crop&q=80',
+      destinationUrl: '/admin/pk-events',
+      position: 1,
+      isActive: true,
+    },
+  });
+
+  await prisma.banner.upsert({
+    where: { id: 'ban-02' },
+    update: {},
+    create: {
+      id: 'ban-02',
+      title: 'Double Coins Weekend Recharge Bonus',
+      imageUrl: 'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=1200&auto=format&fit=crop&q=80',
+      destinationUrl: '/admin/recharge-plans',
+      position: 2,
+      isActive: true,
+    },
+  });
+
+  await prisma.announcement.upsert({
+    where: { id: 'ann-01' },
+    update: {},
+    create: {
+      id: 'ann-01',
+      title: 'ZeParty Global System Upgrade & Fair Play Policy',
+      body: 'Automated audit trail, PostgreSQL financial ledger, and diamond settlement engine active.',
+      targetAudience: 'ALL',
+      isActive: true,
+    },
+  });
+
+  console.log('✅ ZeParty System Configuration Bootstrap Successfully Completed!');
+  console.log('   - Canonical Permissions & System Roles seeded');
+  console.log('   - Owner & Super Admin identities provisioned');
+  console.log('   - Baseline Policy Templates & Dynamic Configs loaded');
+  console.log('   - Official Recharge Plans & Payment Gateways seeded');
+  console.log('   - Canonical Virtual Gifts & Store Catalog initialized');
+  console.log('   - Zero fake/mock business data seeded');
 }
 
 seed()

@@ -1,18 +1,40 @@
 // ============================================================
 // ZeParty Admin Portal — Leaderboards Page (JSX)
+// 100% Real Backend Driven via getLeaderboards()
 // ============================================================
 
-import React, { useState } from 'react';
-import { Trophy, Flame, Crown, Star } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Trophy, Flame, Crown } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
-import { MOCK_LEADERBOARD_RICH, MOCK_LEADERBOARD_HOSTS } from '../../mocks/leaderboards.mock';
+import { getLeaderboards } from '../../services/modules/leaderboards.service';
 import { formatNumber } from '../../utils/format';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryShortName } from '../../constants/countries.data';
 
 export function LeaderboardsPage() {
   const [tab, setTab] = useState('rich'); // 'rich' | 'hosts'
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    getLeaderboards('daily', tab)
+      .then((res) => {
+        if (mounted) {
+          setData(res || []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setData([]);
+          setLoading(false);
+        }
+      });
+    return () => { mounted = false; };
+  }, [tab]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -53,8 +75,14 @@ export function LeaderboardsPage() {
       </div>
 
       {/* Leaderboard Table */}
-      {tab === 'rich' ? (
-        <Card className="overflow-x-auto">
+      <Card className="overflow-x-auto">
+        {loading ? (
+          <div className="py-12 text-center text-sm text-slate-400">Loading leaderboard rankings...</div>
+        ) : data.length === 0 ? (
+          <div className="py-12 text-center text-sm text-slate-500">
+            {tab === 'rich' ? 'No platform spender records found.' : 'No active host earnings found.'}
+          </div>
+        ) : tab === 'rich' ? (
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="bg-slate-900/60 text-xs uppercase text-slate-400 border-b border-slate-700/60">
               <tr>
@@ -66,7 +94,7 @@ export function LeaderboardsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/40">
-              {MOCK_LEADERBOARD_RICH.map((row) => (
+              {data.map((row) => (
                 <tr key={row.rank} className="hover:bg-slate-700/20 transition-colors">
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`inline-flex items-center justify-center h-7 w-7 rounded-full text-xs font-bold ${
@@ -91,28 +119,25 @@ export function LeaderboardsPage() {
                     {row.vipLevel ? <Badge variant="warning">{row.vipLevel}</Badge> : <span className="text-xs text-slate-500">—</span>}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-right font-mono font-bold text-yellow-400 text-base">
-                    🪙 {formatNumber(row.totalCoinsSpent)}
+                    🪙 {formatNumber(row.totalCoinsSpent || 0)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </Card>
-      ) : (
-        <Card className="overflow-x-auto">
+        ) : (
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="bg-slate-900/60 text-xs uppercase text-slate-400 border-b border-slate-700/60">
               <tr>
                 <th className="px-4 py-3">Rank</th>
                 <th className="px-4 py-3">Host</th>
                 <th className="px-4 py-3">Country</th>
-                <th className="px-4 py-3">Gifts Received</th>
                 <th className="px-4 py-3">Live Hours</th>
                 <th className="px-4 py-3 text-right">Total Earnings</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/40">
-              {MOCK_LEADERBOARD_HOSTS.map((row) => (
+              {data.map((row) => (
                 <tr key={row.rank} className="hover:bg-slate-700/20 transition-colors">
                   <td className="px-4 py-3 whitespace-nowrap">
                     <span className={`inline-flex items-center justify-center h-7 w-7 rounded-full text-xs font-bold ${
@@ -133,17 +158,16 @@ export function LeaderboardsPage() {
                       <span>{getCountryShortName(row.country)}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-purple-400 font-medium">🎁 {formatNumber(row.giftsReceived)}</td>
-                  <td className="px-4 py-3 whitespace-nowrap text-slate-300">{row.liveHours}h</td>
+                  <td className="px-4 py-3 whitespace-nowrap text-slate-300">{row.hoursStreamed || 0}h</td>
                   <td className="px-4 py-3 whitespace-nowrap text-right font-mono font-bold text-emerald-400 text-base">
-                    💎 {formatNumber(row.totalEarnings)}
+                    💎 {formatNumber(row.totalDiamondsEarned || 0)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </Card>
-      )}
+        )}
+      </Card>
     </div>
   );
 }

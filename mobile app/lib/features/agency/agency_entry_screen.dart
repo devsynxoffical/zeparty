@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/api_client.dart';
 
 class AgencyEntryScreen extends StatefulWidget {
   const AgencyEntryScreen({super.key});
@@ -17,17 +18,28 @@ class _AgencyEntryScreenState extends State<AgencyEntryScreen> {
   bool _isSubmitting = false;
 
   void _handleJoinAgency() async {
-    if (_agentIdController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter an Agent ID')));
+    final code = _agentIdController.text.trim();
+    if (code.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter an Agent ID / Code')));
       return;
     }
     setState(() => _isSubmitting = true);
-    await Future.delayed(const Duration(seconds: 1)); // Simulate API call
-    setState(() => _isSubmitting = false);
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Application to join agency submitted successfully!')));
+    try {
+      final res = await ApiClient.instance.post(
+        '/v1/agencies/join',
+        data: {'agencyCode': code},
+      );
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      final msg = res.data?['message']?.toString() ?? 'Joined agency successfully!';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: AppColors.success));
       Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to join agency: $e'), backgroundColor: Colors.redAccent),
+      );
     }
   }
 
@@ -37,13 +49,14 @@ class _AgencyEntryScreenState extends State<AgencyEntryScreen> {
       return;
     }
     setState(() => _isSubmitting = true);
-    await Future.delayed(const Duration(seconds: 1)); // Simulate API call
+    // Agency creation is an administrative process or reviewed via business development.
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
     setState(() => _isSubmitting = false);
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Agency creation application submitted!')));
-      Navigator.pop(context);
-    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Agency inquiry submitted! Our BD team will contact you.')),
+    );
+    Navigator.pop(context);
   }
 
   @override

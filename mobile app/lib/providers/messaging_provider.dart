@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/message_model.dart';
 import '../models/user_model.dart';
-import '../core/constants/dummy_data.dart';
 
 class SystemMessageItem {
   final String id;
@@ -186,7 +185,25 @@ class MessagingProvider extends ChangeNotifier {
   final List<String> _reportLogs = [];
 
   // Getters
-  List<UserModel> get chatUsers => List.unmodifiable(DummyData.popularUsers);
+  List<UserModel> get chatUsers => const [
+    UserModel(
+      id: 'user_1002',
+      username: 'sophia_rose',
+      name: 'Sophia Rose',
+      avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80',
+      isOnline: true,
+      isVip: true,
+      vipLevel: 'VIP 4',
+    ),
+    UserModel(
+      id: 'user_1003',
+      username: 'alex_rivera',
+      name: 'Alex Rivera',
+      avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=300&q=80',
+      isOnline: false,
+      isVip: false,
+    ),
+  ];
   List<SystemMessageItem> get systemMessages => List.unmodifiable(_systemMessages);
   List<ActivityRewardItem> get activityRewards => List.unmodifiable(_activityRewards);
   List<ActivityHelperItem> get activityHelpers => List.unmodifiable(_activityHelpers);

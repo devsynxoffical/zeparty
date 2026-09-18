@@ -3,6 +3,7 @@ import merchantService, { sanitizeMerchant } from '../services/merchant.service.
 import {
   createMerchantSchema,
   updateMerchantSchema,
+  adjustMerchantBalanceSchema,
   queryMerchantsSchema,
 } from '../validators/merchant.validator.js';
 
@@ -86,9 +87,60 @@ export async function updateMerchant(req, res, next) {
   }
 }
 
+export async function adjustBalance(req, res, next) {
+  try {
+    const { id } = req.params;
+    const validatedData = adjustMerchantBalanceSchema.parse(req.body);
+    const adminId = req.auth.userId;
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const updated = await merchantService.adjustMerchantBalance(id, validatedData, {
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Merchant balance adjusted successfully',
+      data: updated,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteMerchant(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+    const adminId = req.auth.userId;
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await merchantService.deleteMerchant(id, {
+      adminId,
+      adminName,
+      ipAddress,
+      reason,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: result.message || 'Merchant deleted successfully',
+      data: null,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getMerchants,
   createMerchant,
   getMerchantById,
   updateMerchant,
+  adjustBalance,
+  deleteMerchant,
 };

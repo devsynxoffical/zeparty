@@ -1,108 +1,58 @@
 // ============================================================
 // ZeParty Admin Portal — Exchange Rate Service (JavaScript)
+// 100% Real Backend Driven via /v1/admin/economy/configs
 // ============================================================
 
-import { MOCK_EXCHANGE_RATES } from '../../mocks/exchangeRates.mock';
-
-let exchangeRatesState = [...MOCK_EXCHANGE_RATES];
+import apiClient from '../api';
 
 export async function getExchangeRates() {
-  await new Promise((res) => setTimeout(res, 200));
-  return [...exchangeRatesState];
+  const res = await apiClient.get('/v1/admin/economy/configs');
+  const configs = res?.data?.data || [];
+  return configs.filter((c) => c.key?.includes('EXCHANGE') || c.key?.includes('RATE') || c.key?.includes('USD'));
 }
 
 export async function createRateDraft(payload) {
-  await new Promise((res) => setTimeout(res, 300));
-  const newRate = {
-    id: `ex-${Date.now().toString().slice(-4)}`,
-    status: 'DRAFT',
-    version: `v${Math.floor(3 + Math.random() * 2)}.${Math.floor(Math.random() * 9)}.0-draft`,
-    effectiveDate: payload.effectiveDate || new Date().toISOString(),
-    createdBy: 'Admin Operator',
-    approvedBy: 'Pending Approval',
-    updatedAt: new Date().toISOString(),
-    history: [],
-    ...payload
-  };
-  exchangeRatesState = [newRate, ...exchangeRatesState];
-  return newRate;
+  const res = await apiClient.put(`/v1/admin/economy/configs/${encodeURIComponent(payload.key || 'EXCHANGE_RATE_DRAFT')}`, {
+    valueJson: payload,
+    reason: payload.reason || 'Draft exchange rate',
+  });
+  return res?.data?.data || payload;
 }
 
 export async function updateRate(id, updates) {
-  await new Promise((res) => setTimeout(res, 300));
-  exchangeRatesState = exchangeRatesState.map((r) =>
-    r.id === id ? { ...r, ...updates, updatedAt: new Date().toISOString() } : r
-  );
-  return { success: true };
+  const res = await apiClient.put(`/v1/admin/economy/configs/${encodeURIComponent(id)}`, {
+    valueJson: updates,
+    reason: updates.reason || 'Updated exchange rate',
+  });
+  return res?.data || { success: true };
 }
 
 export async function approveRate(id, approverName = 'Finance Director') {
-  await new Promise((res) => setTimeout(res, 300));
-  exchangeRatesState = exchangeRatesState.map((r) =>
-    r.id === id
-      ? {
-          ...r,
-          status: 'SCHEDULED',
-          approvedBy: approverName,
-          updatedAt: new Date().toISOString()
-        }
-      : r
-  );
-  return { success: true };
+  const res = await apiClient.put(`/v1/admin/economy/configs/${encodeURIComponent(id)}`, {
+    valueJson: { approvedBy: approverName, approvedAt: new Date().toISOString() },
+    reason: `Approved by ${approverName}`,
+  });
+  return res?.data || { success: true };
 }
 
 export async function publishRate(id) {
-  await new Promise((res) => setTimeout(res, 300));
-  exchangeRatesState = exchangeRatesState.map((r) => {
-    if (r.id === id) {
-      const oldRate = r.currentRate;
-      const newRateVal = r.proposedRate || r.currentRate;
-      const newHistoryItem = {
-        version: r.version.replace('-draft', ''),
-        rate: oldRate,
-        effectiveDate: new Date().toISOString().split('T')[0],
-        changedBy: 'Super Admin',
-        notes: `Updated rate from ${oldRate} to ${newRateVal}`
-      };
-      return {
-        ...r,
-        currentRate: newRateVal,
-        status: 'ACTIVE',
-        version: r.version.replace('-draft', ''),
-        history: [newHistoryItem, ...(r.history || [])],
-        updatedAt: new Date().toISOString()
-      };
-    }
-    return r;
-  });
-  return { success: true };
+  const res = await apiClient.post(`/v1/admin/economy/configs/${encodeURIComponent(id)}/restore`);
+  return res?.data || { success: true };
 }
 
 export async function rollbackRate(id, targetVersion) {
-  await new Promise((res) => setTimeout(res, 350));
-  exchangeRatesState = exchangeRatesState.map((r) => {
-    if (r.id === id) {
-      const historical = (r.history || []).find((h) => h.version === targetVersion);
-      if (!historical) throw new Error(`Version ${targetVersion} not found in history`);
-
-      const rollbackRecord = {
-        version: `v${targetVersion}-rollback`,
-        rate: r.currentRate,
-        effectiveDate: new Date().toISOString().split('T')[0],
-        changedBy: 'Super Admin',
-        notes: `Rolled back to version ${targetVersion} (rate: ${historical.rate})`
-      };
-
-      return {
-        ...r,
-        currentRate: historical.rate,
-        proposedRate: historical.rate,
-        status: 'ROLLED_BACK',
-        history: [rollbackRecord, ...(r.history || [])],
-        updatedAt: new Date().toISOString()
-      };
-    }
-    return r;
+  const res = await apiClient.put(`/v1/admin/economy/configs/${encodeURIComponent(id)}`, {
+    valueJson: { rollbackTo: targetVersion },
+    reason: `Rolled back exchange rate to ${targetVersion}`,
   });
-  return { success: true };
+  return res?.data || { success: true };
 }
+
+export default {
+  getExchangeRates,
+  createRateDraft,
+  updateRate,
+  approveRate,
+  publishRate,
+  rollbackRate,
+};

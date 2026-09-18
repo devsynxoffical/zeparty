@@ -14,7 +14,6 @@ import 'pk_battle/pk_battle_screen.dart';
 import 'messages/inbox_screen.dart';
 import 'profile/profile_screen.dart';
 import 'auth/under_age_screen.dart';
-import '../core/constants/dummy_data.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -164,7 +163,7 @@ class _MainLayoutState extends State<MainLayout> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => PKBattleScreen(pkBattle: DummyData.samplePkBattle),
+                            builder: (_) => const PKBattleScreen(),
                           ),
                         );
                       }

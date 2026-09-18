@@ -1,13 +1,21 @@
 import { z } from 'zod';
 
 export const adjustBalanceSchema = z.object({
-  targetUserId: z.string().uuid({ message: 'Target User ID must be a valid UUID' }),
-  asset: z.enum(['COINS', 'DIAMONDS'], {
-    errorMap: () => ({ message: 'Asset must be either COINS or DIAMONDS' }),
-  }),
-  direction: z.enum(['CREDIT', 'DEBIT'], {
-    errorMap: () => ({ message: 'Direction must be either CREDIT or DEBIT' }),
-  }),
+  targetUserId: z.string().min(1, 'Target User ID is required'),
+  asset: z
+    .string({ required_error: 'Asset is required' })
+    .transform((val) => val.trim().toUpperCase())
+    .refine((val) => ['COIN', 'COINS', 'DIAMOND', 'DIAMONDS'].includes(val), {
+      message: 'Asset must be COINS or DIAMONDS',
+    })
+    .transform((val) => (val.startsWith('DIAMOND') ? 'DIAMONDS' : 'COINS')),
+  direction: z
+    .string({ required_error: 'Direction is required' })
+    .transform((val) => val.trim().toUpperCase())
+    .refine((val) => ['CREDIT', 'DEBIT', 'ADD', 'DEDUCT'].includes(val), {
+      message: 'Direction must be CREDIT or DEBIT',
+    })
+    .transform((val) => (val === 'ADD' || val === 'CREDIT' ? 'CREDIT' : 'DEBIT')),
   amount: z
     .union([z.string(), z.number(), z.bigint()])
     .transform((val) => {
@@ -48,6 +56,11 @@ export const rejectFinancialItemSchema = z.object({
     .max(500, 'Rejection reason must be at most 500 characters'),
 });
 
+export const createCoinRefundSchema = z.object({
+  coinAmount: z.coerce.number().int().positive('Coin amount must be a positive integer'),
+  disputeReason: z.string().min(3, 'Dispute reason must be at least 3 characters').max(500),
+});
+
 export const queryLedgerSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -61,6 +74,8 @@ export const queryLedgerSchema = z.object({
     'ADMIN_ADJUSTMENT',
     'SWAP',
     'RESELLER_ALLOCATION',
+    'REFUND',
+    'CHARGEBACK_REVERSAL',
   ]).optional(),
   userId: z.string().uuid().optional(),
   referenceId: z.string().optional(),
@@ -73,5 +88,6 @@ export default {
   createRechargePlanSchema,
   updateRechargePlanSchema,
   rejectFinancialItemSchema,
+  createCoinRefundSchema,
   queryLedgerSchema,
 };

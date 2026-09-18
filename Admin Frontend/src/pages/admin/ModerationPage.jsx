@@ -127,10 +127,10 @@ export function ModerationPage() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Reports Today" value={stats.reportsToday} icon={AlertOctagon} iconColor="text-red-400" iconBg="bg-red-500/10" />
-        <StatCard title="Pending Review" value={stats.pendingReview} icon={ShieldAlert} iconColor="text-amber-400" iconBg="bg-amber-500/10" />
-        <StatCard title="Actioned Today" value={stats.actionedToday} icon={Shield} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
-        <StatCard title="Appeals Pending" value={stats.appealsPending} icon={MessageSquare} iconColor="text-sky-400" iconBg="bg-sky-500/10" />
+        <StatCard title="Reports Today" value={stats?.reportsToday ?? 0} icon={AlertOctagon} iconColor="text-red-400" iconBg="bg-red-500/10" />
+        <StatCard title="Pending Review" value={stats?.pendingReview ?? 0} icon={ShieldAlert} iconColor="text-amber-400" iconBg="bg-amber-500/10" />
+        <StatCard title="Actioned Today" value={stats?.actionedToday ?? 0} icon={Shield} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
+        <StatCard title="Appeals Pending" value={stats?.appealsPending ?? 0} icon={MessageSquare} iconColor="text-sky-400" iconBg="bg-sky-500/10" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">

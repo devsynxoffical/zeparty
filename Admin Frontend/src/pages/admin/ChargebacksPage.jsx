@@ -3,7 +3,7 @@
 // Client Excel Phase C Requirements
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AlertCircle, Search, ShieldAlert, Lock, CheckCircle } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -11,7 +11,10 @@ import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
-import { MOCK_CHARGEBACKS } from '../../mocks/coinRefunds.mock';
+import {
+  getChargebacks,
+  resolveChargeback,
+} from '../../services/modules/monetization.service';
 import { formatCurrency, formatDate } from '../../utils/format';
 import { useAuditLog } from '../../context/AuditLogContext';
 import { CountrySelect } from '../../components/ui/CountrySelect';
@@ -20,41 +23,81 @@ import { getCountryShortName } from '../../constants/countries.data';
 
 export function ChargebacksPage() {
   const { logAdminAction } = useAuditLog();
-  const [disputes, setDisputes] = useState(
-    (MOCK_CHARGEBACKS || []).map((d, i) => ({
-      ...d,
-      country: d.country || (i % 2 === 0 ? 'US' : 'GB')
-    }))
-  );
+  const [disputes, setDisputes] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('All');
   const [selectedDispute, setSelectedDispute] = useState(null);
   const [feedback, setFeedback] = useState(null);
 
-  const handleResolveDispute = async (resolution) => {
-    if (!selectedDispute) return;
-    setDisputes(disputes.map(d => d.id === selectedDispute.id ? { ...d, status: resolution } : d));
-    
-    await logAdminAction({
-      action: 'CHARGEBACK_DISPUTE_RESOLVED',
-      module: 'Finance',
-      targetType: 'chargeback',
-      targetId: selectedDispute.id,
-      targetName: selectedDispute.user,
-      reason: `Dispute resolved with action: ${resolution}`,
-      riskLevel: 'CRITICAL',
-      afterValue: { status: resolution }
-    });
+  useEffect(() => {
+    loadDisputes();
+  }, []);
 
-    setFeedback(`Dispute ${selectedDispute.id} updated with resolution: ${resolution}.`);
-    setSelectedDispute(null);
-    setTimeout(() => setFeedback(null), 3000);
+  async function loadDisputes() {
+    setIsLoading(true);
+    try {
+      const items = await getChargebacks();
+      const formatted = items.map((d, i) => ({
+        id: d.id,
+        disputeId: d.gatewayDisputeId || `DISP-${d.id.slice(0, 8)}`,
+        gateway: d.paymentProvider?.name || d.gateway || 'Stripe Gateway',
+        user: d.user?.username || d.userId || 'User',
+        userId: d.userId,
+        amountUSD: Number(d.disputeAmountUSD || d.amountUSD || 0),
+        coinsInvolved: Number(d.frozenCoinAmount || d.coinsInvolved || 0),
+        reversalState: d.reversalStatus || 'FROZEN_ESCROW',
+        status: d.status || 'PENDING',
+        country: d.country || (i % 2 === 0 ? 'US' : 'GB'),
+      }));
+      setDisputes(formatted);
+    } catch (err) {
+      console.error('Failed to load chargebacks:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const handleResolveDispute = async (action) => {
+    if (!selectedDispute) return;
+    try {
+      await resolveChargeback(selectedDispute.id, {
+        action: action === 'LOST_ACCEPT' ? 'ACCEPT' : 'CHALLENGE',
+        adminNotes: `Dispute resolved with action: ${action}`,
+      });
+
+      await logAdminAction({
+        action: 'CHARGEBACK_DISPUTE_RESOLVED',
+        module: 'Finance',
+        targetType: 'chargeback',
+        targetId: selectedDispute.id,
+        targetName: selectedDispute.user,
+        reason: `Dispute resolved with action: ${action}`,
+        riskLevel: 'CRITICAL',
+        afterValue: { status: action },
+      });
+
+      setFeedback(`Dispute ${selectedDispute.id} updated with resolution: ${action}.`);
+      setSelectedDispute(null);
+      await loadDisputes();
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err) {
+      console.error('Failed to resolve dispute:', err);
+    }
   };
 
-  const filtered = disputes.filter(d => {
+  const filtered = disputes.filter((d) => {
     const q = search.toLowerCase();
-    const matchCountry = !selectedCountry || selectedCountry === 'All' || selectedCountry === 'GLOBAL' || d.country?.toLowerCase() === selectedCountry.toLowerCase();
-    const matchQuery = !q || d.id.toLowerCase().includes(q) || d.disputeId.toLowerCase().includes(q) || d.user.toLowerCase().includes(q);
+    const matchCountry =
+      !selectedCountry ||
+      selectedCountry === 'All' ||
+      selectedCountry === 'GLOBAL' ||
+      d.country?.toLowerCase() === selectedCountry.toLowerCase();
+    const matchQuery =
+      !q ||
+      d.id.toLowerCase().includes(q) ||
+      d.disputeId.toLowerCase().includes(q) ||
+      d.user.toLowerCase().includes(q);
     return matchCountry && matchQuery;
   });
 
@@ -87,7 +130,11 @@ export function ChargebacksPage() {
     {
       key: 'user',
       header: 'Target Account',
-      render: (r) => <span className="text-xs font-semibold text-white">{r.user} ({r.userId})</span>,
+      render: (r) => (
+        <span className="text-xs font-semibold text-white">
+          {r.user} ({r.userId})
+        </span>
+      ),
     },
     {
       key: 'amount',
@@ -95,7 +142,9 @@ export function ChargebacksPage() {
       render: (r) => (
         <div>
           <p className="text-xs font-bold text-red-400">{formatCurrency(r.amountUSD)}</p>
-          <p className="text-[11px] text-yellow-400 font-bold">🪙 {r.coinsInvolved.toLocaleString()} Coins Frozen</p>
+          <p className="text-[11px] text-yellow-400 font-bold">
+            🪙 {r.coinsInvolved.toLocaleString()} Coins Frozen
+          </p>
         </div>
       ),
     },
@@ -128,7 +177,9 @@ export function ChargebacksPage() {
             <AlertCircle className="h-6 w-6 text-red-400" />
             Chargebacks & Payment Disputes
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">Payment provider chargebacks, bank disputes, and account hold enforcement.</p>
+          <p className="text-sm text-slate-400 mt-0.5">
+            Payment provider chargebacks, bank disputes, and account hold enforcement.
+          </p>
         </div>
       </div>
 
@@ -165,7 +216,7 @@ export function ChargebacksPage() {
         </div>
       </Card>
 
-      <DataTable columns={columns} data={filtered} isLoading={false} />
+      <DataTable columns={columns} data={filtered} isLoading={isLoading} />
 
       {selectedDispute && (
         <Modal
@@ -174,7 +225,11 @@ export function ChargebacksPage() {
           title={`Resolve Dispute: ${selectedDispute.id}`}
         >
           <div className="space-y-4 text-xs text-slate-300">
-            <p>Select resolution action for gateway chargeback on <strong className="text-white">{selectedDispute.gateway}</strong> ({formatCurrency(selectedDispute.amountUSD)}):</p>
+            <p>
+              Select resolution action for gateway chargeback on{' '}
+              <strong className="text-white">{selectedDispute.gateway}</strong> (
+              {formatCurrency(selectedDispute.amountUSD)}):
+            </p>
 
             <div className="flex justify-end gap-3 pt-2">
               <Button variant="ghost" size="sm" onClick={() => setSelectedDispute(null)}>

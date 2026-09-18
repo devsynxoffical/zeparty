@@ -2,13 +2,13 @@ import 'package:flutter/material.dart';
 import '../models/recharge_agency_model.dart';
 
 class RechargeAgencyProvider extends ChangeNotifier {
-  int _availableCoins = 2500000;
-  final int _pendingCoins = 50000;
-  int _totalCoinsRecharged = 12500000;
-  int _todaysRechargeTotal = 350000;
-  final int _dailyLimit = 5000000;
-  final String _sellerId = 'seller_8801';
-  final String _sellerName = 'Danial Coin Agency';
+  int _availableCoins = 0;
+  final int _pendingCoins = 0;
+  int _totalCoinsRecharged = 0;
+  int _todaysRechargeTotal = 0;
+  final int _dailyLimit = 0;
+  final String _sellerId = '';
+  final String _sellerName = 'Coin Reseller Agency';
   final String _countryCode = 'GLOBAL';
 
   final List<SavedCustomerModel> _savedCustomers = [];
@@ -29,20 +29,7 @@ class RechargeAgencyProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get auditLogs => List.unmodifiable(_auditLogs);
 
   RechargeAgencyProvider() {
-    _initMockData();
-  }
-
-  void _initMockData() {
-    final now = DateTime.now();
-    _savedCustomers.addAll([
-      SavedCustomerModel(id: 'sc1', sellerId: _sellerId, linkedUserId: 'user_1002', recipientName: 'Sophia Rose', label: 'VIP Customer', contactNumber: '+1 555 0192', createdAt: now.subtract(const Duration(days: 30))),
-      SavedCustomerModel(id: 'sc2', sellerId: _sellerId, linkedUserId: 'user_1003', recipientName: 'Alex Rivera', label: 'Regular Buyer', contactNumber: '+92 300 9988', createdAt: now.subtract(const Duration(days: 15))),
-    ]);
-
-    _transactions.addAll([
-      SellerRechargeTransactionModel(transactionId: 'tx_sel_901', sellerId: _sellerId, sellerName: _sellerName, recipientUserId: 'user_1002', recipientName: 'Sophia Rose', recipientAvatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80', coins: 100000, feeOrBonus: 0, sellerBalanceBefore: 2600000, sellerBalanceAfter: 2500000, status: 'Successful', countryCode: 'GLOBAL', timestamp: now.subtract(const Duration(hours: 4))),
-      SellerRechargeTransactionModel(transactionId: 'tx_sel_902', sellerId: _sellerId, sellerName: _sellerName, recipientUserId: 'user_1003', recipientName: 'Alex Rivera', recipientAvatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=300&q=80', coins: 250000, feeOrBonus: 0, sellerBalanceBefore: 2850000, sellerBalanceAfter: 2600000, status: 'Successful', countryCode: 'GLOBAL', timestamp: now.subtract(const Duration(hours: 12))),
-    ]);
+    // Clean initial state
   }
 
   // Atomic User Verification

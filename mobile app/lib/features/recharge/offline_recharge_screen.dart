@@ -220,53 +220,48 @@ class _OfflineRechargeScreenState extends State<OfflineRechargeScreen> {
             const SizedBox(height: 32),
 
             GoldButton(
-              text: 'Submit to Coin Seller Queue',
+              text: 'Submit to Admin Review Queue',
               icon: Icons.send_rounded,
-              onPressed: () {
-                if (_txIdController.text.trim().isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Please enter valid Transaction / Reference Number.')),
-                  );
-                  return;
-                }
+              isLoading: context.watch<WalletProvider>().isLoading,
+              onPressed: context.watch<WalletProvider>().isLoading
+                  ? null
+                  : () async {
+                      if (_txIdController.text.trim().isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please enter valid Transaction / Reference Number.')),
+                        );
+                        return;
+                      }
 
-                final user = context.read<AuthProvider>().currentUser;
-                final amountUsd = double.tryParse(_amountController.text) ?? 49.99;
-                final coinAmount = (amountUsd * 240).round();
+                      final amountUsd = double.tryParse(_amountController.text) ?? 49.99;
+                      final wallet = context.read<WalletProvider>();
 
-                // Submit to local WalletProvider
-                context.read<WalletProvider>().submitOfflineRecharge(
-                      amountUSD: amountUsd,
-                      paymentMethod: _selectedMethod,
-                      transactionId: _txIdController.text.trim(),
-                      proofFileName: _selectedImageFile?.name ?? 'screenshot.png',
-                    );
+                      final success = await wallet.submitOfflineRecharge(
+                        amountUSD: amountUsd,
+                        bankName: _selectedMethod,
+                        receiptPhotoUrl: _selectedImageFile?.path ?? 'https://storage.zeparty.com/receipts/placeholder.jpg',
+                        transactionRef: _txIdController.text.trim(),
+                      );
 
-                // Push to Coin Seller queue
-                context.read<SellerProvider>().addRechargeRequest(
-                      OfflineRechargeRequest(
-                        id: 'REQ-${DateTime.now().millisecondsSinceEpoch % 10000}',
-                        userId: user.id,
-                        userName: user.name,
-                        userAvatar: user.avatarUrl,
-                        packageTitle: '\$$amountUsd ($coinAmount Coins)',
-                        coins: coinAmount,
-                        priceUsd: amountUsd,
-                        paymentMethod: _selectedMethod,
-                        referenceNumber: _txIdController.text.trim(),
-                        proofImagePath: _selectedImageFile?.path,
-                        timestamp: DateTime.now(),
-                      ),
-                    );
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Offline recharge submitted to Coin Seller queue! Status: Pending Approval.'),
-                    backgroundColor: Color(0xFF16A34A),
-                  ),
-                );
-                Navigator.pop(context);
-              },
+                      if (mounted) {
+                        if (success) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('🎉 Offline recharge submitted to Admin Review Queue! Status: Pending Approval.'),
+                              backgroundColor: Color(0xFF16A34A),
+                            ),
+                          );
+                          Navigator.pop(context);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(wallet.errorMessage ?? 'Submission failed. Please try again.'),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                        }
+                      }
+                    },
             ),
           ],
         ),

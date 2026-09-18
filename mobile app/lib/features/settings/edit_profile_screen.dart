@@ -325,32 +325,37 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     setState(() => _isSaving = true);
 
-    await Future.delayed(const Duration(milliseconds: 400));
-
-    if (!mounted) return;
-
     final auth = context.read<AuthProvider>();
     if (_avatarImagePath != null) {
       auth.updateAvatar(_avatarImagePath!);
     }
 
-    auth.updateProfile(
+    final success = await auth.updateProfile(
       name: name,
       bio: bio,
       gender: _selectedGender,
       region: region.isEmpty ? 'Global' : region,
     );
 
+    if (!mounted) return;
     setState(() => _isSaving = false);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('🎉 Profile updated successfully!'),
-        backgroundColor: AppColors.success,
-      ),
-    );
-
-    Navigator.pop(context);
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🎉 Profile updated successfully!'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(auth.errorMessage ?? 'Failed to update profile. Please try again.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
 
   Future<bool> _confirmDiscardChanges() async {

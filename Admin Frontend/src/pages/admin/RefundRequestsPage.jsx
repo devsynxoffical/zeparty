@@ -3,7 +3,7 @@
 // Client Excel Phase C Requirements
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RotateCcw, Search, CheckCircle, XCircle, FileText } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -13,25 +13,44 @@ import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { formatNumber } from '../../utils/format';
 import { useAuditLog } from '../../context/AuditLogContext';
-
-const INITIAL_REQUESTS = [
-  {
-    id: 'REQ-401',
-    requester: 'BlazingRose (usr-003)',
-    txnId: 'TXN-55102',
-    coins: 100000,
-    amountUSD: 10.0,
-    reason: 'Accidental double tap on coin gift during lag',
-    status: 'PENDING_REVIEW',
-  },
-];
+import { getCoinRefunds, processCoinRefund, rejectCoinRefund } from '../../services/modules/monetization.service';
 
 export function RefundRequestsPage() {
   const { logAdminAction } = useAuditLog();
-  const [requests, setRequests] = useState(INITIAL_REQUESTS);
+  const [requests, setRequests] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedReq, setSelectedReq] = useState(null);
   const [feedback, setFeedback] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    getCoinRefunds()
+      .then((data) => {
+        if (!isMounted) return;
+        const formatted = (data || []).map((r) => ({
+          id: r.id,
+          requester: r.user?.username || r.userId || 'User',
+          txnId: r.transactionId || r.referenceId || r.id,
+          coins: Number(r.coinAmount || r.coins || 0),
+          amountUSD: Number(r.amountUSD || 0),
+          reason: r.reason || 'User refund request',
+          status: r.status || 'PENDING_REVIEW',
+        }));
+        setRequests(formatted);
+      })
+      .catch(() => {
+        if (isMounted) setRequests([]);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleAction = async (status) => {
     if (!selectedReq) return;
@@ -123,7 +142,7 @@ export function RefundRequestsPage() {
         />
       </Card>
 
-      <DataTable columns={columns} data={requests} isLoading={false} />
+      <DataTable columns={columns} data={requests} isLoading={isLoading} emptyTitle="No refund requests found" emptyDescription="No pending or historical refund requests." />
 
       {selectedReq && (
         <Modal

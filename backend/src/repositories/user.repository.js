@@ -37,41 +37,44 @@ export async function findByEmail(email, db = prisma) {
 
 export async function findByUsername(username, db = prisma) {
   if (!username) return null;
-  return await db.user.findUnique({
-    where: { username },
+  return await db.user.findFirst({
+    where: {
+      username: {
+        equals: username.trim(),
+        mode: 'insensitive',
+      },
+    },
   });
 }
 
-/**
- * Creates a new User and associated UserProfile and Wallet in a single transaction.
- */
 export async function createUserWithProfile(
-  { phone, email = null, username, status = 'ACTIVE', userType = 'USER', countryCode = 'US' },
+  { phone = null, email = null, username, displayName = null, status = 'ACTIVE', userType = 'USER', countryCode = 'US', coinBalance = 0, diamondBalance = 0 },
   db = prisma
 ) {
   return await db.user.create({
     data: {
-      phone,
-      email,
+      phone: phone || null,
+      email: email || null,
       username,
       status,
       userType,
-      countryCode,
+      countryCode: countryCode || 'US',
       profile: {
         create: {
-          displayName: username,
+          displayName: displayName || username,
         },
       },
       wallet: {
         create: {
-          coinBalance: 0n,
-          diamondBalance: 0n,
+          coinBalance: BigInt(coinBalance || 0),
+          diamondBalance: BigInt(diamondBalance || 0),
         },
       },
     },
     include: {
       profile: true,
       wallet: true,
+      hostProfile: true,
     },
   });
 }
@@ -83,11 +86,494 @@ export async function updateLastLogin(userId, db = prisma) {
   });
 }
 
+export async function findUsersPaginated(
+  {
+    page = 1,
+    limit = 20,
+    search = null,
+    status = null,
+    userType = null,
+    countryCode = null,
+    createdFrom = null,
+    createdTo = null,
+  } = {},
+  db = prisma
+) {
+  const where = {};
+
+  if (status) {
+    where.status = status;
+  }
+  if (userType) {
+    where.userType = userType;
+  }
+  if (countryCode) {
+    where.countryCode = countryCode;
+  }
+  if (createdFrom || createdTo) {
+    where.createdAt = {};
+    if (createdFrom) where.createdAt.gte = new Date(createdFrom);
+    if (createdTo) where.createdAt.lte = new Date(createdTo);
+  }
+
+  if (search && search.trim() !== '') {
+    const s = search.trim();
+    where.OR = [
+      { username: { contains: s, mode: 'insensitive' } },
+      { phone: { contains: s, mode: 'insensitive' } },
+      { email: { contains: s, mode: 'insensitive' } },
+      { profile: { displayName: { contains: s, mode: 'insensitive' } } },
+    ];
+  }
+
+  // Authoritatively exclude Owner and Admin identities from normal User Management
+  const allAdmins = db?.admin
+    ? await db.admin.findMany({
+        select: { id: true, email: true, username: true, isOwner: true },
+      })
+    : [];
+  const adminIds = allAdmins.map((a) => a.id);
+  const adminEmails = allAdmins.map((a) => a.email).filter(Boolean);
+  const adminUsernames = allAdmins.map((a) => a.username).filter(Boolean);
+  const shadowUsernames = adminUsernames.map((u) => `admin_${u}`);
+
+  where.NOT = [
+    ...(where.NOT ? (Array.isArray(where.NOT) ? where.NOT : [where.NOT]) : []),
+    { id: { in: adminIds } },
+    { email: { in: adminEmails } },
+    { username: { in: [...adminUsernames, ...shadowUsernames] } },
+    { username: { startsWith: 'admin_' } },
+    { username: { startsWith: 'rootowner' } },
+    { email: { endsWith: '@zeparty.app', contains: 'owner' } },
+  ];
+
+  const parsedPage = Math.max(1, Number(page) || 1);
+  const parsedLimit = Math.max(1, Math.min(100, Number(limit) || 20));
+  const skip = (parsedPage - 1) * parsedLimit;
+
+  const [total, users] = await Promise.all([
+    db.user.count({ where }),
+    db.user.findMany({
+      where,
+      skip,
+      take: parsedLimit,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        firebaseUid: true,
+        phone: true,
+        email: true,
+        username: true,
+        status: true,
+        userType: true,
+        countryCode: true,
+        avatarUrl: true,
+        bio: true,
+        gender: true,
+        dob: true,
+        lastLoginAt: true,
+        createdAt: true,
+        updatedAt: true,
+        profile: {
+          select: {
+            id: true,
+            displayName: true,
+            level: true,
+            vipLevel: true,
+            svipLevel: true,
+            nobleRank: true,
+          },
+        },
+        wallet: {
+          select: {
+            id: true,
+            coinBalance: true,
+            diamondBalance: true,
+            sellerBalanceCoins: true,
+          },
+        },
+        hostProfile: {
+          select: {
+            id: true,
+            hostType: true,
+            hostStatus: true,
+            hostLevel: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  return {
+    users,
+    pagination: {
+      page: parsedPage,
+      limit: parsedLimit,
+      total,
+      totalPages: Math.ceil(total / parsedLimit),
+    },
+  };
+}
+
+export async function findUserDetailsById(id, db = prisma) {
+  if (!id) return null;
+
+  return await db.user.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      firebaseUid: true,
+      phone: true,
+      email: true,
+      username: true,
+      status: true,
+      userType: true,
+      countryCode: true,
+      avatarUrl: true,
+      bio: true,
+      gender: true,
+      dob: true,
+      isUnderageBlocked: true,
+      lastLoginAt: true,
+      createdAt: true,
+      updatedAt: true,
+      profile: true,
+      wallet: true,
+      hostProfile: {
+        include: {
+          agency: {
+            select: {
+              id: true,
+              agencyName: true,
+              agencyCode: true,
+              status: true,
+            },
+          },
+        },
+      },
+      ownedAgencies: {
+        select: {
+          id: true,
+          agencyName: true,
+          agencyCode: true,
+          status: true,
+        },
+      },
+      managedBDCenters: {
+        select: {
+          id: true,
+          centerName: true,
+          regionCode: true,
+          currentTier: true,
+        },
+      },
+      coinSeller: true,
+      merchant: {
+        select: {
+          id: true,
+          companyName: true,
+          monthlyQuotaCoins: true,
+          totalSpentUSD: true,
+          status: true,
+        },
+      },
+      sessions: {
+        take: 5,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          ipAddress: true,
+          userAgent: true,
+          expiresAt: true,
+          revokedAt: true,
+          createdAt: true,
+        },
+      },
+      devices: {
+        take: 5,
+        orderBy: { lastSeenAt: 'desc' },
+        select: {
+          id: true,
+          platform: true,
+          deviceModel: true,
+          appVersion: true,
+          isBlocked: true,
+          lastSeenAt: true,
+        },
+      },
+    },
+  });
+}
+
+export async function updateUserStatus(id, status, db = prisma) {
+  return await db.user.update({
+    where: { id },
+    data: { status },
+    select: {
+      id: true,
+      username: true,
+      status: true,
+      updatedAt: true,
+    },
+  });
+}
+
+export async function updateUserProfile(
+  userId,
+  { displayName, bio, gender, dob, avatarUrl, signature, countryCode },
+  db = prisma
+) {
+  const userUpdateData = {};
+  if (bio !== undefined) userUpdateData.bio = bio;
+  if (gender !== undefined) userUpdateData.gender = gender;
+  if (dob !== undefined) userUpdateData.dob = dob ? new Date(dob) : null;
+  if (avatarUrl !== undefined) userUpdateData.avatarUrl = avatarUrl;
+  if (countryCode !== undefined) userUpdateData.countryCode = countryCode;
+
+  const profileUpdateData = {};
+  if (displayName !== undefined) profileUpdateData.displayName = displayName;
+  if (signature !== undefined) profileUpdateData.signature = signature;
+
+  return await db.$transaction(async (tx) => {
+    if (Object.keys(userUpdateData).length > 0) {
+      await tx.user.update({
+        where: { id: userId },
+        data: userUpdateData,
+      });
+    }
+
+    if (Object.keys(profileUpdateData).length > 0) {
+      await tx.userProfile.upsert({
+        where: { userId },
+        create: {
+          userId,
+          displayName: profileUpdateData.displayName || null,
+          signature: profileUpdateData.signature || null,
+        },
+        update: profileUpdateData,
+      });
+    }
+
+    return await tx.user.findUnique({
+      where: { id: userId },
+      include: {
+        profile: true,
+        wallet: true,
+        hostProfile: true,
+      },
+    });
+  });
+}
+
+export async function findPublicProfileById(id, db = prisma) {
+  if (!id) return null;
+  return await db.user.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      bio: true,
+      gender: true,
+      countryCode: true,
+      userType: true,
+      createdAt: true,
+      profile: {
+        select: {
+          displayName: true,
+          level: true,
+          vipLevel: true,
+          svipLevel: true,
+          nobleRank: true,
+          signature: true,
+        },
+      },
+      hostProfile: {
+        select: {
+          hostType: true,
+          hostLevel: true,
+          hostStatus: true,
+        },
+      },
+    },
+  });
+}
+
+export async function deleteUserById(id, db = prisma) {
+  if (!id) return null;
+
+  // 1. Clean up GiftTransactions sent or received
+  try {
+    if (db.giftTransaction?.deleteMany) {
+      await db.giftTransaction.deleteMany({
+        where: {
+          OR: [{ senderUserId: id }, { recipientUserId: id }],
+        },
+      });
+    }
+  } catch (_) {}
+
+  // 2. Clean up P2P Escrow Orders
+  try {
+    if (db.p2PEscrowOrder?.deleteMany) {
+      await db.p2PEscrowOrder.deleteMany({
+        where: {
+          OR: [{ buyerUserId: id }, { sellerUserId: id }],
+        },
+      });
+    }
+  } catch (_) {}
+
+  // 3. Clean up PK Events if host profile exists
+  try {
+    const host = await db.hostProfile?.findUnique?.({ where: { userId: id }, select: { id: true } });
+    if (host && db.pKEvent?.deleteMany) {
+      await db.pKEvent.deleteMany({
+        where: {
+          OR: [{ hostAUserId: host.id }, { hostBUserId: host.id }],
+        },
+      });
+    }
+  } catch (_) {}
+
+  // 4. Clean up Agencies owned by this user
+  try {
+    const ownedAgencies = await db.agency?.findMany?.({
+      where: { ownerUserId: id },
+      select: { id: true },
+    });
+    if (ownedAgencies && ownedAgencies.length > 0) {
+      const agencyIds = ownedAgencies.map((a) => a.id);
+      if (db.hostProfile?.updateMany) {
+        await db.hostProfile.updateMany({
+          where: { agencyId: { in: agencyIds } },
+          data: { agencyId: null },
+        });
+      }
+      if (db.agencyMember?.deleteMany) {
+        await db.agencyMember.deleteMany({
+          where: { agencyId: { in: agencyIds } },
+        });
+      }
+      if (db.agency?.deleteMany) {
+        await db.agency.deleteMany({
+          where: { id: { in: agencyIds } },
+        });
+      }
+    }
+  } catch (_) {}
+
+  // 5. Clean up BDCenters managed by this user
+  try {
+    const managedBDs = await db.bDCenter?.findMany?.({
+      where: { managerUserId: id },
+      select: { id: true },
+    });
+    if (managedBDs && managedBDs.length > 0) {
+      const bdIds = managedBDs.map((b) => b.id);
+      if (db.agency?.updateMany) {
+        await db.agency.updateMany({
+          where: { bdCenterId: { in: bdIds } },
+          data: { bdCenterId: null },
+        });
+      }
+      if (db.hostProfile?.updateMany) {
+        await db.hostProfile.updateMany({
+          where: { bdCenterId: { in: bdIds } },
+          data: { bdCenterId: null },
+        });
+      }
+      if (db.bDInvite?.deleteMany) {
+        await db.bDInvite.deleteMany({
+          where: { bdCenterId: { in: bdIds } },
+        });
+      }
+      if (db.bDCenter?.deleteMany) {
+        await db.bDCenter.deleteMany({
+          where: { id: { in: bdIds } },
+        });
+      }
+    }
+  } catch (_) {}
+
+  // 6. Clean up Rooms created by this user
+  try {
+    const userRooms = await db.room?.findMany?.({
+      where: { creatorUserId: id },
+      select: { id: true },
+    });
+    if (userRooms && userRooms.length > 0) {
+      const roomIds = userRooms.map((r) => r.id);
+      if (db.giftTransaction?.deleteMany) {
+        await db.giftTransaction.deleteMany({
+          where: { roomId: { in: roomIds } },
+        });
+      }
+      if (db.roomModerationAction?.deleteMany) {
+        await db.roomModerationAction.deleteMany({
+          where: { roomId: { in: roomIds } },
+        });
+      }
+      if (db.roomMember?.deleteMany) {
+        await db.roomMember.deleteMany({
+          where: { roomId: { in: roomIds } },
+        });
+      }
+      if (db.roomSeat?.deleteMany) {
+        await db.roomSeat.deleteMany({
+          where: { roomId: { in: roomIds } },
+        });
+      }
+      if (db.room?.deleteMany) {
+        await db.room.deleteMany({
+          where: { id: { in: roomIds } },
+        });
+      }
+    }
+  } catch (_) {}
+
+  // 7. Clean up Reports, Support Tickets, User Blocks
+  try {
+    if (db.report?.deleteMany) {
+      await db.report.deleteMany({
+        where: {
+          OR: [{ reporterId: id }, { reportedUserId: id }],
+        },
+      });
+    }
+    if (db.supportTicket?.deleteMany) {
+      await db.supportTicket.deleteMany({
+        where: { userId: id },
+      });
+    }
+    if (db.userBlock?.deleteMany) {
+      await db.userBlock.deleteMany({
+        where: {
+          OR: [{ blockerId: id }, { blockedId: id }],
+        },
+      });
+    }
+  } catch (_) {}
+
+  // 8. Delete the user (Prisma schema cascades UserProfile, Wallet, HostProfile, UserSession, UserDevice, Posts, Likes, Comments, etc.)
+  return await db.user.delete({
+    where: { id },
+  });
+}
+
 export default {
   findByPhone,
   findById,
+  findUserById: findById,
   findByEmail,
   findByUsername,
   createUserWithProfile,
   updateLastLogin,
+  findUsersPaginated,
+  findUserDetailsById,
+  updateUserStatus,
+  updateUserProfile,
+  findPublicProfileById,
+  deleteUserById,
 };
+

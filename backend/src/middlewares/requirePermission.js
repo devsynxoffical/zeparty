@@ -60,7 +60,7 @@ export function requirePermission(requiredPermission) {
         return next();
       }
 
-      const effective = await calculateEffectivePermissions(req.auth.userId);
+      const effective = await calculateEffectivePermissions(req.admin || req.auth.userId);
 
       if (effective.isOwner) {
         return next();

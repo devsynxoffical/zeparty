@@ -9,6 +9,7 @@ import 'user_avatar.dart';
 class CommentsSheet extends StatefulWidget {
   final String targetId; // Post ID or Video ID
   final String title;
+  final bool isPost; // If true, loads real comments from backend
   final List<SocialComment>? initialComments;
   final Function(String text)? onCommentSubmitted;
 
@@ -16,6 +17,7 @@ class CommentsSheet extends StatefulWidget {
     super.key,
     required this.targetId,
     this.title = 'Comments',
+    this.isPost = true,
     this.initialComments,
     this.onCommentSubmitted,
   });
@@ -24,6 +26,7 @@ class CommentsSheet extends StatefulWidget {
     BuildContext context, {
     required String targetId,
     String title = 'Comments',
+    bool isPost = true,
     List<SocialComment>? initialComments,
     Function(String text)? onCommentSubmitted,
   }) {
@@ -34,6 +37,7 @@ class CommentsSheet extends StatefulWidget {
       builder: (c) => CommentsSheet(
         targetId: targetId,
         title: title,
+        isPost: isPost,
         initialComments: initialComments,
         onCommentSubmitted: onCommentSubmitted,
       ),
@@ -48,14 +52,22 @@ class _CommentsSheetState extends State<CommentsSheet> {
   final TextEditingController _commentController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
-  late List<SocialComment> _comments;
+  List<SocialComment> _localComments = [];
+  bool _isSubmitting = false;
 
   @override
   void initState() {
     super.initState();
-    _comments = widget.initialComments != null
-        ? List.from(widget.initialComments!)
-        : _generateSampleComments();
+    if (widget.initialComments != null) {
+      _localComments = List.from(widget.initialComments!);
+    } else if (widget.isPost) {
+      // Trigger backend load via provider
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        context.read<SocialProvider>().loadCommentsForPost(widget.targetId);
+      });
+    } else {
+      _localComments = _generateSampleComments();
+    }
   }
 
   List<SocialComment> _generateSampleComments() {
@@ -104,51 +116,49 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
   void _submitComment() {
     final text = _commentController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isSubmitting) return;
 
     final currentUser = context.read<AuthProvider>().currentUser;
-    final now = DateTime.now();
+    final social = context.read<SocialProvider>();
 
-    final newComment = SocialComment(
-      id: 'c_${now.millisecondsSinceEpoch}',
-      authorId: currentUser.id,
-      authorName: currentUser.name,
-      authorAvatar: currentUser.avatarUrl,
-      text: text,
-      createdAt: now,
-    );
+    setState(() => _isSubmitting = true);
 
-    setState(() {
-      _comments.insert(0, newComment);
-    });
-
-    try {
-      context.read<SocialProvider>().addCommentToShortVideo(widget.targetId, text, currentUser);
-    } catch (_) {}
+    if (widget.isPost) {
+      social.addCommentToPost(widget.targetId, text, currentUser).then((_) {
+        if (mounted) setState(() => _isSubmitting = false);
+      }).catchError((_) {
+        if (mounted) setState(() => _isSubmitting = false);
+      });
+    } else {
+      social.addCommentToShortVideo(widget.targetId, text, currentUser);
+      setState(() => _isSubmitting = false);
+    }
 
     widget.onCommentSubmitted?.call(text);
-
     _commentController.clear();
     _focusNode.unfocus();
   }
 
   void _toggleLike(int index) {
-    setState(() {
-      final comment = _comments[index];
-      final newIsLiked = !comment.isLiked;
-      final newCount = newIsLiked ? comment.likesCount + 1 : comment.likesCount - 1;
-
-      _comments[index] = SocialComment(
-        id: comment.id,
-        authorId: comment.authorId,
-        authorName: comment.authorName,
-        authorAvatar: comment.authorAvatar,
-        text: comment.text,
-        createdAt: comment.createdAt,
-        likesCount: newCount < 0 ? 0 : newCount,
-        isLiked: newIsLiked,
-      );
-    });
+    if (!widget.isPost) {
+      // Local toggle for short-video comments
+      setState(() {
+        final comment = _localComments[index];
+        final newIsLiked = !comment.isLiked;
+        final newCount = newIsLiked ? comment.likesCount + 1 : comment.likesCount - 1;
+        _localComments[index] = SocialComment(
+          id: comment.id,
+          authorId: comment.authorId,
+          authorName: comment.authorName,
+          authorAvatar: comment.authorAvatar,
+          text: comment.text,
+          createdAt: comment.createdAt,
+          likesCount: newCount < 0 ? 0 : newCount,
+          isLiked: newIsLiked,
+        );
+      });
+    }
+    // For post comments, liking comments is not in backend API scope yet
   }
 
   void _insertQuickEmoji(String emoji) {
@@ -165,10 +175,22 @@ class _CommentsSheetState extends State<CommentsSheet> {
     super.dispose();
   }
 
+  // Build the final displayed comment list:
+  // For posts: use provider-loaded comments; for videos: use local list
+  List<SocialComment> _resolveComments(SocialProvider social) {
+    if (widget.isPost) {
+      return social.getCommentsForPost(widget.targetId);
+    }
+    return _localComments;
+  }
+
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final currentUser = context.watch<AuthProvider>().currentUser;
+    final social = context.watch<SocialProvider>();
+    final comments = _resolveComments(social);
+    final isLoadingComments = widget.isPost && social.isPostCommentsLoading(widget.targetId);
 
     return AnimatedPadding(
       padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
@@ -206,7 +228,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
               child: Row(
                 children: [
                   Text(
-                    '${widget.title} (${_comments.length}) 💬',
+                    '${widget.title} (${comments.length}) 💬',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w900,
@@ -226,7 +248,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
             // Comments List View
             Expanded(
-              child: _comments.isEmpty
+              child: isLoadingComments
+                  ? const Center(child: CircularProgressIndicator(color: Color(0xFF8E24AA), strokeWidth: 2))
+                  : comments.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -242,10 +266,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
                     )
                   : ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      itemCount: _comments.length,
+                      itemCount: comments.length,
                       separatorBuilder: (context, index) => const SizedBox(height: 14),
                       itemBuilder: (context, index) {
-                        final c = _comments[index];
+                        final c = comments[index];
                         final timeAgo = _formatTimeAgo(c.createdAt);
 
                         return Row(

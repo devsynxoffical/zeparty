@@ -2,7 +2,7 @@
 // ZeParty Admin Portal — Notification Broadcasts Page (JSX)
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Bell, Send, Search } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -11,7 +11,7 @@ import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Select, Textarea } from '../../components/ui/Select';
-import { MOCK_NOTIFICATIONS } from '../../mocks/comms.mock';
+import { getNotifications, broadcastNotification } from '../../services/modules/communications.service';
 import { formatDate, formatNumber } from '../../utils/format';
 import { useAuditLog } from '../../context/AuditLogContext';
 
@@ -22,27 +22,25 @@ function BroadcastModal({ isOpen, onClose, onSent }) {
   const [audience, setAudience] = useState('All Users');
   const [isSending, setIsSending] = useState(false);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setIsSending(true);
-    setTimeout(() => {
-      const newNotif = {
-        id: `NTF-${Date.now().toString().slice(-4)}`,
+    try {
+      const created = await broadcastNotification({
         title,
         body,
         type,
-        audience,
-        recipients: audience === 'All Users' ? 12450 : audience === 'Active Users' ? 3420 : audience === 'VIP Users' ? 620 : 154,
-        openRate: 0,
-        sentAt: new Date().toISOString(),
-        status: 'sent'
-      };
-      onSent(newNotif);
-      setIsSending(false);
-      onClose();
+        targetSegment: audience,
+      });
+      onSent(created);
       setTitle('');
       setBody('');
-    }, 1200);
+      onClose();
+    } catch (err) {
+      console.error('Failed to broadcast notification:', err);
+    } finally {
+      setIsSending(false);
+    }
   }
 
   return (
@@ -76,13 +74,34 @@ function BroadcastModal({ isOpen, onClose, onSent }) {
 
 export function NotificationsPage() {
   const { logAdminAction } = useAuditLog();
-  const [notifications, setNotifications] = useState(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [search, setSearch] = useState('');
 
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    getNotifications()
+      .then((data) => {
+        if (mounted) {
+          setNotifications(data || []);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load notifications:', err);
+        if (mounted) {
+          setNotifications([]);
+          setLoading(false);
+        }
+      });
+    return () => { mounted = false; };
+  }, []);
+
   const filtered = notifications.filter((n) => {
     const q = search.toLowerCase();
-    return !q || n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q);
+    return !q || n.title?.toLowerCase().includes(q) || n.body?.toLowerCase().includes(q);
   });
 
   const columns = [

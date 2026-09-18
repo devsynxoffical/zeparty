@@ -6,6 +6,8 @@ import agencyRepository from '../repositories/agency.repository.js';
 import ledgerService from './ledger.service.js';
 import policyService from './policy.service.js';
 import { generateReference } from '../utils/reference.util.js';
+import socketEmitter from '../socket/socket.emitter.js';
+import { SOCKET_EVENTS } from '../socket/socket.constants.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
@@ -336,6 +338,25 @@ export async function sendGift(
     },
     ipAddress,
   }, db);
+
+  if (roomId) {
+    socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_GIFT_SENT, {
+      roomId,
+      transactionId: result.giftTransaction.id,
+      senderUserId,
+      recipientUserId,
+      gift: {
+        id: gift.id,
+        name: gift.name,
+        iconUrl: gift.iconUrl || null,
+        animationUrl: gift.svgaAssetUrl || null,
+        isFullScreen: gift.isFullScreen || false,
+      },
+      quantity: qty,
+      totalCoins: totalCoins.toString(),
+      timestamp: new Date().toISOString(),
+    });
+  }
 
   return {
     success: true,

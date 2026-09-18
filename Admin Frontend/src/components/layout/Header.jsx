@@ -22,8 +22,7 @@ import {
 import { useAuth } from '../../hooks/useAuth';
 import { Avatar } from '../common/Avatar';
 import { Modal } from '../ui/Modal';
-import { MOCK_USERS } from '../../mocks/users.mock';
-import { MOCK_COIN_SELLERS } from '../../mocks/leaderboards.mock';
+import { getUsers } from '../../services/modules/users.service';
 
 const PAGE_TITLES = {
   '/admin': 'Dashboard',
@@ -84,16 +83,31 @@ function getPageTitle(pathname) {
 
 function GlobalSearchModal({ isOpen, onClose }) {
   const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
   const navigate = useNavigate();
 
-  const results = query.trim()
-    ? MOCK_USERS.filter(
-        (u) =>
-          u.displayName.toLowerCase().includes(query.toLowerCase()) ||
-          u.username.toLowerCase().includes(query.toLowerCase()) ||
-          u.id.toLowerCase().includes(query.toLowerCase())
-      )
-    : [];
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const users = await getUsers({ search: query.trim(), limit: 8 });
+        setResults(users || []);
+      } catch {
+        setResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query]);
 
   if (!isOpen) return null;
 
@@ -105,7 +119,7 @@ function GlobalSearchModal({ isOpen, onClose }) {
           <input
             type="text"
             autoFocus
-            placeholder="Search by User ID, Name, Txn ID, Room ID..."
+            placeholder="Search by User ID, Name, Phone, Email..."
             className="w-full rounded-lg border border-slate-700 bg-slate-800 py-2 pl-9 pr-3 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-gold-500"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -113,7 +127,9 @@ function GlobalSearchModal({ isOpen, onClose }) {
         </div>
 
         <div className="max-h-60 overflow-y-auto space-y-1">
-          {results.length > 0 ? (
+          {isSearching ? (
+            <p className="text-xs text-slate-400 text-center py-4">Searching real platform records...</p>
+          ) : results.length > 0 ? (
             results.map((u) => (
               <div
                 key={u.id}
@@ -133,7 +149,7 @@ function GlobalSearchModal({ isOpen, onClose }) {
           ) : query ? (
             <p className="text-xs text-slate-500 text-center py-4">No matching records found for "{query}"</p>
           ) : (
-            <p className="text-xs text-slate-500 text-center py-4">Type a query to search across Users, Hosts, Agencies, Rooms, Transactions...</p>
+            <p className="text-xs text-slate-500 text-center py-4">Type a query to search across active users and accounts...</p>
           )}
         </div>
       </div>

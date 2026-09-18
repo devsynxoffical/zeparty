@@ -3,7 +3,7 @@
 // Client Excel Phase B Requirements
 // ============================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CreditCard, Search, RefreshCcw, CheckCircle, AlertTriangle, ArrowUpRight } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -15,56 +15,51 @@ import { formatNumber, formatDate } from '../../utils/format';
 import { CountrySelect } from '../../components/ui/CountrySelect';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryShortName } from '../../constants/countries.data';
-
-const INITIAL_ONLINE_RECHARGES = [
-  {
-    id: 'ON-9901',
-    provider: 'Stripe Gateway',
-    txId: 'ch_3M00000000000001',
-    user: 'StarQueen Luna',
-    userId: 'usr-001',
-    country: 'US',
-    amountUSD: 50.0,
-    coins: 500000,
-    status: 'SUCCESS',
-    reconciled: true,
-    timestamp: '2026-08-20T10:15:30Z',
-  },
-  {
-    id: 'ON-9902',
-    provider: 'PayPal Express',
-    txId: 'PAYID-M999812001',
-    user: 'NightOwl Kai',
-    userId: 'usr-002',
-    country: 'AE',
-    amountUSD: 100.0,
-    coins: 1000000,
-    status: 'SUCCESS',
-    reconciled: true,
-    timestamp: '2026-08-19T14:22:10Z',
-  },
-  {
-    id: 'ON-9903',
-    provider: 'Razorpay Instant',
-    txId: 'pay_L000188239',
-    user: 'ZenMaster Aria',
-    userId: 'usr-005',
-    country: 'IN',
-    amountUSD: 20.0,
-    coins: 200000,
-    status: 'FAILED',
-    reconciled: false,
-    failureReason: 'Card Declined by Issuer',
-    timestamp: '2026-08-18T09:40:00Z',
-  },
-];
+import apiClient from '../../services/api';
 
 export function OnlineRechargePage() {
-  const [recharges, setRecharges] = useState(INITIAL_ONLINE_RECHARGES);
+  const [recharges, setRecharges] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('All');
   const [investigateTx, setInvestigateTx] = useState(null);
   const [feedback, setFeedback] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    apiClient
+      .get('/v1/finance/transactions', { params: { transactionType: 'COIN_PURCHASE' } })
+      .then((res) => {
+        if (!isMounted) return;
+        const items = res.data?.data || [];
+        const formatted = items.map((t) => ({
+          id: t.id,
+          provider: t.paymentProvider || t.metadata?.provider || 'Online Gateway',
+          txId: t.gatewayTxId || t.referenceId || t.id,
+          user: t.user?.username || t.user?.profile?.displayName || t.userId || 'Customer',
+          userId: t.userId,
+          country: t.user?.country || 'US',
+          amountUSD: Number(t.amountUSD || t.amount || 0),
+          coins: Number(t.coins || t.coinAmount || 0),
+          status: t.status || 'SUCCESS',
+          reconciled: t.status === 'COMPLETED' || t.status === 'SUCCESS',
+          failureReason: t.failureReason || null,
+          timestamp: t.createdAt,
+        }));
+        setRecharges(formatted);
+      })
+      .catch(() => {
+        if (isMounted) setRecharges([]);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -184,7 +179,7 @@ export function OnlineRechargePage() {
         </div>
       </Card>
 
-      <DataTable columns={columns} data={filtered} isLoading={false} />
+      <DataTable columns={columns} data={filtered} isLoading={isLoading} emptyTitle="No online recharges found" emptyDescription="No transactions match your search criteria." />
 
       {investigateTx && (
         <Modal

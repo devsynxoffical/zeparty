@@ -95,10 +95,18 @@ export function WalletPage() {
   const [refundReason, setRefundReason] = useState('');
 
   useEffect(() => {
-    Promise.all([getWalletStats(), getWalletTransactions()])
-      .then(([s, t]) => {
-        setStats(s);
-        setTransactions(t);
+    Promise.allSettled([getWalletStats(), getWalletTransactions()])
+      .then(([statsRes, txRes]) => {
+        if (statsRes.status === 'fulfilled') {
+          setStats(statsRes.value);
+        } else {
+          console.error('Failed to load wallet stats:', statsRes.reason);
+        }
+        if (txRes.status === 'fulfilled') {
+          setTransactions(txRes.value || []);
+        } else {
+          console.error('Failed to load wallet transactions:', txRes.reason);
+        }
       })
       .finally(() => setIsLoading(false));
   }, []);

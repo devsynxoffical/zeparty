@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
-import '../core/constants/dummy_data.dart';
 
 class HostAgencyProvider extends ChangeNotifier {
-  bool _isHostApplied = true;
-  String _hostStatus = 'Approved Host';
+  bool _isHostApplied = false;
+  String _hostStatus = 'None';
 
-  final int _totalStreams = 48;
-  final double _streamingHours = 124.5;
-  final int _totalGiftEarnings = 184500;
-  final double _commissionEarned = 1450.00;
+  final int _totalStreams = 0;
+  final double _streamingHours = 0.0;
+  final int _totalGiftEarnings = 0;
+  final double _commissionEarned = 0.00;
 
-  final List<UserModel> _managedHosts = List.from(DummyData.popularUsers);
+  final List<UserModel> _managedHosts = [];
 
   bool get isHostApplied => _isHostApplied;
   String get hostStatus => _hostStatus;

@@ -1,19 +1,44 @@
-import { pkEventsMock, pkStats, pkLeaderboard } from '../../mocks/pkEvents.mock.js';
+import apiClient from '../api.js';
 
-const delay = (ms = 300) => new Promise(r => setTimeout(r, ms));
-let data = [...pkEventsMock];
+export async function getPKEvents(params = {}) {
+  const res = await apiClient.get('/v1/admin/pk-events', { params });
+  if (res.data && res.data.success && Array.isArray(res.data.data)) {
+    return res.data.data;
+  }
+  return [];
+}
 
-export async function getPKEvents() { await delay(); return [...data]; }
-export async function getPKStats() { await delay(); return { ...pkStats }; }
-export async function getPKLeaderboard() { await delay(); return [...pkLeaderboard]; }
+export async function getPKStats() {
+  try {
+    const events = await getPKEvents();
+    const active = events.filter((e) => e.status === 'ACTIVE' || e.status === 'COUNTDOWN');
+    return {
+      activeBattles: active.length,
+      totalDiamondsPooled: events.reduce((sum, e) => sum + (Number(e.team1Score || 0) + Number(e.team2Score || 0)), 0),
+      totalPKEvents: events.length,
+      totalViewers: events.reduce((sum, e) => sum + (Number(e.viewerCount || 0)), 0),
+    };
+  } catch {
+    return {
+      activeBattles: 0,
+      totalDiamondsPooled: 0,
+      totalPKEvents: 0,
+      totalViewers: 0,
+    };
+  }
+}
+
+export async function getPKLeaderboard() {
+  return [];
+}
+
 export async function createPKEvent(eventData) {
-  await delay();
-  const newEvent = { id: `PK-${Date.now()}`, ...eventData, status: 'SCHEDULED' };
-  data = [newEvent, ...data];
-  return newEvent;
+  const res = await apiClient.post('/v1/admin/pk-events/start', eventData);
+  return res.data?.data;
 }
+
 export async function updatePKEvent(id, updateData) {
-  await delay();
-  data = data.map(d => d.id === id ? { ...d, ...updateData } : d);
-  return data.find(d => d.id === id);
+  const res = await apiClient.post(`/v1/admin/pk-events/${id}/end`, updateData);
+  return res.data?.data;
 }
+

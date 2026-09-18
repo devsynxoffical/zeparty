@@ -3,10 +3,40 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../providers/notification_provider.dart';
+import '../../core/services/fcm_service.dart';
 import '../../widgets/skeleton_widgets.dart';
+import '../settings/notification_settings_screen.dart';
 
-class NotificationsScreen extends StatelessWidget {
+class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<NotificationProvider>().loadNotifications();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      context.read<NotificationProvider>().loadMoreNotifications();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,11 +71,21 @@ class NotificationsScreen extends StatelessWidget {
               onPressed: () => notifProvider.markAllAsRead(),
               child: const Text('Mark all read', style: TextStyle(color: AppColors.primary, fontSize: 12)),
             ),
+          IconButton(
+            icon: const Icon(Icons.tune_rounded, size: 20),
+            tooltip: 'Notification Preferences',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (c) => const NotificationSettingsScreen()),
+              );
+            },
+          ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: () => notifProvider.refreshNotifications(),
-        child: notifProvider.isLoading
+        child: notifProvider.isLoading && notifications.isEmpty
             ? Padding(
                 padding: const EdgeInsets.all(16),
                 child: SkeletonList(
@@ -54,15 +94,35 @@ class NotificationsScreen extends StatelessWidget {
                 ),
               )
             : notifications.isEmpty
-                ? const EmptyStateWidget(
-                    icon: Icons.notifications_off_rounded,
-                    title: 'No Notifications Yet',
-                    subtitle: 'When hosts you follow go live or you receive gifts, notifications will appear here!',
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+                      const EmptyStateWidget(
+                        icon: Icons.notifications_off_rounded,
+                        title: 'No Notifications Yet',
+                        subtitle: 'When you receive gifts, messages, room alerts, or updates, they will appear here!',
+                      ),
+                    ],
                   )
                 : ListView.builder(
+                    controller: _scrollController,
                     padding: const EdgeInsets.all(16),
-                    itemCount: notifications.length,
+                    itemCount: notifications.length + (notifProvider.hasMore ? 1 : 0),
                     itemBuilder: (context, index) {
+                      if (index == notifications.length) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: Center(
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                            ),
+                          ),
+                        );
+                      }
+
                       final item = notifications[index];
 
                       return Dismissible(
@@ -96,10 +156,10 @@ class NotificationsScreen extends StatelessWidget {
                               children: [
                                 CircleAvatar(
                                   radius: 22,
-                                  backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                                  backgroundColor: _getCategoryColor(item.type, item.category).withValues(alpha: 0.15),
                                   child: Icon(
-                                    _getCategoryIcon(item.category),
-                                    color: AppColors.primary,
+                                    _getCategoryIcon(item.type, item.category),
+                                    color: _getCategoryColor(item.type, item.category),
                                     size: 20,
                                   ),
                                 ),
@@ -138,7 +198,12 @@ class NotificationsScreen extends StatelessWidget {
                               ],
                             ),
                             onTap: () {
-                              notifProvider.markAsRead(item.id);
+                              if (!item.isRead) {
+                                notifProvider.markAsRead(item.id);
+                              }
+                              if (item.dataJson != null) {
+                                FcmService.instance.handleNotificationTap(context, item.dataJson);
+                              }
                             },
                           ),
                         ),
@@ -149,18 +214,29 @@ class NotificationsScreen extends StatelessWidget {
     );
   }
 
-  IconData _getCategoryIcon(String category) {
-    switch (category.toLowerCase()) {
-      case 'gift':
-        return Icons.card_giftcard_rounded;
-      case 'follower':
-        return Icons.person_add_rounded;
-      case 'recharge':
-        return Icons.account_balance_wallet_rounded;
-      case 'invitation':
-        return Icons.style_rounded;
-      default:
-        return Icons.notifications_rounded;
-    }
+  IconData _getCategoryIcon(String type, String? category) {
+    final t = type.toUpperCase();
+    final c = (category ?? '').toLowerCase();
+
+    if (c == 'gift') return Icons.card_giftcard_rounded;
+    if (c == 'follower') return Icons.person_add_rounded;
+    if (c == 'recharge' || t == 'FINANCE') return Icons.account_balance_wallet_rounded;
+    if (c == 'invitation' || t == 'LIVE') return Icons.live_tv_rounded;
+    if (t == 'MODERATION') return Icons.shield_outlined;
+    if (t == 'SUPPORT') return Icons.support_agent_rounded;
+    if (t == 'PK') return Icons.sports_kabaddi_rounded;
+    if (t == 'GAMES') return Icons.videogame_asset_rounded;
+    if (t == 'EVENTS') return Icons.celebration_rounded;
+
+    return Icons.notifications_rounded;
+  }
+
+  Color _getCategoryColor(String type, String? category) {
+    final t = type.toUpperCase();
+    if (t == 'MODERATION') return Colors.redAccent;
+    if (t == 'FINANCE') return Colors.amber;
+    if (t == 'LIVE') return Colors.pinkAccent;
+    if (t == 'SUPPORT') return Colors.blueAccent;
+    return AppColors.primary;
   }
 }

@@ -3,7 +3,7 @@
 // 2026 Developer Specification Alignment
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sparkles, Search, Plus, Eye, Tag, Lock, CheckCircle } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -14,19 +14,48 @@ import { Modal } from '../../components/ui/Modal';
 import { formatNumber } from '../../utils/format';
 import { GeographicInheritancePanel } from '../../components/ui/GeographicInheritancePanel';
 import { useAuditLog } from '../../context/AuditLogContext';
-
-const INITIAL_ITEMS = [
-  { id: 'itm-01', name: 'Gold Crown Frame', type: 'Avatar Frame', priceCoins: 50000, duration: '30 Days', rarity: 'Legendary', active: true, scope: 'GLOBAL', overrideValue: '', inheritedValue: '50,000 coins' },
-  { id: 'itm-02', name: 'Dragon Mount', type: 'Ride', priceCoins: 120000, duration: '7 Days', rarity: 'Mythic', active: true, scope: 'REGION', overrideValue: '110,000 coins', inheritedValue: '120,000 coins' },
-  { id: 'itm-03', name: 'Golden Aura Bubble', type: 'Chat Bubble', priceCoins: 15000, duration: '30 Days', rarity: 'Rare', active: true, scope: 'GLOBAL', overrideValue: '', inheritedValue: '15,000 coins' },
-  { id: 'itm-04', name: 'Top Gifter Badge', type: 'Badge', priceCoins: 0, duration: 'Permanent', rarity: 'Unique', active: true, scope: 'COUNTRY', overrideValue: 'Grant only', inheritedValue: '0 coins' },
-];
+import apiClient from '../../services/api';
 
 export function VirtualItemsPage() {
   const { logAdminAction } = useAuditLog();
-  const [items, setItems] = useState(INITIAL_ITEMS);
+  const [items, setItems] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedItem, setSelectedItem] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    apiClient
+      .get('/v1/admin/assets', { params: { type: 'STORE_ITEM' } })
+      .then((res) => {
+        if (!isMounted) return;
+        const raw = res.data?.data || [];
+        const formatted = raw.map((i) => ({
+          id: i.id,
+          name: i.name,
+          type: i.category || 'Avatar Frame',
+          priceCoins: Number(i.priceCoins || i.coinPrice || 0),
+          duration: i.duration ? `${i.duration} Days` : '30 Days',
+          rarity: i.rarity || 'Rare',
+          active: Boolean(i.isActive !== false),
+          scope: i.scope || 'GLOBAL',
+          overrideValue: i.overrideValue || '',
+          inheritedValue: `${Number(i.priceCoins || 0).toLocaleString()} coins`,
+        }));
+        setItems(formatted);
+      })
+      .catch(() => {
+        if (isMounted) setItems([]);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   
   // Inheritance UI state for chosen item
   const [scope, setScope] = useState('GLOBAL');
@@ -161,7 +190,7 @@ export function VirtualItemsPage() {
         />
       </Card>
 
-      <DataTable columns={columns} data={filtered} isLoading={false} />
+      <DataTable columns={columns} data={filtered} isLoading={isLoading} emptyTitle="No virtual items in catalog" emptyDescription="Create or import avatar frames, bubble chats, or rides." />
 
       {/* Inheritance Overrides Modal */}
       {selectedItem && (

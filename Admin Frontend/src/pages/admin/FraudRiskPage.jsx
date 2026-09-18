@@ -3,7 +3,7 @@
 // Client Excel Phase C Requirements
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Search, AlertTriangle, Lock, CheckCircle, Eye } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -11,14 +11,45 @@ import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
-import { MOCK_RISK_ALERTS } from '../../mocks/coinRefunds.mock';
 import { formatDate } from '../../utils/format';
+import apiClient from '../../services/api';
 
 export function FraudRiskPage() {
-  const [alerts, setAlerts] = useState(MOCK_RISK_ALERTS);
+  const [alerts, setAlerts] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeAlert, setActiveAlert] = useState(null);
   const [feedback, setFeedback] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    apiClient.get('/v1/admin/reports')
+      .then((res) => {
+        if (mounted) {
+          const items = res.data?.data || [];
+          setAlerts(items.map((r) => ({
+            id: r.id,
+            user: r.targetUser?.username || r.targetUserId || 'Flagged Subject',
+            userId: r.targetUserId,
+            reason: r.reason || 'Safety / Risk Alert',
+            riskScore: r.riskScore || 75,
+            severity: r.severity?.toLowerCase() || 'medium',
+            status: r.status?.toLowerCase() || 'pending',
+            date: r.createdAt || new Date().toISOString(),
+            actionTaken: r.resolution || null,
+          })));
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setAlerts([]);
+          setLoading(false);
+        }
+      });
+    return () => { mounted = false; };
+  }, []);
 
   const handleAction = (newStatus, msg) => {
     if (!activeAlert) return;

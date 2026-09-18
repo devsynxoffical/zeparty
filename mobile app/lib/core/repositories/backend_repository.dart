@@ -9,21 +9,23 @@ import '../../models/short_video_model.dart';
 import '../../models/transaction_model.dart';
 import '../../models/notification_model.dart';
 import '../../models/message_model.dart';
-import '../constants/dummy_data.dart';
+import 'room_repository.dart';
 
 /// Production-ready Reactive Backend Repository Service
 class BackendRepository extends ChangeNotifier {
   static final BackendRepository instance = BackendRepository._internal();
-  BackendRepository._internal();
+  BackendRepository._internal() {
+    fetchLiveRooms();
+  }
 
-  final List<ShortVideoModel> _shortVideos = List.from(DummyData.shortVideos);
-  final List<LiveRoomModel> _liveRooms = List.from(DummyData.liveRooms);
-  final List<PostModel> _posts = List.from(DummyData.posts);
-  final List<AppNotificationModel> _notifications = List.from(DummyData.notifications);
-  final List<TransactionModel> _transactions = List.from(DummyData.transactions);
-  final List<GiftModel> _gifts = List.from(DummyData.gifts);
+  final List<ShortVideoModel> _shortVideos = [];
+  final List<LiveRoomModel> _liveRooms = [];
+  final List<PostModel> _posts = [];
+  final List<AppNotificationModel> _notifications = [];
+  final List<TransactionModel> _transactions = [];
+  final List<GiftModel> _gifts = List.from(GiftModel.defaultCatalog);
   final List<MessageModel> _messages = [];
-  final List<UserModel> _popularUsers = List.from(DummyData.popularUsers);
+  final List<UserModel> _popularUsers = [];
 
   List<ShortVideoModel> get shortVideos => List.unmodifiable(_shortVideos);
   List<LiveRoomModel> get liveRooms => List.unmodifiable(_liveRooms);
@@ -107,6 +109,21 @@ class BackendRepository extends ChangeNotifier {
       r.category.toLowerCase() != 'party' &&
       !r.id.startsWith('party_')
     ).toList();
+  }
+
+  /// Real Backend Room Discovery Integration
+  Future<List<LiveRoomModel>> fetchLiveRooms({String? category, int limit = 50}) async {
+    try {
+      final remoteRooms = await RoomRepository.instance.getActiveRooms(category: category, limit: limit);
+      if (remoteRooms.isNotEmpty) {
+        _liveRooms.clear();
+        _liveRooms.addAll(remoteRooms);
+        notifyListeners();
+      }
+      return _liveRooms;
+    } catch (_) {
+      return _liveRooms;
+    }
   }
 
   // Dynamic Go Live Stream Creation

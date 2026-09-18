@@ -11,13 +11,10 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { useAuditLog } from '../../context/AuditLogContext';
 
-const MOCK_BACKUPS = [
-  { id: 'BAK-2026-08-20', type: 'Automated Daily Full', size: '14.2 GB', date: '2026-08-20T03:00:00Z', status: 'COMPLETED' },
-  { id: 'BAK-2026-08-19', type: 'Automated Daily Full', size: '13.8 GB', date: '2026-08-19T03:00:00Z', status: 'COMPLETED' },
-];
-
 export function BackupsPage() {
   const { logAdminAction } = useAuditLog();
+  const [backups, setBackups] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [selectedBackup, setSelectedBackup] = useState(null);
   const [isRestoring, setIsRestoring] = useState(false);
   const [restoreMsg, setRestoreMsg] = useState(null);
@@ -75,8 +72,8 @@ export function BackupsPage() {
             </Button>
           )},
         ]}
-        data={MOCK_BACKUPS}
-        isLoading={false}
+        data={backups}
+        isLoading={isLoading}
       />
 
       {selectedBackup && (

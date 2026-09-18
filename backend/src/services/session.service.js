@@ -1,4 +1,5 @@
 import sessionRepository from '../repositories/session.repository.js';
+import adminRepository from '../repositories/admin.repository.js';
 import tokenService from './token.service.js';
 import { hashToken } from '../utils/crypto.util.js';
 
@@ -62,13 +63,33 @@ export async function rotateRefreshToken({ refreshToken, ipAddress, userAgent })
     throw error;
   }
 
-  // Verify account status
-  if (session.user && session.user.status !== 'ACTIVE') {
-    await sessionRepository.revokeSession(session.id);
-    const error = new Error(`Account is ${session.user.status.toLowerCase()}`);
-    error.status = 403;
-    error.code = session.user.status === 'SUSPENDED' ? 'ACCOUNT_SUSPENDED' : 'ACCOUNT_BANNED';
-    throw error;
+  // Determine whether session.userId belongs to an Admin identity
+  const admin = await adminRepository.findById(session.userId);
+  let isAdmin = false;
+  let userType = 'USER';
+  let roleId = null;
+
+  if (admin) {
+    if (admin.status !== 'ACTIVE') {
+      await sessionRepository.revokeSession(session.id);
+      const error = new Error('Admin account is suspended or inactive.');
+      error.status = 403;
+      error.code = 'ACCOUNT_SUSPENDED';
+      throw error;
+    }
+    isAdmin = true;
+    userType = 'ADMIN';
+    roleId = admin.roleId || (admin.isOwner ? 'owner' : (admin.isSuperAdmin ? 'super_admin' : null));
+  } else {
+    // Verify standard user account status
+    if (session.user && session.user.status !== 'ACTIVE') {
+      await sessionRepository.revokeSession(session.id);
+      const error = new Error(`Account is ${session.user.status.toLowerCase()}`);
+      error.status = 403;
+      error.code = session.user.status === 'SUSPENDED' ? 'ACCOUNT_SUSPENDED' : 'ACCOUNT_BANNED';
+      throw error;
+    }
+    userType = session.user?.userType || 'USER';
   }
 
   // Token Rotation: Generate new token pair and update session
@@ -83,9 +104,9 @@ export async function rotateRefreshToken({ refreshToken, ipAddress, userAgent })
   const newAccessToken = tokenService.generateAccessToken({
     userId: session.userId,
     sessionId: session.id,
-    userType: session.user.userType || 'USER',
-    roleId: null,
-    isAdmin: false,
+    userType,
+    roleId,
+    isAdmin,
   });
 
   return {

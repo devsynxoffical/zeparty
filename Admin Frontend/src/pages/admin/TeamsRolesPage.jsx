@@ -979,8 +979,9 @@ export function TeamsRolesPage() {
 
                 {/* Modules Permission List */}
                 <div className="mt-6 space-y-6">
-                  {modules.map((mod) => {
-                    const modPermIds = mod.permissions.map((p) => p.id);
+                  {(modules || []).map((mod) => {
+                    const modPerms = mod.permissions || [];
+                    const modPermIds = modPerms.map((p) => p.id);
                     const grantedCount = modPermIds.filter((id) =>
                       matrixPermissions.includes(id)
                     ).length;

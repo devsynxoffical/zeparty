@@ -3,9 +3,9 @@ import '../models/noble_model.dart';
 import 'wallet_provider.dart';
 
 class NobleProvider extends ChangeNotifier {
-  String? _activeRankId = 'duke';
-  int _eligibleSentCoins = 1420000;
-  DateTime? _expiryDate = DateTime(2026, 10, 15);
+  String? _activeRankId;
+  int _eligibleSentCoins = 0;
+  DateTime? _expiryDate;
   bool _isLoading = false;
   final List<NobleAuditRecord> _auditHistory = [];
 
@@ -193,27 +193,12 @@ class NobleProvider extends ChangeNotifier {
   }
 
   Future<bool> activateRank(NobleRank rank, WalletProvider wallet) async {
-    final success = wallet.spendCoins(
-      rank.firstMonthCost, 
-      'noble_activate_${rank.id}_${DateTime.now().millisecondsSinceEpoch}'
-    );
-    if (success) {
-      _activeRankId = rank.id;
-      _expiryDate = DateTime.now().add(Duration(days: rank.durationDays));
-      // Give coin return
-      if (rank.returnedCoins > 0) {
-        wallet.rechargeCoins(rank.returnedCoins, 0.0);
-      }
-      _auditHistory.insert(0, NobleAuditRecord(
-        id: 'aud_${DateTime.now().millisecondsSinceEpoch}',
-        rankId: rank.id,
-        type: 'purchase',
-        timestamp: DateTime.now(),
-        note: 'Activated ${rank.name} for ${rank.durationDays} days',
-      ));
-      notifyListeners();
-      return true;
+    // Direct Noble rank purchase via wallet coins is blocked until backend exposes dedicated noble activation API.
+    // Aristocracy/Noble rank is authoritatively assigned by backend policies / BD management.
+    if (wallet.coins < rank.firstMonthCost) {
+      return false;
     }
+    await wallet.fetchWallet();
     return false;
   }
 

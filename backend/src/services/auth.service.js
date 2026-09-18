@@ -5,7 +5,8 @@ import userRepository from '../repositories/user.repository.js';
 import deviceRepository from '../repositories/device.repository.js';
 import loginAttemptRepository from '../repositories/login-attempt.repository.js';
 import adminRepository from '../repositories/admin.repository.js';
-import { comparePassword } from '../utils/crypto.util.js';
+import { comparePassword, hashToken } from '../utils/crypto.util.js';
+import sessionRepository from '../repositories/session.repository.js';
 import effectivePermissionsService from './effectivePermissions.service.js';
 
 export async function requestOtp({ phone, purpose = 'LOGIN', ipAddress, logger }) {
@@ -137,9 +138,18 @@ export async function refreshToken({ refreshToken, ipAddress, userAgent }) {
   return await sessionService.rotateRefreshToken({ refreshToken, ipAddress, userAgent });
 }
 
-export async function logout({ sessionId }) {
+export async function logout({ sessionId, refreshToken }) {
   if (sessionId) {
-    await sessionService.revokeSession(sessionId);
+    await sessionService.revokeSession(sessionId).catch(() => {});
+  }
+  if (refreshToken) {
+    try {
+      const tokenHash = hashToken(refreshToken);
+      const session = await sessionRepository.findActiveSessionByRefreshTokenHash(tokenHash);
+      if (session) {
+        await sessionService.revokeSession(session.id).catch(() => {});
+      }
+    } catch {}
   }
   return { success: true, message: 'Successfully logged out.' };
 }

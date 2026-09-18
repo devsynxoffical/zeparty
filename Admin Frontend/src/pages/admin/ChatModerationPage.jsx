@@ -3,21 +3,46 @@
 // Client Excel Phase E Requirements
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MessageSquare, Search, Plus, Trash2, ShieldAlert } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
 import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
-
-const MOCK_BLOCKED_WORDS = [
-  { id: 'w-1', keyword: 'spam_link', category: 'Phishing', severity: 'HIGH', addedBy: 'Super Admin' },
-  { id: 'w-2', keyword: 'fake_coins', category: 'Fraud', severity: 'HIGH', addedBy: 'Moderator' },
-];
+import { getRestrictions } from '../../services/modules/moderation.service';
 
 export function ChatModerationPage() {
+  const [blockedWords, setBlockedWords] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    getRestrictions()
+      .then((data) => {
+        if (mounted) {
+          setBlockedWords(
+            (data || []).map((r) => ({
+              id: r.id,
+              keyword: r.keyword || r.reason || r.id,
+              category: r.restrictionType || 'Community Guidelines',
+              severity: r.severity || 'HIGH',
+              addedBy: r.admin?.username || 'System',
+            }))
+          );
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setBlockedWords([]);
+          setLoading(false);
+        }
+      });
+    return () => { mounted = false; };
+  }, []);
 
   const columns = [
     {
@@ -71,7 +96,7 @@ export function ChatModerationPage() {
         />
       </Card>
 
-      <DataTable columns={columns} data={MOCK_BLOCKED_WORDS} isLoading={false} />
+      <DataTable columns={columns} data={blockedWords} isLoading={loading} />
     </div>
   );
 }

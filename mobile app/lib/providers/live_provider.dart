@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/live_room_model.dart';
 import '../models/pk_battle_model.dart';
 import '../models/gift_model.dart';
-import '../core/constants/dummy_data.dart';
+import '../models/user_model.dart';
 
 class LiveMessage {
   final String sender;
@@ -116,7 +116,24 @@ class LiveProvider extends ChangeNotifier {
   }
 
   void startPkBattle() {
-    _activePkBattle = DummyData.samplePkBattle;
+    _activePkBattle = const PKBattleModel(
+      id: 'pk_active_round',
+      hostA: UserModel(
+        id: 'host_1',
+        username: 'host_alpha',
+        name: 'Team Blue',
+        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+      ),
+      hostB: UserModel(
+        id: 'host_2',
+        username: 'host_beta',
+        name: 'Team Red',
+        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+      ),
+      scoreA: 0,
+      scoreB: 0,
+      remainingTime: Duration(minutes: 3),
+    );
     _pkTimeRemainingSeconds = 180;
     _pkTimer?.cancel();
     _pkTimer = Timer.periodic(const Duration(seconds: 1), (timer) {

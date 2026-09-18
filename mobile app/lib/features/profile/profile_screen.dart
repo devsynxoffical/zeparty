@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
 import '../../core/utils/formatters.dart';
-import '../../core/constants/dummy_data.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../wallet/diamonds_wallet_screen.dart';
@@ -327,11 +326,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       GestureDetector(
                         onTap: () {
                           final partyProv = context.read<LivePartyProvider>();
-                          final room = partyProv.activeRoom ?? DummyData.liveRooms.first;
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: room)),
-                          );
+                          final room = partyProv.activeRoom;
+                          if (room != null) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: room)),
+                            );
+                          }
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

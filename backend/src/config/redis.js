@@ -33,8 +33,11 @@ export const redisProxy = {
   incr: (key) => getRedisClient().incr(key),
   expire: (key, seconds) => getRedisClient().expire(key, seconds),
   ttl: (key) => getRedisClient().ttl(key),
+  ping: () => getRedisClient().ping(),
+  duplicate: () => getRedisClient().duplicate(),
   connect: () => getRedisClient().connect(),
   disconnect: () => redisClient?.disconnect(),
+  quit: () => redisClient?.quit(),
 };
 
 export default redisProxy;

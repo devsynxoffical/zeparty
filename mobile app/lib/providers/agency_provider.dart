@@ -21,7 +21,7 @@ class AgencyProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get auditLogs => List.unmodifiable(_auditLogs);
 
   AgencyProvider() {
-    _initMockData();
+    // Clean initial state for authentic user data
   }
 
   void registerAgency({
@@ -40,53 +40,15 @@ class AgencyProvider extends ChangeNotifier {
       ownerUserId: ownerUserId,
       ownerName: ownerName,
       status: 'Active',
-      totalHosts: 3,
-      totalMembers: 5,
-      cycle15DayId: 'cycle_2026_09_A',
-      pendingBalanceUsd: 150.0,
-      availableBalanceUsd: 850.00,
+      totalHosts: 0,
+      totalMembers: 1,
+      cycle15DayId: 'cycle_${now.year}_${now.month}_A',
+      pendingBalanceUsd: 0.0,
+      availableBalanceUsd: 0.0,
       countryCode: 'GLOBAL',
       createdAt: now,
     );
     notifyListeners();
-  }
-
-  void _initMockData() {
-    final now = DateTime.now();
-    _userAgency = AgencyModel(
-      id: 'agency_777',
-      name: 'ZeParty Royal Agency',
-      logoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-      description: 'Official Premier Agency for Top Creators & Hosts',
-      ownerUserId: 'user_1001',
-      ownerName: 'Danial Khan',
-      status: 'Active',
-      totalHosts: 4,
-      totalMembers: 12,
-      cycle15DayId: 'cycle_2026_08_A',
-      pendingBalanceUsd: 284.0,
-      availableBalanceUsd: 1420.50,
-      countryCode: 'GLOBAL',
-      createdAt: now.subtract(const Duration(days: 120)),
-    );
-
-    _members.addAll([
-      AgencyMemberModel(id: 'm1', agencyId: 'agency_777', userId: 'user_1001', name: 'Danial Khan', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80', countryCode: 'GLOBAL', role: 'Owner', status: 'Active', targetStatus: 'Target Achieved', joinedAt: now.subtract(const Duration(days: 120))),
-      AgencyMemberModel(id: 'm2', agencyId: 'agency_777', userId: 'user_1002', name: 'Sophia Rose', avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80', countryCode: 'US', role: 'Host', status: 'Active', targetStatus: 'Target Achieved', joinedAt: now.subtract(const Duration(days: 90))),
-      AgencyMemberModel(id: 'm3', agencyId: 'agency_777', userId: 'user_1003', name: 'Alex Rivera', avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=300&q=80', countryCode: 'PK', role: 'Host', status: 'Active', targetStatus: 'In Progress', joinedAt: now.subtract(const Duration(days: 60))),
-      AgencyMemberModel(id: 'm4', agencyId: 'agency_777', userId: 'user_1004', name: 'Elena Rostova', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80', countryCode: 'IN', role: 'Host', status: 'Active', targetStatus: 'In Progress', joinedAt: now.subtract(const Duration(days: 45))),
-    ]);
-
-    _audioHosts.addAll([
-      AudioHostModel(hostId: 'ah_1', userId: 'user_1002', userName: 'Sophia Rose', avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80', agencyId: 'agency_777', agencyName: 'ZeParty Royal Agency', joinDate: now.subtract(const Duration(days: 90)), currentLevel: 5, achievedDiamonds: 520000, completedValidDays: 8, dailyOnlineMinutes: 140, isTodayValid: true, pendingSalaryUsd: 32.0, availableSalaryUsd: 120.0),
-      AudioHostModel(hostId: 'ah_2', userId: 'user_1003', userName: 'Alex Rivera', avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=300&q=80', agencyId: 'agency_777', agencyName: 'ZeParty Royal Agency', joinDate: now.subtract(const Duration(days: 60)), currentLevel: 3, achievedDiamonds: 120000, completedValidDays: 10, dailyOnlineMinutes: 130, isTodayValid: true, pendingSalaryUsd: 6.40, availableSalaryUsd: 48.0),
-      AudioHostModel(hostId: 'ah_3', userId: 'user_1004', userName: 'Elena Rostova', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80', agencyId: 'agency_777', agencyName: 'ZeParty Royal Agency', joinDate: now.subtract(const Duration(days: 45)), currentLevel: 2, achievedDiamonds: 45000, completedValidDays: 7, dailyOnlineMinutes: 90, isTodayValid: false, pendingSalaryUsd: 0.0, availableSalaryUsd: 20.0),
-    ]);
-
-    _walletLedger.addAll([
-      AgencyWalletLedgerModel(transactionId: 'tx_ag_101', cycleId: 'cycle_2026_07_B', agencyId: 'agency_777', hostId: 'user_1002', diamonds: 520000, usdAmount: 32.0, commissionUsd: 8.0, type: 'Settlement', status: 'Completed', recipientChannel: 'Agency Wallet', timestamp: now.subtract(const Duration(days: 16))),
-      AgencyWalletLedgerModel(transactionId: 'tx_ag_102', cycleId: 'cycle_2026_07_B', agencyId: 'agency_777', hostId: 'user_1003', diamonds: 120000, usdAmount: 6.4, commissionUsd: 1.6, type: 'Settlement', status: 'Completed', recipientChannel: 'Agency Wallet', timestamp: now.subtract(const Duration(days: 16))),
-    ]);
   }
 
   bool isAgencyOwner(String userId) {

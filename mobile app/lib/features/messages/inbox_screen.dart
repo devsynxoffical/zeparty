@@ -5,6 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../models/user_model.dart';
 import '../../providers/messaging_provider.dart';
 import '../../widgets/user_avatar.dart';
+import '../../widgets/report_sheet.dart';
 import 'chat_screen.dart';
 
 class InboxScreen extends StatefulWidget {
@@ -413,41 +414,10 @@ class _InboxScreenState extends State<InboxScreen> {
   }
 
   void _promptReportDialog(BuildContext context, UserModel user, MessagingProvider messaging) {
-    final reasonController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (c) => AlertDialog(
-        backgroundColor: const Color(0xFF1B182B),
-        title: Text('Report ${user.name}', style: const TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Submit moderation report with metadata trace ID.', style: TextStyle(color: Colors.grey, fontSize: 12)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: reasonController,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                hintText: 'Enter reason (Spam, Harassment, Fraud)...',
-                hintStyle: TextStyle(color: Colors.white30),
-                filled: true,
-                fillColor: Color(0xFF25213B),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              messaging.reportUser(user.id, reasonController.text, 'META_TRACE_${DateTime.now().millisecondsSinceEpoch}');
-              Navigator.pop(c);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report submitted to moderation.')));
-            },
-            child: const Text('Submit Report'),
-          ),
-        ],
-      ),
+    ReportSheet.show(
+      context,
+      targetTitle: user.name,
+      reportedUserId: user.id,
     );
   }
 

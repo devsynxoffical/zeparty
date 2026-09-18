@@ -53,79 +53,29 @@ class _CoinRecordsScreenState extends State<CoinRecordsScreen> with SingleTicker
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _generateMockCoinRecords();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<WalletProvider>().fetchLedger();
+    });
   }
 
-  void _generateMockCoinRecords() {
-    final now = DateTime.now();
-    _allRecords.addAll([
-      CoinRecordItem(
-        id: 'CN_TX_1001',
-        category: 'Recharges',
-        description: 'Coin Seller Recharge (Merchant Center)',
-        amount: 50000,
-        timestamp: now.subtract(const Duration(hours: 2)),
-        status: 'Completed',
-        senderOrReceiver: 'Authorized Merchant #402',
-        balanceBefore: 1200000,
-        balanceAfter: 1250000,
-      ),
-      CoinRecordItem(
-        id: 'CN_TX_1002',
-        category: 'Gifting',
-        description: 'Sent Super Lucky Bag (Party Room #888)',
-        amount: -5000,
-        timestamp: now.subtract(const Duration(hours: 5)),
-        status: 'Completed',
-        senderOrReceiver: 'Room Host: @AriaStar',
-        balanceBefore: 1250000,
-        balanceAfter: 1245000,
-      ),
-      CoinRecordItem(
-        id: 'CN_TX_1003',
-        category: 'Games',
-        description: 'Super Wheel Spin Jackpot Reward',
-        amount: 25000,
-        timestamp: now.subtract(const Duration(days: 1)),
-        status: 'Completed',
-        senderOrReceiver: 'Platform Game Engine',
-        balanceBefore: 1220000,
-        balanceAfter: 1245000,
-      ),
-      CoinRecordItem(
-        id: 'CN_TX_1004',
-        category: 'Transfers',
-        description: 'P2P Coin Transfer Sent',
-        amount: -10000,
-        timestamp: now.subtract(const Duration(days: 2)),
-        status: 'Completed',
-        senderOrReceiver: 'Recipient: @LeoKing',
-        balanceBefore: 1230000,
-        balanceAfter: 1220000,
-      ),
-      CoinRecordItem(
-        id: 'CN_TX_1005',
-        category: 'Store Purchases',
-        description: 'Eternal CP Ring Relationship Card',
-        amount: -1000,
-        timestamp: now.subtract(const Duration(days: 4)),
-        status: 'Completed',
-        senderOrReceiver: 'ZeParty Store',
-        balanceBefore: 1231000,
-        balanceAfter: 1230000,
-      ),
-      CoinRecordItem(
-        id: 'CN_TX_1006',
-        category: 'Store Purchases',
-        description: 'Custom Room Theme DP Upload Fee',
-        amount: -100000,
-        timestamp: now.subtract(const Duration(days: 6)),
-        status: 'Refunded',
-        senderOrReceiver: 'System Moderation Gate',
-        balanceBefore: 1331000,
-        balanceAfter: 1231000,
-      ),
-    ]);
+  List<CoinRecordItem> _getRecordsFromWallet(WalletProvider wallet) {
+    if (wallet.transactions.isNotEmpty) {
+      return wallet.transactions.map((tx) {
+        final amt = tx.amount.round();
+        return CoinRecordItem(
+          id: tx.id,
+          category: tx.type,
+          description: tx.title,
+          amount: amt,
+          timestamp: tx.date,
+          status: tx.status,
+          senderOrReceiver: tx.targetUserId ?? 'ZeParty System',
+          balanceBefore: (tx.balanceAfter ?? 0) - amt,
+          balanceAfter: tx.balanceAfter ?? 0,
+        );
+      }).toList();
+    }
+    return _allRecords;
   }
 
   @override
@@ -134,8 +84,9 @@ class _CoinRecordsScreenState extends State<CoinRecordsScreen> with SingleTicker
     super.dispose();
   }
 
-  List<CoinRecordItem> _filterRecords(int tabIndex) {
-    return _allRecords.where((item) {
+  List<CoinRecordItem> _filterRecords(int tabIndex, WalletProvider wallet) {
+    final list = _getRecordsFromWallet(wallet);
+    return list.where((item) {
       // 1. Tab Direction Filter (0: All, 1: Income, 2: Expense)
       if (tabIndex == 1 && !item.isIncome) return false;
       if (tabIndex == 2 && item.isIncome) return false;
@@ -367,7 +318,8 @@ class _CoinRecordsScreenState extends State<CoinRecordsScreen> with SingleTicker
   }
 
   Widget _buildRecordsList(int tabIndex, bool isDark) {
-    final records = _filterRecords(tabIndex);
+    final wallet = context.watch<WalletProvider>();
+    final records = _filterRecords(tabIndex, wallet);
 
     if (records.isEmpty) {
       return Center(

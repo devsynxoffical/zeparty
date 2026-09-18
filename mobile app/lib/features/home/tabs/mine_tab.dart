@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/repositories/backend_repository.dart';
-import '../../../core/constants/dummy_data.dart';
 import '../../../providers/auth_provider.dart';
 import '../../live/create_live_room_screen.dart';
 import '../../live/live_room_screen.dart';
@@ -31,7 +30,7 @@ class _MineTabState extends State<MineTab> {
     final primary = AppColors.getPrimary(widget.isDark);
     final recentRooms = [...myRooms, ...liveRooms.where((r) => r.host.id != currentUser.id)].take(6).toList();
     final followingRooms = liveRooms.skip(1).take(4).toList();
-    final friendUsers = DummyData.popularUsers.take(4).toList();
+    final friendUsers = liveRooms.map((r) => r.host).where((u) => u.id != currentUser.id).take(4).toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 90),

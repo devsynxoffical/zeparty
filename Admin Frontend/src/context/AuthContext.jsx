@@ -14,16 +14,15 @@ import {
 export const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [session, setSession] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [session, setSession] = useState(() => loadSession());
+  const [isLoading, setIsLoading] = useState(false);
 
-  // On mount, rehydrate from localStorage
+  // Sync session on mount/storage changes
   useEffect(() => {
     const storedSession = loadSession();
     if (storedSession) {
       setSession(storedSession);
     }
-    setIsLoading(false);
   }, []);
 
   const login = useCallback(async (credentials) => {
@@ -35,7 +34,7 @@ export function AuthProvider({ children }) {
   const setOwnerSession = useCallback((ownerData) => {
     const ownerSession = {
       admin: ownerData.owner || ownerData,
-      token: ownerData.accessToken || 'mock_owner_jwt_token',
+      token: ownerData.accessToken || ownerData.token || '',
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     };
     saveSession(ownerSession);

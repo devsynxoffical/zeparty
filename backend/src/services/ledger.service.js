@@ -70,10 +70,10 @@ export async function postTransaction({
         throw error;
       }
 
-      const currentCoins = BigInt(wallet.coinBalance);
-      const currentDiamonds = BigInt(wallet.diamondBalance);
-      const currentSellerCoins = BigInt(wallet.sellerBalanceCoins);
-      const currentEscrowLocked = BigInt(wallet.escrowLockedCoins);
+      const currentCoins = BigInt(wallet.coinBalance ?? 0n);
+      const currentDiamonds = BigInt(wallet.diamondBalance ?? 0n);
+      const currentSellerCoins = BigInt(wallet.sellerBalanceCoins ?? 0n);
+      const currentEscrowLocked = BigInt(wallet.escrowLockedCoins ?? 0n);
 
       const balanceBefore = {
         coins: currentCoins.toString(),
@@ -83,10 +83,10 @@ export async function postTransaction({
       };
 
       // 2. Compute new balances
-      const cDelta = BigInt(coinDelta);
-      const dDelta = BigInt(diamondDelta);
-      const sDelta = BigInt(sellerDelta);
-      const eDelta = BigInt(escrowDelta);
+      const cDelta = BigInt(coinDelta ?? 0n);
+      const dDelta = BigInt(diamondDelta ?? 0n);
+      const sDelta = BigInt(sellerDelta ?? 0n);
+      const eDelta = BigInt(escrowDelta ?? 0n);
 
       const newCoinBalance = currentCoins + cDelta;
       const newDiamondBalance = currentDiamonds + dDelta;
@@ -173,8 +173,8 @@ export async function postTransaction({
     };
   };
 
-  // If already running inside an external transaction, reuse it; otherwise create new Prisma transaction
-  if (db !== prisma && typeof db.$transaction !== 'function') {
+  // If running with custom db/mock or inside an active transaction, execute directly
+  if (db && db !== prisma) {
     return await executeInsideTransaction(db);
   }
 

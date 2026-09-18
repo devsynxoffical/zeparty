@@ -14,8 +14,7 @@ router.post('/otp/verify', authController.verifyOtp); // Blueprint alias
 router.post('/refresh', authController.refresh);
 router.post('/admin/login', authController.adminLogin);
 
-// Protected authentication routes
-router.post('/logout', authenticate, authController.logout);
+router.post('/logout', authController.logout);
 router.get('/me', authenticate, authController.me);
 
 export default router;

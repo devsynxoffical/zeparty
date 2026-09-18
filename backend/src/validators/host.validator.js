@@ -28,11 +28,13 @@ export const reviewHostApplicationSchema = z.object({
 );
 
 export const updateHostStatusSchema = z.object({
-  hostStatus: z.enum(['APPLIED', 'ACTIVE', 'SUSPENDED', 'REJECTED'], {
-    required_error: 'Valid host status is required',
-  }),
+  hostStatus: z.enum(['APPLIED', 'ACTIVE', 'SUSPENDED', 'REJECTED']).optional(),
+  status: z.enum(['APPLIED', 'ACTIVE', 'SUSPENDED', 'REJECTED', 'applied', 'active', 'suspended', 'rejected']).optional(),
   reason: z.string().max(500).optional().nullable(),
-});
+}).transform((data) => ({
+  hostStatus: (data.hostStatus || data.status || 'ACTIVE').toUpperCase(),
+  reason: data.reason,
+}));
 
 export const updateHostPerformanceSchema = z.object({
   liveHoursDelta: z.number().min(0, 'liveHoursDelta must be non-negative').optional(),

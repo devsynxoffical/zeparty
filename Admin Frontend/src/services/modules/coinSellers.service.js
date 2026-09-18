@@ -2,47 +2,77 @@
 // ZeParty Admin Portal — Coin Sellers Service (JavaScript)
 // ============================================================
 
-const MOCK_SELLERS = [
-  {
-    id: 'seller-001',
-    name: 'Global Pay Solutions',
-    contactEmail: 'sales@globalpay.io',
-    allocatedQuota: 10000000,
-    soldCoins: 7500000,
-    commissionPct: 5.0,
-    status: 'active',
-  },
-  {
-    id: 'seller-002',
-    name: 'Asia Direct Coins',
-    contactEmail: 'support@asiadirect.com',
-    allocatedQuota: 5000000,
-    soldCoins: 4200000,
-    commissionPct: 4.5,
-    status: 'active',
-  },
-  {
-    id: 'seller-003',
-    name: 'Middle East Resellers',
-    contactEmail: 'me@coinreseller.ae',
-    allocatedQuota: 8000000,
-    soldCoins: 1200000,
-    commissionPct: 6.0,
-    status: 'inactive',
-  },
-];
+import apiClient from '../api';
 
-let sellersState = [...MOCK_SELLERS];
-
-export async function getCoinSellers() {
-  await new Promise((res) => setTimeout(res, 200));
-  return [...sellersState];
+export async function getCoinSellers(params = {}) {
+  const res = await apiClient.get('/v1/admin/sellers', { params });
+  const items = res.data?.data || [];
+  return items.map((s) => ({
+    id: s.id,
+    name: s.businessName || s.user?.username || s.id,
+    contactEmail: s.user?.email || 'seller@zeparty.io',
+    allocatedQuota: Number(s.resellerBalanceCoins || s.allocatedQuota || s.user?.wallet?.sellerBalanceCoins || 0),
+    soldCoins: Number(s.soldCoins || 0),
+    commissionPct: Number(s.profitMarginPercent || s.commissionPercent || 10.0),
+    status: (s.sellerStatus || s.status || 'ACTIVE').toLowerCase(),
+    userId: s.userId,
+    username: s.user?.username ? `@${s.user.username}` : `@${s.id?.slice(0, 6)}`,
+    country: s.user?.countryCode || 'US',
+    resellerBalanceCoins: Number(s.resellerBalanceCoins || s.user?.wallet?.sellerBalanceCoins || 0),
+    creditLimit: Number(s.creditLimitUSD || 10000),
+    createdAt: s.createdAt,
+    updatedAt: s.updatedAt,
+  }));
 }
 
-export async function toggleSellerStatus(id) {
-  await new Promise((res) => setTimeout(res, 250));
-  sellersState = sellersState.map((s) =>
-    s.id === id ? { ...s, status: s.status === 'active' ? 'inactive' : 'active' } : s
-  );
-  return { success: true };
+export async function createCoinSeller(payload) {
+  const res = await apiClient.post('/v1/admin/sellers', payload);
+  return res.data?.data;
 }
+
+export async function getCoinSellerById(id) {
+  const res = await apiClient.get(`/v1/admin/sellers/${id}`);
+  return res.data?.data;
+}
+
+export async function updateCoinSeller(id, payload) {
+  const res = await apiClient.put(`/v1/admin/sellers/${id}`, payload);
+  return res.data?.data;
+}
+
+export async function deleteCoinSeller(id) {
+  const res = await apiClient.delete(`/v1/admin/sellers/${id}`);
+  return res.data;
+}
+
+export async function toggleSellerStatus(id, currentStatus) {
+  const isCurrentlyActive = (currentStatus || '').toLowerCase() === 'active';
+  const nextStatus = isCurrentlyActive ? 'SUSPENDED' : 'ACTIVE';
+  const res = await apiClient.put(`/v1/admin/sellers/${id}/status`, { sellerStatus: nextStatus, status: nextStatus });
+  return res.data;
+}
+
+export async function allocateCoinsToSeller(id, amount, notes = '') {
+  const res = await apiClient.post(`/v1/admin/sellers/${id}/allocate`, {
+    amountCoins: Number(amount),
+    amount: Number(amount),
+    notes,
+  });
+  return res.data;
+}
+
+export async function correctSellerBalance(id, payload) {
+  const res = await apiClient.post(`/v1/admin/sellers/${id}/correct`, payload);
+  return res.data;
+}
+
+export default {
+  getCoinSellers,
+  createCoinSeller,
+  getCoinSellerById,
+  updateCoinSeller,
+  deleteCoinSeller,
+  toggleSellerStatus,
+  allocateCoinsToSeller,
+  correctSellerBalance,
+};

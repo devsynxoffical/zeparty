@@ -9,10 +9,12 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/user_model.dart';
 import '../../providers/messaging_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/gift_dialog.dart';
 import '../../widgets/gift_animation_overlay.dart';
+import '../../widgets/report_sheet.dart';
 
 class ChatScreen extends StatefulWidget {
   final UserModel user;
@@ -221,8 +223,31 @@ class _ChatScreenState extends State<ChatScreen> {
             onPressed: _showGiftDialog,
           ),
           PopupMenuButton<String>(
-            onSelected: (val) {
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Action: $val')));
+            onSelected: (val) async {
+              if (val == 'Block User') {
+                try {
+                  await context.read<AuthProvider>().blockUser(widget.user.id);
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('🚫 ${widget.user.name} has been blocked.')),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to block: $e')),
+                    );
+                  }
+                }
+              } else if (val == 'Report Account') {
+                ReportSheet.show(
+                  context,
+                  targetTitle: widget.user.name,
+                  reportedUserId: widget.user.id,
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Action: $val')));
+              }
             },
             itemBuilder: (ctx) => [
               const PopupMenuItem(value: 'Block User', child: Text('Block User')),

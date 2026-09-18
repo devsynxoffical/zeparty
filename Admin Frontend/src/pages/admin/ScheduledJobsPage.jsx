@@ -3,26 +3,52 @@
 // Interactive Cron Job Trigger Controls
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Clock, Play, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { useAuditLog } from '../../context/AuditLogContext';
-
-const INITIAL_JOBS = [
-  { id: 'job-1', name: 'Weekly Host Payout Settlement', schedule: 'Every Sunday 00:00 UTC', lastRun: '2026-08-17T00:00:00Z', nextRun: '2026-08-24T00:00:00Z', status: 'IDLE' },
-  { id: 'job-2', name: 'Daily Reward Calculation', schedule: 'Every Day 00:00 UTC', lastRun: '2026-08-20T00:00:00Z', nextRun: '2026-08-21T00:00:00Z', status: 'COMPLETED' },
-  { id: 'job-3', name: 'Audit Log Archival', schedule: 'Every 1st of Month', lastRun: '2026-08-01T00:00:00Z', nextRun: '2026-09-01T00:00:00Z', status: 'IDLE' },
-];
+import apiClient from '../../services/api';
 
 export function ScheduledJobsPage() {
   const { logAdminAction } = useAuditLog();
-  const [jobs, setJobs] = useState(INITIAL_JOBS);
+  const [jobs, setJobs] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
   const [jobMsg, setJobMsg] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    apiClient
+      .get('/v1/admin/jobs')
+      .then((res) => {
+        if (!isMounted) return;
+        const items = res.data?.data || [];
+        const formatted = items.map((j) => ({
+          id: j.id,
+          name: j.name || j.jobName || 'System Cron Job',
+          schedule: j.schedule || j.cronExpression || 'Daily 00:00 UTC',
+          lastRun: j.lastRunAt || j.lastRun || 'Not run yet',
+          nextRun: j.nextRunAt || j.nextRun || 'Scheduled',
+          status: j.status || 'IDLE',
+        }));
+        setJobs(formatted);
+      })
+      .catch(() => {
+        if (isMounted) setJobs([]);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleRunJob = () => {
     if (!selectedJob) return;
@@ -79,7 +105,9 @@ export function ScheduledJobsPage() {
           )},
         ]}
         data={jobs}
-        isLoading={false}
+        isLoading={isLoading}
+        emptyTitle="No scheduled jobs found"
+        emptyDescription="No recurring background tasks or cron processes registered."
       />
 
       {selectedJob && (

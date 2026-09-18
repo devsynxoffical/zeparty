@@ -13,6 +13,8 @@ import { Select, Textarea } from '../../components/ui/Select';
 import {
   getAnnouncements,
   createAnnouncement,
+  updateAnnouncement,
+  deleteAnnouncement,
 } from '../../services/modules/communications.service';
 import { formatDate } from '../../utils/format';
 import { useAuditLog } from '../../context/AuditLogContext';
@@ -46,11 +48,10 @@ function AnnouncementModal({ isOpen, onClose, ann, onSave }) {
     try {
       const payload = { title, content, type, audience, pinned };
       if (isEdit) {
-        // No update service yet — optimistic local patch
-        onSave({ ...ann, ...payload });
+        const updated = await updateAnnouncement(ann.id, payload);
+        onSave(updated || { ...ann, ...payload });
       } else {
         const newAnn = await createAnnouncement({ ...payload, publishNow: true });
-        // Merge extra fields so the card renders properly
         onSave({ ...newAnn, title, content, type, audience, pinned, status: 'published', publishedAt: new Date().toISOString(), createdBy: 'Admin' }, 'create');
       }
       onClose();
@@ -145,6 +146,7 @@ export function AnnouncementsPage() {
     if (!deleteModal.ann) return;
     setIsDeleting(true);
     try {
+      await deleteAnnouncement(deleteModal.ann.id);
       setAnnouncements((prev) => prev.filter((a) => a.id !== deleteModal.ann.id));
       await logAdminAction({
         action: 'ANNOUNCEMENT_DELETED',
@@ -155,6 +157,8 @@ export function AnnouncementsPage() {
         reason: 'Announcement removed from system',
         riskLevel: 'MEDIUM',
       });
+    } catch (err) {
+      console.error('Failed to delete announcement:', err);
     } finally {
       setIsDeleting(false);
       setDeleteModal({ open: false, ann: null });

@@ -11,7 +11,8 @@ export async function findSellerById(id, db = prisma) {
           username: true,
           email: true,
           phone: true,
-          userStatus: true,
+          countryCode: true,
+          status: true,
           profile: true,
           wallet: true,
         },
@@ -30,6 +31,9 @@ export async function findSellerByUserId(userId, db = prisma) {
           id: true,
           username: true,
           email: true,
+          phone: true,
+          countryCode: true,
+          status: true,
           profile: true,
           wallet: true,
         },
@@ -66,6 +70,9 @@ export async function findSellers(
             id: true,
             username: true,
             email: true,
+            phone: true,
+            countryCode: true,
+            status: true,
             profile: true,
             wallet: {
               select: {
@@ -124,6 +131,12 @@ export async function updateSellerBalance(id, amountDelta, db = prisma) {
   });
 }
 
+export async function deleteSeller(id, db = prisma) {
+  return await db.coinSeller.delete({
+    where: { id },
+  });
+}
+
 export default {
   findSellerById,
   findSellerByUserId,
@@ -131,4 +144,5 @@ export default {
   createSeller,
   updateSeller,
   updateSellerBalance,
+  deleteSeller,
 };

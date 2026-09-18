@@ -14,16 +14,48 @@ import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { CountryFlag } from '../../components/ui/CountryFlag';
-import { MOCK_APP_EMOJIS } from '../../mocks/bdCenterFull.mock';
 import { useAuditLog } from '../../context/AuditLogContext';
+import apiClient from '../../services/api';
 
 export function EmojiManagementPage() {
   const { logAdminAction } = useAuditLog();
-  const [emojis, setEmojis] = useState(MOCK_APP_EMOJIS);
+  const [emojis, setEmojis] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [masterSwitch, setMasterSwitch] = useState(true);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [feedback, setFeedback] = useState(null);
+
+  React.useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    apiClient.get('/v1/admin/assets')
+      .then((res) => {
+        if (mounted) {
+          const items = res.data?.data || [];
+          setEmojis(items.filter(a => a.type === 'EMOJI' || a.category === 'EMOJI').map(e => ({
+            id: e.id,
+            name: e.name,
+            category: e.category || 'Default',
+            assetUrl: e.assetUrl || e.iconUrl || '',
+            format: 'WebP',
+            isAnimated: Boolean(e.isAnimated),
+            displayOrder: e.displayOrder || 1,
+            availability: 'Party & Live Rooms',
+            eligibility: 'Everyone',
+            status: e.status?.toLowerCase() || 'active',
+          })));
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setEmojis([]);
+          setLoading(false);
+        }
+      });
+    return () => { mounted = false; };
+  }, []);
 
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);

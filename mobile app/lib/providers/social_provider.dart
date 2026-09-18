@@ -1,8 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/post_model.dart';
 import '../models/short_video_model.dart';
 import '../models/user_model.dart';
-import '../core/constants/dummy_data.dart';
+import '../core/repositories/social_repository.dart';
+import '../core/services/socket_service.dart';
+import '../core/services/api_client.dart';
+
+// ─── Comment Model (for post & video comments) ────────────────────────────────
 
 class SocialComment {
   final String id;
@@ -26,40 +31,380 @@ class SocialComment {
   });
 
   String get authorAvatarUrl => authorAvatar;
+
+  factory SocialComment.fromJson(Map<String, dynamic> json) {
+    final rawUser = json['user'] ?? json['author'];
+    String name = 'User';
+    String avatar = '';
+    String authorId = '';
+    if (rawUser is Map<String, dynamic>) {
+      name = rawUser['displayName']?.toString() ??
+          rawUser['name']?.toString() ??
+          rawUser['username']?.toString() ??
+          'User';
+      avatar = rawUser['avatarUrl']?.toString() ?? '';
+      authorId = rawUser['id']?.toString() ?? '';
+    }
+
+    return SocialComment(
+      id: json['id']?.toString() ?? '',
+      authorId: authorId,
+      authorName: name,
+      authorAvatar: avatar,
+      text: json['content']?.toString() ?? json['text']?.toString() ?? '',
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+      likesCount: 0,
+      isLiked: false,
+    );
+  }
 }
 
+// ─── SocialProvider ───────────────────────────────────────────────────────────
+
 class SocialProvider extends ChangeNotifier {
-  final List<PostModel> _posts = List.from(DummyData.posts);
-  final List<ShortVideoModel> _shortVideos = List.from(DummyData.shortVideos);
-  final Map<String, List<SocialComment>> _videoComments = {};
+  final SocialRepository _repo = SocialRepository.instance;
+
+  // Posts (feed)
+  final List<PostModel> _posts = [];
+  bool _feedLoading = false;
+  bool _feedLoaded = false;
+  String? _feedError;
+  int _feedPage = 1;
+  bool _feedHasMore = true;
+
+  // Short videos (empty initial list — short video streaming backend is deferred)
+  final List<ShortVideoModel> _shortVideos = [];
+
+  // Post comments cache
+  final Map<String, List<SocialComment>> _postComments = {};
+  final Map<String, bool> _postCommentsLoading = {};
+
+  // Socket subscriptions
+  final List<StreamSubscription> _socketSubs = [];
+
+  // ─── Getters ──────────────────────────────────────────────────────────────
 
   List<PostModel> get posts => List.unmodifiable(_posts);
   List<ShortVideoModel> get shortVideos => List.unmodifiable(_shortVideos);
+  bool get feedLoading => _feedLoading;
+  bool get feedLoaded => _feedLoaded;
+  String? get feedError => _feedError;
+  bool get feedHasMore => _feedHasMore;
 
+  List<SocialComment> getCommentsForPost(String postId) =>
+      List.unmodifiable(_postComments[postId] ?? []);
+
+  bool isPostCommentsLoading(String postId) =>
+      _postCommentsLoading[postId] == true;
+
+  // Legacy: for short-video comments
   List<SocialComment> getCommentsForVideo(String videoId) {
-    return List.unmodifiable(_videoComments[videoId] ?? []);
+    return List.unmodifiable(_postComments[videoId] ?? []);
   }
 
-  void toggleLikePost(String postId) {
-    final index = _posts.indexWhere((p) => p.id == postId);
-    if (index != -1) {
-      final post = _posts[index];
-      final newIsLiked = !post.isLiked;
-      final newLikes = newIsLiked ? post.likes + 1 : post.likes - 1;
-      _posts[index] = PostModel(
-        id: post.id,
-        author: post.author,
-        content: post.content,
-        imageUrls: post.imageUrls,
-        likes: newLikes,
-        comments: post.comments,
-        shares: post.shares,
-        isLiked: newIsLiked,
-        createdAt: post.createdAt,
-      );
+  // ─── Initialise (called once when provider is attached) ───────────────────
+
+  SocialProvider() {
+    _listenToSocketEvents();
+  }
+
+  @override
+  void dispose() {
+    for (final sub in _socketSubs) {
+      sub.cancel();
+    }
+    super.dispose();
+  }
+
+  void _listenToSocketEvents() {
+    final socket = SocketService.instance;
+
+    _socketSubs.add(socket.onPostCreated.listen((data) {
+      try {
+        final post = PostModel.fromJson(Map<String, dynamic>.from(data));
+        if (!_posts.any((p) => p.id == post.id)) {
+          _posts.insert(0, post);
+          notifyListeners();
+        }
+      } catch (_) {}
+    }));
+
+    _socketSubs.add(socket.onPostDeleted.listen((data) {
+      final postId = data['postId']?.toString() ?? data['id']?.toString();
+      if (postId != null) {
+        _posts.removeWhere((p) => p.id == postId);
+        notifyListeners();
+      }
+    }));
+
+    _socketSubs.add(socket.onPostLiked.listen((data) {
+      _updatePostLike(data, isLiked: true);
+    }));
+
+    _socketSubs.add(socket.onPostUnliked.listen((data) {
+      _updatePostLike(data, isLiked: false);
+    }));
+
+    _socketSubs.add(socket.onCommentCreated.listen((data) {
+      try {
+        final postId = data['postId']?.toString();
+        if (postId != null) {
+          final comment = SocialComment.fromJson(Map<String, dynamic>.from(data));
+          final current = _postComments[postId] ?? [];
+          _postComments[postId] = [comment, ...current];
+          // Increment comment count on post
+          final idx = _posts.indexWhere((p) => p.id == postId);
+          if (idx != -1) {
+            _posts[idx] = _posts[idx].copyWith(comments: _posts[idx].comments + 1);
+          }
+          notifyListeners();
+        }
+      } catch (_) {}
+    }));
+
+    _socketSubs.add(socket.onCommentDeleted.listen((data) {
+      final commentId = data['commentId']?.toString() ?? data['id']?.toString();
+      final postId = data['postId']?.toString();
+      if (commentId != null && postId != null) {
+        final current = _postComments[postId];
+        if (current != null) {
+          _postComments[postId] = current.where((c) => c.id != commentId).toList();
+        }
+        final idx = _posts.indexWhere((p) => p.id == postId);
+        if (idx != -1 && _posts[idx].comments > 0) {
+          _posts[idx] = _posts[idx].copyWith(comments: _posts[idx].comments - 1);
+        }
+        notifyListeners();
+      }
+    }));
+  }
+
+  void _updatePostLike(Map<String, dynamic> data, {required bool isLiked}) {
+    final postId = data['postId']?.toString() ?? data['id']?.toString();
+    final likesCount = data['likesCount'];
+    if (postId == null) return;
+    final idx = _posts.indexWhere((p) => p.id == postId);
+    if (idx != -1) {
+      final newCount = likesCount is int
+          ? likesCount
+          : (_posts[idx].likes + (isLiked ? 1 : -1)).clamp(0, 999999999);
+      _posts[idx] = _posts[idx].copyWith(likes: newCount);
       notifyListeners();
     }
   }
+
+  // ─── Feed Loading ─────────────────────────────────────────────────────────
+
+  Future<void> loadFeed({bool refresh = false}) async {
+    if (_feedLoading) return;
+    if (refresh) {
+      _feedPage = 1;
+      _feedHasMore = true;
+      _feedError = null;
+    } else if (!_feedHasMore) {
+      return;
+    }
+
+    _feedLoading = true;
+    if (refresh) _posts.clear();
+    notifyListeners();
+
+    try {
+      final result = await _repo.fetchFeed(page: _feedPage, limit: 20);
+      final List<dynamic> rawPosts = result['data'] ?? [];
+      final posts = rawPosts
+          .whereType<Map<String, dynamic>>()
+          .map(PostModel.fromJson)
+          .toList();
+
+      if (refresh) {
+        _posts.clear();
+      }
+      _posts.addAll(posts);
+      _feedPage++;
+      _feedHasMore = posts.length == 20;
+      _feedLoaded = true;
+      _feedError = null;
+    } on ApiException catch (e) {
+      _feedError = e.message;
+    } catch (e) {
+      _feedError = 'Failed to load feed. Please try again.';
+    } finally {
+      _feedLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // ─── Like / Unlike (optimistic + backend reconcile) ───────────────────────
+
+  Future<void> toggleLikePost(String postId) async {
+    final idx = _posts.indexWhere((p) => p.id == postId);
+    if (idx == -1) return;
+
+    final post = _posts[idx];
+    final wasLiked = post.isLiked;
+
+    // Optimistic update
+    _posts[idx] = post.copyWith(
+      isLiked: !wasLiked,
+      likes: wasLiked
+          ? (post.likes > 0 ? post.likes - 1 : 0)
+          : post.likes + 1,
+    );
+    notifyListeners();
+
+    try {
+      final result = wasLiked
+          ? await _repo.unlikePost(postId)
+          : await _repo.likePost(postId);
+      final serverCount = result['data']?['likesCount'];
+      if (serverCount != null && idx < _posts.length) {
+        _posts[idx] = _posts[idx].copyWith(
+          likes: serverCount is int ? serverCount : int.tryParse(serverCount.toString()) ?? _posts[idx].likes,
+        );
+        notifyListeners();
+      }
+    } on ApiException catch (_) {
+      // Rollback optimistic update on error
+      if (idx < _posts.length) {
+        _posts[idx] = post;
+        notifyListeners();
+      }
+    } catch (_) {
+      if (idx < _posts.length) {
+        _posts[idx] = post;
+        notifyListeners();
+      }
+    }
+  }
+
+  // ─── Create Post ──────────────────────────────────────────────────────────
+
+  Future<PostModel?> createPost({
+    required String content,
+    List<String>? mediaUrls,
+    String visibility = 'PUBLIC',
+  }) async {
+    try {
+      final result = await _repo.createPost(
+        content: content,
+        mediaUrls: mediaUrls,
+        visibility: visibility,
+      );
+      final raw = result['data'];
+      if (raw is Map<String, dynamic>) {
+        final post = PostModel.fromJson(raw);
+        _posts.insert(0, post);
+        notifyListeners();
+        return post;
+      }
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      rethrow;
+    }
+    return null;
+  }
+
+  // ─── Delete Post ──────────────────────────────────────────────────────────
+
+  Future<void> deletePost(String postId) async {
+    await _repo.deletePost(postId);
+    _posts.removeWhere((p) => p.id == postId);
+    notifyListeners();
+  }
+
+  // ─── Comments ─────────────────────────────────────────────────────────────
+
+  Future<void> loadCommentsForPost(String postId, {bool refresh = false}) async {
+    if (_postCommentsLoading[postId] == true) return;
+    if (!refresh && _postComments.containsKey(postId)) return;
+
+    _postCommentsLoading[postId] = true;
+    notifyListeners();
+
+    try {
+      final result = await _repo.fetchComments(postId);
+      final List<dynamic> rawComments = result['data'] ?? [];
+      _postComments[postId] = rawComments
+          .whereType<Map<String, dynamic>>()
+          .map(SocialComment.fromJson)
+          .toList();
+    } catch (_) {
+      _postComments.putIfAbsent(postId, () => []);
+    } finally {
+      _postCommentsLoading[postId] = false;
+      notifyListeners();
+    }
+  }
+
+  Future<SocialComment?> addCommentToPost(String postId, String text, UserModel author) async {
+    try {
+      final result = await _repo.createComment(postId: postId, content: text);
+      final raw = result['data'];
+      final comment = raw is Map<String, dynamic>
+          ? SocialComment.fromJson(raw)
+          : SocialComment(
+              id: 'c_${DateTime.now().millisecondsSinceEpoch}',
+              authorId: author.id,
+              authorName: author.name,
+              authorAvatar: author.avatarUrl,
+              text: text,
+              createdAt: DateTime.now(),
+            );
+
+      final current = _postComments[postId] ?? [];
+      _postComments[postId] = [comment, ...current];
+
+      final idx = _posts.indexWhere((p) => p.id == postId);
+      if (idx != -1) {
+        _posts[idx] = _posts[idx].copyWith(comments: _posts[idx].comments + 1);
+      }
+
+      notifyListeners();
+      return comment;
+    } catch (_) {
+      rethrow;
+    }
+  }
+
+  // Legacy: short video comment method preserved for compatibility
+  void addCommentToShortVideo(String videoId, String text, UserModel author) {
+    if (_postComments[videoId] == null) {
+      _postComments[videoId] = [];
+    }
+    _postComments[videoId]!.insert(
+      0,
+      SocialComment(
+        id: 'cmt_${DateTime.now().millisecondsSinceEpoch}',
+        authorName: author.name,
+        authorAvatar: author.avatarUrl,
+        text: text,
+        createdAt: DateTime.now(),
+      ),
+    );
+
+    final index = _shortVideos.indexWhere((v) => v.id == videoId);
+    if (index != -1) {
+      final video = _shortVideos[index];
+      _shortVideos[index] = ShortVideoModel(
+        id: video.id,
+        creator: video.creator,
+        videoUrl: video.videoUrl,
+        caption: video.caption,
+        musicTitle: video.musicTitle,
+        likes: video.likes,
+        comments: video.comments + 1,
+        gifts: video.gifts,
+        isLiked: video.isLiked,
+      );
+    }
+    notifyListeners();
+  }
+
+  // ─── Short Videos (local — deferred) ─────────────────────────────────────
 
   void toggleLikeShortVideo(String videoId) {
     final index = _shortVideos.indexWhere((v) => v.id == videoId);
@@ -82,59 +427,15 @@ class SocialProvider extends ChangeNotifier {
     }
   }
 
-  void addCommentToShortVideo(String videoId, String text, UserModel author) {
-    if (_videoComments[videoId] == null) {
-      _videoComments[videoId] = [];
-    }
-    _videoComments[videoId]!.insert(
-      0,
-      SocialComment(
-        id: 'cmt_${DateTime.now().millisecondsSinceEpoch}',
-        authorName: author.name,
-        authorAvatar: author.avatarUrl,
-        text: text,
-        createdAt: DateTime.now(),
-      ),
-    );
-
-    // Update comment count on model
-    final index = _shortVideos.indexWhere((v) => v.id == videoId);
-    if (index != -1) {
-      final video = _shortVideos[index];
-      _shortVideos[index] = ShortVideoModel(
-        id: video.id,
-        creator: video.creator,
-        videoUrl: video.videoUrl,
-        caption: video.caption,
-        musicTitle: video.musicTitle,
-        likes: video.likes,
-        comments: video.comments + 1,
-        gifts: video.gifts,
-        isLiked: video.isLiked,
-      );
-    }
-    notifyListeners();
-  }
-
-  void addPost(String content, List<String> imageUrls, UserModel author) {
-    _posts.insert(
-      0,
-      PostModel(
-        id: 'post_${DateTime.now().millisecondsSinceEpoch}',
-        author: author,
-        content: content,
-        imageUrls: imageUrls,
-        likes: 0,
-        comments: 0,
-        shares: 0,
-        createdAt: DateTime.now(),
-      ),
-    );
-    notifyListeners();
-  }
-
   void addShortVideo(ShortVideoModel video) {
     _shortVideos.insert(0, video);
     notifyListeners();
+  }
+
+  // Legacy: addPost is now a no-op — use createPost() instead
+  @Deprecated('Use createPost() which calls the backend')
+  void addPost(String content, List<String> imageUrls, UserModel author) {
+    // No-op: callers should migrate to createPost()
+    debugPrint('[SocialProvider] addPost() is deprecated; use createPost() instead');
   }
 }

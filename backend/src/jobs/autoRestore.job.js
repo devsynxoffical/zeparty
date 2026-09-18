@@ -50,10 +50,16 @@ export async function runAutoRestoreSweep() {
   }
 }
 
+let isRecovering = false;
+
 /**
  * Runs immediate startup recovery sweep on server boot.
  */
 export async function runStartupRecoverySweep() {
+  if (isRecovering) {
+    return;
+  }
+  isRecovering = true;
   console.log('🔄 Executing 15-day auto-restore startup recovery sweep...');
   try {
     const result = await runAutoRestoreSweep();
@@ -65,6 +71,8 @@ export async function runStartupRecoverySweep() {
     return result;
   } catch (err) {
     console.error('⚠️ Startup recovery sweep failed:', err.message);
+  } finally {
+    isRecovering = false;
   }
 }
 

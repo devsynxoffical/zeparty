@@ -6,6 +6,7 @@ import {
   createRechargePlanSchema,
   updateRechargePlanSchema,
   rejectFinancialItemSchema,
+  createCoinRefundSchema,
   queryLedgerSchema,
 } from '../validators/finance.validator.js';
 
@@ -72,6 +73,25 @@ export async function updateRechargePlan(req, res, next) {
       success: true,
       message: 'Recharge plan updated successfully',
       data: plan,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteRechargePlan(req, res, next) {
+  try {
+    const { id } = req.params;
+    const adminId = req.auth.userId;
+    const isOwner = Boolean(req.auth.isOwner);
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await rechargeService.deleteRechargePlan(id, adminId, isOwner, ipAddress);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Recharge plan deleted successfully',
+      data: result,
     });
   } catch (err) {
     next(err);
@@ -200,6 +220,27 @@ export async function getCoinRefunds(req, res, next) {
   }
 }
 
+export async function submitCoinRefund(req, res, next) {
+  try {
+    const validated = createCoinRefundSchema.parse(req.body);
+    const userId = req.auth.userId;
+
+    const result = await refundService.submitCoinRefundDispute({
+      userId,
+      coinAmount: validated.coinAmount,
+      disputeReason: validated.disputeReason,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Coin refund dispute submitted successfully. Pending review.',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function processCoinRefund(req, res, next) {
   try {
     const { id } = req.params;
@@ -215,11 +256,34 @@ export async function processCoinRefund(req, res, next) {
   }
 }
 
+export async function rejectCoinRefund(req, res, next) {
+  try {
+    const { id } = req.params;
+    const validated = rejectFinancialItemSchema.parse(req.body);
+    const adminId = req.auth.userId;
+    const isOwner = Boolean(req.auth.isOwner);
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await refundService.rejectCoinRefund({
+      id,
+      adminId,
+      isOwner,
+      reason: validated.reason,
+      ipAddress,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getMasterLedger,
   getRechargePlans,
   createRechargePlan,
   updateRechargePlan,
+  deleteRechargePlan,
   getOfflineRecharges,
   approveOfflineRecharge,
   rejectOfflineRecharge,
@@ -227,5 +291,7 @@ export default {
   approveWithdrawal,
   rejectWithdrawal,
   getCoinRefunds,
+  submitCoinRefund,
   processCoinRefund,
+  rejectCoinRefund,
 };

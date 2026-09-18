@@ -35,6 +35,13 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    // Load real feed from backend on first mount
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final social = context.read<SocialProvider>();
+      if (!social.feedLoaded && !social.feedLoading) {
+        social.loadFeed();
+      }
+    });
   }
 
   @override
@@ -239,6 +246,31 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
   }
 
   Widget _buildPostFeed(SocialProvider social, {required bool isTrending}) {
+    if (social.feedLoading && social.posts.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      );
+    }
+
+    if (social.feedError != null && social.posts.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.wifi_off_rounded, size: 48, color: AppColors.textSecondary),
+            const SizedBox(height: 12),
+            Text(social.feedError!, style: const TextStyle(color: AppColors.textSecondary)),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () => social.loadFeed(refresh: true),
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
     final posts = isTrending ? social.posts.reversed.toList() : social.posts;
 
     if (posts.isEmpty) {
@@ -266,11 +298,21 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
 
     return RefreshIndicator(
       color: AppColors.primary,
-      onRefresh: () async => await Future.delayed(const Duration(seconds: 1)),
+      onRefresh: () => social.loadFeed(refresh: true),
       child: ListView.builder(
         padding: const EdgeInsets.all(12),
-        itemCount: posts.length,
+        itemCount: posts.length + (social.feedHasMore ? 1 : 0),
         itemBuilder: (context, index) {
+          if (index == posts.length) {
+            // Load-more trigger
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!social.feedLoading) social.loadFeed();
+            });
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2)),
+            );
+          }
           final post = posts[index];
           return PostCard(
             post: post,

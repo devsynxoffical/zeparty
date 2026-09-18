@@ -5,7 +5,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Users, Search, Filter, Eye, Ban, DollarSign, UserCheck,
+  Users, Search, Filter, Eye, Ban, DollarSign, UserCheck, Plus, Edit2, Trash2, CheckCircle2, AlertTriangle, ChevronDown, History, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
@@ -14,17 +14,497 @@ import { Input } from '../../components/ui/Input';
 import { Card } from '../../components/ui/Card';
 import { Modal } from '../../components/ui/Modal';
 import { Select } from '../../components/ui/Select';
-import { USER_STATUSES } from '../../mocks/users.mock';
-import { formatDate, formatNumber } from '../../utils/format';
+import { Toast } from '../../components/ui/Toast';
+import { CountryFlag } from '../../components/ui/CountryFlag';
+import {
+  COUNTRY_PHONE_CONFIG,
+  POPULAR_COUNTRY_CODES,
+  getPhoneConfig,
+  formatLocalPhoneNumber,
+  toE164,
+} from '../../constants/phoneCountryCodes';
+const USER_STATUSES = ['all', 'active', 'suspended', 'banned'];
 import { formatDistanceToNow } from '../../utils/formatters';
 import { usePermission } from '../../hooks/usePermission';
+import { getMasterLedger } from '../../services/modules/finance.service';
 import {
   getUsers,
+  createUser,
+  updateUser,
+  deleteUser,
   suspendUser,
   banUser,
   unbanUser,
   adjustUserBalance,
 } from '../../services/modules/users.service';
+
+// ---- Create User Modal ----
+function CreateUserModal({ isOpen, onClose, onConfirm }) {
+  const [formData, setFormData] = useState({
+    username: '',
+    displayName: '',
+    phone: '',
+    email: '',
+    countryCode: 'PK',
+    status: 'ACTIVE',
+    coins: '',
+    diamonds: '',
+  });
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const phoneConfig = getPhoneConfig(formData.countryCode);
+
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        username: '',
+        displayName: '',
+        phone: '',
+        email: '',
+        countryCode: 'PK',
+        status: 'ACTIVE',
+        coins: '',
+        diamonds: '',
+      });
+      setError('');
+    }
+  }, [isOpen]);
+
+  function handleCountryChange(newCode) {
+    setFormData((prev) => {
+      const newPhone = formatLocalPhoneNumber(prev.phone, newCode);
+      return {
+        ...prev,
+        countryCode: newCode,
+        phone: newPhone,
+      };
+    });
+  }
+
+  function handlePhoneChange(e) {
+    const rawVal = e.target.value;
+    const formatted = formatLocalPhoneNumber(rawVal, formData.countryCode);
+    setFormData((prev) => ({ ...prev, phone: formatted }));
+    setError('');
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!formData.username || formData.username.trim().length < 3) {
+      setError('Username must be at least 3 characters.');
+      return;
+    }
+
+    if (formData.email && formData.email.trim() !== '') {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email.trim())) {
+        setError('Please enter a valid email address (e.g. user@example.com)');
+        return;
+      }
+    }
+
+    setIsSaving(true);
+    setError('');
+    try {
+      const formattedPhone = formData.phone.trim()
+        ? toE164(formData.phone.trim(), formData.countryCode)
+        : undefined;
+
+      await onConfirm({
+        username: formData.username.trim(),
+        displayName: formData.displayName.trim() || formData.username.trim(),
+        phone: formattedPhone,
+        email: formData.email.trim() || undefined,
+        countryCode: formData.countryCode.trim().toUpperCase() || 'PK',
+        status: formData.status,
+        coins: Number(formData.coins) || 0,
+        diamonds: Number(formData.diamonds) || 0,
+      });
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Failed to create user.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  const allCountryList = useMemo(() => {
+    return Object.values(COUNTRY_PHONE_CONFIG).sort((a, b) => a.name.localeCompare(b.name));
+  }, []);
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Create New User"
+      description="Add a new user account with PostgreSQL persistence"
+      size="md"
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <Input
+            label="Username *"
+            value={formData.username}
+            onChange={(e) => { setFormData({ ...formData, username: e.target.value }); setError(''); }}
+            placeholder="e.g. johndoe"
+            required
+          />
+          <Input
+            label="Display Name"
+            value={formData.displayName}
+            onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+            placeholder="e.g. John Doe"
+          />
+
+          {/* Country Selection Dropdown */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-slate-300 flex items-center justify-between">
+              <span>Country *</span>
+              <span className="text-[11px] text-indigo-400 font-mono">Dial: {phoneConfig.dialCode}</span>
+            </label>
+            <div className="relative">
+              <select
+                value={formData.countryCode}
+                onChange={(e) => handleCountryChange(e.target.value)}
+                className="w-full h-9 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs pl-9 pr-8 appearance-none focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+              >
+                {allCountryList.map((c) => (
+                  <option key={c.code} value={c.code} className="bg-slate-900 text-white">
+                    {c.name} ({c.dialCode})
+                  </option>
+                ))}
+              </select>
+              <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
+                <CountryFlag code={formData.countryCode} className="w-4 h-3 rounded-sm object-cover" />
+              </div>
+              <ChevronDown className="h-3.5 w-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Phone Input with Dial Code Badge & Spacing */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-slate-300 flex items-center justify-between">
+              <span>Phone Number</span>
+              <span className="text-[11px] text-slate-400">Max {phoneConfig.digits} digits</span>
+            </label>
+            <div className="relative flex items-center">
+              <div className="h-9 px-2.5 bg-slate-800 border border-r-0 border-slate-700 rounded-l-lg flex items-center gap-1.5 text-xs font-mono font-medium text-indigo-400 select-none">
+                <CountryFlag code={formData.countryCode} className="w-3.5 h-2.5 rounded-sm object-cover" />
+                <span>{phoneConfig.dialCode}</span>
+              </div>
+              <input
+                type="text"
+                value={formData.phone}
+                onChange={handlePhoneChange}
+                placeholder={phoneConfig.placeholder || 'e.g. 301 5431674'}
+                className="w-full h-9 rounded-r-lg bg-slate-900 border border-slate-700 text-white text-xs px-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono placeholder:text-slate-600"
+              />
+            </div>
+          </div>
+
+          <Input
+            label="Email"
+            type="email"
+            value={formData.email}
+            onChange={(e) => { setFormData({ ...formData, email: e.target.value }); setError(''); }}
+            placeholder="e.g. user@example.com"
+          />
+
+          <Select
+            label="Status"
+            value={formData.status}
+            onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+          >
+            <option value="ACTIVE">Active</option>
+            <option value="SUSPENDED">Suspended</option>
+            <option value="BANNED">Banned</option>
+          </Select>
+
+          {/* Initial Coins with clean zero clearing */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-slate-300">Initial Coins</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={formData.coins}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '');
+                setFormData({ ...formData, coins: val });
+              }}
+              placeholder="0"
+              className="w-full h-9 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs px-3 focus:outline-none focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 font-mono placeholder:text-slate-600"
+            />
+          </div>
+
+          {/* Initial Diamonds with clean zero clearing */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-medium text-slate-300">Initial Diamonds</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={formData.diamonds}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '');
+                setFormData({ ...formData, diamonds: val });
+              }}
+              placeholder="0"
+              className="w-full h-9 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs px-3 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 font-mono placeholder:text-slate-600"
+            />
+          </div>
+        </div>
+
+        {error && (
+          <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" size="sm" isLoading={isSaving}>
+            Create User
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ---- Edit User Modal ----
+function EditUserModal({ isOpen, onClose, user, onConfirm }) {
+  const [displayName, setDisplayName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [countryCode, setCountryCode] = useState('PK');
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const phoneConfig = getPhoneConfig(countryCode);
+
+  useEffect(() => {
+    if (isOpen && user) {
+      setDisplayName(user.displayName || '');
+      const rawCountry = (user.country || 'PK').toUpperCase();
+      setCountryCode(rawCountry);
+      // Clean up phone if it includes country dial code
+      let rawPhone = user.phone || '';
+      const cfg = getPhoneConfig(rawCountry);
+      if (rawPhone.startsWith(cfg.dialCode)) {
+        rawPhone = rawPhone.slice(cfg.dialCode.length);
+      }
+      setPhone(formatLocalPhoneNumber(rawPhone, rawCountry));
+      setEmail(user.email || '');
+      setError('');
+    }
+  }, [isOpen, user?.id]);
+
+  function handleCountryChange(newCode) {
+    setCountryCode(newCode);
+    setPhone((prev) => formatLocalPhoneNumber(prev, newCode));
+  }
+
+  function handlePhoneChange(e) {
+    const rawVal = e.target.value;
+    const formatted = formatLocalPhoneNumber(rawVal, countryCode);
+    setPhone(formatted);
+    setError('');
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setIsSaving(true);
+    setError('');
+    try {
+      const formattedPhone = phone.trim()
+        ? toE164(phone.trim(), countryCode)
+        : undefined;
+
+      await onConfirm(user.id, {
+        displayName: displayName.trim() || user.username,
+        phone: formattedPhone,
+        email: email.trim() || undefined,
+        countryCode: countryCode.trim().toUpperCase() || 'PK',
+      });
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Failed to update user.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  if (!user) return null;
+
+  const allCountryList = Object.values(COUNTRY_PHONE_CONFIG).sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Edit User Details"
+      description={`Update profile information for @${user.username}`}
+      size="sm"
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <Input
+          label="Display Name"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          required
+        />
+
+        {/* Country Selection */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-slate-300 flex items-center justify-between">
+            <span>Country</span>
+            <span className="text-[11px] text-indigo-400 font-mono">Dial: {phoneConfig.dialCode}</span>
+          </label>
+          <div className="relative">
+            <select
+              value={countryCode}
+              onChange={(e) => handleCountryChange(e.target.value)}
+              className="w-full h-9 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs pl-9 pr-8 appearance-none focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+            >
+              {allCountryList.map((c) => (
+                <option key={c.code} value={c.code} className="bg-slate-900 text-white">
+                  {c.name} ({c.dialCode})
+                </option>
+              ))}
+            </select>
+            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none flex items-center">
+              <CountryFlag code={countryCode} className="w-4 h-3 rounded-sm object-cover" />
+            </div>
+            <ChevronDown className="h-3.5 w-3.5 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+        </div>
+
+        {/* Phone Input with Dial Badge */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-slate-300 flex items-center justify-between">
+            <span>Phone Number</span>
+            <span className="text-[11px] text-slate-400">Max {phoneConfig.digits} digits</span>
+          </label>
+          <div className="relative flex items-center">
+            <div className="h-9 px-2.5 bg-slate-800 border border-r-0 border-slate-700 rounded-l-lg flex items-center gap-1.5 text-xs font-mono font-medium text-indigo-400 select-none">
+              <CountryFlag code={countryCode} className="w-3.5 h-2.5 rounded-sm object-cover" />
+              <span>{phoneConfig.dialCode}</span>
+            </div>
+            <input
+              type="text"
+              value={phone}
+              onChange={handlePhoneChange}
+              placeholder={phoneConfig.placeholder || 'e.g. 301 5431674'}
+              className="w-full h-9 rounded-r-lg bg-slate-900 border border-slate-700 text-white text-xs px-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono placeholder:text-slate-600"
+            />
+          </div>
+        </div>
+
+        <Input
+          label="Email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+
+        {error && (
+          <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-1 border-t border-slate-800">
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" size="sm" isLoading={isSaving}>
+            Save Changes
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ---- Delete User Modal (Clean In-App Confirmation replacing window.confirm) ----
+function DeleteUserModal({ isOpen, onClose, user, onConfirm }) {
+  const [reason, setReason] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setReason('');
+      setError('');
+    }
+  }, [isOpen, user?.id]);
+
+  if (!user) return null;
+
+  async function handleConfirm() {
+    setIsDeleting(true);
+    setError('');
+    try {
+      await onConfirm(user.id, reason.trim() || 'Deleted by administrator');
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Failed to delete user.');
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Delete User Account"
+      description={`Are you sure you want to permanently delete @${user.username}?`}
+      size="sm"
+    >
+      <div className="flex flex-col gap-4">
+        <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-start gap-2.5">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-red-400" />
+          <div>
+            <p className="font-semibold text-red-300">Irreversible Permanent Action</p>
+            <p className="mt-0.5 text-red-400/90 leading-relaxed">
+              This will permanently delete the account, wallet, and identity for{' '}
+              <strong className="text-white">@{user.username}</strong> ({user.displayName}) from PostgreSQL.
+            </p>
+          </div>
+        </div>
+
+        <Input
+          label="Deletion Reason (Optional)"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. Terms violation, GDPR request..."
+        />
+
+        {error && <p className="text-xs text-red-400">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={isDeleting}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            size="sm"
+            isLoading={isDeleting}
+            onClick={handleConfirm}
+          >
+            Delete User Permanently
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
 
 // ---- Balance Adjustment Modal ----
 function BalanceModal({ isOpen, onClose, user, onConfirm }) {
@@ -34,9 +514,27 @@ function BalanceModal({ isOpen, onClose, user, onConfirm }) {
   const [reason, setReason] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
+  const [ledgerEntries, setLedgerEntries] = useState([]);
+  const [isLoadingLedger, setIsLoadingLedger] = useState(false);
 
   useEffect(() => {
-    if (isOpen) { setAmount(''); setReason(''); setError(''); }
+    if (isOpen && user?.id) {
+      setAmount('');
+      setReason('');
+      setError('');
+      setIsLoadingLedger(true);
+      getMasterLedger({ userId: user.id, limit: 5 })
+        .then((res) => {
+          const items = res?.data || res?.items || (Array.isArray(res) ? res : []);
+          setLedgerEntries(items);
+        })
+        .catch(() => {
+          setLedgerEntries([]);
+        })
+        .finally(() => {
+          setIsLoadingLedger(false);
+        });
+    }
   }, [isOpen, user?.id]);
 
   async function handleSubmit(e) {
@@ -62,7 +560,7 @@ function BalanceModal({ isOpen, onClose, user, onConfirm }) {
       onClose={onClose}
       title="Adjust Balance"
       description={`Modify virtual currency for ${user.displayName}`}
-      size="sm"
+      size="md"
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="grid grid-cols-2 gap-3">
@@ -117,19 +615,27 @@ function BalanceModal({ isOpen, onClose, user, onConfirm }) {
           </div>
           <div className="flex justify-between">
             <span>Current Diamonds</span>
-            <span className="text-white font-medium">{user.diamonds.toLocaleString()}</span>
+            <span className="text-white font-medium">{(user.diamonds || 0).toLocaleString()}</span>
           </div>
         </div>
 
-        <Input
-          label="Amount"
-          type="number"
-          min="1"
-          value={amount}
-          onChange={(e) => { setAmount(e.target.value); setError(''); }}
-          placeholder="Enter amount"
-          required
-        />
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-slate-300">Amount</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={amount}
+            onChange={(e) => {
+              const val = e.target.value.replace(/\D/g, '');
+              setAmount(val);
+              setError('');
+            }}
+            placeholder="Enter amount (e.g. 5000)"
+            required
+            className="w-full h-9 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs px-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono placeholder:text-slate-600"
+          />
+        </div>
+
         <Input
           label="Reason"
           value={reason}
@@ -139,7 +645,63 @@ function BalanceModal({ isOpen, onClose, user, onConfirm }) {
         />
         {error && <p className="text-xs text-red-400 -mt-2">{error}</p>}
 
-        <div className="flex justify-end gap-2 pt-1">
+        {/* Recent Transaction Ledger */}
+        <div className="flex flex-col gap-1.5 pt-2 border-t border-slate-800">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+              <History className="h-3.5 w-3.5 text-indigo-400" />
+              Recent Transaction Ledger
+            </span>
+            <span className="text-[11px] text-slate-500">Last 5 entries</span>
+          </div>
+
+          <div className="max-h-36 overflow-y-auto space-y-1.5 rounded-lg bg-slate-950/60 border border-slate-800 p-2 text-xs">
+            {isLoadingLedger ? (
+              <p className="text-center text-slate-500 py-3">Loading ledger history...</p>
+            ) : ledgerEntries.length === 0 ? (
+              <p className="text-center text-slate-500 py-3">No recorded ledger transactions yet.</p>
+            ) : (
+              ledgerEntries.map((tx) => {
+                const coinDelta = Number(tx.coinDelta || 0);
+                const diamondDelta = Number(tx.diamondDelta || 0);
+                const isPositive = coinDelta > 0 || diamondDelta > 0;
+                return (
+                  <div key={tx.id || tx.referenceId || Math.random()} className="flex items-center justify-between py-1 px-2 rounded bg-slate-900/60 border border-slate-800/60">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {isPositive ? (
+                        <ArrowUpRight className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                      ) : (
+                        <ArrowDownRight className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-white font-medium truncate text-[11px]">
+                          {(tx.transactionType || 'ADJUSTMENT').replace(/_/g, ' ')}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-mono">
+                          {tx.createdAt ? new Date(tx.createdAt).toLocaleDateString() : 'Recent'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      {coinDelta !== 0 && (
+                        <p className={`font-mono font-bold text-[11px] ${coinDelta > 0 ? 'text-yellow-400' : 'text-red-400'}`}>
+                          {coinDelta > 0 ? `+${coinDelta.toLocaleString()}` : coinDelta.toLocaleString()} Coins
+                        </p>
+                      )}
+                      {diamondDelta !== 0 && (
+                        <p className={`font-mono font-bold text-[11px] ${diamondDelta > 0 ? 'text-cyan-400' : 'text-red-400'}`}>
+                          {diamondDelta > 0 ? `+${diamondDelta.toLocaleString()}` : diamondDelta.toLocaleString()} Diamonds
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-1 border-t border-slate-800">
           <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
@@ -217,16 +779,11 @@ function StatusModal({ isOpen, onClose, user, onConfirm }) {
           required
         />
         {error && <p className="text-xs text-red-400 -mt-2">{error}</p>}
-        <div className="flex justify-end gap-2 pt-1">
+        <div className="flex justify-end gap-2 pt-1 border-t border-slate-800">
           <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
-          <Button
-            type="submit"
-            variant={newStatus === 'banned' ? 'danger' : 'primary'}
-            size="sm"
-            isLoading={isSaving}
-          >
+          <Button type="submit" variant="primary" size="sm" isLoading={isSaving}>
             Update Status
           </Button>
         </div>
@@ -235,49 +792,120 @@ function StatusModal({ isOpen, onClose, user, onConfirm }) {
   );
 }
 
-// ---- Main Users Page ----
+// ============================================================
+// Main UsersPage Component
+// ============================================================
 export function UsersPage() {
   const navigate = useNavigate();
   const { canPerformAction } = usePermission();
+
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [feedback, setFeedback] = useState(null);
+
+  // Modals state
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [editModal, setEditModal] = useState({ open: false, user: null });
   const [balanceModal, setBalanceModal] = useState({ open: false, user: null });
   const [statusModal, setStatusModal] = useState({ open: false, user: null });
+  const [deleteModal, setDeleteModal] = useState({ open: false, user: null });
+
+  function showFeedback(type, message, title = '') {
+    setFeedback({
+      type,
+      message,
+      title: title || (type === 'success' ? 'Action Completed' : 'Operation Failed'),
+      duration: 4500,
+    });
+  }
+
+  // Load Users from Backend
+  const loadUsers = async () => {
+    setIsLoading(true);
+    setLoadError('');
+    try {
+      const data = await getUsers();
+      setUsers(data);
+    } catch (err) {
+      console.error('Failed to load users:', err);
+      setLoadError(err.message || 'Failed to load users from database.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Load on mount
   useEffect(() => {
-    getUsers()
-      .then((data) => setUsers(data))
-      .finally(() => setIsLoading(false));
+    loadUsers();
   }, []);
 
-  // Patch a single user
-  function patchUser(id, patch) {
-    setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+  // Create User Handler
+  async function handleCreateUser(payload) {
+    try {
+      await createUser(payload);
+      showFeedback('success', `User @${payload.username} has been created and saved to the database.`, 'User Created Successfully');
+      await loadUsers();
+    } catch (err) {
+      showFeedback('error', err.message || 'Failed to create user', 'User Creation Failed');
+      throw err;
+    }
+  }
+
+  // Edit User Handler
+  async function handleEditUser(id, payload) {
+    try {
+      await updateUser(id, payload);
+      showFeedback('success', 'User information updated and committed to the database.', 'User Updated Successfully');
+      await loadUsers();
+    } catch (err) {
+      showFeedback('error', err.message || 'Failed to update user', 'User Update Failed');
+      throw err;
+    }
+  }
+
+  // Delete User Handler
+  async function handleDeleteUser(id, reason) {
+    try {
+      await deleteUser(id, reason);
+      showFeedback('success', 'User account and associated records permanently deleted.', 'User Deleted Successfully');
+      await loadUsers();
+    } catch (err) {
+      showFeedback('error', err.message || 'Failed to delete user', 'Deletion Failed');
+      throw err;
+    }
   }
 
   // Balance adjust handler
-  async function handleBalanceAdjust(id, amount, currencyType, action) {
-    await adjustUserBalance(id, amount, action, currencyType);
-    // Update local coin/diamond count
-    setUsers((prev) =>
-      prev.map((u) => {
-        if (u.id !== id) return u;
-        const delta = action === 'add' ? amount : -amount;
-        if (currencyType === 'coins') return { ...u, coins: Math.max(0, u.coins + delta) };
-        return { ...u, diamonds: Math.max(0, (u.diamonds || 0) + delta) };
-      })
-    );
+  async function handleBalanceAdjust(id, amount, currencyType, action, reason) {
+    try {
+      await adjustUserBalance(id, amount, currencyType, action, reason);
+      showFeedback(
+        'success',
+        `Successfully ${action === 'add' ? 'added' : 'deducted'} ${amount.toLocaleString()} ${currencyType}.`,
+        'Balance Adjusted'
+      );
+      await loadUsers();
+    } catch (err) {
+      showFeedback('error', err.message || 'Failed to adjust user balance', 'Balance Adjustment Failed');
+      throw err;
+    }
   }
 
   // Status change handler
   async function handleStatusChange(id, newStatus, reason) {
-    if (newStatus === 'banned') await banUser(id, reason);
-    else if (newStatus === 'suspended') await suspendUser(id, reason);
-    else await unbanUser(id);
-    patchUser(id, { status: newStatus });
+    try {
+      if (newStatus === 'banned') await banUser(id, reason);
+      else if (newStatus === 'suspended') await suspendUser(id, reason);
+      else await unbanUser(id, reason);
+      showFeedback('success', `User account status updated to ${newStatus.toUpperCase()}.`, 'Status Changed');
+      await loadUsers();
+    } catch (err) {
+      showFeedback('error', err.message || 'Failed to update status', 'Status Change Failed');
+      throw err;
+    }
   }
 
   const filtered = useMemo(() => {
@@ -288,7 +916,8 @@ export function UsersPage() {
         !q ||
         u.username.toLowerCase().includes(q) ||
         u.displayName.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q);
+        u.email.toLowerCase().includes(q) ||
+        (u.phone && u.phone.includes(q));
       return matchStatus && matchSearch;
     });
   }, [users, search, statusFilter]);
@@ -299,13 +928,28 @@ export function UsersPage() {
       header: 'User',
       render: (row) => (
         <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-sm">
             {row.displayName.charAt(0)}
           </div>
           <div>
             <p className="font-medium text-white text-sm leading-tight">{row.displayName}</p>
-            <p className="text-xs text-slate-500">@{row.username}</p>
+            <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
+              <span>@{row.username}</span>
+              <span>•</span>
+              <CountryFlag code={row.country} className="w-3.5 h-2.5 rounded-sm inline-block" />
+              <span>{row.country || 'Global'}</span>
+            </div>
           </div>
+        </div>
+      ),
+    },
+    {
+      key: 'phone',
+      header: 'Phone / Email',
+      render: (row) => (
+        <div className="text-xs">
+          <p className="text-white font-mono">{row.phone || '—'}</p>
+          <p className="text-slate-500">{row.email || '—'}</p>
         </div>
       ),
     },
@@ -328,14 +972,14 @@ export function UsersPage() {
       key: 'coins',
       header: 'Coins',
       render: (row) => (
-        <span className="text-sm font-mono text-yellow-400">{row.coins.toLocaleString()}</span>
+        <span className="text-sm font-mono font-semibold text-yellow-400">{row.coins.toLocaleString()}</span>
       ),
     },
     {
       key: 'diamonds',
       header: 'Diamonds',
       render: (row) => (
-        <span className="text-sm font-mono text-cyan-400">{(row.diamonds || 0).toLocaleString()}</span>
+        <span className="text-sm font-mono font-semibold text-cyan-400">{(row.diamonds || 0).toLocaleString()}</span>
       ),
     },
     {
@@ -357,7 +1001,14 @@ export function UsersPage() {
             onClick={() => navigate(`/admin/users/${row.id}`)}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
           >
-            <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+            <Eye className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            title="Edit User"
+            onClick={() => setEditModal({ open: true, user: row })}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-slate-700 transition-colors"
+          >
+            <Edit2 className="h-4 w-4" aria-hidden="true" />
           </button>
           {canPerformAction('adjust_user_coins') && (
             <button
@@ -365,7 +1016,7 @@ export function UsersPage() {
               onClick={() => setBalanceModal({ open: true, user: row })}
               className="p-1.5 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-slate-700 transition-colors"
             >
-              <DollarSign className="h-3.5 w-3.5" aria-hidden="true" />
+              <DollarSign className="h-4 w-4" aria-hidden="true" />
             </button>
           )}
           {(canPerformAction('suspend_users') || canPerformAction('ban_users')) && (
@@ -380,12 +1031,19 @@ export function UsersPage() {
               ].join(' ')}
             >
               {row.status === 'active' ? (
-                <Ban className="h-3.5 w-3.5" aria-hidden="true" />
+                <Ban className="h-4 w-4" aria-hidden="true" />
               ) : (
-                <UserCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                <UserCheck className="h-4 w-4" aria-hidden="true" />
               )}
             </button>
           )}
+          <button
+            title="Delete User"
+            onClick={() => setDeleteModal({ open: true, user: row })}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-700 transition-colors"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
       ),
     },
@@ -401,15 +1059,27 @@ export function UsersPage() {
             User Management
           </h1>
           <p className="text-sm text-slate-400 mt-0.5">
-            Manage platform users, balances, and account statuses.
+            Manage platform users, balances, and account statuses with PostgreSQL persistence.
           </p>
         </div>
+        <Button
+          variant="primary"
+          size="sm"
+          className="flex items-center gap-2"
+          onClick={() => setCreateModalOpen(true)}
+        >
+          <Plus className="h-4 w-4" />
+          Create User
+        </Button>
       </div>
+
+      {/* Floating In-App Toast Notification */}
+      <Toast toast={feedback} onClose={() => setFeedback(null)} />
 
       {/* Filters Bar */}
       <Card className="p-4 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
         <Input
-          placeholder="Search by username, name, or email…"
+          placeholder="Search by username, name, phone, or email…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           leftIcon={Search}
@@ -436,7 +1106,7 @@ export function UsersPage() {
         </div>
       </Card>
 
-      {/* Stats row — derived from live state */}
+      {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: 'Total Users', value: users.length,                                            color: 'text-white' },
@@ -451,6 +1121,18 @@ export function UsersPage() {
         ))}
       </div>
 
+      {loadError && (
+        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center justify-between">
+          <div className="text-sm">
+            <span className="font-semibold">Error loading users: </span>
+            {loadError}
+          </div>
+          <Button variant="outline" size="sm" onClick={loadUsers}>
+            Retry
+          </Button>
+        </div>
+      )}
+
       {/* Table */}
       <DataTable
         columns={columns}
@@ -462,6 +1144,17 @@ export function UsersPage() {
       />
 
       {/* Modals */}
+      <CreateUserModal
+        isOpen={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onConfirm={handleCreateUser}
+      />
+      <EditUserModal
+        isOpen={editModal.open}
+        onClose={() => setEditModal({ open: false, user: null })}
+        user={editModal.user}
+        onConfirm={handleEditUser}
+      />
       <BalanceModal
         isOpen={balanceModal.open}
         onClose={() => setBalanceModal({ open: false, user: null })}
@@ -474,6 +1167,14 @@ export function UsersPage() {
         user={statusModal.user}
         onConfirm={handleStatusChange}
       />
+      <DeleteUserModal
+        isOpen={deleteModal.open}
+        onClose={() => setDeleteModal({ open: false, user: null })}
+        user={deleteModal.user}
+        onConfirm={handleDeleteUser}
+      />
     </div>
   );
 }
+
+export default UsersPage;

@@ -41,6 +41,25 @@ export async function updatePlan(id, data, db = prisma) {
   });
 }
 
+export async function deletePlan(id, db = prisma) {
+  return await db.rechargePlan.delete({
+    where: { id },
+  });
+}
+
+export async function createOfflineRecharge(data, db = prisma) {
+  return await db.offlineRecharge.create({
+    data: {
+      userId: data.userId,
+      amountUSD: data.amountUSD,
+      bankName: data.bankName,
+      receiptPhotoUrl: data.receiptPhotoUrl,
+      transactionRef: data.transactionRef,
+      status: 'PENDING',
+    },
+  });
+}
+
 export async function findOfflineRechargeById(id, db = prisma) {
   if (!id) return null;
   return await db.offlineRecharge.findUnique({
@@ -50,6 +69,13 @@ export async function findOfflineRechargeById(id, db = prisma) {
         select: { id: true, username: true, email: true },
       },
     },
+  });
+}
+
+export async function findOfflineRechargeByRef(transactionRef, db = prisma) {
+  if (!transactionRef) return null;
+  return await db.offlineRecharge.findUnique({
+    where: { transactionRef },
   });
 }
 
@@ -102,13 +128,133 @@ export async function updateOfflineRechargeStatus(
   });
 }
 
+export async function claimOfflineRechargeStatus(
+  id,
+  fromStatus,
+  toStatus,
+  { reviewerAdminId, reviewedAt = new Date() },
+  db = prisma
+) {
+  const result = await db.offlineRecharge.updateMany({
+    where: { id, status: fromStatus },
+    data: {
+      status: toStatus,
+      reviewerAdminId,
+      reviewedAt,
+    },
+  });
+  return result.count > 0;
+}
+
+// ---- Online Recharge Repository Methods ----
+
+export async function createOnlineRecharge(data, db = prisma) {
+  return await db.onlineRecharge.create({
+    data: {
+      userId: data.userId,
+      gateway: data.gateway,
+      gatewayTxId: data.gatewayTxId,
+      amountUSD: data.amountUSD,
+      coinsCredited: BigInt(data.coinsCredited),
+      planId: data.planId || null,
+      status: data.status || 'PENDING',
+    },
+  });
+}
+
+export async function findOnlineRechargeById(id, db = prisma) {
+  if (!id) return null;
+  return await db.onlineRecharge.findUnique({
+    where: { id },
+    include: {
+      user: {
+        select: { id: true, username: true, email: true },
+      },
+    },
+  });
+}
+
+export async function findOnlineRechargeByGatewayTxId(gatewayTxId, db = prisma) {
+  if (!gatewayTxId) return null;
+  return await db.onlineRecharge.findUnique({
+    where: { gatewayTxId },
+    include: {
+      user: {
+        select: { id: true, username: true, email: true },
+      },
+    },
+  });
+}
+
+export async function updateOnlineRechargeStatus(id, status, db = prisma) {
+  return await db.onlineRecharge.update({
+    where: { id },
+    data: { status },
+  });
+}
+
+export async function claimOnlineRechargeSuccess(id, db = prisma) {
+  const result = await db.onlineRecharge.updateMany({
+    where: { id, status: 'PENDING' },
+    data: { status: 'SUCCESS' },
+  });
+  return result.count > 0;
+}
+
+export async function findAllOnlineRecharges(
+  { status, userId, gateway, page = 1, limit = 20 },
+  db = prisma
+) {
+  const where = {};
+  if (status) where.status = status;
+  if (userId) where.userId = userId;
+  if (gateway) where.gateway = gateway;
+
+  const skip = (Math.max(1, page) - 1) * limit;
+
+  return await db.onlineRecharge.findMany({
+    where,
+    include: {
+      user: {
+        select: { id: true, username: true },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    skip,
+    take: limit,
+  });
+}
+
+export async function countOnlineRecharges(
+  { status, userId, gateway },
+  db = prisma
+) {
+  const where = {};
+  if (status) where.status = status;
+  if (userId) where.userId = userId;
+  if (gateway) where.gateway = gateway;
+
+  return await db.onlineRecharge.count({ where });
+}
+
 export default {
   findAllPlans,
   findPlanById,
   createPlan,
   updatePlan,
+  deletePlan,
+  createOfflineRecharge,
   findOfflineRechargeById,
+  findOfflineRechargeByRef,
   findAllOfflineRecharges,
   countOfflineRecharges,
   updateOfflineRechargeStatus,
+  claimOfflineRechargeStatus,
+  createOnlineRecharge,
+  findOnlineRechargeById,
+  findOnlineRechargeByGatewayTxId,
+  updateOnlineRechargeStatus,
+  claimOnlineRechargeSuccess,
+  findAllOnlineRecharges,
+  countOnlineRecharges,
 };

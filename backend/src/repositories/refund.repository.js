@@ -46,6 +46,17 @@ export async function countAll(
   return await db.coinRefund.count({ where });
 }
 
+export async function create(data, db = prisma) {
+  return await db.coinRefund.create({
+    data: {
+      userId: data.userId,
+      coinAmount: BigInt(data.coinAmount),
+      disputeReason: data.disputeReason,
+      status: 'PENDING',
+    },
+  });
+}
+
 export async function updateStatus(
   id,
   { status, processedByAdminId },
@@ -60,9 +71,28 @@ export async function updateStatus(
   });
 }
 
+export async function claimRefundStatus(
+  id,
+  fromStatus,
+  toStatus,
+  { processedByAdminId },
+  db = prisma
+) {
+  const result = await db.coinRefund.updateMany({
+    where: { id, status: fromStatus },
+    data: {
+      status: toStatus,
+      processedByAdminId,
+    },
+  });
+  return result.count > 0;
+}
+
 export default {
   findById,
   findAll,
   countAll,
+  create,
   updateStatus,
+  claimRefundStatus,
 };

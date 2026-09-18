@@ -3,10 +3,10 @@ import '../models/svip_model.dart';
 import 'wallet_provider.dart';
 
 class SVIPProvider extends ChangeNotifier {
-  int _currentPoints = 14500000;
-  int _currentLevel = 11;
-  int _selectedViewLevel = 11;
-  DateTime _expiryDate = DateTime(2026, 12, 31);
+  int _currentPoints = 0;
+  int _currentLevel = 0;
+  int _selectedViewLevel = 1;
+  DateTime _expiryDate = DateTime.now().add(const Duration(days: 30));
   bool _isLoading = false;
   final List<SVIPAuditRecord> _auditHistory = [];
 
@@ -131,24 +131,13 @@ class SVIPProvider extends ChangeNotifier {
   }
 
   Future<bool> purchasePoints(SVIPPackage package, WalletProvider wallet) async {
-    final success = wallet.spendCoins(
-      package.priceCoins, 
-      'svip_points_${package.id}_${DateTime.now().millisecondsSinceEpoch}'
-    );
-    if (success) {
-      _currentPoints += package.points + package.bonusPoints;
-      _auditHistory.insert(0, SVIPAuditRecord(
-        id: 'aud_${DateTime.now().millisecondsSinceEpoch}',
-        type: 'purchase',
-        points: package.points + package.bonusPoints,
-        level: _currentLevel,
-        timestamp: DateTime.now(),
-        note: 'Purchased ${package.name}',
-      ));
-      _checkAutoUpgrade();
-      notifyListeners();
-      return true;
+    // Direct SVIP points purchase via wallet coins is blocked until backend exposes dedicated VIP package purchase API.
+    // Points are authoritatively accumulated on backend via cumulative recharge and live room gifting.
+    if (wallet.coins < package.priceCoins) {
+      return false;
     }
+    // Reconcile wallet
+    await wallet.fetchWallet();
     return false;
   }
 

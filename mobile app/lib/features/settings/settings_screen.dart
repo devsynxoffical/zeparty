@@ -7,6 +7,8 @@ import '../auth/auth_screen.dart';
 import 'appearance_settings_screen.dart';
 import 'edit_profile_screen.dart';
 import 'privacy_settings_screen.dart';
+import 'notification_settings_screen.dart';
+import 'support_center_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -16,8 +18,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  bool _pushNotifsEnabled = true;
-  bool _liveNotifsEnabled = true;
   bool _soundEffectsEnabled = true;
   String _selectedLanguage = 'English (US)';
 
@@ -33,13 +33,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: () {
                 setState(() => _selectedLanguage = lang);
                 Navigator.pop(c);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('App language changed to $lang')),
-                );
               },
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(lang, style: TextStyle(fontWeight: lang == _selectedLanguage ? FontWeight.bold : FontWeight.normal)),
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Text(
+                  lang,
+                  style: TextStyle(
+                    fontWeight: _selectedLanguage == lang ? FontWeight.bold : FontWeight.normal,
+                    color: _selectedLanguage == lang ? AppColors.primary : null,
+                  ),
+                ),
               ),
             );
           }).toList(),
@@ -48,56 +51,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-
-
-  void _showNotificationSettingsDialog() {
-    showDialog(
-      context: context,
-      builder: (c) {
-        return StatefulBuilder(
-          builder: (context, setDlgState) {
-            return AlertDialog(
-              title: const Text('Notification Preferences'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SwitchListTile(
-                    title: const Text('Push Notifications'),
-                    value: _pushNotifsEnabled,
-                    onChanged: (val) {
-                      setDlgState(() => _pushNotifsEnabled = val);
-                      setState(() => _pushNotifsEnabled = val);
-                    },
-                  ),
-                  SwitchListTile(
-                    title: const Text('Live Host Alerts'),
-                    value: _liveNotifsEnabled,
-                    onChanged: (val) {
-                      setDlgState(() => _liveNotifsEnabled = val);
-                      setState(() => _liveNotifsEnabled = val);
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(c), child: const Text('Save')),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
   void _showBlockedUsersDialog() {
+    final auth = context.read<AuthProvider>();
+
     showDialog(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Blocked Users'),
-        content: const Text('You have no blocked accounts.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('OK')),
-        ],
+      builder: (c) => StatefulBuilder(
+        builder: (ctx, setDlgState) {
+          final currentBlocked = auth.blockedUserIds.toList();
+
+          return AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.block_rounded, color: Colors.redAccent, size: 20),
+                SizedBox(width: 8),
+                Text('Blocked Users', style: TextStyle(fontSize: 16)),
+              ],
+            ),
+            content: currentBlocked.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text('You have no blocked accounts.', style: TextStyle(color: Colors.grey)),
+                  )
+                : SizedBox(
+                    width: double.maxFinite,
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: currentBlocked.length,
+                      itemBuilder: (context, index) {
+                        final userId = currentBlocked[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const CircleAvatar(
+                            backgroundColor: Colors.grey,
+                            child: Icon(Icons.person, color: Colors.white, size: 18),
+                          ),
+                          title: Text('User ID: $userId', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          trailing: TextButton(
+                            onPressed: () async {
+                              await auth.unblockUser(userId);
+                              setDlgState(() {});
+                            },
+                            child: const Text('Unblock', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(c), child: const Text('Close')),
+            ],
+          );
+        },
       ),
     );
   }
@@ -215,8 +220,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             context,
             icon: Icons.notifications_none_rounded,
             title: 'Push Notifications Preferences',
-            subtitle: _pushNotifsEnabled ? 'Notifications Enabled' : 'Notifications Muted',
-            onTap: _showNotificationSettingsDialog,
+            subtitle: 'Category alerts, quiet hours, and channel toggles',
+            onTap: () {
+              Navigator.push(context, MaterialPageRoute(builder: (c) => const NotificationSettingsScreen()));
+            },
           ),
           _buildSettingsTile(
             context,
@@ -237,6 +244,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 16),
           _buildSettingsHeader(context, title: 'General & Support'),
+          _buildSettingsTile(
+            context,
+            icon: Icons.support_agent_rounded,
+            title: 'Customer Support & Help Desk',
+            subtitle: 'Open support tickets and chat with our team',
+            trailingColor: AppColors.primary,
+            onTap: () {
+              Navigator.push(context, MaterialPageRoute(builder: (c) => const SupportCenterScreen()));
+            },
+          ),
           _buildSettingsTile(
             context,
             icon: Icons.language_rounded,

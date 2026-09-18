@@ -1,7 +1,9 @@
+import http from 'http';
 import app from './app.js';
 import env from './config/env.js';
 import prisma from './config/database.js';
 import redisClient from './config/redis.js';
+import { initSocketServer } from './socket/index.js';
 import {
   runStartupRecoverySweep,
   startAutoRestoreScheduler,
@@ -9,31 +11,63 @@ import {
 } from './jobs/autoRestore.job.js';
 
 let server;
+let io;
+
+async function connectDatabaseWithRetry(maxRetries = 3, delayMs = 2000) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt === 1) {
+        console.log('🔄 Connecting to PostgreSQL database via Prisma...');
+      } else {
+        console.log(`🔄 Connecting to PostgreSQL database via Prisma (attempt ${attempt}/${maxRetries})...`);
+      }
+      await prisma.$connect();
+      console.log('✅ Database connected successfully');
+      return;
+    } catch (err) {
+      console.warn(`⚠️ Database connection attempt ${attempt} failed: ${err.message}`);
+      if (attempt === maxRetries) throw err;
+      await new Promise((r) => setTimeout(r, delayMs * attempt));
+    }
+  }
+}
 
 async function startServer() {
   try {
     console.log('🔄 Initializing ZeParty Backend Foundation...');
 
-    // 1. Initialize Database connection
-    console.log('🔄 Connecting to PostgreSQL database via Prisma...');
-    await prisma.$connect();
-    console.log('✅ Database connected successfully');
-
-    // 2. Initialize Redis connection
-    console.log('🔄 Connecting to Redis...');
-    await redisClient.connect();
-
-    // 3. Run Phase 7 Auto-Restore Startup Recovery Sweep
-    await runStartupRecoverySweep();
-
-    // 4. Start Phase 7 Recurring Auto-Restore Scheduler
-    startAutoRestoreScheduler({ intervalMs: 60000 });
-
-    // 5. Start HTTP Server
-    server = app.listen(env.PORT, () => {
+    // 1. Create HTTP Server and bind immediately to prevent cold boot 502 Bad Gateway
+    server = http.createServer(app);
+    server.listen(env.PORT, '0.0.0.0', () => {
       console.log(`🚀 Server listening on port ${env.PORT} in ${env.NODE_ENV} mode`);
-      console.log(`🔗 Health check available at http://localhost:${env.PORT}/api/health`);
+      console.log(`🔗 Health check available at http://localhost:${env.PORT}/health`);
     });
+
+    // 2. Initialize Database connection with automatic retry
+    connectDatabaseWithRetry()
+      .then(async () => {
+        // Run Phase 7 Auto-Restore Startup Recovery Sweep
+        await runStartupRecoverySweep().catch((e) => console.warn('Recovery sweep warning:', e.message));
+        // Start Phase 7 Recurring Auto-Restore Scheduler
+        startAutoRestoreScheduler({ intervalMs: 60000 });
+      })
+      .catch((err) => {
+        console.error('❌ Database connection failure:', err.message);
+      });
+
+    // 3. Initialize Redis connection and Realtime Socket.IO
+    (async () => {
+      try {
+        console.log('🔄 Connecting to Redis...');
+        if (!redisClient.isOpen) {
+          await redisClient.connect();
+        }
+        io = await initSocketServer(server);
+        console.log('✅ Realtime Socket.IO server initialized');
+      } catch (redisErr) {
+        console.warn('⚠️ Redis / Socket.IO connection warning:', redisErr.message);
+      }
+    })();
 
   } catch (error) {
     console.error('❌ Failed to start ZeParty server:', error);

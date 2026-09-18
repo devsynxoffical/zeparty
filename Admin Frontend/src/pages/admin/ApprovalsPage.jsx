@@ -41,10 +41,29 @@ import {
   processApprovalStep,
   createApprovalRequest
 } from '../../services/modules/approvals.service';
-import {
-  APPROVAL_CATEGORIES,
-  APPROVAL_STATUSES
-} from '../../mocks/approvals.mock';
+const APPROVAL_CATEGORIES = [
+  'ALL',
+  'WITHDRAWALS',
+  'REFUNDS',
+  'COIN_CORRECTIONS',
+  'RESELLER_CORRECTIONS',
+  'WALLET_ADJUSTMENTS',
+  'FINANCE_CHANGES',
+  'ECONOMY_POLICY',
+  'GAME_ECONOMICS',
+  'HIGH_RISK_ADMIN',
+];
+
+const APPROVAL_STATUSES = [
+  'ALL',
+  'PENDING',
+  'UNDER_REVIEW',
+  'APPROVED',
+  'REJECTED',
+  'HELD',
+  'ESCALATED',
+  'COMPLETED',
+];
 
 export function ApprovalsPage() {
   const { admin } = useAuth();

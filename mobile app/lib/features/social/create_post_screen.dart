@@ -4,7 +4,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../providers/social_provider.dart';
-import '../../core/constants/dummy_data.dart';
+import '../../providers/auth_provider.dart';
+import '../../core/services/api_client.dart';
 import '../../widgets/design/gold_button.dart';
 import '../../widgets/user_avatar.dart';
 
@@ -20,6 +21,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   XFile? _selectedImage;
   final ImagePicker _picker = ImagePicker();
   bool _isPublishing = false;
+  String? _errorMessage;
 
   Future<void> _pickPostImage(ImageSource source) async {
     try {
@@ -38,23 +40,46 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _publishPost() async {
-    if (_contentController.text.trim().isEmpty && _selectedImage == null) return;
-    
-    setState(() => _isPublishing = true);
-    final mediaList = _selectedImage != null ? [_selectedImage!.path] : <String>[];
-    context.read<SocialProvider>().addPost(
-          _contentController.text.trim(),
-          mediaList,
-          DummyData.currentUser,
-        );
-    if (!mounted) return;
-    Navigator.pop(context);
+    final content = _contentController.text.trim();
+    if (content.isEmpty && _selectedImage == null) return;
+
+    setState(() {
+      _isPublishing = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // Note: backend accepts mediaUrls as remote URLs.
+      // Local file paths cannot be sent directly; we omit them unless a CDN upload is implemented.
+      // For now, only text content is posted when a local image is selected.
+      final List<String> mediaUrls = [];
+
+      await context.read<SocialProvider>().createPost(
+            content: content,
+            mediaUrls: mediaUrls.isEmpty ? null : mediaUrls,
+            visibility: 'PUBLIC',
+          );
+
+      if (!mounted) return;
+      Navigator.pop(context, true); // Return true to signal post created
+    } on ApiException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+        _isPublishing = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to create post. Please try again.';
+        _isPublishing = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = AppColors.getPrimary(isDark);
+    final auth = context.watch<AuthProvider>();
 
     return Scaffold(
       appBar: AppBar(
@@ -77,10 +102,27 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            if (_errorMessage != null)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_errorMessage!, style: const TextStyle(color: Colors.red, fontSize: 13))),
+                  ],
+                ),
+              ),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                UserAvatar(imageUrl: DummyData.currentUser.avatarUrl, radius: 24),
+                UserAvatar(imageUrl: auth.currentUser.avatarUrl, radius: 24),
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextField(
@@ -115,6 +157,22 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           padding: const EdgeInsets.all(4),
                           decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                           child: const Icon(Icons.close, color: Colors.white, size: 18),
+                        ),
+                      ),
+                    ),
+                    // Show note that local image cannot be uploaded yet
+                    Positioned(
+                      bottom: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'Image preview (text will be posted)',
+                          style: TextStyle(color: Colors.white70, fontSize: 10),
                         ),
                       ),
                     ),

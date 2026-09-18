@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../core/theme/app_colors.dart';
-import '../core/constants/dummy_data.dart';
 import '../models/gift_model.dart';
 import '../models/user_model.dart';
 import '../providers/live_provider.dart';
@@ -32,24 +31,22 @@ class GiftDialog extends StatefulWidget {
 class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  // ─── 3 Separate "All" State Variables (Section 2 & Developer Warning) ───
-  bool recipientIsAllSelected = false; // [1] Recipient All State
-  String selectedCategory = 'Lucky Gift'; // [2] Gift Category State
-  CatalogTypeFilter selectedCatalogFilter = CatalogTypeFilter.all; // [3] Catalog Filter State (All, Gift, Props)
+  bool recipientIsAllSelected = false;
+  String selectedCategory = 'Lucky Gift';
+  CatalogTypeFilter selectedCatalogFilter = CatalogTypeFilter.all;
 
-  GiftModel? selectedGift = GiftModel.defaultCatalog.first;
+  GiftModel? selectedGift;
   PropItemModel? selectedProp = GiftModel.defaultProps.first;
   int quantity = 1;
 
   Set<String> _selectedUserIds = {};
 
   final List<String> categories = [
+    'All',
     'Lucky Gift',
     'Classic',
     'Event Gifts',
     'Privileges',
-    'Country',
-    'Celebrity',
     'Special',
   ];
 
@@ -68,6 +65,15 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
     if (widget.targetReceiver != null) {
       _selectedUserIds.add(widget.targetReceiver!.id);
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final liveGiftProv = context.read<LiveGiftProvider>();
+      if (liveGiftProv.catalogGifts.isNotEmpty && selectedGift == null) {
+        setState(() {
+          selectedGift = liveGiftProv.catalogGifts.first;
+        });
+      }
+    });
   }
 
   @override
@@ -76,7 +82,6 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
     super.dispose();
   }
 
-  // Calculate Total Price: gift price × quantity × number of selected recipients (Section 4)
   int _calculateTotalPrice(int giftPrice, int recipientCount) {
     return giftPrice * quantity * (recipientCount > 0 ? recipientCount : 1);
   }
@@ -95,8 +100,9 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
     final primaryColor = AppColors.getPrimary(isDark);
     final wallet = context.watch<WalletProvider>();
     final partyProv = context.watch<LivePartyProvider>();
+    final liveGiftProv = context.watch<LiveGiftProvider>();
 
-    // Available room recipients (participants in active party room or default target)
+    // Available room recipients
     final roomParticipants = partyProv.participants.map((p) => p.user).toList();
     final List<UserModel> availableRecipients = roomParticipants.isNotEmpty
         ? roomParticipants
@@ -109,16 +115,18 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                   name: widget.streamerName,
                   avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
                 ),
-                ...DummyData.popularUsers.take(3),
               ]);
 
-    // Active Recipients List based on RECIPIENT ALL button or individual selection
+    // Active Recipients List
     final effectiveRecipients = recipientIsAllSelected
         ? availableRecipients
         : availableRecipients.where((u) => _selectedUserIds.contains(u.id)).toList();
 
     final recipientCount = effectiveRecipients.isNotEmpty ? effectiveRecipients.length : 1;
-    final totalPrice = _calculateTotalPrice(selectedGift?.diamondPrice ?? 0, recipientCount);
+    final currentGiftPrice = selectedGift != null
+        ? (selectedGift!.priceCoins > 0 ? selectedGift!.priceCoins : selectedGift!.diamondPrice)
+        : 0;
+    final totalPrice = _calculateTotalPrice(currentGiftPrice, recipientCount);
 
     return Material(
       color: Colors.transparent,
@@ -134,378 +142,392 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
             ],
           ),
           child: Column(
-          children: [
-            // Top Grabber Handle
-            Container(
-              width: 38,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(2),
+            children: [
+              // Top Grabber Handle
+              Container(
+                width: 38,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-            ),
 
-            // 1. RECIPIENT BAR (Diagram A & Section 4 & Reference B/C)
-            Row(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    child: Row(
-                      children: availableRecipients.map((user) {
-                        final isSelected = recipientIsAllSelected || _selectedUserIds.contains(user.id);
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              recipientIsAllSelected = false;
-                              if (_selectedUserIds.contains(user.id)) {
-                                if (_selectedUserIds.length > 1) {
-                                  _selectedUserIds.remove(user.id);
+              // 1. RECIPIENT BAR
+              Row(
+                children: [
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      child: Row(
+                        children: availableRecipients.map((user) {
+                          final isSelected = recipientIsAllSelected || _selectedUserIds.contains(user.id);
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                recipientIsAllSelected = false;
+                                if (_selectedUserIds.contains(user.id)) {
+                                  if (_selectedUserIds.length > 1) {
+                                    _selectedUserIds.remove(user.id);
+                                  }
+                                } else {
+                                  _selectedUserIds.add(user.id);
                                 }
-                              } else {
-                                _selectedUserIds.add(user.id);
-                              }
-                            });
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 10),
-                            child: Column(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(2),
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: isSelected ? const Color(0xFF00E676) : Colors.transparent,
-                                      width: 2,
+                              });
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 10),
+                              child: Column(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: isSelected ? const Color(0xFF00E676) : Colors.transparent,
+                                        width: 2,
+                                      ),
+                                      boxShadow: isSelected
+                                          ? [const BoxShadow(color: Color(0xFF00E676), blurRadius: 6)]
+                                          : null,
                                     ),
-                                    boxShadow: isSelected
-                                        ? [const BoxShadow(color: Color(0xFF00E676), blurRadius: 6)]
-                                        : null,
+                                    child: UserAvatar(imageUrl: user.avatarUrl, radius: 18),
                                   ),
-                                  child: UserAvatar(imageUrl: user.avatarUrl, radius: 18),
-                                ),
-                                const SizedBox(height: 2),
-                                SizedBox(
-                                  width: 44,
-                                  child: Text(
-                                    user.name,
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      color: isSelected ? const Color(0xFF00E676) : AppColors.getTextSecondary(isDark),
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                  const SizedBox(height: 2),
+                                  SizedBox(
+                                    width: 44,
+                                    child: Text(
+                                      user.name,
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        color: isSelected ? const Color(0xFF00E676) : AppColors.getTextSecondary(isDark),
+                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
                                     ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: 8),
-
-                // RECIPIENT ALL BUTTON (Top-Right Round Pill - Section 2 & 4)
-                GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      recipientIsAllSelected = !recipientIsAllSelected;
-                      if (recipientIsAllSelected) {
-                        _selectedUserIds = availableRecipients.map((u) => u.id).toSet();
-                      } else if (widget.targetReceiver != null) {
-                        _selectedUserIds = {widget.targetReceiver!.id};
-                      } else if (availableRecipients.isNotEmpty) {
-                        _selectedUserIds = {availableRecipients.first.id};
-                      }
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      gradient: recipientIsAllSelected
-                          ? const LinearGradient(colors: [Color(0xFF00E676), Color(0xFF00B0FF)])
-                          : null,
-                      color: recipientIsAllSelected ? null : AppColors.getSurface(isDark),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: recipientIsAllSelected ? const Color(0xFF00E676) : AppColors.getBorder(isDark),
-                      ),
-                      boxShadow: recipientIsAllSelected
-                          ? [const BoxShadow(color: Color(0xFF00E676), blurRadius: 8)]
-                          : null,
-                    ),
-                    child: Text(
-                      'All',
-                      style: TextStyle(
-                        color: recipientIsAllSelected ? Colors.black : AppColors.getTextPrimary(isDark),
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 10),
-
-            // Wallet & Recharge Row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.diamond_rounded, color: AppColors.cyan, size: 16),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${wallet.diamonds}',
-                      style: TextStyle(fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(isDark), fontSize: 13),
-                    ),
-                    const SizedBox(width: 8),
-                    GestureDetector(
-                      onTap: () => _openRechargeScreen(context),
-                      child: Text('Recharge >', style: TextStyle(color: primaryColor, fontSize: 11, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
-                Text(
-                  'Selected: $recipientCount recipient${recipientCount > 1 ? 's' : ''}',
-                  style: const TextStyle(color: Colors.grey, fontSize: 11),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 8),
-
-            // 2. GIFT CATEGORY TABS & 3. CATALOG TYPE FILTER DROPDOWN
-            Row(
-              children: [
-                // Category Tabs (Lucky Gift, Classic, Event Gifts, Privileges, etc.)
-                Expanded(
-                  child: TabBar(
-                    controller: _tabController,
-                    isScrollable: true,
-                    indicatorColor: primaryColor,
-                    indicatorWeight: 3,
-                    labelColor: primaryColor,
-                    unselectedLabelColor: AppColors.getTextSecondary(isDark),
-                    labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
-                    unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    dividerColor: Colors.transparent,
-                    tabAlignment: TabAlignment.start,
-                    tabs: categories.map((c) => Tab(text: c)).toList(),
-                  ),
-                ),
-
-                const SizedBox(width: 6),
-
-                // CATALOG TYPE FILTER DROPDOWN (All ▾, Gift, Props - Section 6 & Reference C)
-                Container(
-                  height: 30,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.getSurface(isDark),
-                    borderRadius: BorderRadius.circular(15),
-                    border: Border.all(color: AppColors.getBorder(isDark)),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<CatalogTypeFilter>(
-                      value: selectedCatalogFilter,
-                      dropdownColor: AppColors.getCard(isDark),
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16),
-                      style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 11, fontWeight: FontWeight.bold),
-                      items: const [
-                        DropdownMenuItem(value: CatalogTypeFilter.all, child: Text('All ▾')),
-                        DropdownMenuItem(value: CatalogTypeFilter.gift, child: Text('Gift')),
-                        DropdownMenuItem(value: CatalogTypeFilter.props, child: Text('Props')),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) setState(() => selectedCatalogFilter = val);
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 8),
-
-            // 4. ITEM GRID / 5. PROPS CONTENT
-            Expanded(
-              child: selectedCatalogFilter == CatalogTypeFilter.props
-                  ? _buildPropsGrid(isDark, primaryColor)
-                  : _buildGiftGrid(isDark, primaryColor, selectedCategory),
-            ),
-
-            const SizedBox(height: 10),
-
-            // 6. SEND CONTROLS & TOTAL PRICE (Diagram A & Section 4)
-            Row(
-              children: [
-                Text('Qty:', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 12)),
-                const SizedBox(width: 8),
-
-                // Quantity Dropdown
-                Container(
-                  height: 34,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.getSurface(isDark),
-                    borderRadius: BorderRadius.circular(17),
-                    border: Border.all(color: AppColors.getBorder(isDark)),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<int>(
-                      value: quantity,
-                      dropdownColor: AppColors.getCard(isDark),
-                      icon: const Icon(Icons.arrow_drop_down, size: 18),
-                      items: [1, 10, 50, 99, 520, 1314].map((q) => DropdownMenuItem(
-                        value: q,
-                        child: Text('$q', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
-                      )).toList(),
-                      onChanged: (v) {
-                        if (v != null) setState(() => quantity = v);
-                      },
-                    ),
-                  ),
-                ),
-
-                const Spacer(),
-
-                // Send Button with Total Price (gift price × quantity × recipient count)
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: primaryColor,
-                    foregroundColor: AppColors.onPrimary(isDark: isDark),
-                    padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    elevation: 4,
-                  ),
-                  onPressed: selectedGift == null || effectiveRecipients.isEmpty
-                      ? null
-                      : () {
-                          final auth = context.read<AuthProvider>();
-                          final liveGiftProv = context.read<LiveGiftProvider>();
-                          final liveProv = context.read<LiveProvider>();
-                          final partyLiveProv = context.read<LivePartyProvider>();
-
-                          int totalSuccess = 0;
-
-                          // Execute gift transaction for every recipient (Section 4 & 8)
-                          for (final targetUser in effectiveRecipients) {
-                            final success = liveGiftProv.sendGift(
-                              walletProvider: wallet,
-                              gift: selectedGift!,
-                              sender: auth.currentUser,
-                              receiver: targetUser,
-                              roomId: liveProv.activeRoom?.id ?? 'room_live',
-                              quantity: quantity,
-                            );
-
-                            if (success) {
-                              totalSuccess++;
-                              try {
-                                partyLiveProv.sendGiftActivityMessage(
-                                  sender: auth.currentUser,
-                                  receiver: targetUser,
-                                  giftId: selectedGift!.id,
-                                  giftName: selectedGift!.name,
-                                  giftIcon: selectedGift!.icon,
-                                  quantity: quantity,
-                                  transactionId: 'tx_${DateTime.now().millisecondsSinceEpoch}',
-                                );
-                              } catch (_) {}
-                            }
-                          }
-
-                          if (totalSuccess == 0) {
-                            showDialog(
-                              context: context,
-                              builder: (dlgCtx) => AlertDialog(
-                                backgroundColor: AppColors.getCard(isDark),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                title: Row(
-                                  children: [
-                                    const Icon(Icons.diamond_rounded, color: AppColors.cyan, size: 24),
-                                    const SizedBox(width: 8),
-                                    Text('Recharge Diamonds', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
-                                  ],
-                                ),
-                                content: Text(
-                                  'You need $totalPrice 💎 to send this gift. You currently have ${wallet.diamonds} 💎. Would you like to recharge now?',
-                                  style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(dlgCtx),
-                                    child: Text('Cancel', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
-                                  ),
-                                  ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: primaryColor,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                    ),
-                                    onPressed: () {
-                                      Navigator.pop(dlgCtx);
-                                      _openRechargeScreen(context);
-                                    },
-                                    child: const Text('Recharge Now 💎', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                                   ),
                                 ],
                               ),
-                            );
-                            return;
-                          }
-
-                          widget.onGiftSent?.call(selectedGift!);
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('🎁 Sent $quantity × ${selectedGift!.name} to $totalSuccess recipient(s)!'),
-                              backgroundColor: Colors.green[800],
-                              behavior: SnackBarBehavior.floating,
                             ),
                           );
-                        },
-                  child: Text(
-                    'Send $totalPrice 💎',
-                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                        }).toList(),
+                      ),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+
+                  const SizedBox(width: 8),
+
+                  // RECIPIENT ALL BUTTON
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        recipientIsAllSelected = !recipientIsAllSelected;
+                        if (recipientIsAllSelected) {
+                          _selectedUserIds = availableRecipients.map((u) => u.id).toSet();
+                        } else if (widget.targetReceiver != null) {
+                          _selectedUserIds = {widget.targetReceiver!.id};
+                        } else if (availableRecipients.isNotEmpty) {
+                          _selectedUserIds = {availableRecipients.first.id};
+                        }
+                      });
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        gradient: recipientIsAllSelected
+                            ? const LinearGradient(colors: [Color(0xFF00E676), Color(0xFF00B0FF)])
+                            : null,
+                        color: recipientIsAllSelected ? null : AppColors.getSurface(isDark),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: recipientIsAllSelected ? const Color(0xFF00E676) : AppColors.getBorder(isDark),
+                        ),
+                        boxShadow: recipientIsAllSelected
+                            ? [const BoxShadow(color: Color(0xFF00E676), blurRadius: 8)]
+                            : null,
+                      ),
+                      child: Text(
+                        'All',
+                        style: TextStyle(
+                          color: recipientIsAllSelected ? Colors.black : AppColors.getTextPrimary(isDark),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 10),
+
+              // Authoritative Coins Balance & Recharge Link
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.monetization_on_rounded, color: AppColors.gold, size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${wallet.coins}',
+                        style: TextStyle(fontWeight: FontWeight.w900, color: AppColors.getTextPrimary(isDark), fontSize: 13),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => _openRechargeScreen(context),
+                        child: Text('Recharge >', style: TextStyle(color: primaryColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    'Selected: $recipientCount recipient${recipientCount > 1 ? 's' : ''}',
+                    style: const TextStyle(color: Colors.grey, fontSize: 11),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              // 2. GIFT CATEGORY TABS & 3. CATALOG TYPE FILTER DROPDOWN
+              Row(
+                children: [
+                  Expanded(
+                    child: TabBar(
+                      controller: _tabController,
+                      isScrollable: true,
+                      indicatorColor: primaryColor,
+                      indicatorWeight: 3,
+                      labelColor: primaryColor,
+                      unselectedLabelColor: AppColors.getTextSecondary(isDark),
+                      labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900),
+                      unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      dividerColor: Colors.transparent,
+                      tabAlignment: TabAlignment.start,
+                      tabs: categories.map((c) => Tab(text: c)).toList(),
+                    ),
+                  ),
+
+                  const SizedBox(width: 6),
+
+                  Container(
+                    height: 30,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.getSurface(isDark),
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(color: AppColors.getBorder(isDark)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<CatalogTypeFilter>(
+                        value: selectedCatalogFilter,
+                        dropdownColor: AppColors.getCard(isDark),
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 16),
+                        style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 11, fontWeight: FontWeight.bold),
+                        items: const [
+                          DropdownMenuItem(value: CatalogTypeFilter.all, child: Text('All ▾')),
+                          DropdownMenuItem(value: CatalogTypeFilter.gift, child: Text('Gift')),
+                          DropdownMenuItem(value: CatalogTypeFilter.props, child: Text('Props')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) setState(() => selectedCatalogFilter = val);
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              // 4. ITEM GRID / 5. PROPS CONTENT
+              Expanded(
+                child: selectedCatalogFilter == CatalogTypeFilter.props
+                    ? _buildPropsGrid(isDark, primaryColor)
+                    : _buildGiftGrid(isDark, primaryColor, selectedCategory, liveGiftProv.catalogGifts),
+              ),
+
+              const SizedBox(height: 10),
+
+              // 6. SEND CONTROLS & TOTAL PRICE
+              Row(
+                children: [
+                  Text('Qty:', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 12)),
+                  const SizedBox(width: 8),
+
+                  Container(
+                    height: 34,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.getSurface(isDark),
+                      borderRadius: BorderRadius.circular(17),
+                      border: Border.all(color: AppColors.getBorder(isDark)),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        value: quantity,
+                        dropdownColor: AppColors.getCard(isDark),
+                        icon: const Icon(Icons.arrow_drop_down, size: 18),
+                        items: [1, 10, 50, 99, 520, 1314].map((q) => DropdownMenuItem(
+                          value: q,
+                          child: Text('$q', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
+                        )).toList(),
+                        onChanged: (v) {
+                          if (v != null) setState(() => quantity = v);
+                        },
+                      ),
+                    ),
+                  ),
+
+                  const Spacer(),
+
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryColor,
+                      foregroundColor: AppColors.onPrimary(isDark: isDark),
+                      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      elevation: 4,
+                    ),
+                    onPressed: selectedGift == null || effectiveRecipients.isEmpty || liveGiftProv.isSending
+                        ? null
+                        : () async {
+                            final auth = context.read<AuthProvider>();
+                            final liveProv = context.read<LiveProvider>();
+                            final partyLiveProv = context.read<LivePartyProvider>();
+
+                            if (wallet.coins < totalPrice) {
+                              showDialog(
+                                context: context,
+                                builder: (dlgCtx) => AlertDialog(
+                                  backgroundColor: AppColors.getCard(isDark),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                  title: Row(
+                                    children: [
+                                      const Icon(Icons.monetization_on_rounded, color: AppColors.gold, size: 24),
+                                      const SizedBox(width: 8),
+                                      Text('Insufficient Coins', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
+                                    ],
+                                  ),
+                                  content: Text(
+                                    'You need $totalPrice 🪙 to send this gift. You currently have ${wallet.coins} 🪙. Would you like to recharge now?',
+                                    style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(dlgCtx),
+                                      child: Text('Cancel', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
+                                    ),
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: primaryColor,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.pop(dlgCtx);
+                                        _openRechargeScreen(context);
+                                      },
+                                      child: const Text('Recharge Now 🪙', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              return;
+                            }
+
+                            int totalSuccess = 0;
+                            final roomId = liveProv.activeRoom?.id ?? partyLiveProv.activeRoom?.id ?? '';
+
+                            for (final targetUser in effectiveRecipients) {
+                              final success = await liveGiftProv.sendGift(
+                                walletProvider: wallet,
+                                gift: selectedGift!,
+                                sender: auth.currentUser,
+                                receiver: targetUser,
+                                roomId: roomId,
+                                quantity: quantity,
+                              );
+
+                              if (success) {
+                                totalSuccess++;
+                                try {
+                                  partyLiveProv.sendGiftActivityMessage(
+                                    sender: auth.currentUser,
+                                    receiver: targetUser,
+                                    giftId: selectedGift!.id,
+                                    giftName: selectedGift!.name,
+                                    giftIcon: selectedGift!.icon,
+                                    quantity: quantity,
+                                    transactionId: 'tx_${DateTime.now().millisecondsSinceEpoch}',
+                                  );
+                                } catch (_) {}
+                              }
+                            }
+
+                            if (totalSuccess > 0) {
+                              widget.onGiftSent?.call(selectedGift!);
+                              if (mounted) {
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('🎁 Sent $quantity × ${selectedGift!.name} to $totalSuccess recipient(s)!'),
+                                    backgroundColor: Colors.green[800],
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            } else if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(liveGiftProv.lastError ?? 'Failed to send gift. Please check connection.'),
+                                  backgroundColor: Colors.red[800],
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            }
+                          },
+                    child: liveGiftProv.isSending
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                          )
+                        : Text(
+                            'Send $totalPrice 🪙',
+                            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
+                          ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
-  // 4. ITEM GRID RENDERING (Section 5 & Reference Image B)
-  Widget _buildGiftGrid(bool isDark, Color primaryColor, String category) {
+  Widget _buildGiftGrid(bool isDark, Color primaryColor, String category, List<GiftModel> catalog) {
     List<GiftModel> displayGifts;
     if (category == 'Lucky Gift') {
-      displayGifts = GiftModel.defaultCatalog.where((g) => g.isLuckyGift).toList();
+      displayGifts = catalog.where((g) => g.isLuckyGift).toList();
     } else if (category == 'Classic') {
-      displayGifts = GiftModel.defaultCatalog.where((g) => g.category == 'Classic').toList();
+      displayGifts = catalog.where((g) => g.category == 'Classic' || g.giftCategory == 'POPULAR').toList();
     } else if (category == 'Event Gifts') {
-      displayGifts = GiftModel.defaultCatalog.where((g) => g.category == 'Event Gifts').toList();
+      displayGifts = catalog.where((g) => g.category == 'Event Gifts' || g.giftCategory == 'LUXURY').toList();
     } else if (category == 'Privileges') {
-      displayGifts = GiftModel.defaultCatalog.where((g) => g.category == 'Privileges').toList();
+      displayGifts = catalog.where((g) => g.category == 'Privileges' || g.giftCategory == 'VIP').toList();
+    } else if (category == 'Special') {
+      displayGifts = catalog.where((g) => g.category == 'Special' || g.giftCategory == 'AUDIO').toList();
     } else {
-      displayGifts = GiftModel.defaultCatalog.where((g) => g.category == category || category == 'All').toList();
+      displayGifts = catalog;
     }
 
     if (displayGifts.isEmpty) {
-      displayGifts = GiftModel.defaultCatalog;
+      displayGifts = catalog.isNotEmpty ? catalog : GiftModel.defaultCatalog;
     }
 
     return GridView.builder(
@@ -520,6 +542,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
       itemBuilder: (context, index) {
         final gift = displayGifts[index];
         final isSelected = selectedGift?.id == gift.id;
+        final coinPrice = gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice;
 
         return GestureDetector(
           onTap: () {
@@ -565,13 +588,13 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.diamond_rounded, color: AppColors.cyan, size: 10),
+                        const Icon(Icons.monetization_on_rounded, color: AppColors.gold, size: 10),
                         const SizedBox(width: 2),
                         Text(
-                          '${gift.diamondPrice}',
+                          '$coinPrice',
                           style: const TextStyle(
                             fontSize: 10,
-                            color: AppColors.cyan,
+                            color: AppColors.gold,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -581,7 +604,6 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                 ),
               ),
 
-              // Lucky / Special Badges (MAX X2000, MAGIC, LUCKY, MAX)
               if (gift.luckyBadge != null || gift.label != null)
                 Positioned(
                   top: -4,
@@ -610,7 +632,6 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
     );
   }
 
-  // 5. PROPS GRID RENDERING (Section 7 & Reference Image C)
   Widget _buildPropsGrid(bool isDark, Color primaryColor) {
     final props = GiftModel.defaultProps;
 

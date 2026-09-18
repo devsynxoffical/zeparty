@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/constants/dummy_data.dart';
 import '../../../../models/medal_model.dart';
 
 class MedalScreen extends StatefulWidget {
@@ -17,7 +16,7 @@ class _MedalScreenState extends State<MedalScreen> {
   @override
   void initState() {
     super.initState();
-    _medals = List.from(DummyData.userMedals);
+    _medals = List.from(MedalModel.defaultMedals);
   }
 
   void _toggleEquip(int index) {

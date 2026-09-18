@@ -17,9 +17,10 @@ import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
+import { Toast } from '../../components/ui/Toast';
 import { DataTable } from '../../components/tables/DataTable';
-import { MOCK_USERS } from '../../mocks/users.mock';
-import { MOCK_BD_CENTERS } from '../../mocks/bdCenters.mock';
+import { getUserById, updateUser, updateUserStatus } from '../../services/modules/users.service';
+import { getBDCenters } from '../../services/modules/bdCenter.service';
 import { getUserPosts, deleteUserPost } from '../../services/modules/posts.service';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryName } from '../../constants/countries.data';
@@ -38,8 +39,9 @@ export function UserDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const initialUser = MOCK_USERS.find((u) => u.id === id) || MOCK_USERS[0];
-  const [user, setUser] = useState(initialUser);
+  const [user, setUser] = useState(null);
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
+  const [userError, setUserError] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
@@ -47,10 +49,9 @@ export function UserDetailPage() {
   // Posts State
   const [userPosts, setUserPosts] = useState([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
-  const [postToDelete, setPostToDelete] = useState(null);
-
-  // BD Center Assignment State
-  const [selectedBDCenter, setSelectedBDCenter] = useState(user.bdCenterId || 'bdc-101');
+  const [postToDelete, setPostToDelete] = useState(null);  // BD Center Assignment State
+  const [bdCenters, setBdCenters] = useState([]);
+  const [selectedBDCenter, setSelectedBDCenter] = useState('');
 
   // Modals state
   const [modalAction, setModalAction] = useState(null); // 'ban' | 'freeze' | 'reset' | 'grant_prop' | 'revoke_session' | 'change_country'
@@ -59,18 +60,57 @@ export function UserDetailPage() {
   const [propValue, setPropValue] = useState('');
   const [targetSessionId, setTargetSessionId] = useState(null);
 
+  // Toast State
+  const [toast, setToast] = useState(null);
+
+  function showToast(message, type = 'success', title = '') {
+    setToast({
+      message,
+      type,
+      title: title || (type === 'success' ? 'Action Completed' : 'Operation Failed'),
+      duration: 4500,
+    });
+  }
+
   // Country Change state
-  const [newCountry, setNewCountry] = useState(user.country || 'PK');
-  const [newRegion, setNewRegion] = useState(user.region || 'South Asia');
+  const [newCountry, setNewCountry] = useState('PK');
+  const [newRegion, setNewRegion] = useState('South Asia');
+
+  useEffect(() => {
+    getBDCenters().then(bds => setBdCenters(bds || [])).catch(() => setBdCenters([]));
+    if (id) {
+      setIsLoadingUser(true);
+      getUserById(id)
+        .then((userData) => {
+          setUser(userData);
+          setSelectedBDCenter(userData.bdCenterId || '');
+          setNewCountry(userData.country || 'PK');
+          setNewRegion(userData.region || 'South Asia');
+          setUserError(null);
+        })
+        .catch((err) => {
+          console.error('Failed to load user:', err);
+          setUserError(err.message || 'Failed to load user data');
+        })
+        .finally(() => setIsLoadingUser(false));
+    }
+  }, [id]);
 
   const handleCountryChange = async () => {
-    setUser({ ...user, country: newCountry, region: newRegion });
-    await logAdminAction({
+    if (!user) return;
+    try {
+      await updateUser(user.id, { countryCode: newCountry });
+      setUser({ ...user, country: newCountry, region: newRegion });
+      showToast(`Country updated to ${newCountry} (${newRegion}) in database.`, 'success', 'Country Updated');
+    } catch (err) {
+      console.error('Failed to update country on backend:', err);
+      showToast(err.message || 'Failed to update country', 'error', 'Country Update Failed');
+    }
+    await logEvent({
       action: 'USER_COUNTRY_CHANGED',
-      module: 'User Management',
-      targetType: 'USER',
       targetId: user.id,
-      targetName: user.displayName,
+      targetType: 'USER',
+      operatorName: 'Super Admin',
       reason: actionReason || `Country updated to ${newCountry} (${newRegion})`,
       riskLevel: 'HIGH',
       status: 'SUCCESS'
@@ -80,23 +120,28 @@ export function UserDetailPage() {
   };
 
   useEffect(() => {
-    if (user) {
+    if (user?.id) {
       getLogsForTarget(user.id).then((data) => {
-        setHistory(data);
+        setHistory(data || []);
         setIsLoadingHistory(false);
       });
       setIsLoadingPosts(true);
       getUserPosts(user.id).then((posts) => {
-        setUserPosts(posts);
+        setUserPosts(posts || []);
         setIsLoadingPosts(false);
       });
     }
-  }, [user]);
+  }, [user?.id]);
 
   const handleDeletePost = async () => {
     if (!postToDelete) return;
-    await deleteUserPost(postToDelete.id, actionReason || 'Violation of content policy');
-    setUserPosts((prev) => prev.filter((p) => p.id !== postToDelete.id));
+    try {
+      await deleteUserPost(postToDelete.id, actionReason || 'Violation of content policy');
+      setUserPosts((prev) => prev.filter((p) => p.id !== postToDelete.id));
+      showToast('Post deleted successfully.', 'success', 'Post Deleted');
+    } catch (err) {
+      showToast(err.message || 'Failed to delete post', 'error', 'Deletion Failed');
+    }
 
     await logEvent({
       action: 'DELETE_USER_POST',
@@ -116,6 +161,17 @@ export function UserDetailPage() {
 
   const handleApplyControl = async (newStatus, actionLabel, defaultReason = 'Platform security alignment and moderation compliance') => {
     const finalReason = actionReason || defaultReason;
+    if (['banned', 'suspended', 'active'].includes(newStatus)) {
+      try {
+        await updateUserStatus(user.id, { status: newStatus, reason: finalReason });
+        showToast(`User status updated to ${newStatus.toUpperCase()}.`, 'success', 'Status Updated');
+      } catch (err) {
+        console.error('Failed to update user status:', err);
+        showToast(err.message || 'Failed to update status', 'error', 'Status Update Failed');
+      }
+    } else {
+      showToast(`${actionLabel.replace(/_/g, ' ')} executed successfully.`, 'success', 'Action Executed');
+    }
     const updated = { ...user, status: newStatus };
     setUser(updated);
 
@@ -133,13 +189,14 @@ export function UserDetailPage() {
     setActionReason('');
     // Refresh history
     const freshLogs = await getLogsForTarget(user.id);
-    setHistory(freshLogs);
+    setHistory(freshLogs || []);
   };
 
   const handleGrantProp = async () => {
     if (!propValue) return;
     const updatedProps = { ...user.props, [selectedProp]: propValue };
     setUser({ ...user, props: updatedProps });
+    showToast(`Granted ${selectedProp}: "${propValue}" to user.`, 'success', 'Item Granted');
 
     await logEvent({
       action: `GRANT_PROP_${selectedProp.toUpperCase()}`,
@@ -164,6 +221,7 @@ export function UserDetailPage() {
       d.id === targetSessionId ? { ...d, status: 'revoked' } : d
     );
     setUser({ ...user, devices: updatedDevices });
+    showToast('Device session terminated and logged out.', 'success', 'Session Revoked');
 
     await logEvent({
       action: 'REVOKE_SESSION',
@@ -279,12 +337,34 @@ export function UserDetailPage() {
     },
   ];
 
-  if (!user) return null;
+  if (isLoadingUser) {
+    return (
+      <div className="flex flex-col items-center justify-center p-16 gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-gold-500 border-t-transparent" />
+        <p className="text-sm text-slate-400">Loading user profile from database...</p>
+      </div>
+    );
+  }
+
+  if (userError || !user) {
+    return (
+      <div className="p-8 text-center bg-slate-900/60 rounded-2xl border border-red-500/30">
+        <p className="text-base font-bold text-red-400">User Not Found</p>
+        <p className="text-xs text-slate-400 mt-1">{userError || 'The requested user could not be located.'}</p>
+        <Button variant="outline" size="sm" className="mt-4" onClick={() => navigate('/admin/users')}>
+          <ArrowLeft className="h-4 w-4 mr-1.5" /> Back to Users
+        </Button>
+      </div>
+    );
+  }
 
   const bgColor = avatarColor(user.id);
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Floating In-App Toast Notification */}
+      <Toast toast={toast} onClose={() => setToast(null)} />
+
       {/* Back Navigation */}
       <div>
         <button
@@ -530,9 +610,10 @@ export function UserDetailPage() {
                   onChange={(e) => setSelectedBDCenter(e.target.value)}
                   className="bg-slate-900 border border-slate-700 text-white rounded-lg text-xs px-3 py-1.5 flex-1"
                 >
-                  {MOCK_BD_CENTERS.map((bdc) => (
+                  <option value="">None Assigned</option>
+                  {bdCenters.map((bdc) => (
                     <option key={bdc.id} value={bdc.id}>
-                      {bdc.name} ({bdc.code}) - {bdc.managerName}
+                      {bdc.name} ({bdc.code})
                     </option>
                   ))}
                 </select>

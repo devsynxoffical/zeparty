@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
-import '../../core/constants/dummy_data.dart';
 import '../../models/party_room_model.dart';
+import '../../models/user_model.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/gift_dialog.dart';
 
@@ -28,7 +28,19 @@ class _PartyRoomScreenState extends State<PartyRoomScreen> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    party = widget.partyRoom ?? DummyData.samplePartyRoom;
+    party = widget.partyRoom ?? const PartyRoomModel(
+      id: 'party_default',
+      title: 'Voice Party Room',
+      host: UserModel(
+        id: 'host_default',
+        username: 'host',
+        name: 'Party Host',
+        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+      ),
+      roomType: 'Open Party',
+      seats: [],
+      totalListeners: 1,
+    );
     _listenerCount = party.totalListeners;
 
     // Simulate live listener count fluctuation

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../widgets/design/gold_button.dart';
 import '../../widgets/app_logo.dart';
+import '../../providers/auth_provider.dart';
 import 'otp_screen.dart';
 
 class CountryItem {
@@ -117,7 +119,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
     );
   }
 
-  void _sendOtp() {
+  Future<void> _sendOtp() async {
     final phone = _phoneController.text.trim();
     if (phone.isEmpty || phone.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -126,11 +128,25 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       return;
     }
 
-    final fullNumber = '${_selectedCountry.dialCode} $phone';
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (c) => OtpScreen(phoneNumber: fullNumber)),
-    );
+    final fullNumber = '${_selectedCountry.dialCode}$phone'.replaceAll(' ', '');
+    final auth = context.read<AuthProvider>();
+    final success = await auth.requestOtp(fullNumber);
+
+    if (mounted) {
+      if (success) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (c) => OtpScreen(phoneNumber: fullNumber)),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(auth.errorMessage ?? 'Failed to send OTP. Please try again.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -222,7 +238,8 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
 
               GoldButton(
                 text: 'Send OTP Verification',
-                onPressed: _sendOtp,
+                onPressed: context.watch<AuthProvider>().isLoading ? null : _sendOtp,
+                isLoading: context.watch<AuthProvider>().isLoading,
                 height: 52,
                 radius: 14,
               ),

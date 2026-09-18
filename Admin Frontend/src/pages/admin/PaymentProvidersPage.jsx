@@ -3,7 +3,7 @@
 // Interactive Gateway Configuration Modal
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CreditCard, ShieldCheck, Settings } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -11,34 +11,65 @@ import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
-
-const INITIAL_PROVIDERS = [
-  { id: 'gw-1', name: 'Stripe Payments', fee: '2.9% + $0.30', limits: '$10 - $5,000', status: 'ACTIVE', apiKey: 'pk_live_••••••••4892' },
-  { id: 'gw-2', name: 'PayPal Express', fee: '3.4% + $0.30', limits: '$10 - $3,000', status: 'ACTIVE', apiKey: 'client_live_••••••••1102' },
-  { id: 'gw-3', name: 'Binance Pay (Crypto)', fee: '0.5%', limits: '$20 - $10,000', status: 'ACTIVE', apiKey: 'binance_live_••••••••8819' },
-];
+import {
+  getPaymentProviders,
+  updatePaymentProvider,
+} from '../../services/modules/paymentProvider.service';
 
 export function PaymentProvidersPage() {
-  const [providers, setProviders] = useState(INITIAL_PROVIDERS);
+  const [providers, setProviders] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedProvider, setSelectedProvider] = useState(null);
   const [fee, setFee] = useState('');
   const [limits, setLimits] = useState('');
   const [status, setStatus] = useState('ACTIVE');
+  const [isSandbox, setIsSandbox] = useState(true);
   const [savedMessage, setSavedMessage] = useState(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    loadProviders();
+  }, []);
+
+  async function loadProviders() {
+    setIsLoading(true);
+    try {
+      const data = await getPaymentProviders({ includeInactive: true });
+      setProviders(data);
+    } catch (err) {
+      console.error('Failed to load payment providers:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   const handleOpenConfig = (p) => {
     setSelectedProvider(p);
     setFee(p.fee);
     setLimits(p.limits);
     setStatus(p.status);
+    setIsSandbox(p.isSandbox);
   };
 
-  const handleSaveConfig = () => {
+  const handleSaveConfig = async () => {
     if (!selectedProvider) return;
-    setProviders(providers.map(p => p.id === selectedProvider.id ? { ...p, fee, limits, status } : p));
-    setSavedMessage(`Gateway "${selectedProvider.name}" updated successfully.`);
-    setSelectedProvider(null);
-    setTimeout(() => setSavedMessage(null), 3000);
+    setIsSaving(true);
+    try {
+      await updatePaymentProvider(selectedProvider.id, {
+        fee,
+        limits,
+        status,
+        isSandbox,
+      });
+      setSavedMessage(`Gateway "${selectedProvider.name}" updated successfully.`);
+      setSelectedProvider(null);
+      await loadProviders();
+      setTimeout(() => setSavedMessage(null), 3000);
+    } catch (err) {
+      console.error('Failed to save provider config:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -49,7 +80,9 @@ export function PaymentProvidersPage() {
             <CreditCard className="h-6 w-6 text-emerald-400" />
             Payment Provider Configurations
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">Manage online gateway integrations, processing fees, masked credentials, and transaction limits.</p>
+          <p className="text-sm text-slate-400 mt-0.5">
+            Manage online gateway integrations, processing fees, masked credentials, and transaction limits.
+          </p>
         </div>
       </div>
 
@@ -66,6 +99,11 @@ export function PaymentProvidersPage() {
           { key: 'fee', header: 'Processing Fee', render: (r) => <span className="text-xs text-slate-300">{r.fee}</span> },
           { key: 'limits', header: 'Transaction Limits', render: (r) => <span className="text-xs font-mono text-gold-400">{r.limits}</span> },
           { key: 'apiKey', header: 'Masked API Key', render: (r) => <code className="text-xs font-mono text-slate-400">{r.apiKey}</code> },
+          { key: 'mode', header: 'Environment', render: (r) => (
+            <Badge variant={r.isSandbox ? 'warning' : 'success'}>
+              {r.isSandbox ? 'SANDBOX' : 'PRODUCTION'}
+            </Badge>
+          )},
           { key: 'status', header: 'Gateway Status', render: (r) => <StatusBadge status={r.status.toLowerCase()} /> },
           { key: 'actions', header: 'Actions', render: (r) => (
             <Button variant="outline" size="xs" onClick={() => handleOpenConfig(r)}>
@@ -74,7 +112,7 @@ export function PaymentProvidersPage() {
           )},
         ]}
         data={providers}
-        isLoading={false}
+        isLoading={isLoading}
       />
 
       {selectedProvider && (
@@ -87,25 +125,42 @@ export function PaymentProvidersPage() {
             <Input label="Processing Fee Description" value={fee} onChange={(e) => setFee(e.target.value)} required />
             <Input label="Transaction Limits ($ USD)" value={limits} onChange={(e) => setLimits(e.target.value)} required />
 
-            <div>
-              <label className="text-xs font-medium text-slate-300 block mb-1">Gateway Status</label>
-              <select
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none"
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-              >
-                <option value="ACTIVE">ACTIVE</option>
-                <option value="DISABLED">DISABLED</option>
-                <option value="MAINTENANCE">MAINTENANCE</option>
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-medium text-slate-300 block mb-1">Gateway Status</label>
+                <select
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="DISABLED">DISABLED</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-300 block mb-1">Environment Mode</label>
+                <select
+                  className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none"
+                  value={isSandbox ? 'SANDBOX' : 'PRODUCTION'}
+                  onChange={(e) => setIsSandbox(e.target.value === 'SANDBOX')}
+                >
+                  <option value="SANDBOX">SANDBOX (Test Mode)</option>
+                  <option value="PRODUCTION">PRODUCTION (Live Mode)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-900 border border-slate-700 rounded-lg text-slate-400 text-xs">
+              <span className="font-semibold text-slate-200">Security Invariant:</span> Credentials are encrypted via AES-256-GCM in the backend database. Decrypted raw API secrets are never transmitted to or displayed in the browser.
             </div>
 
             <div className="flex justify-end gap-3 pt-2">
               <Button variant="ghost" size="sm" onClick={() => setSelectedProvider(null)}>
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleSaveConfig}>
-                Save Provider Settings
+              <Button variant="primary" size="sm" disabled={isSaving} onClick={handleSaveConfig}>
+                {isSaving ? 'Saving...' : 'Save Provider Settings'}
               </Button>
             </div>
           </div>

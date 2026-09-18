@@ -15,7 +15,6 @@ import '../party_room/live_party_room_screen.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/user_list_sheet.dart';
 import '../../widgets/gift_dialog.dart';
-import '../../core/constants/dummy_data.dart';
 import '../../core/repositories/backend_repository.dart';
 
 import '../svip/svip_center_screen.dart';
@@ -24,6 +23,7 @@ import '../settings/edit_profile_screen.dart';
 import 'level_center_screen.dart';
 import 'modules/medal_screen.dart';
 import 'modules/relationship_screen.dart';
+import '../../widgets/report_sheet.dart';
 
 class UserProfileDetailsScreen extends StatefulWidget {
   final String userId;
@@ -246,87 +246,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
   // Report Modal Dialog Flow
   void _showReportDialog(BuildContext context, bool isDark) {
-    String selectedCategory = 'Inappropriate Content';
-    final categories = [
-      'Inappropriate Content',
-      'Spam & Scammers',
-      'Harassment & Abuse',
-      'Fake Account / Impersonation',
-      'Violent or Offensive Material',
-    ];
-    final noteController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (dlgCtx) => StatefulBuilder(
-        builder: (context, setDlgState) => AlertDialog(
-          backgroundColor: AppColors.getCard(isDark),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Text(
-            'Report User',
-            style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Select Violation Category:', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(isDark))),
-                const SizedBox(height: 8),
-                ...categories.map(
-                  (cat) => RadioListTile<String>(
-                    title: Text(cat, style: TextStyle(fontSize: 13, color: AppColors.getTextPrimary(isDark))),
-                    value: cat,
-                    groupValue: selectedCategory,
-                    activeColor: AppColors.getPrimary(isDark),
-                    onChanged: (val) {
-                      if (val != null) setDlgState(() => selectedCategory = val);
-                    },
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: noteController,
-                  maxLines: 2,
-                  style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'Additional details or evidence (optional)',
-                    hintStyle: const TextStyle(color: Colors.grey, fontSize: 12),
-                    filled: true,
-                    fillColor: AppColors.getSurface(isDark),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dlgCtx),
-              child: Text('Cancel', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orangeAccent,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () {
-                Navigator.pop(dlgCtx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('🎉 Report submitted for user ID: ${_user!.id}. Our moderation team is reviewing it.'),
-                    backgroundColor: Colors.amber[900],
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-              child: const Text('Submit Report', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
-      ),
+    if (_user == null) return;
+    ReportSheet.show(
+      context,
+      targetTitle: _user!.name,
+      reportedUserId: _user!.id,
     );
   }
 
@@ -360,15 +284,24 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             ),
             onPressed: () {
               Navigator.pop(dlgCtx);
-              auth.blockUser(_user!.id);
-              setState(() {});
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('🚫 ${_user!.name} has been blocked successfully.'),
-                  backgroundColor: Colors.redAccent,
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
+              auth.blockUser(_user!.id).then((_) {
+                if (mounted) setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('🚫 ${_user!.name} has been blocked successfully.'),
+                    backgroundColor: Colors.redAccent,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }).catchError((e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to block user: $e'),
+                    backgroundColor: Colors.red,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              });
             },
             child: const Text('Block User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
@@ -428,8 +361,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                   ),
                                   TextButton(
                                     onPressed: () {
-                                      auth.unblockUser(_user!.id);
-                                      setState(() {});
+                                      auth.unblockUser(_user!.id).then((_) {
+                                        if (mounted) setState(() {});
+                                      });
                                     },
                                     child: const Text('Unblock', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
                                   ),
@@ -686,11 +620,13 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     GestureDetector(
                       onTap: () {
                         final partyProv = context.read<LivePartyProvider>();
-                        final room = partyProv.activeRoom ?? DummyData.liveRooms.first;
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: room)),
-                        );
+                        final room = partyProv.activeRoom;
+                        if (room != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: room)),
+                          );
+                        }
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),

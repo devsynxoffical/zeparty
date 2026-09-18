@@ -1,102 +1,103 @@
+import 'package:dio/dio.dart';
+import '../services/api_client.dart';
+import '../../models/wallet_model.dart';
 import '../../models/transaction_model.dart';
+import '../../models/recharge_plan_model.dart';
 
-/// Abstract repository interface for wallet transactions.
-/// Disconnects direct UI manipulation from transaction logic.
-/// Can be replaced with ApiWalletRepository or FirebaseWalletRepository when backend is connected.
-abstract class WalletRepository {
-  Future<int> fetchCoinBalance();
-  Future<int> fetchDiamondBalance();
-  Future<double> fetchRCoinBalance();
-  Future<List<TransactionModel>> fetchTransactions();
-  Future<bool> processCoinSpend(int amount, String idempotencyKey);
-  Future<bool> processCoinRecharge(int coinAmount, double priceUSD);
-  Future<bool> processWithdrawalRequest(double amountUSD, String payoutMethod, String accountNumber);
-}
+class WalletRepository {
+  static final WalletRepository instance = WalletRepository._internal();
+  final ApiClient _apiClient = ApiClient.instance;
 
-/// Development local implementation of WalletRepository.
-class LocalWalletRepository implements WalletRepository {
-  int _coins = 45000;
-  final int _diamonds = 8520;
-  double _rCoins = 1450.75;
-  final List<TransactionModel> _transactions = [];
+  WalletRepository._internal();
 
-  @override
-  Future<int> fetchCoinBalance() async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    return _coins;
+  /// Fetch user's authoritative wallet balance from PostgreSQL backend
+  Future<WalletModel> fetchWallet() async {
+    final response = await _apiClient.get('/v1/wallet/balance');
+    final data = response.data?['data'] as Map<String, dynamic>;
+    return WalletModel.fromJson(data);
   }
 
-  @override
-  Future<int> fetchDiamondBalance() async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    return _diamonds;
-  }
+  /// Fetch user's paginated ledger history from backend
+  Future<List<TransactionModel>> fetchLedger({
+    int page = 1,
+    int limit = 20,
+    String? type,
+  }) async {
+    final queryParams = <String, dynamic>{
+      'page': page,
+      'limit': limit,
+    };
+    if (type != null && type.isNotEmpty && type != 'All') {
+      queryParams['type'] = type;
+    }
 
-  @override
-  Future<double> fetchRCoinBalance() async {
-    await Future.delayed(const Duration(milliseconds: 300));
-    return _rCoins;
-  }
-
-  @override
-  Future<List<TransactionModel>> fetchTransactions() async {
-    await Future.delayed(const Duration(milliseconds: 400));
-    return List.unmodifiable(_transactions);
-  }
-
-  @override
-  Future<bool> processCoinSpend(int amount, String idempotencyKey) async {
-    if (_coins < amount) return false;
-    _coins -= amount;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: idempotencyKey,
-        title: 'Spent $amount Coins [DEV MODE]',
-        type: 'Expense',
-        amount: amount.toDouble(),
-        currency: 'Coins',
-        status: 'Completed',
-        date: DateTime.now(),
-      ),
+    final response = await _apiClient.get(
+      '/v1/wallet/ledger',
+      queryParameters: queryParams,
     );
-    return true;
+
+    final items = response.data?['data'] as List? ?? [];
+    return items
+        .map((item) => TransactionModel.fromLedgerJson(item as Map<String, dynamic>))
+        .toList();
   }
 
-  @override
-  Future<bool> processCoinRecharge(int coinAmount, double priceUSD) async {
-    _coins += coinAmount;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: 'tx_dev_${DateTime.now().millisecondsSinceEpoch}',
-        title: 'Recharge $coinAmount Coins [DEV MODE]',
-        type: 'Recharge',
-        amount: coinAmount.toDouble(),
-        currency: 'Coins',
-        status: 'Completed (Development)',
-        date: DateTime.now(),
-      ),
-    );
-    return true;
+  /// Fetch active recharge packages configured by Admin
+  Future<List<RechargePlanModel>> fetchRechargePlans() async {
+    final response = await _apiClient.get('/v1/recharge/plans');
+    final items = response.data?['data'] as List? ?? [];
+    return items
+        .map((item) => RechargePlanModel.fromJson(item as Map<String, dynamic>))
+        .toList();
   }
 
-  @override
-  Future<bool> processWithdrawalRequest(double amountUSD, String payoutMethod, String accountNumber) async {
-    if (_rCoins < amountUSD) return false;
-    _rCoins -= amountUSD;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: 'wd_dev_${DateTime.now().millisecondsSinceEpoch}',
-        title: 'Cashout ($payoutMethod) [DEV MODE]',
-        type: 'Withdrawal',
-        amount: amountUSD,
-        currency: 'USD',
-        status: 'Pending Verification',
-        date: DateTime.now(),
-      ),
+  /// Create payment intent for online recharge gateway (Stripe, PayPal, Braintree, etc.)
+  Future<Map<String, dynamic>> createPaymentIntent({
+    required String planId,
+    required String paymentProvider,
+    String? idempotencyKey,
+  }) async {
+    final headers = <String, dynamic>{};
+    if (idempotencyKey != null) {
+      headers['idempotency-key'] = idempotencyKey;
+    }
+
+    final response = await _apiClient.post(
+      '/v1/recharge/online/create-intent',
+      data: {
+        'planId': planId,
+        'paymentProvider': paymentProvider,
+      },
+      options: headers.isNotEmpty ? Options(headers: headers) : null,
     );
-    return true;
+
+    return response.data?['data'] as Map<String, dynamic>? ?? {};
+  }
+
+  /// Submit manual offline deposit receipt for admin review
+  Future<Map<String, dynamic>> submitOfflineRecharge({
+    required double amountUSD,
+    required String bankName,
+    required String receiptPhotoUrl,
+    required String transactionRef,
+    String? idempotencyKey,
+  }) async {
+    final headers = <String, dynamic>{};
+    if (idempotencyKey != null) {
+      headers['idempotency-key'] = idempotencyKey;
+    }
+
+    final response = await _apiClient.post(
+      '/v1/recharge/offline',
+      data: {
+        'amountUSD': amountUSD,
+        'bankName': bankName,
+        'receiptPhotoUrl': receiptPhotoUrl,
+        'transactionRef': transactionRef,
+      },
+      options: headers.isNotEmpty ? Options(headers: headers) : null,
+    );
+
+    return response.data?['data'] as Map<String, dynamic>? ?? {};
   }
 }

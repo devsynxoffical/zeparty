@@ -2,34 +2,69 @@
 // ZeParty Admin Portal — Hosts Service (JavaScript)
 // ============================================================
 
-import { MOCK_HOST_APPLICATIONS } from '../../mocks/hosts.mock';
+import apiClient from '../api';
 
-let hostsState = [...MOCK_HOST_APPLICATIONS];
+export async function getHosts(params = {}) {
+  const res = await apiClient.get('/v1/admin/hosts', { params });
+  return res.data?.data || [];
+}
 
-export async function getHostApplications() {
-  await new Promise((res) => setTimeout(res, 200));
-  return [...hostsState];
+export async function getHostApplications(params = {}) {
+  const res = await apiClient.get('/v1/admin/hosts/applications', { params });
+  const items = res.data?.data || [];
+  return items.map((app) => ({
+    id: app.id,
+    userId: app.userId,
+    applicantName: app.user?.username || app.user?.profile?.displayName || app.userId,
+    user: app.user?.username || app.userId,
+    hostType: app.hostType || 'INDEPENDENT',
+    agencyId: app.agencyId,
+    agencyName: app.agency?.name || 'Independent',
+    status: app.status?.toLowerCase() || 'pending',
+    submittedAt: app.createdAt,
+    reviewedAt: app.reviewedAt,
+    reviewerAdminId: app.reviewerAdminId,
+    rejectionReason: app.rejectionReason,
+    idDocumentUrl: app.idDocumentUrl,
+    liveDemoUrl: app.liveDemoUrl,
+  }));
 }
 
 export async function getHostApplicationById(id) {
-  await new Promise((res) => setTimeout(res, 150));
-  const app = hostsState.find((h) => h.id === id);
-  if (!app) throw new Error('Host application not found');
-  return { ...app };
+  const res = await apiClient.get(`/v1/admin/hosts/applications/${id}`);
+  return res.data?.data;
 }
 
-export async function approveHostApplication(id) {
-  await new Promise((res) => setTimeout(res, 300));
-  hostsState = hostsState.map((h) =>
-    h.id === id ? { ...h, status: 'approved', reviewedAt: new Date().toISOString() } : h
-  );
-  return { success: true };
+export async function approveHostApplication(id, payload = {}) {
+  const res = await apiClient.put(`/v1/admin/hosts/applications/${id}`, {
+    status: 'APPROVED',
+    commissionPercent: payload.commissionPercent || 70,
+    reason: payload.reason || 'Approved by administrator',
+  });
+  return res.data;
 }
 
 export async function rejectHostApplication(id, reason) {
-  await new Promise((res) => setTimeout(res, 300));
-  hostsState = hostsState.map((h) =>
-    h.id === id ? { ...h, status: 'rejected', rejectReason: reason, reviewedAt: new Date().toISOString() } : h
-  );
-  return { success: true };
+  const res = await apiClient.put(`/v1/admin/hosts/applications/${id}`, {
+    status: 'REJECTED',
+    reason: reason || 'Application rejected by administrator',
+  });
+  return res.data;
 }
+
+export async function updateHostStatus(id, status, reason) {
+  const res = await apiClient.put(`/v1/admin/hosts/${id}/status`, {
+    status,
+    reason: reason || 'Status updated by administrator',
+  });
+  return res.data;
+}
+
+export default {
+  getHosts,
+  getHostApplications,
+  getHostApplicationById,
+  approveHostApplication,
+  rejectHostApplication,
+  updateHostStatus,
+};

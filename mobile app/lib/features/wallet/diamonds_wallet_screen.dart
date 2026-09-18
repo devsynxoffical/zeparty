@@ -32,6 +32,7 @@ class DiamondsWalletScreen extends StatelessWidget {
           IconButton(
             icon: Icon(Icons.refresh, color: AppColors.getTextPrimary(isDark)),
             onPressed: () {
+              context.read<WalletProvider>().fetchWallet();
               context.read<WalletDetailsProvider>().refreshData();
             },
           )

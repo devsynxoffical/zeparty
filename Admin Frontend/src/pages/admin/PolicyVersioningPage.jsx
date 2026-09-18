@@ -3,14 +3,51 @@
 // Client Excel Phase F Requirements
 // ============================================================
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { History, Calendar, CheckCircle, Clock } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
 import { Card } from '../../components/ui/Card';
-import { POLICY_HISTORIES } from '../../mocks/policyConfig.mock';
+import { getPolicies } from '../../services/modules/economy.service';
 
 export function PolicyVersioningPage() {
+  const [policies, setPolicies] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    getPolicies()
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const formatted = data.flatMap((p) => {
+            if (p.versions && p.versions.length > 0) {
+              return p.versions.map((v) => ({
+                id: v.id,
+                policyType: p.policyType,
+                version: v.version,
+                status: v.version === p.version ? 'CURRENT' : 'HISTORICAL',
+                applyFrom: v.effectiveDate ? new Date(v.effectiveDate).toISOString().split('T')[0] : 'Immediate',
+                summary: v.summary || p.description || 'Master policy baseline definition.',
+                approvedBy: v.approvedBy || 'Root Owner',
+              }));
+            }
+            return [{
+              id: p.id,
+              policyType: p.policyType,
+              version: p.version || 'v1.0.0',
+              status: 'CURRENT',
+              applyFrom: p.createdAt ? new Date(p.createdAt).toISOString().split('T')[0] : 'Immediate',
+              summary: p.description || 'Master policy definition',
+              approvedBy: 'Root Owner',
+            }];
+          });
+          setPolicies(formatted);
+        } else {
+          setPolicies([]);
+        }
+      })
+      .catch(() => setPolicies([]))
+      .finally(() => setIsLoading(false));
+  }, []);
   const columns = [
     {
       key: 'type',
@@ -65,7 +102,8 @@ export function PolicyVersioningPage() {
         <p className="mt-0.5">Every policy update retains full history. Active policies carry status <code className="text-gold-400">CURRENT</code>, future updates carry <code className="text-amber-400">SCHEDULED</code>, past versions remain <code className="text-slate-400">EXPIRED</code>.</p>
       </Card>
 
-      <DataTable columns={columns} data={POLICY_HISTORIES} isLoading={false} />
+      <DataTable columns={columns} data={policies} isLoading={isLoading} />
     </div>
   );
 }
+

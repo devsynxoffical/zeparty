@@ -30,7 +30,6 @@ class _StoreScreenState extends State<StoreScreen> {
       return;
     }
 
-    // Show loading
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -42,34 +41,20 @@ class _StoreScreenState extends State<StoreScreen> {
 
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Successfully bought ${item.name}!'), backgroundColor: AppColors.success),
+        SnackBar(content: Text('Successfully purchased ${item.name}! Check your backpack.'), backgroundColor: AppColors.success),
+      );
+    } else if (mounted) {
+      final error = context.read<StoreProvider>().errorMessage;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error ?? 'Failed to purchase item'), backgroundColor: AppColors.error),
       );
     }
   }
 
-  void _handleSend(StoreItemModel item) async {
-    final wallet = context.read<WalletProvider>();
-    if (wallet.coins < item.priceCoins) {
-      _showInsufficientCoinsDialog();
-      return;
-    }
-    
-    // In a real app, open a friend selector sheet here.
-    // We will just mock sending it to a dummy recipient.
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (c) => Center(child: CircularProgressIndicator(color: AppColors.getPrimary(Theme.of(context).brightness == Brightness.dark))),
+  void _handleSend(StoreItemModel item) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Store items are bound to account upon purchase. Use live room gifting to send gifts to friends!')),
     );
-
-    final success = await context.read<StoreProvider>().sendItem(item, 'dummy_friend_id', wallet);
-    if (mounted) Navigator.pop(context); // hide loading
-
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Successfully sent ${item.name} to a friend!'), backgroundColor: AppColors.success),
-      );
-    }
   }
 
   void _showInsufficientCoinsDialog() {
@@ -78,7 +63,7 @@ class _StoreScreenState extends State<StoreScreen> {
       builder: (c) => AlertDialog(
         backgroundColor: AppColors.getCard(Theme.of(context).brightness == Brightness.dark),
         title: Text('Insufficient Coins', style: TextStyle(color: AppColors.getTextPrimary(Theme.of(context).brightness == Brightness.dark))),
-        content: Text('You do not have enough coins to complete this transaction.', style: TextStyle(color: AppColors.getTextSecondary(Theme.of(context).brightness == Brightness.dark))),
+        content: Text('You do not have enough coins to complete this purchase. Please recharge your wallet.', style: TextStyle(color: AppColors.getTextSecondary(Theme.of(context).brightness == Brightness.dark))),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -132,9 +117,9 @@ class _StoreScreenState extends State<StoreScreen> {
                   color: AppColors.getCard(isDark).withValues(alpha: 0.5),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.shopping_bag_rounded, size: 18, color: AppColors.getPrimary(isDark)),
+                child: Icon(Icons.refresh_rounded, size: 18, color: AppColors.getPrimary(isDark)),
               ),
-              onPressed: () {},
+              onPressed: () => context.read<StoreProvider>().fetchStoreItems(),
             ),
             const SizedBox(width: 8),
           ],
@@ -145,8 +130,8 @@ class _StoreScreenState extends State<StoreScreen> {
             indicatorWeight: 3,
             labelColor: primaryText,
             unselectedLabelColor: secondaryText,
-            labelStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            unselectedLabelStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+            unselectedLabelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             dividerColor: Colors.transparent,
             tabAlignment: TabAlignment.start,
             tabs: categories.map((c) => Tab(text: c)).toList(),
@@ -170,9 +155,16 @@ class _StoreScreenState extends State<StoreScreen> {
   Widget _buildCategoryGrid(List<StoreItemModel> items, bool isDark) {
     if (items.isEmpty) {
       return Center(
-        child: Text(
-          'No items available.',
-          style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.storefront_outlined, size: 48, color: AppColors.getTextSecondary(isDark).withValues(alpha: 0.5)),
+            const SizedBox(height: 12),
+            Text(
+              'No items available in this category.',
+              style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+            ),
+          ],
         ),
       );
     }
@@ -185,7 +177,7 @@ class _StoreScreenState extends State<StoreScreen> {
         crossAxisCount: 2,
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
-        childAspectRatio: 0.75, // Adjust based on content height
+        childAspectRatio: 0.75,
       ),
       itemBuilder: (context, index) {
         final item = items[index];
@@ -209,7 +201,6 @@ class _StoreScreenState extends State<StoreScreen> {
       padding: const EdgeInsets.all(12),
       child: Column(
         children: [
-          // Top Row: Duration and Icon
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -217,22 +208,48 @@ class _StoreScreenState extends State<StoreScreen> {
                 children: [
                   Icon(Icons.access_time_rounded, size: 14, color: secondaryText),
                   const SizedBox(width: 4),
-                  Text('${item.durationDays}Days', style: TextStyle(color: secondaryText, fontSize: 12)),
+                  Text('${item.durationDays} Days', style: TextStyle(color: secondaryText, fontSize: 11)),
                 ],
               ),
-              Icon(Icons.filter_center_focus_rounded, size: 16, color: secondaryText),
+              if (item.isVipExclusive)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.amber, width: 0.8),
+                  ),
+                  child: const Text('VIP', style: TextStyle(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.bold)),
+                ),
             ],
           ),
           
           const Spacer(),
           
-          // Product Image
-          Image.asset(
-            item.imageUrl,
-            height: 70,
-            fit: BoxFit.contain,
-            errorBuilder: (c, e, s) => Icon(Icons.broken_image_rounded, size: 40, color: secondaryText.withValues(alpha: 0.5)),
+          Text(
+            item.name,
+            style: TextStyle(color: primaryText, fontWeight: FontWeight.bold, fontSize: 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
+          const SizedBox(height: 6),
+          
+          // Image / Icon
+          item.imageUrl.startsWith('http')
+              ? Image.network(
+                  item.imageUrl,
+                  height: 60,
+                  fit: BoxFit.contain,
+                  errorBuilder: (c, e, s) => const Icon(Icons.star_rounded, size: 40, color: Colors.amber),
+                )
+              : item.imageUrl.isNotEmpty
+                  ? Image.asset(
+                      item.imageUrl,
+                      height: 60,
+                      fit: BoxFit.contain,
+                      errorBuilder: (c, e, s) => const Icon(Icons.star_rounded, size: 40, color: Colors.amber),
+                    )
+                  : const Icon(Icons.shopping_bag_rounded, size: 40, color: Colors.purpleAccent),
           
           const Spacer(),
           
@@ -240,49 +257,29 @@ class _StoreScreenState extends State<StoreScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.monetization_on_rounded, size: 16, color: Colors.orangeAccent),
+              const Icon(Icons.monetization_on_rounded, size: 15, color: Colors.orangeAccent),
               const SizedBox(width: 4),
               Text(
                 item.priceCoins.toString(),
-                style: TextStyle(color: primaryText, fontWeight: FontWeight.bold, fontSize: 16),
+                style: TextStyle(color: primaryText, fontWeight: FontWeight.bold, fontSize: 14),
               ),
             ],
           ),
           
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           
-          // Action Buttons (Send / Buy)
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => _handleSend(item),
-                  child: Container(
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: AppColors.getBackground(isDark).withValues(alpha: 0.6),
-                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text('Send', style: TextStyle(color: secondaryText, fontSize: 13, fontWeight: FontWeight.bold)),
-                  ),
-                ),
+          // Buy Button
+          GestureDetector(
+            onTap: () => _handleBuy(item),
+            child: Container(
+              height: 34,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [Colors.purple, Colors.deepPurpleAccent]),
+                borderRadius: BorderRadius.circular(17),
               ),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => _handleBuy(item),
-                  child: Container(
-                    height: 36,
-                    decoration: const BoxDecoration(
-                      color: Colors.purpleAccent,
-                      borderRadius: BorderRadius.horizontal(right: Radius.circular(18)),
-                    ),
-                    alignment: Alignment.center,
-                    child: const Text('Buy', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ),
-            ],
+              alignment: Alignment.center,
+              child: const Text('Buy Now', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+            ),
           ),
         ],
       ),

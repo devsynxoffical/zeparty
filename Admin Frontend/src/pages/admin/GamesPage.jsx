@@ -30,8 +30,8 @@ import { Card, CardHeader } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
-import { Select } from '../../components/ui/Select';
-import { GAME_STATUSES, GAME_TYPES } from '../../mocks/games.mock';
+const GAME_STATUSES = ['all', 'active', 'paused', 'inactive'];
+const GAME_TYPES = ['All', 'Arcade', 'Card Game', 'Table Game', 'Crash / Multiplier', 'Slots / Jackpot', 'Multiplier', 'Slots / Match'];
 import { getGames, updateGameConfig } from '../../services/modules/games.service';
 import { formatNumber, formatDate, formatCurrency } from '../../utils/format';
 import { useAuditLog } from '../../context/AuditLogContext';
@@ -414,7 +414,7 @@ function GameConfigModal({ isOpen, onClose, game, onSave }) {
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              placeholder="e.g. Lucky Wheel"
+              placeholder="e.g. Fishing Star"
             />
             <div className="grid grid-cols-2 gap-3">
               <Select label="Game Type" value={type} onChange={(e) => setType(e.target.value)}>
@@ -608,7 +608,14 @@ export function GamesPage() {
       header: 'Game',
       render: (row) => (
         <div>
-          <p className="text-sm font-bold text-white">{row.name}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-bold text-white">{row.name}</p>
+            {row.specificationStatus === 'CLIENT_SPEC_REQUIRED' && (
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                SPEC REQUIRED
+              </span>
+            )}
+          </div>
           <Badge variant="primary" className="text-[10px] mt-0.5">{row.type}</Badge>
         </div>
       ),

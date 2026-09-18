@@ -25,7 +25,8 @@ export function ProtectedRoute({ children }) {
   if (!isAuthenticated) {
     return (
       <Navigate
-        to="/"
+        to="/admin/login"
+        state={{ from: location }}
         replace
       />
     );

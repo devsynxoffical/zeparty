@@ -54,6 +54,44 @@ class UserModel {
 
   // Noble Title (Addendum 32)
   final String? nobleTitle;
+  final String status;
+
+  static const UserModel empty = UserModel(
+    id: '',
+    username: '',
+    name: 'Guest',
+    avatarUrl: '',
+    bio: '',
+    followers: 0,
+    following: 0,
+    diamonds: 0,
+    coins: 0,
+    rCoins: 0.0,
+    isVip: false,
+    vipLevel: 'None',
+    isHost: false,
+    isAgency: false,
+    isSeller: false,
+    isBd: false,
+    sellerBalance: 0,
+    isOnline: false,
+    isLive: false,
+    avatarFrame: '',
+    badge: '',
+    referralCode: '',
+    referralCount: 0,
+    role: UserRole.user,
+    hostApplicationStatus: 'none',
+    wealthLevel: 1,
+    wealthXp: 0,
+    charmLevel: 1,
+    charmXp: 0,
+    gameLevel: 1,
+    gameXp: 0,
+    accountLevel: 1,
+    accountXp: 0,
+    profileCompleted: false,
+  );
 
   const UserModel({
     required this.id,
@@ -61,46 +99,47 @@ class UserModel {
     required this.name,
     required this.avatarUrl,
     this.coverUrl,
-    this.bio = 'Official Streamer & Content Creator 🚀 | Daily Streams 8 PM EST',
+    this.bio = 'Creator on ZeParty ✨',
     this.gender = 'Not Specified',
     this.region = 'Global',
     this.dateOfBirth,
     this.profileCompleted = true,
-    this.followers = 48900,
-    this.following = 180,
-    this.diamonds = 5400,
-    this.coins = 12000,
-    this.rCoins = 850.50,
-    this.isVip = true,
-    this.vipLevel = 'VIP 3',
-    this.isHost = true,
+    this.followers = 0,
+    this.following = 0,
+    this.diamonds = 0,
+    this.coins = 0,
+    this.rCoins = 0.0,
+    this.isVip = false,
+    this.vipLevel = 'None',
+    this.isHost = false,
     this.isAgency = false,
-    this.isSeller = true,
-    this.isBd = true,
+    this.isSeller = false,
+    this.isBd = false,
     this.agencyName,
-    this.sellerBalance = 50000,
+    this.sellerBalance = 0,
     this.isOnline = true,
     this.isLive = false,
     this.liveRoomId,
-    this.avatarFrame = 'Gold Crown Frame',
-    this.badge = 'Top Host 🔥',
-    this.referralCode = 'ZEP8892',
-    this.referralCount = 14,
-    this.role = UserRole.seller,
+    this.avatarFrame = '',
+    this.badge = '',
+    this.referralCode = '',
+    this.referralCount = 0,
+    this.role = UserRole.user,
     this.hostApplicationStatus = 'none',
     this.hostRejectionReason,
-    this.wealthLevel = 30,
-    this.wealthXp = 823083480,
-    this.charmLevel = 15,
-    this.charmXp = 7800,
-    this.gameLevel = 12,
-    this.gameXp = 3200,
-    this.accountLevel = 24,
-    this.accountXp = 14200,
+    this.wealthLevel = 1,
+    this.wealthXp = 0,
+    this.charmLevel = 1,
+    this.charmXp = 0,
+    this.gameLevel = 1,
+    this.gameXp = 0,
+    this.accountLevel = 1,
+    this.accountXp = 0,
     this.cpPartnerId,
     this.cpPoints = 0,
     this.pendingCpRequests = const [],
     this.nobleTitle,
+    this.status = 'ACTIVE',
   });
 
   /// Automatically calculate exact age from date of birth securely
@@ -120,6 +159,129 @@ class UserModel {
 
   /// Effective cover image URL fallback
   String get effectiveCoverUrl => (coverUrl != null && coverUrl!.isNotEmpty) ? coverUrl! : avatarUrl;
+
+  factory UserModel.fromJson(Map<String, dynamic> json) {
+    final profile = json['profile'] is Map<String, dynamic> ? json['profile'] as Map<String, dynamic> : {};
+    final wallet = json['wallet'] is Map<String, dynamic> ? json['wallet'] as Map<String, dynamic> : {};
+    final hostProfile = json['hostProfile'] is Map<String, dynamic> ? json['hostProfile'] as Map<String, dynamic> : null;
+
+    final id = json['id']?.toString() ?? '';
+    final username = json['username']?.toString() ?? (profile['displayName']?.toString() ?? 'user_$id');
+    final name = profile['displayName']?.toString() ?? json['name']?.toString() ?? username;
+    final avatarUrl = profile['avatarUrl']?.toString() ?? json['avatarUrl']?.toString() ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80';
+    final bio = profile['bio']?.toString() ?? json['bio']?.toString() ?? 'Creator on ZeParty ✨';
+    final gender = profile['gender']?.toString() ?? json['gender']?.toString() ?? 'Not Specified';
+    final region = profile['region']?.toString() ?? profile['countryCode']?.toString() ?? json['region']?.toString() ?? 'Global';
+    
+    DateTime? dob;
+    if (profile['birthDate'] != null) {
+      dob = DateTime.tryParse(profile['birthDate'].toString());
+    } else if (json['dateOfBirth'] != null) {
+      dob = DateTime.tryParse(json['dateOfBirth'].toString());
+    }
+
+    final coins = int.tryParse(wallet['coinBalance']?.toString() ?? '') ?? (json['coins'] is int ? json['coins'] as int : 0);
+    final diamonds = int.tryParse(wallet['diamondBalance']?.toString() ?? '') ?? (json['diamonds'] is int ? json['diamonds'] as int : 0);
+    final sellerBalance = int.tryParse(wallet['sellerBalanceCoins']?.toString() ?? '') ?? (json['sellerBalance'] is int ? json['sellerBalance'] as int : 0);
+    final followers = profile['followersCount'] is int ? profile['followersCount'] as int : (json['followers'] is int ? json['followers'] as int : 0);
+    final following = profile['followingCount'] is int ? profile['followingCount'] as int : (json['following'] is int ? json['following'] as int : 0);
+
+    final userType = json['userType']?.toString().toUpperCase();
+    UserRole role = UserRole.user;
+    if (userType == 'HOST' || hostProfile != null) role = UserRole.host;
+    if (userType == 'SELLER') role = UserRole.seller;
+    if (userType == 'AGENCY') role = UserRole.agency;
+    if (userType == 'BD') role = UserRole.bd;
+    if (userType == 'ADMIN') role = UserRole.admin;
+
+    return UserModel(
+      id: id,
+      username: username,
+      name: name,
+      avatarUrl: avatarUrl,
+      coverUrl: json['coverUrl']?.toString(),
+      bio: bio,
+      gender: gender,
+      region: region,
+      dateOfBirth: dob,
+      profileCompleted: json['profileCompleted'] == true || profile['displayName'] != null,
+      followers: followers,
+      following: following,
+      diamonds: diamonds,
+      coins: coins,
+      rCoins: (json['rCoins'] as num?)?.toDouble() ?? 0.0,
+      isVip: json['isVip'] == true || (profile['wealthLevel'] != null && (profile['wealthLevel'] as int) > 0),
+      vipLevel: json['vipLevel']?.toString() ?? 'VIP 1',
+      isHost: role == UserRole.host || hostProfile != null,
+      isAgency: role == UserRole.agency,
+      isSeller: role == UserRole.seller || sellerBalance > 0,
+      isBd: role == UserRole.bd,
+      agencyName: json['agencyName']?.toString(),
+      sellerBalance: sellerBalance,
+      isOnline: json['isOnline'] ?? true,
+      isLive: json['isLive'] ?? false,
+      liveRoomId: json['liveRoomId']?.toString(),
+      avatarFrame: json['avatarFrame']?.toString() ?? 'Gold Crown Frame',
+      badge: json['badge']?.toString() ?? 'Active Member',
+      referralCode: json['referralCode']?.toString() ?? 'ZEP$id',
+      referralCount: json['referralCount'] is int ? json['referralCount'] as int : 0,
+      role: role,
+      hostApplicationStatus: hostProfile?['status']?.toString().toLowerCase() ?? json['hostApplicationStatus']?.toString() ?? 'none',
+      hostRejectionReason: hostProfile?['rejectionReason']?.toString() ?? json['hostRejectionReason']?.toString(),
+      wealthLevel: profile['wealthLevel'] is int ? profile['wealthLevel'] as int : 1,
+      wealthXp: profile['experience'] is int ? profile['experience'] as int : 0,
+      charmLevel: profile['charmLevel'] is int ? profile['charmLevel'] as int : 1,
+      charmXp: 0,
+      gameLevel: 1,
+      gameXp: 0,
+      accountLevel: profile['level'] is int ? profile['level'] as int : 1,
+      accountXp: 0,
+      cpPartnerId: json['cpPartnerId']?.toString(),
+      cpPoints: json['cpPoints'] is int ? json['cpPoints'] as int : 0,
+      pendingCpRequests: json['pendingCpRequests'] is List ? List<String>.from(json['pendingCpRequests']) : const [],
+      nobleTitle: json['nobleTitle']?.toString(),
+      status: json['status']?.toString() ?? 'ACTIVE',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'username': username,
+      'name': name,
+      'avatarUrl': avatarUrl,
+      'coverUrl': coverUrl,
+      'bio': bio,
+      'gender': gender,
+      'region': region,
+      'dateOfBirth': dateOfBirth?.toIso8601String(),
+      'profileCompleted': profileCompleted,
+      'followers': followers,
+      'following': following,
+      'diamonds': diamonds,
+      'coins': coins,
+      'rCoins': rCoins,
+      'isVip': isVip,
+      'vipLevel': vipLevel,
+      'isHost': isHost,
+      'isAgency': isAgency,
+      'isSeller': isSeller,
+      'isBd': isBd,
+      'agencyName': agencyName,
+      'sellerBalance': sellerBalance,
+      'isOnline': isOnline,
+      'isLive': isLive,
+      'liveRoomId': liveRoomId,
+      'avatarFrame': avatarFrame,
+      'badge': badge,
+      'referralCode': referralCode,
+      'referralCount': referralCount,
+      'role': role.name,
+      'wealthLevel': wealthLevel,
+      'charmLevel': charmLevel,
+      'accountLevel': accountLevel,
+    };
+  }
 
   UserModel copyWith({
     String? id,
@@ -167,6 +329,7 @@ class UserModel {
     int? cpPoints,
     List<String>? pendingCpRequests,
     String? nobleTitle,
+    String? status,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -214,7 +377,7 @@ class UserModel {
       cpPoints: cpPoints ?? this.cpPoints,
       pendingCpRequests: pendingCpRequests ?? this.pendingCpRequests,
       nobleTitle: nobleTitle ?? this.nobleTitle,
+      status: status ?? this.status,
     );
   }
 }
-

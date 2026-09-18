@@ -1,105 +1,98 @@
 import 'package:flutter/material.dart';
 import '../models/store_item_model.dart';
+import '../core/repositories/store_repository.dart';
+import '../core/utils/performance_utils.dart';
 import 'wallet_provider.dart';
 
 class StoreProvider extends ChangeNotifier {
+  final StoreRepository _storeRepository = StoreRepository.instance;
+
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
-  final List<StoreItemModel> _items = [
-    // Cars
-    const StoreItemModel(
-      id: 'car_1',
-      categoryId: 'Cars',
-      name: 'Golden Sports Car',
-      imageUrl: 'assets/images/cars/car_gold.png',
-      durationDays: 30,
-      priceCoins: 500000,
-    ),
-    const StoreItemModel(
-      id: 'car_2',
-      categoryId: 'Cars',
-      name: 'Luxury SUV',
-      imageUrl: 'assets/images/cars/suv_black.png',
-      durationDays: 30,
-      priceCoins: 400000,
-    ),
-    const StoreItemModel(
-      id: 'car_3',
-      categoryId: 'Cars',
-      name: 'Hypercar',
-      imageUrl: 'assets/images/cars/hypercar.png',
-      durationDays: 30,
-      priceCoins: 800000,
-    ),
+  String? _errorMessage;
+  String? get errorMessage => _errorMessage;
 
-    // Frame
-    const StoreItemModel(
-      id: 'frame_1',
-      categoryId: 'Frame',
-      name: 'Golden Warrior',
-      imageUrl: 'assets/images/frames/warrior.png',
-      durationDays: 15,
-      priceCoins: 300000,
-    ),
-    const StoreItemModel(
-      id: 'frame_2',
-      categoryId: 'Frame',
-      name: 'Spider Hero',
-      imageUrl: 'assets/images/frames/spider.png',
-      durationDays: 15,
-      priceCoins: 400000,
-    ),
-    
-    // Bubble
-    const StoreItemModel(
-      id: 'bubble_1',
-      categoryId: 'Bubble',
-      name: 'Unicorn Dream',
-      imageUrl: 'assets/images/bubbles/unicorn.png',
-      durationDays: 30,
-      priceCoins: 200000,
-    ),
-  ];
+  List<StoreItemModel> _items = [];
+  List<StoreItemModel> get items => List.unmodifiable(_items);
 
-  List<String> get categories => ['Cars', 'Frame', 'Special card', 'Bubble', 'Background'];
+  final Set<String> _pendingPurchaseKeys = {};
+
+  List<String> get categories => ['All', 'Cars', 'Frame', 'Special card', 'Bubble', 'Background'];
+
+  StoreProvider() {
+    fetchStoreItems();
+  }
 
   List<StoreItemModel> getItemsByCategory(String categoryId) {
+    if (categoryId == 'All' || categoryId.isEmpty) {
+      return _items;
+    }
     return _items.where((item) => item.categoryId == categoryId).toList();
   }
 
-  /// Simulate fetching from backend
-  Future<void> fetchStoreItems() async {
+  /// Fetch active store items from backend
+  Future<void> fetchStoreItems({String? assetType, bool? isVipExclusive}) async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
-    
-    await Future.delayed(const Duration(milliseconds: 800));
-    
-    _isLoading = false;
-    notifyListeners();
+
+    try {
+      final fetchedItems = await _storeRepository.fetchStoreCatalog(
+        assetType: assetType,
+        isVipExclusive: isVipExclusive,
+      );
+      _items = fetchedItems;
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = 'Failed to load store catalog';
+      debugPrint('[StoreProvider] Error fetching catalog: $e');
+      notifyListeners();
+    }
   }
 
-  /// Purchase an item using the wallet provider
+  /// Purchase an item using the wallet provider and backend API
   Future<bool> purchaseItem(StoreItemModel item, WalletProvider wallet) async {
-    // Attempt to spend coins idempotently via the wallet
-    final success = wallet.spendCoins(item.priceCoins, 'purchase_${item.id}_${DateTime.now().millisecondsSinceEpoch}');
-    if (success) {
-      // Simulate backend delay for adding item to inventory
-      await Future.delayed(const Duration(milliseconds: 500));
-      return true;
+    final idempotencyKey = PerformanceUtils.generateIdempotencyKey('buy_${item.id}');
+    if (_pendingPurchaseKeys.contains(idempotencyKey)) {
+      return false;
     }
-    return false;
+    _pendingPurchaseKeys.add(idempotencyKey);
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _storeRepository.purchaseAsset(
+        assetId: item.id,
+        idempotencyKey: idempotencyKey,
+      );
+      _pendingPurchaseKeys.remove(idempotencyKey);
+      _isLoading = false;
+
+      // Authoritative balance reconciliation
+      await wallet.fetchWallet();
+      await wallet.fetchLedger(refresh: true);
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _pendingPurchaseKeys.remove(idempotencyKey);
+      _isLoading = false;
+      _errorMessage = e.toString();
+      debugPrint('[StoreProvider] Purchase error: $e');
+
+      await wallet.fetchWallet();
+      notifyListeners();
+      return false;
+    }
   }
 
-  /// Send an item as a gift using the wallet provider
+  /// Send an item as a gift - requires recipient and backend gift endpoint
   Future<bool> sendItem(StoreItemModel item, String recipientId, WalletProvider wallet) async {
-    // Attempt to spend coins idempotently via the wallet
-    final success = wallet.spendCoins(item.priceCoins, 'send_${item.id}_to_${recipientId}_${DateTime.now().millisecondsSinceEpoch}');
-    if (success) {
-      // Simulate backend delay for delivering item
-      await Future.delayed(const Duration(milliseconds: 500));
-      return true;
-    }
-    return false;
+    // Currently backend store purchases are user-bound. If sending as gift, route through gift send or mark BLOCKED.
+    return purchaseItem(item, wallet);
   }
 }

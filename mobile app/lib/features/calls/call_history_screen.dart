@@ -1,42 +1,43 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/constants/dummy_data.dart';
-import '../../widgets/user_avatar.dart';
 
 class CallHistoryScreen extends StatelessWidget {
   const CallHistoryScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Call History')),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: DummyData.popularUsers.length,
-        itemBuilder: (context, index) {
-          final user = DummyData.popularUsers[index];
-          final isMissed = index % 2 == 1;
-
-          return ListTile(
-            leading: UserAvatar(imageUrl: user.avatarUrl, radius: 22),
-            title: Text(user.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Row(
-              children: [
-                Icon(
-                  isMissed ? Icons.call_missed : Icons.call_received,
-                  color: isMissed ? AppColors.live : AppColors.success,
-                  size: 16,
-                ),
-                const SizedBox(width: 4),
-                Text(isMissed ? 'Missed Video Call' : 'Incoming Call • 12m 45s'),
-              ],
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.phone_missed_rounded,
+              size: 64,
+              color: AppColors.getTextSecondary(isDark).withValues(alpha: 0.4),
             ),
-            trailing: IconButton(
-              icon: const Icon(Icons.videocam_rounded, color: AppColors.primary),
-              onPressed: () {},
+            const SizedBox(height: 16),
+            Text(
+              'No Call History',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.getTextPrimary(isDark),
+              ),
             ),
-          );
-        },
+            const SizedBox(height: 8),
+            Text(
+              'Your audio and video calls will appear here.',
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.getTextSecondary(isDark),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -20,6 +20,17 @@ export function generateAccessToken(payload) {
 }
 
 /**
+ * Decode JWT token without verifying expiration.
+ */
+export function decodeToken(token) {
+  try {
+    return jwt.decode(token);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Verify access token claims against env JWT_SECRET.
  */
 export function verifyAccessToken(token) {
@@ -58,6 +69,7 @@ export function generateRefreshToken() {
 
 export default {
   generateAccessToken,
+  decodeToken,
   verifyAccessToken,
   generateRefreshToken,
 };

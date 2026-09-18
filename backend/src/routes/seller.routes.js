@@ -10,7 +10,10 @@ adminSellerRouter.use(authenticate);
 adminSellerRouter.get('/', requirePermission('view_sellers'), sellerController.getSellers);
 adminSellerRouter.post('/', requirePermission('manage_sellers'), sellerController.createSeller);
 adminSellerRouter.get('/:id', requirePermission('view_sellers'), sellerController.getSellerById);
+adminSellerRouter.put('/:id', requirePermission('manage_sellers'), sellerController.updateSeller);
+adminSellerRouter.delete('/:id', requirePermission('manage_sellers'), sellerController.deleteSeller);
 adminSellerRouter.put('/:id/status', requirePermission('manage_sellers'), sellerController.updateSellerStatus);
+adminSellerRouter.patch('/:id/status', requirePermission('manage_sellers'), sellerController.updateSellerStatus);
 adminSellerRouter.post('/:id/allocate', requirePermission('issue_coins'), idempotency, sellerController.allocateCoins);
 adminSellerRouter.post('/:id/correct', requirePermission('reseller_corrections'), idempotency, sellerController.correctBalance);
 

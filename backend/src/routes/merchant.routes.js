@@ -10,6 +10,10 @@ adminMerchantRouter.get('/', requirePermission('view_merchants'), merchantContro
 adminMerchantRouter.post('/', requirePermission('manage_merchants'), merchantController.createMerchant);
 adminMerchantRouter.get('/:id', requirePermission('view_merchants'), merchantController.getMerchantById);
 adminMerchantRouter.put('/:id', requirePermission('manage_merchants'), merchantController.updateMerchant);
+adminMerchantRouter.patch('/:id', requirePermission('manage_merchants'), merchantController.updateMerchant);
+adminMerchantRouter.post('/:id/adjust-balance', requirePermission('manage_merchants'), merchantController.adjustBalance);
+adminMerchantRouter.post('/:id/balance', requirePermission('manage_merchants'), merchantController.adjustBalance);
+adminMerchantRouter.delete('/:id', requirePermission('manage_merchants'), merchantController.deleteMerchant);
 
 export default {
   adminMerchantRouter,

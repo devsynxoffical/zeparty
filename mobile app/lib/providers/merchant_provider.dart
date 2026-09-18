@@ -3,18 +3,18 @@ import '../models/merchant_model.dart';
 
 class MerchantProvider extends ChangeNotifier {
   MerchantModel _merchant = const MerchantModel(
-    id: 'merch_501',
-    name: 'Premier Merchant Hub',
-    userId: 'user_1001',
-    status: 'Active',
+    id: '',
+    name: 'Merchant Center',
+    userId: '',
+    status: 'Inactive',
     countryCode: 'GLOBAL',
-    availableCoins: 10000000,
+    availableCoins: 0,
     pendingCoins: 0,
-    totalCoinsDistributed: 45000000,
-    todaysTotalCoins: 1200000,
-    userRechargeTotal: 30000000,
-    sellerRechargeTotal: 15000000,
-    dailyLimit: 20000000,
+    totalCoinsDistributed: 0,
+    todaysTotalCoins: 0,
+    userRechargeTotal: 0,
+    sellerRechargeTotal: 0,
+    dailyLimit: 0,
   );
 
   final List<MerchantTransactionModel> _transactions = [];
@@ -25,15 +25,7 @@ class MerchantProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get auditLogs => List.unmodifiable(_auditLogs);
 
   MerchantProvider() {
-    _initMockData();
-  }
-
-  void _initMockData() {
-    final now = DateTime.now();
-    _transactions.addAll([
-      MerchantTransactionModel(transactionId: 'tx_merch_801', merchantId: _merchant.id, recipientType: 'User Recharge', recipientId: 'user_1002', recipientName: 'Sophia Rose', coinAmount: 500000, feeOrBonus: 0, merchantBalanceBefore: 10500000, merchantBalanceAfter: 10000000, destinationBalanceType: 'User Wallet', status: 'Successful', timestamp: now.subtract(const Duration(hours: 2))),
-      MerchantTransactionModel(transactionId: 'tx_merch_802', merchantId: _merchant.id, recipientType: 'Coin Seller Recharge', recipientId: 'seller_8801', recipientName: 'Danial Coin Agency', coinAmount: 1000000, feeOrBonus: 0, merchantBalanceBefore: 11500000, merchantBalanceAfter: 10500000, destinationBalanceType: 'Seller Recharge Operational Balance', status: 'Successful', timestamp: now.subtract(const Duration(hours: 8))),
-    ]);
+    // Clean initial state
   }
 
   // Atomic Merchant Recharge Execution

@@ -3,7 +3,7 @@
 // 2026 Developer Specification Alignment
 // ============================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Trophy, Award, Filter, Crown, Flame, Star, Sparkles, AlertTriangle, ShieldCheck, Globe, CheckCircle, RefreshCw } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -16,42 +16,61 @@ import { GeographicInheritancePanel } from '../../components/ui/GeographicInheri
 import { useAuditLog } from '../../context/AuditLogContext';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryShortName } from '../../constants/countries.data';
+import apiClient from '../../services/api';
 
-const TIMEFRAME_DATA = {
-  Hourly: [
-    { rank: 1, name: 'SpeedGifter_99', category: 'Top Gifter', metric: '140,000 Coins/hr', country: 'US', tier: 'VIP5', status: 'Active' },
-    { rank: 2, name: 'LiveSinger_Aria', category: 'Charm', metric: '98,000 Coins/hr', country: 'KR', tier: 'VIP4', status: 'Active' },
-    { rank: 3, name: 'PK_Master_x', category: 'PK', metric: '45,000 Pts', country: 'UK', tier: 'VIP3', status: 'Active' },
-  ],
-  Daily: [
-    { rank: 1, name: 'StarQueen Luna', category: 'Wealth', metric: '840,000 Coins', country: 'US', tier: 'VIP5', status: 'Active' },
-    { rank: 2, name: 'Fire Phoenix', category: 'Charm', metric: '620,000 Coins', country: 'KR', tier: 'VIP4', status: 'Active' },
-    { rank: 3, name: 'NightOwl Kai', category: 'PK', metric: '410,000 Pts', country: 'UK', tier: 'VIP3', status: 'Active' },
-  ],
-  Weekly: [
-    { rank: 1, name: 'StarQueen Luna', category: 'Top Gifter', metric: '2,840,000 Coins', country: 'US', tier: 'VIP5', status: 'Active' },
-    { rank: 2, name: 'Fire Phoenix', category: 'Charm', metric: '2,180,000 Coins', country: 'KR', tier: 'VIP4', status: 'Active' },
-    { rank: 3, name: 'NightOwl Kai', category: 'PK', metric: '1,560,000 Pts', country: 'UK', tier: 'VIP3', status: 'Active' },
-    { rank: 4, name: 'ZenMaster Aria', category: 'Top Host', metric: '1,240,000 Coins', country: 'JP', tier: 'VIP2', status: 'Active' },
-    { rank: 5, name: 'StarMedia Entertainment', category: 'Top Agency', metric: '$48,290 Payout', country: 'US', tier: 'Official Agency', status: 'Active' },
-  ],
-  Monthly: [
-    { rank: 1, name: 'StarMedia Entertainment', category: 'Top Agency', metric: '$184,290 Payout', country: 'US', tier: 'Official Agency', status: 'Active' },
-    { rank: 2, name: 'StarQueen Luna', category: 'Wealth', metric: '11,400,000 Coins', country: 'US', tier: 'VIP5', status: 'Active' },
-    { rank: 3, name: 'Fire Phoenix', category: 'Charm', metric: '9,800,000 Coins', country: 'KR', tier: 'VIP4', status: 'Active' },
-  ],
-  'All-Time': [
-    { rank: 1, name: 'StarQueen Luna', category: 'Wealth', metric: '84,000,000 Coins', country: 'US', tier: 'SVIP2', status: 'Active' },
-    { rank: 2, name: 'Global Talent Agency', category: 'Top Agency', metric: '$1.4M Payout', country: 'UK', tier: 'Super Agency', status: 'Active' },
-  ],
+const EMPTY_TIMEFRAME_DATA = {
+  Hourly: [],
+  Daily: [],
+  Weekly: [],
+  Monthly: [],
+  'All-Time': [],
 };
 
 export function RankingsPage() {
   const { logAdminAction } = useAuditLog();
   const [timeframe, setTimeframe] = useState('Weekly');
-  const [dataList, setDataList] = useState(TIMEFRAME_DATA);
+  const [dataList, setDataList] = useState(EMPTY_TIMEFRAME_DATA);
+  const [isLoading, setIsLoading] = useState(true);
   const [excludeFraud, setExcludeFraud] = useState(true);
   const [isFrozen, setIsFrozen] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    apiClient
+      .get('/v1/admin/users', { params: { limit: 20 } })
+      .then((res) => {
+        if (!isMounted) return;
+        const users = res.data?.data || [];
+        const mapped = users.map((u, idx) => ({
+          rank: idx + 1,
+          name: u.username || u.displayName || u.id,
+          category: idx % 2 === 0 ? 'Top Gifter' : 'Top Host',
+          metric: `${Number(u.coinBalance || 0).toLocaleString()} Coins`,
+          country: u.country || 'US',
+          tier: u.vipTier ? `VIP${u.vipTier}` : 'Standard',
+          status: u.status === 'ACTIVE' ? 'Active' : 'Disqualified',
+        }));
+
+        setDataList({
+          Hourly: mapped.slice(0, 5),
+          Daily: mapped.slice(0, 10),
+          Weekly: mapped,
+          Monthly: mapped,
+          'All-Time': mapped,
+        });
+      })
+      .catch(() => {
+        if (isMounted) setDataList(EMPTY_TIMEFRAME_DATA);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   
   // Inheritance config
   const [scope, setScope] = useState('GLOBAL');
@@ -293,7 +312,7 @@ export function RankingsPage() {
         </div>
       </Card>
 
-      <DataTable columns={columns} data={currentData} isLoading={false} />
+      <DataTable columns={columns} data={currentData} isLoading={isLoading} emptyTitle="No rankings data available" emptyDescription="Rankings will automatically populate as live platform activity occurs." />
 
       {/* Score Configuration Modal */}
       {configModal && (

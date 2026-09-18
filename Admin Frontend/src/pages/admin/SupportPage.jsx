@@ -13,7 +13,8 @@ import { useAuditLog } from '../../context/AuditLogContext';
 import {
   getSupportStats,
   getSupportTickets,
-  updateTicket
+  updateTicket,
+  replyToTicket
 } from '../../services/modules/support.service';
 import { getLogsForTarget } from '../../services/modules/auditLogs.service';
 
@@ -45,75 +46,91 @@ export function SupportPage() {
     }
   }, [selectedTicket?.id]);
 
-  useEffect(() => {
+  const fetchSupportData = () => {
+    setIsLoading(true);
     Promise.all([getSupportStats(), getSupportTickets()])
       .then(([s, t]) => {
         setStats(s);
         setTickets(t);
       })
       .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    fetchSupportData();
   }, []);
 
   const filteredTickets = useMemo(() => {
     return tickets.filter(t => {
       const matchStatus = statusFilter === 'ALL' || t.status === statusFilter;
       const matchSearch = search === '' || 
-        t.user.toLowerCase().includes(search.toLowerCase()) || 
-        t.subject.toLowerCase().includes(search.toLowerCase()) ||
-        t.id.toLowerCase().includes(search.toLowerCase());
+        (t.userName || t.user || '').toLowerCase().includes(search.toLowerCase()) || 
+        (t.subject || '').toLowerCase().includes(search.toLowerCase()) ||
+        (t.id || '').toLowerCase().includes(search.toLowerCase());
       return matchStatus && matchSearch;
     });
   }, [tickets, search, statusFilter]);
 
   const handleStatusChange = async (ticketId, newStatus) => {
-    const updated = await updateTicket(ticketId, { status: newStatus });
-    setTickets(tickets.map(t => t.id === ticketId ? updated : t));
-    
-    if (selectedTicket && selectedTicket.id === ticketId) {
-      setSelectedTicket(updated);
-    }
-    
-    await logAdminAction({
-      action: 'TICKET_STATUS_UPDATE',
-      module: 'Support',
-      targetType: 'ticket',
-      targetId: ticketId,
-      targetName: `Ticket ${ticketId}`,
-      reason: `Changed status to ${newStatus}`,
-      afterValue: { status: newStatus }
-    });
-    
-    if (selectedTicket && selectedTicket.id === ticketId) {
-      getLogsForTarget(ticketId).then(setHistory);
+    try {
+      const updated = await updateTicket(ticketId, { status: newStatus });
+      fetchSupportData();
+      
+      if (selectedTicket && selectedTicket.id === ticketId) {
+        setSelectedTicket(updated || { ...selectedTicket, status: newStatus });
+      }
+      
+      await logAdminAction({
+        action: 'TICKET_STATUS_UPDATE',
+        module: 'Support',
+        targetType: 'ticket',
+        targetId: ticketId,
+        targetName: `Ticket ${ticketId}`,
+        reason: `Changed status to ${newStatus}`,
+        afterValue: { status: newStatus }
+      });
+      
+      if (selectedTicket && selectedTicket.id === ticketId) {
+        getLogsForTarget(ticketId).then(setHistory);
+      }
+    } catch (err) {
+      console.error('Failed to update ticket status:', err);
     }
   };
 
   const handleSendReply = async () => {
     if (!replyMessage.trim() || !selectedTicket) return;
     
-    const replyObj = {
-      id: `rep-${Date.now()}`,
-      message: replyMessage,
-      timestamp: new Date().toISOString()
-    };
-    
-    setTicketRepliesState(prev => ({
-      ...prev,
-      [selectedTicket.id]: [...(prev[selectedTicket.id] || []), replyObj]
-    }));
+    try {
+      await replyToTicket(selectedTicket.id, replyMessage);
+      
+      const replyObj = {
+        id: `rep-${Date.now()}`,
+        message: replyMessage,
+        timestamp: new Date().toISOString()
+      };
+      
+      setTicketRepliesState(prev => ({
+        ...prev,
+        [selectedTicket.id]: [...(prev[selectedTicket.id] || []), replyObj]
+      }));
 
-    await logAdminAction({
-      action: 'TICKET_REPLY',
-      module: 'Support',
-      targetType: 'ticket',
-      targetId: selectedTicket.id,
-      targetName: `Ticket ${selectedTicket.id}`,
-      reason: 'Admin sent a reply',
-      metadata: { message: replyMessage }
-    });
-    
-    setReplyMessage('');
-    getLogsForTarget(selectedTicket.id).then(setHistory);
+      await logAdminAction({
+        action: 'TICKET_REPLY',
+        module: 'Support',
+        targetType: 'ticket',
+        targetId: selectedTicket.id,
+        targetName: `Ticket ${selectedTicket.id}`,
+        reason: 'Admin sent a reply',
+        metadata: { message: replyMessage }
+      });
+      
+      setReplyMessage('');
+      fetchSupportData();
+      getLogsForTarget(selectedTicket.id).then(setHistory);
+    } catch (err) {
+      console.error('Failed to send reply:', err);
+    }
   };
 
   const columns = [
@@ -162,11 +179,11 @@ export function SupportPage() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard title="Open Tickets" value={stats.openTickets} icon={LifeBuoy} iconColor="text-indigo-400" iconBg="bg-indigo-500/10" />
-        <StatCard title="High Priority" value={stats.highPriority} icon={AlertCircle} iconColor="text-red-400" iconBg="bg-red-500/10" />
-        <StatCard title="Unassigned" value={stats.unassigned} icon={Tag} iconColor="text-amber-400" iconBg="bg-amber-500/10" />
-        <StatCard title="Awaiting Reply" value={stats.waitingForReply} icon={MessageSquare} iconColor="text-sky-400" iconBg="bg-sky-500/10" />
-        <StatCard title="Resolved Today" value={stats.resolvedToday} icon={CheckCircle} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
+        <StatCard title="Open Tickets" value={stats?.openTickets ?? 0} icon={LifeBuoy} iconColor="text-indigo-400" iconBg="bg-indigo-500/10" />
+        <StatCard title="High Priority" value={stats?.highPriority ?? 0} icon={AlertCircle} iconColor="text-red-400" iconBg="bg-red-500/10" />
+        <StatCard title="Unassigned" value={stats?.unassigned ?? 0} icon={Tag} iconColor="text-amber-400" iconBg="bg-amber-500/10" />
+        <StatCard title="Awaiting Reply" value={stats?.waitingForReply ?? 0} icon={MessageSquare} iconColor="text-sky-400" iconBg="bg-sky-500/10" />
+        <StatCard title="Resolved Today" value={stats?.resolvedToday ?? 0} icon={CheckCircle} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">

@@ -25,33 +25,59 @@ import {
   updateBDCenter,
   deactivateBDCenter
 } from '../../services/modules/bdCenter.service';
-import {
-  MOCK_BD_APPLICATIONS,
-  MOCK_TARGET_POLICIES,
-  MOCK_SALARY_PLANS,
-  MOCK_PAYOUTS,
-  MOCK_BD_REACTIONS,
-  BD_COMMISSION_POLICY_CONFIG,
-  MOCK_BD_COMMISSION_POLICY_TIERS
-} from '../../mocks/bdCenterFull.mock';
-import { MOCK_ACTIVE_HOSTS, MOCK_AGENCIES_LIST } from '../../mocks/hosts.mock';
+import { getAgencies } from '../../services/modules/agencies.service';
 import { useAuditLog } from '../../context/AuditLogContext';
+
+export const BD_COMMISSION_POLICY_CONFIG = {
+  policyTitle: 'Z PARTY — BD MONTHLY COMMISSION POLICY',
+  minimumMonthlySending: 500000,
+  bdCommissionRate: 5.0, // 5%
+  salaryBasis: 'Agency Host Policy basic total salary',
+  startingBDSalary: 2.00,
+  belowMinimumCommission: 0.00,
+  ruleText: 'Policy Rule: BD commission is calculated monthly at 5% of the Basic Total Salary. A BD becomes eligible only when the agency\'s monthly sending reaches 500,000 or more. Sending below 500,000 earns no BD commission. Final approval is subject to valid activity and Admin Panel records.'
+};
+
+export const BD_COMMISSION_POLICY_TIERS = [
+  { level: 1, name: 'BD Level 1', targetSending: 500000, basicTotalSalary: 40.00, bdRate: 5.0, bdCommission: 2.00 },
+  { level: 2, name: 'BD Level 2', targetSending: 750000, basicTotalSalary: 60.00, bdRate: 5.0, bdCommission: 3.00 },
+  { level: 3, name: 'BD Level 3', targetSending: 1000000, basicTotalSalary: 80.00, bdRate: 5.0, bdCommission: 4.00 },
+  { level: 4, name: 'BD Level 4', targetSending: 1500000, basicTotalSalary: 120.00, bdRate: 5.0, bdCommission: 6.00 },
+  { level: 5, name: 'BD Level 5', targetSending: 2000000, basicTotalSalary: 160.00, bdRate: 5.0, bdCommission: 8.00 },
+  { level: 6, name: 'BD Level 6', targetSending: 2500000, basicTotalSalary: 200.00, bdRate: 5.0, bdCommission: 10.00 },
+  { level: 7, name: 'BD Level 7', targetSending: 3000000, basicTotalSalary: 240.00, bdRate: 5.0, bdCommission: 12.00 },
+  { level: 8, name: 'BD Level 8', targetSending: 3500000, basicTotalSalary: 280.00, bdRate: 5.0, bdCommission: 14.00 },
+  { level: 9, name: 'BD Level 9', targetSending: 4000000, basicTotalSalary: 320.00, bdRate: 5.0, bdCommission: 16.00 },
+  { level: 10, name: 'BD Level 10', targetSending: 4500000, basicTotalSalary: 360.00, bdRate: 5.0, bdCommission: 18.00 },
+  { level: 11, name: 'BD Level 11', targetSending: 5000000, basicTotalSalary: 400.00, bdRate: 5.0, bdCommission: 20.00 },
+  { level: 12, name: 'BD Level 12', targetSending: 6000000, basicTotalSalary: 480.00, bdRate: 5.0, bdCommission: 24.00 },
+  { level: 13, name: 'BD Level 13', targetSending: 7000000, basicTotalSalary: 560.00, bdRate: 5.0, bdCommission: 28.00 },
+  { level: 14, name: 'BD Level 14', targetSending: 8000000, basicTotalSalary: 640.00, bdRate: 5.0, bdCommission: 32.00 },
+  { level: 15, name: 'BD Level 15', targetSending: 9000000, basicTotalSalary: 720.00, bdRate: 5.0, bdCommission: 36.00 },
+  { level: 16, name: 'BD Level 16', targetSending: 10000000, basicTotalSalary: 800.00, bdRate: 5.0, bdCommission: 40.00 },
+  { level: 17, name: 'BD Level 17', targetSending: 15000000, basicTotalSalary: 1200.00, bdRate: 5.0, bdCommission: 60.00 },
+  { level: 18, name: 'BD Level 18', targetSending: 20000000, basicTotalSalary: 1600.00, bdRate: 5.0, bdCommission: 80.00 },
+  { level: 19, name: 'BD Level 19', targetSending: 30000000, basicTotalSalary: 2400.00, bdRate: 5.0, bdCommission: 120.00 },
+  { level: 20, name: 'BD Level 20', targetSending: 40000000, basicTotalSalary: 3200.00, bdRate: 5.0, bdCommission: 160.00 },
+  { level: 21, name: 'BD Level 21', targetSending: 50000000, basicTotalSalary: 4000.00, bdRate: 5.0, bdCommission: 200.00 }
+];
 
 export function BDCentersPage() {
   const { logAdminAction, logs } = useAuditLog();
   const [activeTab, setActiveTab] = useState('overview'); // overview, list, applications, teams, targets, salary, performance, payouts, reactions, reports, logs
   const [bdCenters, setBdCenters] = useState([]);
+  const [agenciesList, setAgenciesList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [regionFilter, setRegionFilter] = useState('all');
   
   // Data states
-  const [applications, setApplications] = useState(MOCK_BD_APPLICATIONS);
-  const [targetPolicies, setTargetPolicies] = useState(MOCK_TARGET_POLICIES);
-  const [salaryPlans, setSalaryPlans] = useState(MOCK_SALARY_PLANS);
-  const [payouts, setPayouts] = useState(MOCK_PAYOUTS);
-  const [bdReactions, setBdReactions] = useState(MOCK_BD_REACTIONS);
+  const [applications, setApplications] = useState([]);
+  const [targetPolicies, setTargetPolicies] = useState([]);
+  const [salaryPlans, setSalaryPlans] = useState([]);
+  const [payouts, setPayouts] = useState([]);
+  const [bdReactions, setBdReactions] = useState([]);
   const [reactionMasterSwitch, setReactionMasterSwitch] = useState(true);
 
   // Modal States
@@ -82,17 +108,33 @@ export function BDCentersPage() {
     reason: 'Monthly Audit Verification Complete'
   });
 
+  useEffect(() => {
+    let mounted = true;
+    setIsLoading(true);
+    Promise.allSettled([
+      getBDCenters(),
+      getAgencies(),
+    ]).then(([bdRes, agRes]) => {
+      if (mounted) {
+        if (bdRes.status === 'fulfilled') setBdCenters(bdRes.value || []);
+        if (agRes.status === 'fulfilled') setAgenciesList(agRes.value || []);
+        setIsLoading(false);
+      }
+    });
+    return () => { mounted = false; };
+  }, []);
+
   // BD Simulator Tier Calculation
   const simTier = useMemo(() => {
     if (!simSending || simSending < BD_COMMISSION_POLICY_CONFIG.minimumMonthlySending) return null;
-    const sorted = [...MOCK_BD_COMMISSION_POLICY_TIERS].sort((a, b) => b.targetSending - a.targetSending);
-    return sorted.find((t) => simSending >= t.targetSending) || MOCK_BD_COMMISSION_POLICY_TIERS[0];
+    const sorted = [...BD_COMMISSION_POLICY_TIERS].sort((a, b) => b.targetSending - a.targetSending);
+    return sorted.find((t) => simSending >= t.targetSending) || BD_COMMISSION_POLICY_TIERS[0];
   }, [simSending]);
 
   // CSV Export for BD Policy Matrix
   const handleExportPolicyCSV = () => {
     let csv = "Level,Level_Name,Monthly_Sending_Target,Basic_Total_Salary,BD_Rate,BD_Monthly_Commission\n";
-    MOCK_BD_COMMISSION_POLICY_TIERS.forEach(t => {
+    BD_COMMISSION_POLICY_TIERS.forEach(t => {
       csv += `${t.level},"${t.name}",${t.targetSending},${t.basicTotalSalary},${t.bdRate}%,${t.bdCommission}\n`;
     });
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -746,25 +788,31 @@ export function BDCentersPage() {
             </div>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {MOCK_AGENCIES_LIST.map((ag) => (
-                <div key={ag.id} className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-bold text-white text-xs">{ag.agencyName}</p>
-                      <p className="text-[11px] text-slate-400">Owner: {ag.contactName}</p>
-                    </div>
-                    <Badge variant="purple">{ag.agencyType === 'AUDIO_AGENCY' ? 'Audio Syndicate' : 'Live Agency'}</Badge>
-                  </div>
-                  <div className="p-2.5 rounded bg-slate-950 border border-slate-800/80 flex justify-between text-xs font-mono">
-                    <span className="text-slate-400">Attributed BD:</span>
-                    <span className="text-gold-400 font-bold">APAC BD Center</span>
-                  </div>
-                  <div className="flex justify-between text-[11px] text-slate-400">
-                    <span>Talent Roster: <strong className="text-white">{ag.hostCount} Hosts</strong></span>
-                    <span className="text-emerald-400 font-mono">${formatNumber(ag.monthlyVolumeUsd || 12000)}/mo</span>
-                  </div>
+              {agenciesList.length === 0 ? (
+                <div className="col-span-full py-8 text-center text-xs text-slate-500">
+                  No attributed partner agencies found.
                 </div>
-              ))}
+              ) : (
+                agenciesList.map((ag) => (
+                  <div key={ag.id} className="p-4 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-bold text-white text-xs">{ag.name || ag.agencyName}</p>
+                        <p className="text-[11px] text-slate-400">Owner: {ag.ownerUsername || 'Agency Owner'}</p>
+                      </div>
+                      <Badge variant="purple">Agency</Badge>
+                    </div>
+                    <div className="p-2.5 rounded bg-slate-950 border border-slate-800/80 flex justify-between text-xs font-mono">
+                      <span className="text-slate-400">Attributed BD:</span>
+                      <span className="text-gold-400 font-bold">{ag.bdCenterName || 'General BD'}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-slate-400">
+                      <span>Talent Roster: <strong className="text-white">{ag.activeHostsCount || 0} Hosts</strong></span>
+                      <span className="text-emerald-400 font-mono">${formatNumber(ag.monthlyVolumeUsd || 0)}/mo</span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </Card>
         </div>
@@ -928,7 +976,7 @@ export function BDCentersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/80 text-slate-200 font-mono">
-                  {MOCK_BD_COMMISSION_POLICY_TIERS.map((tier) => (
+                  {BD_COMMISSION_POLICY_TIERS.map((tier) => (
                     <tr
                       key={tier.level}
                       className={`hover:bg-slate-900/60 transition-colors ${

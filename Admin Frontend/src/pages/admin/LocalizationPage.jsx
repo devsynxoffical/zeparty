@@ -11,7 +11,7 @@ import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 
-const MOCK_LOCALES = [
+const SUPPORTED_LOCALES = [
   { id: 'loc-1', code: 'en-US', name: 'English (United States)', currency: 'USD ($)', active: true },
   { id: 'loc-2', code: 'ja-JP', name: 'Japanese (Japan)', currency: 'JPY (¥)', active: true },
   { id: 'loc-3', code: 'ar-SA', name: 'Arabic (Saudi Arabia)', currency: 'SAR (SR)', active: true },
@@ -37,7 +37,7 @@ export function LocalizationPage() {
           { key: 'currency', header: 'Currency Symbol', render: (r) => <Badge variant="gold">{r.currency}</Badge> },
           { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.active ? 'active' : 'inactive'} /> },
         ]}
-        data={MOCK_LOCALES}
+        data={SUPPORTED_LOCALES}
         isLoading={false}
       />
     </div>

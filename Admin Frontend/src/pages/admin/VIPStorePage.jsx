@@ -13,7 +13,7 @@ import { Modal } from '../../components/ui/Modal';
 import { formatNumber } from '../../utils/format';
 import { useAuditLog } from '../../context/AuditLogContext';
 
-const MOCK_VIP_TIERS = [
+const VIP_TIERS = [
   { level: 'VIP1', spendUSD: 50, title: 'VIP Starter', perk: 'Bronze Avatar Frame, 5% Bonus EXP' },
   { level: 'VIP2', spendUSD: 200, title: 'VIP Bronze', perk: 'Silver Avatar Frame, Special Chat Bubble' },
   { level: 'VIP3', spendUSD: 500, title: 'VIP Silver', perk: 'Gold Frame, Cyber Supercar Entry' },
@@ -51,61 +51,43 @@ export function VIPStorePage() {
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <Crown className="h-6 w-6 text-gold-400" />
-            VIP / SVIP / Level Perks Engine
+            VIP & SVIP Privilege Store
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">Manage VIP levels, spending thresholds, room entrance effects, and admin manual grants.</p>
+          <p className="text-sm text-slate-400 mt-0.5">Manage spending tier rewards, noble entrance animations, and VIP manual grants.</p>
         </div>
-
-        <Button variant="primary" size="sm" leftIcon={Sparkles} onClick={() => setGrantModal(true)}>
-          Grant VIP / SVIP Status
+        <Button variant="primary" size="sm" onClick={() => setGrantModal(true)}>
+          <Award className="h-4 w-4 mr-1" /> Grant VIP Manually
         </Button>
       </div>
 
-      <Card className="p-5">
-        <h2 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
-          <Award className="h-4 w-4 text-gold-400" /> VIP & SVIP Privilege Tiers & Thresholds
-        </h2>
-
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {MOCK_VIP_TIERS.map((t) => (
-            <div key={t.level} className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/50 flex flex-col justify-between">
+      {/* VIP Tiers Grid */}
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {VIP_TIERS.map((t) => (
+          <Card key={t.level} className="p-4 space-y-3">
+            <div className="flex justify-between items-start">
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <Badge variant={t.level.startsWith('SVIP') ? 'purple' : 'warning'}>{t.level}</Badge>
-                  <span className="text-xs font-mono font-bold text-emerald-400">${formatNumber(t.spendUSD)} USD</span>
-                </div>
-                <p className="text-sm font-bold text-white mt-1">{t.title}</p>
-                <p className="text-xs text-slate-400 mt-1 italic">{t.perk}</p>
+                <Badge variant={t.level.startsWith('SVIP') ? 'purple' : 'gold'}>{t.level}</Badge>
+                <h3 className="font-bold text-white text-sm mt-1">{t.title}</h3>
               </div>
+              <span className="text-xs font-mono font-bold text-gold-400">${formatNumber(t.spendUSD)} Required</span>
             </div>
-          ))}
-        </div>
-      </Card>
+            <div className="p-2.5 rounded bg-slate-900 border border-slate-800 text-xs text-slate-300">
+              <span className="text-slate-400 font-semibold block mb-0.5">Privileges & Props:</span>
+              {t.perk}
+            </div>
+          </Card>
+        ))}
+      </div>
 
       {grantModal && (
-        <Modal
-          isOpen={true}
-          onClose={() => setGrantModal(null)}
-          title="Grant VIP / SVIP Status to User"
-        >
+        <Modal isOpen={true} onClose={() => setGrantModal(false)} title="Grant VIP / SVIP Level Manually">
           <div className="space-y-4 text-xs text-slate-300">
-            <Input
-              label="Target User ID or Username"
-              placeholder="e.g. usr-001"
-              value={targetUser}
-              onChange={(e) => setTargetUser(e.target.value)}
-              required
-            />
-
+            <Input label="Target User ID / Username" value={targetUser} onChange={(e) => setTargetUser(e.target.value)} required placeholder="usr-..." />
             <div>
-              <label className="text-xs font-medium text-slate-300 block mb-1">Select Status Tier</label>
-              <select
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none"
-                value={selectedLevel}
-                onChange={(e) => setSelectedLevel(e.target.value)}
-              >
-                {MOCK_VIP_TIERS.map((t) => (
-                  <option key={t.level} value={t.level}>{t.level} — {t.title}</option>
+              <label className="block text-slate-400 mb-1 font-semibold">Select Tier</label>
+              <select value={selectedLevel} onChange={(e) => setSelectedLevel(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                {VIP_TIERS.map((t) => (
+                  <option key={t.level} value={t.level}>{t.level} - {t.title}</option>
                 ))}
               </select>
             </div>

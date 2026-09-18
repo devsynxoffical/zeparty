@@ -3,7 +3,7 @@
 // 2026 Developer Specification Alignment
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RotateCcw, Search, AlertTriangle, CheckCircle, ShieldAlert, ArrowRight, Link, FileText, Check, X } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -11,29 +11,54 @@ import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
-import { MOCK_COIN_REFUNDS } from '../../mocks/coinRefunds.mock';
 import { formatNumber, formatDate } from '../../utils/format';
 import { useAuditLog } from '../../context/AuditLogContext';
 import { CountrySelect } from '../../components/ui/CountrySelect';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryShortName } from '../../constants/countries.data';
+import apiClient from '../../services/api';
 
 export function CoinRefundCenterPage() {
   const { logAdminAction } = useAuditLog();
-  const [cases, setCases] = useState(
-    MOCK_COIN_REFUNDS.map((c, i) => ({
-      ...c,
-      accountType: i % 3 === 0 ? 'User' : i % 3 === 1 ? 'Coin Seller' : 'Merchant',
-      country: c.country || (i % 3 === 0 ? 'US' : i % 3 === 1 ? 'AE' : 'CA'),
-      originalBalance: c.coins * 3,
-      correctionAmount: c.coins,
-      newBalance: c.coins * 2,
-      evidenceUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?q=80&w=300&auto=format&fit=crop',
-      approvalRequired: c.coins > 1000000, // High-value threshold: 1M coins
-      approvedBy: null,
-      ledgerTxId: null
-    }))
-  );
+  const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    apiClient.get('/v1/admin/chargebacks')
+      .then((res) => {
+        if (mounted) {
+          const items = res.data?.data || [];
+          setCases(items.map((c, i) => ({
+            id: c.id,
+            user: c.user?.username || c.userId || 'User',
+            userId: c.userId,
+            accountType: 'User',
+            coins: Number(c.amount || 0),
+            reason: c.reason || 'Chargeback / Refund dispute',
+            status: c.status?.toLowerCase() || 'pending',
+            date: c.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+            country: 'US',
+            originalBalance: Number(c.amount || 0) * 2,
+            correctionAmount: Number(c.amount || 0),
+            newBalance: Number(c.amount || 0),
+            evidenceUrl: c.evidenceUrl || '',
+            approvalRequired: Number(c.amount || 0) > 1000000,
+            approvedBy: c.resolvedBy || null,
+            ledgerTxId: c.transactionId || null,
+          })));
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setCases([]);
+          setLoading(false);
+        }
+      });
+    return () => { mounted = false; };
+  }, []);
   const [search, setSearch] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('All');
   const [reviewCase, setReviewCase] = useState(null);

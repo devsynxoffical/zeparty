@@ -118,6 +118,7 @@ function CreateItemModal({ isOpen, onClose, onCreated }) {
 function EditStoreItemModal({ isOpen, onClose, item, onSave }) {
   const [name, setName] = useState(item?.name || '');
   const [price, setPrice] = useState(item?.price || 0);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (item) {
@@ -128,10 +129,18 @@ function EditStoreItemModal({ isOpen, onClose, item, onSave }) {
 
   if (!item) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSave({ ...item, name, price: Number(price) });
-    onClose();
+    setIsSaving(true);
+    try {
+      await updateStoreItem(item.id, { name, price: Number(price) });
+      onSave({ ...item, name, price: Number(price) });
+      onClose();
+    } catch (err) {
+      console.error('Failed to update store item:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -141,7 +150,9 @@ function EditStoreItemModal({ isOpen, onClose, item, onSave }) {
         <Input label="Price (Coins)" type="number" value={price} onChange={(e) => setPrice(e.target.value)} required />
         <div className="flex justify-end gap-3 pt-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-400">Cancel</button>
-          <button type="submit" className="bg-gold-500 text-slate-900 px-4 py-2 rounded-lg text-sm font-bold">Save Changes</button>
+          <button type="submit" disabled={isSaving} className="bg-gold-500 text-slate-900 px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50">
+            {isSaving ? 'Saving...' : 'Save Changes'}
+          </button>
         </div>
       </form>
     </Modal>
@@ -171,7 +182,8 @@ export function StorePage() {
     setTimeout(() => setFeedback(null), 3500);
   };
 
-  useEffect(() => {
+  const fetchStoreData = () => {
+    setIsLoading(true);
     Promise.all([getStoreStats(), getStoreItems()])
       .then(([s, i]) => {
         setStats(s);
@@ -184,6 +196,10 @@ export function StorePage() {
         setItems(mapped);
       })
       .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    fetchStoreData();
   }, []);
 
   const filteredItems = useMemo(() => {
@@ -196,9 +212,13 @@ export function StorePage() {
 
   const handleToggleStatus = async (item) => {
     const newStatus = item.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
-    const updated = await updateStoreItem(item.id, { status: newStatus });
-    setItems(items.map(i => i.id === item.id ? { ...i, status: newStatus } : i));
-    addLog('STORE_ITEM_UPDATED', item.id, 'Store', `Changed status of "${item.name}" to ${newStatus}`);
+    try {
+      await updateStoreItem(item.id, { status: newStatus });
+      fetchStoreData();
+      addLog('STORE_ITEM_UPDATED', item.id, 'Store', `Changed status of "${item.name}" to ${newStatus}`);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to update item status');
+    }
   };
 
   const handleOpenInheritance = (item) => {
@@ -211,21 +231,19 @@ export function StorePage() {
   const handleSaveInheritance = async () => {
     if (!selectedItemInherit) return;
 
-    setItems(items.map((i) => {
-      if (i.id === selectedItemInherit.id) {
-        return {
-          ...i,
-          scope,
-          overrideValue,
-          price: overrideValue && !isNaN(parseInt(overrideValue)) ? parseInt(overrideValue) : i.price
-        };
-      }
-      return i;
-    }));
+    try {
+      const newPrice = overrideValue && !isNaN(parseInt(overrideValue)) ? parseInt(overrideValue) : selectedItemInherit.price;
+      await updateStoreItem(selectedItemInherit.id, {
+        price: newPrice,
+      });
 
-    addLog('STORE_ITEM_INHERITANCE_UPDATED', selectedItemInherit.id, 'Store', `Updated scope to ${scope} with override ${overrideValue}`);
-    showFeedback(`Store pricing settings updated for ${selectedItemInherit.name}.`);
-    setSelectedItemInherit(null);
+      addLog('STORE_ITEM_INHERITANCE_UPDATED', selectedItemInherit.id, 'Store', `Updated scope to ${scope} with override ${overrideValue}`);
+      fetchStoreData();
+      showFeedback(`Pricing inheritance override saved for ${selectedItemInherit.name}.`);
+      setSelectedItemInherit(null);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to save inheritance');
+    }
   };
 
   const handleResetScope = (resetScope) => {
@@ -310,11 +328,11 @@ export function StorePage() {
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard title="Total Items" value={stats.totalItems} icon={ShoppingBag} iconColor="text-sky-400" iconBg="bg-sky-500/10" />
-        <StatCard title="Active" value={stats.activeItems} icon={Activity} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
-        <StatCard title="Featured" value={stats.featuredItems} icon={Tag} iconColor="text-amber-400" iconBg="bg-amber-500/10" />
-        <StatCard title="Total Purchases" value={stats.totalPurchases} icon={ShoppingBag} iconColor="text-purple-400" iconBg="bg-purple-500/10" />
-        <StatCard title="Total Gross Revenue" value={formatCurrency(stats.totalRevenue)} icon={DollarSign} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
+        <StatCard title="Total Items" value={stats?.totalItems ?? 0} icon={ShoppingBag} iconColor="text-sky-400" iconBg="bg-sky-500/10" />
+        <StatCard title="Active" value={stats?.activeItems ?? 0} icon={Activity} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
+        <StatCard title="Featured" value={stats?.featuredItems ?? 0} icon={Tag} iconColor="text-amber-400" iconBg="bg-amber-500/10" />
+        <StatCard title="Total Purchases" value={stats?.totalPurchases ?? 0} icon={ShoppingBag} iconColor="text-purple-400" iconBg="bg-purple-500/10" />
+        <StatCard title="Total Gross Revenue" value={formatCurrency(stats?.totalRevenue ?? 0)} icon={DollarSign} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
       </div>
 
       <Card className="p-4 flex flex-col sm:flex-row gap-3">

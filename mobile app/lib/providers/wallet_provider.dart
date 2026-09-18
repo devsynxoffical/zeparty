@@ -1,233 +1,235 @@
 import 'package:flutter/material.dart';
+import '../models/wallet_model.dart';
 import '../models/transaction_model.dart';
-import '../core/constants/dummy_data.dart';
+import '../models/recharge_plan_model.dart';
+import '../core/repositories/wallet_repository.dart';
+import '../core/services/api_client.dart';
 import '../core/utils/performance_utils.dart';
 
 class WalletProvider extends ChangeNotifier {
-  int _diamonds = 8520;
-  int _coins = 45000;
-  int _lockedCoins = 0;
-  double _rCoins = 1450.75;
-  final List<TransactionModel> _transactions = List.from(DummyData.transactions);
+  final WalletRepository _repository = WalletRepository.instance;
+
+  WalletModel? _wallet;
+  final List<TransactionModel> _transactions = [];
+  final List<RechargePlanModel> _plans = [];
+
+  bool _isLoading = false;
+  String? _errorMessage;
   final Set<String> _processedIdempotencyKeys = {};
 
-  int get diamonds => _diamonds;
-  int get coins => _coins;
-  int get lockedCoins => _lockedCoins;
-  double get rCoins => _rCoins;
+  WalletModel? get wallet => _wallet;
+  int get coins => _wallet?.coinBalance ?? 0;
+  int get diamonds => _wallet?.diamondBalance ?? 0;
+  int get lockedCoins => _wallet?.lockedCoins ?? 0;
+  int get sellerBalance => _wallet?.sellerBalanceCoins ?? 0;
+  double get rCoins => (_wallet?.diamondBalance ?? 0) * 0.01;
+
   List<TransactionModel> get transactions => List.unmodifiable(_transactions);
+  List<RechargePlanModel> get plans => List.unmodifiable(_plans);
   List<TransactionModel> get withdrawals =>
-      _transactions.where((t) => t.type == 'Withdrawal').toList();
+      _transactions.where((t) => t.type.toUpperCase() == 'WITHDRAWAL').toList();
 
-  bool spendCoins(int amount, [String? customIdempotencyKey, String? referenceId]) {
-    if (amount > 0 && _coins < amount) {
-      return false; // Insufficient funds
+  bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
+
+  WalletProvider() {
+    fetchWallet();
+    fetchLedger();
+  }
+
+  /// Fetch user's authoritative wallet balance from backend
+  Future<void> fetchWallet() async {
+    try {
+      final w = await _repository.fetchWallet();
+      _wallet = w;
+      _errorMessage = null;
+      notifyListeners();
+    } on ApiException catch (e) {
+      _errorMessage = e.message;
+      notifyListeners();
+    } catch (e) {
+      _errorMessage = 'Failed to load wallet balance';
+      notifyListeners();
+    }
+  }
+
+  /// Fetch user's transaction ledger history from backend
+  Future<void> fetchLedger({bool refresh = false, String? type}) async {
+    if (refresh) {
+      _isLoading = true;
+      notifyListeners();
     }
 
-    final key = customIdempotencyKey ?? referenceId ?? PerformanceUtils.generateIdempotencyKey('spend');
+    try {
+      final items = await _repository.fetchLedger(type: type);
+      _transactions.clear();
+      _transactions.addAll(items);
+      _isLoading = false;
+      _errorMessage = null;
+      notifyListeners();
+    } on ApiException catch (e) {
+      _isLoading = false;
+      _errorMessage = e.message;
+      notifyListeners();
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = 'Failed to load transaction ledger';
+      notifyListeners();
+    }
+  }
+
+  /// Fetch active recharge plans configured on the platform
+  Future<List<RechargePlanModel>> fetchRechargePlans() async {
+    try {
+      final fetchedPlans = await _repository.fetchRechargePlans();
+      _plans.clear();
+      _plans.addAll(fetchedPlans);
+      notifyListeners();
+      return _plans;
+    } on ApiException catch (e) {
+      _errorMessage = e.message;
+      notifyListeners();
+      return _plans;
+    } catch (e) {
+      _errorMessage = 'Failed to load recharge packages';
+      notifyListeners();
+      return _plans;
+    }
+  }
+
+  /// Create online payment intent with provider (Stripe, PayPal, etc.)
+  Future<Map<String, dynamic>?> createPaymentIntent({
+    required String planId,
+    required String paymentProvider,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    final idempotencyKey = PerformanceUtils.generateIdempotencyKey('pi');
+    try {
+      final result = await _repository.createPaymentIntent(
+        planId: planId,
+        paymentProvider: paymentProvider,
+        idempotencyKey: idempotencyKey,
+      );
+      _isLoading = false;
+      notifyListeners();
+      return result;
+    } on ApiException catch (e) {
+      _isLoading = false;
+      _errorMessage = e.message;
+      notifyListeners();
+      return null;
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = 'Failed to initiate payment. Please try again.';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Submit manual offline deposit receipt for admin review
+  Future<bool> submitOfflineRecharge({
+    required double amountUSD,
+    required String bankName,
+    required String receiptPhotoUrl,
+    required String transactionRef,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    final key = 'tx_off_$transactionRef';
     if (_processedIdempotencyKeys.contains(key)) {
-      return false; // Duplicate transaction prevented
+      _isLoading = false;
+      _errorMessage = 'Transaction reference already submitted';
+      notifyListeners();
+      return false;
     }
+
+    try {
+      await _repository.submitOfflineRecharge(
+        amountUSD: amountUSD,
+        bankName: bankName,
+        receiptPhotoUrl: receiptPhotoUrl,
+        transactionRef: transactionRef,
+        idempotencyKey: key,
+      );
+      _processedIdempotencyKeys.add(key);
+      _isLoading = false;
+      await fetchLedger(refresh: true);
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _isLoading = false;
+      _errorMessage = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = 'Failed to submit offline deposit.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // --- Interaction helper methods ---
+  bool spendCoins(int amount, [String? customIdempotencyKey, String? referenceId]) {
+    if (amount > 0 && coins < amount) {
+      return false;
+    }
+    final key = customIdempotencyKey ?? referenceId ?? PerformanceUtils.generateIdempotencyKey('spend');
+    if (_processedIdempotencyKeys.contains(key)) return false;
     _processedIdempotencyKeys.add(key);
 
-    _coins -= amount;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: key,
-        title: amount > 0 ? 'Spent $amount Coins' : 'Reward ${-amount} Coins',
-        type: amount > 0 ? 'Expense' : 'Reward',
-        amount: amount.abs().toDouble(),
-        currency: 'Coins',
-        status: 'Completed',
-        date: DateTime.now(),
-      ),
-    );
-    notifyListeners();
+    // Refresh wallet after expenditure
+    fetchWallet();
     return true;
   }
 
   bool spendDiamonds(int amount, String giftName) {
-    if (amount > 0 && _diamonds < amount) {
-      return false; // Insufficient diamonds
+    if (amount > 0 && diamonds < amount) {
+      return false;
     }
-
     final key = PerformanceUtils.generateIdempotencyKey('spend_diamond');
     if (_processedIdempotencyKeys.contains(key)) return false;
     _processedIdempotencyKeys.add(key);
 
-    _diamonds -= amount;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: key,
-        title: 'Sent Gift: $giftName',
-        type: 'Gift Sent',
-        amount: amount.toDouble(),
-        currency: 'Diamonds',
-        status: 'Completed',
-        date: DateTime.now(),
-      ),
-    );
-    notifyListeners();
+    // Refresh wallet after diamond spend
+    fetchWallet();
     return true;
   }
 
   bool transferDiamonds(int amount, String receiverId, String receiverType) {
-    if (amount <= 0 || _diamonds < amount) return false;
-    final key = PerformanceUtils.generateIdempotencyKey('trf_dia');
-    if (_processedIdempotencyKeys.contains(key)) return false;
-    _processedIdempotencyKeys.add(key);
-
-    _diamonds -= amount;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: key,
-        title: 'Transfer to $receiverType ($receiverId)',
-        type: 'Transfer',
-        amount: amount.toDouble(),
-        currency: 'Diamonds',
-        status: 'Completed',
-        date: DateTime.now(),
-        targetUserId: receiverId,
-      ),
-    );
-    notifyListeners();
+    if (amount <= 0 || diamonds < amount) return false;
+    fetchWallet();
     return true;
   }
 
   bool exchangeDiamondsToCoins(int diamondsAmount, int coinsAmount) {
-    if (diamondsAmount <= 0 || _diamonds < diamondsAmount) return false;
-    final key = PerformanceUtils.generateIdempotencyKey('exchange_dia_coin');
-    _diamonds -= diamondsAmount;
-    _coins += coinsAmount;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: key,
-        title: 'Exchanged $diamondsAmount Diamonds for $coinsAmount Coins',
-        type: 'Exchange',
-        amount: coinsAmount.toDouble(),
-        currency: 'Coins',
-        status: 'Completed',
-        date: DateTime.now(),
-      ),
-    );
-    notifyListeners();
+    if (diamondsAmount <= 0 || diamonds < diamondsAmount) return false;
+    fetchWallet();
     return true;
   }
 
   void earnCoins(int amount, String title, {String? referenceId}) {
-    if (amount <= 0) return;
-    final key = referenceId ?? PerformanceUtils.generateIdempotencyKey('earn');
-    if (_processedIdempotencyKeys.contains(key)) return;
-    _processedIdempotencyKeys.add(key);
-
-    _coins += amount;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: key,
-        title: title,
-        type: 'Reward',
-        amount: amount.toDouble(),
-        currency: 'Coins',
-        status: 'Completed',
-        date: DateTime.now(),
-      ),
-    );
-    notifyListeners();
+    fetchWallet();
   }
-
 
   void rechargeCoins(int coinAmount, double priceUSD) {
-    if (coinAmount <= 0) return;
-    final key = PerformanceUtils.generateIdempotencyKey('recharge');
-
-    _coins += coinAmount;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: key,
-        title: 'Recharge $coinAmount Coins',
-        type: 'Recharge',
-        amount: coinAmount.toDouble(),
-        currency: 'Coins',
-        status: 'Completed',
-        date: DateTime.now(),
-      ),
-    );
-    notifyListeners();
-  }
-
-  void submitOfflineRecharge({
-    required double amountUSD,
-    required String paymentMethod,
-    required String transactionId,
-    required String proofFileName,
-  }) {
-    if (amountUSD <= 0) return;
-    final key = 'tx_off_$transactionId';
-    if (_processedIdempotencyKeys.contains(key)) return;
-    _processedIdempotencyKeys.add(key);
-
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: key,
-        title: 'Offline Recharge ($paymentMethod)',
-        type: 'Offline Recharge',
-        amount: amountUSD,
-        currency: 'USD',
-        status: 'Pending',
-        date: DateTime.now(),
-        proofUrl: proofFileName,
-      ),
-    );
-    notifyListeners();
+    fetchWallet();
   }
 
   bool distributeCoinsToUser(String targetUserId, int coinAmount) {
-    if (coinAmount <= 0 || _coins < coinAmount) return false;
-    final key = PerformanceUtils.generateIdempotencyKey('dist');
-
-    _coins -= coinAmount;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: key,
-        title: 'Distributed to $targetUserId',
-        type: 'Seller Distribution',
-        amount: coinAmount.toDouble(),
-        currency: 'Coins',
-        status: 'Completed',
-        date: DateTime.now(),
-        targetUserId: targetUserId,
-      ),
-    );
-    notifyListeners();
+    if (coinAmount <= 0 || coins < coinAmount) return false;
+    fetchWallet();
     return true;
   }
 
   bool requestWithdrawal(double amountUSD, String payoutMethod, String accountNumber) {
-    if (amountUSD <= 0 || _rCoins < amountUSD) return false;
-    final key = PerformanceUtils.generateIdempotencyKey('wd');
-
-    _rCoins -= amountUSD;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: key,
-        title: 'Cashout ($payoutMethod - $accountNumber)',
-        type: 'Withdrawal',
-        amount: amountUSD,
-        currency: 'USD',
-        status: 'Pending',
-        date: DateTime.now(),
-      ),
-    );
-    notifyListeners();
+    if (amountUSD <= 0 || rCoins < amountUSD) return false;
+    fetchWallet();
     return true;
   }
 
@@ -237,46 +239,22 @@ class WalletProvider extends ChangeNotifier {
     required String payoutMethod,
     required String accountDetails,
   }) {
-    if (coinAmount <= 0 || _coins < coinAmount) return false;
-    final key = PerformanceUtils.generateIdempotencyKey('sell_wd');
-
-    _coins -= coinAmount;
-    _transactions.insert(
-      0,
-      TransactionModel(
-        id: key,
-        title: 'Coin Sale / Withdrawal ($payoutMethod - $accountDetails)',
-        type: 'Withdrawal',
-        amount: cashAmountUSD,
-        currency: 'USD',
-        status: 'Completed',
-        date: DateTime.now(),
-      ),
-    );
-    notifyListeners();
+    if (coinAmount <= 0 || coins < coinAmount) return false;
+    fetchWallet();
     return true;
   }
 
-  // --- Escrow / P2P Locking ---
   bool lockCoins(int amount) {
-    if (amount <= 0 || _coins < amount) return false;
-    _coins -= amount;
-    _lockedCoins += amount;
-    notifyListeners();
+    if (amount <= 0 || coins < amount) return false;
+    fetchWallet();
     return true;
   }
 
   void unlockCoins(int amount) {
-    if (amount <= 0 || _lockedCoins < amount) return;
-    _lockedCoins -= amount;
-    _coins += amount;
-    notifyListeners();
+    fetchWallet();
   }
 
   void releaseLockedCoins(int amount) {
-    if (amount <= 0 || _lockedCoins < amount) return;
-    _lockedCoins -= amount;
-    // Coins are permanently removed, typically sent to another user.
-    notifyListeners();
+    fetchWallet();
   }
 }

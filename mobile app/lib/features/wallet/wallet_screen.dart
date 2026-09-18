@@ -19,8 +19,18 @@ class WalletScreen extends StatefulWidget {
 }
 
 class _WalletScreenState extends State<WalletScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<WalletProvider>().fetchWallet();
+      context.read<WalletProvider>().fetchLedger();
+    });
+  }
+
   Future<void> _refreshWallet() async {
-    await Future.delayed(const Duration(milliseconds: 400));
+    await context.read<WalletProvider>().fetchWallet();
+    await context.read<WalletProvider>().fetchLedger(refresh: true);
     if (mounted) setState(() {});
   }
 

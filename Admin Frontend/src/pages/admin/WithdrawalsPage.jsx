@@ -18,10 +18,10 @@ import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { formatCurrency, formatDate, formatNumber } from '../../utils/format';
-import { CURRENT_WITHDRAWAL_POLICY } from '../../mocks/policyConfig.mock';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { CountrySelect } from '../../components/ui/CountrySelect';
 import { getCountryShortName } from '../../constants/countries.data';
+import { CURRENT_WITHDRAWAL_POLICY } from '../../mocks/policyConfig.mock';
 
 const getSLATimer = (requestedAt) => {
   const reqDate = new Date(requestedAt);

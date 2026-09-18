@@ -21,64 +21,114 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> {
 
   final List<_GameInfo> _allGames = const [
     _GameInfo(
-      title: 'Wheel of Fortune',
-      description: 'Spin the diamond wheel for up to 20× multiplier! Place your wager and spin live.',
-      icon: '🎡',
-      entryFee: 50,
-      maxWin: '1,000 🪙',
-      gameName: 'Wheel of Fortune',
-      category: 'Quick Games',
+      id: 'fishing_star',
+      title: 'Fishing Star',
+      description: 'Dynamic deep-sea arcade fishing where players target virtual fish for coin multipliers.',
+      icon: '🎣',
+      entryFee: 10,
+      maxWin: '2,000 🪙',
+      gameName: 'Fishing Star',
+      category: 'Arcade',
       badge: 'POPULAR',
     ),
     _GameInfo(
-      title: 'Rocket Launch',
-      description: 'Contribute diamonds to launch the rocket and win community prizes!',
-      icon: '🚀',
-      entryFee: 10,
-      maxWin: 'Shared Prize Pool',
-      gameName: 'Rocket Game',
-      category: 'Multiplayer',
-      badge: 'COMMUNITY',
-    ),
-    _GameInfo(
-      title: 'Lucky Fruit Slots',
-      description: 'Match 3 symbols to hit jackpot! Real-time results shown to your live audience.',
-      icon: '🎰',
-      entryFee: 30,
-      maxWin: '3,000 🪙',
-      gameName: 'Lucky Fruit Slots',
-      category: 'Quick Games',
-      badge: 'JACKPOT',
-    ),
-    _GameInfo(
-      title: 'Treasure Box Mystery',
-      description: 'Open mystery boxes for coin surprises! Audience sees your result live.',
-      icon: '📦',
+      id: 'teen_patti',
+      title: 'Teen Patti',
+      description: 'Classic 3-card poker with authoritative hand rankings: Trail, Pure Sequence, Sequence, Pair.',
+      icon: '🃏',
       entryFee: 20,
-      maxWin: '500 🪙',
-      gameName: 'Treasure Box Mystery',
-      category: 'Skill Games',
+      maxWin: '10,000 🪙',
+      gameName: 'Teen Patti',
+      category: 'Cards & Table',
+      badge: 'TOP',
+    ),
+    _GameInfo(
+      id: 'dragon_tiger',
+      title: 'Dragon & Tiger',
+      description: 'Fast-paced two-card comparison game. Back Dragon, Tiger, or Tie with live deck reveals.',
+      icon: '🐉',
+      entryFee: 10,
+      maxWin: '9,000 🪙',
+      gameName: 'Dragon & Tiger',
+      category: 'Cards & Table',
+      badge: 'LIVE',
+    ),
+    _GameInfo(
+      id: 'roulette',
+      title: 'Roulette',
+      description: 'Single-zero European wheel roulette table with straight, color, and dozen wagers.',
+      icon: '🎡',
+      entryFee: 10,
+      maxWin: '36,000 🪙',
+      gameName: 'Roulette',
+      category: 'Cards & Table',
+      badge: 'TABLE',
+    ),
+    _GameInfo(
+      id: 'delicious',
+      title: 'Delicious',
+      description: 'Culinary gourmet matching arcade game with high-tier multiplier combos.',
+      icon: '🍰',
+      entryFee: 10,
+      maxWin: '2,500 🪙',
+      gameName: 'Delicious',
+      category: 'Arcade',
       badge: 'NEW',
     ),
     _GameInfo(
-      title: 'Lucky Dice Roll',
-      description: 'Predict high roll results to double your coins in seconds!',
-      icon: '🎲',
-      entryFee: 50,
-      maxWin: '2,000 🪙',
-      gameName: 'Lucky Dice Roll',
-      category: 'Quick Games',
+      id: 'rocket',
+      title: 'Rocket',
+      description: 'Crash multiplier game where the rocket climbs in real-time. Cash out before the sudden crash!',
+      icon: '🚀',
+      entryFee: 10,
+      maxWin: '50,000 🪙',
+      gameName: 'Rocket',
+      category: 'Multiplier',
       badge: 'HOT',
     ),
     _GameInfo(
-      title: 'Coin Flip Double',
-      description: 'Pick Heads or Tails and double your entry coins instantly.',
-      icon: '🪙',
-      entryFee: 40,
-      maxWin: '1,500 🪙',
-      gameName: 'Coin Flip Double',
-      category: 'Multiplayer',
-      badge: 'FAST',
+      id: 'fruit_party_jackpot',
+      title: 'Fruit Party Jackpot',
+      description: 'Vibrant fruit slot engine featuring symbol combinations and community jackpot pools.',
+      icon: '🎰',
+      entryFee: 10,
+      maxWin: '50,000 🪙',
+      gameName: 'Fruit Party Jackpot',
+      category: 'Slots & Jackpot',
+      badge: 'JACKPOT',
+    ),
+    _GameInfo(
+      id: 'bounty_football',
+      title: 'Bounty Football',
+      description: 'Football and penalty challenge arcade with target score multipliers.',
+      icon: '⚽',
+      entryFee: 10,
+      maxWin: '5,000 🪙',
+      gameName: 'Bounty Football',
+      category: 'Arcade',
+      badge: 'SPORTS',
+    ),
+    _GameInfo(
+      id: 'greedy_lion',
+      title: 'Greedy Lion',
+      description: 'Safari animal multiplier journey. Follow the lion to uncover multiplier rewards.',
+      icon: '🦁',
+      entryFee: 10,
+      maxWin: '5,000 🪙',
+      gameName: 'Greedy Lion',
+      category: 'Multiplier',
+      badge: 'POPULAR',
+    ),
+    _GameInfo(
+      id: 'double_seven_77',
+      title: 'Double Seven (77)',
+      description: 'Lucky 77 matching experience featuring double seven triggers and coin surprises.',
+      icon: '7️⃣',
+      entryFee: 10,
+      maxWin: '5,000 🪙',
+      gameName: 'Double Seven (77)',
+      category: 'Slots & Jackpot',
+      badge: 'CLASSIC',
     ),
   ];
 
@@ -107,7 +157,7 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> {
         backgroundColor: AppColors.getBackground(isDark),
         elevation: 0,
         title: Text(
-          '🎮 Games & Economy Lobby',
+          '🎮 Official Games Lobby (10)',
           style: TextStyle(
             color: AppColors.getTextPrimary(isDark),
             fontWeight: FontWeight.bold,
@@ -153,7 +203,7 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> {
               height: 38,
               child: ListView(
                 scrollDirection: Axis.horizontal,
-                children: ['All Games', 'Quick Games', 'Skill Games', 'Multiplayer'].map((cat) {
+                children: ['All Games', 'Arcade', 'Cards & Table', 'Slots & Jackpot', 'Multiplier'].map((cat) {
                   final isSelected = _selectedCategory == cat;
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
@@ -189,7 +239,7 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Win coins in real-time! All rewards are stored directly into your secure wallet.',
+                      'Official ZeParty Games! All rounds and payouts are settled authoritatively on the server.',
                       style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 12),
                     ),
                   ),
@@ -199,7 +249,7 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> {
 
             const SizedBox(height: 24),
             Text(
-              'Available Games (${filteredGames.length})',
+              'Official Games (${filteredGames.length})',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
             ),
             const SizedBox(height: 14),
@@ -223,9 +273,18 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> {
 }
 
 class _GameInfo {
-  final String title, description, icon, maxWin, gameName, category, badge;
+  final String id;
+  final String title;
+  final String description;
+  final String icon;
   final int entryFee;
+  final String maxWin;
+  final String gameName;
+  final String category;
+  final String badge;
+
   const _GameInfo({
+    required this.id,
     required this.title,
     required this.description,
     required this.icon,
@@ -243,7 +302,7 @@ class _GameCard extends StatelessWidget {
   const _GameCard({required this.game, required this.isDark});
 
   void _showWagerSheet(BuildContext context) {
-    if (game.gameName == 'Rocket Game') {
+    if (game.id == 'rocket' || game.gameName == 'Rocket') {
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -327,7 +386,7 @@ class _GameCard extends StatelessWidget {
                       ? () {
                           Navigator.pop(ctx);
                           Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => GameScreen(gameName: game.gameName, wager: wager),
+                            builder: (_) => GameScreen(gameId: game.id, gameName: game.gameName, wager: wager),
                           ));
                         }
                       : null,
@@ -360,21 +419,34 @@ class _GameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = AppColors.getPrimary(isDark);
-
-    return GestureDetector(
-      onTap: () => _showWagerSheet(context),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child: PremiumCard(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        onTap: () => _showWagerSheet(context),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
           padding: const EdgeInsets.all(14),
-          radius: 20,
-          borderColor: AppColors.getBorderStrong(isDark),
+          decoration: BoxDecoration(
+            color: AppColors.getCard(isDark),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.getBorder(isDark)),
+          ),
           child: Row(
             children: [
-              Text(game.icon, style: const TextStyle(fontSize: 42)),
-              const SizedBox(width: 12),
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: AppColors.getSurface(isDark),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.getBorder(isDark)),
+                ),
+                child: Center(
+                  child: Text(game.icon, style: const TextStyle(fontSize: 28)),
+                ),
+              ),
+              const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

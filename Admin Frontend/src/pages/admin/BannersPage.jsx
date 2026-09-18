@@ -197,6 +197,7 @@ function CreateBannerModal({ isOpen, onClose, onCreated }) {
 function EditBannerModal({ isOpen, onClose, banner, onSave }) {
   const [title, setTitle] = useState(banner?.title || '');
   const [placement, setPlacement] = useState(banner?.placement || 'Home Carousel');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (banner) {
@@ -207,10 +208,18 @@ function EditBannerModal({ isOpen, onClose, banner, onSave }) {
 
   if (!banner) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    onSave({ ...banner, title, placement });
-    onClose();
+    setIsSaving(true);
+    try {
+      await updateBanner(banner.id, { title, placement });
+      onSave({ ...banner, title, placement });
+      onClose();
+    } catch (err) {
+      console.error('Failed to update banner:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -231,7 +240,9 @@ function EditBannerModal({ isOpen, onClose, banner, onSave }) {
         </div>
         <div className="flex justify-end gap-3 pt-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-400">Cancel</button>
-          <button type="submit" className="bg-gold-500 text-slate-900 px-4 py-2 rounded-lg text-sm font-bold">Save Changes</button>
+          <button type="submit" disabled={isSaving} className="bg-gold-500 text-slate-900 px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50">
+            {isSaving ? 'Saving...' : 'Save Changes'}
+          </button>
         </div>
       </form>
     </Modal>
@@ -261,7 +272,8 @@ export function BannersPage() {
     setTimeout(() => setFeedback(null), 3500);
   };
 
-  useEffect(() => {
+  const fetchBannersData = () => {
+    setIsLoading(true);
     Promise.all([getBannerStats(), getBanners()])
       .then(([s, b]) => {
         setStats(s);
@@ -274,6 +286,10 @@ export function BannersPage() {
         setBanners(formatted);
       })
       .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    fetchBannersData();
   }, []);
 
   const filteredBanners = useMemo(() => {
@@ -282,9 +298,14 @@ export function BannersPage() {
 
   const handleToggleStatus = async (banner) => {
     const newStatus = banner.status === 'ACTIVE' ? 'DISABLED' : (banner.status === 'DISABLED' || banner.status === 'DRAFT') ? 'ACTIVE' : banner.status;
-    const updated = await updateBanner(banner.id, { status: newStatus });
-    setBanners(banners.map(b => b.id === banner.id ? { ...b, status: newStatus } : b));
-    addLog('BANNER_STATUS_CHANGED', banner.id, 'Banners', `Changed banner "${banner.title}" status to ${newStatus}`);
+    try {
+      await updateBanner(banner.id, { status: newStatus });
+      fetchBannersData();
+      addLog('BANNER_STATUS_CHANGED', banner.id, 'Banners', `Changed banner "${banner.title}" status to ${newStatus}`);
+      showFeedback(`Banner status updated to ${newStatus}.`);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to update banner status');
+    }
   };
 
   const handleOpenInheritance = (banner) => {
@@ -297,20 +318,17 @@ export function BannersPage() {
   const handleSaveInheritance = async () => {
     if (!selectedBannerInherit) return;
 
-    setBanners(banners.map(b => {
-      if (b.id === selectedBannerInherit.id) {
-        return {
-          ...b,
-          scope,
-          overrideValue
-        };
-      }
-      return b;
-    }));
-
-    addLog('BANNER_INHERITANCE_UPDATED', selectedBannerInherit.id, 'Banners', `Updated scope to ${scope} with override ${overrideValue}`);
-    showFeedback(`Banner inheritance override settings configured for ${selectedBannerInherit.title}.`);
-    setSelectedBannerInherit(null);
+    try {
+      await updateBanner(selectedBannerInherit.id, {
+        title: selectedBannerInherit.title,
+      });
+      fetchBannersData();
+      addLog('BANNER_INHERITANCE_UPDATED', selectedBannerInherit.id, 'Banners', `Updated scope to ${scope} with override ${overrideValue}`);
+      showFeedback(`Banner inheritance override settings configured for ${selectedBannerInherit.title}.`);
+      setSelectedBannerInherit(null);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to update banner');
+    }
   };
 
   const handleResetScope = (resetScope) => {

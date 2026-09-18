@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
+import '../../models/vip_item_model.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/vip_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../widgets/vip_card.dart';
@@ -22,6 +24,9 @@ class _VipStoreScreenState extends State<VipStoreScreen> with SingleTickerProvid
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<VipProvider>().fetchVipCatalog();
+    });
   }
 
   @override
@@ -30,7 +35,7 @@ class _VipStoreScreenState extends State<VipStoreScreen> with SingleTickerProvid
     super.dispose();
   }
 
-  void _showPurchaseConfirm(BuildContext context, bool isDark, dynamic item) {
+  void _showPurchaseConfirm(BuildContext context, bool isDark, VipItemModel item) {
     final wallet = Provider.of<WalletProvider>(context, listen: false);
     final vip = Provider.of<VipProvider>(context, listen: false);
 
@@ -46,44 +51,46 @@ class _VipStoreScreenState extends State<VipStoreScreen> with SingleTickerProvid
             Container(width: 40, height: 4,
               decoration: BoxDecoration(color: AppColors.getBorder(isDark), borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 20),
-            Text(item.icon ?? '✨', style: const TextStyle(fontSize: 56)),
+            Text(item.icon, style: const TextStyle(fontSize: 56)),
             const SizedBox(height: 12),
             Text(item.title, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
             const SizedBox(height: 6),
-            Text(item.description ?? '', style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(isDark)), textAlign: TextAlign.center),
+            Text(item.description, style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(isDark)), textAlign: TextAlign.center),
             const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text('💎', style: TextStyle(fontSize: 20)),
+                const Text('🪙', style: TextStyle(fontSize: 20)),
                 const SizedBox(width: 6),
-                Text('${item.price} Diamonds', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getPrimary(isDark))),
+                Text('${item.coinPrice} Coins', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.gold)),
               ],
             ),
             const SizedBox(height: 6),
-            Text('Your balance: 💎 ${wallet.diamonds}', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(isDark))),
+            Text('Your balance: 🪙 ${wallet.coins}', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(isDark))),
             const SizedBox(height: 24),
-            wallet.diamonds >= (item.price ?? 0)
+            wallet.coins >= item.coinPrice
                 ? GoldButton(
                     text: 'Confirm Purchase',
                     height: 52,
-                    onPressed: () {
+                    onPressed: () async {
                       Navigator.pop(ctx);
-                      vip.purchaseVipItem(item.id);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          backgroundColor: AppColors.getPrimary(isDark),
-                          content: Row(children: [
-                            const Text('🎉', style: TextStyle(fontSize: 20)),
-                            const SizedBox(width: 10),
-                            Text('${item.title} unlocked!', style: TextStyle(color: AppColors.onPrimary(isDark: isDark), fontWeight: FontWeight.bold)),
-                          ]),
-                        ),
-                      );
+                      final success = await vip.purchaseVipItem(item.id, wallet);
+                      if (success && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            backgroundColor: AppColors.getPrimary(isDark),
+                            content: Row(children: [
+                              const Text('🎉', style: TextStyle(fontSize: 20)),
+                              const SizedBox(width: 10),
+                              Text('${item.title} unlocked!', style: TextStyle(color: AppColors.onPrimary(isDark: isDark), fontWeight: FontWeight.bold)),
+                            ]),
+                          ),
+                        );
+                      }
                     },
                   )
                 : GoldOutlinedButton(
-                    text: 'Insufficient Diamonds',
+                    text: 'Insufficient Coins',
                     height: 52,
                     foregroundColor: AppColors.mutedText,
                     onPressed: () {},
@@ -98,7 +105,9 @@ class _VipStoreScreenState extends State<VipStoreScreen> with SingleTickerProvid
   Widget build(BuildContext context) {
     final isDark = Provider.of<ThemeProvider>(context).isDarkMode;
     final vipProvider = context.watch<VipProvider>();
+    final auth = context.watch<AuthProvider>();
     final primary = AppColors.getPrimary(isDark);
+    final userVipLevel = auth.currentUser.wealthLevel;
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -120,9 +129,9 @@ class _VipStoreScreenState extends State<VipStoreScreen> with SingleTickerProvid
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
             child: PremiumBanner(
-              title: 'VIP Level 5 Active',
-              subtitle: 'Entry effects & avatar frames unlocked',
-              value: '👑 VIP 5',
+              title: userVipLevel > 0 ? 'VIP Level $userVipLevel Active' : 'VIP Membership',
+              subtitle: 'Exclusive entrance effects, frames and room badges',
+              value: userVipLevel > 0 ? '👑 VIP $userVipLevel' : 'Member',
               footer: '🏅 Badge • 🎬 Entry FX • 🖼️ Frame • 📊 Priority • 🔒 VIP Room',
               trailing: const Text('👑', style: TextStyle(fontSize: 40)),
             ),
@@ -134,21 +143,30 @@ class _VipStoreScreenState extends State<VipStoreScreen> with SingleTickerProvid
               controller: _tabController,
               children: [
                 // ─── All Catalog Items ───
-                ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: vipProvider.vipItems.length,
-                  itemBuilder: (context, index) {
-                    final item = vipProvider.vipItems[index];
-                    final owned = vipProvider.ownedItems.any((o) => o.id == item.id);
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: VipCard(
-                        item: item,
-                        onBuy: owned ? null : () => _showPurchaseConfirm(context, isDark, item),
-                      ),
-                    );
-                  },
-                ),
+                vipProvider.isLoading && vipProvider.vipItems.isEmpty
+                    ? Center(child: CircularProgressIndicator(color: primary))
+                    : vipProvider.vipItems.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No VIP items available currently.',
+                              style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: vipProvider.vipItems.length,
+                            itemBuilder: (context, index) {
+                              final item = vipProvider.vipItems[index];
+                              final owned = item.isOwned;
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: VipCard(
+                                  item: item,
+                                  onBuy: owned ? null : () => _showPurchaseConfirm(context, isDark, item),
+                                ),
+                              );
+                            },
+                          ),
 
                 // ─── Owned Items ───
                 vipProvider.ownedItems.isEmpty

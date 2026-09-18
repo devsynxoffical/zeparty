@@ -2,41 +2,54 @@
 // ZeParty Admin Portal — VIP Service (JavaScript)
 // ============================================================
 
-import { MOCK_VIP_ITEMS } from '../../mocks/vip.mock';
+import apiClient from '../api';
 
-let vipState = [...MOCK_VIP_ITEMS];
-
-export async function getVIPItems() {
-  await new Promise((res) => setTimeout(res, 200));
-  return [...vipState];
+export async function getVIPItems(params = {}) {
+  const res = await apiClient.get('/v1/admin/store/vip', { params });
+  const items = res.data?.data || [];
+  return items.map((v) => ({
+    id: v.id,
+    name: v.name,
+    type: v.category?.toLowerCase() || 'badge',
+    price: Number(v.coinPrice || 0),
+    coinPrice: Number(v.coinPrice || 0),
+    durationDays: Number(v.durationDays || 30),
+    active: Boolean(v.isActive),
+    isActive: Boolean(v.isActive),
+    iconUrl: v.iconUrl || '',
+    thumbnail: v.iconUrl || '',
+    createdAt: v.createdAt,
+  }));
 }
 
 export async function createVIPItem(vipData) {
-  await new Promise((res) => setTimeout(res, 300));
-  const newItem = {
-    id: 'vip-' + Date.now(),
+  const res = await apiClient.post('/v1/admin/assets', {
     name: vipData.name,
-    type: vipData.type || 'badge',
-    price: Number(vipData.price),
+    category: 'VIP_BADGE',
+    coinPrice: Number(vipData.price || 0),
     durationDays: Number(vipData.durationDays || 30),
-    active: true,
-  };
-  vipState = [newItem, ...vipState];
-  return newItem;
+    iconUrl: vipData.iconUrl || 'https://cdn.zeparty.io/vip/default.png',
+    resourceKey: `vip_${Date.now()}`,
+    isActive: true,
+  });
+  return res.data?.data;
 }
 
 export async function updateVIPItem(id, vipData) {
-  await new Promise((res) => setTimeout(res, 300));
-  vipState = vipState.map((v) =>
-    v.id === id ? { ...v, ...vipData } : v
-  );
-  return { success: true };
+  const res = await apiClient.put(`/v1/admin/assets/${id}`, vipData);
+  return res.data?.data;
 }
 
-export async function toggleVIPStatus(id) {
-  await new Promise((res) => setTimeout(res, 250));
-  vipState = vipState.map((v) =>
-    v.id === id ? { ...v, active: !v.active } : v
-  );
-  return { success: true };
+export async function toggleVIPStatus(id, currentActive) {
+  const res = await apiClient.put(`/v1/admin/assets/${id}`, {
+    isActive: !currentActive,
+  });
+  return res.data?.data;
 }
+
+export default {
+  getVIPItems,
+  createVIPItem,
+  updateVIPItem,
+  toggleVIPStatus,
+};

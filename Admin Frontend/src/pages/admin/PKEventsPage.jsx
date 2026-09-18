@@ -166,11 +166,7 @@ export function PKEventsPage() {
   const [inheritedValue, setInheritedValue] = useState('');
   const [feedback, setFeedback] = useState(null);
 
-  const [activeBattles, setActiveBattles] = useState([
-    { id: 'PKB-101', host1: 'Host_Alpha', host2: 'Host_Beta', score1: 4500, score2: 3200, duration: '05:23', host1Muted: false, host2Muted: false },
-    { id: 'PKB-102', host1: 'Singer_Star', host2: 'Gamer_Pro', score1: 12000, score2: 11500, duration: '12:45', host1Muted: true, host2Muted: false },
-    { id: 'PKB-103', host1: 'User_X', host2: 'User_Y', score1: 500, score2: 250, duration: '01:10', host1Muted: false, host2Muted: false },
-  ]);
+  const [activeBattles, setActiveBattles] = useState([]);
 
   const showFeedback = (msg) => {
     setFeedback(msg);
@@ -347,24 +343,28 @@ export function PKEventsPage() {
       <Card className="p-5">
         <CardHeader title="Live PK Battles Oversight Room" description="Active PK connections. Operations Admins can mute microphone or terminate connection immediately." />
         <div className="space-y-3 mt-4">
-          {activeBattles.map(b => (
-            <div key={b.id} className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex justify-between items-center text-xs">
-              <div>
-                <p className="font-bold text-white flex items-center gap-1">
-                  <span>{b.host1}</span> <span className="text-slate-500">vs</span> <span>{b.host2}</span>
-                </p>
-                <p className="text-[10px] text-slate-400">Score: <strong className="text-gold-400 font-mono">{b.score1}</strong> to <strong className="text-gold-400 font-mono">{b.score2}</strong> · Time: {b.duration}</p>
+          {activeBattles.length === 0 ? (
+            <p className="text-xs text-slate-500 py-4 text-center">No active PK battles in progress.</p>
+          ) : (
+            activeBattles.map(b => (
+              <div key={b.id} className="p-3 bg-slate-900 border border-slate-800 rounded-xl flex justify-between items-center text-xs">
+                <div>
+                  <p className="font-bold text-white flex items-center gap-1">
+                    <span>{b.host1}</span> <span className="text-slate-500">vs</span> <span>{b.host2}</span>
+                  </p>
+                  <p className="text-[10px] text-slate-400">Score: <strong className="text-gold-400 font-mono">{b.score1}</strong> to <strong className="text-gold-400 font-mono">{b.score2}</strong> · Time: {b.duration}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="xs" onClick={() => handleMuteHost(b.id, 1)}>
+                    {b.host1Muted ? 'Unmute H1' : 'Mute H1'}
+                  </Button>
+                  <Button variant="danger" size="xs" onClick={() => handleKickHost(b.id, 1)}>
+                    Kick H1
+                  </Button>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="xs" onClick={() => handleMuteHost(b.id, 1)}>
-                  {b.host1Muted ? 'Unmute H1' : 'Mute H1'}
-                </Button>
-                <Button variant="danger" size="xs" onClick={() => handleKickHost(b.id, 1)}>
-                  Kick H1
-                </Button>
-              </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </Card>
 

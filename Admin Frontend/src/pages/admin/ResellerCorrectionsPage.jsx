@@ -3,7 +3,7 @@
 // Client Excel Phase C Requirements
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Search, Lock, CheckCircle2, RotateCcw } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -16,39 +16,50 @@ import { useAuditLog } from '../../context/AuditLogContext';
 import { CountrySelect } from '../../components/ui/CountrySelect';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryShortName } from '../../constants/countries.data';
-
-const INITIAL_CORRECTIONS = [
-  {
-    id: 'RSC-301',
-    resellerName: 'CoinMaster Pro',
-    username: 'coinmaster_pro',
-    country: 'US',
-    issueType: 'Excess Reseller Coins Assigned',
-    excessCoins: 1000000,
-    originalTxnId: 'TXN-77120',
-    affectedBalanceFrozen: true,
-    status: 'READY_FOR_APPROVAL',
-  },
-  {
-    id: 'RSC-302',
-    resellerName: 'Emirates Coin Hub',
-    username: 'emirates_coins',
-    country: 'AE',
-    issueType: 'Package Tier Profit Adjustment',
-    excessCoins: 500000,
-    originalTxnId: 'TXN-88231',
-    affectedBalanceFrozen: true,
-    status: 'READY_FOR_APPROVAL',
-  },
-];
+import { getCoinSellers } from '../../services/modules/coinSellers.service';
 
 export function ResellerCorrectionsPage() {
   const { logAdminAction } = useAuditLog();
-  const [corrections, setCorrections] = useState(INITIAL_CORRECTIONS);
+  const [corrections, setCorrections] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('All');
   const [activeCorrection, setActiveCorrection] = useState(null);
   const [auditMsg, setAuditMsg] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoading(true);
+    getCoinSellers()
+      .then((sellers) => {
+        if (!isMounted) return;
+        // Check for any sellers requiring correction or discrepancy
+        const discrepancy = (sellers || [])
+          .filter((s) => s.status === 'SUSPENDED' || s.isDiscrepancy)
+          .map((s) => ({
+            id: `RSC-${s.id.slice(0, 6)}`,
+            resellerName: s.agencyName || s.name || s.username,
+            username: s.username,
+            country: s.country || 'US',
+            issueType: 'Reseller Ledger Audit',
+            excessCoins: Number(s.pendingBalance || 0),
+            originalTxnId: `TXN-${s.id.slice(0, 6)}`,
+            affectedBalanceFrozen: s.status === 'SUSPENDED',
+            status: 'READY_FOR_APPROVAL',
+          }));
+        setCorrections(discrepancy);
+      })
+      .catch(() => {
+        if (isMounted) setCorrections([]);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleApproveCorrection = async () => {
     if (!activeCorrection) return;
@@ -167,7 +178,7 @@ export function ResellerCorrectionsPage() {
         </div>
       </Card>
 
-      <DataTable columns={columns} data={filtered} isLoading={false} />
+      <DataTable columns={columns} data={filtered} isLoading={isLoading} emptyTitle="No reseller corrections required" emptyDescription="All reseller accounts and ledgers are balanced." />
 
       {activeCorrection && (
         <Modal

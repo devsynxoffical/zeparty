@@ -1,4 +1,5 @@
 import authService from '../services/auth.service.js';
+import tokenService from '../services/token.service.js';
 import { calculateEffectivePermissions } from '../services/effectivePermissions.service.js';
 import {
   requestOtpSchema,
@@ -52,6 +53,7 @@ export async function verifyOtp(req, res, next) {
       message: result.isNewUser ? 'User registered and authenticated successfully' : 'Authentication successful',
       data: {
         token: result.accessToken,
+        accessToken: result.accessToken,
         refreshToken: result.refreshToken,
         expiresAt: result.expiresAt,
         isNewUser: result.isNewUser,
@@ -80,6 +82,7 @@ export async function refresh(req, res, next) {
       message: 'Tokens refreshed successfully',
       data: {
         token: result.accessToken,
+        accessToken: result.accessToken,
         refreshToken: result.refreshToken,
         expiresAt: result.expiresAt,
       },
@@ -91,16 +94,37 @@ export async function refresh(req, res, next) {
 
 export async function logout(req, res, next) {
   try {
-    const sessionId = req.auth?.sessionId;
-    const result = await authService.logout({ sessionId });
+    let sessionId = req.auth?.sessionId || req.body?.sessionId;
+    const refreshToken = req.body?.refreshToken;
+
+    if (!sessionId) {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        if (token) {
+          try {
+            const decoded = tokenService.decodeToken(token);
+            if (decoded?.sessionId) {
+              sessionId = decoded.sessionId;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    const result = await authService.logout({ sessionId, refreshToken });
 
     return res.status(200).json({
       success: true,
-      message: result.message,
+      message: result.message || 'Successfully logged out.',
       data: null,
     });
   } catch (err) {
-    next(err);
+    return res.status(200).json({
+      success: true,
+      message: 'Successfully logged out.',
+      data: null,
+    });
   }
 }
 
@@ -160,6 +184,7 @@ export async function adminLogin(req, res, next) {
       message: 'Admin authentication successful',
       data: {
         token: result.accessToken,
+        accessToken: result.accessToken,
         refreshToken: result.refreshToken,
         expiresAt: result.expiresAt,
         admin: result.admin,

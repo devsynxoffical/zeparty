@@ -18,7 +18,23 @@ export const assetSubcategoryEnum = z.enum([
 
 export const roomAvailabilityEnum = z.enum(['BOTH', 'LIVE_ONLY', 'AUDIO_ONLY']);
 
-export const createAssetSchema = z.object({
+const preprocessAssetData = (data) => {
+  if (typeof data !== 'object' || data === null) return data;
+  return {
+    ...data,
+    assetType: data.assetType || data.category || (data.assetType === undefined ? undefined : 'FRAME'),
+    thumbnailUrl:
+      data.thumbnailUrl ||
+      data.thumbnail ||
+      data.iconUrl ||
+      'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=120&auto=format&fit=crop&q=60',
+    priceCoins: data.priceCoins ?? data.coinPrice ?? data.price,
+    validDays: data.validDays ?? data.durationDays ?? data.duration,
+    assetSubcategory: data.assetSubcategory || data.subCategory,
+  };
+};
+
+const baseAssetObject = z.object({
   name: z.string().trim().min(1, 'Asset name is required').max(100, 'Asset name cannot exceed 100 characters'),
   assetType: z
     .string()
@@ -66,7 +82,22 @@ export const createAssetSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const updateAssetSchema = createAssetSchema.partial();
+export const createAssetSchema = z.preprocess(preprocessAssetData, baseAssetObject);
+
+export const updateAssetSchema = z.preprocess(
+  (data) => {
+    if (typeof data !== 'object' || data === null) return data;
+    return {
+      ...data,
+      assetType: data.assetType || data.category,
+      thumbnailUrl: data.thumbnailUrl || data.thumbnail || data.iconUrl,
+      priceCoins: data.priceCoins ?? data.coinPrice ?? data.price,
+      validDays: data.validDays ?? data.durationDays ?? data.duration,
+      assetSubcategory: data.assetSubcategory || data.subCategory,
+    };
+  },
+  baseAssetObject.partial()
+);
 
 export const purchaseAssetSchema = z.object({
   assetId: z.string().min(1, 'Asset ID is required'),

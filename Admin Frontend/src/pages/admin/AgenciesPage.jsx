@@ -18,6 +18,7 @@ import { Button } from '../../components/ui/Button';
 import {
   getAgencies,
   getActiveAgencies,
+  updateAgency,
   approveAgency,
   rejectAgency,
   transferHostAgency
@@ -27,8 +28,6 @@ import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryShortName } from '../../constants/countries.data';
 import { usePermission } from '../../hooks/usePermission';
 import { useAuditLog } from '../../context/AuditLogContext';
-import { MOCK_AGENCIES_LIST } from '../../mocks/hosts.mock';
-import { MOCK_BD_CENTERS } from '../../mocks/bdCenters.mock';
 
 export function AgenciesPage() {
   const { logAdminAction } = useAuditLog();
@@ -36,7 +35,7 @@ export function AgenciesPage() {
   const typeParam = searchParams.get('type') || 'live';
 
   const [activeTab, setActiveTab] = useState('activeAgencies'); // 'activeAgencies' | 'applications'
-  const [agencies, setAgencies] = useState(MOCK_AGENCIES_LIST);
+  const [agencies, setAgencies] = useState([]);
   const [applications, setApplications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -60,13 +59,26 @@ export function AgenciesPage() {
   const [rosterModal, setRosterModal] = useState({ open: false, agency: null, hostId: '' });
   const [feedback, setFeedback] = useState(null);
 
-  useEffect(() => {
-    Promise.all([getActiveAgencies(), getAgencies()])
-      .then(([active, apps]) => {
-        setAgencies(active);
-        setApplications(apps);
+  const fetchAgenciesData = () => {
+    setIsLoading(true);
+    Promise.allSettled([getActiveAgencies(), getAgencies()])
+      .then(([activeRes, appsRes]) => {
+        if (activeRes.status === 'fulfilled') {
+          setAgencies(activeRes.value || []);
+        } else {
+          console.error('Failed to load active agencies:', activeRes.reason);
+        }
+        if (appsRes.status === 'fulfilled') {
+          setApplications(appsRes.value || []);
+        } else {
+          console.error('Failed to load agency applications:', appsRes.reason);
+        }
       })
       .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    fetchAgenciesData();
   }, []);
 
   const showFeedback = (msg) => {
@@ -78,9 +90,7 @@ export function AgenciesPage() {
 
   const handleApprove = async (id) => {
     await approveAgency(id);
-    setApplications((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, status: 'approved' } : a))
-    );
+    fetchAgenciesData();
     await logAdminAction({
       action: 'AGENCY_APPLICATION_APPROVED',
       module: 'Agencies',
@@ -95,9 +105,7 @@ export function AgenciesPage() {
 
   const handleReject = async (id) => {
     await rejectAgency(id, 'Document verification failed.');
-    setApplications((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, status: 'rejected' } : a))
-    );
+    fetchAgenciesData();
     await logAdminAction({
       action: 'AGENCY_APPLICATION_REJECTED',
       module: 'Agencies',
@@ -116,90 +124,83 @@ export function AgenciesPage() {
 
     const targetAgency = agencies.find((a) => a.id === targetAgencyId);
 
-    await transferHostAgency(
-      transferHostName,
-      transferModal.agency.id,
-      targetAgencyId,
-      transferReason
-    );
+    try {
+      await transferHostAgency(
+        transferHostName,
+        transferModal.agency.id,
+        targetAgencyId,
+        transferReason
+      );
 
-    await logAdminAction({
-      action: 'HOST_AGENCY_TRANSFERRED',
-      module: 'Agencies',
-      targetType: 'host',
-      targetId: transferHostName,
-      targetName: transferHostName,
-      reason: transferReason || `Transferred from ${transferModal.agency.agencyName} to ${targetAgency?.agencyName}`,
-      riskLevel: 'HIGH',
-    });
+      await logAdminAction({
+        action: 'HOST_AGENCY_TRANSFERRED',
+        module: 'Agencies',
+        targetType: 'host',
+        targetId: transferHostName,
+        targetName: transferHostName,
+        reason: transferReason || `Transferred from ${transferModal.agency.agencyName} to ${targetAgency?.agencyName}`,
+        riskLevel: 'HIGH',
+      });
 
-    setAgencies((prev) =>
-      prev.map((a) => {
-        if (a.id === transferModal.agency.id) {
-          return { ...a, hostsCount: Math.max(0, a.hostsCount - 1) };
-        }
-        if (a.id === targetAgencyId) {
-          return { ...a, hostsCount: a.hostsCount + 1 };
-        }
-        return a;
-      })
-    );
-
-    showFeedback(`Host "${transferHostName}" successfully transferred.`);
-    setTransferModal({ open: false, agency: null });
-    setTransferHostName('');
-    setTargetAgencyId('');
-    setTransferReason('');
+      fetchAgenciesData();
+      showFeedback(`Host "${transferHostName}" successfully transferred.`);
+      setTransferModal({ open: false, agency: null });
+      setTransferHostName('');
+      setTargetAgencyId('');
+      setTransferReason('');
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Transfer failed');
+    }
   };
 
   const handleSaveCommission = async () => {
     const { agency, commission } = commissionModal;
     if (!agency) return;
 
-    setAgencies((prev) => prev.map((a) => {
-      if (a.id === agency.id) {
-        return { ...a, commissionPercent: Number(commission) };
-      }
-      return a;
-    }));
+    try {
+      await updateAgency(agency.id, { commissionRate: Number(commission) });
+      fetchAgenciesData();
 
-    await logAdminAction({
-      action: 'AGENCY_COMMISSION_UPDATED',
-      module: 'Agencies',
-      targetType: 'agency',
-      targetId: agency.id,
-      targetName: agency.agencyName,
-      reason: `Commission rate changed to ${commission}%`,
-      riskLevel: 'HIGH',
-    });
+      await logAdminAction({
+        action: 'AGENCY_COMMISSION_UPDATED',
+        module: 'Agencies',
+        targetType: 'agency',
+        targetId: agency.id,
+        targetName: agency.agencyName,
+        reason: `Commission rate changed to ${commission}%`,
+        riskLevel: 'HIGH',
+      });
 
-    showFeedback(`Commission rate updated to ${commission}% for ${agency.agencyName}.`);
-    setCommissionModal({ open: false, agency: null, commission: '' });
+      showFeedback(`Commission rate updated to ${commission}% for ${agency.agencyName}.`);
+      setCommissionModal({ open: false, agency: null, commission: '' });
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to update commission');
+    }
   };
 
   const handleSaveSettlement = async () => {
     const { agency, settlementMethod, taxId } = settlementModal;
     if (!agency) return;
 
-    setAgencies((prev) => prev.map((a) => {
-      if (a.id === agency.id) {
-        return { ...a, settlementMethod, taxId };
-      }
-      return a;
-    }));
+    try {
+      await updateAgency(agency.id, { settlementMethod, taxId });
+      fetchAgenciesData();
 
-    await logAdminAction({
-      action: 'AGENCY_SETTLEMENT_CONFIGURED',
-      module: 'Agencies',
-      targetType: 'agency',
-      targetId: agency.id,
-      targetName: agency.agencyName,
-      reason: `Method: ${settlementMethod}, Tax ID: ${taxId}`,
-      riskLevel: 'HIGH',
-    });
+      await logAdminAction({
+        action: 'AGENCY_SETTLEMENT_CONFIGURED',
+        module: 'Agencies',
+        targetType: 'agency',
+        targetId: agency.id,
+        targetName: agency.agencyName,
+        reason: `Method: ${settlementMethod}, Tax ID: ${taxId}`,
+        riskLevel: 'HIGH',
+      });
 
-    showFeedback(`Settlement configuration updated for ${agency.agencyName}.`);
-    setSettlementModal({ open: false, agency: null, settlementMethod: '', taxId: '' });
+      showFeedback(`Settlement configuration updated for ${agency.agencyName}.`);
+      setSettlementModal({ open: false, agency: null, settlementMethod: '', taxId: '' });
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to save settlement config');
+    }
   };
 
   const handleRosterAction = async (actionType) => {

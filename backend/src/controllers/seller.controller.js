@@ -214,12 +214,65 @@ export async function correctBalance(req, res, next) {
   }
 }
 
+export async function updateSeller(req, res, next) {
+  try {
+    const { id } = req.params;
+    const validatedData = req.body;
+    const adminId = req.auth?.userId || 'ADMIN';
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const updated = await sellerService.updateSeller(id, validatedData, {
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Coin seller updated successfully',
+      data: {
+        ...updated,
+        resellerBalanceCoins: updated.resellerBalanceCoins ? updated.resellerBalanceCoins.toString() : '0',
+        creditLimitUSD: updated.creditLimitUSD ? updated.creditLimitUSD.toString() : '0.00',
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteSeller(req, res, next) {
+  try {
+    const { id } = req.params;
+    const adminId = req.auth?.userId || 'ADMIN';
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await sellerService.deleteSeller(id, {
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Coin seller removed successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getPublicSellers,
   getSellers,
   createSeller,
   getSellerById,
+  updateSeller,
   updateSellerStatus,
+  deleteSeller,
   allocateCoins,
   correctBalance,
 };

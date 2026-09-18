@@ -3,7 +3,7 @@
 // Standalone, Bulletproof, 100% Robust Implementation
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sliders, Save, History, CheckCircle2, ShieldAlert, DollarSign,
   Plus, RefreshCw, BarChart3, ShieldCheck, ArrowRightLeft,
@@ -16,6 +16,13 @@ import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
 import { formatNumber } from '../../utils/format';
 import { useAuditLog } from '../../context/AuditLogContext';
+import {
+  getEconomyConfigs,
+  updateEconomyConfig,
+  disableEconomyConfig,
+  restoreEconomyConfig,
+} from '../../services/modules/economy.service';
+
 
 // Self-contained Mock Data to guarantee zero load crashes
 const DEFAULT_ECONOMY_POLICY = {
@@ -194,6 +201,18 @@ export function EconomySettingsPage() {
   ]);
   const [overrideForm, setOverrideForm] = useState({ country: '🇹🇷 Turkey (TR)', platform: '41%', host: '39%', agency: '12%', room: '8%' });
 
+  useEffect(() => {
+    getEconomyConfigs()
+      .then((configs) => {
+        if (configs) {
+          if (configs.revenueSplit) {
+            setEconomyPolicy((prev) => ({ ...prev, ...configs.revenueSplit }));
+          }
+        }
+      })
+      .catch((err) => console.warn('Could not load backend economy settings:', err.message));
+  }, []);
+
   const handleAddOverrideSubmit = (e) => {
     e.preventDefault();
     setCountryOverrides([{ ...overrideForm, status: 'ACTIVE' }, ...countryOverrides]);
@@ -207,6 +226,17 @@ export function EconomySettingsPage() {
   };
 
   const handleSavePolicy = async (policyName) => {
+    try {
+      await updateEconomyConfig('ECONOMY_POLICY_' + policyName.toUpperCase(), {
+        revenueSplit: economyPolicy,
+        exchangeRates,
+        transferRates,
+        updatedAt: new Date().toISOString(),
+      }, `Updated ${policyName} policy configuration`);
+    } catch (err) {
+      console.warn('Backend update failed:', err.message);
+    }
+
     await logAdminAction({
       action: 'UPDATE_ECONOMY_POLICY',
       module: 'Economy',

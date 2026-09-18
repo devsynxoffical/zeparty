@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:provider/provider.dart';
@@ -38,11 +39,19 @@ import 'providers/privacy_settings_provider.dart';
 import 'providers/cp_ranking_provider.dart';
 import 'providers/emoji_reaction_provider.dart';
 import 'providers/live_gift_provider.dart';
+import 'providers/backpack_provider.dart';
+import 'providers/support_provider.dart';
+import 'core/config/app_config.dart';
 import 'core/repositories/backend_repository.dart';
 import 'features/auth/splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Authoritative Centralized App Configuration
+  AppConfig.initialize(
+    environment: kReleaseMode ? AppEnvironment.staging : AppEnvironment.development,
+  );
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
@@ -75,6 +84,7 @@ class LiveStreamApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => EscrowProvider()),
         ChangeNotifierProvider(create: (_) => LivePartyProvider()),
         ChangeNotifierProvider(create: (_) => StoreProvider()),
+        ChangeNotifierProvider(create: (_) => BackpackProvider()),
         ChangeNotifierProvider(create: (_) => SVIPProvider()),
         ChangeNotifierProvider(create: (_) => MysteryProvider()),
         ChangeNotifierProvider(create: (_) => NobleProvider()),
@@ -93,6 +103,7 @@ class LiveStreamApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CpRankingProvider()),
         ChangeNotifierProvider(create: (_) => EmojiReactionProvider()),
         ChangeNotifierProvider(create: (_) => LiveGiftProvider()),
+        ChangeNotifierProvider(create: (_) => SupportProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {

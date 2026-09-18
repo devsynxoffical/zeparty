@@ -12,11 +12,16 @@ class GamesTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final games = [
-      {'title': 'Wheel of Fortune', 'icon': Icons.data_usage_rounded, 'color': Colors.amber, 'screen': const GameScreen(gameName: 'Wheel of Fortune')},
-      {'title': 'Lucky Fruit Slots', 'icon': Icons.casino_rounded, 'color': Colors.purpleAccent, 'screen': const GameScreen(gameName: 'Lucky Fruit Slots')},
-      {'title': 'Treasure Box', 'icon': Icons.card_giftcard_rounded, 'color': Colors.blueAccent, 'screen': const GameScreen(gameName: 'Treasure Box')},
-      {'title': 'Lucky Dice Roll', 'icon': Icons.extension_rounded, 'color': Colors.greenAccent, 'screen': const GameScreen(gameName: 'Lucky Dice Roll')},
-      {'title': 'Coin Flip Double', 'icon': Icons.monetization_on_rounded, 'color': Colors.orangeAccent, 'screen': const GameScreen(gameName: 'Coin Flip Double')},
+      {'id': 'fishing_star', 'title': 'Fishing Star', 'icon': Icons.phishing_rounded, 'color': Colors.cyanAccent, 'screen': const GameScreen(gameId: 'fishing_star', gameName: 'Fishing Star')},
+      {'id': 'teen_patti', 'title': 'Teen Patti', 'icon': Icons.style_rounded, 'color': Colors.amber, 'screen': const GameScreen(gameId: 'teen_patti', gameName: 'Teen Patti')},
+      {'id': 'dragon_tiger', 'title': 'Dragon & Tiger', 'icon': Icons.compare_arrows_rounded, 'color': Colors.redAccent, 'screen': const GameScreen(gameId: 'dragon_tiger', gameName: 'Dragon & Tiger')},
+      {'id': 'roulette', 'title': 'Roulette', 'icon': Icons.data_usage_rounded, 'color': Colors.greenAccent, 'screen': const GameScreen(gameId: 'roulette', gameName: 'Roulette')},
+      {'id': 'fruit_party_jackpot', 'title': 'Fruit Party Jackpot', 'icon': Icons.casino_rounded, 'color': Colors.pinkAccent, 'screen': const GameScreen(gameId: 'fruit_party_jackpot', gameName: 'Fruit Party Jackpot')},
+      {'id': 'rocket', 'title': 'Rocket', 'icon': Icons.rocket_launch_rounded, 'color': Colors.purpleAccent, 'screen': const GameScreen(gameId: 'rocket', gameName: 'Rocket')},
+      {'id': 'delicious', 'title': 'Delicious', 'icon': Icons.cake_rounded, 'color': Colors.orangeAccent, 'screen': const GameScreen(gameId: 'delicious', gameName: 'Delicious')},
+      {'id': 'bounty_football', 'title': 'Bounty Football', 'icon': Icons.sports_soccer_rounded, 'color': Colors.blueAccent, 'screen': const GameScreen(gameId: 'bounty_football', gameName: 'Bounty Football')},
+      {'id': 'greedy_lion', 'title': 'Greedy Lion', 'icon': Icons.pets_rounded, 'color': Colors.amberAccent, 'screen': const GameScreen(gameId: 'greedy_lion', gameName: 'Greedy Lion')},
+      {'id': 'double_seven_77', 'title': 'Double Seven (77)', 'icon': Icons.looks_two_rounded, 'color': Colors.tealAccent, 'screen': const GameScreen(gameId: 'double_seven_77', gameName: 'Double Seven (77)')},
     ];
 
     final primary = AppColors.getPrimary(isDark);
@@ -29,7 +34,7 @@ class GamesTab extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Trending Games',
+                'Official ZeParty Games (10)',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -42,7 +47,7 @@ class GamesTab extends StatelessWidget {
                   MaterialPageRoute(builder: (_) => const GameLobbyScreen()),
                 ),
                 child: Text(
-                  'Lobby',
+                  'Full Lobby',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
@@ -93,16 +98,18 @@ class GamesTab extends StatelessWidget {
                           color: color.withValues(alpha: 0.15),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(game['icon'] as IconData, size: 36, color: color),
+                        child: Icon(game['icon'] as IconData, size: 32, color: color),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       Text(
                         game['title'] as String,
                         textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: AppColors.getTextPrimary(isDark),
                           fontWeight: FontWeight.bold,
-                          fontSize: 13,
+                          fontSize: 12.5,
                         ),
                       ),
                     ],

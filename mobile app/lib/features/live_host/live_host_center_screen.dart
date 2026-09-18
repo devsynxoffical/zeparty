@@ -5,6 +5,7 @@ import '../../providers/live_host_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/policy/live_host_policy.dart';
 import '../live/create_live_room_screen.dart';
+import '../settings/support_center_screen.dart';
 
 class LiveHostCenterScreen extends StatelessWidget {
   const LiveHostCenterScreen({super.key});
@@ -335,7 +336,7 @@ class LiveHostCenterScreen extends StatelessWidget {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📜 Live Host Rules & Guidelines opened.')));
                 }),
                 _buildGridOption(context, 'Support', Icons.support_agent_rounded, Colors.orangeAccent, () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('🎧 Live Host Support Desk opened.')));
+                  Navigator.push(context, MaterialPageRoute(builder: (c) => const SupportCenterScreen()));
                 }),
                 _buildGridOption(context, 'Settings', Icons.settings_rounded, Colors.grey, () {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('⚙️ Live Host Payment Settings opened.')));

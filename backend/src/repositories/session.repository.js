@@ -4,6 +4,27 @@ export async function createSession(
   { userId, refreshTokenHash, ipAddress, userAgent, expiresAt },
   db = prisma
 ) {
+  // Ensure a User record exists for this userId (needed if userId is an Admin ID)
+  const existingUser = await db.user.findUnique({ where: { id: userId } });
+  if (!existingUser) {
+    const admin = await db.admin.findUnique({ where: { id: userId } });
+    if (admin) {
+      const safeUsername = `admin_shadow_${admin.id.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+      await db.user.upsert({
+        where: { id: admin.id },
+        update: {},
+        create: {
+          id: admin.id,
+          username: safeUsername,
+          status: 'ACTIVE',
+          userType: 'USER',
+        },
+      }).catch((e) => {
+        console.error('Shadow user upsert warning:', e.message);
+      });
+    }
+  }
+
   return await db.userSession.create({
     data: {
       userId,

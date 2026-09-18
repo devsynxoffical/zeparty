@@ -3,7 +3,7 @@
 // 2026 Developer Specification Alignment
 // ============================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Store, Plus, Search, ShieldCheck, Coins, CheckCircle, Package, Globe, UserCheck, AlertTriangle, UserPlus, UserMinus, History, FileText, DollarSign, Wallet, Power } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -12,13 +12,14 @@ import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Tooltip } from '../../components/ui/Tooltip';
-import { MOCK_COIN_SELLERS } from '../../mocks/leaderboards.mock';
+import { Toast } from '../../components/ui/Toast';
 import { formatNumber, formatCurrency, formatDate } from '../../utils/format';
-import { CURRENT_COINS_SELLER_POLICY } from '../../mocks/policyConfig.mock';
 import { useAuditLog } from '../../context/AuditLogContext';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { CountrySelect } from '../../components/ui/CountrySelect';
 import { getCountryShortName } from '../../constants/countries.data';
+import apiClient from '../../services/api';
+import { getCoinSellers, createCoinSeller, toggleSellerStatus, allocateCoinsToSeller, correctSellerBalance, deleteCoinSeller, updateCoinSeller } from '../../services/modules/coinSellers.service';
 
 const PACKAGES = [
   { value: '300', label: '$300 Package', coins: 2205000, profit: '5%' },
@@ -28,24 +29,40 @@ const PACKAGES = [
 
 export function CoinSellersPage() {
   const { logAdminAction } = useAuditLog();
-  const [sellers, setSellers] = useState(
-    MOCK_COIN_SELLERS.map((s, idx) => ({
-      ...s,
-      country: s.country || (idx % 2 === 0 ? 'US' : 'AE'),
-      insuranceStatus: 'verified',
-      policyInfraction: false,
-      packageTier: s.packageTier || '$1,000 Reseller Tier',
-      profitPercent: s.profitPercent || 10,
-      totalIssued: s.totalSold || 7700000,
-      currentBalance: Math.floor((s.totalSold || 7700000) * 0.25),
-      distributedCoins: Math.floor((s.totalSold || 7700000) * 0.75),
-      creditLimit: 20000000,
-      correctionsHistory: [
-        { date: '2026-08-20', type: 'COIN_CREDIT', amount: 500000, note: 'Approved operational credit buffer' },
-        { date: '2026-08-15', type: 'TIER_ADJUSTMENT', amount: 0, note: 'Upgraded to 10% Profit Tier' }
-      ]
-    }))
-  );
+  const [sellers, setSellers] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchSellers = async () => {
+    try {
+      setLoading(true);
+      const data = await getCoinSellers();
+      setSellers(
+        (data || []).map((s) => ({
+          ...s,
+          sellerName: s.name || s.id,
+          username: s.username || `@${s.id?.slice(0, 6)}`,
+          country: s.country || 'US',
+          insuranceStatus: 'verified',
+          policyInfraction: false,
+          packageTier: '$1,000 Reseller Tier',
+          profitPercent: s.commissionPct || 10,
+          totalIssued: s.allocatedQuota || s.resellerBalanceCoins || 0,
+          currentBalance: s.resellerBalanceCoins || s.allocatedQuota || 0,
+          distributedCoins: s.soldCoins || 0,
+          creditLimit: s.creditLimit || 20000000,
+          correctionsHistory: [],
+        }))
+      );
+    } catch (err) {
+      console.error('Failed to load coin sellers:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSellers();
+  }, []);
 
   const [search, setSearch] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('All');
@@ -73,12 +90,30 @@ export function CoinSellersPage() {
   const [adjustModal, setAdjustModal] = useState({ open: false, type: 'DEDUCTION', amount: '', reason: '' });
   const [feedback, setFeedback] = useState(null);
 
-  const handleExecuteAdjustment = () => {
+  const showFeedback = (typeOrMsg, msg, title) => {
+    if (typeof typeOrMsg === 'string' && !msg) {
+      setFeedback({
+        type: 'success',
+        message: typeOrMsg,
+        title: 'Action Completed',
+        duration: 4500,
+      });
+    } else {
+      setFeedback({
+        type: typeOrMsg || 'success',
+        message: msg || '',
+        title: title || (typeOrMsg === 'success' ? 'Action Completed' : typeOrMsg === 'warning' ? 'Notice' : 'Operation Failed'),
+        duration: 4500,
+      });
+    }
+  };
+
+  const handleExecuteAdjustment = async () => {
     const seller = historyModal.seller;
     if (!seller) return;
 
     if (!adjustModal.amount || Number(adjustModal.amount) <= 0) {
-      alert('Please enter a valid positive coin amount.');
+      showFeedback('warning', 'Please enter a valid positive coin amount.', 'Invalid Amount');
       return;
     }
 
@@ -86,114 +121,104 @@ export function CoinSellersPage() {
     const isDeduct = adjustModal.type === 'DEDUCTION';
     const noteReason = adjustModal.reason.trim() || (isDeduct ? 'Manual coin deduction correction' : 'Manual coin credit adjustment');
 
-    const updatedSellers = sellers.map((s) => {
-      if (s.id === seller.id) {
-        const newBalance = isDeduct ? Math.max(0, (s.currentBalance || 0) - amt) : (s.currentBalance || 0) + amt;
-        const newTotal = isDeduct ? Math.max(0, (s.totalIssued || 0) - amt) : (s.totalIssued || 0) + amt;
-        const newHistory = [
-          {
-            date: new Date().toISOString().split('T')[0],
-            type: isDeduct ? 'MANUAL_COIN_DEDUCTION' : 'MANUAL_COIN_CREDIT',
-            amount: isDeduct ? -amt : amt,
-            note: noteReason,
-          },
-          ...(s.correctionsHistory || []),
-        ];
-        return {
-          ...s,
-          currentBalance: newBalance,
-          totalIssued: newTotal,
-          correctionsHistory: newHistory,
-        };
-      }
-      return s;
-    });
+    try {
+      setLoading(true);
+      await correctSellerBalance(seller.id, {
+        deltaCoins: isDeduct ? -amt : amt,
+        reason: noteReason,
+      });
+      await fetchSellers();
+      setHistoryModal({ open: false, seller: null });
+      setAdjustModal({ open: false, type: 'DEDUCTION', amount: '', reason: '' });
 
-    setSellers(updatedSellers);
-    const updatedSeller = updatedSellers.find((s) => s.id === seller.id);
-    setHistoryModal({ open: true, seller: updatedSeller });
-    setAdjustModal({ open: false, type: 'DEDUCTION', amount: '', reason: '' });
-
-    logAdminAction({
-      action: 'RESELLER_PAYMENT_ADJUSTED',
-      module: 'CoinSellers',
-      targetType: 'reseller',
-      targetId: seller.id,
-      targetName: seller.sellerName,
-      reason: `Manual adjustment (${isDeduct ? 'Deducted' : 'Added'} ${amt} coins): ${noteReason}`,
-      riskLevel: 'HIGH',
-    });
+      logAdminAction({
+        action: 'RESELLER_PAYMENT_ADJUSTED',
+        module: 'CoinSellers',
+        targetType: 'reseller',
+        targetId: seller.id,
+        targetName: seller.sellerName,
+        reason: `Manual adjustment (${isDeduct ? 'Deducted' : 'Added'} ${amt} coins): ${noteReason}`,
+        riskLevel: 'HIGH',
+      });
+      showFeedback('success', `Balance adjusted successfully for ${seller.sellerName}.`, 'Adjustment Successful');
+    } catch (err) {
+      showFeedback('error', err.response?.data?.message || err.message || 'Failed to adjust balance.', 'Adjustment Failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filtered = useMemo(() => {
     return sellers.filter((s) => {
       const q = search.toLowerCase();
       const matchCountry = !selectedCountry || selectedCountry === 'All' || selectedCountry === 'GLOBAL' || s.country?.toLowerCase() === selectedCountry.toLowerCase();
-      const matchQuery = !q || s.sellerName.toLowerCase().includes(q) || s.username.toLowerCase().includes(q) || (s.id && s.id.toLowerCase().includes(q));
+      const matchQuery = !q || s.sellerName?.toLowerCase().includes(q) || s.username?.toLowerCase().includes(q) || (s.id && s.id.toLowerCase().includes(q));
       return matchCountry && matchQuery;
     });
   }, [search, selectedCountry, sellers]);
 
-  const showFeedback = (msg) => {
-    setFeedback(msg);
-    setTimeout(() => setFeedback(null), 3500);
-  };
-
   // Add new Reseller role
   const handleAddResellerRole = async () => {
-    if (!newResellerForm.username || !newResellerForm.sellerName) return;
+    if (!newResellerForm.username || !newResellerForm.sellerName) {
+      showFeedback('warning', 'Please provide both a username and display/business name.', 'Missing Fields');
+      return;
+    }
 
-    const newSeller = {
-      id: `seller-${Date.now()}`,
-      username: newResellerForm.username.replace('@', ''),
-      sellerName: newResellerForm.sellerName,
-      country: newResellerForm.country,
-      status: 'active',
-      insuranceStatus: 'verified',
-      policyInfraction: false,
-      packageTier: 'Custom Coin Policy',
-      profitPercent: 10,
-      totalIssued: Number(newResellerForm.initialCredit) || 0,
-      currentBalance: Number(newResellerForm.initialCredit) || 0,
-      distributedCoins: 0,
-      creditLimit: Number(newResellerForm.creditLimit) || 10000000,
-      correctionsHistory: [
-        { date: new Date().toISOString().split('T')[0], type: 'ROLE_ASSIGNED', amount: Number(newResellerForm.initialCredit), note: 'Assigned reseller role and initial coin credit' }
-      ]
-    };
+    try {
+      setLoading(true);
+      await createCoinSeller({
+        username: newResellerForm.username.replace('@', '').trim(),
+        businessName: newResellerForm.sellerName.trim(),
+        country: newResellerForm.country,
+        initialCredit: Number(newResellerForm.initialCredit) || 0,
+        creditLimitUSD: (Number(newResellerForm.creditLimit) || 10000000) / 1000,
+      });
 
-    setSellers([newSeller, ...sellers]);
-    setAddResellerModal(false);
-    setNewResellerForm({ username: '', sellerName: '', country: 'US', initialCredit: '500000', creditLimit: '10000000' });
+      await fetchSellers();
+      setAddResellerModal(false);
+      setNewResellerForm({ username: '', sellerName: '', country: 'US', initialCredit: '500000', creditLimit: '10000000' });
 
-    await logAdminAction({
-      action: 'RESELLER_ROLE_ADDED',
-      module: 'Recharge',
-      targetType: 'reseller',
-      targetId: newSeller.username,
-      targetName: newSeller.sellerName,
-      reason: `Assigned Reseller role with initial credit of ${newSeller.currentBalance} coins`,
-      riskLevel: 'HIGH',
-    });
+      await logAdminAction({
+        action: 'RESELLER_ROLE_ADDED',
+        module: 'Recharge',
+        targetType: 'reseller',
+        targetId: newResellerForm.username,
+        targetName: newResellerForm.sellerName,
+        reason: `Assigned Reseller role with initial credit of ${newResellerForm.initialCredit} coins`,
+        riskLevel: 'HIGH',
+      });
 
-    showFeedback(`Reseller role assigned to @${newSeller.username}.`);
+      showFeedback('success', `Reseller created and saved to database.`, 'Reseller Created');
+    } catch (err) {
+      showFeedback('error', err.response?.data?.message || err.message || 'Failed to create coin seller.', 'Creation Failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Remove Reseller role
   const handleRemoveResellerRole = async (seller) => {
-    setSellers(sellers.filter((s) => s.username !== seller.username));
+    try {
+      setLoading(true);
+      await deleteCoinSeller(seller.id);
+      await fetchSellers();
 
-    await logAdminAction({
-      action: 'RESELLER_ROLE_REMOVED',
-      module: 'Recharge',
-      targetType: 'reseller',
-      targetId: seller.username,
-      targetName: seller.sellerName,
-      reason: `Revoked Reseller role`,
-      riskLevel: 'HIGH',
-    });
+      await logAdminAction({
+        action: 'RESELLER_ROLE_REMOVED',
+        module: 'Recharge',
+        targetType: 'reseller',
+        targetId: seller.username,
+        targetName: seller.sellerName,
+        reason: `Removed Reseller role`,
+        riskLevel: 'HIGH',
+      });
 
-    showFeedback(`Reseller role revoked for @${seller.username}.`);
+      showFeedback('success', `Reseller role removed for @${seller.username}.`, 'Role Removed');
+    } catch (err) {
+      showFeedback('error', err.response?.data?.message || err.message || 'Failed to remove reseller role.', 'Removal Failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Issue custom coin amount
@@ -208,41 +233,36 @@ export function CoinSellersPage() {
       coinsToIssue = Number(customCoins);
     }
 
-    if (!coinsToIssue || coinsToIssue <= 0) return;
+    if (!coinsToIssue || coinsToIssue <= 0) {
+      showFeedback('warning', 'Please specify a valid positive amount of coins to issue.', 'Invalid Amount');
+      return;
+    }
 
-    setSellers(sellers.map(s => {
-      if (s.username === issueModal.seller.username) {
-        const newTotalIssued = (s.totalIssued || 0) + coinsToIssue;
-        const newBalance = (s.currentBalance || 0) + coinsToIssue;
-        const newHistory = [
-          { date: new Date().toISOString().split('T')[0], type: 'CUSTOM_COINS_ISSUED', amount: coinsToIssue, note: issueReason || 'Issued custom coin allocation' },
-          ...(s.correctionsHistory || [])
-        ];
-        return {
-          ...s,
-          totalIssued: newTotalIssued,
-          currentBalance: newBalance,
-          correctionsHistory: newHistory
-        };
-      }
-      return s;
-    }));
+    try {
+      setLoading(true);
+      await allocateCoinsToSeller(issueModal.seller.id, coinsToIssue, issueReason || 'Issued custom coin allocation');
+      await fetchSellers();
 
-    await logAdminAction({
-      action: 'RESELLER_COINS_ISSUED',
-      module: 'Recharge',
-      targetType: 'reseller',
-      targetId: issueModal.seller?.username,
-      targetName: issueModal.seller?.sellerName,
-      reason: issueReason || `Issued ${formatNumber(coinsToIssue)} custom reseller coins`,
-      riskLevel: 'HIGH',
-      afterValue: { coinsIssued: coinsToIssue }
-    });
+      await logAdminAction({
+        action: 'RESELLER_COINS_ISSUED',
+        module: 'Recharge',
+        targetType: 'reseller',
+        targetId: issueModal.seller?.username,
+        targetName: issueModal.seller?.sellerName,
+        reason: issueReason || `Issued ${formatNumber(coinsToIssue)} custom reseller coins`,
+        riskLevel: 'HIGH',
+        afterValue: { coinsIssued: coinsToIssue }
+      });
 
-    showFeedback(`Issued ${formatNumber(coinsToIssue)} coins to ${issueModal.seller?.sellerName}.`);
-    setIssueModal({ open: false, seller: null });
-    setCustomCoins('');
-    setIssueReason('');
+      showFeedback('success', `Issued ${formatNumber(coinsToIssue)} coins to ${issueModal.seller?.sellerName}.`, 'Coins Issued');
+      setIssueModal({ open: false, seller: null });
+      setCustomCoins('');
+      setIssueReason('');
+    } catch (err) {
+      showFeedback('error', err.response?.data?.message || err.message || 'Failed to issue coins.', 'Issuance Failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Assign Custom Coin Balance / Credit
@@ -253,70 +273,97 @@ export function CoinSellersPage() {
     const newBal = Number(customBalance);
     const newLimit = Number(creditLimit);
 
-    setSellers(sellers.map(s => {
-      if (s.username === seller.username) {
-        return {
-          ...s,
-          currentBalance: isNaN(newBal) ? s.currentBalance : newBal,
-          creditLimit: isNaN(newLimit) ? s.creditLimit : newLimit,
-          correctionsHistory: [
-            { date: new Date().toISOString().split('T')[0], type: 'BALANCE_CREDIT_SET', amount: newBal, note: `Custom balance updated to ${newBal}` },
-            ...(s.correctionsHistory || [])
-          ]
-        };
+    try {
+      setLoading(true);
+      if (!isNaN(newBal)) {
+        const delta = newBal - (seller.currentBalance || 0);
+        if (delta !== 0) {
+          await correctSellerBalance(seller.id, {
+            deltaCoins: delta,
+            reason: `Admin updated balance from ${seller.currentBalance} to ${newBal}`,
+          });
+        }
       }
-      return s;
-    }));
+      await fetchSellers();
 
-    await logAdminAction({
-      action: 'RESELLER_BALANCE_UPDATED',
-      module: 'Recharge',
-      targetType: 'reseller',
-      targetId: seller.username,
-      targetName: seller.sellerName,
-      reason: `Updated balance to ${newBal} coins, limit to ${newLimit}`,
-      riskLevel: 'HIGH',
-    });
+      await logAdminAction({
+        action: 'RESELLER_BALANCE_UPDATED',
+        module: 'Recharge',
+        targetType: 'reseller',
+        targetId: seller.username,
+        targetName: seller.sellerName,
+        reason: `Updated balance to ${newBal} coins, limit to ${newLimit}`,
+        riskLevel: 'HIGH',
+      });
 
-    showFeedback(`Updated balance & credit limits for ${seller.sellerName}.`);
-    setBalanceModal({ open: false, seller: null, customBalance: '', creditLimit: '' });
+      showFeedback('success', `Updated balance & credit limits for ${seller.sellerName}.`, 'Balance Updated');
+      setBalanceModal({ open: false, seller: null, customBalance: '', creditLimit: '' });
+    } catch (err) {
+      showFeedback('error', err.response?.data?.message || err.message || 'Failed to update balance.', 'Balance Update Failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUpdateCountry = async () => {
     const { seller, newCountry } = countryModal;
     if (!seller) return;
 
-    setSellers(sellers.map(s => s.username === seller.username ? { ...s, country: newCountry } : s));
+    try {
+      setLoading(true);
+      if (seller.id) {
+        await updateCoinSeller(seller.id, { countryCode: newCountry });
+      } else if (seller.userId) {
+        await apiClient.put(`/v1/admin/users/${seller.userId}`, { countryCode: newCountry });
+      }
 
-    await logAdminAction({
-      action: 'RESELLER_COUNTRY_MAPPED',
-      module: 'Recharge',
-      targetType: 'reseller',
-      targetId: seller.username,
-      targetName: seller.sellerName,
-      reason: `Mapped reseller to country ${newCountry}`,
-      riskLevel: 'MEDIUM',
-    });
+      setSellers((prev) =>
+        prev.map((s) => (s.id === seller.id ? { ...s, country: newCountry } : s))
+      );
+      await fetchSellers();
 
-    showFeedback(`Reseller ${seller.sellerName} mapped to ${newCountry}.`);
-    setCountryModal({ open: false, seller: null, newCountry: 'US' });
+      await logAdminAction({
+        action: 'RESELLER_COUNTRY_MAPPED',
+        module: 'Recharge',
+        targetType: 'reseller',
+        targetId: seller.username,
+        targetName: seller.sellerName,
+        reason: `Updated reseller registered country to ${getCountryShortName(newCountry)}`,
+        riskLevel: 'MEDIUM',
+      });
+
+      showFeedback('success', `Updated country for ${seller.sellerName} to ${getCountryShortName(newCountry)}.`, 'Country Mapped');
+      setCountryModal({ open: false, seller: null, newCountry: 'US' });
+    } catch (err) {
+      showFeedback('error', err.response?.data?.message || err.message || 'Failed to update seller country.', 'Country Update Failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleToggleStatus = async (seller) => {
-    const newStatus = seller.status === 'active' ? 'suspended' : 'active';
-    setSellers(sellers.map(s => s.username === seller.username ? { ...s, status: newStatus } : s));
+    try {
+      setLoading(true);
+      await toggleSellerStatus(seller.id, seller.status);
+      await fetchSellers();
 
-    await logAdminAction({
-      action: `RESELLER_${newStatus.toUpperCase()}`,
-      module: 'Recharge',
-      targetType: 'reseller',
-      targetId: seller.username,
-      targetName: seller.sellerName,
-      reason: `Administrator set status to ${newStatus}`,
-      riskLevel: 'HIGH',
-    });
+      const newStatus = seller.status === 'active' ? 'suspended' : 'active';
+      await logAdminAction({
+        action: `RESELLER_${newStatus.toUpperCase()}`,
+        module: 'Recharge',
+        targetType: 'reseller',
+        targetId: seller.username,
+        targetName: seller.sellerName,
+        reason: `Administrator set status to ${newStatus}`,
+        riskLevel: 'HIGH',
+      });
 
-    showFeedback(`Reseller ${seller.sellerName} is now ${newStatus}.`);
+      showFeedback('success', `Reseller ${seller.sellerName} is now ${newStatus}.`, 'Status Changed');
+    } catch (err) {
+      showFeedback('error', err.response?.data?.message || err.message || 'Failed to toggle status.', 'Status Change Failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const columns = [
@@ -437,12 +484,8 @@ export function CoinSellersPage() {
         </Button>
       </div>
 
-      {feedback && (
-        <div className="p-3.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center gap-2">
-          <CheckCircle className="h-4 w-4 flex-shrink-0" />
-          <span>{feedback}</span>
-        </div>
-      )}
+      {/* Floating In-App Toast Notification */}
+      <Toast toast={feedback} onClose={() => setFeedback(null)} />
 
       {/* Policy Header Banner */}
       <Card className="p-4 border-emerald-500/30 bg-emerald-950/20">

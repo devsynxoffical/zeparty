@@ -2,7 +2,7 @@
 // ZeParty Admin Portal — Admin Login Page (JSX)
 // ============================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, Lock, User } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
@@ -22,10 +22,13 @@ export function AdminLogin() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  if (isAuthenticated) {
-    navigate(from, { replace: true });
-    return null;
-  }
+  // Redirect already-authenticated users — must be in useEffect, not render body,
+  // to avoid an infinite re-render loop (navigate() during render causes a loop).
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, navigate, from]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -154,14 +157,6 @@ export function AdminLogin() {
               Sign in to portal
             </Button>
           </form>
-
-          <div className="mt-4 rounded-lg bg-slate-950/60 border border-slate-800 px-3 py-2.5 space-y-1">
-            <p className="text-[11px] text-slate-400 text-center">
-              <span className="font-semibold text-slate-300">Super Admin:</span>{' '}
-              username <code className="text-gold-400">admin</code> / password <code className="text-gold-400">admin123</code>
-            </p>
-
-          </div>
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-600">

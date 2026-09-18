@@ -3,7 +3,7 @@
 // 2026 Developer Specification Alignment + Auto-Calculated Reports
 // ============================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Layers,
   Search,
@@ -34,123 +34,9 @@ import { Card } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
-import { MOCK_LEDGER_CHAIN } from '../../mocks/transactionLedger.mock';
+import { getMasterLedger } from '../../services/modules/finance.service';
 import { formatNumber, formatDate, formatCurrency } from '../../utils/format';
 import { useAuditLog } from '../../context/AuditLogContext';
-
-// Additional Coin Sellers & Merchants Coin Allocation Mock Transactions
-const INITIAL_COIN_SALES = [
-  {
-    txnId: 'TXN-CS-801',
-    timestamp: '2026-08-28T14:20:00.000Z',
-    type: 'COINS',
-    entityType: 'SELLER',
-    entityName: 'CoinMaster Pro',
-    username: '@coinmaster_pro',
-    userRef: 'usr-8812',
-    packageTier: '$1,000 Reseller Tier',
-    coinsDelivered: 7700000,
-    grossAmountUSD: 1000.0,
-    discountPercent: 10, // 10% Discount
-    netAmountUSD: 900.0,
-    discountSavingsUSD: 100.0,
-    grossAmountPKR: 280000,
-    netAmountPKR: 252000,
-    discountSavingsPKR: 28000,
-    paymentMethod: 'Bank Wire Transfer (HBL)',
-    status: 'SUCCESS',
-    chainId: 'CHAIN-COIN-001',
-    operator: 'Super Admin',
-  },
-  {
-    txnId: 'TXN-CS-802',
-    timestamp: '2026-08-25T11:10:00.000Z',
-    type: 'COINS',
-    entityType: 'SELLER',
-    entityName: 'Apex Global Distribution',
-    username: '@apex_dist',
-    userRef: 'usr-9012',
-    packageTier: '$500 Reseller Tier',
-    coinsDelivered: 3675000,
-    grossAmountUSD: 500.0,
-    discountPercent: 5, // 5% Discount
-    netAmountUSD: 475.0,
-    discountSavingsUSD: 25.0,
-    grossAmountPKR: 140000,
-    netAmountPKR: 133000,
-    discountSavingsPKR: 7000,
-    paymentMethod: 'USDT (TRC20)',
-    status: 'SUCCESS',
-    chainId: 'CHAIN-COIN-002',
-    operator: 'Finance Admin',
-  },
-  {
-    txnId: 'TXN-MC-901',
-    timestamp: '2026-08-20T09:45:00.000Z',
-    type: 'COINS',
-    entityType: 'MERCHANT',
-    entityName: 'SilkRoad Pay Enterprise',
-    username: '@silkroad_pay',
-    userRef: 'usr-7741',
-    packageTier: '$3,000 Merchant Enterprise',
-    coinsDelivered: 25200000,
-    grossAmountUSD: 3000.0,
-    discountPercent: 16, // 16% Discount
-    netAmountUSD: 2520.0,
-    discountSavingsUSD: 480.0,
-    grossAmountPKR: 840000,
-    netAmountPKR: 705600,
-    discountSavingsPKR: 134400,
-    paymentMethod: 'Bank Wire Transfer (Mezan Bank)',
-    status: 'SUCCESS',
-    chainId: 'CHAIN-COIN-003',
-    operator: 'Root Owner',
-  },
-  {
-    txnId: 'TXN-CS-803',
-    timestamp: '2026-08-15T16:30:00.000Z',
-    type: 'COINS',
-    entityType: 'SELLER',
-    entityName: 'Desert Eagle Pay AE',
-    username: '@desert_eagle',
-    userRef: 'usr-3319',
-    packageTier: '$300 Reseller Tier',
-    coinsDelivered: 2205000,
-    grossAmountUSD: 300.0,
-    discountPercent: 5,
-    netAmountUSD: 285.0,
-    discountSavingsUSD: 15.0,
-    grossAmountPKR: 84000,
-    netAmountPKR: 79800,
-    discountSavingsPKR: 4200,
-    paymentMethod: 'Local E-Wallet',
-    status: 'SUCCESS',
-    chainId: 'CHAIN-COIN-004',
-    operator: 'Finance Admin',
-  },
-  {
-    txnId: 'TXN-MC-902',
-    timestamp: '2026-08-10T12:00:00.000Z',
-    type: 'COINS',
-    entityType: 'MERCHANT',
-    entityName: 'NovaPay Solutions Global',
-    username: '@novapay_io',
-    userRef: 'usr-5521',
-    packageTier: '$3,000 Merchant Enterprise',
-    coinsDelivered: 25200000,
-    grossAmountUSD: 3000.0,
-    discountPercent: 15,
-    netAmountUSD: 2550.0,
-    discountSavingsUSD: 450.0,
-    grossAmountPKR: 840000,
-    netAmountPKR: 714000,
-    discountSavingsPKR: 126000,
-    paymentMethod: 'USDT (TRC20)',
-    status: 'SUCCESS',
-    chainId: 'CHAIN-COIN-005',
-    operator: 'Super Admin',
-  },
-];
 
 export function TransactionLedgerPage() {
   const { logAdminAction } = useAuditLog();
@@ -159,19 +45,39 @@ export function TransactionLedgerPage() {
   const [activeView, setActiveView] = useState('ledger');
 
   // Ledger state
-  const [ledger, setLedger] = useState(
-    MOCK_LEDGER_CHAIN.map((tx) => ({
-      ...tx,
-      sellerId: tx.sellerId || null,
-      merchantId: tx.merchantId || null,
-      withdrawalId: tx.withdrawalId || null,
-      rate: tx.rate || '10,000/$1',
-      operator: tx.operator || 'System Automated',
-      linkedRecords: tx.relatedTxnIds || [],
-    }))
-  );
+  const [ledger, setLedger] = useState([]);
+  const [coinSales, setCoinSales] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [coinSales, setCoinSales] = useState(INITIAL_COIN_SALES);
+  useEffect(() => {
+    getMasterLedger({ limit: 100 })
+      .then((res) => {
+        const rawItems = res?.data || [];
+        const formatted = rawItems.map((tx) => ({
+          txnId: tx.id,
+          timestamp: tx.createdAt,
+          type: tx.type,
+          user: tx.wallet?.user?.username || tx.wallet?.userId || 'System',
+          userId: tx.wallet?.userId,
+          source: tx.source || (tx.type === 'RECHARGE' ? 'Gateway' : 'Wallet'),
+          destination: tx.destination || (tx.type === 'WITHDRAWAL' ? 'Payout Account' : 'Wallet'),
+          amountUSD: Number(tx.amount || 0),
+          coinsAdded: Number(tx.coinAmount > 0 ? tx.coinAmount : 0),
+          coinsSpent: Number(tx.coinAmount < 0 ? Math.abs(tx.coinAmount) : 0),
+          status: tx.status || 'SUCCESS',
+          chainId: tx.referenceId || `CHAIN-${tx.id.slice(0, 8)}`,
+          operator: tx.operator || 'System Automated',
+          linkedRecords: tx.referenceId ? [tx.referenceId] : [],
+          rate: tx.rate || '10,000/$1',
+          note: tx.reason || '',
+        }));
+        setLedger(formatted);
+      })
+      .catch((err) => {
+        console.error('Failed to load ledger transactions:', err);
+      })
+      .finally(() => setIsLoading(false));
+  }, []);
 
   // Filters
   const [search, setSearch] = useState('');

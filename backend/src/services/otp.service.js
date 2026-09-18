@@ -4,6 +4,8 @@ import { checkRateLimit } from '../utils/rate-limiter.util.js';
 import { normalizePhone } from '../utils/phone.util.js';
 import otpRepository from '../repositories/otp.repository.js';
 import mockProvider from './otp/mock.provider.js';
+import twilioProvider from './otp/twilio.provider.js';
+import snsProvider from './otp/sns.provider.js';
 
 export { normalizePhone };
 
@@ -57,16 +59,28 @@ export async function requestOtp({ phone, purpose = 'LOGIN', ipAddress, logger }
 
   // Select provider & deliver
   let providerResult;
-  if (env.OTP_PROVIDER === 'mock' || env.NODE_ENV === 'test' || env.NODE_ENV === 'development') {
-    providerResult = await mockProvider.sendOtp({
+  if (env.OTP_PROVIDER === 'twilio') {
+    providerResult = await twilioProvider.sendOtp({
+      destination: normalizedPhone,
+      otp: rawOtp,
+      purpose,
+      logger,
+    });
+  } else if (env.OTP_PROVIDER === 'aws_sns') {
+    providerResult = await snsProvider.sendOtp({
       destination: normalizedPhone,
       otp: rawOtp,
       purpose,
       logger,
     });
   } else {
-    // Production provider fallback safeguards
-    throw new Error('Production SMS provider is not configured.');
+    // Default mock / dev / test provider
+    providerResult = await mockProvider.sendOtp({
+      destination: normalizedPhone,
+      otp: rawOtp,
+      purpose,
+      logger,
+    });
   }
 
   return {

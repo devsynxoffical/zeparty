@@ -2,27 +2,48 @@
 node_modules/
 **/node_modules/
 
-# Build outputs & Archives
+# Build outputs
 dist/
 **/dist/
 build/
 **/build/
+.dart_tool/
+**/.dart_tool/
 *.tar
 *.tar.gz
-*.tgz
 *.zip
 
-# Environment & Logs
+# Environment
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+
+# Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 
-# IDE & System
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
+# Excluded by request: Docs, Plans, Readmes, Markdown
+docs/
+**/docs/
+*.md
+**/*.md
+*.txt
+**/*.txt
+temp_mobile/
+
+# Excluded by request: Tests & test runners
+tests/
+**/tests/
+test/
+**/test/
+test_*.js
+**/test_*.js
+run_all_tests.js
+**/run_all_tests.js
+check_*.js
+**/check_*.js
+quick_test.js
+**/quick_test.js
+verify_*.js
+**/verify_*.js

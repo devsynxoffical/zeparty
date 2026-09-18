@@ -43,21 +43,16 @@ export function LiveRoomsPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Load rooms
+  // Load rooms from backend
   useEffect(() => {
+    setIsLoading(true);
     getLiveRooms()
       .then((data) => {
-        // Enforce roomType attributes and country tags rotation
-        const formatted = data.map((r, i) => {
-          const countryObj = AVAILABLE_COUNTRIES[i % AVAILABLE_COUNTRIES.length];
-          return {
-            ...r,
-            roomType: i % 2 === 0 ? 'live' : 'party', // Even indices are Live Video Rooms, odd are Party Rooms
-            country: r.country || countryObj.code,
-            id: r.id || `room-00${i + 1}`
-          };
-        });
-        setRooms(formatted);
+        setRooms(data || []);
+      })
+      .catch((err) => {
+        console.error('Failed to load rooms:', err);
+        setRooms([]);
       })
       .finally(() => setIsLoading(false));
   }, []);

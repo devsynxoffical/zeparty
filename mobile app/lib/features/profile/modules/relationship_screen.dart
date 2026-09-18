@@ -108,7 +108,7 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
         type: 'Game Friend',
         imageUrl: 'assets/images/game_buddy.png',
         coinPrice: 200,
-        benefits: 'Game Team-up Badge, Extra Lucky Wheel Free Spins',
+        benefits: 'Game Team-up Badge, Extra Game Bonus Rewards',
         maxCount: 20,
       ),
     ];

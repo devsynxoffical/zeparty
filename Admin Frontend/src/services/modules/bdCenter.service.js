@@ -2,51 +2,64 @@
 // ZeParty Admin Portal — BD Center Service (JavaScript)
 // ============================================================
 
-import { MOCK_BD_CENTERS } from '../../mocks/bdCenters.mock';
+import apiClient from '../api';
 
-let bdCentersState = [...MOCK_BD_CENTERS];
-
-export async function getBDCenters() {
-  await new Promise((res) => setTimeout(res, 200));
-  return [...bdCentersState];
+export async function getBDCenters(params = {}) {
+  const res = await apiClient.get('/v1/admin/bd-centers', { params });
+  const items = res.data?.data || [];
+  return items.map((b) => ({
+    id: b.id,
+    name: b.name,
+    code: b.code || `BDC-${b.id.slice(0, 6).toUpperCase()}`,
+    ownerUserId: b.ownerUserId,
+    ownerUsername: b.owner?.username || b.ownerUserId,
+    status: b.status || 'ACTIVE',
+    region: b.region || 'GLOBAL',
+    commissionPercent: Number(b.commissionPercent || 5),
+    activeHostsCount: b._count?.hosts || b.hosts?.length || 0,
+    activeAgenciesCount: b._count?.agencies || b.agencies?.length || 0,
+    monthlyVolumeCoins: Number(b.monthlyVolumeCoins || 0),
+    createdAt: b.createdAt,
+    updatedAt: b.updatedAt,
+  }));
 }
 
 export async function getBDCenterById(id) {
-  await new Promise((res) => setTimeout(res, 150));
-  const found = bdCentersState.find((b) => b.id === id);
-  if (!found) throw new Error(`BD Center with ID ${id} not found`);
-  return { ...found };
+  const res = await apiClient.get(`/v1/admin/bd-centers/${id}`);
+  return res.data?.data;
 }
 
 export async function createBDCenter(payload) {
-  await new Promise((res) => setTimeout(res, 300));
-  const newCenter = {
-    id: `bdc-${Date.now().toString().slice(-4)}`,
-    code: `BDC-${(payload.region || 'GEN').toUpperCase().slice(0, 4)}-${Math.floor(10 + Math.random() * 90)}`,
-    status: 'ACTIVE',
-    activeHostsCount: 0,
-    activeAgenciesCount: 0,
-    monthlyVolumeCoins: 0,
-    createdAt: new Date().toISOString(),
-    ...payload,
-  };
-  bdCentersState = [newCenter, ...bdCentersState];
-  return newCenter;
+  const res = await apiClient.post('/v1/admin/bd-centers', payload);
+  return res.data?.data;
 }
 
 export async function updateBDCenter(id, updates) {
-  await new Promise((res) => setTimeout(res, 300));
-  bdCentersState = bdCentersState.map((b) => (b.id === id ? { ...b, ...updates } : b));
-  return { success: true };
+  const res = await apiClient.put(`/v1/admin/bd-centers/${id}`, updates);
+  return res.data?.data;
 }
 
 export async function deactivateBDCenter(id) {
-  await new Promise((res) => setTimeout(res, 300));
-  bdCentersState = bdCentersState.map((b) => (b.id === id ? { ...b, status: 'INACTIVE' } : b));
-  return { success: true };
+  const res = await apiClient.put(`/v1/admin/bd-centers/${id}`, { status: 'INACTIVE' });
+  return res.data;
 }
 
-export async function assignBDCenter(entityType, entityId, bdCenterId) {
-  await new Promise((res) => setTimeout(res, 250));
-  return { success: true, entityType, entityId, bdCenterId };
+export async function sendBDCenterInvite(id, payload) {
+  const res = await apiClient.post(`/v1/admin/bd-centers/${id}/invites`, payload);
+  return res.data?.data;
 }
+
+export async function getBDCenterInvites(id) {
+  const res = await apiClient.get(`/v1/admin/bd-centers/${id}/invites`);
+  return res.data?.data || [];
+}
+
+export default {
+  getBDCenters,
+  getBDCenterById,
+  createBDCenter,
+  updateBDCenter,
+  deactivateBDCenter,
+  sendBDCenterInvite,
+  getBDCenterInvites,
+};

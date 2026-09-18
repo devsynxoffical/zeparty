@@ -20,18 +20,20 @@ import { getCountryName } from '../../constants/countries.data';
 import { formatNumber } from '../../utils/format';
 import { useAuditLog } from '../../context/AuditLogContext';
 import { getLiveRooms } from '../../services/modules/liveRooms.service';
-import {
-  PIN_TYPES,
-  MOCK_PINNED_ROOMS,
-  MOCK_PIN_HISTORY
-} from '../../mocks/roomPins.mock';
+
+const PIN_TYPES = [
+  { id: 'global_top', label: 'Global Top Pin (Slot 1-3)', color: 'gold', badge: 'GLOBAL TOP' },
+  { id: 'category_top', label: 'Category Top Pin', color: 'purple', badge: 'CATEGORY TOP' },
+  { id: 'country_top', label: 'Country Priority Pin', color: 'blue', badge: 'COUNTRY PIN' },
+  { id: 'hot_recommendation', label: 'Hot Feed Recommendation', color: 'emerald', badge: 'HOT FEED' }
+];
 
 export function RoomPinManagementPage() {
   const navigate = useNavigate();
   const { logAdminAction } = useAuditLog();
 
-  const [pinnedRooms, setPinnedRooms] = useState(MOCK_PINNED_ROOMS);
-  const [pinHistory, setPinHistory] = useState(MOCK_PIN_HISTORY);
+  const [pinnedRooms, setPinnedRooms] = useState([]);
+  const [pinHistory, setPinHistory] = useState([]);
   const [availableLiveRooms, setAvailableLiveRooms] = useState([]);
   const [activeTab, setActiveTab] = useState('active'); // active, history
   const [search, setSearch] = useState('');
@@ -110,8 +112,8 @@ export function RoomPinManagementPage() {
       expiresAt: expires,
       durationHours: pinForm.isPermanent ? 'Permanent' : Number(pinForm.durationHours),
       status: 'ACTIVE',
-      viewersCount: selectedRoom.viewers || 2400,
-      giftsVolumeCoins: 120000,
+      viewersCount: Number(selectedRoom.viewers || 0),
+      giftsVolumeCoins: Number(selectedRoom.giftsReceived || 0),
       notes: pinForm.notes || 'Pin created from Admin Panel'
     };
 
