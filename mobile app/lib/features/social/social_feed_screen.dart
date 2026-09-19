@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
+import '../../models/post_model.dart';
 import '../../providers/social_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/post_card.dart';
@@ -10,6 +13,8 @@ import '../../widgets/comments_sheet.dart';
 import '../../widgets/app_logo.dart';
 import 'create_post_screen.dart';
 import 'short_videos_screen.dart';
+import 'camera_recorder_screen.dart';
+import '../../core/services/room_share_service.dart';
 
 class SocialFeedScreen extends StatefulWidget {
   const SocialFeedScreen({super.key});
@@ -20,16 +25,6 @@ class SocialFeedScreen extends StatefulWidget {
 
 class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-
-  final List<Map<String, dynamic>> _stories = [
-    {'name': 'Your Story', 'emoji': '➕', 'isMe': true},
-    {'name': 'Luna', 'emoji': '🌙', 'isMe': false},
-    {'name': 'StarX', 'emoji': '⭐', 'isMe': false},
-    {'name': 'NeonX', 'emoji': '💜', 'isMe': false},
-    {'name': 'SkyDJ', 'emoji': '🎧', 'isMe': false},
-    {'name': 'Aria', 'emoji': '🎤', 'isMe': false},
-    {'name': 'Leo', 'emoji': '🦁', 'isMe': false},
-  ];
 
   @override
   void initState() {
@@ -130,15 +125,13 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
               preferredSize: const Size.fromHeight(90),
               child: SizedBox(
                 height: 90,
-                child: ListView.builder(
+                child: ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  itemCount: _stories.length,
-                  itemBuilder: (context, index) {
-                    final story = _stories[index];
-                    final bool isMe = story['isMe'] as bool;
-                    return _buildStoryItem(story, isMe, auth);
-                  },
+                  children: [
+                    _buildAddStoryItem(auth),
+                    ...social.posts.take(6).map((post) => _buildDynamicStoryItem(post)),
+                  ],
                 ),
               ),
             ),
@@ -184,60 +177,131 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildStoryItem(Map<String, dynamic> story, bool isMe, AuthProvider auth) {
+  Widget _buildAddStoryItem(AuthProvider auth) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final social = context.watch<SocialProvider>();
+    final myStories = social.posts.where((p) =>
+      p.author.id == auth.currentUser.id ||
+      p.author.name.toLowerCase() == auth.currentUser.name.toLowerCase()
+    ).toList();
+    final hasStory = myStories.isNotEmpty;
+    final latestStory = hasStory ? myStories.first : null;
+
     return GestureDetector(
       onTap: () {
         AuthGuard.require(context, () {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(isMe ? 'Add your story' : 'Viewing ${story['name']}\'s story'),
-              duration: const Duration(seconds: 1),
-            ),
-          );
-        }, reason: 'Sign in to view stories');
+          if (hasStory && latestStory != null) {
+            showDialog(
+              context: context,
+              builder: (_) => _FullStoryViewerDialog(post: latestStory, isMyStory: true),
+            );
+          } else {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraRecorderScreen()));
+          }
+        }, reason: 'Sign in to post a story');
       },
       child: Container(
-        margin: const EdgeInsets.only(right: 10),
+        margin: const EdgeInsets.only(right: 12),
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(2),
+              padding: const EdgeInsets.all(2.5),
               decoration: BoxDecoration(
-                gradient: isMe ? null : AppColors.getAccentGradient(isDark),
                 shape: BoxShape.circle,
-                color: isMe ? AppColors.getPrimary(isDark).withValues(alpha: 0.3) : null,
+                gradient: hasStory
+                    ? const LinearGradient(
+                        colors: [Color(0xFFF9CE34), Color(0xFFEE2A7B), Color(0xFF6228D7)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      )
+                    : null,
+                color: hasStory ? null : AppColors.getPrimary(isDark).withValues(alpha: 0.3),
               ),
               child: CircleAvatar(
-                radius: 26,
+                radius: 25,
                 backgroundColor: AppColors.getCard(isDark),
-                child: isMe
-                    ? Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          UserAvatar(imageUrl: auth.currentUser.avatarUrl, radius: 22),
-                          Positioned(
-                            bottom: -2,
-                            right: -2,
-                            child: Container(
-                              padding: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(
-                                color: AppColors.getPrimary(isDark),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(Icons.add, size: 10, color: AppColors.onPrimary(isDark: isDark)),
-                            ),
-                          ),
-                        ],
-                      )
-                    : Text(story['emoji'] as String, style: const TextStyle(fontSize: 22)),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    UserAvatar(imageUrl: auth.currentUser.avatarUrl, radius: 22),
+                    Positioned(
+                      bottom: -2,
+                      right: -2,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: AppColors.getPrimary(isDark),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          hasStory ? Icons.remove_red_eye_rounded : Icons.add,
+                          size: 10,
+                          color: AppColors.onPrimary(isDark: isDark),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              story['name'] as String,
-              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w500),
+              hasStory ? 'My Story ✨' : 'Your Story',
+              style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: hasStory ? FontWeight.bold : FontWeight.w600,
+                color: hasStory ? AppColors.getPrimary(isDark) : null,
+              ),
               overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDynamicStoryItem(PostModel post) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final authorName = post.author.name.isNotEmpty ? post.author.name : 'User';
+    final avatar = post.author.avatarUrl;
+
+    return GestureDetector(
+      onTap: () {
+        showDialog(
+          context: context,
+          builder: (ctx) => _FullStoryViewerDialog(post: post, isMyStory: false),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(right: 12),
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(2.5),
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  colors: [Color(0xFFF9CE34), Color(0xFFEE2A7B), Color(0xFF6228D7)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: CircleAvatar(
+                radius: 25,
+                backgroundColor: AppColors.getCard(isDark),
+                child: UserAvatar(imageUrl: avatar, radius: 22),
+              ),
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              width: 54,
+              child: Text(
+                authorName,
+                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -322,11 +386,7 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
               }, reason: 'Sign in to like posts');
             },
             onComment: () => _showCommentSheet(context, post.id),
-            onShare: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Post link copied to clipboard! 🚀')),
-              );
-            },
+            onShare: () => RoomShareService.sharePost(context, postId: post.id, title: post.content),
           );
         },
       ),
@@ -396,6 +456,243 @@ class _PostSearchDelegate extends SearchDelegate<String> {
           subtitle: Text(post.author.name as String),
         );
       },
+    );
+  }
+}
+
+class _FullStoryViewerDialog extends StatefulWidget {
+  final PostModel post;
+  final bool isMyStory;
+
+  const _FullStoryViewerDialog({
+    required this.post,
+    this.isMyStory = false,
+  });
+
+  @override
+  State<_FullStoryViewerDialog> createState() => _FullStoryViewerDialogState();
+}
+
+class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
+  VideoPlayerController? _videoController;
+  final TextEditingController _replyController = TextEditingController();
+  bool _isVideo = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initMedia();
+  }
+
+  Future<void> _initMedia() async {
+    final mediaList = widget.post.imageUrls;
+    if (mediaList.isNotEmpty) {
+      final String url = mediaList.first;
+      if (url.endsWith('.mp4') || url.endsWith('.mov') || url.endsWith('.m4v') || !url.startsWith('http')) {
+        _isVideo = true;
+        try {
+          if (url.startsWith('http')) {
+            _videoController = VideoPlayerController.networkUrl(Uri.parse(url));
+          } else {
+            _videoController = VideoPlayerController.file(File(url));
+          }
+          await _videoController?.initialize();
+          _videoController?.setLooping(true);
+          await _videoController?.play();
+          if (mounted) setState(() {});
+        } catch (e) {
+          debugPrint('Story video error: $e');
+        }
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _videoController?.dispose();
+    _replyController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildTextFallback() {
+    return Container(
+      color: const Color(0xFF1E1B4B),
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: Text(
+          widget.post.content.isNotEmpty ? widget.post.content : '✨ ZeParty Story',
+          style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final authorName = widget.post.author.name.isNotEmpty ? widget.post.author.name : 'User';
+    final avatar = widget.post.author.avatarUrl;
+    final mediaList = widget.post.imageUrls;
+    final String? mediaUrl = mediaList.isNotEmpty ? mediaList.first : null;
+
+    return Dialog(
+      backgroundColor: Colors.black,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          children: [
+            // Media View (Video or Image)
+            Positioned.fill(
+              child: _isVideo && _videoController != null && _videoController!.value.isInitialized
+                  ? FittedBox(
+                      fit: BoxFit.cover,
+                      child: SizedBox(
+                        width: _videoController!.value.size.width,
+                        height: _videoController!.value.size.height,
+                        child: VideoPlayer(_videoController!),
+                      ),
+                    )
+                  : mediaUrl != null
+                      ? (mediaUrl.startsWith('http')
+                          ? Image.network(
+                              mediaUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => _buildTextFallback(),
+                            )
+                          : Image.file(
+                              File(mediaUrl),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => _buildTextFallback(),
+                            ))
+                      : _buildTextFallback(),
+            ),
+
+            // Gradient Top Overlay for readability
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                height: 120,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.black87, Colors.transparent],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                ),
+              ),
+            ),
+
+            // Top Header: User info + Close Button
+            Positioned(
+              top: 16,
+              left: 16,
+              right: 16,
+              child: Column(
+                children: [
+                  // Progress indicator line
+                  Container(
+                    height: 3,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundImage: NetworkImage(avatar.isNotEmpty ? avatar : 'https://i.pravatar.cc/150'),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            authorName,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                          const Text(
+                            'Just now',
+                            style: TextStyle(color: Colors.white70, fontSize: 10),
+                          ),
+                        ],
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white, size: 24),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // Bottom Bar: Reaction / Reply for viewers or Add New for host
+            Positioned(
+              bottom: 16,
+              left: 16,
+              right: 16,
+              child: widget.isMyStory
+                  ? Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                            onPressed: () {
+                              Navigator.pop(context);
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraRecorderScreen()));
+                            },
+                            icon: const Icon(Icons.add_a_photo_rounded, size: 18),
+                            label: const Text('Add Another Story', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _replyController,
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            decoration: InputDecoration(
+                              hintText: 'Send message to $authorName...',
+                              hintStyle: const TextStyle(color: Colors.white60, fontSize: 12),
+                              filled: true,
+                              fillColor: Colors.white.withValues(alpha: 0.2),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.favorite_rounded, color: Colors.redAccent, size: 28),
+                          onPressed: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('❤️ Reacted to $authorName\'s story!')),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -24,7 +24,12 @@ class PartyRoomCard extends StatelessWidget {
 
     final totalSeats = (room.viewerCount % 3 == 0) ? 4 : 8;
     final occupiedSeats = (room.viewerCount % totalSeats) + 1;
-    final effectiveDp = gameProvider.getEffectiveRoomDp(room.id, room.coverUrl, room.host.region);
+    final effectiveDp = gameProvider.getEffectiveRoomDp(
+      room.id,
+      room.coverUrl,
+      room.host.region,
+      hostAvatarUrl: room.host.avatarUrl,
+    );
 
     return GestureDetector(
       onTap: onTap,
@@ -56,7 +61,9 @@ class PartyRoomCard extends StatelessWidget {
                       effectiveDp,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) => Image.network(
-                        gameProvider.globalDefaultRoomDp,
+                        room.host.avatarUrl.isNotEmpty
+                            ? room.host.avatarUrl
+                            : gameProvider.globalDefaultRoomDp,
                         fit: BoxFit.cover,
                       ),
                     ),

@@ -712,9 +712,12 @@ class GameProvider extends ChangeNotifier {
   // ── Module 04: Room Card Display & Room DP Moderation Logic ──
 
   /// Get effective Room DP with instant moderation fallback safety
-  String getEffectiveRoomDp(String roomId, String? uploadedDp, String? userCountry) {
+  String getEffectiveRoomDp(String roomId, String? uploadedDp, String? userCountry, {String? hostAvatarUrl}) {
     final status = _moderatedRoomDps[roomId];
     if (status == 'rejected' || status == 'removed' || uploadedDp == null || uploadedDp.isEmpty) {
+      if (hostAvatarUrl != null && hostAvatarUrl.isNotEmpty) {
+        return hostAvatarUrl;
+      }
       if (userCountry != null && _countryDefaultRoomDps.containsKey(userCountry)) {
         return _countryDefaultRoomDps[userCountry]!;
       }

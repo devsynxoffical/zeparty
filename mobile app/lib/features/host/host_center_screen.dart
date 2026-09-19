@@ -15,7 +15,41 @@ class HostCenterScreen extends StatelessWidget {
     final authUser = context.watch<AuthProvider>().currentUser;
     final agencyProv = context.watch<AgencyProvider>();
 
-    final audioHost = agencyProv.getAudioHostByUserId(authUser.id) ?? agencyProv.audioHosts.first;
+    final audioHost = agencyProv.getAudioHostByUserId(authUser.id) ?? (agencyProv.audioHosts.isNotEmpty ? agencyProv.audioHosts.first : null);
+
+    if (audioHost == null) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(isDark),
+        appBar: AppBar(
+          title: const Text('Audio Host Center'),
+          backgroundColor: AppColors.getBackground(isDark),
+          elevation: 0,
+        ),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.mic_off_rounded, size: 64, color: Colors.amberAccent),
+                SizedBox(height: 16),
+                Text(
+                  'No Audio Host Record Found',
+                  style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Apply as an Audio Host or join an agency to access salary and target metrics.',
+                  style: TextStyle(color: Colors.white70, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final currentPolicy = AgencyHostPolicy.getLevelForDiamonds(audioHost.achievedDiamonds);
     final nextPolicy = AgencyHostPolicy.getNextLevel(currentPolicy.level);
 

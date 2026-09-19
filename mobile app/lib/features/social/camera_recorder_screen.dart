@@ -348,8 +348,10 @@ class _CameraRecorderScreenState extends State<CameraRecorderScreen>
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              alignment: WrapAlignment.center,
               children: [
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
@@ -357,7 +359,6 @@ class _CameraRecorderScreenState extends State<CameraRecorderScreen>
                   label: const Text('Grant Access', style: TextStyle(color: AppColors.black, fontWeight: FontWeight.bold)),
                   onPressed: _initCameras,
                 ),
-                const SizedBox(width: 12),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.white54),

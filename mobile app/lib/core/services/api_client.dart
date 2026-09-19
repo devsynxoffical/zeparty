@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Standard Normalized API Exception for Mobile App
 class ApiException implements Exception {
@@ -39,8 +40,8 @@ class ApiClient {
     dio = Dio(
       BaseOptions(
         baseUrl: _baseUrl,
-        connectTimeout: const Duration(seconds: 15),
-        receiveTimeout: const Duration(seconds: 15),
+        connectTimeout: const Duration(seconds: 35),
+        receiveTimeout: const Duration(seconds: 35),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
@@ -153,24 +154,54 @@ class ApiClient {
     }
   }
 
-  // ---- Token Storage Helpers ----
+  // ---- Token Storage Helpers with Dual Secure & SharedPreferences Persistence ----
 
   Future<void> saveTokens({required String accessToken, required String refreshToken}) async {
-    await secureStorage.write(key: _tokenKey, value: accessToken);
-    await secureStorage.write(key: _refreshTokenKey, value: refreshToken);
+    try {
+      await secureStorage.write(key: _tokenKey, value: accessToken);
+      await secureStorage.write(key: _refreshTokenKey, value: refreshToken);
+    } catch (_) {}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_tokenKey, accessToken);
+      await prefs.setString(_refreshTokenKey, refreshToken);
+    } catch (_) {}
   }
 
   Future<String?> getAccessToken() async {
-    return await secureStorage.read(key: _tokenKey);
+    try {
+      final secure = await secureStorage.read(key: _tokenKey);
+      if (secure != null && secure.isNotEmpty) return secure;
+    } catch (_) {}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_tokenKey);
+    } catch (_) {}
+    return null;
   }
 
   Future<String?> getRefreshToken() async {
-    return await secureStorage.read(key: _refreshTokenKey);
+    try {
+      final secure = await secureStorage.read(key: _refreshTokenKey);
+      if (secure != null && secure.isNotEmpty) return secure;
+    } catch (_) {}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_refreshTokenKey);
+    } catch (_) {}
+    return null;
   }
 
   Future<void> clearTokens() async {
-    await secureStorage.delete(key: _tokenKey);
-    await secureStorage.delete(key: _refreshTokenKey);
+    try {
+      await secureStorage.delete(key: _tokenKey);
+      await secureStorage.delete(key: _refreshTokenKey);
+    } catch (_) {}
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_tokenKey);
+      await prefs.remove(_refreshTokenKey);
+    } catch (_) {}
   }
 
   // ---- Generic HTTP Methods with Clean Error Normalization ----

@@ -12,6 +12,7 @@ import '../../../../providers/auth_provider.dart';
 import '../../../../providers/game_provider.dart';
 import '../../../../providers/wallet_provider.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/services/room_share_service.dart';
 import '../../recharge/recharge_screen.dart';
 
 class RoomInfoSheet extends StatefulWidget {
@@ -902,59 +903,65 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
   }
 
   Widget _buildShareAction(IconData icon, String label, Color textColor, Color secondaryColor) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: secondaryColor.withValues(alpha: 0.05),
-            shape: BoxShape.circle,
+    return GestureDetector(
+      onTap: () => RoomShareService.shareRoom(context, roomId: widget.room.id, roomTitle: widget.room.title),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: secondaryColor.withValues(alpha: 0.05),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: textColor, size: 22),
           ),
-          child: Icon(icon, color: textColor, size: 22),
-        ),
-        const SizedBox(height: 6),
-        Text(label, style: TextStyle(color: textColor, fontSize: 10, fontWeight: FontWeight.w600)),
-      ],
+          const SizedBox(height: 6),
+          Text(label, style: TextStyle(color: textColor, fontSize: 10, fontWeight: FontWeight.w600)),
+        ],
+      ),
     );
   }
 
   Widget _buildShareNetworkGroup() {
-    return Column(
-      children: [
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Row(
-              children: [
-                _buildSocialIcon(Colors.blue, Icons.facebook),
-                _buildSocialIcon(Colors.green, Icons.wechat),
-                _buildSocialIcon(Colors.pink, Icons.camera_alt),
-              ],
-            ),
-            Positioned(
-              top: -12,
-              right: -10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.amber,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.monetization_on, color: Colors.white, size: 12),
-                    SizedBox(width: 2),
-                    Text('X100', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                  ],
+    return GestureDetector(
+      onTap: () => RoomShareService.shareRoom(context, roomId: widget.room.id, roomTitle: widget.room.title),
+      child: Column(
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Row(
+                children: [
+                  _buildSocialIcon(Colors.blue, Icons.facebook),
+                  _buildSocialIcon(Colors.green, Icons.wechat),
+                  _buildSocialIcon(Colors.pink, Icons.camera_alt),
+                ],
+              ),
+              Positioned(
+                top: -12,
+                right: -10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.amber,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.monetization_on, color: Colors.white, size: 12),
+                      SizedBox(width: 2),
+                      Text('X100', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text('Click to Share', style: TextStyle(color: Colors.redAccent.withValues(alpha: 0.8), fontSize: 11, fontWeight: FontWeight.bold)),
-      ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('Click to Share', style: TextStyle(color: Colors.redAccent.withValues(alpha: 0.8), fontSize: 11, fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 

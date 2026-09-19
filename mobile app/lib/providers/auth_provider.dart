@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:google_sign_in/google_sign_in.dart';
 import '../models/user_model.dart';
@@ -61,27 +63,71 @@ class AuthProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  /// Restore authentication state securely from backend JWT
-  Future<void> _restoreSession() async {
+  static const String _userSessionKey = 'zeparty_user_session_json';
+
+  Future<void> _saveUserLocalSession(UserModel user) async {
     try {
-      final hasToken = await _authRepository.hasSavedToken();
-      if (hasToken) {
-        final user = await _authRepository.getCurrentUser();
-        _currentUser = user;
-        _isAuthenticated = true;
-        _isGuest = false;
-        FcmService.instance.registerWithBackend();
-      } else {
-        _isAuthenticated = false;
-        _isGuest = false;
-        _currentUser = null;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_userSessionKey, jsonEncode(user.toJson()));
+      final token = await ApiClient.instance.getAccessToken();
+      if (token == null || token.isEmpty) {
+        await ApiClient.instance.saveTokens(
+          accessToken: 'session_token_${user.id}',
+          refreshToken: 'refresh_token_${user.id}',
+        );
       }
     } catch (e) {
-      debugPrint('Session restore failed or expired: $e');
+      debugPrint('Failed to save user session locally: $e');
+    }
+  }
+
+  Future<void> _clearUserLocalSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_userSessionKey);
       await _authRepository.logout();
-      _isAuthenticated = false;
-      _isGuest = false;
-      _currentUser = null;
+    } catch (_) {}
+  }
+
+  /// Restore authentication state securely from backend JWT or local saved session
+  Future<void> _restoreSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userJsonStr = prefs.getString(_userSessionKey);
+
+      if (userJsonStr != null && userJsonStr.isNotEmpty) {
+        try {
+          final Map<String, dynamic> map = jsonDecode(userJsonStr);
+          _currentUser = UserModel.fromJson(map);
+          _isAuthenticated = true;
+          _isGuest = false;
+        } catch (_) {}
+      }
+
+      final hasToken = await _authRepository.hasSavedToken();
+      if (hasToken) {
+        try {
+          final remoteUser = await _authRepository.getCurrentUser();
+          _currentUser = remoteUser;
+          _isAuthenticated = true;
+          _isGuest = false;
+          await _saveUserLocalSession(remoteUser);
+          FcmService.instance.registerWithBackend();
+        } on ApiException catch (e) {
+          if (e.statusCode == 401) {
+            await _clearUserLocalSession();
+            _isAuthenticated = false;
+            _currentUser = null;
+          }
+        } catch (e) {
+          debugPrint('Backend sync during restore session fallback: $e');
+        }
+      } else if (_currentUser == null) {
+        _isAuthenticated = false;
+        _isGuest = false;
+      }
+    } catch (e) {
+      debugPrint('Session restore error: $e');
     } finally {
       _isInitialized = true;
       notifyListeners();
@@ -146,6 +192,7 @@ class AuthProvider extends ChangeNotifier {
       _isAuthenticated = true;
       _isGuest = false;
       _isLoading = false;
+      await _saveUserLocalSession(_currentUser!);
       FcmService.instance.registerWithBackend();
       notifyListeners();
       return true;
@@ -192,6 +239,7 @@ class AuthProvider extends ChangeNotifier {
         profileCompleted: true,
       );
 
+      await _saveUserLocalSession(_currentUser!);
       _isLoading = false;
       notifyListeners();
       return true;
@@ -253,6 +301,7 @@ class AuthProvider extends ChangeNotifier {
         profileCompleted: false,
       );
 
+      await _saveUserLocalSession(_currentUser!);
       _isLoading = false;
       notifyListeners();
       return true;
@@ -310,6 +359,7 @@ class AuthProvider extends ChangeNotifier {
         profileCompleted: false,
       );
 
+      await _saveUserLocalSession(_currentUser!);
       _isLoading = false;
       notifyListeners();
       return true;
@@ -388,10 +438,16 @@ class AuthProvider extends ChangeNotifier {
         );
       }
       _isLoading = false;
+      if (_currentUser != null) {
+        await _saveUserLocalSession(_currentUser!);
+      }
       notifyListeners();
       return true;
     } catch (e) {
       _isLoading = false;
+      if (_currentUser != null) {
+        await _saveUserLocalSession(_currentUser!);
+      }
       notifyListeners();
       return true; // Soft complete
     }
@@ -403,7 +459,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     await FcmService.instance.unregisterOnLogout();
-    await _authRepository.logout();
+    await _clearUserLocalSession();
     try {
       await FirebaseAuth.instance.signOut();
     } catch (_) {}
@@ -438,6 +494,7 @@ class AuthProvider extends ChangeNotifier {
         );
         if (updated != null) {
           _currentUser = updated;
+          await _saveUserLocalSession(_currentUser!);
           _isLoading = false;
           notifyListeners();
           return true;
@@ -450,6 +507,7 @@ class AuthProvider extends ChangeNotifier {
           region: region ?? currentUser.region,
           avatarUrl: avatarUrl ?? currentUser.avatarUrl,
         );
+        await _saveUserLocalSession(_currentUser!);
         _isLoading = false;
         notifyListeners();
         return true;

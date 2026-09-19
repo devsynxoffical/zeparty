@@ -9,6 +9,7 @@ import '../../core/repositories/backend_repository.dart';
 import '../../models/short_video_model.dart';
 import '../profile/profile_screen.dart';
 import '../../widgets/comments_sheet.dart';
+import '../../core/services/room_share_service.dart';
 
 class ShortVideosScreen extends StatefulWidget {
   const ShortVideosScreen({super.key});
@@ -312,11 +313,7 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
 
               // Share Action Button
               GestureDetector(
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('📤 Video link copied! Share with your friends.')),
-                  );
-                },
+                onTap: () => RoomShareService.shareShort(context, shortId: video.id, title: video.caption),
                 child: const Column(
                   children: [
                     Icon(Icons.share_rounded, color: Colors.white, size: 32),

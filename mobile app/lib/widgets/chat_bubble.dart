@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 import '../core/theme/app_colors.dart';
 import '../models/message_model.dart';
 import '../core/utils/formatters.dart';
@@ -19,29 +20,70 @@ class _ChatBubbleState extends State<ChatBubble> {
   bool _isPlayingVoice = false;
   double _playbackProgress = 0.0;
   Timer? _playbackTimer;
+  VideoPlayerController? _audioController;
 
   @override
   void dispose() {
     _playbackTimer?.cancel();
+    _audioController?.dispose();
     super.dispose();
   }
 
-  void _toggleVoicePlayback() {
+  Future<void> _toggleVoicePlayback() async {
     if (_isPlayingVoice) {
       _playbackTimer?.cancel();
-      setState(() {
-        _isPlayingVoice = false;
-      });
+      await _audioController?.pause();
+      if (mounted) {
+        setState(() {
+          _isPlayingVoice = false;
+        });
+      }
     } else {
       setState(() {
         _isPlayingVoice = true;
         _playbackProgress = 0.0;
       });
+
+      try {
+        final mediaUrl = widget.message.mediaUrl;
+        if (mediaUrl != null && mediaUrl.isNotEmpty) {
+          _audioController?.dispose();
+          if (mediaUrl.startsWith('http')) {
+            _audioController = VideoPlayerController.networkUrl(Uri.parse(mediaUrl));
+          } else {
+            _audioController = VideoPlayerController.file(File(mediaUrl));
+          }
+          await _audioController?.initialize();
+          await _audioController?.play();
+        }
+      } catch (e) {
+        debugPrint('Voice note playback error: $e');
+      }
+
       _playbackTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) {
         if (!mounted) {
           timer.cancel();
           return;
         }
+        if (_audioController != null && _audioController!.value.isInitialized) {
+          final pos = _audioController!.value.position;
+          final dur = _audioController!.value.duration;
+          if (dur.inMilliseconds > 0) {
+            final prog = pos.inMilliseconds / dur.inMilliseconds;
+            setState(() {
+              _playbackProgress = prog.clamp(0.0, 1.0);
+            });
+            if (pos >= dur) {
+              _playbackTimer?.cancel();
+              setState(() {
+                _isPlayingVoice = false;
+                _playbackProgress = 1.0;
+              });
+            }
+            return;
+          }
+        }
+
         setState(() {
           _playbackProgress += 0.04;
           if (_playbackProgress >= 1.0) {

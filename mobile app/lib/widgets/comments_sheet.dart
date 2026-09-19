@@ -123,6 +123,21 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
     setState(() => _isSubmitting = true);
 
+    final newComment = SocialComment(
+      id: 'c_${DateTime.now().millisecondsSinceEpoch}',
+      authorId: currentUser.id,
+      authorName: currentUser.name.isNotEmpty ? currentUser.name : currentUser.username,
+      authorAvatar: currentUser.avatarUrl,
+      text: text,
+      createdAt: DateTime.now(),
+      likesCount: 0,
+      isLiked: false,
+    );
+
+    setState(() {
+      _localComments.insert(0, newComment);
+    });
+
     if (widget.isPost) {
       social.addCommentToPost(widget.targetId, text, currentUser).then((_) {
         if (mounted) setState(() => _isSubmitting = false);
@@ -131,7 +146,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       });
     } else {
       social.addCommentToShortVideo(widget.targetId, text, currentUser);
-      setState(() => _isSubmitting = false);
+      if (mounted) setState(() => _isSubmitting = false);
     }
 
     widget.onCommentSubmitted?.call(text);
@@ -179,7 +194,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
   // For posts: use provider-loaded comments; for videos: use local list
   List<SocialComment> _resolveComments(SocialProvider social) {
     if (widget.isPost) {
-      return social.getCommentsForPost(widget.targetId);
+      final backendComments = social.getCommentsForPost(widget.targetId);
+      final combined = [..._localComments, ...backendComments];
+      final seenIds = <String>{};
+      return combined.where((c) => seenIds.add(c.id)).toList();
     }
     return _localComments;
   }

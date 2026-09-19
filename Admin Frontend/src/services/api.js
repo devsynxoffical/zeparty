@@ -60,7 +60,7 @@ const getValidAccessToken = async () => {
       const session = JSON.parse(rawSession);
       refreshToken = session?.refreshToken;
     }
-  } catch {}
+  } catch { }
 
   if (!refreshToken) {
     if (token) {
@@ -90,7 +90,7 @@ const getValidAccessToken = async () => {
               session.refreshToken = newRefreshToken;
               session.expiresAt = res.data.data.expiresAt || session.expiresAt;
               localStorage.setItem('zeparty_admin_session', JSON.stringify(session));
-            } catch {}
+            } catch { }
           }
           return newAccessToken;
         }
@@ -201,7 +201,7 @@ apiClient.interceptors.response.use(
               session.refreshToken = newRefreshToken;
               session.expiresAt = refreshResponse.data.data.expiresAt || session.expiresAt;
               localStorage.setItem('zeparty_admin_session', JSON.stringify(session));
-            } catch {}
+            } catch { }
           }
 
           processQueue(null, newAccessToken);

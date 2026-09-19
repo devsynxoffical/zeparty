@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import 'upload_video_screen.dart';
@@ -22,43 +24,61 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
   double _trimStart = 0.0;
   double _trimEnd = 1.0;
   bool _isPlaying = true;
-  double _videoProgress = 0.35;
-  Timer? _videoPlaybackTimer;
+  double _videoProgress = 0.0;
+  VideoPlayerController? _videoController;
 
   @override
   void initState() {
     super.initState();
-    _startPreviewPlayback();
+    _initVideoPlayer();
+  }
+
+  Future<void> _initVideoPlayer() async {
+    try {
+      if (widget.videoPath.startsWith('http')) {
+        _videoController = VideoPlayerController.networkUrl(Uri.parse(widget.videoPath));
+      } else {
+        _videoController = VideoPlayerController.file(File(widget.videoPath));
+      }
+      await _videoController?.initialize();
+      _videoController?.setLooping(true);
+      _videoController?.setPlaybackSpeed(_playbackSpeed);
+      await _videoController?.play();
+
+      _videoController?.addListener(() {
+        if (mounted && _videoController != null && _videoController!.value.isInitialized) {
+          final pos = _videoController!.value.position.inMilliseconds;
+          final dur = _videoController!.value.duration.inMilliseconds;
+          setState(() {
+            _videoProgress = dur > 0 ? (pos / dur).clamp(0.0, 1.0) : 0.0;
+            _isPlaying = _videoController!.value.isPlaying;
+          });
+        }
+      });
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('Video editor player error: $e');
+    }
   }
 
   @override
   void dispose() {
-    _videoPlaybackTimer?.cancel();
+    _videoController?.dispose();
     super.dispose();
   }
 
-  void _startPreviewPlayback() {
-    _videoPlaybackTimer?.cancel();
-    _videoPlaybackTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      if (_isPlaying) {
-        setState(() {
-          _videoProgress += 0.02 * _playbackSpeed;
-          if (_videoProgress >= 1.0) {
-            _videoProgress = 0.0;
-          }
-        });
-      }
-    });
-  }
-
   void _togglePlayPause() {
-    setState(() {
-      _isPlaying = !_isPlaying;
-    });
+    if (_videoController != null && _videoController!.value.isInitialized) {
+      if (_videoController!.value.isPlaying) {
+        _videoController?.pause();
+      } else {
+        _videoController?.play();
+      }
+    } else {
+      setState(() {
+        _isPlaying = !_isPlaying;
+      });
+    }
   }
 
   @override
@@ -122,6 +142,14 @@ class _VideoEditorScreenState extends State<VideoEditorScreen> {
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
+                            if (_videoController != null && _videoController!.value.isInitialized)
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(20),
+                                child: SizedOverflowBox(
+                                  size: Size.infinite,
+                                  child: VideoPlayer(_videoController!),
+                                ),
+                              ),
                             // Animated Play/Pause overlay icon
                             AnimatedOpacity(
                               duration: const Duration(milliseconds: 200),

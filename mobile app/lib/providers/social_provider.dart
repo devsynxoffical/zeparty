@@ -308,6 +308,13 @@ class SocialProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Insert or update a post locally (for instant UI feedback when uploading stories or shorts)
+  void addPostLocally(PostModel post) {
+    _posts.removeWhere((p) => p.id == post.id);
+    _posts.insert(0, post);
+    notifyListeners();
+  }
+
   // ─── Delete Post ──────────────────────────────────────────────────────────
 
   Future<void> deletePost(String postId) async {

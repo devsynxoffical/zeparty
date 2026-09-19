@@ -463,10 +463,11 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
       if (existingUserSeat.seatIndex === seatIndex) {
         return existingUserSeat; // Idempotent already on this seat
       }
-      const error = new Error('User is already occupying another seat in this room');
-      error.statusCode = 409;
-      error.code = 'ALREADY_OCCUPYING_SEAT';
-      throw error;
+      // Auto-vacate previous seat to allow seamless mic assignment/move
+      await tx.roomSeat.update({
+        where: { id: existingUserSeat.id },
+        data: { occupiedUserId: null },
+      });
     }
 
     // Find target seat

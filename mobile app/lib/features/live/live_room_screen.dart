@@ -22,6 +22,7 @@ import '../../widgets/emoji_picker_sheet.dart';
 import '../../widgets/tiktok_gift_overlay.dart';
 import '../../providers/emoji_reaction_provider.dart';
 import '../../providers/live_gift_provider.dart';
+import '../../core/services/room_share_service.dart';
 
 class FloatingHeart {
   final Key id;
@@ -504,8 +505,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   'Share',
                   Colors.white,
                   onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Room link copied! Share it with friends 🚀'), behavior: SnackBarBehavior.floating),
+                    RoomShareService.shareRoom(
+                      context,
+                      roomId: widget.room.id,
+                      roomTitle: widget.room.title,
+                      isParty: false,
                     );
                   },
                 ),
@@ -693,39 +697,42 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                      },
                                   ),
                                 ),
-                                IconButton(
-                                   icon: const Icon(Icons.sentiment_satisfied_alt_rounded, color: Colors.amber, size: 22),
-                                   onPressed: () {
-                                     AuthGuard.require(context, () {
-                                       EmojiPickerSheet.show(context, onEmojiSelected: (emoji) {
-                                         final currentUser = context.read<AuthProvider>().currentUser;
-                                         liveProvider.sendMessage(emoji, currentUser.name);
-                                         context.read<EmojiReactionProvider>().sendReaction(
-                                           roomId: widget.room.id,
-                                           senderId: currentUser.id,
-                                           emoji: emoji,
-                                           senderName: currentUser.name,
-                                         );
-                                       });
-                                     }, reason: 'Sign in to send reactions');
-                                   },
-                                   padding: EdgeInsets.zero,
-                                   constraints: const BoxConstraints(),
-                                   tooltip: 'Emojis & Reactions',
-                                 ),
-                                if (_chatController.text.isNotEmpty) ...[
-                                  const SizedBox(width: 6),
-                                  IconButton(
-                                    icon: const Icon(Icons.send_rounded, color: Color(0xFFFF416C), size: 20),
-                                    onPressed: () {
-                                      final currentUser = context.read<AuthProvider>().currentUser;
-                                      liveProvider.sendMessage(_chatController.text, currentUser.name);
-                                      _chatController.clear();
-                                    },
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                  ),
-                                ],
+                                 _chatController.text.isNotEmpty
+                                     ? GestureDetector(
+                                         onTap: () {
+                                           final currentUser = context.read<AuthProvider>().currentUser;
+                                           final text = _chatController.text.trim();
+                                           if (text.isNotEmpty) {
+                                             liveProvider.sendMessage(text, currentUser.name);
+                                             _chatController.clear();
+                                             if (mounted) setState(() {});
+                                           }
+                                         },
+                                         child: const Padding(
+                                           padding: EdgeInsets.symmetric(horizontal: 4),
+                                           child: Icon(Icons.send_rounded, color: Color(0xFFFF416C), size: 20),
+                                         ),
+                                       )
+                                     : IconButton(
+                                         icon: const Icon(Icons.sentiment_satisfied_alt_rounded, color: Colors.amber, size: 22),
+                                         onPressed: () {
+                                           AuthGuard.require(context, () {
+                                             EmojiPickerSheet.show(context, onEmojiSelected: (emoji) {
+                                               final currentUser = context.read<AuthProvider>().currentUser;
+                                               liveProvider.sendMessage(emoji, currentUser.name);
+                                               context.read<EmojiReactionProvider>().sendReaction(
+                                                 roomId: widget.room.id,
+                                                 senderId: currentUser.id,
+                                                 emoji: emoji,
+                                                 senderName: currentUser.name,
+                                               );
+                                             });
+                                           }, reason: 'Sign in to send reactions');
+                                         },
+                                         padding: EdgeInsets.zero,
+                                         constraints: const BoxConstraints(),
+                                         tooltip: 'Emojis & Reactions',
+                                       ),
                               ],
                             ),
                           ),

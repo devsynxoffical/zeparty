@@ -1,12 +1,17 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
 import '../../core/repositories/backend_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/design/gold_button.dart';
+import '../../models/post_model.dart';
+import '../../providers/social_provider.dart';
+import 'video_editor_screen.dart';
 import '../main_layout.dart';
 
 class UploadVideoScreen extends StatefulWidget {
@@ -31,6 +36,7 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
   bool _saveToDevice = false;
   String? _selectedVideoPath;
   String _selectedMusic = 'Original Sound';
+  VideoPlayerController? _previewController;
 
   bool _isUploading = false;
   double _uploadProgress = 0.0;
@@ -42,11 +48,30 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
   void initState() {
     super.initState();
     _selectedVideoPath = widget.videoPath;
+    _initThumbnailPlayer();
+  }
+
+  Future<void> _initThumbnailPlayer() async {
+    final path = _selectedVideoPath;
+    if (path != null && path.isNotEmpty) {
+      try {
+        if (path.startsWith('http')) {
+          _previewController = VideoPlayerController.networkUrl(Uri.parse(path));
+        } else {
+          _previewController = VideoPlayerController.file(File(path));
+        }
+        await _previewController?.initialize();
+        if (mounted) setState(() {});
+      } catch (e) {
+        debugPrint('Thumbnail controller error: $e');
+      }
+    }
   }
 
   @override
   void dispose() {
     _captionController.dispose();
+    _previewController?.dispose();
     _uploadTimer?.cancel();
     super.dispose();
   }
@@ -54,10 +79,13 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
   Future<void> _pickVideo() async {
     try {
       final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
-      if (video != null) {
-        setState(() {
-          _selectedVideoPath = video.path;
-        });
+      if (video != null && mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => VideoEditorScreen(videoPath: video.path),
+          ),
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -75,52 +103,66 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
     });
   }
 
-  void _startUploadProcess() {
+  Future<void> _startUploadProcess() async {
     setState(() {
       _isUploading = true;
-      _uploadProgress = 0.0;
-      _uploadStatusText = 'Compressing video media...';
+      _uploadProgress = 0.3;
+      _uploadStatusText = 'Uploading video media to server...';
     });
 
-    _uploadTimer = Timer.periodic(const Duration(milliseconds: 300), (timer) async {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
+    try {
+      final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
       setState(() {
-        _uploadProgress += 0.12;
-        if (_uploadProgress >= 0.35 && _uploadProgress < 0.75) {
-          _uploadStatusText = 'Uploading video to server (${(_uploadProgress * 100).toInt()}%)...';
-        } else if (_uploadProgress >= 0.75 && _uploadProgress < 1.0) {
-          _uploadStatusText = 'Processing video & generating thumbnail...';
-        }
+        _uploadProgress = 0.75;
+        _uploadStatusText = 'Processing video & generating metadata...';
       });
 
-      if (_uploadProgress >= 1.0) {
-        _uploadTimer?.cancel();
-        if (!mounted) return;
-        final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
-        await BackendRepository.instance.publishVideo(
-          creator: currentUser,
-          videoUrl: _selectedVideoPath ?? 'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
-          caption: _captionController.text.trim(),
-          musicTitle: _selectedMusic == 'Original Sound' ? 'Original Sound - ${currentUser.name}' : _selectedMusic,
-        );
+      await BackendRepository.instance.publishVideo(
+        creator: currentUser,
+        videoUrl: _selectedVideoPath ?? 'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
+        caption: _captionController.text.trim(),
+        musicTitle: _selectedMusic == 'Original Sound' ? 'Original Sound - ${currentUser.name}' : _selectedMusic,
+      );
 
-        if (mounted) {
-          setState(() {
-            _uploadStatusText = 'Published successfully! 🎉';
-          });
-          await Future.delayed(const Duration(milliseconds: 500));
-          if (!mounted) return;
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const MainLayout()),
-            (route) => false,
-          );
-        }
-      }
-    });
+      final newPost = PostModel(
+        id: 'story_${DateTime.now().millisecondsSinceEpoch}',
+        author: currentUser,
+        content: _captionController.text.trim(),
+        imageUrls: _selectedVideoPath != null ? [_selectedVideoPath!] : [],
+        createdAt: DateTime.now(),
+        likes: 1,
+        comments: 0,
+        shares: 0,
+        isLiked: true,
+      );
+
+      final social = Provider.of<SocialProvider>(context, listen: false);
+      social.addPostLocally(newPost);
+
+      if (!mounted) return;
+      setState(() {
+        _uploadProgress = 1.0;
+        _uploadStatusText = 'Video published successfully!';
+        _isUploading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('🎉 Your video was uploaded & published successfully!')),
+      );
+
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const MainLayout()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isUploading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Video upload failed: $e')),
+      );
+    }
   }
 
   @override
@@ -185,39 +227,51 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
                       // Video Cover Thumbnail Card
                       GestureDetector(
                         onTap: _pickVideo,
-                        child: Stack(
-                          children: [
-                            Container(
-                              width: 95,
-                              height: 130,
-                              decoration: BoxDecoration(
-                                color: isDark ? const Color(0xFF0F172A) : AppColors.black,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: primary.withValues(alpha: 0.5), width: 1.2),
-                              ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: Container(
+                            width: 95,
+                            height: 130,
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF0F172A) : AppColors.black,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: primary.withValues(alpha: 0.5), width: 1.2),
                             ),
-                            Positioned.fill(
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(14),
-                                  color: Colors.black.withValues(alpha: 0.35),
-                                ),
-                                child: Center(
-                                  child: Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: primary.withValues(alpha: 0.85),
-                                      shape: BoxShape.circle,
+                            child: Stack(
+                              children: [
+                                if (_previewController != null && _previewController!.value.isInitialized)
+                                  Positioned.fill(
+                                    child: FittedBox(
+                                      fit: BoxFit.cover,
+                                      child: SizedBox(
+                                        width: _previewController!.value.size.width,
+                                        height: _previewController!.value.size.height,
+                                        child: VideoPlayer(_previewController!),
+                                      ),
                                     ),
-                                    child: const Icon(
-                                      Icons.play_arrow_rounded,
-                                      color: Colors.white,
-                                      size: 22,
+                                  ),
+                                Positioned.fill(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(14),
+                                      color: Colors.black.withValues(alpha: 0.35),
+                                    ),
+                                    child: Center(
+                                      child: Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: primary.withValues(alpha: 0.85),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.play_arrow_rounded,
+                                          color: Colors.white,
+                                          size: 22,
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ),
                             Positioned(
                               bottom: 6,
                               right: 6,
@@ -236,8 +290,10 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
                           ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
+                ],
+              ),
 
                   const Divider(height: 16),
 

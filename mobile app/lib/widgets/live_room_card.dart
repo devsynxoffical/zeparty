@@ -18,7 +18,12 @@ class LiveRoomCard extends StatelessWidget {
     final bool isDark = Theme.of(context).brightness == Brightness.dark;
     final gameProvider = Provider.of<GameProvider>(context);
     final bool isParty = room.category.toLowerCase() == 'party' || room.category.toLowerCase() == 'voice';
-    final effectiveDp = gameProvider.getEffectiveRoomDp(room.id, room.coverUrl, room.host.region);
+    final effectiveDp = gameProvider.getEffectiveRoomDp(
+      room.id,
+      room.coverUrl,
+      room.host.region,
+      hostAvatarUrl: room.host.avatarUrl,
+    );
 
     return GestureDetector(
       onTap: onTap,
@@ -53,7 +58,9 @@ class LiveRoomCard extends StatelessWidget {
                       effectiveDp,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) => Image.network(
-                        gameProvider.globalDefaultRoomDp,
+                        room.host.avatarUrl.isNotEmpty
+                            ? room.host.avatarUrl
+                            : gameProvider.globalDefaultRoomDp,
                         fit: BoxFit.cover,
                       ),
                     ),
