@@ -37,10 +37,11 @@ async function startServer() {
     console.log('🔄 Initializing ZeParty Backend Foundation...');
 
     // 1. Create HTTP Server and bind immediately to prevent cold boot 502 Bad Gateway
+    const port = Number(process.env.PORT) || Number(env.PORT) || 8080;
     server = http.createServer(app);
-    server.listen(env.PORT, '0.0.0.0', () => {
-      console.log(`🚀 Server listening on port ${env.PORT} in ${env.NODE_ENV} mode`);
-      console.log(`🔗 Health check available at http://localhost:${env.PORT}/health`);
+    server.listen(port, '0.0.0.0', () => {
+      console.log(`🚀 Server listening on port ${port} in ${env.NODE_ENV} mode`);
+      console.log(`🔗 Health check available at http://localhost:${port}/health`);
     });
 
     // 2. Initialize Database connection with automatic retry
