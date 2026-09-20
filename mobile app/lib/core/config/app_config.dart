@@ -9,8 +9,8 @@ enum AppEnvironment {
 
 /// Authoritative Centralized Environment Configuration for ZeParty Mobile Client
 class AppConfig {
-  static AppEnvironment _environment = AppEnvironment.development;
-  static String _apiBaseUrl = '';
+  static AppEnvironment _environment = AppEnvironment.production;
+  static String _apiBaseUrl = railwayApiUrl;
 
   static AppEnvironment get environment => _environment;
   static String get apiBaseUrl => _apiBaseUrl;
@@ -18,10 +18,10 @@ class AppConfig {
   /// Live Railway Backend URL (production)
   static const String railwayApiUrl = 'https://zeparty-backend-production.up.railway.app/api';
 
-  /// Staging API Base URL — points to Railway until a custom domain is configured
+  /// Staging API Base URL
   static const String stagingApiUrl = railwayApiUrl;
 
-  /// Development LAN URL for physical iPhone on the same Wi-Fi
+  /// Development LAN URL (for optional local debugging)
   static const String devLanUrl = 'http://192.168.18.113:8080/api';
 
   /// Production API Base URL
@@ -29,7 +29,7 @@ class AppConfig {
 
   /// Initialize application environment and configure ApiClient
   static void initialize({
-    AppEnvironment environment = AppEnvironment.development,
+    AppEnvironment environment = AppEnvironment.production,
     String? customBaseUrl,
   }) {
     _environment = environment;
@@ -40,10 +40,9 @@ class AppConfig {
       const envOverride = String.fromEnvironment('API_BASE_URL');
       if (envOverride.isNotEmpty) {
         _apiBaseUrl = envOverride;
-      } else if (environment == AppEnvironment.production) {
-        _apiBaseUrl = railwayApiUrl;
       } else {
-        _apiBaseUrl = devLanUrl;
+        // Always default to live production Railway server
+        _apiBaseUrl = railwayApiUrl;
       }
     }
 

@@ -31,8 +31,8 @@ class ApiClient {
   static const String _tokenKey = 'zeparty_access_token';
   static const String _refreshTokenKey = 'zeparty_refresh_token';
 
-  // Default Base URL points to active backend
-  String _baseUrl = 'http://192.168.18.113:8080/api';
+  // Default Base URL points to live Railway backend
+  String _baseUrl = 'https://zeparty-backend-production.up.railway.app/api';
 
   Completer<String?>? _refreshCompleter;
 
