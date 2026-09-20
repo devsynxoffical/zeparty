@@ -59,6 +59,9 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
     final isMuted = provider.isSeatMuted(micIndex);
     final volume = provider.getSeatVolume(micIndex);
 
+    final isHost = provider.activeRoom?.host.id == authUser.id || provider.activeRoom?.creatorUserId == authUser.id;
+    final isModerator = provider.participants.any((p) => p.user.id == authUser.id && p.role == ParticipantRole.moderator);
+    final canManageSeats = isHost || isModerator || authUser.role == UserRole.admin;
     final micLabel = micIndex == 0 ? 'Host Mic' : 'Mic ${micIndex + 1}';
 
     return Container(
@@ -243,17 +246,19 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
                 iconColor: const Color(0xFF00E676),
                 title: 'Take the Mic',
                 subtitle: 'Move to or occupy this mic seat',
-                onTap: () {
+                onTap: () async {
                   Navigator.pop(context);
-                  final err = provider.takeMicSeat(micIndex, authUser);
-                  if (err == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('🎉 You are now on $micLabel!'), backgroundColor: Colors.green),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('❌ $err'), backgroundColor: Colors.redAccent),
-                    );
+                  final err = await provider.takeMicSeat(micIndex, authUser);
+                  if (context.mounted) {
+                    if (err == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('🎉 You are now on $micLabel!'), backgroundColor: Colors.green),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('❌ $err'), backgroundColor: Colors.redAccent),
+                      );
+                    }
                   }
                 },
               ),
@@ -272,63 +277,65 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
                 },
               ),
 
-              // 3. Mute / Unmute the Mic (Available for ALL seats!)
-              _buildActionTile(
-                context,
-                icon: isMuted ? Icons.mic_rounded : Icons.mic_off_rounded,
-                iconBg: isMuted ? const Color(0xFF1B4D3E) : const Color(0xFF4A2B10),
-                iconColor: isMuted ? const Color(0xFF00E676) : const Color(0xFFFF9100),
-                title: isMuted ? 'Unmute the Mic' : 'Mute the Mic',
-                subtitle: isMuted
-                    ? 'Allow speakers on $micLabel to talk'
-                    : 'Mute audio output for $micLabel',
-                onTap: () {
-                  Navigator.pop(context);
-                  provider.muteMicSeat(micIndex, !isMuted, actor: authUser);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(isMuted ? '🔊 $micLabel unmuted' : '🔇 $micLabel muted'),
-                      backgroundColor: isMuted ? Colors.green : Colors.orange,
-                    ),
-                  );
-                },
-              ),
+              // 3. Mute / Unmute the Mic (Only Host/Admin or Self Occupant)
+              if (canManageSeats || (isOccupied && occupant.user.id == authUser.id))
+                _buildActionTile(
+                  context,
+                  icon: isMuted ? Icons.mic_rounded : Icons.mic_off_rounded,
+                  iconBg: isMuted ? const Color(0xFF1B4D3E) : const Color(0xFF4A2B10),
+                  iconColor: isMuted ? const Color(0xFF00E676) : const Color(0xFFFF9100),
+                  title: isMuted ? 'Unmute the Mic' : 'Mute the Mic',
+                  subtitle: isMuted
+                      ? 'Allow speakers on $micLabel to talk'
+                      : 'Mute audio output for $micLabel',
+                  onTap: () {
+                    Navigator.pop(context);
+                    provider.muteMicSeat(micIndex, !isMuted, actor: authUser);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(isMuted ? '🔊 $micLabel unmuted' : '🔇 $micLabel muted'),
+                        backgroundColor: isMuted ? Colors.green : Colors.orange,
+                      ),
+                    );
+                  },
+                ),
 
-              // 4. Lock / Unlock the Mic
-              _buildActionTile(
-                context,
-                icon: isLocked ? Icons.lock_open_rounded : Icons.lock_rounded,
-                iconBg: isLocked ? const Color(0xFF103A4A) : const Color(0xFF4A151B),
-                iconColor: isLocked ? const Color(0xFF00E5FF) : const Color(0xFFFF1744),
-                title: isLocked ? 'Unlock the Mic' : 'Lock the Mic',
-                subtitle: isLocked ? 'Allow users to take this seat' : 'Prevent regular users from taking this seat',
-                onTap: () {
-                  Navigator.pop(context);
-                  provider.lockMicSeat(micIndex, !isLocked, actor: authUser);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(isLocked ? '🔓 $micLabel unlocked' : '🔒 $micLabel locked'),
-                      backgroundColor: isLocked ? Colors.green : Colors.orange,
-                    ),
-                  );
-                },
-              ),
+              // 4. Lock / Unlock the Mic (Host / Admin Only)
+              if (canManageSeats)
+                _buildActionTile(
+                  context,
+                  icon: isLocked ? Icons.lock_open_rounded : Icons.lock_rounded,
+                  iconBg: isLocked ? const Color(0xFF103A4A) : const Color(0xFF4A151B),
+                  iconColor: isLocked ? const Color(0xFF00E5FF) : const Color(0xFFFF1744),
+                  title: isLocked ? 'Unlock the Mic' : 'Lock the Mic',
+                  subtitle: isLocked ? 'Allow users to take this seat' : 'Prevent regular users from taking this seat',
+                  onTap: () {
+                    Navigator.pop(context);
+                    provider.lockMicSeat(micIndex, !isLocked, actor: authUser);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(isLocked ? '🔓 $micLabel unlocked' : '🔒 $micLabel locked'),
+                        backgroundColor: isLocked ? Colors.green : Colors.orange,
+                      ),
+                    );
+                  },
+                ),
 
-              // 5. Clear Seat / Remove User (Shown when occupied)
-              if (isOccupied)
+              // 5. Clear Seat / Remove User (Host / Admin or Self Leaving)
+              if (isOccupied && (canManageSeats || occupant.user.id == authUser.id))
                 _buildActionTile(
                   context,
                   icon: Icons.person_remove_rounded,
                   iconBg: const Color(0xFF3D0C15),
                   iconColor: const Color(0xFFFF5252),
-                  title: 'Clear Seat',
-                  subtitle: 'Move ${occupant.user.name} off the mic back to audience',
+                  title: occupant.user.id == authUser.id ? 'Leave the Mic' : 'Clear Seat',
+                  subtitle: occupant.user.id == authUser.id ? 'Release your mic and return to audience' : 'Move ${occupant.user.name} off the mic back to audience',
                   onTap: () {
                     Navigator.pop(context);
                     provider.clearMicSeat(micIndex, actor: authUser);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('🚫 ${occupant.user.name} was moved to audience'),
+                        content: Text(occupant.user.id == authUser.id ? 'Released $micLabel' : '🚫 ${occupant.user.name} was moved to audience'),
                         backgroundColor: Colors.redAccent,
                       ),
                     );

@@ -317,6 +317,10 @@ export async function deleteUserByAdmin(
   return await userRepository.deleteUserById(userId, db);
 }
 
+export async function searchUsers(query, options = {}) {
+  return await userRepository.searchUsers(query, options);
+}
+
 export default {
   listUsersForAdmin,
   getUserDetailsForAdmin,
@@ -327,4 +331,5 @@ export default {
   getSelfProfile,
   updateSelfProfile,
   getPublicProfile,
+  searchUsers,
 };

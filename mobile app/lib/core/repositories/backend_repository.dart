@@ -38,24 +38,25 @@ class BackendRepository extends ChangeNotifier {
 
   // Dynamic Video Upload
   Future<ShortVideoModel> publishVideo({
+    String? id,
     required UserModel creator,
     required String videoUrl,
     required String caption,
     required String musicTitle,
     String? coverUrl,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 600));
     final newVideo = ShortVideoModel(
-      id: 'video_${DateTime.now().millisecondsSinceEpoch}',
+      id: id ?? 'video_${DateTime.now().millisecondsSinceEpoch}',
       creator: creator,
       videoUrl: videoUrl,
       caption: caption,
       musicTitle: musicTitle,
-      likes: 1,
+      likes: 0,
       comments: 0,
       gifts: 0,
-      isLiked: true,
+      isLiked: false,
     );
+    _shortVideos.removeWhere((v) => v.id == newVideo.id);
     _shortVideos.insert(0, newVideo);
     notifyListeners();
     return newVideo;

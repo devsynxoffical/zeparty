@@ -68,6 +68,16 @@ export async function initSocketServer(httpServer) {
     registerGiftHandlers(io, socket);
     registerPKHandlers(io, socket);
 
+    // Direct Messaging Typing Indicators
+    socket.on('chat:typing', (data) => {
+      if (data && data.targetUserId) {
+        io.to(`user:${data.targetUserId}`).emit('chat:typing', {
+          senderId: socket.userId,
+          isTyping: !!data.isTyping,
+        });
+      }
+    });
+
     socket.on('disconnect', (reason) => {
       // Handled in room.socket.js onSocketDisconnect
     });

@@ -102,19 +102,37 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
     final partyProv = context.watch<LivePartyProvider>();
     final liveGiftProv = context.watch<LiveGiftProvider>();
 
+    final auth = context.watch<AuthProvider>();
+    final currentUser = auth.currentUser;
+
     // Available room recipients
     final roomParticipants = partyProv.participants.map((p) => p.user).toList();
     final List<UserModel> availableRecipients = roomParticipants.isNotEmpty
-        ? roomParticipants
+        ? roomParticipants.map((u) {
+            if (u.id == currentUser.id && currentUser.avatarUrl.isNotEmpty) {
+              return u.copyWith(avatarUrl: currentUser.avatarUrl, name: currentUser.name);
+            }
+            return u;
+          }).toList()
         : (widget.targetReceiver != null
-            ? [widget.targetReceiver!]
+            ? [
+                (widget.targetReceiver!.id == currentUser.id && currentUser.avatarUrl.isNotEmpty)
+                    ? widget.targetReceiver!.copyWith(avatarUrl: currentUser.avatarUrl, name: currentUser.name)
+                    : (widget.targetReceiver!.avatarUrl.isEmpty && currentUser.avatarUrl.isNotEmpty && (widget.targetReceiver!.name == currentUser.name || widget.targetReceiver!.name == widget.streamerName)
+                        ? widget.targetReceiver!.copyWith(avatarUrl: currentUser.avatarUrl)
+                        : widget.targetReceiver!)
+              ]
             : [
-                UserModel(
-                  id: 'user_target',
-                  username: widget.streamerName,
-                  name: widget.streamerName,
-                  avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-                ),
+                (widget.streamerName == currentUser.name || widget.streamerName == currentUser.displayName || widget.streamerName.contains(currentUser.name))
+                    ? currentUser
+                    : UserModel(
+                        id: 'user_target',
+                        username: widget.streamerName,
+                        name: widget.streamerName,
+                        avatarUrl: currentUser.avatarUrl.isNotEmpty
+                            ? currentUser.avatarUrl
+                            : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+                      ),
               ]);
 
     // Active Recipients List
@@ -164,6 +182,10 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                       child: Row(
                         children: availableRecipients.map((user) {
                           final isSelected = recipientIsAllSelected || _selectedUserIds.contains(user.id);
+                          final resolvedAvatarUrl = (user.id == currentUser.id && currentUser.avatarUrl.isNotEmpty)
+                              ? currentUser.avatarUrl
+                              : (user.avatarUrl.isNotEmpty ? user.avatarUrl : (currentUser.avatarUrl.isNotEmpty ? currentUser.avatarUrl : null));
+
                           return GestureDetector(
                             onTap: () {
                               setState(() {
@@ -193,7 +215,11 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                                           ? [const BoxShadow(color: Color(0xFF00E676), blurRadius: 6)]
                                           : null,
                                     ),
-                                    child: UserAvatar(imageUrl: user.avatarUrl, radius: 18),
+                                    child: UserAvatar(
+                                      imageUrl: resolvedAvatarUrl,
+                                      name: user.name,
+                                      radius: 18,
+                                    ),
                                   ),
                                   const SizedBox(height: 2),
                                   SizedBox(

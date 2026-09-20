@@ -13,69 +13,61 @@ export async function createRoomWithSeats(
   },
   db = prisma
 ) {
-  return await db.$transaction(async (tx) => {
-    const room = await tx.room.create({
-      data: {
-        creatorUserId,
-        title,
-        coverImageUrl,
-        roomType,
-        category,
-        isPrivate,
-        roomPin,
-        agoraChannelName,
-        status: 'LIVE',
-        currentViewersCount: 1, // Creator starts in room
-      },
-    });
+  // Initialize 8 seats (indices 0 to 7)
+  const seatsData = Array.from({ length: 8 }, (_, i) => ({
+    seatIndex: i,
+    occupiedUserId: i === 0 && roomType === 'AUDIO_PARTY' ? creatorUserId : null,
+    isMuted: false,
+    isLocked: false,
+  }));
 
-    // Create initial RoomMember record for creator
-    await tx.roomMember.create({
-      data: {
-        roomId: room.id,
-        userId: creatorUserId,
-      },
-    });
-
-    // Initialize 8 seats (indices 0 to 7)
-    const seatsData = Array.from({ length: 8 }, (_, i) => ({
-      roomId: room.id,
-      seatIndex: i,
-      occupiedUserId: i === 0 && roomType === 'AUDIO_PARTY' ? creatorUserId : null,
-      isMuted: false,
-      isLocked: false,
-    }));
-
-    await tx.roomSeat.createMany({
-      data: seatsData,
-    });
-
-    return await tx.room.findUnique({
-      where: { id: room.id },
-      include: {
-        creator: {
-          select: {
-            id: true,
-            username: true,
-            avatarUrl: true,
-            profile: true,
-          },
+  return await db.room.create({
+    data: {
+      creatorUserId,
+      title,
+      coverImageUrl,
+      roomType,
+      category,
+      isPrivate,
+      roomPin,
+      agoraChannelName,
+      status: 'LIVE',
+      currentViewersCount: 1, // Creator starts in room
+      members: {
+        create: {
+          userId: creatorUserId,
         },
-        seats: {
-          orderBy: { seatIndex: 'asc' },
-          include: {
-            occupiedUser: {
-              select: {
-                id: true,
-                username: true,
-                avatarUrl: true,
-                profile: true,
-              },
+      },
+      seats: {
+        create: seatsData,
+      },
+    },
+    include: {
+      creator: {
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          profile: true,
+        },
+      },
+      seats: {
+        orderBy: { seatIndex: 'asc' },
+        include: {
+          occupiedUser: {
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              profile: true,
             },
           },
         },
       },
-    });
+      _count: {
+        select: { members: true },
+      },
+    },
   });
 }
 
@@ -312,122 +304,105 @@ export async function findAdminRooms(
 }
 
 export async function joinRoomTx({ roomId, userId }, db = prisma) {
-  return await db.$transaction(async (tx) => {
-    const room = await tx.room.findUnique({
-      where: { id: roomId },
-    });
+  const room = await db.room.findUnique({
+    where: { id: roomId },
+  });
 
-    if (!room) {
-      const error = new Error('Room not found');
-      error.statusCode = 404;
-      error.code = 'ROOM_NOT_FOUND';
-      throw error;
-    }
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
 
-    if (room.status !== 'LIVE') {
-      const error = new Error('Room is not currently live');
-      error.statusCode = 400;
-      error.code = 'ROOM_NOT_LIVE';
-      throw error;
-    }
+  if (room.status !== 'LIVE') {
+    const error = new Error('Room is not currently live');
+    error.statusCode = 400;
+    error.code = 'ROOM_NOT_LIVE';
+    throw error;
+  }
 
-    // Check if user is already an active member
-    const existingMember = await tx.roomMember.findUnique({
-      where: {
-        roomId_userId: {
-          roomId,
-          userId,
-        },
+  // Ensure RoomMember record exists
+  const existingMember = await db.roomMember.findUnique({
+    where: {
+      roomId_userId: {
+        roomId,
+        userId,
       },
-    });
+    },
+  });
 
-    if (!existingMember) {
-      await tx.roomMember.create({
-        data: {
-          roomId,
-          userId,
-        },
-      });
-    }
-
-    const memberCount = await tx.roomMember.count({
-      where: { roomId },
-    });
-
-    return await tx.room.update({
-      where: { id: roomId },
+  if (!existingMember) {
+    await db.roomMember.create({
       data: {
-        currentViewersCount: memberCount,
+        roomId,
+        userId,
       },
-      include: {
-        creator: {
-          select: {
-            id: true,
-            username: true,
-            avatarUrl: true,
-          },
+    }).catch(() => {});
+  }
+
+  const memberCount = await db.roomMember.count({
+    where: { roomId },
+  });
+
+  return await db.room.update({
+    where: { id: roomId },
+    data: {
+      currentViewersCount: memberCount,
+    },
+    include: {
+      creator: {
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
         },
       },
-    });
+    },
   });
 }
 
 export async function leaveRoomTx({ roomId, userId }, db = prisma) {
-  return await db.$transaction(async (tx) => {
-    const room = await tx.room.findUnique({
-      where: { id: roomId },
-    });
+  const room = await db.room.findUnique({
+    where: { id: roomId },
+  });
 
-    if (!room) {
-      const error = new Error('Room not found');
-      error.statusCode = 404;
-      error.code = 'ROOM_NOT_FOUND';
-      throw error;
-    }
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
 
-    // Delete membership if present
-    const existingMember = await tx.roomMember.findUnique({
-      where: {
-        roomId_userId: {
-          roomId,
-          userId,
-        },
-      },
-    });
+  // Release seat if user occupied one
+  await db.roomSeat.updateMany({
+    where: {
+      roomId,
+      occupiedUserId: userId,
+    },
+    data: {
+      occupiedUserId: null,
+      isMuted: false,
+    },
+  });
 
-    if (existingMember) {
-      await tx.roomMember.delete({
-        where: {
-          roomId_userId: {
-            roomId,
-            userId,
-          },
-        },
-      });
-    }
+  // Remove membership record
+  await db.roomMember.deleteMany({
+    where: {
+      roomId,
+      userId,
+    },
+  });
 
-    // Release any seat occupied by this user
-    await tx.roomSeat.updateMany({
-      where: {
-        roomId,
-        occupiedUserId: userId,
-      },
-      data: {
-        occupiedUserId: null,
-        isMuted: false,
-      },
-    });
+  const memberCount = await db.roomMember.count({
+    where: { roomId },
+  });
 
-    const memberCount = await tx.roomMember.count({
-      where: { roomId },
-    });
-
-    return await tx.room.update({
-      where: { id: roomId },
-      data: {
-        currentViewersCount: memberCount,
-      },
-    });
+  return await db.room.update({
+    where: { id: roomId },
+    data: {
+      currentViewersCount: memberCount,
+    },
   });
 }
 

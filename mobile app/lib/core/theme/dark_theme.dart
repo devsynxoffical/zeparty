@@ -43,6 +43,7 @@ class DarkTheme {
       shadow: Colors.black,
     ),
     cardTheme: CardThemeData(
+      clipBehavior: Clip.antiAlias,
       color: AppColors.cardBlack,
       elevation: 0,
       margin: EdgeInsets.zero,

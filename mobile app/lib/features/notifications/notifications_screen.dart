@@ -138,14 +138,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           ),
                           child: const Icon(Icons.delete_outline, color: Colors.white),
                         ),
-                        child: Container(
+                        child: Card(
                           margin: const EdgeInsets.only(bottom: 10),
-                          decoration: BoxDecoration(
-                            color: item.isRead
-                                ? Theme.of(context).cardColor
-                                : AppColors.primary.withValues(alpha: 0.08),
+                          color: item.isRead
+                              ? Theme.of(context).cardColor
+                              : AppColors.primary.withValues(alpha: 0.08),
+                          shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
+                            side: BorderSide(
                               color: item.isRead
                                   ? Theme.of(context).dividerColor
                                   : AppColors.primary.withValues(alpha: 0.3),

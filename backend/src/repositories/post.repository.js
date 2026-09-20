@@ -144,6 +144,7 @@ export async function findFeedPosts(
           },
         },
       },
+      likes: viewerUserId ? { where: { userId: viewerUserId }, select: { id: true } } : false,
       _count: {
         select: {
           comments: { where: { deletedAt: null } },
@@ -153,11 +154,18 @@ export async function findFeedPosts(
     },
   };
 
+  const formatPostItem = (p) => ({
+    ...p,
+    isLiked: viewerUserId ? Boolean(p.likes && p.likes.length > 0) : false,
+    likesCount: p.likesCount ?? p._count?.likes ?? 0,
+    commentsCount: p.commentsCount ?? p._count?.comments ?? 0,
+  });
+
   // If offset page requested
   if (page && !cursor) {
     const parsedPage = Math.max(1, Number(page) || 1);
     const skip = (parsedPage - 1) * parsedLimit;
-    const [total, posts] = await Promise.all([
+    const [total, rawPosts] = await Promise.all([
       db.post.count({ where }),
       db.post.findMany({
         ...queryArgs,
@@ -167,7 +175,7 @@ export async function findFeedPosts(
     ]);
 
     return {
-      posts,
+      posts: rawPosts.map(formatPostItem),
       pagination: {
         page: parsedPage,
         limit: parsedLimit,
@@ -179,11 +187,12 @@ export async function findFeedPosts(
 
   const rawPosts = await db.post.findMany(queryArgs);
   const hasMore = rawPosts.length > parsedLimit;
-  const posts = hasMore ? rawPosts.slice(0, parsedLimit) : rawPosts;
+  const slicedPosts = hasMore ? rawPosts.slice(0, parsedLimit) : rawPosts;
+  const posts = slicedPosts.map(formatPostItem);
 
   let nextCursor = null;
-  if (hasMore && posts.length > 0) {
-    const lastItem = posts[posts.length - 1];
+  if (hasMore && rawPosts.length > 0) {
+    const lastItem = rawPosts[slicedPosts.length - 1];
     nextCursor = Buffer.from(`${lastItem.createdAt.toISOString()}:${lastItem.id}`).toString('base64');
   }
 
@@ -197,9 +206,9 @@ export async function findFeedPosts(
   };
 }
 
-export async function findPostById(id, db = prisma) {
+export async function findPostById(id, viewerUserId = null, db = prisma) {
   if (!id) return null;
-  return await db.post.findFirst({
+  const post = await db.post.findFirst({
     where: {
       id,
       deletedAt: null,
@@ -223,8 +232,24 @@ export async function findPostById(id, db = prisma) {
           },
         },
       },
+      likes: viewerUserId ? { where: { userId: viewerUserId }, select: { id: true } } : false,
+      _count: {
+        select: {
+          comments: { where: { deletedAt: null } },
+          likes: true,
+        },
+      },
     },
   });
+
+  if (!post) return null;
+
+  return {
+    ...post,
+    isLiked: viewerUserId ? Boolean(post.likes && post.likes.length > 0) : false,
+    likesCount: post.likesCount ?? post._count?.likes ?? 0,
+    commentsCount: post.commentsCount ?? post._count?.comments ?? 0,
+  };
 }
 
 export async function softDeletePost(id, db = prisma) {

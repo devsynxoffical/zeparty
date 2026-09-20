@@ -500,6 +500,29 @@ class _SignupScreenState extends State<SignupScreen> with SingleTickerProviderSt
                           ),
                         ],
                       ),
+                      const SizedBox(height: 12),
+                      TextButton.icon(
+                        onPressed: () {
+                          context.read<AuthProvider>().enterAsGuest();
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(builder: (_) => const MainLayout()),
+                            (route) => false,
+                          );
+                        },
+                        icon: const Icon(Icons.explore_outlined, size: 16),
+                        label: const Text(
+                          'Explore as Guest ➔',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.getTextSecondary(isDark),
+                        ),
+                      ),
                     ],
                   ),
                 ),

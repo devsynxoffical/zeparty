@@ -192,6 +192,23 @@ export async function getPublicUserById(req, res, next) {
   }
 }
 
+export async function searchUsers(req, res, next) {
+  try {
+    const { q, limit } = req.query;
+    const currentUserId = req.auth?.userId;
+    const users = await userService.searchUsers(q || '', {
+      limit,
+      excludeUserId: currentUserId,
+    });
+    return res.status(200).json({
+      success: true,
+      data: users,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getAdminUsers,
   getAdminUserById,
@@ -202,4 +219,5 @@ export default {
   getMe,
   putMyProfile,
   getPublicUserById,
+  searchUsers,
 };

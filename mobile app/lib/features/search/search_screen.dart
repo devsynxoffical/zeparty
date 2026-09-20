@@ -218,11 +218,12 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         final user = filtered[i];
         final isFollowed = context.watch<AuthProvider>().isFollowing(user.id);
 
-        return Container(
-          decoration: BoxDecoration(
-            color: AppColors.getCard(isDark),
+        return Card(
+          clipBehavior: Clip.antiAlias,
+          color: AppColors.getCard(isDark),
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.getBorder(isDark)),
+            side: BorderSide(color: AppColors.getBorder(isDark)),
           ),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
@@ -342,12 +343,13 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         final room = filtered[i];
         final isParty = room.category.toLowerCase() == 'party' || room.id.startsWith('party_');
 
-        return Container(
+        return Card(
+          clipBehavior: Clip.antiAlias,
           margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: AppColors.getCard(isDark),
+          color: AppColors.getCard(isDark),
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.getBorder(isDark), width: 1.2),
+            side: BorderSide(color: AppColors.getBorder(isDark), width: 1.2),
           ),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -474,12 +476,13 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       itemCount: sounds.length,
-      itemBuilder: (_, i) => Container(
+      itemBuilder: (_, i) => Card(
+        clipBehavior: Clip.antiAlias,
         margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color: AppColors.getCard(isDark),
+        color: AppColors.getCard(isDark),
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.getBorder(isDark)),
+          side: BorderSide(color: AppColors.getBorder(isDark)),
         ),
         child: ListTile(
           leading: Container(
@@ -526,12 +529,13 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       itemCount: tags.length,
-      itemBuilder: (_, i) => Container(
+      itemBuilder: (_, i) => Card(
+        clipBehavior: Clip.antiAlias,
         margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color: AppColors.getCard(isDark),
+        color: AppColors.getCard(isDark),
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.getBorder(isDark)),
+          side: BorderSide(color: AppColors.getBorder(isDark)),
         ),
         child: ListTile(
           leading: Container(

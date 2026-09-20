@@ -19,12 +19,18 @@ export const updateUserStatusSchema = z.object({
 });
 
 export const updateUserProfileSchema = z.object({
+  username: z.string().trim().min(3).max(30).optional(),
+  name: z.string().trim().min(1).max(50).optional(),
   displayName: z.string().trim().min(1).max(50).optional(),
   avatarUrl: z.string().max(1000).optional().or(z.literal('')),
-  bio: z.string().trim().max(500).optional(),
-  gender: z.string().max(20).optional(),
-  dob: z.string().optional(),
-  signature: z.string().trim().max(100).optional(),
+  coverUrl: z.string().max(1000).optional().or(z.literal('')),
+  bio: z.string().trim().max(500).optional().or(z.literal('')),
+  gender: z.string().max(20).optional().or(z.literal('')),
+  dob: z.string().optional().or(z.literal('')),
+  birthDate: z.string().optional().or(z.literal('')),
+  dateOfBirth: z.string().optional().or(z.literal('')),
+  region: z.string().max(50).optional().or(z.literal('')),
+  signature: z.string().trim().max(100).optional().or(z.literal('')),
   countryCode: z.string().length(2).optional(),
   // Explicitly disallow protected fields
   role: z.undefined({ invalid_type_error: 'Role cannot be modified through profile' }),

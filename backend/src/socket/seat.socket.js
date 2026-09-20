@@ -53,7 +53,9 @@ export async function onOccupySeat(io, socket, data, callback, db) {
       },
     };
     if (typeof callback === 'function') return callback(errorResponse);
-    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+    if (socket && typeof socket.emit === 'function') {
+      socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+    }
   }
 }
 
@@ -104,7 +106,9 @@ export async function onLeaveSeat(io, socket, data, callback, db) {
       },
     };
     if (typeof callback === 'function') return callback(errorResponse);
-    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+    if (socket && typeof socket.emit === 'function') {
+      socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+    }
   }
 }
 

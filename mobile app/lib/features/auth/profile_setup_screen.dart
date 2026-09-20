@@ -298,9 +298,10 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 backgroundColor: AppColors.getCard(isDark),
                 backgroundImage: _selectedImagePath != null
                     ? FileImage(File(_selectedImagePath!)) as ImageProvider
-                    : const NetworkImage(
-                        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
-                      ),
+                    : null,
+                child: _selectedImagePath == null
+                    ? Icon(Icons.person_rounded, size: 64, color: AppColors.getPrimary(isDark))
+                    : null,
               ),
             ),
             Positioned(

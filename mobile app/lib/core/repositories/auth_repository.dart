@@ -91,18 +91,24 @@ class AuthRepository {
 
   /// Update user's profile on backend
   Future<UserModel> updateProfile({
+    String? username,
+    String? name,
     String? displayName,
     String? bio,
     String? avatarUrl,
+    String? coverUrl,
     String? gender,
     String? countryCode,
     String? region,
     DateTime? birthDate,
   }) async {
     final payload = <String, dynamic>{};
-    if (displayName != null) payload['displayName'] = displayName;
+    if (username != null && username.trim().isNotEmpty) payload['username'] = username.trim();
+    if (name != null && name.trim().isNotEmpty) payload['displayName'] = name.trim();
+    if (displayName != null && displayName.trim().isNotEmpty) payload['displayName'] = displayName.trim();
     if (bio != null) payload['bio'] = bio;
     if (avatarUrl != null) payload['avatarUrl'] = avatarUrl;
+    if (coverUrl != null) payload['coverUrl'] = coverUrl;
     if (gender != null) payload['gender'] = gender;
     if (countryCode != null) payload['countryCode'] = countryCode;
     if (region != null) payload['region'] = region;

@@ -55,8 +55,9 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
     _initCameraAndMic();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final currentUser = context.read<AuthProvider>().currentUser;
       final liveProv = context.read<LiveProvider>();
-      liveProv.startPkBattle();
+      liveProv.startPkBattle(currentHost: currentUser);
       context.read<LiveGiftProvider>().setActiveRoom('pk_battle');
     });
 
@@ -102,7 +103,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
     final controller = CameraController(
       cameraDescription,
       ResolutionPreset.medium,
-      enableAudio: true,
+      enableAudio: false,
     );
 
     _cameraController = controller;

@@ -19,43 +19,41 @@ class EmojiReactionOverlay extends StatelessWidget {
     final size = mediaQuery.size;
     final defaultFallback = fallbackPosition ?? Offset(size.width * 0.5, size.height * 0.72);
 
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: Consumer<EmojiReactionProvider>(
-          builder: (context, provider, child) {
-            final activeReactions = provider.activeReactions;
-            if (activeReactions.isEmpty) return const SizedBox.shrink();
+    return IgnorePointer(
+      child: Consumer<EmojiReactionProvider>(
+        builder: (context, provider, child) {
+          final activeReactions = provider.activeReactions;
+          if (activeReactions.isEmpty) return const SizedBox.shrink();
 
-            return Stack(
-              clipBehavior: Clip.none,
-              children: activeReactions.map((reaction) {
-                // 1. Try position by seatId anchor (Party Room)
-                Offset? startPos;
-                if (reaction.seatId != null) {
-                  startPos = provider.getAnchorPosition('party_seat_${reaction.seatId}');
-                }
+          return Stack(
+            clipBehavior: Clip.none,
+            children: activeReactions.map((reaction) {
+              // 1. Try position by seatId anchor (Party Room)
+              Offset? startPos;
+              if (reaction.seatId != null) {
+                startPos = provider.getAnchorPosition('party_seat_${reaction.seatId}');
+              }
 
-                // 2. Try position by senderId anchor
-                startPos ??= provider.getAnchorPosition('user_${reaction.senderId}');
+              // 2. Try position by senderId anchor
+              startPos ??= provider.getAnchorPosition('user_${reaction.senderId}');
 
-                // 3. Try host anchor fallback
-                startPos ??= provider.getAnchorPosition('live_host_avatar');
+              // 3. Try host anchor fallback
+              startPos ??= provider.getAnchorPosition('live_host_avatar');
 
-                // 4. Default screen position fallback
-                startPos ??= defaultFallback;
+              // 4. Default screen position fallback
+              startPos ??= defaultFallback;
 
-                return AnimatedEmojiReaction(
-                  key: ValueKey('anim_${reaction.reactionId}'),
-                  emoji: reaction.emoji,
-                  startPosition: startPos,
-                  onComplete: () {
-                    provider.removeReaction(reaction.reactionId);
-                  },
-                );
-              }).toList(),
-            );
-          },
-        ),
+              return AnimatedEmojiReaction(
+                key: ValueKey('anim_${reaction.reactionId}'),
+                emoji: reaction.emoji,
+                startPosition: startPos,
+                onComplete: () {
+                  provider.removeReaction(reaction.reactionId);
+                },
+              );
+            }).toList(),
+          );
+        },
       ),
     );
   }

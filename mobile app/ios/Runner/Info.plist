@@ -16,14 +16,6 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>ZeParty</string>
-	<key>NSCameraUsageDescription</key>
-	<string>ZeParty requires access to your camera for live streaming and video calls.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>ZeParty requires access to your microphone for live streaming and audio/video calls.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>ZeParty requires access to your photo library to select avatar images and payment proof receipts.</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>ZeParty requires permission to save photos to your library.</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -34,6 +26,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>ZeParty requires access to your camera for live streaming and video calls.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ZeParty requires access to your microphone for live streaming and audio/video calls.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>ZeParty requires permission to save photos to your library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ZeParty requires access to your photo library to select avatar images and payment proof receipts.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

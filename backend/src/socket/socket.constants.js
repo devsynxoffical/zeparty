@@ -30,9 +30,17 @@ export const SOCKET_EVENTS = {
   ROOM_PINNED: 'room:pinned',
   ROOM_UNPINNED: 'room:unpinned',
 
+  // In-Room Chat & Messaging
+  ROOM_CHAT_SEND: 'room:chat_send',
+  ROOM_CHAT_MESSAGE: 'room:chat_message',
+
   // Gifting & Tipping
   ROOM_GIFT_SEND: 'room:gift_send',
   ROOM_GIFT_SENT: 'room:gift_sent',
+
+  // Moderation & Seat/User Management
+  ROOM_KICK_USER: 'room:kick_user',
+  ROOM_USER_KICKED: 'room:user_kicked',
 
   // PK Battles (Phase 19)
   PK_START: 'pk:start',

@@ -212,41 +212,40 @@ class _MetallicShineState extends State<MetallicShine>
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final shineColor = isDark ? AppColors.goldHighlight : AppColors.lightBlue;
-    final shineOverlay = Positioned.fill(
-      child: IgnorePointer(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            return FractionallySizedBox(
-              widthFactor: widget.bandWidth,
-              child: Align(
-                alignment: Alignment(_position.value, 0),
-                child: Transform.rotate(
-                  angle: 0.35,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                        colors: [
-                          shineColor.withValues(alpha: 0.0),
-                          shineColor.withValues(alpha: 0.28),
-                          AppColors.white.withValues(alpha: 0.18),
-                          shineColor.withValues(alpha: 0.0),
-                        ],
-                      ),
+
+    Widget buildShine() => IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          return FractionallySizedBox(
+            widthFactor: widget.bandWidth,
+            child: Align(
+              alignment: Alignment(_position.value, 0),
+              child: Transform.rotate(
+                angle: 0.35,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        shineColor.withValues(alpha: 0.0),
+                        shineColor.withValues(alpha: 0.28),
+                        AppColors.white.withValues(alpha: 0.18),
+                        shineColor.withValues(alpha: 0.0),
+                      ],
                     ),
                   ),
                 ),
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
 
     if (widget.child == null) {
-      return shineOverlay;
+      return buildShine();
     }
 
     return ClipRRect(
@@ -254,7 +253,7 @@ class _MetallicShineState extends State<MetallicShine>
       child: Stack(
         children: [
           widget.child!,
-          shineOverlay,
+          Positioned.fill(child: buildShine()),
         ],
       ),
     );
@@ -451,14 +450,13 @@ class _FloatingHeartAnimationState extends State<FloatingHeartAnimation>
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: widget.position.dx - 40,
-      top: widget.position.dy - 40,
+    return Align(
+      alignment: Alignment.topLeft,
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, child) {
           return Transform.translate(
-            offset: Offset(0, _translateY.value),
+            offset: Offset(widget.position.dx - 40, widget.position.dy - 40 + _translateY.value),
             child: Opacity(
               opacity: _opacity.value,
               child: Transform.scale(

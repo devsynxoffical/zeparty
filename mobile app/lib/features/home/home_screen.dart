@@ -182,25 +182,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             controller: _tabController,
             children: [
               MineTab(isDark: isDark),
+              // Party Tab: Audio Voice Party Rooms
               LiveDiscoveryGrid(
                 liveRooms: liveRooms.where((r) =>
-                  r.category.toLowerCase() == 'party' ||
-                  r.id.startsWith('party_')
+                  r.roomType == 'AUDIO_PARTY' ||
+                  r.category.toUpperCase() == 'PARTY' ||
+                  r.id.startsWith('party_') ||
+                  r.id.startsWith('room-elena')
                 ).toList(),
                 isDark: isDark,
                 isPartyTab: true,
               ),
+              // Live Tab: Video Streams & Live Broadcasts
               LiveDiscoveryGrid(
                 liveRooms: liveRooms.where((r) =>
-                  r.category.toLowerCase() != 'party' &&
-                  !r.id.startsWith('party_')
+                  r.roomType == 'LIVE_VIDEO' ||
+                  (r.roomType != 'AUDIO_PARTY' && r.category.toUpperCase() != 'PARTY' && !r.id.startsWith('party_') && !r.id.startsWith('room-elena'))
                 ).toList(),
                 isDark: isDark,
                 isPartyTab: false,
               ),
               ShortsTab(isDark: isDark),
               GamesTab(isDark: isDark),
-              LiveDiscoveryGrid(liveRooms: liveRooms.where((r) => r.category == 'PK').toList(), isDark: isDark),
+              LiveDiscoveryGrid(liveRooms: liveRooms.where((r) => r.category.toUpperCase() == 'PK').toList(), isDark: isDark),
             ],
           ),
         ),

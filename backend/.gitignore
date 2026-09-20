@@ -8,5 +8,12 @@ logs/
 
 coverage/
 
+public/uploads/avatars/*
+!public/uploads/avatars/.gitkeep
+public/uploads/covers/*
+!public/uploads/covers/.gitkeep
+public/uploads/posts/*
+!public/uploads/posts/.gitkeep
+
 .DS_Store
 Thumbs.db

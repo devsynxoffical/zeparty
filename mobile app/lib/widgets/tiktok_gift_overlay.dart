@@ -25,11 +25,9 @@ class TikTokGiftOverlay extends StatelessWidget {
         final activeEvent = provider.currentActiveEvent;
         if (activeEvent == null) return const SizedBox.shrink();
 
-        return Positioned.fill(
-          child: IgnorePointer(
-            ignoring: activeEvent.animationLevel != GiftAnimationLevel.legendary,
-            child: _buildLevelAnimator(context, provider, activeEvent),
-          ),
+        return IgnorePointer(
+          ignoring: activeEvent.animationLevel != GiftAnimationLevel.legendary,
+          child: _buildLevelAnimator(context, provider, activeEvent),
         );
       },
     );

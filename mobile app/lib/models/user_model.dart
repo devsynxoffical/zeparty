@@ -144,18 +144,29 @@ class UserModel {
 
   /// Automatically calculate exact age from date of birth securely
   int get age {
-    if (dateOfBirth == null) return 21; // Default fallback if not set
+    if (dateOfBirth == null) return 21; // Safe fallback when profile DOB is loading
     final today = DateTime.now();
     int calculatedAge = today.year - dateOfBirth!.year;
     if (today.month < dateOfBirth!.month ||
         (today.month == dateOfBirth!.month && today.day < dateOfBirth!.day)) {
       calculatedAge--;
     }
-    return calculatedAge;
+    return calculatedAge > 0 ? calculatedAge : 0;
   }
 
   /// 18+ requirement for restricted live streaming features
   bool get isAgeEligible => age >= 18;
+
+  /// Effective display name that avoids raw generated technical IDs
+  String get displayName {
+    if (name.isNotEmpty && !name.startsWith('user_') && name != 'Guest') {
+      return name;
+    }
+    if (username.isNotEmpty && !username.startsWith('user_')) {
+      return username;
+    }
+    return name.isNotEmpty ? name : 'ZeParty Member';
+  }
 
   /// Effective cover image URL fallback
   String get effectiveCoverUrl => (coverUrl != null && coverUrl!.isNotEmpty) ? coverUrl! : avatarUrl;
@@ -165,16 +176,22 @@ class UserModel {
     final wallet = json['wallet'] is Map<String, dynamic> ? json['wallet'] as Map<String, dynamic> : {};
     final hostProfile = json['hostProfile'] is Map<String, dynamic> ? json['hostProfile'] as Map<String, dynamic> : null;
 
-    final id = json['id']?.toString() ?? '';
-    final username = json['username']?.toString() ?? (profile['displayName']?.toString() ?? 'user_$id');
-    final name = profile['displayName']?.toString() ?? json['name']?.toString() ?? username;
-    final avatarUrl = profile['avatarUrl']?.toString() ?? json['avatarUrl']?.toString() ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80';
-    final bio = profile['bio']?.toString() ?? json['bio']?.toString() ?? 'Creator on ZeParty ✨';
+    final id = json['id']?.toString() ?? json['_id']?.toString() ?? '';
+    final rawUsername = json['username']?.toString() ?? (profile['displayName']?.toString() ?? (id.isNotEmpty ? 'user_$id' : 'Guest'));
+    final rawName = profile['displayName']?.toString() ?? json['name']?.toString() ?? '';
+    final username = rawUsername.isNotEmpty ? rawUsername : (rawName.isNotEmpty ? rawName : (id.isNotEmpty ? 'user_$id' : 'Guest'));
+    final name = (rawName.isNotEmpty && !rawName.startsWith('user_'))
+        ? rawName
+        : (username.isNotEmpty && !username.startsWith('user_') ? username : (rawName.isNotEmpty ? rawName : username));
+    final avatarUrl = profile['avatarUrl']?.toString() ?? json['avatarUrl']?.toString() ?? '';
+    final bio = profile['bio']?.toString() ?? json['bio']?.toString() ?? '';
     final gender = profile['gender']?.toString() ?? json['gender']?.toString() ?? 'Not Specified';
     final region = profile['region']?.toString() ?? profile['countryCode']?.toString() ?? json['region']?.toString() ?? 'Global';
     
     DateTime? dob;
-    if (profile['birthDate'] != null) {
+    if (json['dob'] != null) {
+      dob = DateTime.tryParse(json['dob'].toString());
+    } else if (profile['birthDate'] != null) {
       dob = DateTime.tryParse(profile['birthDate'].toString());
     } else if (json['dateOfBirth'] != null) {
       dob = DateTime.tryParse(json['dateOfBirth'].toString());
@@ -194,6 +211,11 @@ class UserModel {
     if (userType == 'BD') role = UserRole.bd;
     if (userType == 'ADMIN') role = UserRole.admin;
 
+    final int wealthLevel = profile['wealthLevel'] is int ? profile['wealthLevel'] as int : (json['wealthLevel'] is int ? json['wealthLevel'] as int : 1);
+    final int charmLevel = profile['charmLevel'] is int ? profile['charmLevel'] as int : (json['charmLevel'] is int ? json['charmLevel'] as int : 1);
+    final int accountLevel = profile['level'] is int ? profile['level'] as int : (json['accountLevel'] is int ? json['accountLevel'] as int : 1);
+    final bool isVipUser = json['isVip'] == true || (wealthLevel > 10);
+
     return UserModel(
       id: id,
       username: username,
@@ -204,14 +226,17 @@ class UserModel {
       gender: gender,
       region: region,
       dateOfBirth: dob,
-      profileCompleted: json['profileCompleted'] == true || profile['displayName'] != null,
+      profileCompleted: json['profileCompleted'] == true ||
+          (profile['displayName'] != null && profile['displayName'].toString().trim().isNotEmpty) ||
+          (name.isNotEmpty && name != 'Guest') ||
+          (username.isNotEmpty && !username.startsWith('user_')),
       followers: followers,
       following: following,
       diamonds: diamonds,
       coins: coins,
       rCoins: (json['rCoins'] as num?)?.toDouble() ?? 0.0,
-      isVip: json['isVip'] == true || (profile['wealthLevel'] != null && (profile['wealthLevel'] as int) > 0),
-      vipLevel: json['vipLevel']?.toString() ?? 'VIP 1',
+      isVip: isVipUser,
+      vipLevel: isVipUser ? (json['vipLevel']?.toString() ?? 'VIP 1') : 'None',
       isHost: role == UserRole.host || hostProfile != null,
       isAgency: role == UserRole.agency,
       isSeller: role == UserRole.seller || sellerBalance > 0,
@@ -221,20 +246,20 @@ class UserModel {
       isOnline: json['isOnline'] ?? true,
       isLive: json['isLive'] ?? false,
       liveRoomId: json['liveRoomId']?.toString(),
-      avatarFrame: json['avatarFrame']?.toString() ?? 'Gold Crown Frame',
-      badge: json['badge']?.toString() ?? 'Active Member',
+      avatarFrame: json['avatarFrame']?.toString() ?? '',
+      badge: json['badge']?.toString() ?? '',
       referralCode: json['referralCode']?.toString() ?? 'ZEP$id',
       referralCount: json['referralCount'] is int ? json['referralCount'] as int : 0,
       role: role,
       hostApplicationStatus: hostProfile?['status']?.toString().toLowerCase() ?? json['hostApplicationStatus']?.toString() ?? 'none',
       hostRejectionReason: hostProfile?['rejectionReason']?.toString() ?? json['hostRejectionReason']?.toString(),
-      wealthLevel: profile['wealthLevel'] is int ? profile['wealthLevel'] as int : 1,
-      wealthXp: profile['experience'] is int ? profile['experience'] as int : 0,
-      charmLevel: profile['charmLevel'] is int ? profile['charmLevel'] as int : 1,
+      wealthLevel: wealthLevel,
+      wealthXp: profile['experience'] is int ? profile['experience'] as int : (json['wealthXp'] is int ? json['wealthXp'] as int : 0),
+      charmLevel: charmLevel,
       charmXp: 0,
-      gameLevel: 1,
+      gameLevel: json['gameLevel'] is int ? json['gameLevel'] as int : 1,
       gameXp: 0,
-      accountLevel: profile['level'] is int ? profile['level'] as int : 1,
+      accountLevel: accountLevel,
       accountXp: 0,
       cpPartnerId: json['cpPartnerId']?.toString(),
       cpPoints: json['cpPoints'] is int ? json['cpPoints'] as int : 0,

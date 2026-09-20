@@ -38,8 +38,13 @@ import adminNotificationRouter from './adminNotification.routes.js';
 import { userGameRouter, adminGameRouter } from './game.routes.js';
 import mediaRoutes from './media.routes.js';
 import { userPKRouter, adminPKRouter } from './pk.routes.js';
+import messageRouter from './message.routes.js';
 
 const router = express.Router();
+
+// Direct Messaging routes
+router.use('/v1/messages', messageRouter);
+router.use('/messages', messageRouter);
 
 // Phase 18 Media & Storage Routes
 router.use('/v1/media', mediaRoutes);

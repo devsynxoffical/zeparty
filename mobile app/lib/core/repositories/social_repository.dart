@@ -196,11 +196,66 @@ class SocialRepository {
     );
   }
 
-  // ─── User Profile ─────────────────────────────────────────────────────────
+  // ─── User Profile & Search ───────────────────────────────────────────────────
 
   /// GET /v1/users/:id
   Future<Map<String, dynamic>> getUserById(String userId) async {
     final response = await _client.get<Map<String, dynamic>>('/v1/users/$userId');
     return response.data!;
+  }
+
+  /// GET /v1/users/search
+  Future<List<dynamic>> searchUsers(String query, {int limit = 20}) async {
+    final response = await _client.get<Map<String, dynamic>>(
+      '/v1/users/search',
+      queryParameters: {
+        'q': query,
+        'limit': limit,
+      },
+    );
+    return response.data?['data'] as List<dynamic>? ?? [];
+  }
+
+  // ─── Direct Messaging ─────────────────────────────────────────────────────
+
+  /// GET /v1/messages/conversations
+  Future<List<dynamic>> fetchConversations() async {
+    final response = await _client.get<Map<String, dynamic>>('/v1/messages/conversations');
+    return response.data?['data'] as List<dynamic>? ?? [];
+  }
+
+  /// GET /v1/messages/:targetUserId
+  Future<Map<String, dynamic>> fetchMessages(
+    String targetUserId, {
+    int page = 1,
+    int limit = 50,
+  }) async {
+    final response = await _client.get<Map<String, dynamic>>(
+      '/v1/messages/$targetUserId',
+      queryParameters: {
+        'page': page,
+        'limit': limit,
+      },
+    );
+    return response.data!;
+  }
+
+  /// POST /v1/messages/:targetUserId
+  Future<Map<String, dynamic>> sendMessage(
+    String targetUserId, {
+    required String content,
+  }) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      '/v1/messages/$targetUserId',
+      data: {
+        'content': content,
+      },
+    );
+    return response.data!;
+  }
+
+  /// PATCH /v1/messages/:targetUserId/read
+  Future<void> markMessagesAsRead(String targetUserId) async {
+    await _client.patch<Map<String, dynamic>>('/v1/messages/$targetUserId/read');
   }
 }

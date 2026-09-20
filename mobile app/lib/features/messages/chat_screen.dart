@@ -15,6 +15,7 @@ import '../../widgets/chat_bubble.dart';
 import '../../widgets/gift_dialog.dart';
 import '../../widgets/gift_animation_overlay.dart';
 import '../../widgets/report_sheet.dart';
+import '../profile/user_profile_details_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final UserModel user;
@@ -29,8 +30,10 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _msgController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
   final GlobalKey<GiftAnimationOverlayState> _giftOverlayKey = GlobalKey<GiftAnimationOverlayState>();
+  final ScrollController _scrollController = ScrollController();
   XFile? _selectedImage;
   bool _hasText = false;
+  Timer? _typingDebounce;
 
   final AudioRecorder _audioRecorder = AudioRecorder();
   bool _isRecording = false;
@@ -41,17 +44,38 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    _msgController.addListener(() {
-      final hasText = _msgController.text.trim().isNotEmpty;
-      if (_hasText != hasText) {
-        setState(() => _hasText = hasText);
-      }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<MessagingProvider>().loadMessagesForUser(widget.user.id);
     });
+
+    _msgController.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    final hasText = _msgController.text.trim().isNotEmpty;
+    if (_hasText != hasText) {
+      setState(() => _hasText = hasText);
+    }
+
+    if (hasText) {
+      context.read<MessagingProvider>().sendTyping(widget.user.id, true);
+      _typingDebounce?.cancel();
+      _typingDebounce = Timer(const Duration(milliseconds: 2500), () {
+        if (mounted) {
+          context.read<MessagingProvider>().sendTyping(widget.user.id, false);
+        }
+      });
+    } else {
+      _typingDebounce?.cancel();
+      context.read<MessagingProvider>().sendTyping(widget.user.id, false);
+    }
   }
 
   @override
   void dispose() {
+    _typingDebounce?.cancel();
     _msgController.dispose();
+    _scrollController.dispose();
     _recordTimer?.cancel();
     _audioRecorder.dispose();
     super.dispose();
@@ -120,15 +144,17 @@ class _ChatScreenState extends State<ChatScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => GiftDialog(
-        streamerName: widget.user.name,
+        streamerName: widget.user.name.isNotEmpty ? widget.user.name : widget.user.username,
         targetReceiver: widget.user,
         onGiftSent: (gift) {
+          final currentUser = context.read<AuthProvider>().currentUser;
           _giftOverlayKey.currentState?.playGiftAnimation(gift);
           context.read<MessagingProvider>().sendMessage(
             widget.user.id,
             '🎁 Sent ${gift.name}!',
             type: 'gift',
             mediaUrl: gift.icon,
+            currentUserId: currentUser.id,
           );
         },
       ),
@@ -178,11 +204,13 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     
     if (path != null && mounted) {
+      final currentUser = context.read<AuthProvider>().currentUser;
       context.read<MessagingProvider>().sendMessage(
         widget.user.id,
         '🎤 Voice Note ($durationText)',
         type: 'voice',
         mediaUrl: path,
+        currentUserId: currentUser.id,
       );
     }
   }
@@ -195,36 +223,104 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryColor = AppColors.getPrimary(isDark);
+    final currentUser = context.watch<AuthProvider>().currentUser;
     final messaging = context.watch<MessagingProvider>();
     final messages = messaging.getMessagesForUser(widget.user.id);
+    final isTargetTyping = messaging.isUserTyping(widget.user.id);
+
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
-        title: Row(
-          children: [
-            UserAvatar(imageUrl: widget.user.avatarUrl, radius: 18),
-            const SizedBox(width: 10),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(widget.user.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                const Text('Online • ZeParty', style: TextStyle(fontSize: 10, color: AppColors.success)),
-              ],
-            ),
-          ],
+        title: GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: widget.user.id)),
+            );
+          },
+          child: Row(
+            children: [
+              UserAvatar(imageUrl: widget.user.avatarUrl, radius: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.user.name.isNotEmpty ? widget.user.name : widget.user.username,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (isTargetTyping)
+                      const Text(
+                        'typing...',
+                        style: TextStyle(fontSize: 10, color: Color(0xFF00E5FF), fontWeight: FontWeight.bold),
+                      )
+                    else if (widget.user.isLive)
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(4)),
+                            child: const Text('🔴 LIVE', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
+                          ),
+                          const SizedBox(width: 4),
+                          const Text('Streaming now', style: TextStyle(fontSize: 10, color: Colors.redAccent)),
+                        ],
+                      )
+                    else
+                      const Row(
+                        children: [
+                          Icon(Icons.circle, color: AppColors.success, size: 8),
+                          SizedBox(width: 4),
+                          Text('Online • ZeParty', style: TextStyle(fontSize: 10, color: AppColors.success)),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.person_outline_rounded, color: Colors.blueAccent),
+            tooltip: 'View Profile',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: widget.user.id)),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.card_giftcard_rounded, color: Colors.amber),
+            tooltip: 'Send Gift',
             onPressed: _showGiftDialog,
           ),
           PopupMenuButton<String>(
             onSelected: (val) async {
-              if (val == 'Block User') {
+              if (val == 'View Profile') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: widget.user.id)),
+                );
+              } else if (val == 'Block User') {
                 try {
                   await context.read<AuthProvider>().blockUser(widget.user.id);
                   if (mounted) {
@@ -245,11 +341,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   targetTitle: widget.user.name,
                   reportedUserId: widget.user.id,
                 );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Action: $val')));
+              } else if (val == 'Clear Chat') {
+                messaging.deleteThreadLocally(widget.user.id);
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chat cleared locally.')));
               }
             },
             itemBuilder: (ctx) => [
+              const PopupMenuItem(value: 'View Profile', child: Text('View Full Profile')),
               const PopupMenuItem(value: 'Block User', child: Text('Block User')),
               const PopupMenuItem(value: 'Report Account', child: Text('Report Account')),
               const PopupMenuItem(value: 'Clear Chat', child: Text('Clear Chat')),
@@ -263,15 +361,79 @@ class _ChatScreenState extends State<ChatScreen> {
             children: [
               // Chat Messages Feed
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final msg = messages[index];
-                    return ChatBubble(message: msg, isMe: msg.senderId == 'user_1001');
-                  },
-                ),
+                child: messaging.isLoadingMessages && messages.isEmpty
+                    ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                    : messages.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: widget.user.id)),
+                                    );
+                                  },
+                                  child: UserAvatar(imageUrl: widget.user.avatarUrl, radius: 36),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  widget.user.name.isNotEmpty ? widget.user.name : widget.user.username,
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Say hello and start connecting on ZeParty! 👋',
+                                  style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(12),
+                            itemCount: messages.length,
+                            itemBuilder: (context, index) {
+                              final msg = messages[index];
+                              final isMe = msg.senderId == currentUser.id ||
+                                  (currentUser.id.isNotEmpty && msg.senderId == currentUser.id) ||
+                                  msg.receiverId == widget.user.id;
+                              return ChatBubble(message: msg, isMe: isMe);
+                            },
+                          ),
               ),
+
+              // Real-time Typing Bubble
+              if (isTargetTyping)
+                Padding(
+                  padding: const EdgeInsets.only(left: 16, bottom: 6),
+                  child: Row(
+                    children: [
+                      UserAvatar(imageUrl: widget.user.avatarUrl, radius: 12),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AppColors.getCard(isDark),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text('typing', style: TextStyle(fontSize: 11, color: Colors.white70, fontStyle: FontStyle.italic)),
+                            SizedBox(width: 6),
+                            SizedBox(
+                              width: 10,
+                              height: 10,
+                              child: CircularProgressIndicator(strokeWidth: 1.5, color: Color(0xFF00E5FF)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
               // Quick Replies Bar
               SizedBox(
@@ -289,7 +451,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         backgroundColor: AppColors.getSurface(isDark),
                         side: BorderSide(color: AppColors.getBorderStrong(isDark), width: 1),
                         onPressed: () {
-                          messaging.sendMessage(widget.user.id, reply);
+                          messaging.sendMessage(widget.user.id, reply, currentUserId: currentUser.id);
+                          _scrollToBottom();
                         },
                       ),
                     );
@@ -371,7 +534,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                       minLines: 1,
                                       maxLines: 5,
                                       decoration: const InputDecoration(
-                                        hintText: 'Message',
+                                        hintText: 'Message...',
                                         border: InputBorder.none,
                                         enabledBorder: InputBorder.none,
                                         focusedBorder: InputBorder.none,
@@ -400,8 +563,9 @@ class _ChatScreenState extends State<ChatScreen> {
                             if (_hasText || _selectedImage != null) {
                               final text = _msgController.text.trim();
                               if (text.isNotEmpty) {
-                                messaging.sendMessage(widget.user.id, text);
+                                messaging.sendMessage(widget.user.id, text, currentUserId: currentUser.id);
                                 _msgController.clear();
+                                _scrollToBottom();
                               }
                               if (_selectedImage != null) {
                                 messaging.sendMessage(
@@ -409,8 +573,10 @@ class _ChatScreenState extends State<ChatScreen> {
                                   '📷 Photo',
                                   type: 'image',
                                   mediaUrl: _selectedImage!.path,
+                                  currentUserId: currentUser.id,
                                 );
                                 setState(() => _selectedImage = null);
+                                _scrollToBottom();
                               }
                             } else {
                               _toggleRecordingState();

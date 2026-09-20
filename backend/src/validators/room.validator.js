@@ -2,9 +2,24 @@ import { z } from 'zod';
 
 export const createRoomSchema = z.object({
   title: z.string().trim().min(1, 'Title is required').max(100),
-  coverImageUrl: z.string().url().max(1000).optional().or(z.literal('')),
-  roomType: z.enum(['LIVE_VIDEO', 'AUDIO_PARTY']).default('LIVE_VIDEO'),
-  category: z.enum(['MUSIC', 'CHAT', 'GAMING']).default('CHAT'),
+  coverImageUrl: z.string().max(1000).optional().or(z.literal('')),
+  roomType: z.preprocess((val) => {
+    if (typeof val === 'string') {
+      const u = val.toUpperCase().trim();
+      if (u.includes('AUDIO') || u.includes('PARTY')) return 'AUDIO_PARTY';
+      if (u.includes('VIDEO') || u.includes('LIVE')) return 'LIVE_VIDEO';
+    }
+    return val;
+  }, z.enum(['LIVE_VIDEO', 'AUDIO_PARTY']).default('LIVE_VIDEO')),
+  category: z.preprocess((val) => {
+    if (typeof val === 'string') {
+      const u = val.toUpperCase().trim();
+      if (u.includes('MUSIC')) return 'MUSIC';
+      if (u.includes('GAME') || u.includes('GAMING')) return 'GAMING';
+      return 'CHAT';
+    }
+    return val;
+  }, z.enum(['MUSIC', 'CHAT', 'GAMING']).default('CHAT')),
   isPrivate: z.boolean().default(false),
   roomPin: z.string().max(10).optional().or(z.literal('')),
 });

@@ -6,6 +6,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../../core/animations/app_animations.dart';
 import '../../core/repositories/backend_repository.dart';
+import '../../core/repositories/room_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/live_room_model.dart';
 import '../../providers/auth_provider.dart';
@@ -30,6 +31,7 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
   List<CameraDescription> _cameras = [];
   int _selectedCameraIndex = 0;
   bool _isCameraInitialized = false;
+  bool _isCreating = false;
 
   XFile? _coverImage;
   final ImagePicker _picker = ImagePicker();
@@ -367,7 +369,9 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: AppColors.getBorder(isDark)),
               ),
-              child: SwitchListTile(
+              child: Material(
+                color: Colors.transparent,
+                child: SwitchListTile(
                 title: Text(
                   'Private Room',
                   style: TextStyle(
@@ -388,37 +392,74 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                 onChanged: (val) => setState(() => _isPrivate = val),
               ),
             ),
+          ),
 
             const SizedBox(height: 28),
 
             GoldButton(
               text: 'Go Live on ZeParty',
               icon: Icons.cell_tower_rounded,
-              onPressed: () {
-                final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
-                final room = LiveRoomModel(
-                  id: 'live_${DateTime.now().millisecondsSinceEpoch}',
-                  title: _titleController.text.trim().isNotEmpty
-                      ? _titleController.text.trim()
-                      : '${currentUser.name}\'s Live Stream',
-                  host: currentUser,
-                  coverUrl: _coverImage != null
-                      ? 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=600&q=80'
-                      : currentUser.avatarUrl,
-                  viewerCount: 1,
-                  category: _selectedCategory,
-                  isPrivate: _isPrivate,
-                  startTime: DateTime.now(),
-                );
+              isLoading: _isCreating,
+              onPressed: _isCreating
+                  ? null
+                  : () async {
+                      setState(() => _isCreating = true);
+                      try {
+                        final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+                        final title = _titleController.text.trim().isNotEmpty
+                            ? _titleController.text.trim()
+                            : '${currentUser.name}\'s Live Stream';
+                        final coverUrl = _coverImage != null
+                            ? 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=600&q=80'
+                            : (currentUser.avatarUrl.isNotEmpty ? currentUser.avatarUrl : 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=600&q=80');
 
-                // Register live stream in backend repository so it appears in Public Live & Mine
-                BackendRepository.instance.addLiveRoom(room);
+                        LiveRoomModel roomToJoin;
 
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (c) => LiveRoomScreen(room: room)),
-                );
-              },
+                        try {
+                          roomToJoin = await RoomRepository.instance.createRoom(
+                            title: title,
+                            coverImageUrl: coverUrl,
+                            roomType: 'LIVE_VIDEO',
+                            category: _selectedCategory,
+                            isPrivate: _isPrivate,
+                          );
+                        } catch (e) {
+                          debugPrint('[CreateLiveRoom] Backend createRoom error: $e, using local fallback');
+                          roomToJoin = LiveRoomModel(
+                            id: 'live_${DateTime.now().millisecondsSinceEpoch}',
+                            title: title,
+                            host: currentUser,
+                            coverUrl: coverUrl,
+                            viewerCount: 1,
+                            category: _selectedCategory,
+                            isPrivate: _isPrivate,
+                            startTime: DateTime.now(),
+                            roomType: 'VIDEO_PARTY',
+                          );
+                        }
+
+                        BackendRepository.instance.addLiveRoom(roomToJoin);
+
+                        // Cleanly dispose preview camera so iOS AVFoundation releases hardware lock
+                        if (_cameraController != null) {
+                          try {
+                            await _cameraController!.dispose();
+                            _cameraController = null;
+                          } catch (_) {}
+                        }
+
+                        if (context.mounted) {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (c) => LiveRoomScreen(room: roomToJoin)),
+                          );
+                        }
+                      } finally {
+                        if (mounted) {
+                          setState(() => _isCreating = false);
+                        }
+                      }
+                    },
             ),
             const SizedBox(height: 30),
           ],

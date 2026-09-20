@@ -112,7 +112,12 @@ class _PartyRoomScreenState extends State<PartyRoomScreen> with SingleTickerProv
               }),
               _seatAction(ctx, icon: Icons.card_giftcard_rounded, label: 'Send Gift', color: primary, onTap: () {
                 Navigator.pop(ctx);
-                showDialog(context: context, builder: (_) => GiftDialog(streamerName: party.title));
+                showModalBottomSheet(
+                  context: context,
+                  backgroundColor: Colors.transparent,
+                  isScrollControlled: true,
+                  builder: (_) => GiftDialog(streamerName: party.title),
+                );
               }),
             ] else ...[
               _seatAction(ctx, icon: Icons.person_add_rounded, label: 'Invite to Seat', color: primary, onTap: () {
@@ -275,7 +280,12 @@ class _PartyRoomScreenState extends State<PartyRoomScreen> with SingleTickerProv
                   ),
                   // Gift
                   GestureDetector(
-                    onTap: () => showDialog(context: context, builder: (_) => GiftDialog(streamerName: party.title)),
+                    onTap: () => showModalBottomSheet(
+                      context: context,
+                      backgroundColor: Colors.transparent,
+                      isScrollControlled: true,
+                      builder: (_) => GiftDialog(streamerName: party.title),
+                    ),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       decoration: BoxDecoration(

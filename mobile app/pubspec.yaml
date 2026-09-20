@@ -44,7 +44,7 @@ dependencies:
   url_launcher: ^6.3.1
   google_fonts: ^6.2.1
   uuid: ^4.6.0
-  agora_rtc_engine: ^6.5.4
+  agora_rtc_engine: ^6.6.4
   flutter_screenutil: ^5.9.3
   flutter_svg: ^2.3.0
   record: ^7.1.1
@@ -73,6 +73,8 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+  config:
+    enable-swift-package-manager: false
   uses-material-design: true
 
   assets:

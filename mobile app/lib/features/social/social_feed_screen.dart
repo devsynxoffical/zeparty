@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
@@ -17,19 +18,26 @@ import 'camera_recorder_screen.dart';
 import '../../core/services/room_share_service.dart';
 
 class SocialFeedScreen extends StatefulWidget {
-  const SocialFeedScreen({super.key});
+  final bool isScreenActive;
+  const SocialFeedScreen({super.key, this.isScreenActive = true});
 
   @override
   State<SocialFeedScreen> createState() => _SocialFeedScreenState();
 }
 
 class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerProviderStateMixin {
+  static const String _viewedStoriesPrefsKey = 'zeparty_viewed_story_keys';
   late TabController _tabController;
+  final Set<String> _viewedStoryKeys = {};
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
+    _loadViewedStories();
     // Load real feed from backend on first mount
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final social = context.read<SocialProvider>();
@@ -37,6 +45,30 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
         social.loadFeed();
       }
     });
+  }
+
+  void _loadViewedStories() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_viewedStoriesPrefsKey);
+      if (list != null && list.isNotEmpty && mounted) {
+        setState(() {
+          _viewedStoryKeys.addAll(list);
+        });
+      }
+    } catch (_) {}
+  }
+
+  void _markStoryAsViewed(String key) async {
+    if (!_viewedStoryKeys.contains(key)) {
+      setState(() {
+        _viewedStoryKeys.add(key);
+      });
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList(_viewedStoriesPrefsKey, _viewedStoryKeys.toList());
+      } catch (_) {}
+    }
   }
 
   @override
@@ -123,17 +155,7 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
             ],
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(90),
-              child: SizedBox(
-                height: 90,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  children: [
-                    _buildAddStoryItem(auth),
-                    ...social.posts.take(6).map((post) => _buildDynamicStoryItem(post)),
-                  ],
-                ),
-              ),
+              child: _buildStoryBar(social, auth),
             ),
           ),
           SliverPersistentHeader(
@@ -159,7 +181,7 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
           controller: _tabController,
           children: [
             _buildPostFeed(social, isTrending: false),
-            const ShortVideosScreen(),
+            ShortVideosScreen(isActive: widget.isScreenActive && _tabController.index == 1),
             _buildPostFeed(social, isTrending: true),
           ],
         ),
@@ -177,23 +199,62 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildAddStoryItem(AuthProvider auth) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final social = context.watch<SocialProvider>();
+  Widget _buildStoryBar(SocialProvider social, AuthProvider auth) {
+    final currentUserId = auth.currentUser.id;
+    final currentUserName = auth.currentUser.displayName.toLowerCase();
+    final currentUserHandle = auth.currentUser.username.toLowerCase();
+
+    // 1. Current user's stories
     final myStories = social.posts.where((p) =>
-      p.author.id == auth.currentUser.id ||
-      p.author.name.toLowerCase() == auth.currentUser.name.toLowerCase()
+      (currentUserId.isNotEmpty && p.author.id == currentUserId) ||
+      (currentUserName.isNotEmpty && p.author.displayName.toLowerCase() == currentUserName) ||
+      (currentUserHandle.isNotEmpty && p.author.username.toLowerCase() == currentUserHandle)
     ).toList();
+
+    // 2. Group other users' stories strictly by unique author name/handle
+    final Map<String, List<PostModel>> otherUsersStoryMap = {};
+    for (final post in social.posts) {
+      final isMyPost = (currentUserId.isNotEmpty && post.author.id == currentUserId) ||
+                       (currentUserName.isNotEmpty && post.author.displayName.toLowerCase() == currentUserName) ||
+                       (currentUserHandle.isNotEmpty && post.author.username.toLowerCase() == currentUserHandle);
+      if (isMyPost) continue;
+
+      // Group by author username or display name
+      final rawKey = post.author.username.isNotEmpty && !post.author.username.startsWith('user_')
+          ? post.author.username
+          : (post.author.displayName.isNotEmpty ? post.author.displayName : post.author.id);
+      final key = rawKey.toLowerCase().trim();
+      if (key.isNotEmpty) {
+        otherUsersStoryMap.putIfAbsent(key, () => []).add(post);
+      }
+    }
+
+    return SizedBox(
+      height: 90,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        children: [
+          _buildAddStoryItem(auth, myStories),
+          ...otherUsersStoryMap.values.map((storyList) => _buildGroupedStoryItem(storyList)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddStoryItem(AuthProvider auth, List<PostModel> myStories) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final hasStory = myStories.isNotEmpty;
-    final latestStory = hasStory ? myStories.first : null;
+    final isMyStoryWatched = _viewedStoryKeys.contains('__my_story__');
 
     return GestureDetector(
       onTap: () {
         AuthGuard.require(context, () {
-          if (hasStory && latestStory != null) {
+          if (hasStory) {
+            _markStoryAsViewed('__my_story__');
             showDialog(
               context: context,
-              builder: (_) => _FullStoryViewerDialog(post: latestStory, isMyStory: true),
+              builder: (_) => _FullStoryViewerDialog(stories: myStories, isMyStory: true),
             );
           } else {
             Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraRecorderScreen()));
@@ -208,11 +269,17 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
               padding: const EdgeInsets.all(2.5),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: hasStory
+                gradient: hasStory && !isMyStoryWatched
                     ? const LinearGradient(
                         colors: [Color(0xFFF9CE34), Color(0xFFEE2A7B), Color(0xFF6228D7)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
+                      )
+                    : null,
+                border: hasStory && isMyStoryWatched
+                    ? Border.all(
+                        color: isDark ? Colors.white.withValues(alpha: 0.8) : Colors.grey.shade400,
+                        width: 1.8,
                       )
                     : null,
                 color: hasStory ? null : AppColors.getPrimary(isDark).withValues(alpha: 0.3),
@@ -223,7 +290,13 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    UserAvatar(imageUrl: auth.currentUser.avatarUrl, radius: 22),
+                    UserAvatar(
+                      imageUrl: auth.currentUser.avatarUrl.isNotEmpty
+                          ? auth.currentUser.avatarUrl
+                          : (hasStory ? myStories.first.author.avatarUrl : null),
+                      name: auth.currentUser.displayName,
+                      radius: 22,
+                    ),
                     Positioned(
                       bottom: -2,
                       right: -2,
@@ -246,11 +319,13 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
             ),
             const SizedBox(height: 4),
             Text(
-              hasStory ? 'My Story ✨' : 'Your Story',
+              hasStory ? 'My Story (${myStories.length})' : 'Your Story',
               style: TextStyle(
                 fontSize: 9.5,
                 fontWeight: hasStory ? FontWeight.bold : FontWeight.w600,
-                color: hasStory ? AppColors.getPrimary(isDark) : null,
+                color: hasStory
+                    ? (isMyStoryWatched ? (isDark ? Colors.white70 : Colors.black54) : AppColors.getPrimary(isDark))
+                    : null,
               ),
               overflow: TextOverflow.ellipsis,
             ),
@@ -260,16 +335,25 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildDynamicStoryItem(PostModel post) {
+  Widget _buildGroupedStoryItem(List<PostModel> stories) {
+    if (stories.isEmpty) return const SizedBox.shrink();
+    final firstPost = stories.first;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final authorName = post.author.name.isNotEmpty ? post.author.name : 'User';
-    final avatar = post.author.avatarUrl;
+    final authorName = firstPost.author.name.isNotEmpty && firstPost.author.name != 'Unknown User' ? firstPost.author.name : 'Creator';
+    final avatar = firstPost.author.avatarUrl;
+
+    final rawKey = firstPost.author.username.isNotEmpty && !firstPost.author.username.startsWith('user_')
+        ? firstPost.author.username
+        : (firstPost.author.displayName.isNotEmpty ? firstPost.author.displayName : firstPost.author.id);
+    final storyKey = rawKey.toLowerCase().trim();
+    final isWatched = _viewedStoryKeys.contains(storyKey);
 
     return GestureDetector(
       onTap: () {
+        _markStoryAsViewed(storyKey);
         showDialog(
           context: context,
-          builder: (ctx) => _FullStoryViewerDialog(post: post, isMyStory: false),
+          builder: (ctx) => _FullStoryViewerDialog(stories: stories, isMyStory: false),
         );
       },
       child: Container(
@@ -278,26 +362,42 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
           children: [
             Container(
               padding: const EdgeInsets.all(2.5),
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  colors: [Color(0xFFF9CE34), Color(0xFFEE2A7B), Color(0xFF6228D7)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                gradient: isWatched
+                    ? null
+                    : const LinearGradient(
+                        colors: [Color(0xFFF9CE34), Color(0xFFEE2A7B), Color(0xFF6228D7)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                border: isWatched
+                    ? Border.all(
+                        color: isDark ? Colors.white.withValues(alpha: 0.8) : Colors.grey.shade400,
+                        width: 1.8,
+                      )
+                    : null,
               ),
               child: CircleAvatar(
                 radius: 25,
                 backgroundColor: AppColors.getCard(isDark),
-                child: UserAvatar(imageUrl: avatar, radius: 22),
+                child: UserAvatar(
+                  imageUrl: avatar.isNotEmpty ? avatar : firstPost.author.avatarUrl,
+                  name: authorName,
+                  radius: 22,
+                ),
               ),
             ),
             const SizedBox(height: 4),
             SizedBox(
-              width: 54,
+              width: 58,
               child: Text(
                 authorName,
-                style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                  fontSize: 9.5,
+                  fontWeight: isWatched ? FontWeight.w400 : FontWeight.w600,
+                  color: isWatched ? (isDark ? Colors.white70 : Colors.black54) : null,
+                ),
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -461,11 +561,11 @@ class _PostSearchDelegate extends SearchDelegate<String> {
 }
 
 class _FullStoryViewerDialog extends StatefulWidget {
-  final PostModel post;
+  final List<PostModel> stories;
   final bool isMyStory;
 
   const _FullStoryViewerDialog({
-    required this.post,
+    required this.stories,
     this.isMyStory = false,
   });
 
@@ -474,9 +574,13 @@ class _FullStoryViewerDialog extends StatefulWidget {
 }
 
 class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
+  int _currentIndex = 0;
   VideoPlayerController? _videoController;
   final TextEditingController _replyController = TextEditingController();
   bool _isVideo = false;
+
+  PostModel get currentStory =>
+      widget.stories[_currentIndex.clamp(0, widget.stories.length - 1)];
 
   @override
   void initState() {
@@ -484,11 +588,35 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
     _initMedia();
   }
 
+  void _nextStory() {
+    if (_currentIndex < widget.stories.length - 1) {
+      setState(() {
+        _currentIndex++;
+      });
+      _initMedia();
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  void _previousStory() {
+    if (_currentIndex > 0) {
+      setState(() {
+        _currentIndex--;
+      });
+      _initMedia();
+    }
+  }
+
   Future<void> _initMedia() async {
-    final mediaList = widget.post.imageUrls;
+    _videoController?.dispose();
+    _videoController = null;
+    _isVideo = false;
+
+    final mediaList = currentStory.imageUrls;
     if (mediaList.isNotEmpty) {
       final String url = mediaList.first;
-      if (url.endsWith('.mp4') || url.endsWith('.mov') || url.endsWith('.m4v') || !url.startsWith('http')) {
+      if (url.endsWith('.mp4') || url.endsWith('.mov') || url.endsWith('.m4v')) {
         _isVideo = true;
         try {
           if (url.startsWith('http')) {
@@ -499,12 +627,12 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
           await _videoController?.initialize();
           _videoController?.setLooping(true);
           await _videoController?.play();
-          if (mounted) setState(() {});
         } catch (e) {
           debugPrint('Story video error: $e');
         }
       }
     }
+    if (mounted) setState(() {});
   }
 
   @override
@@ -520,7 +648,7 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
       padding: const EdgeInsets.all(24),
       child: Center(
         child: Text(
-          widget.post.content.isNotEmpty ? widget.post.content : '✨ ZeParty Story',
+          currentStory.content.isNotEmpty ? currentStory.content : '✨ ZeParty Story',
           style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
           textAlign: TextAlign.center,
         ),
@@ -530,9 +658,15 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final authorName = widget.post.author.name.isNotEmpty ? widget.post.author.name : 'User';
-    final avatar = widget.post.author.avatarUrl;
-    final mediaList = widget.post.imageUrls;
+    if (widget.stories.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final authorName = currentStory.author.name.isNotEmpty && currentStory.author.name != 'Unknown User'
+        ? currentStory.author.name
+        : 'Creator';
+    final avatar = currentStory.author.avatarUrl;
+    final mediaList = currentStory.imageUrls;
     final String? mediaUrl = mediaList.isNotEmpty ? mediaList.first : null;
 
     return Dialog(
@@ -559,14 +693,36 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
                           ? Image.network(
                               mediaUrl,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => _buildTextFallback(),
+                              errorBuilder: (_, _, _) => _buildTextFallback(),
                             )
                           : Image.file(
                               File(mediaUrl),
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => _buildTextFallback(),
+                              errorBuilder: (_, _, _) => _buildTextFallback(),
                             ))
                       : _buildTextFallback(),
+            ),
+
+            // Left / Right Touch Tap Detectors for Instagram navigation
+            Positioned.fill(
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 1,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: _previousStory,
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: _nextStory,
+                    ),
+                  ),
+                ],
+              ),
             ),
 
             // Gradient Top Overlay for readability
@@ -586,28 +742,33 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
               ),
             ),
 
-            // Top Header: User info + Close Button
+            // Top Header: Segmented Progress Lines + User info + Close Button
             Positioned(
               top: 16,
               left: 16,
               right: 16,
               child: Column(
                 children: [
-                  // Progress indicator line
-                  Container(
-                    height: 3,
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+                  // Segmented Story Bars (Instagram Style)
+                  Row(
+                    children: List.generate(widget.stories.length, (index) {
+                      final isPassed = index <= _currentIndex;
+                      return Expanded(
+                        child: Container(
+                          height: 3,
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          decoration: BoxDecoration(
+                            color: isPassed ? Colors.white : Colors.white.withValues(alpha: 0.3),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      );
+                    }),
                   ),
+                  const SizedBox(height: 12),
                   Row(
                     children: [
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundImage: NetworkImage(avatar.isNotEmpty ? avatar : 'https://i.pravatar.cc/150'),
-                      ),
+                      UserAvatar(imageUrl: avatar, radius: 18),
                       const SizedBox(width: 10),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -616,9 +777,9 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
                             authorName,
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                           ),
-                          const Text(
-                            'Just now',
-                            style: TextStyle(color: Colors.white70, fontSize: 10),
+                          Text(
+                            'Story ${_currentIndex + 1} of ${widget.stories.length}',
+                            style: const TextStyle(color: Colors.white70, fontSize: 10),
                           ),
                         ],
                       ),
@@ -683,7 +844,7 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
                           icon: const Icon(Icons.favorite_rounded, color: Colors.redAccent, size: 28),
                           onPressed: () {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('❤️ Reacted to $authorName\'s story!')),
+                              const SnackBar(content: Text('Liked story! ❤️'), duration: Duration(seconds: 1)),
                             );
                           },
                         ),

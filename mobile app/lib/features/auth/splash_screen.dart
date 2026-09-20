@@ -20,6 +20,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   late AnimationController _controller;
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
+  bool _navigated = false;
 
   @override
   void initState() {
@@ -41,12 +42,17 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   Future<void> _initAndNavigate() async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-    await Future.wait([
-      authProvider.initFuture,
+    // Guaranteed transition in ~1.2-1.5s — never hangs even if network or auth is slow
+    await Future.any([
+      Future.wait([
+        authProvider.initFuture,
+        Future.delayed(const Duration(milliseconds: 1200)),
+      ]),
       Future.delayed(const Duration(milliseconds: 1500)),
     ]);
 
-    if (!mounted) return;
+    if (!mounted || _navigated) return;
+    _navigated = true;
 
     if (authProvider.isAuthenticated) {
       if (!authProvider.currentUser.profileCompleted) {
@@ -77,6 +83,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     final isDark = Provider.of<ThemeProvider>(context).isDarkMode;
+    final onGoldColor = AppColors.onGold(isDark: isDark);
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -87,55 +94,50 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
           gradient: AppColors.getAccentGradient(isDark),
         ),
         child: Center(
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              return ScaleTransition(
-                scale: _scaleAnimation,
-                child: FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      AppLogo(
-                        size: 130,
-                        showGlow: true,
-                        showBorder: true,
-                        borderRadius: 30,
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'ZEPARTY',
-                        style: TextStyle(
-                          color: AppColors.onGold(isDark: isDark),
-                          fontSize: 36,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 4,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Social Video & Live Streaming Platform',
-                        style: TextStyle(
-                          color: AppColors.onGold(isDark: isDark).withValues(alpha: 0.85),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 54),
-                      SizedBox(
-                        width: 28,
-                        height: 28,
-                        child: CircularProgressIndicator(
-                          color: AppColors.onGold(isDark: isDark),
-                          strokeWidth: 3,
-                        ),
-                      ),
-                    ],
+          child: ScaleTransition(
+            scale: _scaleAnimation,
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const AppLogo(
+                    size: 130,
+                    showGlow: true,
+                    showBorder: true,
+                    borderRadius: 30,
                   ),
-                ),
-              );
-            },
+                  const SizedBox(height: 24),
+                  Text(
+                    'ZEPARTY',
+                    style: TextStyle(
+                      color: onGoldColor,
+                      fontSize: 36,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 4,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Social Video & Live Streaming Platform',
+                    style: TextStyle(
+                      color: onGoldColor.withValues(alpha: 0.85),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 54),
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(onGoldColor),
+                      strokeWidth: 3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

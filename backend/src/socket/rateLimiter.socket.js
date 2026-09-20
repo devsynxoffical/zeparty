@@ -62,8 +62,9 @@ export async function checkSocketRateLimit(userIdOrSocketId, action, maxAllowed 
  * Wraps a socket event handler with rate limiting.
  */
 export function withRateLimit(action, maxAllowed, windowMs, handler) {
-  return async function (socket, data, callback) {
-    const rateKey = socket.userId || socket.id;
+  return async function (data, callback) {
+    const socket = this;
+    const rateKey = socket?.userId || socket?.id;
     const limit = await checkSocketRateLimit(rateKey, action, maxAllowed, windowMs);
     if (!limit.allowed) {
       const errResponse = {
@@ -77,7 +78,9 @@ export function withRateLimit(action, maxAllowed, windowMs, handler) {
       if (typeof callback === 'function') {
         return callback(errResponse);
       }
-      socket.emit('error', errResponse);
+      if (socket && typeof socket.emit === 'function') {
+        socket.emit('error', errResponse);
+      }
       return;
     }
     return await handler(socket, data, callback);

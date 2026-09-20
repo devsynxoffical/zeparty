@@ -23,6 +23,8 @@ import '../../widgets/tiktok_gift_overlay.dart';
 import '../../providers/emoji_reaction_provider.dart';
 import '../../providers/live_gift_provider.dart';
 import '../../core/services/room_share_service.dart';
+import '../../core/services/agora_rtc_service.dart';
+import '../../widgets/user_avatar.dart';
 
 class FloatingHeart {
   final Key id;
@@ -58,6 +60,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
   void _toggleMic() {
     setState(() => _isMicMuted = !_isMicMuted);
+    try {
+      AgoraRtcService().muteLocalAudio(_isMicMuted);
+    } catch (_) {}
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(_isMicMuted ? 'Mic Muted 🔇' : 'Mic Live 🎙️'),
@@ -73,7 +78,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     _initLiveCamera();
     _startDurationTimer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<LiveProvider>().joinRoom(widget.room);
+      final currentUser = context.read<AuthProvider>().currentUser;
+      context.read<LiveProvider>().joinRoom(widget.room, currentUser: currentUser);
       context.read<LiveGiftProvider>().setActiveRoom(widget.room.id);
       final emojiProv = context.read<EmojiReactionProvider>();
       emojiProv.setActiveRoom(widget.room.id);
@@ -81,7 +87,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       emojiProv.registerAnchor('user_${widget.room.host.id}', _hostAvatarKey);
       
       // Mock SVIP entry for demonstration
-      final currentUser = context.read<AuthProvider>().currentUser;
       emojiProv.registerAnchor('user_${currentUser.id}', _hostAvatarKey);
 
       if (currentUser.isVip) {
@@ -102,6 +107,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
   Future<void> _initLiveCamera() async {
     try {
+      // Small delay to ensure previous screen's CameraController has released camera hardware
+      await Future.delayed(const Duration(milliseconds: 250));
+      if (!mounted) return;
+
       _cameras = await availableCameras();
       if (_cameras.isNotEmpty) {
         int frontIdx = _cameras.indexWhere((c) => c.lensDirection == CameraLensDirection.front);
@@ -118,15 +127,17 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     if (_cameraController != null) {
       try {
         await _cameraController!.dispose();
+        _cameraController = null;
       } catch (_) {}
     }
     try {
-      _cameraController = CameraController(
+      final ctrl = CameraController(
         desc,
         ResolutionPreset.medium,
         enableAudio: false,
       );
-      await _cameraController!.initialize();
+      _cameraController = ctrl;
+      await ctrl.initialize();
       if (mounted) setState(() => _isCameraInitialized = true);
     } catch (e) {
       debugPrint('Live camera setup error: $e');
@@ -143,6 +154,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   }
 
   void _triggerFloatingHeartAt(Offset position) {
+    try {
+      context.read<LiveProvider>().sendLike();
+    } catch (_) {}
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final rand = Random();
     final colors = isDark
@@ -173,11 +188,133 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     _triggerFloatingHeartAt(const Offset(250, 450));
   }
 
+  Widget _buildLiveHostBackground(bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: isDark
+              ? const [Color(0xFF161129), Color(0xFF0D0A18), Color(0xFF050508)]
+              : const [Color(0xFF1E1B4B), Color(0xFF0F172A), Color(0xFF020617)],
+        ),
+      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // If valid coverUrl, render blurred background cover
+          if (widget.room.coverUrl.isNotEmpty && widget.room.coverUrl.startsWith('http'))
+            Positioned.fill(
+              child: Opacity(
+                opacity: 0.35,
+                child: Image.network(
+                  widget.room.coverUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                ),
+              ),
+            ),
+
+          // Glowing radial center highlight
+          Center(
+            child: Container(
+              width: 280,
+              height: 280,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    (isDark ? AppColors.warmGold : AppColors.royalBlue).withValues(alpha: 0.22),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Host Avatar & Live status centerpiece
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: isDark ? AppColors.metallicGoldGradient : AppColors.metallicBlueGradient,
+                    boxShadow: [
+                      BoxShadow(
+                        color: (isDark ? AppColors.metallicGold : AppColors.royalBlue).withValues(alpha: 0.4),
+                        blurRadius: 24,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: UserAvatar(
+                    imageUrl: widget.room.host.avatarUrl,
+                    name: widget.room.host.name,
+                    radius: 48,
+                    isLive: true,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  widget.room.host.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: AppColors.live,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        widget.room.roomType == 'AUDIO_PARTY' ? 'VOICE PARTY LIVE' : 'LIVE BROADCASTING',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _durationTimer?.cancel();
     _cameraController?.dispose();
     _chatController.dispose();
+    try {
+      context.read<LiveProvider>().leaveRoom();
+    } catch (_) {}
     super.dispose();
   }
 
@@ -190,7 +327,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     return Scaffold(
       body: Stack(
         children: [
-          // Background Stream (Camera preview or Cover Image fallback)
+          // Background Stream (Camera preview or Cover Image/Live Host fallback)
           Positioned.fill(
             child: _isCameraInitialized && _cameraController != null && _cameraController!.value.isInitialized
                 ? FittedBox(
@@ -201,11 +338,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       child: CameraPreview(_cameraController!),
                     ),
                   )
-                : Image.network(
-                    widget.room.coverUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(color: AppColors.background),
-                  ),
+                : _buildLiveHostBackground(isDark),
           ),
 
           // Double Tap Screen for Like Hearts
@@ -377,17 +510,28 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Trophy
+                          // Likes & Trophy Badges
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.emoji_events_rounded, color: AppColors.gold, size: 16),
-                              const SizedBox(width: 4),
+                              const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 15),
+                              const SizedBox(width: 3),
                               Text(
-                                '373M',
+                                liveProvider.likeCountFormatted,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.emoji_events_rounded, color: AppColors.gold, size: 15),
+                              const SizedBox(width: 3),
+                              Text(
+                                liveProvider.pointsFormatted,
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.9),
-                                  fontSize: 12,
+                                  fontSize: 11.5,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -536,40 +680,78 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   children: [
                     // Live Messages List
                     SizedBox(
-                      height: 180,
+                      height: 190,
                       child: ListView.builder(
                         reverse: true,
                         itemCount: liveProvider.messages.length,
                         itemBuilder: (context, index) {
                           final msg = liveProvider.messages.reversed.toList()[index];
+                          final isSystem = msg.sender == 'System';
+                          final isGift = msg.isGift;
+
                           return Container(
                             margin: const EdgeInsets.only(bottom: 6),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
-                              color: AppColors.black.withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: RichText(
-                              text: TextSpan(
-                                children: [
-                                  TextSpan(
-                                    text: '${msg.sender}: ',
-                                    style: TextStyle(
-                                      color: isDark ? AppColors.warmGold : AppColors.lightBlue,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                  TextSpan(
-                                    text: msg.text,
-                                    style: TextStyle(
-                                      color: msg.isGift ? (isDark ? AppColors.gold : AppColors.cyan) : AppColors.white,
-                                      fontWeight: msg.isGift ? FontWeight.bold : FontWeight.normal,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
+                              color: isGift
+                                  ? const Color(0xFFE91E63).withValues(alpha: 0.28)
+                                  : (isSystem
+                                      ? const Color(0xFFFF9800).withValues(alpha: 0.18)
+                                      : Colors.black.withValues(alpha: 0.55)),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isGift
+                                    ? const Color(0xFFFF4081).withValues(alpha: 0.45)
+                                    : (isSystem
+                                        ? const Color(0xFFFFB74D).withValues(alpha: 0.3)
+                                        : Colors.white.withValues(alpha: 0.08)),
+                                width: 0.8,
                               ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                if (msg.avatarUrl != null && msg.avatarUrl!.isNotEmpty) ...[
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(10),
+                                    child: Image.network(
+                                      msg.avatarUrl!,
+                                      width: 18,
+                                      height: 18,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.person, size: 14, color: Colors.white70),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                ],
+                                Flexible(
+                                  child: RichText(
+                                    text: TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text: '${msg.sender}: ',
+                                          style: TextStyle(
+                                            color: isSystem
+                                                ? const Color(0xFFFFD54F)
+                                                : (isGift ? const Color(0xFFFF80AB) : (isDark ? AppColors.warmGold : AppColors.lightBlue)),
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: msg.text,
+                                          style: TextStyle(
+                                            color: isGift ? const Color(0xFFFFF176) : Colors.white,
+                                            fontWeight: isGift ? FontWeight.bold : FontWeight.normal,
+                                            fontSize: 13,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           );
                         },
@@ -616,12 +798,20 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                           showModalBottomSheet(
                                             context: context,
                                             backgroundColor: AppColors.transparent,
-                                             builder: (c) => GiftDialog(
-                                               streamerName: widget.room.host.name,
-                                               onGiftSent: (gift) {
-                                                 _giftOverlayKey.currentState?.playGiftAnimation(gift);
-                                               },
-                                             ),
+                                            builder: (c) {
+                                              final currentUser = context.read<AuthProvider>().currentUser;
+                                              final effectiveHost = (widget.room.host.id == currentUser.id && currentUser.avatarUrl.isNotEmpty)
+                                                  ? widget.room.host.copyWith(avatarUrl: currentUser.avatarUrl, name: currentUser.name)
+                                                  : widget.room.host;
+                                              return GiftDialog(
+                                                streamerName: effectiveHost.name,
+                                                targetReceiver: effectiveHost,
+                                                onGiftSent: (gift) {
+                                                  liveProvider.sendGift(gift, currentUser.name);
+                                                  _giftOverlayKey.currentState?.playGiftAnimation(gift, senderName: currentUser.name);
+                                                },
+                                              );
+                                            },
                                           );
                                         },
                                       ),
@@ -747,12 +937,20 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               showModalBottomSheet(
                                 context: context,
                                 backgroundColor: AppColors.transparent,
-                                builder: (c) => GiftDialog(
-                                  streamerName: widget.room.host.name,
-                                  onGiftSent: (gift) {
-                                    _giftOverlayKey.currentState?.playGiftAnimation(gift);
-                                  },
-                                ),
+                                builder: (c) {
+                                  final currentUser = context.read<AuthProvider>().currentUser;
+                                  final effectiveHost = (widget.room.host.id == currentUser.id && currentUser.avatarUrl.isNotEmpty)
+                                      ? widget.room.host.copyWith(avatarUrl: currentUser.avatarUrl, name: currentUser.name)
+                                      : widget.room.host;
+                                  return GiftDialog(
+                                    streamerName: effectiveHost.name,
+                                    targetReceiver: effectiveHost,
+                                    onGiftSent: (gift) {
+                                      liveProvider.sendGift(gift, currentUser.name);
+                                      _giftOverlayKey.currentState?.playGiftAnimation(gift, senderName: currentUser.name);
+                                    },
+                                  );
+                                },
                               );
                             }, reason: 'Sign in to send gifts');
                           },

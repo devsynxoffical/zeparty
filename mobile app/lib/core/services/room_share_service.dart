@@ -240,44 +240,94 @@ class RoomShareService {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.share_rounded, color: AppColors.primary, size: 36),
-            const SizedBox(height: 12),
-            Text(
-              'Share $title',
-              style: TextStyle(
-                color: AppColors.getTextPrimary(isDark),
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
             Container(
-              padding: const EdgeInsets.all(12),
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                link,
-                style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 13),
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: 16),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.getPrimary(isDark),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () {
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('✅ Share link copied! Share with your friends.')),
-                );
-              },
-              icon: const Icon(Icons.copy_rounded),
-              label: const Text('Copy & Share Link'),
+            Row(
+              children: [
+                const Icon(Icons.share_rounded, color: AppColors.primary, size: 24),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Share $title',
+                    style: TextStyle(
+                      color: AppColors.getTextPrimary(isDark),
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.link_rounded, color: AppColors.primary, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      link,
+                      style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 13),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy_rounded, color: AppColors.primary, size: 20),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: link));
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(
+                          content: Text('✅ Share link copied to clipboard!'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildShareOption(
+                  ctx,
+                  icon: Icons.chat_bubble_rounded,
+                  label: 'WhatsApp',
+                  color: const Color(0xFF25D366),
+                  onTap: () => _copyAndNotify(ctx, link, 'WhatsApp share link copied! Paste in WhatsApp chat.'),
+                ),
+                _buildShareOption(
+                  ctx,
+                  icon: Icons.send_rounded,
+                  label: 'Telegram',
+                  color: const Color(0xFF0088CC),
+                  onTap: () => _copyAndNotify(ctx, link, 'Telegram share link copied! Paste in Telegram chat.'),
+                ),
+                _buildShareOption(
+                  ctx,
+                  icon: Icons.link_rounded,
+                  label: 'Copy Link',
+                  color: AppColors.primary,
+                  onTap: () => _copyAndNotify(ctx, link, 'Link copied! Send to anyone to watch.'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
           ],
         ),
       ),

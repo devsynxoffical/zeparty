@@ -5,13 +5,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 import '../../core/repositories/backend_repository.dart';
+import '../../core/services/media_upload_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/design/gold_button.dart';
-import '../../models/post_model.dart';
 import '../../providers/social_provider.dart';
 import 'video_editor_screen.dart';
+import 'music_picker_sheet.dart';
 import '../main_layout.dart';
 
 class UploadVideoScreen extends StatefulWidget {
@@ -106,38 +107,51 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
   Future<void> _startUploadProcess() async {
     setState(() {
       _isUploading = true;
-      _uploadProgress = 0.3;
-      _uploadStatusText = 'Uploading video media to server...';
+      _uploadProgress = 0.2;
+      _uploadStatusText = 'Uploading video media to Cloudflare R2...';
     });
 
     try {
       final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+      String targetVideoUrl = _selectedVideoPath ?? '';
+
+      if (_selectedVideoPath != null &&
+          !_selectedVideoPath!.startsWith('http') &&
+          !_selectedVideoPath!.startsWith('assets/')) {
+        final uploadResult = await MediaUploadService.instance.uploadFile(
+          filePath: _selectedVideoPath!,
+          folder: 'videos',
+        );
+        targetVideoUrl = uploadResult.url;
+      }
+
       setState(() {
         _uploadProgress = 0.75;
-        _uploadStatusText = 'Processing video & generating metadata...';
+        _uploadStatusText = 'Creating video post on server...';
       });
 
-      await BackendRepository.instance.publishVideo(
-        creator: currentUser,
-        videoUrl: _selectedVideoPath ?? 'https://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
-        caption: _captionController.text.trim(),
-        musicTitle: _selectedMusic == 'Original Sound' ? 'Original Sound - ${currentUser.name}' : _selectedMusic,
-      );
+      final caption = _captionController.text.trim();
+      final music = _selectedMusic == 'Original Sound' ? 'Original Sound - ${currentUser.name}' : _selectedMusic;
 
-      final newPost = PostModel(
-        id: 'story_${DateTime.now().millisecondsSinceEpoch}',
-        author: currentUser,
-        content: _captionController.text.trim(),
-        imageUrls: _selectedVideoPath != null ? [_selectedVideoPath!] : [],
-        createdAt: DateTime.now(),
-        likes: 1,
-        comments: 0,
-        shares: 0,
-        isLiked: true,
-      );
-
+      if (!mounted) return;
+      // Save to database via SocialProvider
       final social = Provider.of<SocialProvider>(context, listen: false);
-      social.addPostLocally(newPost);
+      final createdPost = await social.createPost(
+        content: caption.isNotEmpty ? caption : 'Shared a new video! 🔥',
+        mediaUrls: targetVideoUrl.isNotEmpty ? [targetVideoUrl] : null,
+        visibility: _privacySetting.toUpperCase(),
+      );
+
+      final realPostId = createdPost?.id;
+
+      // Also register in short video feed with real post ID
+      await BackendRepository.instance.publishVideo(
+        id: realPostId,
+        creator: currentUser,
+        videoUrl: targetVideoUrl,
+        caption: caption,
+        musicTitle: music,
+      );
 
       if (!mounted) return;
       setState(() {
@@ -323,41 +337,50 @@ class _UploadVideoScreenState extends State<UploadVideoScreen> {
             const SizedBox(height: 16),
 
             // Music Selection Pill
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.getCard(isDark),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.getBorder(isDark)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.music_note_rounded, color: primary, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Background Music: $_selectedMusic',
-                      style: TextStyle(
-                        color: AppColors.getTextPrimary(isDark),
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+            GestureDetector(
+              onTap: () {
+                MusicPickerSheet.show(context, onTrackSelected: (track) {
+                  setState(() {
+                    _selectedMusic = track.title;
+                  });
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.getCard(isDark),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.getBorder(isDark)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.music_note_rounded, color: primary, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Background Music: $_selectedMusic',
+                        style: TextStyle(
+                          color: AppColors.getTextPrimary(isDark),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedMusic = _selectedMusic == 'Original Sound' ? 'ZeParty Summer Remix 🎶' : 'Original Sound';
-                      });
-                    },
-                    child: Text(
-                      'Change',
-                      style: TextStyle(color: primary, fontSize: 12, fontWeight: FontWeight.bold),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: primary.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        'Change',
+                        style: TextStyle(color: primary, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
 

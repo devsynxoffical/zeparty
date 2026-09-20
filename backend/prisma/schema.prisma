@@ -317,6 +317,8 @@ model User {
   gender            String?
   bio               String?
   avatarUrl         String?
+  coverUrl          String?
+  region            String?
   isUnderageBlocked Boolean    @default(false)
   lastLoginAt       DateTime?
   createdAt         DateTime   @default(now())

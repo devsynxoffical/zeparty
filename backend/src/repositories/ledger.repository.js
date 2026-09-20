@@ -38,16 +38,18 @@ export async function findByWalletId(
   { page = 1, limit = 20, type = null },
   db = prisma
 ) {
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = parseInt(limit, 10) || 20;
   const where = { walletId };
   if (type) where.transactionType = type;
 
-  const skip = (Math.max(1, page) - 1) * limit;
+  const skip = (Math.max(1, pageNum) - 1) * limitNum;
 
   return await db.walletLedger.findMany({
     where,
     orderBy: { createdAt: 'desc' },
     skip,
-    take: limit,
+    take: limitNum,
   });
 }
 

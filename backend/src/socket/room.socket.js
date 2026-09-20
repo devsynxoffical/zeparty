@@ -275,20 +275,119 @@ export async function onSocketDisconnect(socket) {
   }
 }
 
+export async function onSendRoomChat(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId;
+    const text = (data?.text || '').trim();
+
+    if (!roomId || !text) {
+      const err = {
+        success: false,
+        error: {
+          code: SOCKET_ERRORS.VALIDATION_ERROR,
+          message: 'roomId and message text are required',
+        },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const payload = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      roomId,
+      sender: {
+        id: socket.user?.id || socket.userId,
+        username: socket.user?.username || 'user',
+        displayName: socket.user?.displayName || socket.user?.name || socket.user?.username || 'User',
+        avatarUrl: socket.user?.avatarUrl || null,
+        isVip: Boolean(socket.user?.isVip),
+        nobleLevel: socket.user?.nobleLevel || null,
+      },
+      text: text.substring(0, 500),
+      timestamp: new Date().toISOString(),
+      type: data?.type || 'text',
+    };
+
+    const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
+    broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, data: payload });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: {
+        code: err.code || SOCKET_ERRORS.INTERNAL_ERROR,
+        message: err.message || 'Failed to send room chat message',
+      },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onKickUser(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId;
+    const targetUserId = data?.targetUserId;
+
+    if (!roomId || !targetUserId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.VALIDATION_ERROR, message: 'roomId and targetUserId are required' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const payload = {
+      roomId,
+      targetUserId,
+      kickedByUserId: socket.userId,
+      timestamp: new Date().toISOString(),
+    };
+
+    const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
+    broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_KICKED, payload);
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: 'User kicked successfully', data: payload });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to kick user' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
 export function registerRoomHandlers(io, socket) {
   socket.on(
     SOCKET_EVENTS.ROOM_JOIN,
-    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(s, d, cb))
+    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
   );
 
   socket.on(
     SOCKET_EVENTS.ROOM_LEAVE,
-    withRateLimit('ROOM_LEAVE', 10, 1000, (s, d, cb) => onLeaveRoom(s, d, cb))
+    withRateLimit('ROOM_LEAVE', 10, 1000, (s, d, cb) => onLeaveRoom(io, s, d, cb))
   );
 
   socket.on(
     SOCKET_EVENTS.ROOM_SNAPSHOT,
     withRateLimit('ROOM_SNAPSHOT', 10, 1000, (s, d, cb) => onRequestSnapshot(s, d, cb))
+  );
+
+  socket.on(
+    SOCKET_EVENTS.ROOM_CHAT_SEND,
+    withRateLimit('ROOM_CHAT', 15, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
+  );
+
+  socket.on(
+    SOCKET_EVENTS.ROOM_KICK_USER,
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onKickUser(io, s, d, cb))
   );
 
   socket.on(SOCKET_EVENTS.DISCONNECT, () => onSocketDisconnect(socket));
@@ -299,6 +398,8 @@ export default {
   onJoinRoom,
   onLeaveRoom,
   onRequestSnapshot,
+  onSendRoomChat,
+  onKickUser,
   onSocketDisconnect,
   registerRoomHandlers,
 };

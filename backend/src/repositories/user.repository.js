@@ -48,29 +48,34 @@ export async function findByUsername(username, db = prisma) {
 }
 
 export async function createUserWithProfile(
-  { phone = null, email = null, username, displayName = null, status = 'ACTIVE', userType = 'USER', countryCode = 'US', coinBalance = 0, diamondBalance = 0 },
+  { id = null, phone = null, email = null, username, displayName = null, avatarUrl = null, coverUrl = null, status = 'ACTIVE', userType = 'USER', countryCode = 'US', coinBalance = 0, diamondBalance = 0 },
   db = prisma
 ) {
-  return await db.user.create({
-    data: {
-      phone: phone || null,
-      email: email || null,
-      username,
-      status,
-      userType,
-      countryCode: countryCode || 'US',
-      profile: {
-        create: {
-          displayName: displayName || username,
-        },
-      },
-      wallet: {
-        create: {
-          coinBalance: BigInt(coinBalance || 0),
-          diamondBalance: BigInt(diamondBalance || 0),
-        },
+  const data = {
+    phone: phone || null,
+    email: email || null,
+    username,
+    status,
+    userType,
+    countryCode: countryCode || 'US',
+    avatarUrl: avatarUrl || null,
+    profile: {
+      create: {
+        displayName: displayName || username,
       },
     },
+    wallet: {
+      create: {
+        coinBalance: BigInt(coinBalance || 0),
+        diamondBalance: BigInt(diamondBalance || 0),
+      },
+    },
+  };
+  if (id) {
+    data.id = id;
+  }
+  return await db.user.create({
+    data,
     include: {
       profile: true,
       wallet: true,
@@ -320,18 +325,41 @@ export async function updateUserStatus(id, status, db = prisma) {
 
 export async function updateUserProfile(
   userId,
-  { displayName, bio, gender, dob, avatarUrl, signature, countryCode },
+  { username, name, displayName, bio, gender, dob, birthDate, dateOfBirth, avatarUrl, coverUrl, signature, countryCode, region },
   db = prisma
 ) {
   const userUpdateData = {};
+  if (username !== undefined && username.trim().length >= 3) {
+    // Check if username is already taken by another user
+    const existing = await db.user.findFirst({
+      where: {
+        username: username.trim(),
+        NOT: { id: userId },
+      },
+    });
+    if (!existing) {
+      userUpdateData.username = username.trim();
+    }
+  }
   if (bio !== undefined) userUpdateData.bio = bio;
   if (gender !== undefined) userUpdateData.gender = gender;
-  if (dob !== undefined) userUpdateData.dob = dob ? new Date(dob) : null;
+  
+  const effectiveDob = dob || birthDate || dateOfBirth;
+  if (effectiveDob !== undefined) {
+    const parsedDate = effectiveDob ? new Date(effectiveDob) : null;
+    if (parsedDate && !isNaN(parsedDate.getTime())) {
+      userUpdateData.dob = parsedDate;
+    }
+  }
+  
   if (avatarUrl !== undefined) userUpdateData.avatarUrl = avatarUrl;
+  if (coverUrl !== undefined && coverUrl !== null) userUpdateData.coverUrl = coverUrl;
   if (countryCode !== undefined) userUpdateData.countryCode = countryCode;
+  if (region !== undefined && region !== null && region.trim().length > 0) userUpdateData.region = region.trim();
 
   const profileUpdateData = {};
-  if (displayName !== undefined) profileUpdateData.displayName = displayName;
+  const effectiveDisplayName = displayName || name;
+  if (effectiveDisplayName !== undefined) profileUpdateData.displayName = effectiveDisplayName;
   if (signature !== undefined) profileUpdateData.signature = signature;
 
   return await db.$transaction(async (tx) => {
@@ -561,6 +589,66 @@ export async function deleteUserById(id, db = prisma) {
   });
 }
 
+/**
+ * Search users by username, display name, phone, or id
+ */
+export async function searchUsers(query, { limit = 20, excludeUserId = null } = {}, db = prisma) {
+  if (!query || !query.trim()) return [];
+  const q = query.trim();
+  const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
+
+  const where = {
+    status: 'ACTIVE',
+    OR: [
+      { username: { contains: q, mode: 'insensitive' } },
+      { phone: { contains: q, mode: 'insensitive' } },
+      { bio: { contains: q, mode: 'insensitive' } },
+      { profile: { displayName: { contains: q, mode: 'insensitive' } } },
+      ...(q.length === 36 ? [{ id: q }] : []),
+    ],
+  };
+
+  if (excludeUserId) {
+    where.NOT = { id: excludeUserId };
+  }
+
+  const users = await db.user.findMany({
+    where,
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      bio: true,
+      gender: true,
+      dob: true,
+      countryCode: true,
+      profile: {
+        select: {
+          displayName: true,
+          signature: true,
+          level: true,
+          vipLevel: true,
+        },
+      },
+    },
+    take: limitNum,
+  });
+
+  return users.map((u) => ({
+    id: u.id,
+    username: u.username,
+    name: u.profile?.displayName || u.username,
+    displayName: u.profile?.displayName || u.username,
+    avatarUrl: u.avatarUrl || '',
+    bio: u.bio || u.profile?.signature || '',
+    gender: u.gender || 'Not Specified',
+    dob: u.dob,
+    countryCode: u.countryCode || 'US',
+    isVip: (u.profile?.vipLevel || 0) > 0,
+    vipLevel: u.profile?.vipLevel ? `VIP ${u.profile.vipLevel}` : 'None',
+  }));
+}
+
 export default {
   findByPhone,
   findById,
@@ -575,5 +663,7 @@ export default {
   updateUserProfile,
   findPublicProfileById,
   deleteUserById,
+  searchUsers,
 };
+
 

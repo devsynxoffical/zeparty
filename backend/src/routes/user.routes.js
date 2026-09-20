@@ -18,6 +18,7 @@ adminUserRouter.put('/:id/status', requirePermission('suspend_users'), userContr
 adminUserRouter.delete('/:id', requirePermission('suspend_users'), userController.deleteAdminUser);
 
 // User Self & Public Profile Routes
+userProfileRouter.get('/search', authenticate, userController.searchUsers);
 userProfileRouter.get('/me', authenticate, userController.getMe);
 userProfileRouter.put('/profile', authenticate, userController.putMyProfile);
 userProfileRouter.patch('/profile', authenticate, userController.putMyProfile);

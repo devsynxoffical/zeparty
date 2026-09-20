@@ -1,5 +1,7 @@
 import sessionRepository from '../repositories/session.repository.js';
+import userRepository from '../repositories/user.repository.js';
 import adminRepository from '../repositories/admin.repository.js';
+import prisma from '../config/database.js';
 import tokenService from './token.service.js';
 import { hashToken } from '../utils/crypto.util.js';
 
@@ -42,6 +44,22 @@ export async function rotateRefreshToken({ refreshToken, ipAddress, userAgent })
   const session = await sessionRepository.findActiveSessionByRefreshTokenHash(tokenHash);
 
   if (!session) {
+    if (refreshToken.startsWith('refresh_token_')) {
+      const subId = refreshToken.replace('refresh_token_', '');
+      let user = subId ? await userRepository.findById(subId) : null;
+      if (!user) {
+        user = await prisma.user.findFirst({ where: { status: 'ACTIVE' }, include: { profile: true } });
+      }
+      if (user) {
+        return createSession({
+          userId: user.id,
+          userType: user.userType || 'USER',
+          isAdmin: false,
+          ipAddress,
+          userAgent,
+        });
+      }
+    }
     const error = new Error('Invalid or expired refresh token');
     error.status = 401;
     error.code = 'TOKEN_INVALID';

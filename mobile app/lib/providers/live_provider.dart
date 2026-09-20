@@ -4,30 +4,50 @@ import '../models/live_room_model.dart';
 import '../models/pk_battle_model.dart';
 import '../models/gift_model.dart';
 import '../models/user_model.dart';
+import '../core/services/agora_rtc_service.dart';
+import '../core/services/socket_service.dart';
+import '../core/repositories/room_repository.dart';
 
 class LiveMessage {
   final String sender;
   final String text;
   final bool isGift;
   final GiftModel? gift;
+  final String? avatarUrl;
 
   LiveMessage({
     required this.sender,
     required this.text,
     this.isGift = false,
     this.gift,
+    this.avatarUrl,
   });
 }
 
 class LiveProvider extends ChangeNotifier {
+  final AgoraRtcService _agoraService = AgoraRtcService();
+  final RoomRepository _roomRepository = RoomRepository.instance;
+  final SocketService _socketService = SocketService.instance;
+
   LiveRoomModel? _activeRoom;
+  UserModel? _currentUser;
   List<LiveMessage> _messages = [];
   GiftModel? _activeGiftAnimation;
   PKBattleModel? _activePkBattle;
   Timer? _pkTimer;
   Timer? _giftTimer;
   int _pkTimeRemainingSeconds = 180;
+  int _likeCount = 0;
+  int _giftPoints = 0;
   static const int _maxMessageBuffer = 100;
+
+  // Stream Subscriptions
+  StreamSubscription? _socketUserJoinedSub;
+  StreamSubscription? _socketUserLeftSub;
+  StreamSubscription? _socketViewerCountSub;
+  StreamSubscription? _socketGiftSentSub;
+  StreamSubscription? _socketChatMessageSub;
+  StreamSubscription? _socketRoomClosedSub;
 
   // ── Room Tool State ──────────────────────────────────────
   bool _isRoomLocked = false;
@@ -39,10 +59,31 @@ class LiveProvider extends ChangeNotifier {
 
   // ── Getters ─────────────────────────────────────────────
   LiveRoomModel? get activeRoom => _activeRoom;
+  UserModel? get currentUser => _currentUser;
   List<LiveMessage> get messages => List.unmodifiable(_messages);
   GiftModel? get activeGiftAnimation => _activeGiftAnimation;
   PKBattleModel? get activePkBattle => _activePkBattle;
   int get pkTimeRemainingSeconds => _pkTimeRemainingSeconds;
+  int get likeCount => _likeCount;
+  int get giftPoints => _giftPoints;
+
+  String get likeCountFormatted {
+    if (_likeCount >= 1000000) {
+      return '${(_likeCount / 1000000).toStringAsFixed(1)}M';
+    } else if (_likeCount >= 1000) {
+      return '${(_likeCount / 1000).toStringAsFixed(1)}K';
+    }
+    return '$_likeCount';
+  }
+
+  String get pointsFormatted {
+    if (_giftPoints >= 1000000) {
+      return '${(_giftPoints / 1000000).toStringAsFixed(1)}M';
+    } else if (_giftPoints >= 1000) {
+      return '${(_giftPoints / 1000).toStringAsFixed(1)}K';
+    }
+    return '$_giftPoints';
+  }
 
   bool get isRoomLocked => _isRoomLocked;
   String? get currentMusicTrack => _currentMusicTrack;
@@ -54,29 +95,163 @@ class LiveProvider extends ChangeNotifier {
 
   // ── Core Methods ─────────────────────────────────────────
 
-  void joinRoom(LiveRoomModel room) {
+  Future<void> joinRoom(LiveRoomModel room, {UserModel? currentUser}) async {
     _activeRoom = room;
+    _currentUser = currentUser;
     _isRoomLocked = false;
     _currentMusicTrack = null;
     _luckyBagActive = false;
     _activeEffect = 'None';
+    _likeCount = 0;
+    _giftPoints = 0;
     _messages = [
       LiveMessage(sender: 'System', text: 'Welcome to ${room.title}! Remember to follow community rules.'),
-      LiveMessage(sender: 'Sophia', text: 'Hey streamer! Sending love'),
-      LiveMessage(sender: 'Alex', text: 'Awesome stream quality today!'),
     ];
     notifyListeners();
+
+    final isHost = (currentUser != null) &&
+        (room.host.id == currentUser.id || room.creatorUserId == currentUser.id);
+
+    try {
+      // 1. Connect Socket.IO
+      _socketService.connect();
+      _socketService.joinRoom(room.id);
+      _setupSocketSubscriptions(currentUser);
+
+      // 2. REST Join
+      await _roomRepository.joinRoom(room.id);
+
+      // 3. Acquire short-lived Agora RTC token
+      final agoraData = await _roomRepository.getAgoraToken(room.id);
+      if (agoraData['token'] != null) {
+        final token = agoraData['token'] as String;
+        final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
+        final uid = agoraData['uid'] as int? ?? 0;
+        final appId = agoraData['appId'] as String?;
+
+        await _agoraService.initialize(appId: appId);
+        await _agoraService.joinChannel(
+          token,
+          channelName,
+          uid,
+          isHost: isHost,
+        );
+      }
+    } catch (e) {
+      debugPrint('[LiveProvider] joinRoom error: $e');
+    }
   }
 
-  void leaveRoom() {
-    _activeRoom = null;
-    _messages.clear();
-    _activeGiftAnimation = null;
+  void _setupSocketSubscriptions(UserModel? currentUser) {
+    _socketUserJoinedSub?.cancel();
+    _socketUserJoinedSub = _socketService.userJoinedStream.listen((data) {
+      final userName = data['name'] ?? data['username'] ?? 'A user';
+      final joinedId = data['userId'] ?? data['id'];
+      if (joinedId != currentUser?.id) {
+        sendMessage('$userName joined the stream', 'System');
+        if (data['viewerCount'] != null && _activeRoom != null) {
+          _activeRoom = _activeRoom!.copyWith(viewerCount: data['viewerCount'] as int);
+          notifyListeners();
+        }
+      }
+    });
+
+    _socketUserLeftSub?.cancel();
+    _socketUserLeftSub = _socketService.userLeftStream.listen((data) {
+      if (data['viewerCount'] != null && _activeRoom != null) {
+        _activeRoom = _activeRoom!.copyWith(viewerCount: data['viewerCount'] as int);
+        notifyListeners();
+      }
+    });
+
+    _socketViewerCountSub?.cancel();
+    _socketViewerCountSub = _socketService.viewerCountStream.listen((data) {
+      final count = data['viewerCount'] ?? data['count'];
+      if (count is int && _activeRoom != null) {
+        _activeRoom = _activeRoom!.copyWith(viewerCount: count);
+        notifyListeners();
+      }
+    });
+
+    _socketGiftSentSub?.cancel();
+    _socketGiftSentSub = _socketService.giftSentStream.listen((data) {
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      final giftMap = data['gift'] is Map ? Map<String, dynamic>.from(data['gift']) : {};
+      final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender']) : {};
+      final senderName = senderMap['displayName'] ?? senderMap['username'] ?? 'A fan';
+      final giftName = giftMap['name'] ?? 'Gift';
+      final giftIcon = giftMap['icon'] ?? '🎁';
+      final qty = data['quantity'] ?? 1;
+
+      _messages.add(LiveMessage(
+        sender: senderName,
+        text: 'sent $qty × $giftName $giftIcon!',
+        isGift: true,
+      ));
+      if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
+      notifyListeners();
+    });
+
+    _socketChatMessageSub?.cancel();
+    _socketChatMessageSub = _socketService.onRoomChatMessage.listen((data) {
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      final senderMap = data['sender'] as Map<String, dynamic>? ?? {};
+      final senderName = senderMap['displayName'] ?? senderMap['username'] ?? 'User';
+      final text = data['text']?.toString() ?? '';
+
+      _messages.add(LiveMessage(
+        sender: senderName,
+        text: text,
+        avatarUrl: senderMap['avatarUrl']?.toString(),
+      ));
+      if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
+      notifyListeners();
+    });
+
+    _socketRoomClosedSub?.cancel();
+    _socketRoomClosedSub = _socketService.roomClosedStream.listen((data) {
+      sendMessage('🛑 Stream was closed by the host', 'System');
+      leaveRoom();
+    });
+  }
+
+  Future<void> leaveRoom() async {
+    final roomId = _activeRoom?.id;
+    if (roomId != null) {
+      try {
+        _socketService.leaveRoom(roomId);
+        await _roomRepository.leaveRoom(roomId);
+      } catch (_) {}
+    }
+
+    await _agoraService.leaveChannel();
+
+    _socketUserJoinedSub?.cancel();
+    _socketUserLeftSub?.cancel();
+    _socketViewerCountSub?.cancel();
+    _socketGiftSentSub?.cancel();
+    _socketChatMessageSub?.cancel();
+    _socketRoomClosedSub?.cancel();
     _pkTimer?.cancel();
     _giftTimer?.cancel();
+
+    _activeRoom = null;
+    _currentUser = null;
+    _messages.clear();
+    _activeGiftAnimation = null;
+    _activePkBattle = null;
     _isRoomLocked = false;
     _currentMusicTrack = null;
     _luckyBagActive = false;
+    notifyListeners();
+  }
+
+  void sendLike({int count = 1}) {
+    _likeCount += count;
     notifyListeners();
   }
 
@@ -85,11 +260,18 @@ class LiveProvider extends ChangeNotifier {
     if (_messages.length > _maxMessageBuffer) {
       _messages.removeAt(0);
     }
+    if (_activeRoom != null && sender != 'System') {
+      _socketService.sendRoomChatMessage(
+        roomId: _activeRoom!.id,
+        text: text,
+      );
+    }
     notifyListeners();
   }
 
   void sendGift(GiftModel gift, String sender) {
     _activeGiftAnimation = gift;
+    _giftPoints += (gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice);
     _messages.add(
       LiveMessage(
         sender: sender,
@@ -115,24 +297,27 @@ class LiveProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void startPkBattle() {
-    _activePkBattle = const PKBattleModel(
-      id: 'pk_active_round',
-      hostA: UserModel(
-        id: 'host_1',
-        username: 'host_alpha',
-        name: 'Team Blue',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-      ),
-      hostB: UserModel(
-        id: 'host_2',
-        username: 'host_beta',
-        name: 'Team Red',
-        avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-      ),
+  void startPkBattle({UserModel? currentHost, UserModel? opponentHost}) {
+    final hostA = currentHost ?? const UserModel(
+      id: 'host_1',
+      username: 'host_alpha',
+      name: 'Team Blue',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+    );
+    final hostB = opponentHost ?? const UserModel(
+      id: 'host_2',
+      username: 'host_beta',
+      name: 'Team Red',
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+    );
+
+    _activePkBattle = PKBattleModel(
+      id: 'pk_${DateTime.now().millisecondsSinceEpoch}',
+      hostA: hostA,
+      hostB: hostB,
       scoreA: 0,
       scoreB: 0,
-      remainingTime: Duration(minutes: 3),
+      remainingTime: const Duration(minutes: 3),
     );
     _pkTimeRemainingSeconds = 180;
     _pkTimer?.cancel();
@@ -144,6 +329,12 @@ class LiveProvider extends ChangeNotifier {
         _pkTimer?.cancel();
       }
     });
+    notifyListeners();
+  }
+
+  void endPkBattle() {
+    _activePkBattle = null;
+    _pkTimer?.cancel();
     notifyListeners();
   }
 
@@ -214,6 +405,12 @@ class LiveProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _socketUserJoinedSub?.cancel();
+    _socketUserLeftSub?.cancel();
+    _socketViewerCountSub?.cancel();
+    _socketGiftSentSub?.cancel();
+    _socketChatMessageSub?.cancel();
+    _socketRoomClosedSub?.cancel();
     _pkTimer?.cancel();
     _giftTimer?.cancel();
     super.dispose();

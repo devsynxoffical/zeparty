@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/theme_provider.dart';
+import '../core/utils/auth_guard.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/glass_nav_bar.dart';
 import 'home/home_screen.dart';
@@ -25,16 +26,16 @@ class MainLayout extends StatefulWidget {
 class _MainLayoutState extends State<MainLayout> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    HomeScreen(),
-    SocialFeedScreen(),
-    SizedBox.shrink(), // Create Gap — never actually shown
-    InboxScreen(),
-    ProfileScreen(),
-  ];
-
   void _onTabSelected(int index) {
     if (index == 2) return; // centre button handled separately
+    if (index == 3) {
+      AuthGuard.require(context, () {
+        setState(() {
+          _currentIndex = index;
+        });
+      }, reason: 'Sign in to access your direct messages');
+      return;
+    }
     setState(() {
       _currentIndex = index;
     });
@@ -221,12 +222,22 @@ class _MainLayoutState extends State<MainLayout> {
       extendBody: true,
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: [
+          const HomeScreen(),
+          SocialFeedScreen(isScreenActive: _currentIndex == 1),
+          const SizedBox.shrink(), // Create Gap — never actually shown
+          const InboxScreen(),
+          const ProfileScreen(),
+        ],
       ),
       bottomNavigationBar: GlassNavBar(
         selectedIndex: _currentIndex,
         onTabSelected: _onTabSelected,
-        onCreatePressed: _showCreateActionSheet,
+        onCreatePressed: () => AuthGuard.require(
+          context,
+          _showCreateActionSheet,
+          reason: 'Sign in to create & broadcast content',
+        ),
       ),
     );
   }

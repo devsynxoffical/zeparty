@@ -8,9 +8,11 @@ import '../../core/utils/auth_guard.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/noble_badge_helper.dart';
 import '../../models/user_model.dart';
+import '../../models/post_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/svip_provider.dart';
 import '../../providers/live_party_provider.dart';
+import '../../providers/social_provider.dart';
 import '../party_room/live_party_room_screen.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/user_list_sheet.dart';
@@ -132,7 +134,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         context,
         MaterialPageRoute(builder: (c) => const EditProfileScreen()),
       ).then((_) {
-        if (mounted) setState(() {});
+        if (mounted) _loadUser();
       });
       return;
     }
@@ -315,17 +317,41 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     final auth = context.watch<AuthProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryText = AppColors.getTextPrimary(isDark);
-    final isOtherUser = _user != null && _user!.id != auth.currentUser.id;
+    final svip = context.watch<SVIPProvider>();
+    final currentUserId = auth.currentUser.id;
+    final currentUsername = auth.currentUser.username.toLowerCase();
+    final currentName = auth.currentUser.name.toLowerCase();
+    final targetId = _user?.id ?? widget.userId;
+    final targetUsername = _user?.username.toLowerCase() ?? '';
+    final targetName = _user?.name.toLowerCase() ?? '';
+    final isMyProfile = (targetId.isNotEmpty && (targetId == currentUserId || targetId == 'me')) ||
+        (targetUsername.isNotEmpty && currentUsername.isNotEmpty && targetUsername == currentUsername) ||
+        (targetName.isNotEmpty && currentName.isNotEmpty && targetName == currentName) ||
+        (widget.userId.isNotEmpty && (widget.userId == currentUserId || widget.userId == 'me' || (currentUsername.isNotEmpty && widget.userId.toLowerCase() == currentUsername)));
+    final isOtherUser = !isMyProfile;
     final isFollowing = _user != null && auth.isFollowing(_user!.id);
     final isUserBlocked = _user != null && auth.isBlocked(_user!.id);
-    final svip = context.watch<SVIPProvider>();
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
       body: _isLoading
-          ? Center(child: CircularProgressIndicator(color: AppColors.getPrimary(isDark)))
+          ? const Center(child: CircularProgressIndicator())
           : _user == null
-              ? Center(child: Text('User not found', style: TextStyle(color: primaryText)))
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.person_off_rounded, size: 64, color: AppColors.getMuted(isDark)),
+                      const SizedBox(height: 12),
+                      Text('User profile not found', style: TextStyle(color: primaryText, fontSize: 16, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Go Back'),
+                      ),
+                    ],
+                  ),
+                )
               : Stack(
                   children: [
                     // Scrollable Diagram B Hierarchy
@@ -430,20 +456,57 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   ],
                 ),
 
-      // 8. VISITOR ACTIONS (Sticky Bottom Action Bar: Follow/Following | Message | Gift)
-      // NEVER show owner controls (Edit Profile / Complete Profile) to visitors!
+      // 8. ACTIONS: Edit Profile for Owner | Follow/Message/Gift for Visitors
       bottomNavigationBar: _user == null
           ? null
-          : Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.getCard(isDark),
-                border: Border(top: BorderSide(color: AppColors.getBorder(isDark))),
-                boxShadow: AppColors.cardShadow,
-              ),
-              child: SafeArea(
-                child: Row(
-                  children: [
+          : !isOtherUser
+              ? Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.getCard(isDark),
+                    border: Border(top: BorderSide(color: AppColors.getBorder(isDark))),
+                    boxShadow: AppColors.cardShadow,
+                  ),
+                  child: SafeArea(
+                    child: SizedBox(
+                      height: 46,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.getPrimary(isDark),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)),
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+                          ).then((_) {
+                            if (mounted) setState(() {});
+                          });
+                        },
+                        icon: Icon(Icons.edit_rounded, color: AppColors.onPrimary(isDark: isDark), size: 18),
+                        label: Text(
+                          'Edit Profile',
+                          style: TextStyle(
+                            color: AppColors.onPrimary(isDark: isDark),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.getCard(isDark),
+                    border: Border(top: BorderSide(color: AppColors.getBorder(isDark))),
+                    boxShadow: AppColors.cardShadow,
+                  ),
+                  child: SafeArea(
+                    child: Row(
+                      children: [
                     // Follow / Following Button
                     Expanded(
                       flex: 3,
@@ -569,9 +632,23 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   Widget _buildCoverAndIdentityHeader(BuildContext context, bool isDark, SVIPProvider svip, bool isFollowing) {
     final displayFollowers = _user!.followers;
     final coverUrl = _user!.effectiveCoverUrl;
-    final isLocalFile = coverUrl.startsWith('/') || coverUrl.contains('\\') || coverUrl.startsWith('file:');
+    bool isLocalFile = false;
+    if (coverUrl.startsWith('/') || coverUrl.contains('\\') || coverUrl.startsWith('file:')) {
+      try {
+        final f = File(coverUrl);
+        isLocalFile = f.existsSync() && f.lengthSync() > 0;
+      } catch (_) {
+        isLocalFile = false;
+      }
+    }
     final primaryText = AppColors.getTextPrimary(isDark);
     final secondaryText = AppColors.getTextSecondary(isDark);
+
+    final ImageProvider coverImageProvider = isLocalFile
+        ? FileImage(File(coverUrl))
+        : (coverUrl.startsWith('http://') || coverUrl.startsWith('https://')
+            ? NetworkImage(coverUrl)
+            : const NetworkImage('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'));
 
     // CP Partner Mini-Avatar Decoration when active
     final hasCpPartner = _user!.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty;
@@ -588,7 +665,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               width: double.infinity,
               decoration: BoxDecoration(
                 image: DecorationImage(
-                  image: (isLocalFile ? FileImage(File(coverUrl)) : NetworkImage(coverUrl)) as ImageProvider,
+                  image: coverImageProvider,
                   fit: BoxFit.cover,
                 ),
               ),
@@ -697,9 +774,31 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                             BoxShadow(color: Colors.amber.withValues(alpha: 0.4), blurRadius: 10),
                           ],
                         ),
-                        child: UserAvatar(
-                          imageUrl: _user!.avatarUrl,
-                          radius: 38,
+                        child: Builder(
+                          builder: (ctx) {
+                            String? effAvatar = _user!.avatarUrl.isNotEmpty ? _user!.avatarUrl : null;
+                            if (effAvatar == null || effAvatar.isEmpty) {
+                              try {
+                                final social = ctx.watch<SocialProvider>();
+                                final myPost = social.posts.cast<PostModel?>().firstWhere(
+                                  (p) => p != null && (
+                                    (_user!.id.isNotEmpty && p.author.id == _user!.id) ||
+                                    (_user!.displayName.isNotEmpty && p.author.displayName.toLowerCase() == _user!.displayName.toLowerCase()) ||
+                                    (_user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase())
+                                  ),
+                                  orElse: () => null,
+                                );
+                                if (myPost != null && myPost.author.avatarUrl.isNotEmpty) {
+                                  effAvatar = myPost.author.avatarUrl;
+                                }
+                              } catch (_) {}
+                            }
+                            return UserAvatar(
+                              imageUrl: effAvatar,
+                              name: _user!.displayName,
+                              radius: 38,
+                            );
+                          },
                         ),
                       ),
 
@@ -798,7 +897,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         ),
                         const SizedBox(width: 3),
                         Text(
-                          '${_user!.age}',
+                          _user!.age > 0 ? '${_user!.age}' : _user!.gender,
                           style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                       ],
@@ -814,8 +913,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 children: [
                   Flexible(
                     child: Text(
-                      'ID:${_user!.id}',
-                      style: TextStyle(color: secondaryText, fontSize: 13, fontWeight: FontWeight.w500),
+                      '@${_user!.username.isNotEmpty ? _user!.username : _user!.id}',
+                      style: TextStyle(color: secondaryText, fontSize: 13, fontWeight: FontWeight.w600),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -823,9 +922,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   const SizedBox(width: 4),
                   GestureDetector(
                     onTap: () {
-                      Clipboard.setData(ClipboardData(text: _user!.id));
+                      Clipboard.setData(ClipboardData(text: _user!.username.isNotEmpty ? _user!.username : _user!.id));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('ID copied to clipboard!')),
+                        const SnackBar(content: Text('Username copied to clipboard!')),
                       );
                     },
                     child: Icon(Icons.copy_rounded, color: secondaryText, size: 14),
@@ -872,35 +971,36 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     );
   }
 
-  // Tag Badges Section (Row 1: SVIP 2, Wealth 30, Charm 15, Game 12, Level 24, Seeker, III | Row 2: Collector Tags)
+  // Tag Badges Section — shows only real earned levels
   Widget _buildProfileTags(bool isDark, SVIPProvider svip) {
-    final svipLvl = svip.currentLevel > 0 ? svip.currentLevel : 2;
-    final wealthLvl = _user?.wealthLevel ?? 30;
-    final charmLvl = _user?.charmLevel ?? 15;
-    final gameLvl = _user?.gameLevel ?? 12;
-    final accountLvl = _user?.accountLevel ?? 24;
+    final svipLvl = svip.currentLevel;
+    final wealthLvl = _user?.wealthLevel ?? 1;
+    final charmLvl = _user?.charmLevel ?? 1;
+    final gameLvl = _user?.gameLevel ?? 1;
+    final accountLvl = _user?.accountLevel ?? 1;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Row 1: SVIP, Wealth, Charm, Game, Level, Seeker, III, Eligible...
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           physics: const BouncingScrollPhysics(),
           child: Row(
             children: [
-              _buildTagChip(
-                icon: Icons.workspace_premium_rounded,
-                text: 'SVIP $svipLvl',
-                color: const Color(0xFFFFD700),
-                bgColor: const Color(0xFF2E2715),
-                borderColor: const Color(0xFFFFD700),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen())),
-              ),
-              const SizedBox(width: 6),
+              if (svipLvl > 0) ...[
+                _buildTagChip(
+                  icon: Icons.workspace_premium_rounded,
+                  text: 'SVIP $svipLvl',
+                  color: const Color(0xFFFFD700),
+                  bgColor: const Color(0xFF2E2715),
+                  borderColor: const Color(0xFFFFD700),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen())),
+                ),
+                const SizedBox(width: 6),
+              ],
               _buildTagChip(
                 icon: Icons.diamond_rounded,
-                text: '$wealthLvl',
+                text: 'Lv.$wealthLvl',
                 color: const Color(0xFF00E5FF),
                 bgColor: const Color(0xFF321A4C),
                 borderColor: const Color(0xFF9042F5),

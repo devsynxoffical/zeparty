@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/repositories/backend_repository.dart';
+import '../../core/repositories/room_repository.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -17,10 +18,11 @@ class CreatePartyScreen extends StatefulWidget {
 class _CreatePartyScreenState extends State<CreatePartyScreen> {
   final _nameController = TextEditingController();
   String _selectedCategory = 'Music';
-  String _roomType = 'Voice Room';
+  String _roomType = 'AUDIO_PARTY';
   int _capacity = 10;
   String _privacy = 'Public';
   String? _selectedCoverUrl;
+  bool _isCreating = false;
   
   final List<String> _dummyCovers = [
     'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=600&q=80',
@@ -30,28 +32,52 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
   ];
   int _coverIndex = 0;
 
-  void _createParty() {
+  Future<void> _createParty() async {
+    if (_isCreating) return;
+    setState(() => _isCreating = true);
+
     final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
-    final newRoom = LiveRoomModel(
-      id: 'party_${DateTime.now().millisecondsSinceEpoch}',
-      title: _nameController.text.isNotEmpty ? _nameController.text : '${currentUser.name}\'s Party',
-      host: currentUser,
-      coverUrl: _selectedCoverUrl ?? currentUser.avatarUrl,
-      viewerCount: 1,
-      category: _selectedCategory,
-      isPrivate: _privacy != 'Public',
-      startTime: DateTime.now(),
-      roomType: _roomType,
-      seatCapacity: _capacity,
-    );
+    final title = _nameController.text.trim().isNotEmpty
+        ? _nameController.text.trim()
+        : '${currentUser.name}\'s Party';
+    final coverUrl = _selectedCoverUrl ?? (currentUser.avatarUrl.isNotEmpty ? currentUser.avatarUrl : _dummyCovers[0]);
 
-    // Register active party room in backend repository so it appears in Public Party & Mine
-    BackendRepository.instance.addLiveRoom(newRoom);
+    LiveRoomModel roomToJoin;
 
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: newRoom)),
-    );
+    try {
+      roomToJoin = await RoomRepository.instance.createRoom(
+        title: title,
+        coverImageUrl: coverUrl,
+        roomType: 'AUDIO_PARTY',
+        category: _selectedCategory,
+        isPrivate: _privacy != 'Public',
+      );
+    } catch (e) {
+      debugPrint('[CreateParty] Backend createRoom error: $e, using local fallback');
+      roomToJoin = LiveRoomModel(
+        id: 'party_${DateTime.now().millisecondsSinceEpoch}',
+        title: title,
+        host: currentUser,
+        coverUrl: coverUrl,
+        viewerCount: 1,
+        category: _selectedCategory,
+        isPrivate: _privacy != 'Public',
+        startTime: DateTime.now(),
+        roomType: 'AUDIO_PARTY',
+        seatCapacity: _capacity,
+      );
+    } finally {
+      if (mounted) setState(() => _isCreating = false);
+    }
+
+    BackendRepository.instance.addLiveRoom(roomToJoin);
+
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: roomToJoin)),
+      );
+    }
   }
 
   @override
@@ -199,12 +225,14 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
               width: double.infinity,
               height: 50,
               child: ElevatedButton(
-                onPressed: _createParty,
+                onPressed: _isCreating ? null : _createParty,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryGold,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                child: const Text('Create Party', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
+                child: _isCreating
+                    ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                    : const Text('Create Party', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
           ],

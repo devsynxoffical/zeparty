@@ -2,10 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 import '../core/animations/app_animations.dart';
-import '../core/utils/performance_utils.dart';
 
 class UserAvatar extends StatelessWidget {
   final String? imageUrl;
+  final String? name;
   final double radius;
   final bool isLive;
   final bool showVipFrame;
@@ -15,6 +15,7 @@ class UserAvatar extends StatelessWidget {
   const UserAvatar({
     super.key,
     this.imageUrl,
+    this.name,
     this.radius = 24,
     this.isLive = false,
     this.showVipFrame = false,
@@ -22,27 +23,100 @@ class UserAvatar extends StatelessWidget {
     this.onTap,
   });
 
-  ImageProvider _getImageProvider(String url) {
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return NetworkImage(url);
-    } else if (url.startsWith('assets/')) {
-      return AssetImage(url);
-    } else {
-      final file = File(url);
-      if (file.existsSync()) {
-        return FileImage(file);
-      }
-      return NetworkImage(url);
+  bool _isValidRemoteOrLocal(String? url) {
+    if (url == null || url.trim().isEmpty) return false;
+    final trimmed = url.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return true;
+    if (trimmed.startsWith('assets/')) return true;
+    if (trimmed.startsWith('/') || trimmed.startsWith('file://')) return true;
+    try {
+      final f = File(trimmed.replaceFirst('file://', ''));
+      return f.existsSync() && f.lengthSync() > 0;
+    } catch (_) {
+      return false;
     }
+  }
+
+  String _getInitials(String? displayName) {
+    if (displayName == null || displayName.trim().isEmpty) return 'Z';
+    final parts = displayName.trim().split(RegExp(r'\s+'));
+    if (parts.length > 1) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return displayName.trim().substring(0, 1).toUpperCase();
+  }
+
+  Widget _buildPlaceholder(bool isDark) {
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [
+            AppColors.getPrimary(isDark),
+            AppColors.accent,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          _getInitials(name),
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: radius * 0.85,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final validUrl = (imageUrl != null && imageUrl!.isNotEmpty)
-        ? imageUrl!
-        : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
-    final cacheDim = PerformanceUtils.getMemCacheWidth(radius * 2);
+    final hasValidImage = _isValidRemoteOrLocal(imageUrl);
+
+    Widget avatarContent;
+    if (hasValidImage) {
+      final clean = imageUrl!.trim().replaceFirst('file://', '');
+      if (clean.startsWith('http://') || clean.startsWith('https://')) {
+        avatarContent = ClipOval(
+          child: Image.network(
+            clean,
+            width: radius * 2,
+            height: radius * 2,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => _buildPlaceholder(isDark),
+          ),
+        );
+      } else if (clean.startsWith('assets/')) {
+        avatarContent = ClipOval(
+          child: Image.asset(
+            clean,
+            width: radius * 2,
+            height: radius * 2,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => _buildPlaceholder(isDark),
+          ),
+        );
+      } else {
+        avatarContent = ClipOval(
+          child: Image.file(
+            File(clean),
+            width: radius * 2,
+            height: radius * 2,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => _buildPlaceholder(isDark),
+          ),
+        );
+      }
+    } else {
+      avatarContent = _buildPlaceholder(isDark);
+    }
 
     Widget avatar = Container(
       padding: EdgeInsets.all(isLive || showVipFrame || isPremium ? 2.5 : 0),
@@ -58,15 +132,7 @@ class UserAvatar extends StatelessWidget {
               )
             : null,
       ),
-      child: CircleAvatar(
-        radius: radius,
-        backgroundColor: isDark ? AppColors.softBlack : AppColors.lightSurface,
-        backgroundImage: ResizeImage.resizeIfNeeded(
-          cacheDim,
-          cacheDim,
-          _getImageProvider(validUrl),
-        ),
-      ),
+      child: avatarContent,
     );
 
     if (showVipFrame && !isLive) {

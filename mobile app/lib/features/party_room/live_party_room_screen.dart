@@ -205,7 +205,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           final provider = Provider.of<LivePartyProvider>(context, listen: false);
           final emojiProvider = Provider.of<EmojiReactionProvider>(context, listen: false);
           
-          provider.sendMessage(user, 'sent ${gift.name} ${gift.icon}✨');
           emojiProvider.sendReaction(
             roomId: widget.room.id,
             senderId: user.id,

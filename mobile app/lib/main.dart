@@ -50,7 +50,7 @@ Future<void> main() async {
 
   // Initialize Authoritative Centralized App Configuration
   AppConfig.initialize(
-    environment: kReleaseMode ? AppEnvironment.staging : AppEnvironment.development,
+    environment: kReleaseMode ? AppEnvironment.production : AppEnvironment.development,
   );
 
   await Firebase.initializeApp(

@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../../providers/social_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/services/api_client.dart';
+import '../../core/services/media_upload_service.dart';
 import '../../widgets/design/gold_button.dart';
 import '../../widgets/user_avatar.dart';
 
@@ -25,7 +26,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Future<void> _pickPostImage(ImageSource source) async {
     try {
-      final XFile? picked = await _picker.pickImage(source: source, imageQuality: 85);
+      final XFile? picked = await _picker.pickImage(
+        source: source,
+        maxWidth: 1080,
+        maxHeight: 1080,
+        imageQuality: 80,
+      );
       if (picked != null) {
         setState(() {
           _selectedImage = picked;
@@ -49,13 +55,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
 
     try {
-      // Note: backend accepts mediaUrls as remote URLs.
-      // Local file paths cannot be sent directly; we omit them unless a CDN upload is implemented.
-      // For now, only text content is posted when a local image is selected.
       final List<String> mediaUrls = [];
+      if (_selectedImage != null) {
+        final uploadResult = await MediaUploadService.instance.uploadFile(
+          filePath: _selectedImage!.path,
+          folder: 'posts',
+        );
+        mediaUrls.add(uploadResult.url);
+      }
 
+      if (!mounted) return;
       await context.read<SocialProvider>().createPost(
-            content: content,
+            content: content.isNotEmpty ? content : 'Shared a moment ✨',
             mediaUrls: mediaUrls.isEmpty ? null : mediaUrls,
             visibility: 'PUBLIC',
           );
@@ -157,22 +168,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           padding: const EdgeInsets.all(4),
                           decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                           child: const Icon(Icons.close, color: Colors.white, size: 18),
-                        ),
-                      ),
-                    ),
-                    // Show note that local image cannot be uploaded yet
-                    Positioned(
-                      bottom: 8,
-                      left: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: const Text(
-                          'Image preview (text will be posted)',
-                          style: TextStyle(color: Colors.white70, fontSize: 10),
                         ),
                       ),
                     ),

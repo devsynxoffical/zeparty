@@ -85,14 +85,15 @@ class _HighValueAnnouncementOverlayState extends State<HighValueAnnouncementOver
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // Build the banner based on tier
-    return Positioned(
-      top: 60.h,
-      left: 16.w,
-      right: 16.w,
-      child: IgnorePointer(
-        child: SlideTransition(
-          position: _slideAnimation,
-          child: _buildBanner(_currentEvent!, isDark),
+    return IgnorePointer(
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: Padding(
+          padding: EdgeInsets.only(top: 60.h, left: 16.w, right: 16.w),
+          child: SlideTransition(
+            position: _slideAnimation,
+            child: _buildBanner(_currentEvent!, isDark),
+          ),
         ),
       ),
     );

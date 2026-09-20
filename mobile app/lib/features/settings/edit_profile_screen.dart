@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -18,6 +19,7 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _nameController;
+  late TextEditingController _usernameController;
   late TextEditingController _bioController;
   late TextEditingController _regionController;
 
@@ -28,9 +30,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _isSaving = false;
 
   late String _initialName;
+  late String _initialUsername;
   late String _initialBio;
   late String _initialRegion;
   late String _initialGender;
+  DateTime? _initialBirthday;
 
   final List<String> _selectedTags = [];
 
@@ -61,18 +65,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.initState();
     final user = context.read<AuthProvider>().currentUser;
     _initialName = user.name;
+    _initialUsername = user.username;
     _initialBio = user.bio;
     _initialRegion = user.region;
     _initialGender = user.gender.isEmpty ? 'Not Specified' : user.gender;
 
     _nameController = TextEditingController(text: _initialName);
+    _usernameController = TextEditingController(text: _initialUsername);
     _bioController = TextEditingController(text: _initialBio);
     _regionController = TextEditingController(text: _initialRegion);
     _selectedGender = _initialGender;
-    _selectedBirthday = DateTime.now().subtract(Duration(days: user.age * 365));
+    _selectedBirthday = user.dateOfBirth ?? (user.age > 0 ? DateTime.now().subtract(Duration(days: user.age * 365)) : DateTime(2000, 1, 1));
+    _initialBirthday = _selectedBirthday;
     _selectedTags.addAll(['Music 🎵', 'Streaming 🎙️']);
 
     _nameController.addListener(_onFieldChanged);
+    _usernameController.addListener(_onFieldChanged);
     _bioController.addListener(_onFieldChanged);
     _regionController.addListener(_onFieldChanged);
   }
@@ -84,6 +92,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _usernameController.dispose();
     _bioController.dispose();
     _regionController.dispose();
     super.dispose();
@@ -91,9 +100,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   bool get _hasChanges {
     return _nameController.text.trim() != _initialName.trim() ||
+        _usernameController.text.trim() != _initialUsername.trim() ||
         _bioController.text.trim() != _initialBio.trim() ||
         _regionController.text.trim() != _initialRegion.trim() ||
         _selectedGender != _initialGender ||
+        _selectedBirthday != _initialBirthday ||
         _coverImagePath != null ||
         _avatarImagePath != null;
   }
@@ -103,9 +114,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final picker = ImagePicker();
       final pickedFile = await picker.pickImage(
         source: source,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 85,
+        maxWidth: 1080,
+        maxHeight: 1080,
+        imageQuality: 80,
       );
 
       if (pickedFile != null && mounted) {
@@ -291,6 +302,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!_hasChanges || _isSaving) return;
 
     final name = _nameController.text.trim();
+    final username = _usernameController.text.trim();
     final bio = _bioController.text.trim();
     final region = _regionController.text.trim();
 
@@ -304,13 +316,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       return;
     }
 
-    if (_containsProhibitedWords(name) || _containsProhibitedWords(bio)) {
+    if (_containsProhibitedWords(name) || _containsProhibitedWords(username) || _containsProhibitedWords(bio)) {
       showDialog(
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Security & Title Filter Alert'),
           content: const Text(
-            'Your proposed Name or Bio contains prohibited terms or reserved Admin titles ("admin", "official", "support", etc.). Please choose a different title.',
+            'Your proposed Name, Username, or Bio contains prohibited terms or reserved Admin titles ("admin", "official", "support", etc.). Please choose a different title.',
           ),
           actions: [
             TextButton(
@@ -326,15 +338,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _isSaving = true);
 
     final auth = context.read<AuthProvider>();
-    if (_avatarImagePath != null) {
-      auth.updateAvatar(_avatarImagePath!);
-    }
 
     final success = await auth.updateProfile(
       name: name,
+      username: username.isNotEmpty ? username : null,
       bio: bio,
       gender: _selectedGender,
       region: region.isEmpty ? 'Global' : region,
+      birthDate: _selectedBirthday,
+      avatarUrl: _avatarImagePath,
+      coverUrl: _coverImagePath,
     );
 
     if (!mounted) return;
@@ -443,7 +456,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     gradient: const LinearGradient(
                       colors: [Color(0xFF2E1A47), Color(0xFF120F24)],
                     ),
-                    image: _coverImagePath != null
+                    image: (_coverImagePath != null &&
+                            File(_coverImagePath!).existsSync() &&
+                            File(_coverImagePath!).lengthSync() > 0)
                         ? DecorationImage(
                             image: FileImage(File(_coverImagePath!)),
                             fit: BoxFit.cover,
@@ -486,7 +501,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          _avatarImagePath != null
+                          (_avatarImagePath != null &&
+                                  File(_avatarImagePath!).existsSync() &&
+                                  File(_avatarImagePath!).lengthSync() > 0)
                               ? CircleAvatar(
                                   radius: 46,
                                   backgroundImage: FileImage(File(_avatarImagePath!)),
@@ -530,6 +547,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   labelText: 'Display Name (Nickname)',
                   prefixIcon: const Icon(Icons.person_outline),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Username (@handle)
+              TextField(
+                controller: _usernameController,
+                maxLength: 30,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9_.]')),
+                ],
+                decoration: InputDecoration(
+                  labelText: 'Username (Handle)',
+                  prefixText: '@',
+                  prefixIcon: const Icon(Icons.alternate_email_rounded),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  helperText: 'Unique handle for tags, mentions, and search',
                 ),
               ),
               const SizedBox(height: 12),

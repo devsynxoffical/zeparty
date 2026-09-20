@@ -93,30 +93,74 @@ export class StorageService {
     const config = this.validateFile({ buffer, mimeType });
     const storageKey = this.generateStorageKey({ folder, ext: config.ext, userId });
 
-    if (this.storageProvider === 'local') {
-      const targetPath = path.join(this.uploadDir, storageKey);
-      const targetDir = path.dirname(targetPath);
-      if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
-      }
-      await fs.promises.writeFile(targetPath, buffer);
-    } else {
-      // Cloud S3 / R2 upload handler
-      // In production with AWS SDK / @aws-sdk/client-s3 configured
-      const s3Client = await this._getS3Client();
-      if (!s3Client) {
-        // Graceful fallback to local if S3 credentials not provisioned in staging
-        const targetPath = path.join(this.uploadDir, storageKey);
-        const targetDir = path.dirname(targetPath);
-        if (!fs.existsSync(targetDir)) {
-          fs.mkdirSync(targetDir, { recursive: true });
+    // Clean up older profile/cover images for this specific user so older ones are automatically deleted
+    if (userId && (folder === 'avatars' || folder === 'covers')) {
+      try {
+        const folderDir = path.join(this.uploadDir, folder);
+        if (fs.existsSync(folderDir)) {
+          const files = await fs.promises.readdir(folderDir);
+          const prefix = `u_${userId.replace(/[^a-zA-Z0-9_-]/g, '')}_`;
+          for (const file of files) {
+            if (file.startsWith(prefix)) {
+              await fs.promises.unlink(path.join(folderDir, file)).catch(() => {});
+            }
+          }
         }
-        await fs.promises.writeFile(targetPath, buffer);
+      } catch (cleanErr) {
+        console.warn('[StorageService] Cleanup of older images notice:', cleanErr.message);
+      }
+    }
+
+    // Write to local disk to guarantee immediate availability
+    const targetPath = path.join(this.uploadDir, storageKey);
+    const targetDir = path.dirname(targetPath);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    await fs.promises.writeFile(targetPath, buffer);
+
+    // Also sync to Cloudflare R2 if configured
+    if (this.storageProvider === 'r2' || this.storageProvider === 's3') {
+      try {
+        const s3Client = await this._getS3Client();
+        if (s3Client) {
+          const { PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+          
+          // Delete old user objects from R2 if avatar or cover
+          if (userId && (folder === 'avatars' || folder === 'covers')) {
+            const prefix = `${folder}/u_${userId.replace(/[^a-zA-Z0-9_-]/g, '')}_`;
+            const listRes = await s3Client.send(new ListObjectsV2Command({
+              Bucket: process.env.S3_BUCKET_NAME || 'zeparty-media',
+              Prefix: prefix,
+            })).catch(() => null);
+
+            if (listRes?.Contents?.length) {
+              for (const obj of listRes.Contents) {
+                if (obj.Key && obj.Key !== storageKey) {
+                  await s3Client.send(new DeleteObjectCommand({
+                    Bucket: process.env.S3_BUCKET_NAME || 'zeparty-media',
+                    Key: obj.Key,
+                  })).catch(() => {});
+                }
+              }
+            }
+          }
+
+          await s3Client.send(new PutObjectCommand({
+            Bucket: process.env.S3_BUCKET_NAME || 'zeparty-media',
+            Key: storageKey,
+            Body: buffer,
+            ContentType: mimeType,
+          }));
+        }
+      } catch (r2Err) {
+        console.warn('[StorageService] Cloud R2 upload notice:', r2Err.message);
       }
     }
 
     return {
       storageKey,
+      url: this.getPublicUrl(storageKey),
       cdnUrl: this.getPublicUrl(storageKey),
       mimeType,
       size: buffer.length,
@@ -180,8 +224,11 @@ export class StorageService {
     // Dynamic import to maintain resilience
     try {
       const { S3Client } = await import('@aws-sdk/client-s3');
+      // S3_ENDPOINT_URL is required for Cloudflare R2 and other S3-compatible providers
       return new S3Client({
-        region: process.env.AWS_REGION || 'us-east-1',
+        region: process.env.AWS_REGION || 'auto',
+        ...(process.env.S3_ENDPOINT_URL && { endpoint: process.env.S3_ENDPOINT_URL }),
+        forcePathStyle: false, // R2 uses virtual-hosted style (default)
         credentials: {
           accessKeyId: process.env.AWS_ACCESS_KEY_ID,
           secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,

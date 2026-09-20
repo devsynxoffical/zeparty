@@ -36,6 +36,7 @@ class LightTheme {
       shadow: Color(0x200D47A1),
     ),
     cardTheme: CardThemeData(
+      clipBehavior: Clip.antiAlias,
       color: AppColors.lightCard,
       elevation: 0,
       margin: EdgeInsets.zero,
@@ -159,6 +160,11 @@ class LightTheme {
         foregroundColor: AppColors.royalBlue,
         textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
       ),
+    ),
+    listTileTheme: const ListTileThemeData(
+      textColor: AppColors.lightTextPrimary,
+      iconColor: AppColors.royalBlue,
+      subtitleTextStyle: TextStyle(color: AppColors.lightTextSecondary),
     ),
     dividerColor: AppColors.lightBorder,
     textTheme: GoogleFonts.poppinsTextTheme(

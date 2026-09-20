@@ -12,19 +12,33 @@ class RoomRepository {
     required String title,
     String? coverImageUrl,
     String roomType = 'AUDIO_PARTY',
-    String category = 'Live',
+    String category = 'CHAT',
     bool isPrivate = false,
     String? roomPin,
   }) async {
+    String normType = 'LIVE_VIDEO';
+    final uType = roomType.toUpperCase().trim();
+    if (uType.contains('AUDIO') || uType.contains('PARTY')) {
+      normType = 'AUDIO_PARTY';
+    }
+
+    String normCat = 'CHAT';
+    final uCat = category.toUpperCase().trim();
+    if (uCat.contains('MUSIC')) {
+      normCat = 'MUSIC';
+    } else if (uCat.contains('GAME') || uCat.contains('GAMING')) {
+      normCat = 'GAMING';
+    }
+
     final response = await _apiClient.post(
       '/v1/rooms',
       data: {
         'title': title,
-        'coverImageUrl': coverImageUrl,
-        'roomType': roomType,
-        'category': category,
+        'coverImageUrl': coverImageUrl ?? '',
+        'roomType': normType,
+        'category': normCat,
         'isPrivate': isPrivate,
-        if (roomPin != null) 'roomPin': roomPin,
+        if (roomPin != null && roomPin.isNotEmpty) 'roomPin': roomPin,
       },
     );
 

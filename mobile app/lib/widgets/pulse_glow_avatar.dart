@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
+import 'user_avatar.dart';
 
 class PulseGlowAvatar extends StatefulWidget {
   final String imageUrl;
+  final String? name;
   final double radius;
   final Color glowColor;
 
   const PulseGlowAvatar({
     super.key,
     required this.imageUrl,
+    this.name,
     this.radius = 36,
     this.glowColor = Colors.pinkAccent,
   });
@@ -57,11 +60,10 @@ class _PulseGlowAvatarState extends State<PulseGlowAvatar> with SingleTickerProv
               ),
             ],
           ),
-          child: CircleAvatar(
+          child: UserAvatar(
+            imageUrl: widget.imageUrl,
+            name: widget.name,
             radius: widget.radius,
-            backgroundImage: NetworkImage(widget.imageUrl),
-            backgroundColor: Colors.grey.withValues(alpha: 0.3),
-            onBackgroundImageError: (_, stackTrace) {}, // handle error gracefully
           ),
         );
       },

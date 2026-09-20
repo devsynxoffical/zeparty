@@ -8,9 +8,11 @@ import '../../core/utils/auth_guard.dart';
 import '../../core/utils/formatters.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
+import '../auth/auth_screen.dart';
 import '../wallet/diamonds_wallet_screen.dart';
 import '../../models/user_model.dart';
-import '../../widgets/profile_status_strip.dart';
+import '../../models/post_model.dart';
+import '../../providers/social_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/user_list_sheet.dart';
 import '../../core/repositories/backend_repository.dart';
@@ -46,10 +48,8 @@ import '../host/host_dashboard_screen.dart';
 
 
 import '../store/store_screen.dart';
-import '../auth/login_screen.dart';
 import '../svip/svip_center_screen.dart';
 import '../aristocracy/aristocracy_center_screen.dart';
-import '../bd_center/bd_center_dashboard_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final UserModel? user;
@@ -70,14 +70,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         imageQuality: 85,
       );
       if (pickedFile != null && mounted) {
-        context.read<AuthProvider>().updateAvatar(pickedFile.path);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('🎉 Profile picture updated successfully!'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        await context.read<AuthProvider>().updateAvatar(pickedFile.path);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('🎉 Profile picture updated successfully!'),
+              backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -207,34 +209,88 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildGuestView(bool isDark) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.account_circle, size: 80, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text(
-            'Guest Mode',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Sign in to access your wallet, profile settings, and inventory.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (c) => const LoginScreen()));
-            },
-            child: const Text('Sign In'),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: AppColors.getPrimary(isDark).withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.getPrimary(isDark).withValues(alpha: 0.3), width: 2),
+              ),
+              child: Icon(Icons.person_rounded, size: 64, color: AppColors.getPrimary(isDark)),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Guest Mode Active',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: AppColors.getTextPrimary(isDark),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Create an account or sign in to access your coins, virtual gifts, levels, VIP privileges, and profile customization.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.getTextSecondary(isDark),
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 28),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.getPrimary(isDark),
+                  foregroundColor: AppColors.onPrimary(isDark: isDark),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 2,
+                ),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (c) => const AuthScreen(initialMode: AuthMode.login)),
+                  );
+                },
+                icon: const Icon(Icons.login_rounded, size: 18),
+                label: const Text(
+                  'Sign In / Register',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildProfileHeader(UserModel user, bool isDark, Color primary) {
+    String? effectiveAvatar = user.avatarUrl.isNotEmpty ? user.avatarUrl : null;
+    if (effectiveAvatar == null || effectiveAvatar.isEmpty) {
+      try {
+        final social = context.watch<SocialProvider>();
+        final myPost = social.posts.cast<PostModel?>().firstWhere(
+          (p) => p != null && (
+            (user.id.isNotEmpty && p.author.id == user.id) ||
+            (user.displayName.isNotEmpty && p.author.displayName.toLowerCase() == user.displayName.toLowerCase()) ||
+            (user.username.isNotEmpty && p.author.username.toLowerCase() == user.username.toLowerCase())
+          ),
+          orElse: () => null,
+        );
+        if (myPost != null && myPost.author.avatarUrl.isNotEmpty) {
+          effectiveAvatar = myPost.author.avatarUrl;
+        }
+      } catch (_) {}
+    }
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -256,7 +312,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ],
                 ),
                 child: UserAvatar(
-                  imageUrl: user.avatarUrl,
+                  imageUrl: effectiveAvatar,
+                  name: user.displayName,
                   radius: 40,
                   showVipFrame: false,
                 ),
@@ -311,7 +368,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     Flexible(
                       child: Text(
-                        user.name,
+                        user.displayName,
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.bold,
@@ -378,7 +435,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const SizedBox(width: 2),
                           Text(
-                            '${user.age}',
+                            user.age > 0 ? '${user.age}' : user.gender,
                             style: const TextStyle(
                               fontSize: 10,
                               color: Colors.blueAccent,
@@ -395,9 +452,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     Flexible(
                       child: Text(
-                        'ID: ${user.id}',
+                        '@${user.username.isNotEmpty ? user.username : (user.name.isNotEmpty ? user.name : user.id)}',
                         style: TextStyle(
                           fontSize: 12,
+                          fontWeight: FontWeight.w600,
                           color: AppColors.getTextSecondary(isDark),
                         ),
                         maxLines: 1,
@@ -407,9 +465,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(width: 4),
                     GestureDetector(
                       onTap: () {
-                        Clipboard.setData(ClipboardData(text: user.id));
+                        Clipboard.setData(ClipboardData(text: user.username.isNotEmpty ? user.username : user.id));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('ID copied to clipboard')),
+                          const SnackBar(content: Text('Username copied to clipboard')),
                         );
                       },
                       child: Icon(Icons.copy_rounded, size: 12, color: AppColors.getTextSecondary(isDark)),

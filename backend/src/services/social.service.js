@@ -84,7 +84,7 @@ export async function createPost(
 }
 
 export async function getPostById(postId, viewerUserId = null, { isAdmin = false } = {}, db = prisma) {
-  const post = await postRepository.findPostById(postId, db);
+  const post = await postRepository.findPostById(postId, viewerUserId, db);
   if (!post) {
     const error = new Error('Post not found');
     error.statusCode = 404;

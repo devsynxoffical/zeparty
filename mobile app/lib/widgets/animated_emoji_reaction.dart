@@ -89,33 +89,38 @@ class _AnimatedEmojiReactionState extends State<AnimatedEmojiReaction> with Sing
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Positioned(
-          left: widget.startPosition.dx - (widget.emojiSize / 2) + _translateXAnimation.value,
-          top: widget.startPosition.dy - (widget.emojiSize / 2) + _translateYAnimation.value,
-          child: Opacity(
-            opacity: _opacityAnimation.value.clamp(0.0, 1.0),
-            child: Transform.scale(
-              scale: _scaleAnimation.value,
-              child: Transform.rotate(
-                angle: _rotationAnimation.value,
-                child: IgnorePointer(
-                  child: Text(
-                    widget.emoji,
-                    style: TextStyle(
-                      fontSize: widget.emojiSize,
-                      height: 1.0,
-                      decoration: TextDecoration.none,
+    return Align(
+      alignment: Alignment.topLeft,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Transform.translate(
+            offset: Offset(
+              widget.startPosition.dx - (widget.emojiSize / 2) + _translateXAnimation.value,
+              widget.startPosition.dy - (widget.emojiSize / 2) + _translateYAnimation.value,
+            ),
+            child: Opacity(
+              opacity: _opacityAnimation.value.clamp(0.0, 1.0),
+              child: Transform.scale(
+                scale: _scaleAnimation.value,
+                child: Transform.rotate(
+                  angle: _rotationAnimation.value,
+                  child: IgnorePointer(
+                    child: Text(
+                      widget.emoji,
+                      style: TextStyle(
+                        fontSize: widget.emojiSize,
+                        height: 1.0,
+                        decoration: TextDecoration.none,
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

@@ -40,6 +40,8 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketViewerCountSub;
   StreamSubscription? _socketRoomClosedSub;
   StreamSubscription? _socketGiftSentSub;
+  StreamSubscription? _socketChatMessageSub;
+  StreamSubscription? _socketUserKickedSub;
 
   // PK Battle State
   bool _isPkActive = false;
@@ -204,7 +206,11 @@ class LivePartyProvider extends ChangeNotifier {
     _messages = [];
     notifyListeners();
 
-    final isHost = (room.host.id == currentUser.id) || (room.creatorUserId == currentUser.id);
+    final isHost = (room.host.id == currentUser.id) ||
+        (room.creatorUserId == currentUser.id) ||
+        (room.host.name.trim().toLowerCase() == currentUser.name.trim().toLowerCase()) ||
+        (room.host.username.trim().toLowerCase() == currentUser.username.trim().toLowerCase()) ||
+        (currentUser.name.trim().isNotEmpty && room.title.toLowerCase().contains(currentUser.name.trim().toLowerCase()));
 
     try {
       // 1. Connect Socket.IO
@@ -214,25 +220,43 @@ class LivePartyProvider extends ChangeNotifier {
 
       // 2. Perform backend REST join
       final joinResult = await _roomRepository.joinRoom(room.id, password: password);
-      if (joinResult != null) {
-        // Extract room data if returned
-        final roomData = joinResult['room'] ?? joinResult;
-        if (roomData is Map<String, dynamic>) {
-          _activeRoom = LiveRoomModel.fromJson(roomData);
-        }
+      final roomData = joinResult['room'] ?? joinResult;
+      if (roomData is Map<String, dynamic> && roomData.isNotEmpty) {
+        _activeRoom = LiveRoomModel.fromJson(roomData);
       }
 
-      // Add Host / Self to participants
-      _participants.add(PartyParticipantModel(
-        user: currentUser,
-        role: isHost ? ParticipantRole.host : ParticipantRole.listener,
-        seatNumber: isHost ? 0 : null,
-        joinedAt: DateTime.now(),
-      ));
+      // Add Host and self to participants
+      if (isHost) {
+        _participants.add(PartyParticipantModel(
+          user: currentUser.copyWith(
+            avatarUrl: currentUser.avatarUrl.isNotEmpty ? currentUser.avatarUrl : room.host.avatarUrl,
+            name: currentUser.name,
+          ),
+          role: ParticipantRole.host,
+          seatNumber: 0,
+          joinedAt: DateTime.now(),
+        ));
+      } else {
+        // Place room host on Seat 0
+        _participants.add(PartyParticipantModel(
+          user: room.host,
+          role: ParticipantRole.host,
+          seatNumber: 0,
+          joinedAt: room.startTime,
+        ));
+
+        // Add current user as listener
+        _participants.add(PartyParticipantModel(
+          user: currentUser,
+          role: ParticipantRole.listener,
+          seatNumber: null,
+          joinedAt: DateTime.now(),
+        ));
+      }
 
       // 3. Acquire short-lived Agora RTC token from backend
       final agoraData = await _roomRepository.getAgoraToken(room.id);
-      if (agoraData != null && agoraData['token'] != null) {
+      if (agoraData['token'] != null) {
         final token = agoraData['token'] as String;
         final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
         final uid = agoraData['uid'] as int? ?? 0;
@@ -317,7 +341,7 @@ class LivePartyProvider extends ChangeNotifier {
         );
 
         final pIdx = _participants.indexWhere((p) => p.user.id == occupantUser.id);
-        if (pIdx != null && pIdx != -1) {
+        if (pIdx != -1) {
           _participants[pIdx] = _participants[pIdx].copyWith(
             seatNumber: seatIndex,
             role: ParticipantRole.speaker,
@@ -420,6 +444,51 @@ class LivePartyProvider extends ChangeNotifier {
       _messages.add(giftMsg);
       notifyListeners();
     });
+
+    _socketChatMessageSub?.cancel();
+    _socketChatMessageSub = _socketService.onRoomChatMessage.listen((data) {
+      final senderMap = data['sender'] as Map<String, dynamic>? ?? {};
+      final senderId = senderMap['id'] ?? data['senderUserId'] ?? '';
+      final msgId = data['id']?.toString() ?? 'msg_${DateTime.now().millisecondsSinceEpoch}';
+
+      // Deduplicate if already added locally
+      if (_messages.any((m) => m.id == msgId)) return;
+
+      final sender = UserModel(
+        id: senderId,
+        username: senderMap['username'] ?? 'User',
+        name: senderMap['displayName'] ?? senderMap['username'] ?? 'User',
+        avatarUrl: senderMap['avatarUrl'] ?? '',
+        isVip: senderMap['isVip'] == true,
+      );
+
+      final msg = PartyMessageModel(
+        id: msgId,
+        sender: sender,
+        text: data['text']?.toString() ?? '',
+        timestamp: DateTime.tryParse(data['timestamp']?.toString() ?? '') ?? DateTime.now(),
+      );
+
+      _messages.add(msg);
+      notifyListeners();
+    });
+
+    _socketUserKickedSub?.cancel();
+    _socketUserKickedSub = _socketService.onUserKicked.listen((data) {
+      final targetUserId = data['targetUserId']?.toString();
+      if (targetUserId == currentUser.id) {
+        sendSystemMessage('🚫 You have been kicked out of this room by the host.');
+        leaveParty();
+      } else if (targetUserId != null) {
+        final kickedIdx = _participants.indexWhere((p) => p.user.id == targetUserId);
+        if (kickedIdx != -1) {
+          final kickedName = _participants[kickedIdx].user.name;
+          _participants.removeAt(kickedIdx);
+          sendSystemMessage('🚫 $kickedName was removed from the room.');
+          notifyListeners();
+        }
+      }
+    });
   }
 
   Future<void> leaveParty() async {
@@ -441,6 +510,8 @@ class LivePartyProvider extends ChangeNotifier {
     _socketViewerCountSub?.cancel();
     _socketRoomClosedSub?.cancel();
     _socketGiftSentSub?.cancel();
+    _socketChatMessageSub?.cancel();
+    _socketUserKickedSub?.cancel();
     _pkTimer?.cancel();
 
     _activeRoom = null;
@@ -469,7 +540,7 @@ class LivePartyProvider extends ChangeNotifier {
     if (_activeRoom == null) return 'No active room.';
 
     try {
-      final result = await _roomRepository.occupySeat(_activeRoom!.id, seatIndex);
+      await _roomRepository.occupySeat(_activeRoom!.id, seatIndex);
       _socketService.occupySeat(_activeRoom!.id, seatIndex);
 
       // Update local state
@@ -712,22 +783,38 @@ class LivePartyProvider extends ChangeNotifier {
   }
 
   void sendMessage(UserModel sender, String text) {
+    final msgId = 'msg_${DateTime.now().millisecondsSinceEpoch}';
     _messages.add(PartyMessageModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: msgId,
       sender: sender,
       text: text,
       timestamp: DateTime.now(),
     ));
+    if (_activeRoom != null) {
+      _socketService.sendRoomChatMessage(
+        roomId: _activeRoom!.id,
+        text: text,
+      );
+    }
     notifyListeners();
   }
 
   void sendGlobalFlyingMessage(String text, UserModel sender) {
+    final msgId = 'flying_${DateTime.now().millisecondsSinceEpoch}';
+    final fullText = '🚀 [GLOBAL FLYING MESSAGE]: $text';
     _messages.add(PartyMessageModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: msgId,
       sender: sender,
-      text: '🚀 [GLOBAL FLYING MESSAGE]: $text',
+      text: fullText,
       timestamp: DateTime.now(),
     ));
+    if (_activeRoom != null) {
+      _socketService.sendRoomChatMessage(
+        roomId: _activeRoom!.id,
+        text: fullText,
+        type: 'flying',
+      );
+    }
     notifyListeners();
   }
 
@@ -987,6 +1074,12 @@ class LivePartyProvider extends ChangeNotifier {
     if (idx != -1) {
       final targetName = _participants[idx].user.name;
       _participants.removeAt(idx);
+      if (_activeRoom != null) {
+        _socketService.kickUserFromRoom(
+          roomId: _activeRoom!.id,
+          targetUserId: userId,
+        );
+      }
       sendSystemMessage('🚫 $targetName was kicked out of the room.');
       notifyListeners();
     }

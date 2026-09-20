@@ -13,6 +13,7 @@ import '../../../../providers/game_provider.dart';
 import '../../../../providers/wallet_provider.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/services/room_share_service.dart';
+import '../../../../core/services/media_upload_service.dart';
 import '../../recharge/recharge_screen.dart';
 
 class RoomInfoSheet extends StatefulWidget {
@@ -213,12 +214,25 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
                           final picker = ImagePicker();
                           final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
                           if (picked != null) {
+                            String publicUrl = picked.path;
+                            try {
+                              final uploadRes = await MediaUploadService.instance.uploadFile(
+                                filePath: picked.path,
+                                folder: 'banners',
+                              );
+                              if (uploadRes.url.isNotEmpty) {
+                                publicUrl = uploadRes.url;
+                              }
+                            } catch (uploadErr) {
+                              debugPrint('[RoomInfoSheet] Upload error: $uploadErr');
+                            }
+
                             setState(() {
-                              _currentCoverUrl = picked.path;
+                              _currentCoverUrl = publicUrl;
                             });
                             gameProv.completeRoomThemeUpload(txId);
                             if (mounted) {
-                              Provider.of<LivePartyProvider>(context, listen: false).updateRoomDetails(coverUrl: picked.path);
+                              Provider.of<LivePartyProvider>(context, listen: false).updateRoomDetails(coverUrl: publicUrl);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text('✨ Room cover updated successfully!'),

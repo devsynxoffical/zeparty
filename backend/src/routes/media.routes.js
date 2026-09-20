@@ -1,14 +1,12 @@
 import express from 'express';
-import authenticate from '../middlewares/authenticate.js';
+import { authenticate, optionalAuthenticate } from '../middlewares/authenticate.js';
 import mediaController from '../controllers/media.controller.js';
 
 const router = express.Router();
 
-router.use(authenticate);
-
 // Media upload and management endpoints
-router.post('/upload', mediaController.uploadMedia);
-router.get('/presigned-url', mediaController.getPresignedUploadUrl);
-router.delete('/:key(*)', mediaController.deleteMedia);
+router.post('/upload', optionalAuthenticate, mediaController.uploadMedia);
+router.get('/presigned-url', optionalAuthenticate, mediaController.getPresignedUploadUrl);
+router.delete('/:key(*)', authenticate, mediaController.deleteMedia);
 
 export default router;

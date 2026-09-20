@@ -567,8 +567,30 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 10),
+                            TextButton.icon(
+                              onPressed: () {
+                                authProvider.enterAsGuest();
+                                Navigator.of(context).pushAndRemoveUntil(
+                                  MaterialPageRoute(builder: (_) => const MainLayout()),
+                                  (route) => false,
+                                );
+                              },
+                              icon: const Icon(Icons.explore_outlined, size: 16),
+                              label: const Text(
+                                'Explore as Guest ➔',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.getTextSecondary(isDark),
+                              ),
+                            ),
                             if (!keyboardOpen) ...[
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 4),
                               Text(
                                 'By continuing, you agree to ZeParty Terms & Privacy Policy',
                                 style: TextStyle(

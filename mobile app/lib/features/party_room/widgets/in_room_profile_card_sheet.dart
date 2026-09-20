@@ -56,7 +56,8 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     final currentUser = authProvider.currentUser;
 
     final user = widget.participant.user;
-    final isMe = user.id == currentUser.id;
+    final isMe = user.id == currentUser.id ||
+        (user.username.isNotEmpty && currentUser.username.isNotEmpty && user.username.toLowerCase() == currentUser.username.toLowerCase());
 
     // Resolve room role string
     String roomRole = 'Member';
@@ -426,7 +427,12 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                               padding: const EdgeInsets.symmetric(vertical: 8),
                             ),
                             onPressed: () {
-                              showDialog(context: context, builder: (_) => GiftDialog(targetReceiver: user, streamerName: user.name));
+                              showModalBottomSheet(
+                                context: context,
+                                backgroundColor: Colors.transparent,
+                                isScrollControlled: true,
+                                builder: (_) => GiftDialog(targetReceiver: user, streamerName: user.name),
+                              );
                             },
                             child: const Text('All Gifts 🎁', style: TextStyle(fontSize: 11, color: Colors.white)),
                           ),

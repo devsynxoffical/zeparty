@@ -42,9 +42,9 @@ app.use(
   })
 );
 
-// Request body parsers with limits
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Request body parsers with limits (50mb for high-res camera media)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Pino request logger
 app.use(

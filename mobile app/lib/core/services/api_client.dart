@@ -31,8 +31,8 @@ class ApiClient {
   static const String _tokenKey = 'zeparty_access_token';
   static const String _refreshTokenKey = 'zeparty_refresh_token';
 
-  // Default development Base URL (configurable via initialize)
-  String _baseUrl = 'http://10.0.2.2:5000/api';
+  // Default Base URL points to active backend
+  String _baseUrl = 'http://192.168.18.113:8080/api';
 
   Completer<String?>? _refreshCompleter;
 
@@ -154,6 +154,9 @@ class ApiClient {
     }
   }
 
+  /// Public token refresh accessor for realtime services and sockets
+  Future<String?> refreshToken() => _performTokenRefresh();
+
   // ---- Token Storage Helpers with Dual Secure & SharedPreferences Persistence ----
 
   Future<void> saveTokens({required String accessToken, required String refreshToken}) async {
@@ -272,20 +275,27 @@ class ApiClient {
 
   ApiException _normalizeError(DioException error) {
     final response = error.response;
-    if (response != null && response.data is Map<String, dynamic>) {
-      final data = response.data as Map<String, dynamic>;
-      final msg = data['message'] ?? data['error']?['message'] ?? error.message ?? 'Unknown API error';
-      final code = data['error']?['code']?.toString() ?? 'API_ERROR';
+    if (response != null) {
+      if (response.data is Map<String, dynamic>) {
+        final data = response.data as Map<String, dynamic>;
+        final msg = data['message'] ?? data['error']?['message'] ?? error.message ?? 'Unknown API error';
+        final code = data['error']?['code']?.toString() ?? 'HTTP_${response.statusCode}';
+        return ApiException(
+          message: msg.toString(),
+          code: code,
+          statusCode: response.statusCode,
+          details: data['error']?['details'],
+        );
+      }
       return ApiException(
-        message: msg.toString(),
-        code: code,
+        message: 'Server returned HTTP ${response.statusCode}: ${response.statusMessage ?? error.message}',
+        code: 'HTTP_${response.statusCode}',
         statusCode: response.statusCode,
-        details: data['error']?['details'],
       );
     }
 
     return ApiException(
-      message: error.message ?? 'Network connection error',
+      message: error.message ?? 'Network connection error: cannot reach ${dio.options.baseUrl}',
       code: 'NETWORK_ERROR',
       statusCode: response?.statusCode,
     );

@@ -72,12 +72,10 @@ class _BasicGiftAnimatorState extends State<BasicGiftAnimator>
         final scale = _scaleAnim.value;
         final translateY = _translateYAnim.value;
 
-        return Positioned(
-          top: MediaQuery.of(context).size.height * 0.38 + translateY,
-          left: 0,
-          right: 0,
-          child: Align(
-            alignment: Alignment.center,
+        return Align(
+          alignment: const Alignment(0, -0.25),
+          child: Transform.translate(
+            offset: Offset(0, translateY),
             child: Opacity(
               opacity: opacity,
               child: Transform.scale(

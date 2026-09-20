@@ -1,4 +1,5 @@
 import env from '../config/env.js';
+import prisma from '../config/database.js';
 import roomRepository from '../repositories/room.repository.js';
 import userRepository from '../repositories/user.repository.js';
 import { deriveAgoraUid, generateAgoraRtcToken, AGORA_ROLES } from '../utils/agoraToken.util.js';

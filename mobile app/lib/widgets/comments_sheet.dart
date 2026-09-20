@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/utils/auth_guard.dart';
 import '../providers/auth_provider.dart';
 import '../providers/social_provider.dart';
+import '../features/profile/user_profile_details_screen.dart';
 import 'user_avatar.dart';
 
 /// Reusable TikTok/ZeParty Slide-up Comments Sheet.
@@ -66,114 +68,86 @@ class _CommentsSheetState extends State<CommentsSheet> {
         context.read<SocialProvider>().loadCommentsForPost(widget.targetId);
       });
     } else {
-      _localComments = _generateSampleComments();
+      _localComments = [];
     }
-  }
-
-  List<SocialComment> _generateSampleComments() {
-    final now = DateTime.now();
-    return [
-      SocialComment(
-        id: 'c_1',
-        authorId: 'u_sophia',
-        authorName: 'Sophia Rose 💖',
-        authorAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-        text: 'Wow! This stream/video is super amazing! 🔥',
-        createdAt: now.subtract(const Duration(minutes: 5)),
-        likesCount: 24,
-        isLiked: true,
-      ),
-      SocialComment(
-        id: 'c_2',
-        authorId: 'u_usman',
-        authorName: 'Usman Jutt 👑',
-        authorAvatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-        text: 'Team Blue support kar rahe hain full support! 🚀💙',
-        createdAt: now.subtract(const Duration(minutes: 18)),
-        likesCount: 15,
-      ),
-      SocialComment(
-        id: 'c_3',
-        authorId: 'u_sana',
-        authorName: 'Sana Mughal ✨',
-        authorAvatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-        text: 'Super high quality live battle performance! 👏',
-        createdAt: now.subtract(const Duration(hours: 1)),
-        likesCount: 8,
-      ),
-      SocialComment(
-        id: 'c_4',
-        authorId: 'u_ali',
-        authorName: 'Ali Khan 🔥',
-        authorAvatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-        text: 'Gift combo level 4 blast standard video content! 👑',
-        createdAt: now.subtract(const Duration(hours: 3)),
-        likesCount: 42,
-        isLiked: true,
-      ),
-    ];
   }
 
   void _submitComment() {
     final text = _commentController.text.trim();
     if (text.isEmpty || _isSubmitting) return;
 
-    final currentUser = context.read<AuthProvider>().currentUser;
-    final social = context.read<SocialProvider>();
+    AuthGuard.require(context, () {
+      final currentUser = context.read<AuthProvider>().currentUser;
+      final social = context.read<SocialProvider>();
 
-    setState(() => _isSubmitting = true);
+      setState(() => _isSubmitting = true);
 
-    final newComment = SocialComment(
-      id: 'c_${DateTime.now().millisecondsSinceEpoch}',
-      authorId: currentUser.id,
-      authorName: currentUser.name.isNotEmpty ? currentUser.name : currentUser.username,
-      authorAvatar: currentUser.avatarUrl,
-      text: text,
-      createdAt: DateTime.now(),
-      likesCount: 0,
-      isLiked: false,
-    );
+      final newComment = SocialComment(
+        id: 'c_${DateTime.now().millisecondsSinceEpoch}',
+        authorId: currentUser.id,
+        authorName: currentUser.name.isNotEmpty ? currentUser.name : currentUser.username,
+        authorAvatar: currentUser.avatarUrl,
+        text: text,
+        createdAt: DateTime.now(),
+        likesCount: 0,
+        isLiked: false,
+      );
 
-    setState(() {
-      _localComments.insert(0, newComment);
-    });
-
-    if (widget.isPost) {
-      social.addCommentToPost(widget.targetId, text, currentUser).then((_) {
-        if (mounted) setState(() => _isSubmitting = false);
-      }).catchError((_) {
-        if (mounted) setState(() => _isSubmitting = false);
+      setState(() {
+        _localComments.insert(0, newComment);
       });
-    } else {
-      social.addCommentToShortVideo(widget.targetId, text, currentUser);
-      if (mounted) setState(() => _isSubmitting = false);
-    }
 
-    widget.onCommentSubmitted?.call(text);
-    _commentController.clear();
-    _focusNode.unfocus();
+      if (widget.isPost) {
+        social.addCommentToPost(widget.targetId, text, currentUser).then((_) {
+          if (mounted) setState(() => _isSubmitting = false);
+        }).catchError((_) {
+          if (mounted) setState(() => _isSubmitting = false);
+        });
+      } else {
+        final newComment = SocialComment(
+          id: 'c_${DateTime.now().millisecondsSinceEpoch}',
+          authorId: currentUser.id,
+          authorName: currentUser.name.isNotEmpty ? currentUser.name : currentUser.username,
+          authorAvatar: currentUser.avatarUrl,
+          text: text,
+          createdAt: DateTime.now(),
+          likesCount: 0,
+          isLiked: false,
+        );
+        setState(() {
+          _localComments.insert(0, newComment);
+        });
+        social.addCommentToShortVideo(widget.targetId, text, currentUser);
+        if (mounted) setState(() => _isSubmitting = false);
+      }
+
+      widget.onCommentSubmitted?.call(text);
+      _commentController.clear();
+      _focusNode.unfocus();
+    }, reason: 'Sign in to leave a comment');
   }
 
   void _toggleLike(int index) {
-    if (!widget.isPost) {
-      // Local toggle for short-video comments
-      setState(() {
-        final comment = _localComments[index];
-        final newIsLiked = !comment.isLiked;
-        final newCount = newIsLiked ? comment.likesCount + 1 : comment.likesCount - 1;
-        _localComments[index] = SocialComment(
-          id: comment.id,
-          authorId: comment.authorId,
-          authorName: comment.authorName,
-          authorAvatar: comment.authorAvatar,
-          text: comment.text,
-          createdAt: comment.createdAt,
-          likesCount: newCount < 0 ? 0 : newCount,
-          isLiked: newIsLiked,
-        );
-      });
-    }
-    // For post comments, liking comments is not in backend API scope yet
+    AuthGuard.require(context, () {
+      if (!widget.isPost) {
+        // Local toggle for short-video comments
+        setState(() {
+          final comment = _localComments[index];
+          final newIsLiked = !comment.isLiked;
+          final newCount = newIsLiked ? comment.likesCount + 1 : comment.likesCount - 1;
+          _localComments[index] = SocialComment(
+            id: comment.id,
+            authorId: comment.authorId,
+            authorName: comment.authorName,
+            authorAvatar: comment.authorAvatar,
+            text: comment.text,
+            createdAt: comment.createdAt,
+            likesCount: newCount < 0 ? 0 : newCount,
+            isLiked: newIsLiked,
+          );
+        });
+      }
+    }, reason: 'Sign in to like comments');
   }
 
   void _insertQuickEmoji(String emoji) {
@@ -190,14 +164,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
     super.dispose();
   }
 
-  // Build the final displayed comment list:
-  // For posts: use provider-loaded comments; for videos: use local list
+  // Build the final displayed comment list
   List<SocialComment> _resolveComments(SocialProvider social) {
     if (widget.isPost) {
-      final backendComments = social.getCommentsForPost(widget.targetId);
-      final combined = [..._localComments, ...backendComments];
-      final seenIds = <String>{};
-      return combined.where((c) => seenIds.add(c.id)).toList();
+      return social.getCommentsForPost(widget.targetId);
     }
     return _localComments;
   }
@@ -293,7 +263,17 @@ class _CommentsSheetState extends State<CommentsSheet> {
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            UserAvatar(imageUrl: c.authorAvatarUrl, radius: 18),
+                            GestureDetector(
+                              onTap: () {
+                                if (c.authorId.isNotEmpty) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: c.authorId)),
+                                  );
+                                }
+                              },
+                              child: UserAvatar(imageUrl: c.authorAvatarUrl, radius: 18),
+                            ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
@@ -301,12 +281,22 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                 children: [
                                   Row(
                                     children: [
-                                      Text(
-                                        c.authorName,
-                                        style: const TextStyle(
-                                          color: Color(0xFF00E5FF),
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 12,
+                                      GestureDetector(
+                                        onTap: () {
+                                          if (c.authorId.isNotEmpty) {
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: c.authorId)),
+                                            );
+                                          }
+                                        },
+                                        child: Text(
+                                          c.authorName,
+                                          style: const TextStyle(
+                                            color: Color(0xFF00E5FF),
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(width: 8),

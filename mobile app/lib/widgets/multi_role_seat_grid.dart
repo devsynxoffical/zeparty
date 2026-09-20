@@ -5,6 +5,7 @@ import '../providers/live_party_provider.dart';
 import '../providers/emoji_reaction_provider.dart';
 import '../core/utils/noble_badge_helper.dart';
 import 'pulse_glow_avatar.dart';
+import 'user_avatar.dart';
 
 class MultiRoleSeatGrid extends StatelessWidget {
   final List<PartyParticipantModel> participants;
@@ -228,6 +229,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                 participant.isSpeaking
                     ? PulseGlowAvatar(
                         imageUrl: participant.user.avatarUrl,
+                        name: participant.user.name,
                         radius: radius + 1,
                         glowColor: isHostUser ? Colors.amber : Colors.greenAccent,
                       )
@@ -247,9 +249,10 @@ class MultiRoleSeatGrid extends StatelessWidget {
                             ),
                           ],
                         ),
-                        child: CircleAvatar(
+                        child: UserAvatar(
+                          imageUrl: participant.user.avatarUrl,
+                          name: participant.user.name,
                           radius: radius,
-                          backgroundImage: NetworkImage(participant.user.avatarUrl),
                         ),
                       ),
                 if (activeReaction != null)

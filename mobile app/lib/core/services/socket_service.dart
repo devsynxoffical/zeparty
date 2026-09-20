@@ -22,6 +22,8 @@ class SocketService {
   final _seatReleasedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomClosedController = StreamController<Map<String, dynamic>>.broadcast();
   final _giftSentController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomChatMessageController = StreamController<Map<String, dynamic>>.broadcast();
+  final _userKickedController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Social realtime event streams
   final _postCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -49,6 +51,10 @@ class SocketService {
   final _notificationReadAllController = StreamController<Map<String, dynamic>>.broadcast();
   final _notificationBroadcastController = StreamController<Map<String, dynamic>>.broadcast();
 
+  // Direct Messaging event streams
+  final _directMessageController = StreamController<Map<String, dynamic>>.broadcast();
+  final _typingController = StreamController<Map<String, dynamic>>.broadcast();
+
   // Getters - Room
   Stream<Map<String, dynamic>> get onUserJoined => _userJoinedController.stream;
   Stream<Map<String, dynamic>> get onUserLeft => _userLeftController.stream;
@@ -57,6 +63,8 @@ class SocketService {
   Stream<Map<String, dynamic>> get onSeatReleased => _seatReleasedController.stream;
   Stream<Map<String, dynamic>> get onRoomClosed => _roomClosedController.stream;
   Stream<Map<String, dynamic>> get onGiftSent => _giftSentController.stream;
+  Stream<Map<String, dynamic>> get onRoomChatMessage => _roomChatMessageController.stream;
+  Stream<Map<String, dynamic>> get onUserKicked => _userKickedController.stream;
 
   // Stream aliases for backwards compatibility
   Stream<Map<String, dynamic>> get userJoinedStream => onUserJoined;
@@ -66,6 +74,8 @@ class SocketService {
   Stream<Map<String, dynamic>> get seatReleasedStream => onSeatReleased;
   Stream<Map<String, dynamic>> get roomClosedStream => onRoomClosed;
   Stream<Map<String, dynamic>> get giftSentStream => onGiftSent;
+  Stream<Map<String, dynamic>> get roomChatMessageStream => onRoomChatMessage;
+  Stream<Map<String, dynamic>> get userKickedStream => onUserKicked;
 
   // Getters - Social
   Stream<Map<String, dynamic>> get onPostCreated => _postCreatedController.stream;
@@ -93,6 +103,10 @@ class SocketService {
   Stream<Map<String, dynamic>> get onNotificationReadAll => _notificationReadAllController.stream;
   Stream<Map<String, dynamic>> get onNotificationBroadcast => _notificationBroadcastController.stream;
 
+  // Getters - Direct Messaging
+  Stream<Map<String, dynamic>> get onDirectMessage => _directMessageController.stream;
+  Stream<Map<String, dynamic>> get onChatTyping => _typingController.stream;
+
   /// Connect to backend Socket.IO server with JWT token
   Future<void> connect({String? token}) async {
     final authToken = token ?? await ApiClient.instance.getAccessToken();
@@ -105,6 +119,11 @@ class SocketService {
       return;
     }
 
+    // Clean up any stale disconnected instance
+    _socket?.disconnect();
+    _socket?.dispose();
+    _socket = null;
+
     final baseUrl = ApiClient.baseUrl;
 
     _socket = IO.io(
@@ -115,8 +134,8 @@ class SocketService {
           .setAuth({'token': authToken})
           .setExtraHeaders({'Authorization': 'Bearer $authToken'})
           .enableReconnection()
-          .setReconnectionAttempts(5)
-          .setReconnectionDelay(1000)
+          .setReconnectionAttempts(3)
+          .setReconnectionDelay(2000)
           .build(),
     );
 
@@ -135,7 +154,7 @@ class SocketService {
 
     _socket!.onConnectError((err) {
       _isConnected = false;
-      debugPrint('[SocketService] Connection error: $err');
+      debugPrint('[SocketService] Connection notice: $err');
     });
 
     _socket!.onError((err) {
@@ -163,6 +182,12 @@ class SocketService {
     });
     _socket!.on('room:gift_sent', (data) {
       if (data is Map) _giftSentController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('room:chat_message', (data) {
+      if (data is Map) _roomChatMessageController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('room:user_kicked', (data) {
+      if (data is Map) _userKickedController.add(Map<String, dynamic>.from(data));
     });
 
     // Social Events
@@ -227,7 +252,28 @@ class SocketService {
       if (data is Map) _notificationBroadcastController.add(Map<String, dynamic>.from(data));
     });
 
+    // Direct Messaging Events
+    _socket!.on('direct_message', (data) {
+      if (data is Map) _directMessageController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('direct_message_sent', (data) {
+      if (data is Map) _directMessageController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('chat:typing', (data) {
+      if (data is Map) _typingController.add(Map<String, dynamic>.from(data));
+    });
+
     _socket!.connect();
+  }
+
+  /// Send typing indicator to target user via socket
+  void sendTyping({required String targetUserId, required bool isTyping}) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('chat:typing', {
+        'targetUserId': targetUserId,
+        'isTyping': isTyping,
+      });
+    }
   }
 
   /// Subscribe to room channel on server
@@ -270,6 +316,34 @@ class SocketService {
       _socket!.emit('room:seat_leave', {
         'roomId': roomId,
         'seatIndex': seatIndex,
+      });
+    }
+  }
+
+  /// Broadcast a chat message in a live party or streaming room
+  void sendRoomChatMessage({
+    required String roomId,
+    required String text,
+    String type = 'text',
+  }) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('room:chat_send', {
+        'roomId': roomId,
+        'text': text,
+        'type': type,
+      });
+    }
+  }
+
+  /// Kick a participant from a room
+  void kickUserFromRoom({
+    required String roomId,
+    required String targetUserId,
+  }) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('room:kick_user', {
+        'roomId': roomId,
+        'targetUserId': targetUserId,
       });
     }
   }

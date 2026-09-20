@@ -10,6 +10,7 @@ import '../core/services/fcm_service.dart';
 import '../core/services/socket_service.dart';
 import '../core/repositories/auth_repository.dart';
 import '../core/repositories/social_repository.dart';
+import '../core/services/media_upload_service.dart';
 import '../core/utils/firebase_auth_errors.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -104,20 +105,68 @@ class AuthProvider extends ChangeNotifier {
         } catch (_) {}
       }
 
-      final hasToken = await _authRepository.hasSavedToken();
+      // If we restored a local user, mark initialized immediately for instant splash dismissal
+      if (_currentUser != null) {
+        _isInitialized = true;
+        notifyListeners();
+      }
+
+      // Sync latest profile from backend asynchronously
+      _syncRemoteUser();
+    } catch (e) {
+      debugPrint('Session restore error: $e');
+    } finally {
+      _isInitialized = true;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _syncRemoteUser() async {
+    try {
+      final hasToken = await _authRepository
+          .hasSavedToken()
+          .timeout(const Duration(seconds: 4), onTimeout: () => false);
       if (hasToken) {
         try {
-          final remoteUser = await _authRepository.getCurrentUser();
-          _currentUser = remoteUser;
+          final remoteUser = await _authRepository
+              .getCurrentUser()
+              .timeout(const Duration(seconds: 4));
+          final local = _currentUser;
+          // Protect against generic/empty server overrides
+          final mergedName = (remoteUser.name.isNotEmpty && remoteUser.name != 'ZeParty Creator' && remoteUser.name != 'Guest')
+              ? remoteUser.name
+              : (local?.name.isNotEmpty == true && local?.name != 'ZeParty Creator' ? local!.name : remoteUser.name);
+          final mergedUsername = (remoteUser.username.isNotEmpty && !remoteUser.username.startsWith('user_'))
+              ? remoteUser.username
+              : (local?.username.isNotEmpty == true && !local!.username.startsWith('user_') ? local.username : remoteUser.username);
+          final rawAvatar = remoteUser.avatarUrl.isNotEmpty
+              ? remoteUser.avatarUrl
+              : (local?.avatarUrl ?? remoteUser.avatarUrl);
+          final mergedAvatar = rawAvatar;
+          final mergedCover = (remoteUser.coverUrl != null && remoteUser.coverUrl!.isNotEmpty)
+              ? remoteUser.coverUrl
+              : (local?.coverUrl ?? remoteUser.coverUrl);
+
+          _currentUser = remoteUser.copyWith(
+            name: mergedName,
+            username: mergedUsername,
+            avatarUrl: mergedAvatar,
+            coverUrl: mergedCover,
+            bio: remoteUser.bio.isNotEmpty ? remoteUser.bio : (local?.bio ?? remoteUser.bio),
+          );
           _isAuthenticated = true;
           _isGuest = false;
-          await _saveUserLocalSession(remoteUser);
+          await _saveUserLocalSession(_currentUser!);
           FcmService.instance.registerWithBackend();
+          notifyListeners();
         } on ApiException catch (e) {
           if (e.statusCode == 401) {
-            await _clearUserLocalSession();
-            _isAuthenticated = false;
-            _currentUser = null;
+            // Keep local session if we have one or soft re-auth
+            if (_currentUser == null) {
+              await _clearUserLocalSession();
+              _isAuthenticated = false;
+              notifyListeners();
+            }
           }
         } catch (e) {
           debugPrint('Backend sync during restore session fallback: $e');
@@ -125,13 +174,9 @@ class AuthProvider extends ChangeNotifier {
       } else if (_currentUser == null) {
         _isAuthenticated = false;
         _isGuest = false;
+        notifyListeners();
       }
-    } catch (e) {
-      debugPrint('Session restore error: $e');
-    } finally {
-      _isInitialized = true;
-      notifyListeners();
-    }
+    } catch (_) {}
   }
 
   void enterAsGuest() {
@@ -235,7 +280,7 @@ class AuthProvider extends ChangeNotifier {
         id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
         username: usernameOrEmail.contains('@') ? usernameOrEmail.split('@').first : usernameOrEmail,
         name: firebaseUser?.displayName ?? usernameOrEmail.split('@').first,
-        avatarUrl: firebaseUser?.photoURL ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
+        avatarUrl: firebaseUser?.photoURL ?? '',
         profileCompleted: true,
       );
 
@@ -293,7 +338,7 @@ class AuthProvider extends ChangeNotifier {
         id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
         username: email.split('@').first,
         name: name.trim(),
-        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
+        avatarUrl: '',
         bio: 'New creator on ZeParty! ✨',
         coins: 1000,
         diamonds: 100,
@@ -418,21 +463,39 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      String? remoteAvatarUrl = avatarUrl;
+      if (avatarUrl != null && !avatarUrl.startsWith('http') && !avatarUrl.startsWith('assets/')) {
+        try {
+          final uploadRes = await MediaUploadService.instance.uploadFile(
+            filePath: avatarUrl,
+            folder: 'avatars',
+          );
+          remoteAvatarUrl = uploadRes.url;
+        } catch (e) {
+          debugPrint('[AuthProvider] Avatar upload to R2 failed: $e');
+        }
+      }
+
       if (_isAuthenticated && await _authRepository.hasSavedToken()) {
         final updated = await _authRepository.updateProfile(
           displayName: username.trim(),
           gender: gender,
           birthDate: dateOfBirth,
-          avatarUrl: avatarUrl,
+          avatarUrl: remoteAvatarUrl,
           bio: bio,
         );
-        _currentUser = updated;
+        _currentUser = updated.copyWith(
+          profileCompleted: true,
+          username: username.trim(),
+          name: username.trim(),
+        );
       } else {
         _currentUser = currentUser.copyWith(
           username: username.trim(),
+          name: username.trim(),
           gender: gender,
           dateOfBirth: dateOfBirth,
-          avatarUrl: avatarUrl ?? currentUser.avatarUrl,
+          avatarUrl: remoteAvatarUrl ?? currentUser.avatarUrl,
           bio: (bio != null && bio.trim().isNotEmpty) ? bio.trim() : currentUser.bio,
           profileCompleted: true,
         );
@@ -471,50 +534,102 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Update user profile through backend API
+  /// Update Profile Details on Server
   Future<bool> updateProfile({
     String? name,
+    String? username,
     String? bio,
     String? gender,
     String? region,
+    DateTime? birthDate,
     String? avatarUrl,
+    String? coverUrl,
   }) async {
+    final finalName = (name != null && name.trim().isNotEmpty) ? name.trim() : currentUser.name;
+    final finalUsername = (username != null && username.trim().isNotEmpty) ? username.trim().toLowerCase() : currentUser.username;
+
+    // Optimistically update locally so the user sees changes INSTANTLY
+    _currentUser = currentUser.copyWith(
+      name: finalName,
+      username: finalUsername,
+      bio: (bio != null && bio.trim().isNotEmpty) ? bio.trim() : currentUser.bio,
+      gender: gender ?? currentUser.gender,
+      region: region ?? currentUser.region,
+      dateOfBirth: birthDate ?? currentUser.dateOfBirth,
+      avatarUrl: (avatarUrl != null && avatarUrl.isNotEmpty) ? avatarUrl : currentUser.avatarUrl,
+      coverUrl: (coverUrl != null && coverUrl.isNotEmpty) ? coverUrl : currentUser.coverUrl,
+      profileCompleted: true,
+    );
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
+    await _saveUserLocalSession(_currentUser!);
 
     try {
-      if (_isAuthenticated && await _authRepository.hasSavedToken()) {
-        final updated = await _authRepository.updateProfile(
-          displayName: name,
-          bio: bio,
-          gender: gender,
-          region: region,
-          avatarUrl: avatarUrl,
-        );
-        if (updated != null) {
-          _currentUser = updated;
-          await _saveUserLocalSession(_currentUser!);
-          _isLoading = false;
-          notifyListeners();
-          return true;
+      String? remoteAvatarUrl = avatarUrl;
+      if (avatarUrl != null && !avatarUrl.startsWith('http') && !avatarUrl.startsWith('assets/')) {
+        try {
+          final uploadRes = await MediaUploadService.instance.uploadFile(
+            filePath: avatarUrl,
+            folder: 'avatars',
+          );
+          if (uploadRes.url.isNotEmpty) {
+            remoteAvatarUrl = uploadRes.url;
+          }
+        } catch (e) {
+          debugPrint('[AuthProvider] Avatar upload to R2 failed: $e');
+          remoteAvatarUrl = avatarUrl; // Fallback to local file path
         }
-      } else {
-        _currentUser = currentUser.copyWith(
-          name: name ?? currentUser.name,
-          bio: bio ?? currentUser.bio,
-          gender: gender ?? currentUser.gender,
-          region: region ?? currentUser.region,
-          avatarUrl: avatarUrl ?? currentUser.avatarUrl,
-        );
+      }
+
+      String? remoteCoverUrl = coverUrl;
+      if (coverUrl != null && !coverUrl.startsWith('http') && !coverUrl.startsWith('assets/')) {
+        try {
+          final uploadRes = await MediaUploadService.instance.uploadFile(
+            filePath: coverUrl,
+            folder: 'covers',
+          );
+          if (uploadRes.url.isNotEmpty) {
+            remoteCoverUrl = uploadRes.url;
+          }
+        } catch (e) {
+          debugPrint('[AuthProvider] Cover upload to R2 failed: $e');
+          remoteCoverUrl = coverUrl; // Fallback to local file path
+        }
+      }
+
+      if (_isAuthenticated && await _authRepository.hasSavedToken()) {
+        try {
+          final updated = await _authRepository.updateProfile(
+            username: finalUsername,
+            name: finalName,
+            displayName: finalName,
+            bio: bio,
+            gender: gender,
+            region: region,
+            birthDate: birthDate,
+            avatarUrl: remoteAvatarUrl,
+            coverUrl: remoteCoverUrl,
+          );
+          _currentUser = updated.copyWith(
+            username: finalUsername,
+            name: finalName,
+            avatarUrl: remoteAvatarUrl ?? updated.avatarUrl,
+            coverUrl: remoteCoverUrl ?? updated.coverUrl,
+            profileCompleted: true,
+          );
+        } catch (serverErr) {
+          debugPrint('[AuthProvider] Server update error, retaining optimistic state: $serverErr');
+        }
         await _saveUserLocalSession(_currentUser!);
         _isLoading = false;
         notifyListeners();
         return true;
+      } else {
+        _isLoading = false;
+        notifyListeners();
+        return true;
       }
-      _isLoading = false;
-      notifyListeners();
-      return true;
     } on ApiException catch (e) {
       _errorMessage = e.message;
       _isLoading = false;
@@ -529,13 +644,12 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  void updateAvatar(String newAvatarUrl) {
-    updateProfile(avatarUrl: newAvatarUrl);
+  Future<void> updateAvatar(String newAvatarUrl) async {
+    await updateProfile(avatarUrl: newAvatarUrl);
   }
 
-  void updateCoverUrl(String newCoverUrl) {
-    _currentUser = currentUser.copyWith(coverUrl: newCoverUrl);
-    notifyListeners();
+  Future<void> updateCoverUrl(String newCoverUrl) async {
+    await updateProfile(coverUrl: newCoverUrl);
   }
 
   void updateHostApplicationStatus(String status, {String? reason}) {
