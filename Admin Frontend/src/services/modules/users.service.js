@@ -11,11 +11,16 @@ function formatUserRecord(u) {
   const profile = u.profile || {};
   const hostProfile = u.hostProfile || {};
 
+  const cleanDisplayName =
+    (profile.displayName && profile.displayName.trim() && profile.displayName !== 'ZeParty Member')
+      ? profile.displayName.trim()
+      : (u.displayName && u.displayName.trim() ? u.displayName.trim() : (u.username || `User ${u.id.slice(0, 6)}`));
+
   return {
     id: u.id,
-    username: u.username || u.phone || 'user',
-    displayName: profile.displayName || u.username || 'User ' + u.id.slice(0, 6),
-    email: u.email || `${u.username || u.id}@zeparty.app`,
+    username: u.username || (u.phone ? `user_${u.phone.replace(/\D/g, '').slice(-4)}` : `user_${u.id.slice(0, 8)}`),
+    displayName: cleanDisplayName,
+    email: u.email || '',
     phone: u.phone || '',
     country: u.countryCode || 'PK',
     region: u.countryCode === 'PK' ? 'South Asia' : 'Global',
@@ -59,12 +64,27 @@ export async function getUsers(params = {}) {
   try {
     const res = await apiClient.get('/v1/admin/users', { params });
     const userList = res.data?.data || res.data?.users || (Array.isArray(res.data) ? res.data : []);
-    if (Array.isArray(userList)) {
-      return userList
-        .filter((u) => !u.isOwner && u.username !== 'owner' && !u.email?.includes('owner@zeparty.app'))
-        .map(formatUserRecord);
-    }
-    return [];
+    const pagination = res.data?.pagination || {
+      page: Number(params.page) || 1,
+      limit: Number(params.limit) || 20,
+      total: Array.isArray(userList) ? userList.length : 0,
+      totalPages: 1,
+    };
+
+    const formatted = Array.isArray(userList)
+      ? userList
+          .filter((u) => !u.isOwner && u.username !== 'owner' && !u.email?.includes('owner@zeparty.app'))
+          .map(formatUserRecord)
+      : [];
+
+    return {
+      users: formatted,
+      pagination: {
+        ...pagination,
+        total: Number(pagination.total || formatted.length),
+      },
+      data: formatted,
+    };
   } catch (err) {
     throw new Error(err.response?.data?.message || err.message || 'Failed to load users from backend.');
   }
