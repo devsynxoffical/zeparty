@@ -280,7 +280,11 @@ class LivePartyProvider extends ChangeNotifier {
         }
       });
 
+      final displayName = currentUser.displayName.isNotEmpty
+          ? currentUser.displayName
+          : (currentUser.name.isNotEmpty ? currentUser.name : currentUser.username);
       sendSystemMessage('👋 Welcome to ${room.title}! Please follow community guidelines.');
+      sendSystemMessage('🎉 $displayName joined the room! 🔥');
     } catch (e) {
       _errorMessage = e.toString();
       sendSystemMessage('⚠️ Room connection alert: ${_errorMessage ?? "Unknown error"}');

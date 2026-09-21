@@ -104,8 +104,13 @@ class LiveProvider extends ChangeNotifier {
     _activeEffect = 'None';
     _likeCount = 0;
     _giftPoints = 0;
+    final displayName = currentUser?.displayName.isNotEmpty == true
+        ? currentUser!.displayName
+        : (currentUser?.name.isNotEmpty == true ? currentUser!.name : (currentUser?.username ?? 'User'));
+
     _messages = [
       LiveMessage(sender: 'System', text: 'Welcome to ${room.title}! Remember to follow community rules.'),
+      LiveMessage(sender: 'System', text: '👋 $displayName joined the room! 🔥'),
     ];
     notifyListeners();
 

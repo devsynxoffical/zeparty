@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
@@ -107,9 +108,24 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
   Future<void> _initLiveCamera() async {
     try {
-      // Small delay to ensure previous screen's CameraController has released camera hardware
+      final currentUser = context.read<AuthProvider>().currentUser;
+      final isHost = (widget.room.host.id == currentUser.id) ||
+          (widget.room.creatorUserId == currentUser.id) ||
+          (currentUser.name.trim().isNotEmpty && currentUser.name.trim().toLowerCase() == widget.room.host.name.trim().toLowerCase()) ||
+          (currentUser.username.trim().isNotEmpty && currentUser.username.trim().toLowerCase() == widget.room.host.username.trim().toLowerCase());
+
+      // Guest viewers joining someone else's live stream should NOT have camera opened automatically
+      if (!isHost) {
+        if (mounted) setState(() => _isCameraInitialized = false);
+        return;
+      }
+
       await Future.delayed(const Duration(milliseconds: 250));
       if (!mounted) return;
+
+      try {
+        await [Permission.camera, Permission.microphone].request();
+      } catch (_) {}
 
       _cameras = await availableCameras();
       if (_cameras.isNotEmpty) {

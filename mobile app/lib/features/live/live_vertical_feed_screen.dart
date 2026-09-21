@@ -3,12 +3,14 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../core/animations/app_animations.dart';
+import '../../core/utils/auth_guard.dart';
 import '../../models/live_room_model.dart';
 import '../../core/repositories/backend_repository.dart';
 import '../../widgets/design/gold_icon_button.dart';
 import '../../widgets/gift_dialog.dart';
 import '../../widgets/gift_animation_overlay.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/live_provider.dart';
 import '../party_room/widgets/room_info_sheet.dart';
 
 class LiveVerticalFeedScreen extends StatefulWidget {
@@ -133,19 +135,24 @@ class _LiveVerticalFeedScreenState extends State<LiveVerticalFeedScreen> {
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onDoubleTapDown: (details) {
-              final pos = details.localPosition;
-              setState(() {
-                _floatingHearts.add(
-                  FloatingHeartAnimation(
-                    position: pos,
-                    onComplete: () {
-                      if (_floatingHearts.isNotEmpty) {
-                        setState(() => _floatingHearts.removeAt(0));
-                      }
-                    },
-                  ),
-                );
-              });
+              AuthGuard.require(context, () {
+                try {
+                  context.read<LiveProvider>().sendLike();
+                } catch (_) {}
+                final pos = details.localPosition;
+                setState(() {
+                  _floatingHearts.add(
+                    FloatingHeartAnimation(
+                      position: pos,
+                      onComplete: () {
+                        if (mounted && _floatingHearts.isNotEmpty) {
+                          setState(() => _floatingHearts.removeAt(0));
+                        }
+                      },
+                    ),
+                  );
+                });
+              }, reason: 'Sign in to like live streams');
             },
             onDoubleTap: () {},
           ),

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/animations/app_animations.dart';
+import '../../core/utils/auth_guard.dart';
 import '../../models/pk_battle_model.dart';
 import '../../providers/live_provider.dart';
 import '../../providers/live_gift_provider.dart';
@@ -47,6 +49,29 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
   bool _showWinner = false;
   String? _winnerName;
   int _winnerScore = 0;
+  final List<FloatingHeartAnimation> _floatingHearts = [];
+
+  void _onDoubleTapStage(TapDownDetails details) {
+    AuthGuard.require(context, () {
+      try {
+        context.read<LiveProvider>().sendLike();
+      } catch (_) {}
+
+      final pos = details.localPosition;
+      setState(() {
+        _floatingHearts.add(
+          FloatingHeartAnimation(
+            position: pos,
+            onComplete: () {
+              if (mounted && _floatingHearts.isNotEmpty) {
+                setState(() => _floatingHearts.removeAt(0));
+              }
+            },
+          ),
+        );
+      });
+    }, reason: 'Sign in to send like hearts');
+  }
 
   @override
   void initState() {
@@ -258,6 +283,15 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
             ),
           ),
 
+          // Double-tap to like gesture detector layer
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onDoubleTapDown: _onDoubleTapStage,
+              onDoubleTap: () {},
+            ),
+          ),
+
           // Main Layout Column
           SafeArea(
             child: Column(
@@ -335,6 +369,9 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
               ],
             ),
           ),
+
+          // Double Tap Floating Animated Hearts Layer
+          ..._floatingHearts,
 
           // ─── 5. TIKTOK LIVE GIFT ANIMATION OVERLAY LAYER ───
           const TikTokGiftOverlay(roomId: 'pk_battle'),
@@ -936,6 +973,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                         context,
                         targetId: 'pk_battle',
                         title: 'Arena Comments',
+                        isPost: false,
                         onCommentSubmitted: _sendChatMessage,
                       );
                     },
