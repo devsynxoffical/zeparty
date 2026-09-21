@@ -82,6 +82,70 @@ class AuthRepository {
     );
   }
 
+  /// Synchronize/Register application user (Firebase, Google, Email, Apple) with backend PostgreSQL database
+  Future<AuthResponse> syncUser({
+    String? uid,
+    String? id,
+    String? email,
+    String? phone,
+    String? username,
+    String? name,
+    String? displayName,
+    String? avatarUrl,
+    String? bio,
+    String? gender,
+    String? countryCode,
+    int? coins,
+    int? diamonds,
+  }) async {
+    final platformName = Platform.isAndroid ? 'ANDROID' : (Platform.isIOS ? 'IOS' : 'FLUTTER');
+    final cleanPhone = phone?.replaceAll(' ', '');
+
+    final response = await _apiClient.post(
+      '/v1/auth/sync',
+      data: {
+        if (uid != null && uid.isNotEmpty) 'uid': uid,
+        if (id != null && id.isNotEmpty) 'id': id,
+        if (email != null && email.isNotEmpty) 'email': email.trim().toLowerCase(),
+        if (cleanPhone != null && cleanPhone.isNotEmpty) 'phone': cleanPhone,
+        if (username != null && username.isNotEmpty) 'username': username.trim(),
+        if (name != null && name.isNotEmpty) 'name': name.trim(),
+        if (displayName != null && displayName.isNotEmpty) 'displayName': displayName.trim(),
+        if (avatarUrl != null && avatarUrl.isNotEmpty) 'avatarUrl': avatarUrl,
+        if (bio != null && bio.isNotEmpty) 'bio': bio,
+        if (gender != null && gender.isNotEmpty) 'gender': gender,
+        if (countryCode != null && countryCode.isNotEmpty) 'countryCode': countryCode,
+        if (coins != null) 'coins': coins,
+        if (diamonds != null) 'diamonds': diamonds,
+        'device': {
+          'platform': platformName,
+          'appVersion': '1.0.0',
+        },
+      },
+    );
+
+    final data = response.data?['data'] as Map<String, dynamic>;
+    final token = (data['token'] ?? data['accessToken']) as String;
+    final refreshToken = (data['refreshToken'] ?? '') as String;
+    final isNewUser = data['isNewUser'] == true;
+    final userData = data['user'] as Map<String, dynamic>;
+
+    await _apiClient.saveTokens(
+      accessToken: token,
+      refreshToken: refreshToken,
+    );
+
+    final user = UserModel.fromJson(userData);
+
+    return AuthResponse(
+      token: token,
+      refreshToken: refreshToken,
+      isNewUser: isNewUser,
+      user: user,
+    );
+  }
+
+
   /// Fetch currently authenticated user's self profile from backend
   Future<UserModel> getCurrentUser() async {
     final response = await _apiClient.get('/v1/users/me');
