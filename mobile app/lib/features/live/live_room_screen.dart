@@ -205,6 +205,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   }
 
   Widget _buildLiveHostBackground(bool isDark) {
+    final bgUrl = widget.room.coverUrl.isNotEmpty
+        ? widget.room.coverUrl
+        : widget.room.host.avatarUrl;
+
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -218,16 +222,27 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // If valid coverUrl, render blurred background cover
-          if (widget.room.coverUrl.isNotEmpty && widget.room.coverUrl.startsWith('http'))
+          // Background cover / host avatar image
+          if (bgUrl.isNotEmpty)
             Positioned.fill(
               child: Opacity(
-                opacity: 0.35,
-                child: Image.network(
-                  widget.room.coverUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-                ),
+                opacity: 0.45,
+                child: bgUrl.startsWith('http')
+                    ? Image.network(
+                        bgUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(color: Colors.black26),
+                      )
+                    : Container(
+                        decoration: BoxDecoration(
+                          gradient: RadialGradient(
+                            colors: [
+                              (isDark ? AppColors.warmGold : AppColors.royalBlue).withValues(alpha: 0.3),
+                              Colors.black,
+                            ],
+                          ),
+                        ),
+                      ),
               ),
             ),
 

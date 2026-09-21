@@ -9,13 +9,57 @@ import '../../models/short_video_model.dart';
 import '../../models/transaction_model.dart';
 import '../../models/notification_model.dart';
 import '../../models/message_model.dart';
+import '../services/socket_service.dart';
 import 'room_repository.dart';
 
 /// Production-ready Reactive Backend Repository Service
 class BackendRepository extends ChangeNotifier {
   static final BackendRepository instance = BackendRepository._internal();
+
+  Timer? _autoRefreshTimer;
+  StreamSubscription? _socketRoomCreatedSub;
+  StreamSubscription? _socketRoomClosedSub;
+
   BackendRepository._internal() {
     fetchLiveRooms();
+    _startAutoRefresh();
+    _initSocketSubscriptions();
+  }
+
+  void _startAutoRefresh() {
+    _autoRefreshTimer?.cancel();
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      fetchLiveRooms();
+    });
+  }
+
+  void _initSocketSubscriptions() {
+    final socket = SocketService.instance;
+    _socketRoomCreatedSub?.cancel();
+    _socketRoomCreatedSub = socket.roomCreatedStream.listen((data) {
+      try {
+        final room = LiveRoomModel.fromJson(data);
+        addLiveRoom(room);
+      } catch (_) {
+        fetchLiveRooms();
+      }
+    });
+
+    _socketRoomClosedSub?.cancel();
+    _socketRoomClosedSub = socket.roomClosedStream.listen((data) {
+      final roomId = data['roomId']?.toString() ?? data['id']?.toString();
+      if (roomId != null) {
+        removeLiveRoom(roomId);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _autoRefreshTimer?.cancel();
+    _socketRoomCreatedSub?.cancel();
+    _socketRoomClosedSub?.cancel();
+    super.dispose();
   }
 
   final List<ShortVideoModel> _shortVideos = [];

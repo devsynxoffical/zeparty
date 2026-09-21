@@ -20,6 +20,7 @@ class SocketService {
   final _viewerCountController = StreamController<Map<String, dynamic>>.broadcast();
   final _seatOccupiedController = StreamController<Map<String, dynamic>>.broadcast();
   final _seatReleasedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomCreatedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomClosedController = StreamController<Map<String, dynamic>>.broadcast();
   final _giftSentController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomChatMessageController = StreamController<Map<String, dynamic>>.broadcast();
@@ -61,12 +62,14 @@ class SocketService {
   Stream<Map<String, dynamic>> get onViewerCountChanged => _viewerCountController.stream;
   Stream<Map<String, dynamic>> get onSeatOccupied => _seatOccupiedController.stream;
   Stream<Map<String, dynamic>> get onSeatReleased => _seatReleasedController.stream;
+  Stream<Map<String, dynamic>> get onRoomCreated => _roomCreatedController.stream;
   Stream<Map<String, dynamic>> get onRoomClosed => _roomClosedController.stream;
   Stream<Map<String, dynamic>> get onGiftSent => _giftSentController.stream;
   Stream<Map<String, dynamic>> get onRoomChatMessage => _roomChatMessageController.stream;
   Stream<Map<String, dynamic>> get onUserKicked => _userKickedController.stream;
 
   // Stream aliases for backwards compatibility
+  Stream<Map<String, dynamic>> get roomCreatedStream => onRoomCreated;
   Stream<Map<String, dynamic>> get userJoinedStream => onUserJoined;
   Stream<Map<String, dynamic>> get userLeftStream => onUserLeft;
   Stream<Map<String, dynamic>> get viewerCountStream => onViewerCountChanged;
@@ -176,6 +179,12 @@ class SocketService {
     });
     _socket!.on('room:seat_released', (data) {
       if (data is Map) _seatReleasedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('room:created', (data) {
+      if (data is Map) _roomCreatedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('room_created', (data) {
+      if (data is Map) _roomCreatedController.add(Map<String, dynamic>.from(data));
     });
     _socket!.on('room:closed', (data) {
       if (data is Map) _roomClosedController.add(Map<String, dynamic>.from(data));
