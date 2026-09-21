@@ -444,7 +444,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
           // Header Overlay Controls
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Column(
                 children: [
                   Row(
@@ -474,16 +474,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                 borderRadius: BorderRadius.circular(8),
                                 child: Image.network(
                                   widget.room.coverUrl,
-                                  width: 36,
-                                  height: 36,
+                                  width: 34,
+                                  height: 34,
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, _, _) => Container(
-                                    width: 36, height: 36, color: Colors.grey,
-                                    child: const Icon(Icons.music_note, color: Colors.white, size: 20),
+                                    width: 34, height: 34, color: Colors.grey,
+                                    child: const Icon(Icons.music_note, color: Colors.white, size: 18),
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 6),
                               Flexible(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -494,7 +494,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 13,
+                                        fontSize: 12.5,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -503,7 +503,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                       'ID:${widget.room.id.length > 8 ? widget.room.id.substring(0, 8) : widget.room.id}',
                                       style: TextStyle(
                                         color: Colors.white.withValues(alpha: 0.7),
-                                        fontSize: 10,
+                                        fontSize: 9.5,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -515,7 +515,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
 
                       // Follow Button (Small Purple Pill)
                       Consumer<AuthProvider>(
@@ -534,7 +534,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               }, reason: 'Sign in to follow hosts');
                             },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                               decoration: BoxDecoration(
                                 color: isFollowing ? AppColors.liveGreen : const Color(0xFF9B51E0),
                                 borderRadius: BorderRadius.circular(16),
@@ -542,93 +542,99 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               child: Icon(
                                 isFollowing ? Icons.check_rounded : Icons.add_rounded,
                                 color: Colors.white,
-                                size: 16,
+                                size: 15,
                               ),
                             ),
                           );
                         },
                       ),
                       
-                      const Spacer(),
+                      const SizedBox(width: 6),
 
-                      // Right Controls (Trophy, Settings, Close)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Viewers, Likes & Trophy Badges
-                          Row(
+                      // Right Controls (Viewers, Likes, Trophy, Settings, Close)
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.remove_red_eye_rounded, color: Colors.white, size: 14),
-                              const SizedBox(width: 3),
-                              Text(
-                                '${activeRoom.viewerCount}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              // Viewers, Likes & Trophy Badges
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.remove_red_eye_rounded, color: Colors.white, size: 13),
+                                  const SizedBox(width: 2.5),
+                                  Text(
+                                    '${activeRoom.viewerCount}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 14),
+                                  const SizedBox(width: 2.5),
+                                  Text(
+                                    liveProvider.likeCountFormatted,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.emoji_events_rounded, color: AppColors.gold, size: 14),
+                                  const SizedBox(width: 2.5),
+                                  Text(
+                                    liveProvider.pointsFormatted,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.9),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
                               ),
                               const SizedBox(width: 8),
-                              const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 15),
-                              const SizedBox(width: 3),
-                              Text(
-                                liveProvider.likeCountFormatted,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
+                              
+                              // Settings (if authorized)
+                              if (widget.room.host.id == context.read<AuthProvider>().currentUser.id)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: GestureDetector(
+                                    onTap: () => _showRoomTools(context, isDark),
+                                    child: const Icon(Icons.settings_outlined, color: Colors.white, size: 20),
+                                  ),
+                                ),
+                                
+                              // Switch Camera
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: GestureDetector(
+                                  onTap: _switchCamera,
+                                  child: const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 20),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.emoji_events_rounded, color: AppColors.gold, size: 15),
-                              const SizedBox(width: 3),
-                              Text(
-                                liveProvider.pointsFormatted,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.9),
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
-                                ),
+
+                              // Close
+                              GestureDetector(
+                                onTap: () {
+                                  context.read<LiveProvider>().leaveRoom();
+                                  Navigator.pop(context);
+                                },
+                                child: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
                               ),
                             ],
                           ),
-                          const SizedBox(width: 12),
-                          
-                          // Settings (if authorized)
-                          if (widget.room.host.id == context.read<AuthProvider>().currentUser.id)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 12),
-                              child: GestureDetector(
-                                onTap: () => _showRoomTools(context, isDark),
-                                child: const Icon(Icons.settings_outlined, color: Colors.white, size: 22),
-                              ),
-                            ),
-                            
-                          // Switch Camera
-                          Padding(
-                            padding: const EdgeInsets.only(right: 12),
-                            child: GestureDetector(
-                              onTap: _switchCamera,
-                              child: const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 22),
-                            ),
-                          ),
-
-                          // Close
-                          GestureDetector(
-                            onTap: () {
-                              context.read<LiveProvider>().leaveRoom();
-                              Navigator.pop(context);
-                            },
-                            child: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
-                          ),
-                        ],
+                        ),
                       ),
                     ],
                   ),
                 ],
               ),
-
             ),
           ),
 
