@@ -487,18 +487,20 @@ export function Dashboard() {
     let mounted = true;
     async function loadDashboard() {
       try {
-        const [liveStats, liveCharts, liveContent] = await Promise.all([
+        const results = await Promise.allSettled([
           getDashboardStats(),
           getDashboardCharts(),
           getDashboardContent(),
         ]);
         if (mounted) {
-          if (liveStats) setStats(liveStats);
-          if (liveCharts) setCharts(liveCharts);
-          if (liveContent) setContent(liveContent);
+          const [statsRes, chartsRes, contentRes] = results;
+          if (statsRes.status === 'fulfilled' && statsRes.value) setStats(statsRes.value);
+          if (chartsRes.status === 'fulfilled' && chartsRes.value) setCharts(chartsRes.value);
+          if (contentRes.status === 'fulfilled' && contentRes.value) setContent(contentRes.value);
           setIsLive(true);
         }
-      } catch {
+      } catch (err) {
+        console.error('Dashboard load error:', err);
         if (mounted) setIsLive(false);
       }
     }
