@@ -73,6 +73,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     );
   }
 
+  StreamSubscription? _socketLikeSub;
+
   @override
   void initState() {
     super.initState();
@@ -80,7 +82,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     _startDurationTimer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentUser = context.read<AuthProvider>().currentUser;
-      context.read<LiveProvider>().joinRoom(widget.room, currentUser: currentUser);
+      final liveProv = context.read<LiveProvider>();
+      liveProv.joinRoom(widget.room, currentUser: currentUser);
       context.read<LiveGiftProvider>().setActiveRoom(widget.room.id);
       final emojiProv = context.read<EmojiReactionProvider>();
       emojiProv.setActiveRoom(widget.room.id);
@@ -89,6 +92,15 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       
       // Mock SVIP entry for demonstration
       emojiProv.registerAnchor('user_${currentUser.id}', _hostAvatarKey);
+
+      _socketLikeSub = liveProv.onLikeReceived.listen((data) {
+        final rand = Random();
+        final dx = 180.0 + rand.nextDouble() * 120.0;
+        final dy = 350.0 + rand.nextDouble() * 150.0;
+        if (mounted) {
+          _triggerFloatingHeartAt(Offset(dx, dy));
+        }
+      });
 
       if (currentUser.isVip) {
         Future.delayed(const Duration(seconds: 2), () {
@@ -340,6 +352,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
   @override
   void dispose() {
+    _socketLikeSub?.cancel();
     _durationTimer?.cancel();
     _cameraController?.dispose();
     _chatController.dispose();
@@ -353,6 +366,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final liveProvider = context.watch<LiveProvider>();
+    final activeRoom = liveProvider.activeRoom ?? widget.room;
     final activeGift = liveProvider.activeGiftAnimation;
 
     return Scaffold(
@@ -541,10 +555,21 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Likes & Trophy Badges
+                          // Viewers, Likes & Trophy Badges
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              const Icon(Icons.remove_red_eye_rounded, color: Colors.white, size: 14),
+                              const SizedBox(width: 3),
+                              Text(
+                                '${activeRoom.viewerCount}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
                               const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 15),
                               const SizedBox(width: 3),
                               Text(

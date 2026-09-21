@@ -25,6 +25,7 @@ class SocketService {
   final _giftSentController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomChatMessageController = StreamController<Map<String, dynamic>>.broadcast();
   final _userKickedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomLikeController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Social realtime event streams
   final _postCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -67,6 +68,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get onGiftSent => _giftSentController.stream;
   Stream<Map<String, dynamic>> get onRoomChatMessage => _roomChatMessageController.stream;
   Stream<Map<String, dynamic>> get onUserKicked => _userKickedController.stream;
+  Stream<Map<String, dynamic>> get onRoomLike => _roomLikeController.stream;
 
   // Stream aliases for backwards compatibility
   Stream<Map<String, dynamic>> get roomCreatedStream => onRoomCreated;
@@ -79,6 +81,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get giftSentStream => onGiftSent;
   Stream<Map<String, dynamic>> get roomChatMessageStream => onRoomChatMessage;
   Stream<Map<String, dynamic>> get userKickedStream => onUserKicked;
+  Stream<Map<String, dynamic>> get roomLikeStream => onRoomLike;
 
   // Getters - Social
   Stream<Map<String, dynamic>> get onPostCreated => _postCreatedController.stream;
@@ -164,16 +167,37 @@ class SocketService {
       debugPrint('[SocketService] Socket error: $err');
     });
 
-    // Register Authoritative Room Event Listeners
-    _socket!.on('room:user_joined', (data) {
+    // Register Authoritative Room Event Listeners with multi-alias support
+    void handleUserJoined(dynamic data) {
       if (data is Map) _userJoinedController.add(Map<String, dynamic>.from(data));
-    });
-    _socket!.on('room:user_left', (data) {
+    }
+    _socket!.on('room:user_joined', handleUserJoined);
+    _socket!.on('user_joined', handleUserJoined);
+    _socket!.on('user:joined', handleUserJoined);
+    _socket!.on('room_user_joined', handleUserJoined);
+
+    void handleUserLeft(dynamic data) {
       if (data is Map) _userLeftController.add(Map<String, dynamic>.from(data));
-    });
-    _socket!.on('room:viewer_count_changed', (data) {
+    }
+    _socket!.on('room:user_left', handleUserLeft);
+    _socket!.on('user_left', handleUserLeft);
+    _socket!.on('user:left', handleUserLeft);
+
+    void handleViewerCount(dynamic data) {
       if (data is Map) _viewerCountController.add(Map<String, dynamic>.from(data));
-    });
+    }
+    _socket!.on('room:viewer_count_changed', handleViewerCount);
+    _socket!.on('room:viewer_count', handleViewerCount);
+    _socket!.on('viewer_count_changed', handleViewerCount);
+
+    void handleRoomLike(dynamic data) {
+      if (data is Map) _roomLikeController.add(Map<String, dynamic>.from(data));
+    }
+    _socket!.on('room:like', handleRoomLike);
+    _socket!.on('room:like_sent', handleRoomLike);
+    _socket!.on('room_like', handleRoomLike);
+    _socket!.on('like_sent', handleRoomLike);
+
     _socket!.on('room:seat_occupied', (data) {
       if (data is Map) _seatOccupiedController.add(Map<String, dynamic>.from(data));
     });
@@ -353,6 +377,36 @@ class SocketService {
       _socket!.emit('room:kick_user', {
         'roomId': roomId,
         'targetUserId': targetUserId,
+      });
+    }
+  }
+
+  /// Broadcast double-tap likes to all room participants
+  void sendRoomLike({
+    required String roomId,
+    int count = 1,
+    Map<String, dynamic>? sender,
+  }) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('room:like', {
+        'roomId': roomId,
+        'count': count,
+        if (sender != null) 'sender': sender,
+      });
+    }
+  }
+
+  /// Broadcast user joined event to room participants
+  void sendUserJoined({
+    required String roomId,
+    Map<String, dynamic>? user,
+    int? viewerCount,
+  }) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('room:user_joined', {
+        'roomId': roomId,
+        if (user != null) 'user': user,
+        if (viewerCount != null) 'viewerCount': viewerCount,
       });
     }
   }
