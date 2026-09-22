@@ -27,9 +27,14 @@ export async function issueRoomAgoraToken({ roomId, userId }, db = prisma) {
     throw error;
   }
 
-  // 1. Check user status
+  // 1. Check user status (supports both regular users and admins)
   const user = await userRepository.findUserById(userId, db);
+  let admin = null;
   if (!user) {
+    admin = await db.admin.findUnique({ where: { id: userId } });
+  }
+
+  if (!user && !admin) {
     const error = new Error('User not found');
     error.statusCode = 404;
     error.status = 404;
@@ -37,11 +42,19 @@ export async function issueRoomAgoraToken({ roomId, userId }, db = prisma) {
     throw error;
   }
 
-  if (user.status !== 'ACTIVE') {
+  if (user && user.status !== 'ACTIVE') {
     const error = new Error(`Account is ${user.status.toLowerCase()}. Access denied.`);
     error.statusCode = 403;
     error.status = 403;
     error.code = 'USER_NOT_ACTIVE';
+    throw error;
+  }
+
+  if (admin && admin.status !== 'ACTIVE') {
+    const error = new Error(`Admin account is ${admin.status.toLowerCase()}. Access denied.`);
+    error.statusCode = 403;
+    error.status = 403;
+    error.code = 'ADMIN_NOT_ACTIVE';
     throw error;
   }
 

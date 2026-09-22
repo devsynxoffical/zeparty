@@ -41,6 +41,11 @@ export const SOCKET_EVENTS = {
   // Moderation & Seat/User Management
   ROOM_KICK_USER: 'room:kick_user',
   ROOM_USER_KICKED: 'room:user_kicked',
+  ROOM_WARNING: 'room:warning',
+  ROOM_WARNING_ISSUED: 'room:warning',
+  ROOM_MUTED: 'room:muted',
+  ROOM_USER_MUTED: 'room:user_muted',
+  ROOM_DP_UPDATED: 'room:dp_updated',
 
   // PK Battles (Phase 19)
   PK_START: 'pk:start',

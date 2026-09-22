@@ -23,9 +23,19 @@ userRoomRouter.post('/:id/agora-token/refresh', authenticate, agoraController.po
 adminRoomRouter.use(authenticate);
 adminRoomRouter.get('/', requirePermission('view_live_rooms'), roomController.getAdminRooms);
 adminRoomRouter.get('/:id', requirePermission('view_live_rooms'), roomController.getAdminRoomById);
+adminRoomRouter.get('/:id/agora-token', requirePermission('view_live_rooms'), roomController.getAdminAgoraToken);
 adminRoomRouter.post('/:id/pin', requirePermission('view_live_rooms'), roomController.postAdminPinRoom);
 adminRoomRouter.delete('/:id/pin', requirePermission('view_live_rooms'), roomController.deleteAdminPinRoom);
 adminRoomRouter.post('/:id/close', requirePermission('moderation_actions'), roomController.postAdminCloseRoom);
+adminRoomRouter.post('/:id/warn', requirePermission('moderation_actions'), roomController.postAdminWarnRoom);
+adminRoomRouter.post('/:id/mute', requirePermission('moderation_actions'), roomController.postAdminMuteRoom);
+adminRoomRouter.post('/:id/mute-participant', requirePermission('moderation_actions'), roomController.postAdminMuteParticipant);
+adminRoomRouter.post('/:id/kick', requirePermission('moderation_actions'), roomController.postAdminKickUser);
+adminRoomRouter.post('/:id/dp', requirePermission('moderation_actions'), roomController.postAdminUpdateRoomDp);
+adminRoomRouter.delete('/:id/dp', requirePermission('moderation_actions'), (req, res, next) => {
+  req.body = { ...req.body, coverImageUrl: null };
+  roomController.postAdminUpdateRoomDp(req, res, next);
+});
 
 export default {
   userRoomRouter,

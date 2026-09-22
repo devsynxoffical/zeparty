@@ -111,6 +111,27 @@ export async function findRoomById(id, db = prisma) {
           },
         },
       },
+      members: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              profile: {
+                select: {
+                  displayName: true,
+                },
+              },
+            },
+          },
+        },
+      },
+      giftTransactions: {
+        select: {
+          totalCoins: true,
+        },
+      },
     },
   });
 }
@@ -127,7 +148,6 @@ export async function findActiveRooms(
 ) {
   const where = {
     status: 'LIVE',
-    currentViewersCount: { gt: 0 },
   };
 
   if (roomType) where.roomType = roomType;
@@ -217,7 +237,6 @@ export async function findAdminRooms(
 
   if (status === 'active' || status === 'LIVE') {
     where.status = 'LIVE';
-    where.currentViewersCount = { gt: 0 };
   } else if (status && status !== 'all') {
     where.status = status;
   }
@@ -638,6 +657,85 @@ export async function closeRoomTx({ roomId, status = 'ENDED', endedAt = new Date
   });
 }
 
+export async function updateRoomCoverImage({ roomId, coverImageUrl }, db = prisma) {
+  return await db.room.update({
+    where: { id: roomId },
+    data: { coverImageUrl },
+  });
+}
+
+export async function updateRoomMuteStatus({ roomId, isMuted }, db = prisma) {
+  // Update all seats in the room
+  await db.roomSeat.updateMany({
+    where: { roomId },
+    data: { isMuted: Boolean(isMuted) },
+  });
+
+  return await db.room.findUnique({
+    where: { id: roomId },
+  });
+}
+
+export async function updateSeatMuteStatus({ roomId, seatIndex, isMuted }, db = prisma) {
+  return await db.roomSeat.update({
+    where: {
+      roomId_seatIndex: {
+        roomId,
+        seatIndex: Number(seatIndex),
+      },
+    },
+    data: { isMuted: Boolean(isMuted) },
+  });
+}
+
+export async function updateUserSeatMuteStatus({ roomId, userId, isMuted }, db = prisma) {
+  await db.roomSeat.updateMany({
+    where: {
+      roomId,
+      occupiedUserId: userId,
+    },
+    data: { isMuted: Boolean(isMuted) },
+  });
+
+  return await db.roomSeat.findFirst({
+    where: { roomId, occupiedUserId: userId },
+  });
+}
+
+export async function kickUserFromRoomTx({ roomId, targetUserId }, db = prisma) {
+  return await db.$transaction(async (tx) => {
+    // 1. Release any seat occupied by this user
+    await tx.roomSeat.updateMany({
+      where: {
+        roomId,
+        occupiedUserId: targetUserId,
+      },
+      data: {
+        occupiedUserId: null,
+        isMuted: false,
+      },
+    });
+
+    // 2. Remove room membership
+    await tx.roomMember.deleteMany({
+      where: {
+        roomId,
+        userId: targetUserId,
+      },
+    });
+
+    // 3. Decrement viewer count if greater than 0
+    const room = await tx.room.findUnique({ where: { id: roomId } });
+    if (room && room.currentViewersCount > 0) {
+      await tx.room.update({
+        where: { id: roomId },
+        data: { currentViewersCount: { decrement: 1 } },
+      });
+    }
+
+    return { roomId, targetUserId };
+  });
+}
 
 export default {
   createRoomWithSeats,
@@ -650,4 +748,9 @@ export default {
   leaveSeatTx,
   pinRoom,
   closeRoomTx,
+  updateRoomCoverImage,
+  updateRoomMuteStatus,
+  updateSeatMuteStatus,
+  updateUserSeatMuteStatus,
+  kickUserFromRoomTx,
 };

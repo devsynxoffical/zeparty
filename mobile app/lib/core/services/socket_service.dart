@@ -26,6 +26,9 @@ class SocketService {
   final _roomChatMessageController = StreamController<Map<String, dynamic>>.broadcast();
   final _userKickedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomLikeController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomWarningController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomMutedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomUserMutedController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Social realtime event streams
   final _postCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -69,6 +72,9 @@ class SocketService {
   Stream<Map<String, dynamic>> get onRoomChatMessage => _roomChatMessageController.stream;
   Stream<Map<String, dynamic>> get onUserKicked => _userKickedController.stream;
   Stream<Map<String, dynamic>> get onRoomLike => _roomLikeController.stream;
+  Stream<Map<String, dynamic>> get onRoomWarning => _roomWarningController.stream;
+  Stream<Map<String, dynamic>> get onRoomMuted => _roomMutedController.stream;
+  Stream<Map<String, dynamic>> get onRoomUserMuted => _roomUserMutedController.stream;
 
   // Stream aliases for backwards compatibility
   Stream<Map<String, dynamic>> get roomCreatedStream => onRoomCreated;
@@ -82,6 +88,9 @@ class SocketService {
   Stream<Map<String, dynamic>> get roomChatMessageStream => onRoomChatMessage;
   Stream<Map<String, dynamic>> get userKickedStream => onUserKicked;
   Stream<Map<String, dynamic>> get roomLikeStream => onRoomLike;
+  Stream<Map<String, dynamic>> get roomWarningStream => onRoomWarning;
+  Stream<Map<String, dynamic>> get roomMutedStream => onRoomMuted;
+  Stream<Map<String, dynamic>> get roomUserMutedStream => onRoomUserMuted;
 
   // Getters - Social
   Stream<Map<String, dynamic>> get onPostCreated => _postCreatedController.stream;
@@ -221,6 +230,21 @@ class SocketService {
     });
     _socket!.on('room:user_kicked', (data) {
       if (data is Map) _userKickedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('user_kicked', (data) {
+      if (data is Map) _userKickedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('room:warning', (data) {
+      if (data is Map) _roomWarningController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('room_warning', (data) {
+      if (data is Map) _roomWarningController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('room:muted', (data) {
+      if (data is Map) _roomMutedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('room:user_muted', (data) {
+      if (data is Map) _roomUserMutedController.add(Map<String, dynamic>.from(data));
     });
 
     // Social Events

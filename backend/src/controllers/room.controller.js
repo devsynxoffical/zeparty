@@ -1,4 +1,5 @@
 import roomService from '../services/room.service.js';
+import agoraService from '../services/agora.service.js';
 import {
   createRoomSchema,
   queryActiveRoomsSchema,
@@ -6,6 +7,11 @@ import {
   occupySeatParamSchema,
   pinRoomSchema,
   adminCloseRoomSchema,
+  adminWarnRoomSchema,
+  adminMuteRoomSchema,
+  adminMuteParticipantSchema,
+  adminKickUserSchema,
+  adminUpdateDpSchema,
   roomIdParamSchema,
 } from '../validators/room.validator.js';
 
@@ -244,6 +250,132 @@ export async function postAdminCloseRoom(req, res, next) {
   }
 }
 
+export async function postAdminWarnRoom(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const validatedBody = adminWarnRoomSchema.parse(req.body);
+    const adminId = req.auth.userId;
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await roomService.adminIssueWarning(id, {
+      ...validatedBody,
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminMuteRoom(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const validatedBody = adminMuteRoomSchema.parse(req.body);
+    const adminId = req.auth.userId;
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await roomService.adminToggleRoomMute(id, {
+      ...validatedBody,
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminMuteParticipant(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const validatedBody = adminMuteParticipantSchema.parse(req.body);
+    const adminId = req.auth.userId;
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await roomService.adminMuteParticipant(id, {
+      ...validatedBody,
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminKickUser(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const validatedBody = adminKickUserSchema.parse(req.body);
+    const adminId = req.auth.userId;
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await roomService.adminKickUser(id, {
+      ...validatedBody,
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminUpdateRoomDp(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const validatedBody = adminUpdateDpSchema.parse(req.body);
+    const adminId = req.auth.userId;
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await roomService.adminUpdateRoomDp(id, {
+      ...validatedBody,
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Room DP updated successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAdminAgoraToken(req, res, next) {
+  try {
+    const { id: roomId } = req.params;
+    const userId = req.auth.userId;
+
+    const result = await agoraService.issueRoomAgoraToken({ roomId, userId });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Admin Agora RTC token generated successfully.',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -258,4 +390,10 @@ export default {
   postAdminPinRoom,
   deleteAdminPinRoom,
   postAdminCloseRoom,
+  postAdminWarnRoom,
+  postAdminMuteRoom,
+  postAdminMuteParticipant,
+  postAdminKickUser,
+  postAdminUpdateRoomDp,
+  getAdminAgoraToken,
 };

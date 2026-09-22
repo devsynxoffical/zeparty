@@ -49,9 +49,25 @@ class LiveProvider extends ChangeNotifier {
   StreamSubscription? _socketChatMessageSub;
   StreamSubscription? _socketRoomClosedSub;
   StreamSubscription? _socketRoomLikeSub;
+  StreamSubscription? _socketUserKickedSub;
+  StreamSubscription? _socketRoomWarningSub;
+  StreamSubscription? _socketRoomMutedSub;
+  StreamSubscription? _socketRoomUserMutedSub;
 
   final _likeReceivedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onLikeReceived => _likeReceivedController.stream;
+
+  final _warningReceivedController = StreamController<String>.broadcast();
+  Stream<String> get onWarningReceived => _warningReceivedController.stream;
+
+  final _kickedReceivedController = StreamController<String>.broadcast();
+  Stream<String> get onKickedReceived => _kickedReceivedController.stream;
+
+  // ── Moderation State ─────────────────────────────────────
+  bool _isRoomMuted = false;
+  String? _activeWarningMessage;
+  bool _wasKicked = false;
+  String? _kickReason;
 
   // ── Room Tool State ──────────────────────────────────────
   bool _isRoomLocked = false;
@@ -70,6 +86,10 @@ class LiveProvider extends ChangeNotifier {
   int get pkTimeRemainingSeconds => _pkTimeRemainingSeconds;
   int get likeCount => _likeCount;
   int get giftPoints => _giftPoints;
+  bool get isRoomMuted => _isRoomMuted;
+  String? get activeWarningMessage => _activeWarningMessage;
+  bool get wasKicked => _wasKicked;
+  String? get kickReason => _kickReason;
 
   String get likeCountFormatted {
     if (_likeCount >= 1000000) {
@@ -103,6 +123,10 @@ class LiveProvider extends ChangeNotifier {
     _activeRoom = room.copyWith(viewerCount: room.viewerCount + 1);
     _currentUser = currentUser;
     _isRoomLocked = false;
+    _isRoomMuted = room.isMuted;
+    _activeWarningMessage = null;
+    _wasKicked = false;
+    _kickReason = null;
     _currentMusicTrack = null;
     _luckyBagActive = false;
     _activeEffect = 'None';
@@ -153,7 +177,7 @@ class LiveProvider extends ChangeNotifier {
         final uid = agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
         final appId = agoraData['appId'] as String?;
 
-        final isVideo = (room.roomType == 'LIVE_VIDEO' || room.roomType == 'VIDEO_PARTY' || room.roomType == null || !room.roomType!.contains('AUDIO'));
+        final isVideo = (room.roomType == 'LIVE_VIDEO' || room.roomType == 'VIDEO_PARTY' || !room.roomType.contains('AUDIO'));
 
         await _agoraService.initialize(appId: appId, enableVideo: isVideo);
         await _agoraService.joinChannel(
@@ -163,6 +187,10 @@ class LiveProvider extends ChangeNotifier {
           isHost: isHost,
           isVideo: isVideo,
         );
+
+        if (_isRoomMuted && isHost) {
+          await _agoraService.muteLocalAudio(true);
+        }
       }
     } catch (e) {
       debugPrint('[LiveProvider] joinRoom error: $e');
@@ -276,9 +304,84 @@ class LiveProvider extends ChangeNotifier {
       notifyListeners();
     });
 
+    // ── Moderation Event Subscriptions ──────────────────────
+    _socketRoomWarningSub?.cancel();
+    _socketRoomWarningSub = _socketService.roomWarningStream.listen((data) {
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      final msg = data['message'] ?? data['reason'] ?? 'Official moderation warning issued';
+      _activeWarningMessage = msg.toString();
+      _warningReceivedController.add(_activeWarningMessage!);
+      _messages.add(LiveMessage(sender: '🛡️ Moderation Warning', text: msg.toString()));
+      notifyListeners();
+
+      Timer(const Duration(seconds: 8), () {
+        _activeWarningMessage = null;
+        notifyListeners();
+      });
+    });
+
+    _socketRoomMutedSub?.cancel();
+    _socketRoomMutedSub = _socketService.roomMutedStream.listen((data) {
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      final muted = data['isMuted'] == true || data['muted'] == true;
+      _isRoomMuted = muted;
+      if (muted) {
+        try {
+          _agoraService.muteLocalAudio(true);
+        } catch (_) {}
+      }
+      _messages.add(LiveMessage(
+        sender: 'System',
+        text: muted ? '🔇 Room audio has been MUTED by platform moderation.' : '🎙️ Room audio has been UNMUTED.',
+      ));
+      notifyListeners();
+    });
+
+    _socketRoomUserMutedSub?.cancel();
+    _socketRoomUserMutedSub = _socketService.onRoomUserMuted.listen((data) {
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      final targetId = data['targetUserId']?.toString();
+      final muted = data['isMuted'] == true;
+      if (targetId != null && targetId == currentUser?.id) {
+        try {
+          _agoraService.muteLocalAudio(muted);
+        } catch (_) {}
+        _messages.add(LiveMessage(
+          sender: 'System',
+          text: muted ? '🔇 Your microphone has been muted by moderation.' : '🎙️ Your microphone has been unmuted.',
+        ));
+        notifyListeners();
+      }
+    });
+
+    _socketUserKickedSub?.cancel();
+    _socketUserKickedSub = _socketService.userKickedStream.listen((data) {
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      final targetId = data['targetUserId']?.toString() ?? data['userId']?.toString();
+      final isHostKicked = data['isHost'] == true;
+
+      if (targetId != null && targetId == currentUser?.id) {
+        _wasKicked = true;
+        _kickReason = data['reason']?.toString() ?? 'You have been removed from this room by moderation.';
+        _kickedReceivedController.add(_kickReason!);
+        leaveRoom();
+      } else if (isHostKicked) {
+        _messages.add(LiveMessage(sender: 'System', text: '🛑 Stream ended: Host was removed by moderation.'));
+        leaveRoom();
+      }
+    });
+
     _socketRoomClosedSub?.cancel();
     _socketRoomClosedSub = _socketService.roomClosedStream.listen((data) {
-      sendMessage('🛑 Stream was closed by the host', 'System');
+      sendMessage('🛑 Stream was closed', 'System');
       leaveRoom();
     });
   }
@@ -308,6 +411,10 @@ class LiveProvider extends ChangeNotifier {
     _socketGiftSentSub?.cancel();
     _socketChatMessageSub?.cancel();
     _socketRoomClosedSub?.cancel();
+    _socketUserKickedSub?.cancel();
+    _socketRoomWarningSub?.cancel();
+    _socketRoomMutedSub?.cancel();
+    _socketRoomUserMutedSub?.cancel();
     _pkTimer?.cancel();
     _giftTimer?.cancel();
 

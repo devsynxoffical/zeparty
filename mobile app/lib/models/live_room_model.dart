@@ -17,6 +17,7 @@ class LiveRoomModel {
   final String? creatorUserId;
   final String status; // LIVE, ENDED, CLOSED_BY_ADMIN
   final bool isPinnedTop;
+  final bool isMuted;
   final List<dynamic>? seats;
 
   const LiveRoomModel({
@@ -36,6 +37,7 @@ class LiveRoomModel {
     this.creatorUserId,
     this.status = 'LIVE',
     this.isPinnedTop = false,
+    this.isMuted = false,
     this.seats,
   });
 
@@ -83,6 +85,7 @@ class LiveRoomModel {
       creatorUserId: json['creatorUserId']?.toString() ?? hostUser.id,
       status: json['status']?.toString() ?? 'LIVE',
       isPinnedTop: json['isPinnedTop'] == true,
+      isMuted: json['isMuted'] == true,
       seats: json['seats'] is List ? json['seats'] as List : null,
     );
   }
@@ -102,6 +105,7 @@ class LiveRoomModel {
       'creatorUserId': creatorUserId,
       'status': status,
       'isPinnedTop': isPinnedTop,
+      'isMuted': isMuted,
     };
   }
 
@@ -122,6 +126,7 @@ class LiveRoomModel {
     String? creatorUserId,
     String? status,
     bool? isPinnedTop,
+    bool? isMuted,
     List<dynamic>? seats,
   }) {
     return LiveRoomModel(
@@ -141,6 +146,7 @@ class LiveRoomModel {
       creatorUserId: creatorUserId ?? this.creatorUserId,
       status: status ?? this.status,
       isPinnedTop: isPinnedTop ?? this.isPinnedTop,
+      isMuted: isMuted ?? this.isMuted,
       seats: seats ?? this.seats,
     );
   }

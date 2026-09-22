@@ -33,7 +33,7 @@ export async function createRoom(
 ) {
   const agoraChannelName = `room_${crypto.randomUUID().replace(/-/g, '')}`;
 
-  return await roomRepository.createRoomWithSeats(
+  const room = await roomRepository.createRoomWithSeats(
     {
       creatorUserId: userId,
       title,
@@ -46,6 +46,15 @@ export async function createRoom(
     },
     db
   );
+
+  // Broadcast new room creation to global realtime discovery subscribers
+  try {
+    socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CREATED, room);
+  } catch (err) {
+    console.error('Failed to broadcast ROOM_CREATED socket event:', err);
+  }
+
+  return room;
 }
 
 export async function getActiveRooms(filters, db = prisma) {
@@ -60,7 +69,22 @@ export async function getRoomDetails(roomId, db = prisma) {
     error.code = 'ROOM_NOT_FOUND';
     throw error;
   }
-  return room;
+
+  // Calculate gift coin total from transactions if present
+  let totalGiftCoins = 0;
+  if (Array.isArray(room.giftTransactions)) {
+    totalGiftCoins = room.giftTransactions.reduce((sum, tx) => sum + Number(tx.totalCoins || 0), 0);
+  }
+
+  // Check if any seats are muted to determine room-level mute flag
+  const isRoomMuted = Array.isArray(room.seats) && room.seats.length > 0 && room.seats.every((s) => s.isMuted);
+
+  return {
+    ...room,
+    giftsReceivedCoins: totalGiftCoins,
+    totalGifts: totalGiftCoins,
+    isMuted: isRoomMuted,
+  };
 }
 
 export async function joinRoom(roomId, userId, db = prisma) {
@@ -244,6 +268,253 @@ export async function adminCloseRoom(
   return updatedRoom;
 }
 
+export async function adminIssueWarning(
+  roomId,
+  { reason, adminId, adminName, ipAddress },
+  db = prisma
+) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const payload = {
+    roomId,
+    roomTitle: room.title,
+    message: reason || 'Community Guidelines Violation Warning',
+    reason: reason || 'Community Guidelines Violation Warning',
+    adminName: adminName || 'Admin Moderation',
+    timestamp: new Date().toISOString(),
+  };
+
+  await logAudit(
+    {
+      adminId,
+      adminName,
+      action: 'ROOM_WARNING_ISSUED',
+      targetEntity: 'Room',
+      targetEntityId: roomId,
+      reason: reason || 'Official moderation warning broadcasted',
+      ipAddress,
+    },
+    db
+  );
+
+  // Broadcast to room
+  socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_WARNING_ISSUED, payload);
+  socketEmitter.emitToRoom(roomId, 'room:warning', payload);
+
+  return { success: true, message: 'Warning broadcasted successfully', data: payload };
+}
+
+export async function adminToggleRoomMute(
+  roomId,
+  { isMuted, adminId, adminName, ipAddress },
+  db = prisma
+) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const updatedRoom = await roomRepository.updateRoomMuteStatus({ roomId, isMuted }, db);
+
+  const payload = {
+    roomId,
+    isMuted: Boolean(isMuted),
+    adminName: adminName || 'Admin Moderation',
+    timestamp: new Date().toISOString(),
+  };
+
+  await logAudit(
+    {
+      adminId,
+      adminName,
+      action: isMuted ? 'ROOM_MUTED' : 'ROOM_UNMUTED',
+      targetEntity: 'Room',
+      targetEntityId: roomId,
+      reason: isMuted ? 'Room audio muted by admin' : 'Room audio unmuted by admin',
+      ipAddress,
+    },
+    db
+  );
+
+  socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_MUTED, payload);
+  socketEmitter.emitToRoom(roomId, 'room:muted', payload);
+
+  return { success: true, isMuted: Boolean(isMuted), room: updatedRoom };
+}
+
+export async function adminMuteParticipant(
+  roomId,
+  { targetUserId, seatIndex, isMuted, adminId, adminName, ipAddress },
+  db = prisma
+) {
+  if (seatIndex !== undefined && seatIndex !== null) {
+    await roomRepository.updateSeatMuteStatus({ roomId, seatIndex, isMuted }, db);
+  } else if (targetUserId) {
+    await roomRepository.updateUserSeatMuteStatus({ roomId, userId: targetUserId, isMuted }, db);
+  }
+
+  const payload = {
+    roomId,
+    targetUserId,
+    seatIndex,
+    isMuted: Boolean(isMuted),
+    adminName: adminName || 'Admin Moderation',
+    timestamp: new Date().toISOString(),
+  };
+
+  await logAudit(
+    {
+      adminId,
+      adminName,
+      action: isMuted ? 'PARTICIPANT_MUTED' : 'PARTICIPANT_UNMUTED',
+      targetEntity: 'Room',
+      targetEntityId: roomId,
+      reason: `Participant ${targetUserId || seatIndex} ${isMuted ? 'muted' : 'unmuted'} by admin`,
+      ipAddress,
+    },
+    db
+  );
+
+  socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_USER_MUTED, payload);
+  socketEmitter.emitToRoom(roomId, 'room:user_muted', payload);
+
+  return { success: true, data: payload };
+}
+
+export async function adminKickUser(
+  roomId,
+  { targetUserId, adminId, adminName, ipAddress },
+  db = prisma
+) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const isHost = room.creatorUserId === targetUserId;
+
+  if (isHost) {
+    // If the host is kicked, close the stream
+    await roomRepository.closeRoomTx({ roomId, status: 'HOST_KICKED' }, db);
+
+    const kickPayload = {
+      roomId,
+      targetUserId,
+      kickedByUserId: adminId || 'admin',
+      isHost: true,
+      reason: 'Host removed by platform moderation',
+      timestamp: new Date().toISOString(),
+    };
+
+    socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_USER_KICKED, kickPayload);
+    socketEmitter.emitToRoom(roomId, 'room:user_kicked', kickPayload);
+
+    socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, {
+      roomId,
+      status: 'ENDED',
+      reason: 'HOST_KICKED_BY_ADMIN',
+    });
+
+    await logAudit(
+      {
+        adminId,
+        adminName,
+        action: 'HOST_KICKED_ROOM_CLOSED',
+        targetEntity: 'Room',
+        targetEntityId: roomId,
+        reason: `Host ${targetUserId} kicked by admin moderation`,
+        ipAddress,
+      },
+      db
+    );
+
+    return { success: true, message: 'Host kicked and room closed', isHost: true };
+  }
+
+  // Regular participant/speaker/viewer
+  await roomRepository.kickUserFromRoomTx({ roomId, targetUserId }, db);
+
+  const kickPayload = {
+    roomId,
+    targetUserId,
+    kickedByUserId: adminId || 'admin',
+    isHost: false,
+    reason: 'Participant removed by platform moderation',
+    timestamp: new Date().toISOString(),
+  };
+
+  socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_USER_KICKED, kickPayload);
+  socketEmitter.emitToRoom(roomId, 'room:user_kicked', kickPayload);
+
+  await logAudit(
+    {
+      adminId,
+      adminName,
+      action: 'PARTICIPANT_KICKED',
+      targetEntity: 'Room',
+      targetEntityId: roomId,
+      reason: `Participant ${targetUserId} kicked by admin`,
+      ipAddress,
+    },
+    db
+  );
+
+  return { success: true, message: 'Participant kicked successfully', isHost: false };
+}
+
+export async function adminUpdateRoomDp(
+  roomId,
+  { coverImageUrl, adminId, adminName, ipAddress },
+  db = prisma
+) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const updatedRoom = await roomRepository.updateRoomCoverImage({ roomId, coverImageUrl }, db);
+
+  const payload = {
+    roomId,
+    coverImageUrl,
+    dpDeleted: !coverImageUrl,
+    timestamp: new Date().toISOString(),
+  };
+
+  await logAudit(
+    {
+      adminId,
+      adminName,
+      action: coverImageUrl ? 'ROOM_DP_UPDATED' : 'ROOM_DP_DELETED',
+      targetEntity: 'Room',
+      targetEntityId: roomId,
+      reason: coverImageUrl ? 'Room display picture updated by admin' : 'Room display picture removed by admin',
+      ipAddress,
+    },
+    db
+  );
+
+  socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_DP_UPDATED, payload);
+  socketEmitter.emitToRoom(roomId, 'room:dp_updated', payload);
+
+  return updatedRoom;
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -257,4 +528,9 @@ export default {
   adminPinRoom,
   adminUnpinRoom,
   adminCloseRoom,
+  adminIssueWarning,
+  adminToggleRoomMute,
+  adminMuteParticipant,
+  adminKickUser,
+  adminUpdateRoomDp,
 };

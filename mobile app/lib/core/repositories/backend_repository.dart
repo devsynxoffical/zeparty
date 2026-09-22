@@ -160,11 +160,9 @@ class BackendRepository extends ChangeNotifier {
   Future<List<LiveRoomModel>> fetchLiveRooms({String? category, int limit = 50}) async {
     try {
       final remoteRooms = await RoomRepository.instance.getActiveRooms(category: category, limit: limit);
-      if (remoteRooms.isNotEmpty) {
-        _liveRooms.clear();
-        _liveRooms.addAll(remoteRooms);
-        notifyListeners();
-      }
+      _liveRooms.clear();
+      _liveRooms.addAll(remoteRooms);
+      notifyListeners();
       return _liveRooms;
     } catch (_) {
       return _liveRooms;

@@ -46,12 +46,27 @@ export const occupySeatParamSchema = z.object({
   seatIndex: z.coerce.number().int().min(0, 'Seat index must be between 0 and 7').max(7, 'Seat index must be between 0 and 7'),
 });
 
-export const pinRoomSchema = z.object({
-  pinnedPosition: z.coerce.number().int().min(1).max(3).default(1),
+export const adminWarnRoomSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
 });
 
-export const adminCloseRoomSchema = z.object({
+export const adminMuteRoomSchema = z.object({
+  isMuted: z.boolean().default(true),
+});
+
+export const adminMuteParticipantSchema = z.object({
+  targetUserId: z.string().optional(),
+  seatIndex: z.coerce.number().int().optional(),
+  isMuted: z.boolean().default(true),
+});
+
+export const adminKickUserSchema = z.object({
+  targetUserId: z.string().min(1, 'Target user ID is required'),
   reason: z.string().trim().max(500).optional(),
+});
+
+export const adminUpdateDpSchema = z.object({
+  coverImageUrl: z.string().max(1000).nullable().optional().or(z.literal('')),
 });
 
 export const roomIdParamSchema = z.object({
@@ -65,5 +80,10 @@ export default {
   occupySeatParamSchema,
   pinRoomSchema,
   adminCloseRoomSchema,
+  adminWarnRoomSchema,
+  adminMuteRoomSchema,
+  adminMuteParticipantSchema,
+  adminKickUserSchema,
+  adminUpdateDpSchema,
   roomIdParamSchema,
 };

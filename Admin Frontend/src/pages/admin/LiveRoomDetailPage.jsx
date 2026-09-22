@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Mic, MicOff, StopCircle, ShieldAlert, AlertTriangle, Image, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, Users, Mic, MicOff, StopCircle, ShieldAlert, AlertTriangle, Image, Trash2, Upload, RefreshCw } from 'lucide-react';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { DataTable } from '../../components/tables/DataTable';
@@ -12,8 +12,18 @@ import { ConfirmDialog, Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { useAuditLog } from '../../context/AuditLogContext';
-import { getLiveRoomById, endStream } from '../../services/modules/liveRooms.service';
+import {
+  getLiveRoomById,
+  endStream,
+  issueRoomWarning,
+  toggleRoomMute,
+  muteParticipant,
+  kickParticipant,
+  updateRoomCoverDp,
+  deleteRoomCoverDp,
+} from '../../services/modules/liveRooms.service';
 import { getLogsForTarget } from '../../services/modules/auditLogs.service';
+import { AgoraVideoPlayer } from '../../components/common/AgoraVideoPlayer';
 
 export function LiveRoomDetailPage() {
   const { id } = useParams();
@@ -31,6 +41,7 @@ export function LiveRoomDetailPage() {
   const [warningActive, setWarningActive] = useState(false);
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [elapsedDuration, setElapsedDuration] = useState('00:00');
 
   useEffect(() => {
     if (!id) return;
@@ -39,13 +50,14 @@ export function LiveRoomDetailPage() {
       .then((found) => {
         setRoom(found || null);
         if (found) {
+          setRoomMuted(Boolean(found.isMuted));
           const realParticipants = [];
           if (found.hostId || found.hostName) {
             realParticipants.push({
               id: found.hostId || 'host',
               name: found.hostName || 'Host',
               role: 'host',
-              micOn: true,
+              micOn: !found.isMuted,
               seatIndex: 0,
             });
           }
@@ -76,7 +88,7 @@ export function LiveRoomDetailPage() {
             });
           }
           setParticipants(realParticipants);
-          getLogsForTarget(found.id).then(data => {
+          getLogsForTarget(found.id).then((data) => {
             setHistory(data || []);
             setIsLoadingHistory(false);
           });
@@ -93,7 +105,27 @@ export function LiveRoomDetailPage() {
       .finally(() => setIsLoading(false));
   }, [id]);
 
+  useEffect(() => {
+    if (!room?.startedAt) return;
+    const start = new Date(room.startedAt).getTime();
+    const updateElapsed = () => {
+      const diffSec = Math.max(0, Math.floor((Date.now() - start) / 1000));
+      const mins = Math.floor(diffSec / 60);
+      const secs = diffSec % 60;
+      const hrs = Math.floor(mins / 60);
+      if (hrs > 0) {
+        setElapsedDuration(`${hrs}h ${mins % 60}m ${secs}s`);
+      } else {
+        setElapsedDuration(`${mins}m ${secs}s`);
+      }
+    };
+    updateElapsed();
+    const timer = setInterval(updateElapsed, 1000);
+    return () => clearInterval(timer);
+  }, [room?.startedAt]);
+
   const refreshHistory = () => {
+    if (!id) return;
     getLogsForTarget(id).then(setHistory);
   };
 
@@ -103,7 +135,12 @@ export function LiveRoomDetailPage() {
 
   const handleIssueWarning = async () => {
     const reasonText = warningReason.trim() || 'Warning issued by platform moderation.';
-    await addLog('ROOM_WARNING_ISSUED', room?.id, 'Live Rooms', `Warning issued to room "${room?.title}": ${reasonText}`);
+    try {
+      await issueRoomWarning(room?.id, reasonText);
+      await addLog('ROOM_WARNING_ISSUED', room?.id, 'Live Rooms', `Warning issued to room "${room?.title}": ${reasonText}`);
+    } catch (err) {
+      console.error('Failed to issue room warning:', err);
+    }
     setActiveWarningText(reasonText);
     setWarningActive(true);
     setWarningModalOpen(false);
@@ -116,22 +153,82 @@ export function LiveRoomDetailPage() {
 
   const handleToggleRoomMute = async () => {
     const nextState = !roomMuted;
-    await addLog('ROOM_MUTED_TOGGLE', room?.id, 'Live Rooms', `Room "${room?.title}" globally ${nextState ? 'muted' : 'unmuted'}`);
-    setRoomMuted(nextState);
+    try {
+      await toggleRoomMute(room?.id, nextState);
+      await addLog(nextState ? 'ROOM_MUTED' : 'ROOM_UNMUTED', room?.id, 'Live Rooms', `Room "${room?.title}" globally ${nextState ? 'muted' : 'unmuted'}`);
+      setRoomMuted(nextState);
+      setParticipants(participants.map((p) => ({ ...p, micOn: !nextState })));
+    } catch (err) {
+      console.error('Failed to toggle room mute:', err);
+    }
     refreshHistory();
   };
 
   const handleMuteParticipant = async (row) => {
-    const isMuting = row.micOn;
-    await addLog(isMuting ? 'PARTICIPANT_MUTED' : 'PARTICIPANT_UNMUTED', row.id, 'Live Rooms', `${isMuting ? 'Muted' : 'Unmuted'} participant ${row.name}`);
-    setParticipants(participants.map(p => p.id === row.id ? { ...p, micOn: !p.micOn } : p));
+    const nextMic = !row.micOn;
+    try {
+      await muteParticipant(room?.id, { targetUserId: row.id, seatIndex: row.seatIndex, isMuted: !nextMic });
+      await addLog(!nextMic ? 'PARTICIPANT_MUTED' : 'PARTICIPANT_UNMUTED', row.id, 'Live Rooms', `${!nextMic ? 'Muted' : 'Unmuted'} participant ${row.name}`);
+      setParticipants(participants.map((p) => (p.id === row.id ? { ...p, micOn: nextMic } : p)));
+    } catch (err) {
+      console.error('Failed to mute participant:', err);
+    }
     refreshHistory();
   };
 
   const handleKickParticipant = async (row) => {
-    await addLog('PARTICIPANT_KICKED', row.id, 'Live Rooms', `Kicked participant ${row.name} from live room`);
-    setParticipants(participants.filter(p => p.id !== row.id));
+    try {
+      await kickParticipant(room?.id, row.id, 'Participant removed by admin moderation');
+      await addLog('PARTICIPANT_KICKED', row.id, 'Live Rooms', `Kicked participant ${row.name} from live room`);
+      setParticipants(participants.filter((p) => p.id !== row.id));
+      if (row.role === 'host') {
+        setRoom((r) => (r ? { ...r, status: 'ended', viewers: 0 } : r));
+      }
+    } catch (err) {
+      console.error('Failed to kick participant:', err);
+    }
     refreshHistory();
+  };
+
+  const handleDeleteRoomDp = async () => {
+    try {
+      await deleteRoomCoverDp(room?.id);
+      await addLog('ROOM_DP_DELETED', room?.id, 'Live Rooms', `Deleted Room DP image for room "${room?.title}". Room record preserved.`);
+      setRoom({ ...room, coverImage: null, dpDeleted: true });
+    } catch (err) {
+      console.error('Failed to delete room DP:', err);
+    }
+    setDeleteDpModal(false);
+    refreshHistory();
+  };
+
+  const handleUpdateRoomDp = async () => {
+    if (!newDpUrl) return;
+    try {
+      await updateRoomCoverDp(room?.id, newDpUrl);
+      await addLog('ROOM_DP_UPDATED', room?.id, 'Live Rooms', `Updated Room DP image for room "${room?.title}".`);
+      setRoom({ ...room, coverImage: newDpUrl, dpDeleted: false });
+    } catch (err) {
+      console.error('Failed to update room DP:', err);
+    }
+    setEditDpModal(false);
+    setNewDpUrl('');
+    refreshHistory();
+  };
+
+  const handleForceClose = async () => {
+    setIsClosing(true);
+    try {
+      await endStream(room.id, 'Force closed by admin');
+      await addLog('ROOM_FORCE_CLOSED', room.id, 'Live Rooms', `Force closed room "${room.title}"`);
+      setRoom({ ...room, status: 'ended', viewers: 0 });
+      refreshHistory();
+    } catch (err) {
+      console.error('Failed to force close room:', err);
+    } finally {
+      setIsClosing(false);
+      setCloseModal(false);
+    }
   };
 
   if (isLoading) {
@@ -153,55 +250,42 @@ export function LiveRoomDetailPage() {
     );
   }
 
-  const handleDeleteRoomDp = async () => {
-    await addLog('ROOM_DP_DELETED', room.id, 'Live Rooms', `Deleted Room DP image for room "${room.title}". Room record preserved.`);
-    setRoom({ ...room, coverImage: null, dpDeleted: true });
-    setDeleteDpModal(false);
-    refreshHistory();
-  };
-
-  const handleUpdateRoomDp = async () => {
-    if (!newDpUrl) return;
-    await addLog('ROOM_DP_UPDATED', room.id, 'Live Rooms', `Updated Room DP image for room "${room.title}".`);
-    setRoom({ ...room, coverImage: newDpUrl, dpDeleted: false });
-    setEditDpModal(false);
-    setNewDpUrl('');
-    refreshHistory();
-  };
-
-  const handleForceClose = async () => {
-    setIsClosing(true);
-    try {
-      await endStream(room.id, 'Force closed by admin');
-      await addLog('ROOM_FORCE_CLOSED', room.id, 'Live Rooms', `Force closed room "${room.title}"`);
-      setRoom({ ...room, status: 'ended', viewers: 0 });
-      refreshHistory();
-    } finally {
-      setIsClosing(false);
-      setCloseModal(false);
-    }
-  };
-
   const participantsColumns = [
     { key: 'user', header: 'User', render: (row) => <span className="text-white font-medium">{row.name}</span> },
     { key: 'role', header: 'Role', render: (row) => <Badge variant={row.role === 'host' ? 'primary' : 'muted'}>{row.role}</Badge> },
-    { key: 'mic', header: 'Mic Status', render: (row) => (
-      row.micOn ? <div className="flex items-center gap-1.5 text-emerald-400"><Mic className="h-4 w-4"/> On</div> 
-                : <div className="flex items-center gap-1.5 text-slate-500"><MicOff className="h-4 w-4"/> Off</div>
-    ) },
-    { key: 'actions', header: 'Actions', render: (row) => (
-      <div className="flex gap-2">
-        <button onClick={() => handleMuteParticipant(row)} className={`text-xs hover:underline ${row.micOn ? 'text-amber-400' : 'text-slate-400'}`}>
-          {row.micOn ? 'Mute' : 'Unmute'}
-        </button>
-        <button onClick={() => handleKickParticipant(row)} className="text-xs text-red-400 hover:underline">Kick</button>
-      </div>
-    ) }
+    {
+      key: 'mic',
+      header: 'Mic Status',
+      render: (row) =>
+        row.micOn && !roomMuted ? (
+          <div className="flex items-center gap-1.5 text-emerald-400">
+            <Mic className="h-4 w-4" /> On
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 text-slate-500">
+            <MicOff className="h-4 w-4" /> Off
+          </div>
+        ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (row) => (
+        <div className="flex gap-2">
+          <button onClick={() => handleMuteParticipant(row)} className={`text-xs hover:underline ${row.micOn ? 'text-amber-400' : 'text-slate-400'}`}>
+            {row.micOn ? 'Mute' : 'Unmute'}
+          </button>
+          <button onClick={() => handleKickParticipant(row)} className="text-xs text-red-400 hover:underline">
+            Kick
+          </button>
+        </div>
+      ),
+    },
   ];
 
   const historyColumns = [
     { key: 'timestamp', header: 'Date', render: (row) => <span className="text-xs text-slate-400">{new Date(row.timestamp).toLocaleString()}</span> },
-    { key: 'action', header: 'Action', render: (row) => <span className={`text-xs font-bold text-amber-400`}>{row.action}</span> },
+    { key: 'action', header: 'Action', render: (row) => <span className="text-xs font-bold text-amber-400">{row.action}</span> },
     { key: 'operator', header: 'Operator', render: (row) => <span className="text-xs text-white">{row.operatorName}</span> },
     { key: 'reason', header: 'Details', render: (row) => <span className="text-xs text-slate-300 italic">{row.reason || '-'}</span> },
   ];
@@ -217,9 +301,11 @@ export function LiveRoomDetailPage() {
             <h1 className="text-2xl font-bold text-white">{room.title}</h1>
             <StatusBadge status={room.status} />
           </div>
-          <p className="text-sm text-slate-400">Hosted by {room.hostName} ({room.hostUsername})</p>
+          <p className="text-sm text-slate-400">
+            Hosted by {room.hostName} ({room.hostUsername})
+          </p>
         </div>
-        
+
         {room.status === 'active' && (
           <button
             onClick={() => setCloseModal(true)}
@@ -233,59 +319,35 @@ export function LiveRoomDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
           <Card>
-            <CardHeader title="Live Stream Live Monitor & Moderation" description="Real-time broadcast preview, audio status, and active overlay tools" />
+            <CardHeader title="Live Stream Live Monitor & Moderation" description="Real-time broadcast preview with live video stream, audio status, and active overlay tools" />
             <div className="bg-slate-950 aspect-video rounded-b-xl flex items-center justify-center border-t border-slate-700/60 relative overflow-hidden group">
-              {/* Background Cover Visual with Luxury Ambient Gradient */}
-              {room.coverImage && !room.dpDeleted ? (
-                <img
-                  src={room.coverImage}
-                  alt={room.title}
-                  className="absolute inset-0 w-full h-full object-cover opacity-45 filter blur-[2px] scale-105 transition-transform duration-700"
-                />
-              ) : (
-                <div className="absolute inset-0 bg-gradient-to-br from-purple-950/50 via-slate-950 to-indigo-950/40" />
-              )}
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent" />
+              {/* Agora Web RTC Live Video Monitor Player */}
+              <AgoraVideoPlayer
+                roomId={room.id}
+                hostName={room.hostName}
+                hostAvatar={room.hostAvatar}
+                coverImage={room.coverImage && !room.dpDeleted ? room.coverImage : null}
+                isLive={room.status === 'active'}
+                roomType={room.roomType}
+              />
 
-              {/* Top Stream Badges */}
-              <div className="absolute top-4 left-4 flex items-center gap-2 z-10">
+              {/* Top Stream Badges Overlay */}
+              <div className="absolute top-4 left-4 flex items-center gap-2 z-20 pointer-events-none">
                 <Badge variant="danger" className="animate-pulse flex items-center gap-1.5 shadow-lg shadow-red-500/20">
                   <span className="w-2 h-2 rounded-full bg-white animate-ping" />
                   {room.status === 'active' ? 'LIVE' : room.status.toUpperCase()}
                 </Badge>
                 <Badge variant="muted" className="bg-black/60 text-white backdrop-blur-md flex gap-1.5 items-center border border-white/10">
-                  <Users className="h-3.5 w-3.5 text-indigo-400"/> {room.viewers} Viewers
+                  <Users className="h-3.5 w-3.5 text-indigo-400" /> {room.viewers} Viewers
                 </Badge>
                 <Badge variant="muted" className="bg-black/60 text-amber-300 backdrop-blur-md border border-amber-400/20 capitalize">
                   {room.roomType === 'party' ? '🎙️ Audio Party' : '📹 Live Stream'}
                 </Badge>
               </div>
 
-              {/* Host Stage Centerpiece */}
-              <div className="flex flex-col items-center z-10 text-center px-4">
-                <div className="relative mb-3">
-                  <div className="w-20 h-20 rounded-full border-2 border-amber-400/80 p-1 shadow-xl shadow-amber-500/20 bg-slate-900/80 backdrop-blur-md flex items-center justify-center">
-                    {room.hostAvatar ? (
-                      <img src={room.hostAvatar} alt={room.hostName} className="w-full h-full rounded-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full rounded-full bg-indigo-600 flex items-center justify-center text-xl font-bold text-white">
-                        {(room.hostName || 'H').charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                  {room.status === 'active' && (
-                    <span className="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-emerald-500 border-2 border-slate-950 flex items-center justify-center">
-                      <Mic className="w-3 h-3 text-white" />
-                    </span>
-                  )}
-                </div>
-                <h3 className="text-white font-bold text-base tracking-wide drop-shadow-md">{room.hostName}</h3>
-                <p className="text-slate-300 text-xs mt-0.5">@{room.hostUsername} • {room.category}</p>
-              </div>
-
               {/* Active Admin Warning Overlay */}
               {warningActive && (
-                <div className="absolute inset-x-6 top-1/2 transform -translate-y-1/2 bg-amber-600/95 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center text-center gap-2 shadow-2xl shadow-amber-500/40 z-20 animate-bounce border-2 border-amber-300">
+                <div className="absolute inset-x-6 top-1/2 transform -translate-y-1/2 bg-amber-600/95 text-white p-4 rounded-xl font-bold flex flex-col items-center justify-center text-center gap-2 shadow-2xl shadow-amber-500/40 z-30 animate-bounce border-2 border-amber-300">
                   <div className="flex items-center gap-2 text-lg">
                     <AlertTriangle className="h-7 w-7 text-white animate-pulse" />
                     <span>MODERATION WARNING BROADCASTED</span>
@@ -298,7 +360,7 @@ export function LiveRoomDetailPage() {
 
               {/* Active Mute Overlay */}
               {roomMuted && (
-                <div className="absolute bottom-4 left-4 bg-red-600/95 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg z-10 border border-red-400">
+                <div className="absolute bottom-4 left-4 bg-red-600/95 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg z-20 border border-red-400">
                   <MicOff className="h-4 w-4" /> ROOM AUDIO MUTED BY ADMIN
                 </div>
               )}
@@ -307,14 +369,9 @@ export function LiveRoomDetailPage() {
 
           <Card>
             <CardHeader title="Participants" description="Users currently in the room" />
-            <DataTable
-              columns={participantsColumns}
-              data={participants}
-              isLoading={false}
-              pagination={null}
-            />
+            <DataTable columns={participantsColumns} data={participants} isLoading={false} pagination={null} />
           </Card>
-          
+
           <Card>
             <CardHeader title="Moderation History" description="Recent administrative actions taken on this room" />
             <DataTable
@@ -337,7 +394,9 @@ export function LiveRoomDetailPage() {
                 {room.coverImage && !room.dpDeleted ? (
                   <div className="relative w-full h-32 rounded-lg overflow-hidden border border-slate-700">
                     <img src={room.coverImage} alt="Room DP" className="w-full h-full object-cover" />
-                    <Badge variant="success" className="absolute top-2 right-2">Active DP</Badge>
+                    <Badge variant="success" className="absolute top-2 right-2">
+                      Active DP
+                    </Badge>
                   </div>
                 ) : (
                   <div className="w-full h-32 rounded-lg border-2 border-dashed border-slate-700 flex flex-col items-center justify-center text-slate-500 bg-slate-900/60">
@@ -349,21 +408,11 @@ export function LiveRoomDetailPage() {
               </div>
 
               <div className="flex gap-2 pt-1">
-                <Button
-                  variant="outline"
-                  size="xs"
-                  className="flex-1"
-                  onClick={() => setEditDpModal(true)}
-                >
+                <Button variant="outline" size="xs" className="flex-1" onClick={() => setEditDpModal(true)}>
                   <Upload className="h-3.5 w-3.5 mr-1 text-gold-400" /> Change DP
                 </Button>
                 {room.coverImage && !room.dpDeleted && (
-                  <Button
-                    variant="danger"
-                    size="xs"
-                    className="flex-1"
-                    onClick={() => setDeleteDpModal(true)}
-                  >
+                  <Button variant="danger" size="xs" className="flex-1" onClick={() => setDeleteDpModal(true)}>
                     <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete DP
                   </Button>
                 )}
@@ -376,19 +425,19 @@ export function LiveRoomDetailPage() {
             <div className="p-4 space-y-4">
               <div>
                 <p className="text-xs text-slate-500 mb-1">Category</p>
-                <Badge variant="default">{room.category}</Badge>
+                <Badge variant="default">{room.category || 'General'}</Badge>
               </div>
               <div>
                 <p className="text-xs text-slate-500 mb-1">Region</p>
-                <p className="text-sm text-white">{room.region}</p>
+                <p className="text-sm font-medium text-white">{room.region || room.country || 'Global (PK)'}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500 mb-1">Duration</p>
-                <p className="text-sm text-white">{room.duration}</p>
+                <p className="text-xs text-slate-500 mb-1">Stream Duration</p>
+                <p className="text-sm font-semibold text-emerald-400 font-mono">{elapsedDuration || room.duration || '00:00'}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 mb-1">Total Gifts Received</p>
-                <p className="text-sm font-medium text-purple-400">{room.giftsReceived} coins</p>
+                <p className="text-sm font-bold text-purple-400">{room.giftsReceived || 0} coins</p>
               </div>
             </div>
           </Card>
@@ -403,7 +452,12 @@ export function LiveRoomDetailPage() {
                 <ShieldAlert className="h-5 w-5" />
                 <span className="text-xs font-medium">Issue Warning</span>
               </button>
-              <button onClick={handleToggleRoomMute} className={`flex flex-col items-center justify-center gap-2 p-3 rounded-lg border transition-colors ${roomMuted ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'}`}>
+              <button
+                onClick={handleToggleRoomMute}
+                className={`flex flex-col items-center justify-center gap-2 p-3 rounded-lg border transition-colors ${
+                  roomMuted ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+              >
                 {roomMuted ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
                 <span className="text-xs font-medium">{roomMuted ? 'Unmute Room' : 'Mute Room'}</span>
               </button>
@@ -414,14 +468,10 @@ export function LiveRoomDetailPage() {
 
       {/* Issue Warning Modal */}
       {warningModalOpen && (
-        <Modal
-          isOpen={true}
-          onClose={() => setWarningModalOpen(false)}
-          title="Issue Stream Moderation Warning"
-        >
+        <Modal isOpen={true} onClose={() => setWarningModalOpen(false)} title="Issue Stream Moderation Warning">
           <div className="space-y-4">
             <p className="text-xs text-slate-300">
-              Broadcast an authoritative administrative warning to <strong className="text-white">"{room.title}"</strong>. The warning will be displayed on the live broadcast stage and logged in the moderation audit trail:
+              Broadcast an authoritative administrative warning to <strong className="text-white">"{room.title}"</strong>. The warning will be displayed on the live broadcast stage on mobile and logged in the moderation audit trail:
             </p>
             <div className="space-y-2">
               <label className="text-xs font-medium text-slate-400">Select Warning Preset or Enter Custom Notice</label>
@@ -449,17 +499,11 @@ export function LiveRoomDetailPage() {
                 onChange={(e) => setWarningReason(e.target.value)}
               />
             </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setWarningModalOpen(false)}>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" size="sm" onClick={() => setWarningModalOpen(false)}>
                 Cancel
               </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                className="bg-amber-600 hover:bg-amber-500 text-white"
-                onClick={handleIssueWarning}
-                disabled={!warningReason.trim()}
-              >
+              <Button variant="primary" size="sm" onClick={handleIssueWarning} className="bg-amber-600 hover:bg-amber-500 text-white">
                 Broadcast Warning
               </Button>
             </div>
@@ -467,57 +511,56 @@ export function LiveRoomDetailPage() {
         </Modal>
       )}
 
-      <ConfirmDialog
-        isOpen={closeModal}
-        onClose={() => setCloseModal(false)}
-        onConfirm={handleForceClose}
-        title="Force Close Room"
-        description={`Are you sure you want to force close "${room.title}"? This will end the live stream immediately.`}
-        confirmLabel="Force Close"
-        confirmVariant="danger"
-        isLoading={isClosing}
-      />
-
-      {/* Delete Room DP Confirmation Modal */}
-      <ConfirmDialog
-        isOpen={deleteDpModal}
-        onClose={() => setDeleteDpModal(false)}
-        onConfirm={handleDeleteRoomDp}
-        title="Delete Room Display Picture (DP)"
-        description={`Are you sure you want to delete the Display Picture for room "${room.title}"? The cover image will be removed and reset to the default placeholder. The room record, host, and live stream remain active.`}
-        confirmLabel="Delete Room DP"
-        confirmVariant="danger"
-      />
-
       {/* Edit Room DP Modal */}
       {editDpModal && (
-        <Modal
-          isOpen={true}
-          onClose={() => setEditDpModal(false)}
-          title="Update Room Display Picture"
-        >
+        <Modal isOpen={true} onClose={() => setEditDpModal(false)} title="Change Room Display Picture (DP)">
           <div className="space-y-4">
-            <p className="text-xs text-slate-300">
-              Enter a new image URL for Room <strong className="text-white">"{room.title}"</strong>:
-            </p>
+            <p className="text-xs text-slate-300">Enter a valid image URL for the room display picture:</p>
             <Input
-              label="Image URL"
-              placeholder="https://images.unsplash.com/..."
+              type="url"
+              placeholder="https://example.com/cover-image.jpg"
               value={newDpUrl}
               onChange={(e) => setNewDpUrl(e.target.value)}
-              required
             />
-            <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setEditDpModal(false)}>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" size="sm" onClick={() => setEditDpModal(false)}>
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleUpdateRoomDp} disabled={!newDpUrl}>
-                Save Room DP
+              <Button variant="primary" size="sm" onClick={handleUpdateRoomDp} disabled={!newDpUrl.trim()}>
+                Save DP
               </Button>
             </div>
           </div>
         </Modal>
       )}
+
+      {/* Delete DP Confirmation */}
+      {deleteDpModal && (
+        <ConfirmDialog
+          isOpen={true}
+          title="Delete Room Display Picture"
+          message={`Are you sure you want to remove the cover image for "${room.title}"? The room will remain active with default placeholder styling.`}
+          confirmLabel="Delete DP"
+          variant="danger"
+          onConfirm={handleDeleteRoomDp}
+          onCancel={() => setDeleteDpModal(false)}
+        />
+      )}
+
+      {/* Force Close Confirmation */}
+      {closeModal && (
+        <ConfirmDialog
+          isOpen={true}
+          title="Force Close Live Room"
+          message={`Are you sure you want to terminate "${room.title}" immediately? All viewers will be disconnected.`}
+          confirmLabel={isClosing ? 'Closing...' : 'Force Close Stream'}
+          variant="danger"
+          onConfirm={handleForceClose}
+          onCancel={() => setCloseModal(false)}
+        />
+      )}
     </div>
   );
 }
+
+export default LiveRoomDetailPage;

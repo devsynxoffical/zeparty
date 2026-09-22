@@ -40,6 +40,23 @@ export async function getLiveRoomById(id) {
   const r = res.data?.data;
   if (!r) return null;
   const isParty = r.roomType === 'AUDIO_PARTY' || r.roomType === 'party';
+
+  // Calculate duration string
+  let durationStr = '00:00';
+  if (r.createdAt) {
+    const start = new Date(r.createdAt).getTime();
+    const now = Date.now();
+    const diffSec = Math.max(0, Math.floor((now - start) / 1000));
+    const mins = Math.floor(diffSec / 60);
+    const secs = diffSec % 60;
+    const hrs = Math.floor(mins / 60);
+    if (hrs > 0) {
+      durationStr = `${hrs}h ${mins % 60}m ${secs}s`;
+    } else {
+      durationStr = `${mins}m ${secs}s`;
+    }
+  }
+
   return {
     id: r.id,
     title: r.title,
@@ -50,11 +67,16 @@ export async function getLiveRoomById(id) {
     hostAvatar: r.creator?.avatarUrl || r.creator?.profile?.avatarUrl || '',
     coverImage: r.coverImageUrl || r.coverUrl || r.coverImage || '',
     country: r.creator?.countryCode || r.countryCode || 'PK',
+    region: r.creator?.countryCode || r.countryCode || 'PK',
     category: r.category || 'General',
     viewers: Number(r.currentViewersCount || r.activeMembersCount || 0),
+    giftsReceived: Number(r.giftsReceivedCoins || r.totalGifts || 0),
+    duration: durationStr,
     status: (r.status || 'LIVE').toLowerCase() === 'live' ? 'active' : (r.status || 'active').toLowerCase(),
     isPinned: Boolean(r.isPinnedTop || r.isPinned),
+    isMuted: Boolean(r.isMuted),
     startedAt: r.createdAt,
+    agoraChannelName: r.agoraChannelName,
     members: r.members || [],
     seats: r.seats || [],
     creator: r.creator,
@@ -76,6 +98,54 @@ export async function endStream(id, reason) {
     reason: reason || 'Stream closed by administrator',
   });
   return res.data;
+}
+
+export async function issueRoomWarning(id, reason) {
+  const res = await apiClient.post(`/v1/admin/rooms/${id}/warn`, {
+    reason: reason || 'Community Guidelines Violation Warning',
+  });
+  return res.data;
+}
+
+export async function toggleRoomMute(id, isMuted) {
+  const res = await apiClient.post(`/v1/admin/rooms/${id}/mute`, {
+    isMuted: Boolean(isMuted),
+  });
+  return res.data;
+}
+
+export async function muteParticipant(id, { targetUserId, seatIndex, isMuted }) {
+  const res = await apiClient.post(`/v1/admin/rooms/${id}/mute-participant`, {
+    targetUserId,
+    seatIndex,
+    isMuted: Boolean(isMuted),
+  });
+  return res.data;
+}
+
+export async function kickParticipant(id, targetUserId, reason) {
+  const res = await apiClient.post(`/v1/admin/rooms/${id}/kick`, {
+    targetUserId,
+    reason: reason || 'Participant removed by admin moderation',
+  });
+  return res.data;
+}
+
+export async function updateRoomCoverDp(id, coverImageUrl) {
+  const res = await apiClient.post(`/v1/admin/rooms/${id}/dp`, {
+    coverImageUrl,
+  });
+  return res.data;
+}
+
+export async function deleteRoomCoverDp(id) {
+  const res = await apiClient.delete(`/v1/admin/rooms/${id}/dp`);
+  return res.data;
+}
+
+export async function getAdminAgoraToken(id) {
+  const res = await apiClient.get(`/v1/admin/rooms/${id}/agora-token`);
+  return res.data?.data;
 }
 
 export async function muteHost(id, durationMinutes) {
@@ -101,6 +171,13 @@ export default {
   pinRoom,
   unpinRoom,
   endStream,
+  issueRoomWarning,
+  toggleRoomMute,
+  muteParticipant,
+  kickParticipant,
+  updateRoomCoverDp,
+  deleteRoomCoverDp,
+  getAdminAgoraToken,
   muteHost,
   banRoom,
 };

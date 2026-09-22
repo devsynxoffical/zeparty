@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/material.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
@@ -59,8 +58,21 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   StreamSubscription? _socketLikeSub;
   StreamSubscription? _remoteUsersSub;
   StreamSubscription? _firstFrameSub;
+  StreamSubscription? _kickedSub;
 
   void _toggleMic() {
+    final liveProv = context.read<LiveProvider>();
+    if (liveProv.isRoomMuted && !_isMicMuted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Room microphone is currently locked by admin moderation.'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isMicMuted = !_isMicMuted);
     try {
       AgoraRtcService().muteLocalAudio(_isMicMuted);
@@ -119,6 +131,38 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
         final dy = 350.0 + rand.nextDouble() * 150.0;
         if (mounted) {
           _triggerFloatingHeartAt(Offset(dx, dy));
+        }
+      });
+
+      _kickedSub = liveProv.onKickedReceived.listen((reason) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => AlertDialog(
+              backgroundColor: const Color(0xFF1E1B4B),
+              title: const Row(
+                children: [
+                  Icon(Icons.shield, color: Colors.amber),
+                  SizedBox(width: 8),
+                  Text('Moderation Notice', style: TextStyle(color: Colors.white, fontSize: 16)),
+                ],
+              ),
+              content: Text(
+                reason,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                    if (mounted) Navigator.of(context).pop();
+                  },
+                  child: const Text('OK', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          );
         }
       });
 
@@ -342,6 +386,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     _socketLikeSub?.cancel();
     _remoteUsersSub?.cancel();
     _firstFrameSub?.cancel();
+    _kickedSub?.cancel();
     _durationTimer?.cancel();
     _chatController.dispose();
     try {
@@ -414,6 +459,63 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
           // TikTok-Style Live Gifting Animation Overlay
           TikTokGiftOverlay(roomId: widget.room.id),
+
+          // Real-time Moderation Warning Banner Overlay
+          if (liveProvider.activeWarningMessage != null)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 70,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFD97706), Color(0xFFB45309)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.amber.withValues(alpha: 0.4),
+                      blurRadius: 16,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                  border: Border.all(color: Colors.amberAccent, width: 1.5),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'MODERATION WARNING',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            liveProvider.activeWarningMessage!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // Floating Hearts Stack
           for (final heart in _hearts)
