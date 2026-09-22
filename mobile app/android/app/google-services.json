@@ -9,6 +9,25 @@
       "client_info": {
         "mobilesdk_app_id": "1:13274132785:android:30c7463ffbb7de93bc8010",
         "android_client_info": {
+          "package_name": "com.zeparty.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAAZRAw83GcwurMrWhbdwmbn5xj7mXvywI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:13274132785:android:30c7463ffbb7de93bc8010",
+        "android_client_info": {
           "package_name": "com.example.live_stream_app"
         }
       },

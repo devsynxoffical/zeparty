@@ -17,7 +17,7 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.example.live_stream_app"
+    namespace = "com.zeparty.app"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -40,7 +40,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.live_stream_app"
+        applicationId = "com.zeparty.app"
         minSdk = 24
         targetSdk = 36
         versionCode = flutter.versionCode
