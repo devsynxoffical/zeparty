@@ -97,13 +97,6 @@ class SocketService {
   Stream<Map<String, dynamic>> get roomUserMutedStream => onRoomUserMuted;
   Stream<Map<String, dynamic>> get roomEmojiStream => onRoomEmoji;
   Stream<Map<String, dynamic>> get roomSnapshotStream => onRoomSnapshot;
-  Stream<Map<String, dynamic>> get roomChatMessageStream => onRoomChatMessage;
-  Stream<Map<String, dynamic>> get userKickedStream => onUserKicked;
-  Stream<Map<String, dynamic>> get roomLikeStream => onRoomLike;
-  Stream<Map<String, dynamic>> get roomWarningStream => onRoomWarning;
-  Stream<Map<String, dynamic>> get roomMutedStream => onRoomMuted;
-  Stream<Map<String, dynamic>> get roomUserMutedStream => onRoomUserMuted;
-  Stream<Map<String, dynamic>> get roomEmojiStream => onRoomEmoji;
 
   // Getters - Social
   Stream<Map<String, dynamic>> get onPostCreated => _postCreatedController.stream;

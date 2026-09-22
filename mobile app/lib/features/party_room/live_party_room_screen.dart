@@ -38,6 +38,7 @@ import '../../widgets/emoji_reaction_overlay.dart';
 import '../../widgets/tiktok_user_join_banner.dart';
 import '../../providers/emoji_reaction_provider.dart';
 import '../profile/user_profile_details_screen.dart';
+import '../messages/chat_screen.dart';
 
 class LivePartyRoomScreen extends StatefulWidget {
   final LiveRoomModel room;

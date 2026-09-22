@@ -20,6 +20,7 @@ import '../../widgets/emoji_reaction_overlay.dart';
 import '../../widgets/tiktok_user_join_banner.dart';
 import '../../widgets/emoji_picker_sheet.dart';
 import '../../widgets/tiktok_gift_overlay.dart';
+import 'widgets/high_value_announcement.dart';
 import '../../providers/emoji_reaction_provider.dart';
 import '../../providers/live_gift_provider.dart';
 import '../../core/services/room_share_service.dart';
