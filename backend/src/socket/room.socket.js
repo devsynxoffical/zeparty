@@ -258,21 +258,33 @@ export async function onSocketDisconnect(socket) {
       const { isLastSocket } = await presenceService.removeSocketFromRoom(roomId, userId, socket.id);
       if (isLastSocket) {
         let updatedViewerCount = 0;
+        let roomEnded = false;
         try {
           const leaveResult = await roomService.leaveRoom(roomId, userId);
-          updatedViewerCount = leaveResult.currentViewersCount;
+          updatedViewerCount = leaveResult.currentViewersCount || 0;
+          if (leaveResult.status === 'ENDED') {
+            roomEnded = true;
+          }
         } catch {}
 
         if (socket.to) {
-          socket.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_USER_LEFT, {
-            roomId,
-            userId,
-          });
+          if (roomEnded) {
+            socket.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_CLOSED, {
+              roomId,
+              status: 'ENDED',
+              reason: 'HOST_DISCONNECTED',
+            });
+          } else {
+            socket.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_USER_LEFT, {
+              roomId,
+              userId,
+            });
 
-          socket.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, {
-            roomId,
-            viewerCount: updatedViewerCount,
-          });
+            socket.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, {
+              roomId,
+              viewerCount: updatedViewerCount,
+            });
+          }
         }
       }
     } catch {}

@@ -394,14 +394,14 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
     },
   });
 
-  const memberCount = await db.roomMember.count({
-    where: { roomId },
-  });
+  const isHostLeaving = room.creatorUserId === userId;
+  const shouldEndRoom = isHostLeaving || memberCount === 0;
 
   return await db.room.update({
     where: { id: roomId },
     data: {
-      currentViewersCount: memberCount,
+      currentViewersCount: shouldEndRoom ? 0 : memberCount,
+      ...(shouldEndRoom ? { status: 'ENDED' } : {}),
     },
   });
 }
