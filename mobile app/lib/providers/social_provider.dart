@@ -46,14 +46,27 @@ class SocialComment {
         name = rawUser['displayName']?.toString() ??
             rawUser['name']?.toString() ??
             rawUser['username']?.toString() ??
-            'User';
+            '';
       }
-      avatar = rawUser['avatarUrl']?.toString() ?? '';
+      avatar = rawUser['avatarUrl']?.toString() ?? (profile is Map ? profile['avatarUrl']?.toString() ?? '' : '');
       authorId = rawUser['id']?.toString() ?? '';
     }
 
+    if (name.isEmpty) {
+      name = json['authorName']?.toString() ??
+          json['authorDisplayName']?.toString() ??
+          json['authorUsername']?.toString() ??
+          'User';
+    }
+    if (avatar.isEmpty) {
+      avatar = json['authorAvatar']?.toString() ?? json['avatarUrl']?.toString() ?? '';
+    }
+    if (authorId.isEmpty) {
+      authorId = json['authorId']?.toString() ?? json['userId']?.toString() ?? '';
+    }
+
     return SocialComment(
-      id: json['id']?.toString() ?? '',
+      id: json['id']?.toString() ?? json['commentId']?.toString() ?? '',
       authorId: authorId,
       authorName: name.isNotEmpty ? name : 'User',
       authorAvatar: avatar,
@@ -158,14 +171,23 @@ class SocialProvider extends ChangeNotifier {
         final postId = data['postId']?.toString();
         if (postId != null) {
           final comment = SocialComment.fromJson(Map<String, dynamic>.from(data));
+          if (comment.text.trim().isEmpty) return;
           final current = _postComments[postId] ?? [];
-          _postComments[postId] = [comment, ...current];
-          // Increment comment count on post
-          final idx = _posts.indexWhere((p) => p.id == postId);
-          if (idx != -1) {
-            _posts[idx] = _posts[idx].copyWith(comments: _posts[idx].comments + 1);
+
+          // Deduplicate if already present (e.g. from local optimistic insert)
+          final exists = current.any((c) =>
+              (comment.id.isNotEmpty && c.id == comment.id) ||
+              (c.text == comment.text && c.authorId == comment.authorId && DateTime.now().difference(c.createdAt).inSeconds.abs() < 4));
+
+          if (!exists) {
+            _postComments[postId] = [comment, ...current];
+            // Increment comment count on post
+            final idx = _posts.indexWhere((p) => p.id == postId);
+            if (idx != -1) {
+              _posts[idx] = _posts[idx].copyWith(comments: _posts[idx].comments + 1);
+            }
+            notifyListeners();
           }
-          notifyListeners();
         }
       } catch (_) {}
     }));
@@ -189,13 +211,15 @@ class SocialProvider extends ChangeNotifier {
 
   void _updatePostLike(Map<String, dynamic> data, {required bool isLiked}) {
     final postId = data['postId']?.toString() ?? data['id']?.toString();
-    final likesCount = data['likesCount'];
+    final rawLikesCount = data['likesCount'];
     if (postId == null) return;
     final idx = _posts.indexWhere((p) => p.id == postId);
     if (idx != -1) {
-      final newCount = likesCount is int
-          ? likesCount
-          : (_posts[idx].likes + (isLiked ? 1 : -1)).clamp(0, 999999999);
+      final newCount = rawLikesCount is int
+          ? rawLikesCount
+          : (rawLikesCount != null
+              ? int.tryParse(rawLikesCount.toString()) ?? (_posts[idx].likes + (isLiked ? 1 : -1))
+              : (_posts[idx].likes + (isLiked ? 1 : -1))).clamp(0, 999999999);
       _posts[idx] = _posts[idx].copyWith(likes: newCount);
       notifyListeners();
     }

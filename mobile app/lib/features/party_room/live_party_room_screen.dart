@@ -26,7 +26,6 @@ import 'widgets/room_info_sheet.dart';
 import 'widgets/room_type_selector_sheet.dart';
 import 'widgets/room_entry_announcement_banner.dart';
 import 'widgets/room_entry_mount_banner.dart';
-import '../../core/utils/noble_badge_helper.dart';
 import 'widgets/effects_settings_sheet.dart';
 import 'widgets/mic_seat_management_sheet.dart';
 import 'widgets/in_room_profile_card_sheet.dart';
@@ -34,6 +33,7 @@ import 'widgets/expanded_message_panel.dart';
 import '../../widgets/multi_role_seat_grid.dart';
 import '../../widgets/svip_entry_banner.dart';
 import '../live/widgets/high_value_announcement.dart';
+import '../../widgets/animated_live_comment_item.dart';
 import '../../widgets/emoji_reaction_overlay.dart';
 import '../../widgets/tiktok_user_join_banner.dart';
 import '../../providers/emoji_reaction_provider.dart';
@@ -120,13 +120,25 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   }
 
   void _leaveRoom() {
+    final provider = Provider.of<LivePartyProvider>(context, listen: false);
+    final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+    final isHost = widget.room.host.id == currentUser.id || widget.room.creatorUserId == currentUser.id;
+
     showDialog(
       context: context,
       builder: (d) => AlertDialog(
         backgroundColor: const Color(0xFF1E1B2E),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Leave Party?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        content: const Text('Are you sure you want to leave this party room?', style: TextStyle(color: Colors.white70)),
+        title: Text(
+          isHost ? 'End Party Room?' : 'Leave Party?',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          isHost
+              ? 'Are you sure you want to end this live party room? All participants will be disconnected and the live stream will close.'
+              : 'Are you sure you want to leave this party room?',
+          style: const TextStyle(color: Colors.white70),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(d),
@@ -138,12 +150,18 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(d);
-              Provider.of<LivePartyProvider>(context, listen: false).leaveParty();
-              Navigator.pop(context);
+              if (isHost) {
+                await provider.closeRoom();
+              } else {
+                await provider.leaveParty();
+              }
+              if (mounted) {
+                Navigator.pop(context);
+              }
             },
-            child: const Text('Leave'),
+            child: Text(isHost ? 'End Live' : 'Leave'),
           ),
         ],
       ),
@@ -179,18 +197,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
       final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
       partyProv.sendMessage(user, text);
-
-      final participant = partyProv.participants.where((p) => p.user.id == user.id && p.seatNumber != null).firstOrNull;
-      final seatId = participant?.seatNumber;
-
-      Provider.of<EmojiReactionProvider>(context, listen: false).sendReaction(
-        roomId: widget.room.id,
-        senderId: user.id,
-        emoji: text,
-        seatId: seatId,
-        senderName: user.name,
-      );
-
       _chatController.clear();
       Future.delayed(const Duration(milliseconds: 100), () {
         if (_chatScrollController.hasClients) {
@@ -770,202 +776,30 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         
         final participantInfo = provider.participants.where((p) => p.user.id == msg.sender.id).firstOrNull;
         final isMod = participantInfo?.role == ParticipantRole.moderator;
-        final isVip = msg.sender.wealthLevel >= 10; // Mock VIP logic based on level
-
-        if (isSystem) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
-                ),
-                child: Text(
-                  msg.text,
-                  style: const TextStyle(color: Colors.amber, fontSize: 11, fontStyle: FontStyle.italic),
-                ),
-              ),
-            ),
-          );
-        }
+        final isVip = msg.sender.wealthLevel >= 10 || msg.sender.isVip;
 
         final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
         final isHost = widget.room.host.id == currentUser.id;
         final canManage = isHost || provider.participants.any((p) => p.user.id == currentUser.id && p.role == ParticipantRole.moderator);
 
-        // ── Module 05: Gift Activity Message Custom Renderer ──
-        if (msg.isGiftMessage && msg.receiver != null) {
-          final senderPart = provider.participants.where((p) => p.user.id == msg.sender.id).firstOrNull ??
-              PartyParticipantModel(user: msg.sender, joinedAt: DateTime.now());
-          final receiverPart = provider.participants.where((p) => p.user.id == msg.receiver!.id).firstOrNull ??
-              PartyParticipantModel(user: msg.receiver!, joinedAt: DateTime.now());
-
-          final senderName = msg.sender.name.length > 18 ? '${msg.sender.name.substring(0, 15)}...' : msg.sender.name;
-          final receiverName = msg.receiver!.name.length > 18 ? '${msg.receiver!.name.substring(0, 15)}...' : msg.receiver!.name;
-          final giftName = msg.giftName ?? 'Gift';
-          final giftIcon = msg.giftIcon ?? '🌹';
-          final qty = msg.quantity ?? 1;
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.purple.shade900.withValues(alpha: 0.6),
-                    Colors.pink.shade900.withValues(alpha: 0.6),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.5), width: 1),
-                boxShadow: [
-                  BoxShadow(color: Colors.pinkAccent.withValues(alpha: 0.2), blurRadius: 6),
-                ],
-              ),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => _showParticipantSheet(context, senderPart, provider, Theme.of(context).brightness == Brightness.dark, canManage),
-                    child: CircleAvatar(
-                      radius: 12,
-                      backgroundImage: NetworkImage(msg.sender.avatarUrl),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: RichText(
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      text: TextSpan(
-                        children: [
-                          TextSpan(
-                            text: senderName,
-                            style: const TextStyle(
-                              color: Colors.amberAccent,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                            recognizer: TapGestureRecognizer()
-                              ..onTap = () => _showParticipantSheet(context, senderPart, provider, Theme.of(context).brightness == Brightness.dark, canManage),
-                          ),
-                          TextSpan(
-                            text: ' sent $qty × $giftName $giftIcon to ',
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                          TextSpan(
-                            text: receiverName,
-                            style: const TextStyle(
-                              color: Colors.cyanAccent,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                            recognizer: TapGestureRecognizer()
-                              ..onTap = () => _showParticipantSheet(context, receiverPart, provider, Theme.of(context).brightness == Brightness.dark, canManage),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-
-        return GestureDetector(
+        return AnimatedLiveCommentItem(
+          key: ValueKey(msg.id),
+          senderId: msg.sender.id,
+          senderName: msg.sender.name.isNotEmpty ? msg.sender.name : msg.sender.username,
+          avatarUrl: msg.sender.avatarUrl,
+          text: msg.text,
+          isHost: isHostMsg,
+          isMod: isMod,
+          isVip: isVip,
+          isSystem: isSystem,
+          isGift: msg.isGiftMessage,
+          nobleTitle: msg.sender.nobleTitle,
+          wealthLevel: msg.sender.wealthLevel,
           onTap: () {
             final participant = provider.participants.where((p) => p.user.id == msg.sender.id).firstOrNull ??
                 PartyParticipantModel(user: msg.sender, joinedAt: DateTime.now());
             _showParticipantSheet(context, participant, provider, Theme.of(context).brightness == Brightness.dark, canManage);
           },
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CircleAvatar(
-                  radius: 12,
-                  backgroundImage: NetworkImage(msg.sender.avatarUrl),
-                ),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isHostMsg
-                          ? const Color(0xFF8A2387).withValues(alpha: 0.35)
-                          : (isMod ? Colors.blue.withValues(alpha: 0.2) : Colors.black.withValues(alpha: 0.45)),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isHostMsg
-                            ? Colors.amber.withValues(alpha: 0.3)
-                            : (isMod ? Colors.blue.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.08)),
-                      ),
-                    ),
-                    child: RichText(
-                      text: TextSpan(
-                        children: [
-                          if (isHostMsg)
-                            WidgetSpan(
-                              alignment: PlaceholderAlignment.middle,
-                              child: Container(
-                                margin: const EdgeInsets.only(right: 4),
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(color: Colors.amber, borderRadius: BorderRadius.circular(4)),
-                                child: const Text('Host', style: TextStyle(color: Colors.black, fontSize: 8, fontWeight: FontWeight.bold)),
-                              ),
-                            )
-                          else if (isMod)
-                            WidgetSpan(
-                              alignment: PlaceholderAlignment.middle,
-                              child: Container(
-                                margin: const EdgeInsets.only(right: 4),
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(color: Colors.blueAccent, borderRadius: BorderRadius.circular(4)),
-                                child: const Text('Admin', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
-                              ),
-                            )
-                          else if (isVip)
-                            WidgetSpan(
-                              alignment: PlaceholderAlignment.middle,
-                              child: Container(
-                                margin: const EdgeInsets.only(right: 4),
-                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(gradient: const LinearGradient(colors: [Colors.purple, Colors.pink]), borderRadius: BorderRadius.circular(4)),
-                                child: const Text('VIP', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
-                              ),
-                            ),
-                          WidgetSpan(
-                            alignment: PlaceholderAlignment.middle,
-                            child: NobleBadgeChip(user: msg.sender, fontSize: 8),
-                          ),
-                          TextSpan(
-                            text: '${msg.sender.name}: ',
-                            style: TextStyle(
-                              color: NobleBadgeHelper.getColoredNicknameColor(
-                                NobleBadgeHelper.getTierFromTitle(msg.sender.nobleTitle),
-                              ),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                          TextSpan(
-                            text: msg.text,
-                            style: const TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
         );
       },
     );

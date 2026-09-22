@@ -305,11 +305,13 @@ export async function likePost(postId, userId, db = prisma) {
     await socialRepository.createLike({ postId, userId }, db);
     const updatedPost = await postRepository.incrementLikesCount(postId, db);
 
-    socketEmitter.emitToUser(post.userId, SOCKET_EVENTS.POST_LIKED, {
+    const payload = {
       postId,
       likedByUserId: userId,
       likesCount: updatedPost.likesCount,
-    });
+    };
+    socketEmitter.broadcastGlobal(SOCKET_EVENTS.POST_LIKED, payload);
+    socketEmitter.emitToUser(post.userId, SOCKET_EVENTS.POST_LIKED, payload);
 
     return { success: true, alreadyLiked: false, likesCount: updatedPost.likesCount };
   } catch (err) {
@@ -346,11 +348,13 @@ export async function unlikePost(postId, userId, db = prisma) {
     await socialRepository.deleteLike({ postId, userId }, db);
     const updatedPost = await postRepository.decrementLikesCount(postId, db);
 
-    socketEmitter.emitToUser(post.userId, SOCKET_EVENTS.POST_UNLIKED, {
+    const payload = {
       postId,
       unlikedByUserId: userId,
       likesCount: updatedPost.likesCount,
-    });
+    };
+    socketEmitter.broadcastGlobal(SOCKET_EVENTS.POST_UNLIKED, payload);
+    socketEmitter.emitToUser(post.userId, SOCKET_EVENTS.POST_UNLIKED, payload);
 
     return { success: true, alreadyUnliked: false, likesCount: updatedPost.likesCount };
   } catch (err) {
@@ -402,15 +406,30 @@ export async function createComment(
 
   await postRepository.incrementCommentsCount(postId, db);
 
-  socketEmitter.emitToUser(post.userId, SOCKET_EVENTS.COMMENT_CREATED, {
-    postId,
+  const commentPayload = {
+    id: comment.id,
     commentId: comment.id,
+    postId,
     authorId: userId,
-    authorUsername: comment.user?.username,
+    authorUsername: comment.user?.username || 'User',
+    authorName: comment.user?.profile?.displayName || comment.user?.username || 'User',
+    authorAvatar: comment.user?.profile?.avatarUrl || null,
+    user: {
+      id: comment.user?.id || userId,
+      username: comment.user?.username || 'User',
+      displayName: comment.user?.profile?.displayName || comment.user?.username || 'User',
+      avatarUrl: comment.user?.profile?.avatarUrl || null,
+    },
     content: comment.content,
+    text: comment.content,
     parentId,
     createdAt: comment.createdAt,
-  });
+    likesCount: 0,
+    isLiked: false,
+  };
+
+  socketEmitter.broadcastGlobal(SOCKET_EVENTS.COMMENT_CREATED, commentPayload);
+  socketEmitter.emitToUser(post.userId, SOCKET_EVENTS.COMMENT_CREATED, commentPayload);
 
   return comment;
 }
@@ -428,13 +447,18 @@ export async function getPostComments(
     throw error;
   }
 
-  return await socialRepository.findCommentsByPost(postId, { page, limit, parentId }, db);
+  return socialRepository.findCommentsByPostId(postId, {
+    viewerUserId,
+    page: Number(page),
+    limit: Number(limit),
+    parentId,
+  }, db);
 }
 
 export async function deleteComment(
   commentId,
   userId,
-  { isAdmin = false, adminId = null, adminName = null, ipAddress = '127.0.0.1' } = {},
+  { isAdmin = false, adminId = null, adminName = null, ipAddress = null } = {},
   db = prisma
 ) {
   const comment = await socialRepository.findCommentById(commentId, db);
@@ -445,18 +469,14 @@ export async function deleteComment(
     throw error;
   }
 
-  // Author of comment or Author of post or Admin can delete
-  const isCommentAuthor = comment.userId === userId;
-  const isPostAuthor = comment.post?.userId === userId;
-
-  if (!isCommentAuthor && !isPostAuthor && !isAdmin) {
-    const error = new Error('Unauthorized to delete this comment');
+  if (!isAdmin && comment.userId !== userId) {
+    const error = new Error('Forbidden: You cannot delete this comment');
     error.statusCode = 403;
     error.code = 'FORBIDDEN';
     throw error;
   }
 
-  await socialRepository.softDeleteComment(commentId, db);
+  await socialRepository.deleteComment(commentId, db);
   await postRepository.decrementCommentsCount(comment.postId, db);
 
   if (isAdmin) {
@@ -474,11 +494,15 @@ export async function deleteComment(
     );
   }
 
-  socketEmitter.emitToUser(comment.userId, SOCKET_EVENTS.COMMENT_DELETED, {
+  const deletePayload = {
+    id: commentId,
     commentId,
     postId: comment.postId,
     deletedBy: userId || adminId,
-  });
+  };
+
+  socketEmitter.broadcastGlobal(SOCKET_EVENTS.COMMENT_DELETED, deletePayload);
+  socketEmitter.emitToUser(comment.userId, SOCKET_EVENTS.COMMENT_DELETED, deletePayload);
 
   return { success: true, id: commentId };
 }

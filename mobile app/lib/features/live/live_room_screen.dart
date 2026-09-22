@@ -8,6 +8,7 @@ import '../../core/utils/auth_guard.dart';
 import '../../models/live_room_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/live_provider.dart';
+import '../../widgets/animated_live_comment_item.dart';
 import '../../widgets/gift_dialog.dart';
 import '../games/rocket_game_sheet.dart';
 import '../../widgets/svip_entry_banner.dart';
@@ -820,84 +821,32 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Live Messages List
-                    SizedBox(
-                      height: 190,
-                      child: ListView.builder(
-                        reverse: true,
-                        itemCount: liveProvider.messages.length,
-                        itemBuilder: (context, index) {
-                          final msg = liveProvider.messages.reversed.toList()[index];
-                          final isSystem = msg.sender == 'System';
-                          final isGift = msg.isGift;
+                      SizedBox(
+                        height: 190,
+                        child: ListView.builder(
+                          reverse: true,
+                          itemCount: liveProvider.messages.length,
+                          itemBuilder: (context, index) {
+                            final msg = liveProvider.messages.reversed.toList()[index];
+                            final isSystem = msg.sender.toLowerCase().contains('system') || msg.sender.contains('🛡️');
+                            final isHostMsg = msg.isHost || msg.sender == widget.room.host.name;
 
-                          return Container(
-                            margin: const EdgeInsets.only(bottom: 6),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: isGift
-                                  ? const Color(0xFFE91E63).withValues(alpha: 0.28)
-                                  : (isSystem
-                                      ? const Color(0xFFFF9800).withValues(alpha: 0.18)
-                                      : Colors.black.withValues(alpha: 0.55)),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                color: isGift
-                                    ? const Color(0xFFFF4081).withValues(alpha: 0.45)
-                                    : (isSystem
-                                        ? const Color(0xFFFFB74D).withValues(alpha: 0.3)
-                                        : Colors.white.withValues(alpha: 0.08)),
-                                width: 0.8,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                if (msg.avatarUrl != null && msg.avatarUrl!.isNotEmpty) ...[
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(10),
-                                    child: Image.network(
-                                      msg.avatarUrl!,
-                                      width: 18,
-                                      height: 18,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.person, size: 14, color: Colors.white70),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                ],
-                                Flexible(
-                                  child: RichText(
-                                    text: TextSpan(
-                                      children: [
-                                        TextSpan(
-                                          text: '${msg.sender}: ',
-                                          style: TextStyle(
-                                            color: isSystem
-                                                ? const Color(0xFFFFD54F)
-                                                : (isGift ? const Color(0xFFFF80AB) : (isDark ? AppColors.warmGold : AppColors.lightBlue)),
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                        TextSpan(
-                                          text: msg.text,
-                                          style: TextStyle(
-                                            color: isGift ? const Color(0xFFFFF176) : Colors.white,
-                                            fontWeight: isGift ? FontWeight.bold : FontWeight.normal,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
+                            return AnimatedLiveCommentItem(
+                              key: ValueKey('${msg.sender}_${msg.text}_${msg.id}_$index'),
+                              senderId: msg.senderId.isNotEmpty ? msg.senderId : (isHostMsg ? widget.room.host.id : 'user_$index'),
+                              senderName: msg.sender,
+                              avatarUrl: msg.avatarUrl,
+                              text: msg.text,
+                              isHost: isHostMsg,
+                              isMod: msg.isMod,
+                              isVip: msg.isVip,
+                              nobleTitle: msg.nobleTitle,
+                              isSystem: isSystem,
+                              isGift: msg.isGift,
+                            );
+                          },
+                        ),
                       ),
-                    ),
 
                     const SizedBox(height: 12),
 
@@ -1010,31 +959,26 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                       contentPadding: const EdgeInsets.symmetric(vertical: 12),
                                     ),
                                     onSubmitted: (_) {
-                                       if (_chatController.text.isNotEmpty) {
-                                         final currentUser = context.read<AuthProvider>().currentUser;
-                                         final text = _chatController.text.trim();
-                                         liveProvider.sendMessage(text, currentUser.name);
-                                         context.read<EmojiReactionProvider>().sendReaction(
-                                           roomId: widget.room.id,
-                                           senderId: currentUser.id,
-                                           emoji: text,
-                                           senderName: currentUser.name,
-                                         );
-                                         _chatController.clear();
-                                       }
-                                     },
-                                     onChanged: (val) {
-                                       if (mounted) setState(() {});
-                                     },
+                                      final text = _chatController.text.trim();
+                                      if (text.isNotEmpty) {
+                                        final currentUser = context.read<AuthProvider>().currentUser;
+                                        liveProvider.sendMessage(text, currentUser.name, user: currentUser);
+                                        _chatController.clear();
+                                        if (mounted) setState(() {});
+                                      }
+                                    },
+                                    onChanged: (val) {
+                                      if (mounted) setState(() {});
+                                    },
                                   ),
                                 ),
                                  _chatController.text.isNotEmpty
                                      ? GestureDetector(
                                          onTap: () {
-                                           final currentUser = context.read<AuthProvider>().currentUser;
                                            final text = _chatController.text.trim();
                                            if (text.isNotEmpty) {
-                                             liveProvider.sendMessage(text, currentUser.name);
+                                             final currentUser = context.read<AuthProvider>().currentUser;
+                                             liveProvider.sendMessage(text, currentUser.name, user: currentUser);
                                              _chatController.clear();
                                              if (mounted) setState(() {});
                                            }

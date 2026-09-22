@@ -156,16 +156,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
         ? social.getCommentsForPost(widget.targetId)
         : social.getCommentsForVideo(widget.targetId);
 
-    final set = <String>{};
-    final combined = <SocialComment>[];
-
-    for (final c in _localComments) {
-      if (set.add(c.id)) combined.add(c);
+    if (providerComments.isNotEmpty) {
+      return providerComments;
     }
-    for (final c in providerComments) {
-      if (set.add(c.id)) combined.add(c);
-    }
-    return combined;
+    return _localComments;
   }
 
   @override
