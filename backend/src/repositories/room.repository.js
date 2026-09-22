@@ -127,6 +127,7 @@ export async function findActiveRooms(
 ) {
   const where = {
     status: 'LIVE',
+    currentViewersCount: { gt: 0 },
   };
 
   if (roomType) where.roomType = roomType;
@@ -214,7 +215,12 @@ export async function findAdminRooms(
 ) {
   const where = {};
 
-  if (status) where.status = status;
+  if (status === 'active' || status === 'LIVE') {
+    where.status = 'LIVE';
+    where.currentViewersCount = { gt: 0 };
+  } else if (status && status !== 'all') {
+    where.status = status;
+  }
   if (roomType) where.roomType = roomType;
   if (isPinnedTop !== null && isPinnedTop !== undefined) {
     where.isPinnedTop = isPinnedTop === 'true' || isPinnedTop === true;
@@ -397,6 +403,27 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
   const memberCount = await db.roomMember.count({
     where: { roomId },
   });
+
+  const isHostLeaving = room.creatorUserId === userId;
+  const shouldDeleteRoom = isHostLeaving || memberCount === 0;
+
+  if (shouldDeleteRoom) {
+    try {
+      await db.room.delete({
+        where: { id: roomId },
+      });
+    } catch {
+      await db.room.update({
+        where: { id: roomId },
+        data: {
+          status: 'ENDED',
+          currentViewersCount: 0,
+          endedAt: new Date(),
+        },
+      });
+    }
+    return { id: roomId, currentViewersCount: 0, status: 'ENDED' };
+  }
 
   return await db.room.update({
     where: { id: roomId },
@@ -593,14 +620,21 @@ export async function closeRoomTx({ roomId, status = 'ENDED', endedAt = new Date
       where: { roomId },
     });
 
-    return await tx.room.update({
-      where: { id: roomId },
-      data: {
-        status,
-        endedAt,
-        currentViewersCount: 0,
-      },
-    });
+    try {
+      await tx.room.delete({
+        where: { id: roomId },
+      });
+      return { id: roomId, status: 'ENDED', currentViewersCount: 0 };
+    } catch {
+      return await tx.room.update({
+        where: { id: roomId },
+        data: {
+          status,
+          endedAt,
+          currentViewersCount: 0,
+        },
+      });
+    }
   });
 }
 
