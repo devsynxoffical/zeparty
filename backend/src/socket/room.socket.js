@@ -46,21 +46,22 @@ export function buildRoomSnapshot(room, viewerCount) {
 }
 
 function resolveArgs(arg1, arg2, arg3, arg4, arg5) {
-  // Case A: (socket, data, callback, db)
-  if (arg1 && (typeof arg1.emit === 'function' || arg1.id || arg1.userId || arg1.handshake)) {
-    const socket = arg1;
-    const data = arg2;
-    const callback = typeof arg3 === 'function' ? arg3 : (typeof arg4 === 'function' ? arg4 : null);
-    const db = (arg3 && typeof arg3 === 'object' && typeof arg3 !== 'function') ? arg3 : ((arg4 && typeof arg4 === 'object' && typeof arg4 !== 'function') ? arg4 : (arg5 || null));
-    return { io: null, socket, data, callback, db };
+  // Case A: (io, socket, data, callback, db)
+  if (arg2 && (arg2.handshake || arg2.conn || arg2.client || typeof arg2.join === 'function' || arg2.userId || arg2.id)) {
+    const io = arg1;
+    const socket = arg2;
+    const data = arg3;
+    const callback = typeof arg4 === 'function' ? arg4 : (typeof arg5 === 'function' ? arg5 : null);
+    const db = (arg4 && typeof arg4 === 'object' && typeof arg4 !== 'function') ? arg4 : (arg5 || null);
+    return { io, socket, data, callback, db };
   }
-  // Case B: (io, socket, data, callback, db)
-  const io = arg1;
-  const socket = arg2;
-  const data = arg3;
-  const callback = typeof arg4 === 'function' ? arg4 : (typeof arg5 === 'function' ? arg5 : null);
-  const db = (arg4 && typeof arg4 === 'object' && typeof arg4 !== 'function') ? arg4 : (arg5 || null);
-  return { io, socket, data, callback, db };
+
+  // Case B: (socket, data, callback, db)
+  const socket = arg1;
+  const data = arg2;
+  const callback = typeof arg3 === 'function' ? arg3 : (typeof arg4 === 'function' ? arg4 : null);
+  const db = (arg3 && typeof arg3 === 'object' && typeof arg3 !== 'function') ? arg3 : ((arg4 && typeof arg4 === 'object' && typeof arg4 !== 'function') ? arg4 : (arg5 || null));
+  return { io: null, socket, data, callback, db };
 }
 
 export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
