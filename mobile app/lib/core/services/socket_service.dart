@@ -95,15 +95,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get roomWarningStream => onRoomWarning;
   Stream<Map<String, dynamic>> get roomMutedStream => onRoomMuted;
   Stream<Map<String, dynamic>> get roomUserMutedStream => onRoomUserMuted;
-  Stream<Map<String, dynamic>> get roomEmojiStream => onRoomEmoji;
   Stream<Map<String, dynamic>> get roomSnapshotStream => onRoomSnapshot;
-  Stream<Map<String, dynamic>> get roomChatMessageStream => onRoomChatMessage;
-  Stream<Map<String, dynamic>> get userKickedStream => onUserKicked;
-  Stream<Map<String, dynamic>> get roomLikeStream => onRoomLike;
-  Stream<Map<String, dynamic>> get roomWarningStream => onRoomWarning;
-  Stream<Map<String, dynamic>> get roomMutedStream => onRoomMuted;
-  Stream<Map<String, dynamic>> get roomUserMutedStream => onRoomUserMuted;
-  Stream<Map<String, dynamic>> get roomEmojiStream => onRoomEmoji;
 
   // Getters - Social
   Stream<Map<String, dynamic>> get onPostCreated => _postCreatedController.stream;
@@ -257,12 +249,15 @@ class SocketService {
     _socket!.on('room:closed', (data) {
       if (data != null) _roomClosedController.add(safeMap(data));
     });
-    _socket!.on('room:gift_sent', (data) {
-      if (data != null) _giftSentController.add(safeMap(data));
-    });
-    _socket!.on('room:chat_message', (data) {
+    void handleChatMessage(dynamic data) {
       if (data != null) _roomChatMessageController.add(safeMap(data));
-    });
+    }
+    _socket!.on('room:chat_message', handleChatMessage);
+    _socket!.on('chat_message', handleChatMessage);
+    _socket!.on('room_chat_message', handleChatMessage);
+    _socket!.on('room:chat', handleChatMessage);
+    _socket!.on('chat:message', handleChatMessage);
+
     _socket!.on('room:user_kicked', (data) {
       if (data != null) _userKickedController.add(safeMap(data));
     });
@@ -375,7 +370,7 @@ class SocketService {
   /// Subscribe to room channel on server
   void joinRoomSubscription(String roomId) {
     _currentRoomId = roomId;
-    if (_socket != null && _isConnected) {
+    if (_socket != null) {
       _socket!.emit('room:join', {'roomId': roomId});
       debugPrint('[SocketService] Subscribed to room:$roomId');
     }
@@ -385,7 +380,7 @@ class SocketService {
 
   /// Unsubscribe from room channel on server
   void leaveRoomSubscription(String roomId) {
-    if (_socket != null && _isConnected) {
+    if (_socket != null) {
       _socket!.emit('room:leave', {'roomId': roomId});
       debugPrint('[SocketService] Unsubscribed from room:$roomId');
     }
@@ -398,7 +393,7 @@ class SocketService {
 
   /// Occupy a seat via realtime socket emission
   void occupySeat(String roomId, int seatIndex) {
-    if (_socket != null && _isConnected) {
+    if (_socket != null) {
       _socket!.emit('room:seat_occupy', {
         'roomId': roomId,
         'seatIndex': seatIndex,
@@ -408,7 +403,7 @@ class SocketService {
 
   /// Release a seat via realtime socket emission
   void leaveSeat(String roomId, int seatIndex) {
-    if (_socket != null && _isConnected) {
+    if (_socket != null) {
       _socket!.emit('room:seat_leave', {
         'roomId': roomId,
         'seatIndex': seatIndex,
@@ -422,7 +417,7 @@ class SocketService {
     required String text,
     String type = 'text',
   }) {
-    if (_socket != null && _isConnected) {
+    if (_socket != null) {
       _socket!.emit('room:chat_send', {
         'roomId': roomId,
         'text': text,

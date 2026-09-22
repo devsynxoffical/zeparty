@@ -556,11 +556,26 @@ class LivePartyProvider extends ChangeNotifier {
     _socketChatMessageSub?.cancel();
     _socketChatMessageSub = _socketService.onRoomChatMessage.listen((data) {
       try {
+        final incomingRoomId = data['roomId']?.toString();
+        if (_activeRoom != null && incomingRoomId != null && incomingRoomId != _activeRoom!.id) {
+          return;
+        }
         final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender'] as Map) : <String, dynamic>{};
         final senderId = senderMap['id']?.toString() ?? data['senderUserId']?.toString() ?? '';
+        final text = data['text']?.toString() ?? '';
+        if (text.trim().isEmpty) return;
         final msgId = data['id']?.toString() ?? 'msg_${DateTime.now().millisecondsSinceEpoch}';
 
         if (_messages.any((m) => m.id == msgId)) return;
+
+        // Prevent duplicate self-messages added optimistically
+        final isSelf = (senderId == currentUser.id || senderId == currentUser.username);
+        if (isSelf && _messages.isNotEmpty) {
+          final recentSelf = _messages.reversed.take(5).where((m) => m.sender.id == currentUser.id && m.text == text).firstOrNull;
+          if (recentSelf != null && DateTime.now().difference(recentSelf.timestamp).inSeconds < 4) {
+            return;
+          }
+        }
 
         final sender = UserModel(
           id: senderId,
@@ -568,12 +583,13 @@ class LivePartyProvider extends ChangeNotifier {
           name: senderMap['displayName']?.toString() ?? senderMap['name']?.toString() ?? senderMap['username']?.toString() ?? 'User',
           avatarUrl: senderMap['avatarUrl']?.toString() ?? '',
           isVip: senderMap['isVip'] == true,
+          nobleTitle: senderMap['nobleTitle']?.toString() ?? senderMap['nobleLevel']?.toString(),
         );
 
         final msg = PartyMessageModel(
           id: msgId,
           sender: sender,
-          text: data['text']?.toString() ?? '',
+          text: text,
           timestamp: DateTime.tryParse(data['timestamp']?.toString() ?? '') ?? DateTime.now(),
         );
 

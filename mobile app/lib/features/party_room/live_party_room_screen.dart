@@ -26,7 +26,6 @@ import 'widgets/room_info_sheet.dart';
 import 'widgets/room_type_selector_sheet.dart';
 import 'widgets/room_entry_announcement_banner.dart';
 import 'widgets/room_entry_mount_banner.dart';
-import '../../core/utils/noble_badge_helper.dart';
 import 'widgets/effects_settings_sheet.dart';
 import 'widgets/mic_seat_management_sheet.dart';
 import 'widgets/in_room_profile_card_sheet.dart';
@@ -39,6 +38,7 @@ import '../../widgets/emoji_reaction_overlay.dart';
 import '../../widgets/tiktok_user_join_banner.dart';
 import '../../providers/emoji_reaction_provider.dart';
 import '../profile/user_profile_details_screen.dart';
+import '../messages/chat_screen.dart';
 
 class LivePartyRoomScreen extends StatefulWidget {
   final LiveRoomModel room;
@@ -197,18 +197,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
       final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
       partyProv.sendMessage(user, text);
-
-      final participant = partyProv.participants.where((p) => p.user.id == user.id && p.seatNumber != null).firstOrNull;
-      final seatId = participant?.seatNumber;
-
-      Provider.of<EmojiReactionProvider>(context, listen: false).sendReaction(
-        roomId: widget.room.id,
-        senderId: user.id,
-        emoji: text,
-        seatId: seatId,
-        senderName: user.name,
-      );
-
       _chatController.clear();
       Future.delayed(const Duration(milliseconds: 100), () {
         if (_chatScrollController.hasClients) {

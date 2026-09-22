@@ -9,19 +9,34 @@ import '../core/services/socket_service.dart';
 import '../core/repositories/room_repository.dart';
 
 class LiveMessage {
+  final String id;
+  final String senderId;
   final String sender;
   final String text;
   final bool isGift;
   final GiftModel? gift;
   final String? avatarUrl;
+  final bool isHost;
+  final bool isMod;
+  final bool isVip;
+  final String? nobleTitle;
+  final DateTime timestamp;
 
   LiveMessage({
+    String? id,
+    this.senderId = '',
     required this.sender,
     required this.text,
     this.isGift = false,
     this.gift,
     this.avatarUrl,
-  });
+    this.isHost = false,
+    this.isMod = false,
+    this.isVip = false,
+    this.nobleTitle,
+    DateTime? timestamp,
+  })  : id = id ?? 'msg_${DateTime.now().millisecondsSinceEpoch}',
+        timestamp = timestamp ?? DateTime.now();
 }
 
 class LiveProvider extends ChangeNotifier {
@@ -278,20 +293,55 @@ class LiveProvider extends ChangeNotifier {
 
     _socketChatMessageSub?.cancel();
     _socketChatMessageSub = _socketService.onRoomChatMessage.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
-        return;
-      }
-      final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender']) : <String, dynamic>{};
-      final senderName = senderMap['displayName'] ?? senderMap['username'] ?? 'User';
-      final text = data['text']?.toString() ?? '';
+      try {
+        final incomingRoomId = data['roomId']?.toString();
+        if (_activeRoom != null && incomingRoomId != null && incomingRoomId != _activeRoom!.id) {
+          return;
+        }
+        final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender'] as Map) : <String, dynamic>{};
+        final senderId = senderMap['id']?.toString() ?? data['senderUserId']?.toString() ?? '';
+        final text = data['text']?.toString() ?? '';
+        if (text.trim().isEmpty) return;
 
-      _messages.add(LiveMessage(
-        sender: senderName,
-        text: text,
-        avatarUrl: senderMap['avatarUrl']?.toString(),
-      ));
-      if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
-      notifyListeners();
+        final incomingId = data['id']?.toString();
+        if (incomingId != null && _messages.any((m) => m.id == incomingId)) {
+          return;
+        }
+
+        // Deduplicate optimistic local messages from the current user
+        final isSelf = _currentUser != null && (senderId == _currentUser!.id || senderId == _currentUser!.username);
+        if (isSelf && _messages.isNotEmpty) {
+          final recentSelf = _messages.reversed.take(5).where(
+            (m) => (m.senderId == _currentUser!.id || m.sender == _currentUser!.name || m.sender == _currentUser!.username) && m.text == text
+          ).firstOrNull;
+          if (recentSelf != null && DateTime.now().difference(recentSelf.timestamp).inSeconds < 4) {
+            return;
+          }
+        }
+
+        final senderName = senderMap['displayName']?.toString() ??
+            senderMap['name']?.toString() ??
+            senderMap['username']?.toString() ??
+            'User';
+        final isHost = (_activeRoom != null) &&
+            (_activeRoom!.host.id == senderId || _activeRoom!.creatorUserId == senderId || senderMap['isHost'] == true);
+
+        _messages.add(LiveMessage(
+          id: incomingId,
+          senderId: senderId,
+          sender: senderName,
+          text: text,
+          avatarUrl: senderMap['avatarUrl']?.toString(),
+          isHost: isHost,
+          isVip: senderMap['isVip'] == true,
+          nobleTitle: senderMap['nobleTitle']?.toString() ?? senderMap['nobleLevel']?.toString(),
+          timestamp: DateTime.tryParse(data['timestamp']?.toString() ?? '') ?? DateTime.now(),
+        ));
+        if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LiveProvider] ChatMessage receive error: $e');
+      }
     });
 
     // ── Snapshot Subscription ─────────────────────────────────
@@ -465,18 +515,36 @@ class LiveProvider extends ChangeNotifier {
     }
   }
 
-  void sendMessage(String text, String sender) {
-    _messages.add(LiveMessage(sender: sender, text: text));
+  void sendMessage(String text, String sender, {UserModel? user}) {
+    final trimmedText = text.trim();
+    if (trimmedText.isEmpty) return;
+
+    final effectiveUser = user ?? _currentUser;
+    final isHost = (effectiveUser != null && _activeRoom != null) &&
+        (_activeRoom!.host.id == effectiveUser.id || _activeRoom!.creatorUserId == effectiveUser.id);
+
+    final localMsg = LiveMessage(
+      senderId: effectiveUser?.id ?? '',
+      sender: sender.isNotEmpty ? sender : (effectiveUser?.name ?? 'User'),
+      text: trimmedText,
+      avatarUrl: effectiveUser?.avatarUrl,
+      isHost: isHost,
+      isVip: effectiveUser?.isVip ?? false,
+      nobleTitle: effectiveUser?.nobleTitle,
+    );
+
+    _messages.add(localMsg);
     if (_messages.length > _maxMessageBuffer) {
       _messages.removeAt(0);
     }
+    notifyListeners();
+
     if (_activeRoom != null && sender != 'System') {
       _socketService.sendRoomChatMessage(
         roomId: _activeRoom!.id,
-        text: text,
+        text: trimmedText,
       );
     }
-    notifyListeners();
   }
 
   void sendGift(GiftModel gift, String sender) {

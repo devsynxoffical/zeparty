@@ -317,7 +317,8 @@ export async function onSocketDisconnect(io, socket) {
   }
 }
 
-export async function onSendRoomEmoji(io, socket, data, callback) {
+export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
   try {
     const roomId = data?.roomId;
     const emoji = (data?.emoji || '').trim();
@@ -335,6 +336,11 @@ export async function onSendRoomEmoji(io, socket, data, callback) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
+    // Ensure socket is joined to room channel
+    if (typeof socket.join === 'function') {
+      socket.join(`room:${roomId}`);
+    }
+
     const payload = {
       id: `emoji_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       roomId,
@@ -344,7 +350,7 @@ export async function onSendRoomEmoji(io, socket, data, callback) {
         id: socket.user?.id || socket.userId,
         username: socket.user?.username || 'user',
         displayName: socket.user?.displayName || socket.user?.username || 'User',
-        avatarUrl: socket.user?.avatarUrl || null,
+        avatarUrl: socket.user?.avatarUrl || socket.user?.profile?.avatarUrl || null,
       },
       timestamp: new Date().toISOString(),
     };
@@ -369,7 +375,8 @@ export async function onSendRoomEmoji(io, socket, data, callback) {
   }
 }
 
-export async function onSendRoomChat(io, socket, data, callback) {
+export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
   try {
     const roomId = data?.roomId;
     const text = (data?.text || '').trim();
@@ -386,6 +393,11 @@ export async function onSendRoomChat(io, socket, data, callback) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
+    // Ensure socket is joined to room channel
+    if (typeof socket.join === 'function') {
+      socket.join(`room:${roomId}`);
+    }
+
     const payload = {
       id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       roomId,
@@ -393,9 +405,10 @@ export async function onSendRoomChat(io, socket, data, callback) {
         id: socket.user?.id || socket.userId,
         username: socket.user?.username || 'user',
         displayName: socket.user?.displayName || socket.user?.name || socket.user?.username || 'User',
-        avatarUrl: socket.user?.avatarUrl || null,
+        avatarUrl: socket.user?.avatarUrl || socket.user?.profile?.avatarUrl || null,
         isVip: Boolean(socket.user?.isVip),
         nobleLevel: socket.user?.nobleLevel || null,
+        nobleTitle: socket.user?.nobleTitle || null,
       },
       text: text.substring(0, 500),
       timestamp: new Date().toISOString(),
@@ -404,6 +417,8 @@ export async function onSendRoomChat(io, socket, data, callback) {
 
     const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
     broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
+    broadcastTarget.emit('chat:message', payload);
+    broadcastTarget.emit('room_chat_message', payload);
 
     if (typeof callback === 'function') {
       return callback({ success: true, data: payload });
@@ -421,7 +436,8 @@ export async function onSendRoomChat(io, socket, data, callback) {
   }
 }
 
-export async function onKickUser(io, socket, data, callback) {
+export async function onKickUser(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
   try {
     const roomId = data?.roomId;
     const targetUserId = data?.targetUserId;

@@ -21,6 +21,7 @@ import '../../widgets/emoji_reaction_overlay.dart';
 import '../../widgets/tiktok_user_join_banner.dart';
 import '../../widgets/emoji_picker_sheet.dart';
 import '../../widgets/tiktok_gift_overlay.dart';
+import 'widgets/high_value_announcement.dart';
 import '../../providers/emoji_reaction_provider.dart';
 import '../../providers/live_gift_provider.dart';
 import '../../core/services/room_share_service.dart';
@@ -820,29 +821,32 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Live Messages List
-                    SizedBox(
-                      height: 190,
-                      child: ListView.builder(
-                        reverse: true,
-                        itemCount: liveProvider.messages.length,
-                        itemBuilder: (context, index) {
-                          final msg = liveProvider.messages.reversed.toList()[index];
-                          final isSystem = msg.sender.toLowerCase().contains('system') || msg.sender.contains('🛡️');
-                          final isHostMsg = msg.sender == widget.room.host.name;
+                      SizedBox(
+                        height: 190,
+                        child: ListView.builder(
+                          reverse: true,
+                          itemCount: liveProvider.messages.length,
+                          itemBuilder: (context, index) {
+                            final msg = liveProvider.messages.reversed.toList()[index];
+                            final isSystem = msg.sender.toLowerCase().contains('system') || msg.sender.contains('🛡️');
+                            final isHostMsg = msg.isHost || msg.sender == widget.room.host.name;
 
-                          return AnimatedLiveCommentItem(
-                            key: ValueKey('${msg.sender}_${msg.text}_$index'),
-                            senderId: isHostMsg ? widget.room.host.id : 'user_$index',
-                            senderName: msg.sender,
-                            avatarUrl: msg.avatarUrl,
-                            text: msg.text,
-                            isHost: isHostMsg,
-                            isSystem: isSystem,
-                            isGift: msg.isGift,
-                          );
-                        },
+                            return AnimatedLiveCommentItem(
+                              key: ValueKey('${msg.sender}_${msg.text}_${msg.id}_$index'),
+                              senderId: msg.senderId.isNotEmpty ? msg.senderId : (isHostMsg ? widget.room.host.id : 'user_$index'),
+                              senderName: msg.sender,
+                              avatarUrl: msg.avatarUrl,
+                              text: msg.text,
+                              isHost: isHostMsg,
+                              isMod: msg.isMod,
+                              isVip: msg.isVip,
+                              nobleTitle: msg.nobleTitle,
+                              isSystem: isSystem,
+                              isGift: msg.isGift,
+                            );
+                          },
+                        ),
                       ),
-                    ),
 
                     const SizedBox(height: 12),
 
@@ -955,31 +959,26 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                       contentPadding: const EdgeInsets.symmetric(vertical: 12),
                                     ),
                                     onSubmitted: (_) {
-                                       if (_chatController.text.isNotEmpty) {
-                                         final currentUser = context.read<AuthProvider>().currentUser;
-                                         final text = _chatController.text.trim();
-                                         liveProvider.sendMessage(text, currentUser.name);
-                                         context.read<EmojiReactionProvider>().sendReaction(
-                                           roomId: widget.room.id,
-                                           senderId: currentUser.id,
-                                           emoji: text,
-                                           senderName: currentUser.name,
-                                         );
-                                         _chatController.clear();
-                                       }
-                                     },
-                                     onChanged: (val) {
-                                       if (mounted) setState(() {});
-                                     },
+                                      final text = _chatController.text.trim();
+                                      if (text.isNotEmpty) {
+                                        final currentUser = context.read<AuthProvider>().currentUser;
+                                        liveProvider.sendMessage(text, currentUser.name, user: currentUser);
+                                        _chatController.clear();
+                                        if (mounted) setState(() {});
+                                      }
+                                    },
+                                    onChanged: (val) {
+                                      if (mounted) setState(() {});
+                                    },
                                   ),
                                 ),
                                  _chatController.text.isNotEmpty
                                      ? GestureDetector(
                                          onTap: () {
-                                           final currentUser = context.read<AuthProvider>().currentUser;
                                            final text = _chatController.text.trim();
                                            if (text.isNotEmpty) {
-                                             liveProvider.sendMessage(text, currentUser.name);
+                                             final currentUser = context.read<AuthProvider>().currentUser;
+                                             liveProvider.sendMessage(text, currentUser.name, user: currentUser);
                                              _chatController.clear();
                                              if (mounted) setState(() {});
                                            }
