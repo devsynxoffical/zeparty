@@ -398,6 +398,73 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     super.dispose();
   }
 
+  Future<void> _handleExitConfirmation(BuildContext context, bool isHost, LiveProvider liveProvider) async {
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161129),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: (isHost ? Colors.redAccent : AppColors.live).withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isHost ? Icons.power_settings_new_rounded : Icons.logout_rounded,
+                color: isHost ? Colors.redAccent : AppColors.live,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              isHost ? 'End Live Stream?' : 'Leave Live Stream?',
+              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Text(
+          isHost
+              ? 'Are you sure you want to end your live stream? All viewers will be disconnected.'
+              : 'Are you sure you want to leave this live stream?',
+          style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white60, fontSize: 15)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isHost ? Colors.redAccent : AppColors.live,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(isHost ? 'End Stream' : 'Leave', style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLeave == true && mounted) {
+      try {
+        await liveProvider.leaveRoom();
+      } catch (_) {}
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -409,26 +476,32 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
         (activeRoom.creatorUserId == currentUser.id) ||
         (currentUser.name.trim().isNotEmpty && currentUser.name.trim().toLowerCase() == activeRoom.host.name.trim().toLowerCase());
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Background Stream (Native Agora Video or Cover Image fallback)
-          Positioned.fill(
-            child: _buildVideoStream(isDark, isHost, activeRoom),
-          ),
-
-          // Double Tap Screen for Like Hearts
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onDoubleTapDown: (details) {
-                AuthGuard.require(context, () {
-                  _triggerFloatingHeartAt(details.localPosition);
-                }, reason: 'Sign in to send like hearts');
-              },
-              onDoubleTap: () {},
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _handleExitConfirmation(context, isHost, liveProvider);
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            // Background Stream (Native Agora Video or Cover Image fallback)
+            Positioned.fill(
+              child: _buildVideoStream(isDark, isHost, activeRoom),
             ),
-          ),
+
+            // Double Tap Screen for Like Hearts
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onDoubleTapDown: (details) {
+                  AuthGuard.require(context, () {
+                    _triggerFloatingHeartAt(details.localPosition);
+                  }, reason: 'Sign in to send like hearts');
+                },
+                onDoubleTap: () {},
+              ),
+            ),
 
           // Dark Overlay
           Positioned.fill(
@@ -706,10 +779,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
                               // Close
                               GestureDetector(
-                                onTap: () {
-                                  context.read<LiveProvider>().leaveRoom();
-                                  Navigator.pop(context);
-                                },
+                                onTap: () => _handleExitConfirmation(context, isHost, liveProvider),
                                 child: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
                               ),
                             ],
@@ -1090,7 +1160,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
           GiftAnimationOverlay(key: _giftOverlayKey),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildQuickActionBtn(bool isDark, IconData icon, String label, Color color, {VoidCallback? onTap}) {
