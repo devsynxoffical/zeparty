@@ -46,7 +46,6 @@ class LiveRoomScreen extends StatefulWidget {
 class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStateMixin {
   final TextEditingController _chatController = TextEditingController();
   final GlobalKey _hostAvatarKey = GlobalKey();
-  bool _isMicMuted = false;
   int? _remoteHostUid;
 
   Timer? _durationTimer;
@@ -62,7 +61,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
   void _toggleMic() {
     final liveProv = context.read<LiveProvider>();
-    if (liveProv.isRoomMuted && !_isMicMuted) {
+    if (liveProv.isRoomMuted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('⚠️ Room microphone is currently locked by admin moderation.'),
@@ -73,13 +72,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       return;
     }
 
-    setState(() => _isMicMuted = !_isMicMuted);
-    try {
-      AgoraRtcService().muteLocalAudio(_isMicMuted);
-    } catch (_) {}
+    final nowMuted = liveProv.toggleLocalMic();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(_isMicMuted ? 'Mic Muted 🔇' : 'Mic Live 🎙️'),
+        content: Text(nowMuted ? 'Mic Muted 🔇' : 'Mic Live 🎙️'),
         duration: const Duration(seconds: 1),
         behavior: SnackBarBehavior.floating,
       ),
@@ -1108,8 +1104,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
                         IconButton(
                           icon: Icon(
-                            _isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                            color: _isMicMuted ? Colors.redAccent : const Color(0xFF00E676),
+                            liveProvider.isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                            color: liveProvider.isMicMuted ? Colors.redAccent : const Color(0xFF00E676),
                             size: 25,
                           ),
                           onPressed: _toggleMic,

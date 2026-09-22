@@ -29,6 +29,7 @@ class SocketService {
   final _roomWarningController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomMutedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomUserMutedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomEmojiController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Social realtime event streams
   final _postCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -75,6 +76,8 @@ class SocketService {
   Stream<Map<String, dynamic>> get onRoomWarning => _roomWarningController.stream;
   Stream<Map<String, dynamic>> get onRoomMuted => _roomMutedController.stream;
   Stream<Map<String, dynamic>> get onRoomUserMuted => _roomUserMutedController.stream;
+  Stream<Map<String, dynamic>> get onRoomEmoji => _roomEmojiController.stream;
+
 
   // Stream aliases for backwards compatibility
   Stream<Map<String, dynamic>> get roomCreatedStream => onRoomCreated;
@@ -91,6 +94,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get roomWarningStream => onRoomWarning;
   Stream<Map<String, dynamic>> get roomMutedStream => onRoomMuted;
   Stream<Map<String, dynamic>> get roomUserMutedStream => onRoomUserMuted;
+  Stream<Map<String, dynamic>> get roomEmojiStream => onRoomEmoji;
 
   // Getters - Social
   Stream<Map<String, dynamic>> get onPostCreated => _postCreatedController.stream;
@@ -245,6 +249,10 @@ class SocketService {
     });
     _socket!.on('room:user_muted', (data) {
       if (data is Map) _roomUserMutedController.add(Map<String, dynamic>.from(data));
+    });
+    // Emoji reactions broadcast from backend
+    _socket!.on('room:emoji', (data) {
+      if (data is Map) _roomEmojiController.add(Map<String, dynamic>.from(data));
     });
 
     // Social Events
@@ -401,6 +409,21 @@ class SocketService {
       _socket!.emit('room:kick_user', {
         'roomId': roomId,
         'targetUserId': targetUserId,
+      });
+    }
+  }
+
+  /// Broadcast an emoji reaction to all room participants
+  void sendRoomEmoji({
+    required String roomId,
+    required String emoji,
+    String? targetUserId,
+  }) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('room:emoji_send', {
+        'roomId': roomId,
+        'emoji': emoji,
+        if (targetUserId != null) 'targetUserId': targetUserId,
       });
     }
   }

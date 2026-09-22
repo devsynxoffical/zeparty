@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/emoji_reaction_model.dart';
+import '../core/services/socket_service.dart';
 
 class EmojiReactionProvider extends ChangeNotifier {
+  final SocketService _socketService = SocketService.instance;
+
   String? _activeRoomId;
   String? get activeRoomId => _activeRoomId;
 
@@ -12,6 +15,8 @@ class EmojiReactionProvider extends ChangeNotifier {
   final StreamController<EmojiReactionModel> _reactionStreamController =
       StreamController<EmojiReactionModel>.broadcast();
   Stream<EmojiReactionModel> get reactionStream => _reactionStreamController.stream;
+
+  StreamSubscription<Map<String, dynamic>>? _socketEmojiSub;
 
   final Set<String> _processedReactionIds = {};
   final Map<String, DateTime> _lastUserReactionTimestamp = {};
@@ -26,6 +31,7 @@ class EmojiReactionProvider extends ChangeNotifier {
       _activeReactions.clear();
       _processedReactionIds.clear();
       _lastUserReactionTimestamp.clear();
+      _setupSocketSubscription();
       notifyListeners();
     }
   }
@@ -35,7 +41,41 @@ class EmojiReactionProvider extends ChangeNotifier {
     _activeReactions.clear();
     _processedReactionIds.clear();
     _lastUserReactionTimestamp.clear();
+    _socketEmojiSub?.cancel();
+    _socketEmojiSub = null;
     notifyListeners();
+  }
+
+  void _setupSocketSubscription() {
+    _socketEmojiSub?.cancel();
+    _socketEmojiSub = _socketService.onRoomEmoji.listen((data) {
+      final roomId = data['roomId']?.toString() ?? '';
+      if (_activeRoomId != null && roomId.isNotEmpty && roomId != _activeRoomId) return;
+
+      // Parse and receive the incoming remote emoji reaction
+      try {
+        final senderId = (data['sender'] is Map ? (data['sender'] as Map)['id'] : data['senderId'])?.toString() ?? '';
+        final senderName = (data['sender'] is Map ? (data['sender'] as Map)['displayName'] : data['senderName'])?.toString();
+        final emoji = data['emoji']?.toString() ?? '';
+        final reactionId = data['id']?.toString() ?? 'remote_${DateTime.now().millisecondsSinceEpoch}';
+        final targetUserId = data['targetUserId']?.toString();
+
+        if (emoji.isEmpty || senderId.isEmpty) return;
+
+        final reaction = EmojiReactionModel(
+          reactionId: reactionId,
+          roomId: roomId.isNotEmpty ? roomId : (_activeRoomId ?? ''),
+          senderId: senderId,
+          targetUserId: targetUserId ?? senderId,
+          emoji: emoji,
+          timestamp: DateTime.now(),
+          senderName: senderName,
+        );
+        receiveReaction(reaction);
+      } catch (e) {
+        debugPrint('[EmojiReactionProvider] Socket emoji parse error: $e');
+      }
+    });
   }
 
   void registerAnchor(String keyId, GlobalKey key) {
@@ -109,6 +149,14 @@ class EmojiReactionProvider extends ChangeNotifier {
       senderName: senderName,
     );
 
+    // Broadcast to other room participants via socket BEFORE adding locally
+    // (the backend will echo it back via room:emoji, which receiveReaction deduplicates)
+    _socketService.sendRoomEmoji(
+      roomId: roomId,
+      emoji: emoji,
+      targetUserId: targetUserId,
+    );
+
     return receiveReaction(reaction);
   }
 
@@ -160,6 +208,7 @@ class EmojiReactionProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _socketEmojiSub?.cancel();
     _reactionStreamController.close();
     super.dispose();
   }

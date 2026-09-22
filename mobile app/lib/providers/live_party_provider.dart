@@ -42,6 +42,15 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketGiftSentSub;
   StreamSubscription? _socketChatMessageSub;
   StreamSubscription? _socketUserKickedSub;
+  StreamSubscription? _socketRoomWarningSub;
+  StreamSubscription? _socketRoomMutedSub;
+  StreamSubscription? _socketRoomUserMutedSub;
+
+  // Admin Moderation State
+  bool _isRoomMuted = false;
+  bool get isRoomMuted => _isRoomMuted;
+  String? _activeWarningMessage;
+  String? get activeWarningMessage => _activeWarningMessage;
 
   // PK Battle State
   bool _isPkActive = false;
@@ -298,15 +307,32 @@ class LivePartyProvider extends ChangeNotifier {
   void _setupSocketSubscriptions(UserModel currentUser) {
     _socketUserJoinedSub?.cancel();
     _socketUserJoinedSub = _socketService.userJoinedStream.listen((data) {
-      final joinedUserId = data['userId'] ?? data['id'];
+      // Backend sends: { roomId, user: { id, username, displayName, avatarUrl }, viewerCount }
+      final userObj = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : <String, dynamic>{};
+      final joinedUserId = userObj['id']?.toString() ?? data['userId']?.toString() ?? data['id']?.toString();
       if (joinedUserId != null && joinedUserId != currentUser.id) {
         final existingIdx = _participants.indexWhere((p) => p.user.id == joinedUserId);
         if (existingIdx == -1) {
-          _participants.add(PartyParticipantModel.fromMemberJson(data));
+          // Build participant from user object
+          final joinedUser = UserModel(
+            id: joinedUserId,
+            username: userObj['username']?.toString() ?? 'viewer',
+            name: userObj['displayName']?.toString() ?? userObj['username']?.toString() ?? 'Viewer',
+            avatarUrl: userObj['avatarUrl']?.toString() ?? '',
+          );
+          _participants.add(PartyParticipantModel(
+            user: joinedUser,
+            role: ParticipantRole.listener,
+            seatNumber: null,
+            joinedAt: DateTime.now(),
+          ));
         }
-        sendSystemMessage('👋 ${data['name'] ?? data['username'] ?? 'A user'} joined the room.');
-        if (data['viewerCount'] != null && _activeRoom != null) {
-          _activeRoom = _activeRoom!.copyWith(viewerCount: data['viewerCount'] as int);
+        final displayName = userObj['displayName']?.toString() ?? userObj['username']?.toString() ?? data['name']?.toString() ?? 'A user';
+        sendSystemMessage('👋 $displayName joined the room.');
+        // Update viewer count if provided
+        final viewerCount = data['viewerCount'];
+        if (viewerCount is int && _activeRoom != null) {
+          _activeRoom = _activeRoom!.copyWith(viewerCount: viewerCount);
         }
         notifyListeners();
       }
@@ -494,6 +520,63 @@ class LivePartyProvider extends ChangeNotifier {
         }
       }
     });
+
+    // Admin moderation: Room Warning
+    _socketRoomWarningSub?.cancel();
+    _socketRoomWarningSub = _socketService.roomWarningStream.listen((data) {
+      final roomId = data['roomId']?.toString() ?? '';
+      if (_activeRoom != null && roomId.isNotEmpty && roomId != _activeRoom!.id) return;
+      final msg = data['message'] ?? data['reason'] ?? 'Official moderation warning issued';
+      _activeWarningMessage = msg.toString();
+      sendSystemMessage('⚠️ MODERATION WARNING: $_activeWarningMessage');
+      notifyListeners();
+      // Auto-clear after 8 seconds
+      Future.delayed(const Duration(seconds: 8), () {
+        _activeWarningMessage = null;
+        notifyListeners();
+      });
+    });
+
+    // Admin moderation: Room Mute
+    _socketRoomMutedSub?.cancel();
+    _socketRoomMutedSub = _socketService.roomMutedStream.listen((data) {
+      final roomId = data['roomId']?.toString() ?? '';
+      if (_activeRoom != null && roomId.isNotEmpty && roomId != _activeRoom!.id) return;
+      final muted = data['isMuted'] == true || data['muted'] == true;
+      _isRoomMuted = muted;
+      // Mute all participants' local audio
+      try {
+        _agoraService.muteLocalAudio(muted);
+      } catch (_) {}
+      sendSystemMessage(muted ? '🔇 Room audio has been MUTED by platform moderation.' : '🎙️ Room audio has been UNMUTED.');
+      notifyListeners();
+    });
+
+    // Admin moderation: Specific user muted
+    _socketRoomUserMutedSub?.cancel();
+    _socketRoomUserMutedSub = _socketService.onRoomUserMuted.listen((data) {
+      final roomId = data['roomId']?.toString() ?? '';
+      if (_activeRoom != null && roomId.isNotEmpty && roomId != _activeRoom!.id) return;
+      final targetId = data['targetUserId']?.toString();
+      final muted = data['isMuted'] == true;
+      if (targetId != null && targetId == currentUser.id) {
+        try {
+          _agoraService.muteLocalAudio(muted);
+        } catch (_) {}
+        sendSystemMessage(muted ? '🔇 Your microphone has been muted by moderation.' : '🎙️ Your microphone has been unmuted.');
+        notifyListeners();
+      }
+      // Update participant mic status in the list
+      if (targetId != null) {
+        final idx = _participants.indexWhere((p) => p.user.id == targetId);
+        if (idx != -1) {
+          _participants[idx] = _participants[idx].copyWith(
+            micStatus: muted ? MicStatus.muted : MicStatus.on,
+          );
+          notifyListeners();
+        }
+      }
+    });
   }
 
   Future<void> leaveParty() async {
@@ -517,6 +600,9 @@ class LivePartyProvider extends ChangeNotifier {
     _socketGiftSentSub?.cancel();
     _socketChatMessageSub?.cancel();
     _socketUserKickedSub?.cancel();
+    _socketRoomWarningSub?.cancel();
+    _socketRoomMutedSub?.cancel();
+    _socketRoomUserMutedSub?.cancel();
     _pkTimer?.cancel();
 
     _activeRoom = null;

@@ -65,6 +65,7 @@ class LiveProvider extends ChangeNotifier {
 
   // ── Moderation State ─────────────────────────────────────
   bool _isRoomMuted = false;
+  bool _isLocalMicMuted = false;
   String? _activeWarningMessage;
   bool _wasKicked = false;
   String? _kickReason;
@@ -87,6 +88,9 @@ class LiveProvider extends ChangeNotifier {
   int get likeCount => _likeCount;
   int get giftPoints => _giftPoints;
   bool get isRoomMuted => _isRoomMuted;
+  bool get isLocalMicMuted => _isLocalMicMuted;
+  // Combined mic muted: true if either room is muted OR user muted their own mic
+  bool get isMicMuted => _isRoomMuted || _isLocalMicMuted;
   String? get activeWarningMessage => _activeWarningMessage;
   bool get wasKicked => _wasKicked;
   String? get kickReason => _kickReason;
@@ -150,21 +154,6 @@ class LiveProvider extends ChangeNotifier {
       _socketService.connect();
       _socketService.joinRoom(room.id);
       _setupSocketSubscriptions(currentUser);
-
-      // Broadcast user joined event to room subscribers
-      final userMap = currentUser != null
-          ? {
-              'id': currentUser.id,
-              'name': currentUser.name,
-              'username': currentUser.username,
-              'avatarUrl': currentUser.avatarUrl,
-            }
-          : null;
-      _socketService.sendUserJoined(
-        roomId: room.id,
-        user: userMap,
-        viewerCount: _activeRoom?.viewerCount ?? (room.viewerCount + 1),
-      );
 
       // 2. REST Join
       await _roomRepository.joinRoom(room.id);
@@ -329,11 +318,10 @@ class LiveProvider extends ChangeNotifier {
       }
       final muted = data['isMuted'] == true || data['muted'] == true;
       _isRoomMuted = muted;
-      if (muted) {
-        try {
-          _agoraService.muteLocalAudio(true);
-        } catch (_) {}
-      }
+      // Mute ALL participants' local audio (not just host)
+      try {
+        _agoraService.muteLocalAudio(muted);
+      } catch (_) {}
       _messages.add(LiveMessage(
         sender: 'System',
         text: muted ? '🔇 Room audio has been MUTED by platform moderation.' : '🎙️ Room audio has been UNMUTED.',
@@ -424,9 +412,21 @@ class LiveProvider extends ChangeNotifier {
     _activeGiftAnimation = null;
     _activePkBattle = null;
     _isRoomLocked = false;
+    _isLocalMicMuted = false;
     _currentMusicTrack = null;
     _luckyBagActive = false;
     notifyListeners();
+  }
+
+  /// Toggle local mic mute and sync state. Returns new muted value.
+  bool toggleLocalMic() {
+    if (_isRoomMuted) return true; // Can't unmute if room is admin-muted
+    _isLocalMicMuted = !_isLocalMicMuted;
+    try {
+      _agoraService.muteLocalAudio(_isLocalMicMuted);
+    } catch (_) {}
+    notifyListeners();
+    return _isLocalMicMuted;
   }
 
   void sendLike({int count = 1}) {

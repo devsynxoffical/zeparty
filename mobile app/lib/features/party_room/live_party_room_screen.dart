@@ -150,8 +150,19 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   }
 
   void _toggleMic() {
+    final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+    if (partyProv.isRoomMuted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Room microphone is currently locked by admin moderation.'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     setState(() => _isMicMuted = !_isMicMuted);
-    Provider.of<LivePartyProvider>(context, listen: false).muteLocalMic(_isMicMuted);
+    partyProv.muteLocalMic(_isMicMuted);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(_isMicMuted ? 'Mic Muted 🔇' : 'Mic Live 🎙️'),
@@ -295,6 +306,62 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           // Overlays
           const HighValueAnnouncementOverlay(),
 
+          // Admin Moderation Warning Banner
+          if (provider.activeWarningMessage != null)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 70,
+              left: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFD97706), Color(0xFFB45309)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.amber.withValues(alpha: 0.4),
+                      blurRadius: 16,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                  border: Border.all(color: Colors.amberAccent, width: 1.5),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'MODERATION WARNING',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            provider.activeWarningMessage!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // Main Layout
           SafeArea(
@@ -1004,14 +1071,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               // Microphone Toggle Button (Green when Active, Red when Muted)
               IconButton(
                 icon: Icon(
-                  _isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                  color: _isMicMuted ? Colors.redAccent : const Color(0xFF00E676),
+                  (provider.isRoomMuted || _isMicMuted) ? Icons.mic_off_rounded : Icons.mic_rounded,
+                  color: (provider.isRoomMuted || _isMicMuted) ? Colors.redAccent : const Color(0xFF00E676),
                   size: 25,
                 ),
                 onPressed: _toggleMic,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                tooltip: _isMicMuted ? 'Unmute Mic' : 'Mute Mic',
+                tooltip: (provider.isRoomMuted || _isMicMuted) ? 'Unmute Mic' : 'Mute Mic',
               ),
             ],
           ],

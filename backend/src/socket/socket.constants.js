@@ -47,6 +47,10 @@ export const SOCKET_EVENTS = {
   ROOM_USER_MUTED: 'room:user_muted',
   ROOM_DP_UPDATED: 'room:dp_updated',
 
+  // Emoji Reactions
+  ROOM_EMOJI_SEND: 'room:emoji_send',
+  ROOM_EMOJI_RECEIVED: 'room:emoji',
+
   // PK Battles (Phase 19)
   PK_START: 'pk:start',
   PK_STARTED: 'pk:started',

@@ -106,9 +106,10 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     const snapshot = buildRoomSnapshot(room, currentCount);
     socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, { room, seats: room.seats || [] });
 
-    // 6. Broadcast user joined event to room members if this is the user's first active connection
+    // 6. Broadcast user joined event to ALL room members (including host's own socket) if this is the user's first active connection
     if (isFirstSocket) {
-      const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
+      // Use io.to() (not socket.to()) so the emitting socket (e.g. host) also receives the event
+      const broadcastTarget = io ? io.to(`room:${roomId}`) : socket;
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_JOINED, {
         roomId,
         user: {
@@ -117,6 +118,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           displayName: socket.user?.displayName || socket.user?.username || 'User',
           avatarUrl: socket.user?.avatarUrl || null,
         },
+        viewerCount: currentCount,
       });
 
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, {
@@ -291,6 +293,58 @@ export async function onSocketDisconnect(socket) {
   }
 }
 
+export async function onSendRoomEmoji(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId;
+    const emoji = (data?.emoji || '').trim();
+    const targetUserId = data?.targetUserId || null;
+
+    if (!roomId || !emoji) {
+      const err = {
+        success: false,
+        error: {
+          code: SOCKET_ERRORS.VALIDATION_ERROR,
+          message: 'roomId and emoji are required',
+        },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const payload = {
+      id: `emoji_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      roomId,
+      emoji,
+      targetUserId,
+      sender: {
+        id: socket.user?.id || socket.userId,
+        username: socket.user?.username || 'user',
+        displayName: socket.user?.displayName || socket.user?.username || 'User',
+        avatarUrl: socket.user?.avatarUrl || null,
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    // Broadcast to ALL room members including sender
+    const broadcastTarget = io ? io.to(`room:${roomId}`) : socket;
+    broadcastTarget.emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, data: payload });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: {
+        code: err.code || SOCKET_ERRORS.INTERNAL_ERROR,
+        message: err.message || 'Failed to send emoji reaction',
+      },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
 export async function onSendRoomChat(io, socket, data, callback) {
   try {
     const roomId = data?.roomId;
@@ -402,6 +456,11 @@ export function registerRoomHandlers(io, socket) {
   );
 
   socket.on(
+    SOCKET_EVENTS.ROOM_EMOJI_SEND,
+    withRateLimit('ROOM_EMOJI', 20, 1000, (s, d, cb) => onSendRoomEmoji(io, s, d, cb))
+  );
+
+  socket.on(
     SOCKET_EVENTS.ROOM_KICK_USER,
     withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onKickUser(io, s, d, cb))
   );
@@ -415,6 +474,7 @@ export default {
   onLeaveRoom,
   onRequestSnapshot,
   onSendRoomChat,
+  onSendRoomEmoji,
   onKickUser,
   onSocketDisconnect,
   registerRoomHandlers,
