@@ -38,6 +38,13 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
       vsync: this,
       duration: const Duration(seconds: 4),
     )..repeat();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final social = context.read<SocialProvider>();
+      if (!social.feedLoaded) {
+        social.loadFeed();
+      }
+    });
   }
 
   @override

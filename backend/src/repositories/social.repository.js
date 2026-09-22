@@ -196,6 +196,9 @@ export async function softDeleteComment(id, db = prisma) {
   });
 }
 
+export const deleteComment = softDeleteComment;
+export const findCommentsByPostId = findCommentsByPost;
+
 export async function countComments(postId, db = prisma) {
   return await db.comment.count({
     where: {

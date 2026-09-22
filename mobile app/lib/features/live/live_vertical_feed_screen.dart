@@ -55,8 +55,10 @@ class _LiveVerticalFeedScreenState extends State<LiveVerticalFeedScreen> {
   void _sendComment() {
     final text = _commentController.text.trim();
     if (text.isNotEmpty) {
+      final currentUser = context.read<AuthProvider>().currentUser;
+      context.read<LiveProvider>().sendMessage(text, currentUser.name, user: currentUser);
       setState(() {
-        _chatMessages.add('You: $text');
+        _chatMessages.add('${currentUser.name.isNotEmpty ? currentUser.name : "You"}: $text');
         _commentController.clear();
       });
       FocusScope.of(context).unfocus();
@@ -492,6 +494,7 @@ class _LiveVerticalFeedScreenState extends State<LiveVerticalFeedScreen> {
                     onTap: () {
                       final size = MediaQuery.of(context).size;
                       final centerPos = Offset(size.width / 2, size.height / 2);
+                      context.read<LiveProvider>().sendLike();
                       setState(() {
                         _floatingHearts.add(
                           FloatingHeartAnimation(
