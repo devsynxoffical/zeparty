@@ -16,8 +16,8 @@ import '../../widgets/gift_animation_overlay.dart';
 import '../pk_battle/pk_match_screen.dart';
 import '../games/game_lobby_screen.dart';
 import '../games/game_center_sheet.dart';
-import 'widgets/high_value_announcement.dart';
 import '../../widgets/emoji_reaction_overlay.dart';
+import '../../widgets/tiktok_user_join_banner.dart';
 import '../../widgets/emoji_picker_sheet.dart';
 import '../../widgets/tiktok_gift_overlay.dart';
 import '../../providers/emoji_reaction_provider.dart';
@@ -449,9 +449,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
           // High Value Announcement Overlay
           const HighValueAnnouncementOverlay(),
           const SvipEntryBanner(),
-
-          // Realtime Animated Emoji Reaction Overlay
-          EmojiReactionOverlay(roomId: widget.room.id),
 
           // TikTok-Style Live Gifting Animation Overlay
           TikTokGiftOverlay(roomId: widget.room.id),
@@ -1132,6 +1129,12 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               ),
             ),
           ),
+
+          // TikTok User Join Entrance Banner
+          TikTokUserJoinBanner(roomId: widget.room.id, bottomOffset: 240),
+
+          // Realtime Animated Emoji Reaction Overlay (Top of Stack)
+          EmojiReactionOverlay(roomId: widget.room.id),
 
           // Onscreen 3D Gift Animation Overlay
           GiftAnimationOverlay(key: _giftOverlayKey),

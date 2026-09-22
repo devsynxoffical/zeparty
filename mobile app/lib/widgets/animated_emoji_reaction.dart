@@ -34,9 +34,9 @@ class _AnimatedEmojiReactionState extends State<AnimatedEmojiReaction> with Sing
     super.initState();
 
     final rand = Random(widget.startPosition.dx.toInt() ^ widget.emoji.hashCode);
-    final targetY = -(90.0 + rand.nextDouble() * 50.0); // -90 to -140 px upward
-    final targetX = (rand.nextDouble() - 0.5) * 45.0; // -22.5 to +22.5 px horizontal drift
-    final targetRotation = (rand.nextDouble() - 0.5) * 0.24; // -0.12 to +0.12 rad
+    final targetY = -(220.0 + rand.nextDouble() * 140.0); // -220 to -360 px upward travel
+    final targetX = (rand.nextDouble() - 0.5) * 80.0; // -40 to +40 px horizontal wobble
+    final targetRotation = (rand.nextDouble() - 0.5) * 0.4; // subtle playful tilt
 
     _controller = AnimationController(
       vsync: this,

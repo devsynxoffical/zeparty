@@ -304,206 +304,287 @@ class LivePartyProvider extends ChangeNotifier {
     }
   }
 
+  StreamSubscription? _socketRoomSnapshotSub;
+
   void _setupSocketSubscriptions(UserModel currentUser) {
+    // 1. Room Snapshot Subscription (Authoritative Seat & Participant State)
+    _socketRoomSnapshotSub?.cancel();
+    _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
+      try {
+        final roomObj = data['room'] is Map ? Map<String, dynamic>.from(data['room'] as Map) : <String, dynamic>{};
+        if (roomObj.isNotEmpty) {
+          _activeRoom = LiveRoomModel.fromJson(roomObj);
+        }
+
+        final seatsList = data['seats'] is List ? (data['seats'] as List) : (roomObj['seats'] is List ? (roomObj['seats'] as List) : []);
+        for (final seatRaw in seatsList) {
+          if (seatRaw is! Map) continue;
+          final seatMap = Map<String, dynamic>.from(seatRaw);
+          final seatIndex = (seatMap['seatIndex'] is num) ? (seatMap['seatIndex'] as num).toInt() : int.tryParse(seatMap['seatIndex']?.toString() ?? '');
+          final userRaw = seatMap['user'];
+          if (seatIndex != null && userRaw is Map) {
+            final userMap = Map<String, dynamic>.from(userRaw);
+            final userObj = UserModel(
+              id: userMap['id']?.toString() ?? '',
+              username: userMap['username']?.toString() ?? 'User',
+              name: userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'User',
+              avatarUrl: userMap['avatarUrl']?.toString() ?? '',
+            );
+            if (userObj.id.isNotEmpty) {
+              final isSeatHost = seatIndex == 0 || (_activeRoom != null && _activeRoom!.host.id == userObj.id);
+              final existingIdx = _participants.indexWhere((p) => p.user.id == userObj.id || p.seatNumber == seatIndex);
+              if (existingIdx != -1) {
+                _participants[existingIdx] = _participants[existingIdx].copyWith(
+                  user: userObj,
+                  seatNumber: seatIndex,
+                  role: isSeatHost ? ParticipantRole.host : ParticipantRole.speaker,
+                  micStatus: seatMap['isMuted'] == true ? MicStatus.muted : MicStatus.on,
+                );
+              } else {
+                _participants.add(PartyParticipantModel(
+                  user: userObj,
+                  role: isSeatHost ? ParticipantRole.host : ParticipantRole.speaker,
+                  seatNumber: seatIndex,
+                  micStatus: seatMap['isMuted'] == true ? MicStatus.muted : MicStatus.on,
+                  joinedAt: DateTime.now(),
+                ));
+              }
+            }
+          }
+        }
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LivePartyProvider] Snapshot processing error: $e');
+      }
+    });
+
+    // 2. User Joined Stream
     _socketUserJoinedSub?.cancel();
     _socketUserJoinedSub = _socketService.userJoinedStream.listen((data) {
-      // Backend sends: { roomId, user: { id, username, displayName, avatarUrl }, viewerCount }
-      final userObj = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : <String, dynamic>{};
-      final joinedUserId = userObj['id']?.toString() ?? data['userId']?.toString() ?? data['id']?.toString();
-      if (joinedUserId != null && joinedUserId != currentUser.id) {
-        final existingIdx = _participants.indexWhere((p) => p.user.id == joinedUserId);
-        if (existingIdx == -1) {
-          // Build participant from user object
-          final joinedUser = UserModel(
-            id: joinedUserId,
-            username: userObj['username']?.toString() ?? 'viewer',
-            name: userObj['displayName']?.toString() ?? userObj['username']?.toString() ?? 'Viewer',
-            avatarUrl: userObj['avatarUrl']?.toString() ?? '',
-          );
-          _participants.add(PartyParticipantModel(
-            user: joinedUser,
-            role: ParticipantRole.listener,
-            seatNumber: null,
-            joinedAt: DateTime.now(),
-          ));
+      try {
+        final userObj = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : <String, dynamic>{};
+        final joinedUserId = userObj['id']?.toString() ?? data['userId']?.toString() ?? data['id']?.toString();
+        if (joinedUserId != null && joinedUserId != currentUser.id) {
+          final existingIdx = _participants.indexWhere((p) => p.user.id == joinedUserId);
+          if (existingIdx == -1) {
+            final joinedUser = UserModel(
+              id: joinedUserId,
+              username: userObj['username']?.toString() ?? 'viewer',
+              name: userObj['displayName']?.toString() ?? userObj['name']?.toString() ?? userObj['username']?.toString() ?? 'Viewer',
+              avatarUrl: userObj['avatarUrl']?.toString() ?? '',
+            );
+            _participants.add(PartyParticipantModel(
+              user: joinedUser,
+              role: ParticipantRole.listener,
+              seatNumber: null,
+              joinedAt: DateTime.now(),
+            ));
+          }
+          final displayName = userObj['displayName']?.toString() ?? userObj['name']?.toString() ?? userObj['username']?.toString() ?? 'A user';
+          sendSystemMessage('👋 $displayName joined the room.');
+          final viewerCount = (data['viewerCount'] is num) ? (data['viewerCount'] as num).toInt() : int.tryParse(data['viewerCount']?.toString() ?? '');
+          if (viewerCount != null && _activeRoom != null) {
+            _activeRoom = _activeRoom!.copyWith(viewerCount: viewerCount);
+          }
+          notifyListeners();
         }
-        final displayName = userObj['displayName']?.toString() ?? userObj['username']?.toString() ?? data['name']?.toString() ?? 'A user';
-        sendSystemMessage('👋 $displayName joined the room.');
-        // Update viewer count if provided
-        final viewerCount = data['viewerCount'];
-        if (viewerCount is int && _activeRoom != null) {
+      } catch (e) {
+        debugPrint('[LivePartyProvider] UserJoined error: $e');
+      }
+    });
+
+    // 3. User Left Stream
+    _socketUserLeftSub?.cancel();
+    _socketUserLeftSub = _socketService.userLeftStream.listen((data) {
+      final leftUserId = data['userId']?.toString() ?? data['id']?.toString();
+      if (leftUserId != null) {
+        _participants.removeWhere((p) => p.user.id == leftUserId);
+        final viewerCount = (data['viewerCount'] is num) ? (data['viewerCount'] as num).toInt() : int.tryParse(data['viewerCount']?.toString() ?? '');
+        if (viewerCount != null && _activeRoom != null) {
           _activeRoom = _activeRoom!.copyWith(viewerCount: viewerCount);
         }
         notifyListeners();
       }
     });
 
-    _socketUserLeftSub?.cancel();
-    _socketUserLeftSub = _socketService.userLeftStream.listen((data) {
-      final leftUserId = data['userId'] ?? data['id'];
-      if (leftUserId != null) {
-        _participants.removeWhere((p) => p.user.id == leftUserId);
-        if (data['viewerCount'] != null && _activeRoom != null) {
-          _activeRoom = _activeRoom!.copyWith(viewerCount: data['viewerCount'] as int);
-        }
-        notifyListeners();
-      }
-    });
-
+    // 4. Viewer Count Changed Stream
     _socketViewerCountSub?.cancel();
     _socketViewerCountSub = _socketService.viewerCountStream.listen((data) {
-      final count = data['viewerCount'] ?? data['count'];
-      if (count is int && _activeRoom != null) {
+      final count = (data['viewerCount'] is num) ? (data['viewerCount'] as num).toInt() : (data['count'] is num ? (data['count'] as num).toInt() : null);
+      if (count != null && _activeRoom != null) {
         _activeRoom = _activeRoom!.copyWith(viewerCount: count);
         notifyListeners();
       }
     });
 
+    // 5. Seat Occupied Stream
     _socketSeatOccupiedSub?.cancel();
     _socketSeatOccupiedSub = _socketService.seatOccupiedStream.listen((data) {
-      final seatIndex = data['seatIndex'] as int?;
-      final userMap = data['user'] as Map<String, dynamic>?;
-      if (seatIndex != null && userMap != null) {
-        final occupantUser = UserModel(
-          id: userMap['id'] ?? userMap['userId'] ?? '',
-          username: userMap['username'] ?? userMap['name'] ?? 'Speaker',
-          name: userMap['name'] ?? userMap['username'] ?? 'Speaker',
-          avatarUrl: userMap['avatarUrl'] ?? '',
-        );
-
-        final pIdx = _participants.indexWhere((p) => p.user.id == occupantUser.id);
-        if (pIdx != -1) {
-          _participants[pIdx] = _participants[pIdx].copyWith(
-            seatNumber: seatIndex,
-            role: ParticipantRole.speaker,
-            micStatus: MicStatus.on,
+      try {
+        final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
+        final userMap = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : null;
+        if (seatIndex != null && userMap != null) {
+          final occupantUser = UserModel(
+            id: userMap['id']?.toString() ?? userMap['userId']?.toString() ?? '',
+            username: userMap['username']?.toString() ?? userMap['name']?.toString() ?? 'Speaker',
+            name: userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'Speaker',
+            avatarUrl: userMap['avatarUrl']?.toString() ?? '',
           );
-        } else {
-          _participants.add(PartyParticipantModel(
-            user: occupantUser,
-            role: ParticipantRole.speaker,
-            seatNumber: seatIndex,
-            micStatus: MicStatus.on,
-            joinedAt: DateTime.now(),
-          ));
-        }
 
-        // If self occupied seat, promote Agora RTC role to Broadcaster
-        if (occupantUser.id == currentUser.id) {
-          _agoraService.switchRole(isHost: true);
-        }
+          final pIdx = _participants.indexWhere((p) => p.user.id == occupantUser.id);
+          if (pIdx != -1) {
+            _participants[pIdx] = _participants[pIdx].copyWith(
+              seatNumber: seatIndex,
+              role: ParticipantRole.speaker,
+              micStatus: MicStatus.on,
+            );
+          } else {
+            _participants.add(PartyParticipantModel(
+              user: occupantUser,
+              role: ParticipantRole.speaker,
+              seatNumber: seatIndex,
+              micStatus: MicStatus.on,
+              joinedAt: DateTime.now(),
+            ));
+          }
 
-        sendSystemMessage('🎙️ ${occupantUser.name} took Mic ${seatIndex + 1}.');
-        notifyListeners();
+          if (occupantUser.id == currentUser.id) {
+            _agoraService.switchRole(isHost: true);
+          }
+
+          sendSystemMessage('🎙️ ${occupantUser.name} took Mic ${seatIndex + 1}.');
+          notifyListeners();
+        }
+      } catch (e) {
+        debugPrint('[LivePartyProvider] SeatOccupied error: $e');
       }
     });
 
+    // 6. Seat Released Stream
     _socketSeatReleasedSub?.cancel();
     _socketSeatReleasedSub = _socketService.seatReleasedStream.listen((data) {
-      final seatIndex = data['seatIndex'] as int?;
-      final userId = data['userId'] as String?;
-      if (seatIndex != null) {
-        final pIdx = _participants.indexWhere((p) => p.seatNumber == seatIndex);
-        if (pIdx != -1) {
-          final occupant = _participants[pIdx];
-          _participants[pIdx] = occupant.copyWith(
-            seatNumber: null,
-            role: ParticipantRole.listener,
-            micStatus: MicStatus.muted,
-          );
+      try {
+        final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
+        final userId = data['userId']?.toString() ?? data['releasedByUserId']?.toString();
+        if (seatIndex != null) {
+          final pIdx = _participants.indexWhere((p) => p.seatNumber == seatIndex);
+          if (pIdx != -1) {
+            final occupant = _participants[pIdx];
+            _participants[pIdx] = occupant.copyWith(
+              seatNumber: null,
+              role: ParticipantRole.listener,
+              micStatus: MicStatus.muted,
+            );
 
-          if (occupant.user.id == currentUser.id) {
-            _agoraService.switchRole(isHost: false);
+            if (occupant.user.id == currentUser.id) {
+              _agoraService.switchRole(isHost: false);
+            }
+            sendSystemMessage('🚫 ${occupant.user.name} released Mic ${seatIndex + 1}.');
           }
-          sendSystemMessage('🚫 ${occupant.user.name} released Mic ${seatIndex + 1}.');
-        }
-      } else if (userId != null) {
-        final pIdx = _participants.indexWhere((p) => p.user.id == userId);
-        if (pIdx != -1) {
-          _participants[pIdx] = _participants[pIdx].copyWith(
-            seatNumber: null,
-            role: ParticipantRole.listener,
-            micStatus: MicStatus.muted,
-          );
-          if (userId == currentUser.id) {
-            _agoraService.switchRole(isHost: false);
+        } else if (userId != null) {
+          final pIdx = _participants.indexWhere((p) => p.user.id == userId);
+          if (pIdx != -1) {
+            _participants[pIdx] = _participants[pIdx].copyWith(
+              seatNumber: null,
+              role: ParticipantRole.listener,
+              micStatus: MicStatus.muted,
+            );
+            if (userId == currentUser.id) {
+              _agoraService.switchRole(isHost: false);
+            }
           }
         }
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LivePartyProvider] SeatReleased error: $e');
       }
-      notifyListeners();
     });
 
+    // 7. Room Closed Stream
     _socketRoomClosedSub?.cancel();
     _socketRoomClosedSub = _socketService.roomClosedStream.listen((data) {
       sendSystemMessage('🛑 Room has been closed by host.');
       leaveParty();
     });
 
+    // 8. Gift Sent Stream
     _socketGiftSentSub?.cancel();
     _socketGiftSentSub = _socketService.giftSentStream.listen((data) {
-      final txId = data['transactionId'] ?? data['id'] ?? DateTime.now().millisecondsSinceEpoch.toString();
-      if (_processedGiftTxIds.contains(txId)) return;
-      _processedGiftTxIds.add(txId);
+      try {
+        final txId = data['transactionId']?.toString() ?? data['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString();
+        if (_processedGiftTxIds.contains(txId)) return;
+        _processedGiftTxIds.add(txId);
 
-      final sender = UserModel(
-        id: data['senderUserId'] ?? data['sender']?['id'] ?? '',
-        username: data['senderName'] ?? data['sender']?['name'] ?? 'User',
-        name: data['senderName'] ?? data['sender']?['name'] ?? 'User',
-        avatarUrl: data['senderAvatar'] ?? '',
-      );
-      final receiver = UserModel(
-        id: data['receiverUserId'] ?? data['receiver']?['id'] ?? '',
-        username: data['receiverName'] ?? data['receiver']?['name'] ?? 'Host',
-        name: data['receiverName'] ?? data['receiver']?['name'] ?? 'Host',
-        avatarUrl: '',
-      );
+        final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender'] as Map) : <String, dynamic>{};
+        final receiverMap = data['receiver'] is Map ? Map<String, dynamic>.from(data['receiver'] as Map) : <String, dynamic>{};
 
-      final giftMsg = PartyMessageModel(
-        id: 'gift_$txId',
-        sender: sender,
-        receiver: receiver,
-        text: '${sender.name} sent ${data['quantity'] ?? 1} × ${data['giftName'] ?? 'Gift'} 🎁',
-        timestamp: DateTime.now(),
-        isGiftMessage: true,
-        giftId: data['giftId'] ?? '',
-        giftName: data['giftName'] ?? 'Gift',
-        giftIcon: data['giftIcon'] ?? '🎁',
-        quantity: data['quantity'] ?? 1,
-        transactionId: txId,
-        serverTimestamp: DateTime.now(),
-      );
-      _messages.add(giftMsg);
-      notifyListeners();
+        final sender = UserModel(
+          id: data['senderUserId']?.toString() ?? senderMap['id']?.toString() ?? '',
+          username: data['senderName']?.toString() ?? senderMap['name']?.toString() ?? 'User',
+          name: data['senderName']?.toString() ?? senderMap['name']?.toString() ?? 'User',
+          avatarUrl: data['senderAvatar']?.toString() ?? senderMap['avatarUrl']?.toString() ?? '',
+        );
+        final receiver = UserModel(
+          id: data['receiverUserId']?.toString() ?? receiverMap['id']?.toString() ?? '',
+          username: data['receiverName']?.toString() ?? receiverMap['name']?.toString() ?? 'Host',
+          name: data['receiverName']?.toString() ?? receiverMap['name']?.toString() ?? 'Host',
+          avatarUrl: '',
+        );
+
+        final giftMsg = PartyMessageModel(
+          id: 'gift_$txId',
+          sender: sender,
+          receiver: receiver,
+          text: '${sender.name} sent ${data['quantity'] ?? 1} × ${data['giftName'] ?? 'Gift'} 🎁',
+          timestamp: DateTime.now(),
+          isGiftMessage: true,
+          giftId: data['giftId']?.toString() ?? '',
+          giftName: data['giftName']?.toString() ?? 'Gift',
+          giftIcon: data['giftIcon']?.toString() ?? '🎁',
+          quantity: (data['quantity'] is num) ? (data['quantity'] as num).toInt() : 1,
+          transactionId: txId,
+          serverTimestamp: DateTime.now(),
+        );
+        _messages.add(giftMsg);
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LivePartyProvider] GiftSent error: $e');
+      }
     });
 
+    // 9. Chat Message Stream
     _socketChatMessageSub?.cancel();
     _socketChatMessageSub = _socketService.onRoomChatMessage.listen((data) {
-      final senderMap = data['sender'] as Map<String, dynamic>? ?? {};
-      final senderId = senderMap['id'] ?? data['senderUserId'] ?? '';
-      final msgId = data['id']?.toString() ?? 'msg_${DateTime.now().millisecondsSinceEpoch}';
+      try {
+        final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender'] as Map) : <String, dynamic>{};
+        final senderId = senderMap['id']?.toString() ?? data['senderUserId']?.toString() ?? '';
+        final msgId = data['id']?.toString() ?? 'msg_${DateTime.now().millisecondsSinceEpoch}';
 
-      // Deduplicate if already added locally
-      if (_messages.any((m) => m.id == msgId)) return;
+        if (_messages.any((m) => m.id == msgId)) return;
 
-      final sender = UserModel(
-        id: senderId,
-        username: senderMap['username'] ?? 'User',
-        name: senderMap['displayName'] ?? senderMap['username'] ?? 'User',
-        avatarUrl: senderMap['avatarUrl'] ?? '',
-        isVip: senderMap['isVip'] == true,
-      );
+        final sender = UserModel(
+          id: senderId,
+          username: senderMap['username']?.toString() ?? 'User',
+          name: senderMap['displayName']?.toString() ?? senderMap['name']?.toString() ?? senderMap['username']?.toString() ?? 'User',
+          avatarUrl: senderMap['avatarUrl']?.toString() ?? '',
+          isVip: senderMap['isVip'] == true,
+        );
 
-      final msg = PartyMessageModel(
-        id: msgId,
-        sender: sender,
-        text: data['text']?.toString() ?? '',
-        timestamp: DateTime.tryParse(data['timestamp']?.toString() ?? '') ?? DateTime.now(),
-      );
+        final msg = PartyMessageModel(
+          id: msgId,
+          sender: sender,
+          text: data['text']?.toString() ?? '',
+          timestamp: DateTime.tryParse(data['timestamp']?.toString() ?? '') ?? DateTime.now(),
+        );
 
-      _messages.add(msg);
-      notifyListeners();
+        _messages.add(msg);
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LivePartyProvider] ChatMessage error: $e');
+      }
     });
 
+    // 10. User Kicked Stream
     _socketUserKickedSub?.cancel();
     _socketUserKickedSub = _socketService.onUserKicked.listen((data) {
       final targetUserId = data['targetUserId']?.toString();
@@ -521,7 +602,7 @@ class LivePartyProvider extends ChangeNotifier {
       }
     });
 
-    // Admin moderation: Room Warning
+    // 11. Admin moderation: Room Warning
     _socketRoomWarningSub?.cancel();
     _socketRoomWarningSub = _socketService.roomWarningStream.listen((data) {
       final roomId = data['roomId']?.toString() ?? '';
@@ -530,21 +611,19 @@ class LivePartyProvider extends ChangeNotifier {
       _activeWarningMessage = msg.toString();
       sendSystemMessage('⚠️ MODERATION WARNING: $_activeWarningMessage');
       notifyListeners();
-      // Auto-clear after 8 seconds
       Future.delayed(const Duration(seconds: 8), () {
         _activeWarningMessage = null;
         notifyListeners();
       });
     });
 
-    // Admin moderation: Room Mute
+    // 12. Admin moderation: Room Mute
     _socketRoomMutedSub?.cancel();
     _socketRoomMutedSub = _socketService.roomMutedStream.listen((data) {
       final roomId = data['roomId']?.toString() ?? '';
       if (_activeRoom != null && roomId.isNotEmpty && roomId != _activeRoom!.id) return;
       final muted = data['isMuted'] == true || data['muted'] == true;
       _isRoomMuted = muted;
-      // Mute all participants' local audio
       try {
         _agoraService.muteLocalAudio(muted);
       } catch (_) {}
@@ -552,7 +631,7 @@ class LivePartyProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Admin moderation: Specific user muted
+    // 13. Admin moderation: Specific user muted
     _socketRoomUserMutedSub?.cancel();
     _socketRoomUserMutedSub = _socketService.onRoomUserMuted.listen((data) {
       final roomId = data['roomId']?.toString() ?? '';
@@ -566,7 +645,6 @@ class LivePartyProvider extends ChangeNotifier {
         sendSystemMessage(muted ? '🔇 Your microphone has been muted by moderation.' : '🎙️ Your microphone has been unmuted.');
         notifyListeners();
       }
-      // Update participant mic status in the list
       if (targetId != null) {
         final idx = _participants.indexWhere((p) => p.user.id == targetId);
         if (idx != -1) {
@@ -591,6 +669,7 @@ class LivePartyProvider extends ChangeNotifier {
     await _agoraService.leaveChannel();
 
     _speakerSub?.cancel();
+    _socketRoomSnapshotSub?.cancel();
     _socketUserJoinedSub?.cancel();
     _socketUserLeftSub?.cancel();
     _socketSeatOccupiedSub?.cancel();

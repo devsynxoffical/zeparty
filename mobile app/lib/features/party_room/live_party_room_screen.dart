@@ -34,8 +34,8 @@ import 'widgets/expanded_message_panel.dart';
 import '../../widgets/multi_role_seat_grid.dart';
 import '../../widgets/svip_entry_banner.dart';
 import '../live/widgets/high_value_announcement.dart';
-import '../messages/chat_screen.dart';
 import '../../widgets/emoji_reaction_overlay.dart';
+import '../../widgets/tiktok_user_join_banner.dart';
 import '../../providers/emoji_reaction_provider.dart';
 import '../profile/user_profile_details_screen.dart';
 
@@ -272,9 +272,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             ),
           ),
 
-          // Realtime Animated Emoji Reaction Overlay Layer
-          EmojiReactionOverlay(roomId: widget.room.id),
-
           // Neon Glow Shapes
           Positioned(
             top: -60,
@@ -480,6 +477,12 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               ],
             ),
           ),
+
+          // TikTok User Join Entrance Banner
+          TikTokUserJoinBanner(roomId: widget.room.id, bottomOffset: 240),
+
+          // Realtime Animated Emoji Reaction Overlay Layer (Top of Stack)
+          EmojiReactionOverlay(roomId: widget.room.id),
 
           // Onscreen 3D Gift Animation Overlay
           GiftAnimationOverlay(key: _giftOverlayKey),

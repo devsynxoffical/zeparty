@@ -140,14 +140,15 @@ class LiveGiftEventModel {
 
   /// Factory specifically parsing backend Socket.IO `room:gift_sent` event payload
   factory LiveGiftEventModel.fromSocketJson(Map<String, dynamic> json) {
-    final giftObj = json['gift'] as Map<String, dynamic>? ?? {};
-    final isFull = giftObj['isFullScreen'] as bool? ?? false;
-    final animUrl = giftObj['animationUrl'] as String?;
-    final iconUrl = giftObj['iconUrl'] as String?;
+    final giftRaw = json['gift'];
+    final giftObj = giftRaw is Map ? Map<String, dynamic>.from(giftRaw) : <String, dynamic>{};
+    final isFull = giftObj['isFullScreen'] == true;
+    final animUrl = giftObj['animationUrl']?.toString();
+    final iconUrl = giftObj['iconUrl']?.toString();
 
-    final totalCoins = int.tryParse(json['totalCoins']?.toString() ?? '0') ?? 0;
-    final qty = (json['quantity'] as num?)?.toInt() ?? 1;
-    final unitCoins = qty > 0 ? (totalCoins ~/ qty) : totalCoins;
+    final totalCoins = int.tryParse(json['totalCoins']?.toString() ?? json['coins']?.toString() ?? '0') ?? 0;
+    final qty = (json['quantity'] is num ? (json['quantity'] as num).toInt() : int.tryParse(json['quantity']?.toString() ?? '1')) ?? 1;
+    final unitCoins = qty > 0 ? (totalCoins ~/ qty) : (totalCoins > 0 ? totalCoins : 10);
 
     GiftAnimationLevel animLevel = GiftAnimationLevel.basic;
     if (isFull || unitCoins >= 10000) {
@@ -159,25 +160,25 @@ class LiveGiftEventModel {
     }
 
     return LiveGiftEventModel(
-      eventId: json['transactionId'] as String? ?? 'tx_${DateTime.now().millisecondsSinceEpoch}',
-      giftId: giftObj['id'] as String? ?? '',
-      giftName: giftObj['name'] as String? ?? 'Gift',
-      giftIcon: isFull ? '🏰' : '🎁',
+      eventId: json['transactionId']?.toString() ?? json['id']?.toString() ?? 'tx_${DateTime.now().millisecondsSinceEpoch}',
+      giftId: giftObj['id']?.toString() ?? json['giftId']?.toString() ?? '',
+      giftName: giftObj['name']?.toString() ?? json['giftName']?.toString() ?? 'Gift',
+      giftIcon: isFull ? '🏰' : (giftObj['icon']?.toString() ?? '🎁'),
       iconUrl: iconUrl,
       animationUrl: animUrl,
       animationLevel: animLevel,
-      giftValue: unitCoins,
+      giftValue: unitCoins > 0 ? unitCoins : 10,
       quantity: qty,
       comboCount: qty,
-      senderId: json['senderUserId'] as String? ?? '',
-      senderName: json['senderName'] as String? ?? 'User',
-      senderAvatarUrl: json['senderAvatarUrl'] as String? ?? '',
-      receiverId: json['recipientUserId'] as String? ?? '',
-      receiverName: json['recipientName'] as String? ?? 'Host',
-      receiverAvatarUrl: json['recipientAvatarUrl'] as String? ?? '',
-      roomId: json['roomId'] as String? ?? '',
+      senderId: json['senderUserId']?.toString() ?? (json['sender'] is Map ? (json['sender'] as Map)['id']?.toString() : null) ?? '',
+      senderName: json['senderName']?.toString() ?? (json['sender'] is Map ? (json['sender'] as Map)['name']?.toString() : null) ?? 'User',
+      senderAvatarUrl: json['senderAvatarUrl']?.toString() ?? (json['sender'] is Map ? (json['sender'] as Map)['avatarUrl']?.toString() : null) ?? '',
+      receiverId: json['recipientUserId']?.toString() ?? json['receiverUserId']?.toString() ?? (json['recipient'] is Map ? (json['recipient'] as Map)['id']?.toString() : null) ?? '',
+      receiverName: json['recipientName']?.toString() ?? json['receiverName']?.toString() ?? (json['recipient'] is Map ? (json['recipient'] as Map)['name']?.toString() : null) ?? 'Host',
+      receiverAvatarUrl: json['recipientAvatarUrl']?.toString() ?? json['receiverAvatarUrl']?.toString() ?? '',
+      roomId: json['roomId']?.toString() ?? '',
       timestamp: json['timestamp'] != null
-          ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
+          ? (DateTime.tryParse(json['timestamp'].toString()) ?? DateTime.now())
           : DateTime.now(),
     );
   }

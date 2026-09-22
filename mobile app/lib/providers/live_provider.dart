@@ -53,6 +53,7 @@ class LiveProvider extends ChangeNotifier {
   StreamSubscription? _socketRoomWarningSub;
   StreamSubscription? _socketRoomMutedSub;
   StreamSubscription? _socketRoomUserMutedSub;
+  StreamSubscription? _socketRoomSnapshotSub;
 
   final _likeReceivedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onLikeReceived => _likeReceivedController.stream;
@@ -280,7 +281,7 @@ class LiveProvider extends ChangeNotifier {
       if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
         return;
       }
-      final senderMap = data['sender'] as Map<String, dynamic>? ?? {};
+      final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender']) : <String, dynamic>{};
       final senderName = senderMap['displayName'] ?? senderMap['username'] ?? 'User';
       final text = data['text']?.toString() ?? '';
 
@@ -291,6 +292,20 @@ class LiveProvider extends ChangeNotifier {
       ));
       if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
       notifyListeners();
+    });
+
+    // ── Snapshot Subscription ─────────────────────────────────
+    _socketRoomSnapshotSub?.cancel();
+    _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
+      try {
+        final roomObj = data['room'] is Map ? Map<String, dynamic>.from(data['room']) : <String, dynamic>{};
+        if (roomObj.isNotEmpty && _activeRoom != null) {
+          _activeRoom = LiveRoomModel.fromJson(roomObj);
+          notifyListeners();
+        }
+      } catch (e) {
+        debugPrint('[LiveProvider] Snapshot parse error: $e');
+      }
     });
 
     // ── Moderation Event Subscriptions ──────────────────────
@@ -403,6 +418,7 @@ class LiveProvider extends ChangeNotifier {
     _socketRoomWarningSub?.cancel();
     _socketRoomMutedSub?.cancel();
     _socketRoomUserMutedSub?.cancel();
+    _socketRoomSnapshotSub?.cancel();
     _pkTimer?.cancel();
     _giftTimer?.cancel();
 
