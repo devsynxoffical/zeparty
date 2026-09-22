@@ -9,10 +9,23 @@
       "client_info": {
         "mobilesdk_app_id": "1:13274132785:android:30c7463ffbb7de93bc8010",
         "android_client_info": {
-          "package_name": "com.zeparty.app"
+          "package_name": "com.example.live_stream_app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "13274132785-3ioj3utli0dh2s2vqrp7it22tmduh2sk.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.live_stream_app",
+            "certificate_hash": "7a1c73afdef8ef4c8edf17a628ec3f55f1381c95"
+          }
+        },
+        {
+          "client_id": "13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAAZRAw83GcwurMrWhbdwmbn5xj7mXvywI"
@@ -20,18 +33,51 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "13274132785-ts33rjidm4fdga5v2p8vomnq90rtf2to.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.liveStreamApp"
+              }
+            }
+          ]
         }
       }
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:13274132785:android:30c7463ffbb7de93bc8010",
+        "mobilesdk_app_id": "1:13274132785:android:7b886f859e416ce2bc8010",
         "android_client_info": {
-          "package_name": "com.example.live_stream_app"
+          "package_name": "com.zeparty.app"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "13274132785-bnbfjbjt3ggi9tjgtgbq5c8tn7lhpehg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.zeparty.app",
+            "certificate_hash": "8e119e9c240588afb4b5c6af1fa4badcb6c639f5"
+          }
+        },
+        {
+          "client_id": "13274132785-rvi54dbpt1l289aq5eb555ilppmkba1o.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.zeparty.app",
+            "certificate_hash": "7a1c73afdef8ef4c8edf17a628ec3f55f1381c95"
+          }
+        },
+        {
+          "client_id": "13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAAZRAw83GcwurMrWhbdwmbn5xj7mXvywI"
@@ -39,7 +85,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "13274132785-ts33rjidm4fdga5v2p8vomnq90rtf2to.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.liveStreamApp"
+              }
+            }
+          ]
         }
       }
     }
