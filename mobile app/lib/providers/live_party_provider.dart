@@ -259,15 +259,16 @@ class LivePartyProvider extends ChangeNotifier {
       if (agoraData['token'] != null) {
         final token = agoraData['token'] as String;
         final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
-        final uid = agoraData['uid'] as int? ?? 0;
+        final uid = agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
         final appId = agoraData['appId'] as String?;
 
-        await _agoraService.initialize(appId: appId);
+        await _agoraService.initialize(appId: appId, enableVideo: false);
         await _agoraService.joinChannel(
           token,
           channelName,
           uid,
           isHost: isHost,
+          isVideo: false,
         );
       }
 

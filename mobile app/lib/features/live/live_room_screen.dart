@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:camera/camera.dart';
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
@@ -47,17 +47,18 @@ class LiveRoomScreen extends StatefulWidget {
 class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStateMixin {
   final TextEditingController _chatController = TextEditingController();
   final GlobalKey _hostAvatarKey = GlobalKey();
-  CameraController? _cameraController;
-  List<CameraDescription> _cameras = [];
-  int _selectedCameraIndex = 0;
-  bool _isCameraInitialized = false;
   bool _isMicMuted = false;
+  int? _remoteHostUid;
 
   Timer? _durationTimer;
   int _streamDurationSeconds = 0;
 
   final List<FloatingHeart> _hearts = [];
   final GlobalKey<GiftAnimationOverlayState> _giftOverlayKey = GlobalKey<GiftAnimationOverlayState>();
+
+  StreamSubscription? _socketLikeSub;
+  StreamSubscription? _remoteUsersSub;
+  StreamSubscription? _firstFrameSub;
 
   void _toggleMic() {
     setState(() => _isMicMuted = !_isMicMuted);
@@ -73,13 +74,32 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     );
   }
 
-  StreamSubscription? _socketLikeSub;
+  void _switchCamera() {
+    AgoraRtcService().switchCamera();
+  }
 
   @override
   void initState() {
     super.initState();
-    _initLiveCamera();
     _startDurationTimer();
+
+    // Listen to remote host video stream arrival for audience viewers
+    _remoteUsersSub = AgoraRtcService().remoteUsersStream.listen((uids) {
+      if (mounted && uids.isNotEmpty) {
+        setState(() {
+          _remoteHostUid = uids.first;
+        });
+      }
+    });
+
+    _firstFrameSub = AgoraRtcService().firstRemoteVideoFrameStream.listen((uid) {
+      if (mounted) {
+        setState(() {
+          _remoteHostUid = uid;
+        });
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentUser = context.read<AuthProvider>().currentUser;
       final liveProv = context.read<LiveProvider>();
@@ -116,69 +136,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (mounted) setState(() => _streamDurationSeconds++);
     });
-  }
-
-  Future<void> _initLiveCamera() async {
-    try {
-      final currentUser = context.read<AuthProvider>().currentUser;
-      final isHost = (widget.room.host.id == currentUser.id) ||
-          (widget.room.creatorUserId == currentUser.id) ||
-          (currentUser.name.trim().isNotEmpty && currentUser.name.trim().toLowerCase() == widget.room.host.name.trim().toLowerCase()) ||
-          (currentUser.username.trim().isNotEmpty && currentUser.username.trim().toLowerCase() == widget.room.host.username.trim().toLowerCase());
-
-      // Guest viewers joining someone else's live stream should NOT have camera opened automatically
-      if (!isHost) {
-        if (mounted) setState(() => _isCameraInitialized = false);
-        return;
-      }
-
-      await Future.delayed(const Duration(milliseconds: 250));
-      if (!mounted) return;
-
-      try {
-        await [Permission.camera, Permission.microphone].request();
-      } catch (_) {}
-
-      _cameras = await availableCameras();
-      if (_cameras.isNotEmpty) {
-        int frontIdx = _cameras.indexWhere((c) => c.lensDirection == CameraLensDirection.front);
-        _selectedCameraIndex = frontIdx != -1 ? frontIdx : 0;
-        await _setupCamera(_cameras[_selectedCameraIndex]);
-      }
-    } catch (e) {
-      debugPrint('Live stream camera init safely skipped: $e');
-      if (mounted) setState(() => _isCameraInitialized = false);
-    }
-  }
-
-  Future<void> _setupCamera(CameraDescription desc) async {
-    if (_cameraController != null) {
-      try {
-        await _cameraController!.dispose();
-        _cameraController = null;
-      } catch (_) {}
-    }
-    try {
-      final ctrl = CameraController(
-        desc,
-        ResolutionPreset.medium,
-        enableAudio: false,
-      );
-      _cameraController = ctrl;
-      await ctrl.initialize();
-      if (mounted) setState(() => _isCameraInitialized = true);
-    } catch (e) {
-      debugPrint('Live camera setup error: $e');
-      if (mounted) setState(() => _isCameraInitialized = false);
-    }
-  }
-
-  void _switchCamera() async {
-    if (_cameras.length > 1) {
-      _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
-      setState(() => _isCameraInitialized = false);
-      await _setupCamera(_cameras[_selectedCameraIndex]);
-    }
   }
 
   void _triggerFloatingHeartAt(Offset position) {
@@ -350,11 +307,42 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     );
   }
 
+  Widget _buildVideoStream(bool isDark, bool isHost, LiveRoomModel activeRoom) {
+    final agora = AgoraRtcService.instance;
+
+    if (isHost) {
+      if (agora.isInitialized && agora.engine != null) {
+        return AgoraVideoView(
+          controller: VideoViewController(
+            rtcEngine: agora.engine!,
+            canvas: const VideoCanvas(uid: 0),
+          ),
+        );
+      }
+    } else {
+      // Audience Viewer
+      final targetUid = _remoteHostUid ?? (agora.remoteUids.isNotEmpty ? agora.remoteUids.first : null);
+      if (agora.isInitialized && agora.engine != null && targetUid != null) {
+        return AgoraVideoView(
+          controller: VideoViewController.remote(
+            rtcEngine: agora.engine!,
+            canvas: VideoCanvas(uid: targetUid),
+            connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+          ),
+        );
+      }
+    }
+
+    // Fallback if video is connecting or audio-only
+    return _buildLiveHostBackground(isDark);
+  }
+
   @override
   void dispose() {
     _socketLikeSub?.cancel();
+    _remoteUsersSub?.cancel();
+    _firstFrameSub?.cancel();
     _durationTimer?.cancel();
-    _cameraController?.dispose();
     _chatController.dispose();
     try {
       context.read<LiveProvider>().leaveRoom();
@@ -368,22 +356,17 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     final liveProvider = context.watch<LiveProvider>();
     final activeRoom = liveProvider.activeRoom ?? widget.room;
     final activeGift = liveProvider.activeGiftAnimation;
+    final currentUser = context.read<AuthProvider>().currentUser;
+    final isHost = (activeRoom.host.id == currentUser.id) ||
+        (activeRoom.creatorUserId == currentUser.id) ||
+        (currentUser.name.trim().isNotEmpty && currentUser.name.trim().toLowerCase() == activeRoom.host.name.trim().toLowerCase());
 
     return Scaffold(
       body: Stack(
         children: [
-          // Background Stream (Camera preview or Cover Image/Live Host fallback)
+          // Background Stream (Native Agora Video or Cover Image fallback)
           Positioned.fill(
-            child: _isCameraInitialized && _cameraController != null && _cameraController!.value.isInitialized
-                ? FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: _cameraController!.value.previewSize?.height ?? 1,
-                      height: _cameraController!.value.previewSize?.width ?? 1,
-                      child: CameraPreview(_cameraController!),
-                    ),
-                  )
-                : _buildLiveHostBackground(isDark),
+            child: _buildVideoStream(isDark, isHost, activeRoom),
           ),
 
           // Double Tap Screen for Like Hearts

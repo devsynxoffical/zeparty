@@ -150,20 +150,24 @@ class LiveProvider extends ChangeNotifier {
       if (agoraData['token'] != null) {
         final token = agoraData['token'] as String;
         final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
-        final uid = agoraData['uid'] as int? ?? 0;
+        final uid = agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
         final appId = agoraData['appId'] as String?;
 
-        await _agoraService.initialize(appId: appId);
+        final isVideo = (room.roomType == 'LIVE_VIDEO' || room.roomType == 'VIDEO_PARTY' || room.roomType == null || !room.roomType!.contains('AUDIO'));
+
+        await _agoraService.initialize(appId: appId, enableVideo: isVideo);
         await _agoraService.joinChannel(
           token,
           channelName,
           uid,
           isHost: isHost,
+          isVideo: isVideo,
         );
       }
     } catch (e) {
       debugPrint('[LiveProvider] joinRoom error: $e');
     }
+    notifyListeners();
   }
 
   void _setupSocketSubscriptions(UserModel? currentUser) {
