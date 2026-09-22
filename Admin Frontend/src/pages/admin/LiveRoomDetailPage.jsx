@@ -45,64 +45,88 @@ export function LiveRoomDetailPage() {
 
   useEffect(() => {
     if (!id) return;
-    setIsLoading(true);
-    getLiveRoomById(id)
-      .then((found) => {
-        setRoom(found || null);
-        if (found) {
-          setRoomMuted(Boolean(found.isMuted));
-          const realParticipants = [];
-          if (found.hostId || found.hostName) {
-            realParticipants.push({
-              id: found.hostId || 'host',
-              name: found.hostName || 'Host',
-              role: 'host',
-              micOn: !found.isMuted,
-              seatIndex: 0,
-            });
-          }
-          if (Array.isArray(found.seats)) {
-            found.seats.forEach((s) => {
-              if (s.occupiedUser && s.occupiedUser.id !== found.hostId) {
-                realParticipants.push({
-                  id: s.occupiedUser.id,
-                  name: s.occupiedUser.profile?.displayName || s.occupiedUser.username || `Speaker ${s.seatIndex + 1}`,
-                  role: 'speaker',
-                  micOn: !s.isMuted,
-                  seatIndex: s.seatIndex,
-                });
-              }
-            });
-          }
-          if (Array.isArray(found.members)) {
-            found.members.forEach((m) => {
-              const u = m.user || m;
-              if (u && u.id && !realParticipants.some((p) => p.id === u.id)) {
-                realParticipants.push({
-                  id: u.id,
-                  name: u.profile?.displayName || u.username || 'Viewer',
-                  role: 'viewer',
-                  micOn: false,
-                });
-              }
-            });
-          }
-          setParticipants(realParticipants);
-          getLogsForTarget(found.id).then((data) => {
-            setHistory(data || []);
+    let isMounted = true;
+
+    const fetchDetail = (isInitial = false) => {
+      if (isInitial) setIsLoading(true);
+      getLiveRoomById(id)
+        .then((found) => {
+          if (!isMounted) return;
+          setRoom(found || null);
+          if (found) {
+            setRoomMuted(Boolean(found.isMuted));
+            const realParticipants = [];
+            if (found.hostId || found.hostName) {
+              realParticipants.push({
+                id: found.hostId || 'host',
+                name: found.hostName || 'Host',
+                role: 'host',
+                micOn: !found.isMuted,
+                seatIndex: 0,
+              });
+            }
+            if (Array.isArray(found.seats)) {
+              found.seats.forEach((s) => {
+                if (s.occupiedUser && s.occupiedUser.id !== found.hostId) {
+                  realParticipants.push({
+                    id: s.occupiedUser.id,
+                    name: s.occupiedUser.profile?.displayName || s.occupiedUser.username || `Speaker ${s.seatIndex + 1}`,
+                    role: 'speaker',
+                    micOn: !s.isMuted,
+                    seatIndex: s.seatIndex,
+                  });
+                }
+              });
+            }
+            if (Array.isArray(found.members)) {
+              found.members.forEach((m) => {
+                const u = m.user || m;
+                if (u && u.id && !realParticipants.some((p) => p.id === u.id)) {
+                  realParticipants.push({
+                    id: u.id,
+                    name: u.profile?.displayName || u.username || 'Viewer',
+                    role: 'viewer',
+                    micOn: false,
+                  });
+                }
+              });
+            }
+            setParticipants(realParticipants);
+            if (isInitial) {
+              getLogsForTarget(found.id).then((data) => {
+                if (isMounted) {
+                  setHistory(data || []);
+                  setIsLoadingHistory(false);
+                }
+              });
+            }
+          } else {
             setIsLoadingHistory(false);
-          });
-        } else {
-          setIsLoadingHistory(false);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load live room:', err);
-        setRoom(null);
-        setParticipants([]);
-        setIsLoadingHistory(false);
-      })
-      .finally(() => setIsLoading(false));
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to load live room:', err);
+          if (isMounted) {
+            setRoom(null);
+            setParticipants([]);
+            setIsLoadingHistory(false);
+          }
+        })
+        .finally(() => {
+          if (isMounted && isInitial) setIsLoading(false);
+        });
+    };
+
+    fetchDetail(true);
+
+    const interval = setInterval(() => {
+      fetchDetail(false);
+    }, 3000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [id]);
 
   useEffect(() => {

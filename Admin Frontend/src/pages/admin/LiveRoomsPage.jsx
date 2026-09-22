@@ -43,18 +43,34 @@ export function LiveRoomsPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  // Load rooms from backend
+  // Load rooms from backend with live auto-refresh
   useEffect(() => {
-    setIsLoading(true);
-    getLiveRooms()
-      .then((data) => {
-        setRooms(data || []);
-      })
-      .catch((err) => {
-        console.error('Failed to load rooms:', err);
-        setRooms([]);
-      })
-      .finally(() => setIsLoading(false));
+    let isMounted = true;
+    const loadRooms = (isInitial = false) => {
+      if (isInitial) setIsLoading(true);
+      getLiveRooms()
+        .then((data) => {
+          if (isMounted) setRooms(data || []);
+        })
+        .catch((err) => {
+          console.error('Failed to load rooms:', err);
+          if (isMounted && isInitial) setRooms([]);
+        })
+        .finally(() => {
+          if (isMounted && isInitial) setIsLoading(false);
+        });
+    };
+
+    loadRooms(true);
+
+    const interval = setInterval(() => {
+      loadRooms(false);
+    }, 3500);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   const showFeedback = (msg) => {

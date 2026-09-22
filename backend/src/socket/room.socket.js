@@ -171,23 +171,38 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
 
     // 3. If this was the user's last remaining connection, execute persistent leave
     if (isLastSocket) {
+      let leaveResult = null;
       try {
-        const leaveResult = await roomService.leaveRoom(roomId, userId, db);
+        leaveResult = await roomService.leaveRoom(roomId, userId, db);
         updatedViewerCount = leaveResult?.currentViewersCount || 0;
       } catch (leaveErr) {
         // Safe fallback
       }
 
+      const isRoomEnded = leaveResult?.status === 'ENDED';
       const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
-      broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, {
-        roomId,
-        userId,
-      });
 
-      broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, {
-        roomId,
-        viewerCount: updatedViewerCount,
-      });
+      if (isRoomEnded) {
+        broadcastTarget.emit(SOCKET_EVENTS.ROOM_CLOSED, {
+          roomId,
+          status: 'ENDED',
+          reason: 'HOST_LEFT',
+        });
+        if (io) {
+          io.emit('room:closed', { roomId, status: 'ENDED' });
+          io.emit('room:deleted', { roomId });
+        }
+      } else {
+        broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, {
+          roomId,
+          userId,
+        });
+
+        broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, {
+          roomId,
+          viewerCount: updatedViewerCount,
+        });
+      }
     }
 
     if (typeof callback === 'function') {
@@ -247,7 +262,7 @@ export async function onRequestSnapshot(socket, data, callback, db) {
   }
 }
 
-export async function onSocketDisconnect(socket) {
+export async function onSocketDisconnect(io, socket) {
   const userId = socket.userId;
   if (!userId) return;
 
@@ -269,24 +284,33 @@ export async function onSocketDisconnect(socket) {
           }
         } catch {}
 
-        if (socket.to) {
-          if (roomEnded) {
+        if (roomEnded) {
+          if (io) {
+            io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_CLOSED, {
+              roomId,
+              status: 'ENDED',
+              reason: 'HOST_DISCONNECTED',
+            });
+            io.emit('room:closed', { roomId, status: 'ENDED' });
+            io.emit('room:deleted', { roomId });
+          } else if (socket.to) {
             socket.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_CLOSED, {
               roomId,
               status: 'ENDED',
               reason: 'HOST_DISCONNECTED',
             });
-          } else {
-            socket.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_USER_LEFT, {
-              roomId,
-              userId,
-            });
-
-            socket.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, {
-              roomId,
-              viewerCount: updatedViewerCount,
-            });
           }
+        } else {
+          const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
+          broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, {
+            roomId,
+            userId,
+          });
+
+          broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, {
+            roomId,
+            viewerCount: updatedViewerCount,
+          });
         }
       }
     } catch {}
@@ -465,7 +489,7 @@ export function registerRoomHandlers(io, socket) {
     withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onKickUser(io, s, d, cb))
   );
 
-  socket.on(SOCKET_EVENTS.DISCONNECT, () => onSocketDisconnect(socket));
+  socket.on(SOCKET_EVENTS.DISCONNECT, () => onSocketDisconnect(io, socket));
 }
 
 export default {
