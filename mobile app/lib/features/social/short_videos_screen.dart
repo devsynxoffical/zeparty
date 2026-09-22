@@ -52,10 +52,15 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
       final social = context.read<SocialProvider>();
       final isPost = social.posts.any((p) => p.id == video.id);
       if (isPost) {
-        social.toggleLikePost(video.id);
+        final post = social.posts.firstWhere((p) => p.id == video.id);
+        if (!post.isLiked) {
+          social.toggleLikePost(video.id);
+        }
       } else {
-        BackendRepository.instance.toggleVideoLike(video.id);
-        setState(() {});
+        if (!video.isLiked) {
+          BackendRepository.instance.toggleVideoLike(video.id);
+          setState(() {});
+        }
       }
       final position = details.localPosition;
       setState(() {
@@ -63,9 +68,9 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
           FloatingHeartAnimation(
             position: position,
             onComplete: () {
-              setState(() {
-                if (_floatingHearts.isNotEmpty) _floatingHearts.removeAt(0);
-              });
+              if (mounted && _floatingHearts.isNotEmpty) {
+                setState(() => _floatingHearts.removeAt(0));
+              }
             },
           ),
         );

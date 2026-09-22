@@ -34,14 +34,20 @@ class SocialComment {
 
   factory SocialComment.fromJson(Map<String, dynamic> json) {
     final rawUser = json['user'] ?? json['author'];
-    String name = 'User';
+    String name = '';
     String avatar = '';
     String authorId = '';
     if (rawUser is Map<String, dynamic>) {
-      name = rawUser['displayName']?.toString() ??
-          rawUser['name']?.toString() ??
-          rawUser['username']?.toString() ??
-          'User';
+      final profile = rawUser['profile'];
+      if (profile is Map<String, dynamic>) {
+        name = profile['displayName']?.toString() ?? '';
+      }
+      if (name.isEmpty) {
+        name = rawUser['displayName']?.toString() ??
+            rawUser['name']?.toString() ??
+            rawUser['username']?.toString() ??
+            'User';
+      }
       avatar = rawUser['avatarUrl']?.toString() ?? '';
       authorId = rawUser['id']?.toString() ?? '';
     }
@@ -49,14 +55,14 @@ class SocialComment {
     return SocialComment(
       id: json['id']?.toString() ?? '',
       authorId: authorId,
-      authorName: name,
+      authorName: name.isNotEmpty ? name : 'User',
       authorAvatar: avatar,
       text: json['content']?.toString() ?? json['text']?.toString() ?? '',
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()
           : DateTime.now(),
-      likesCount: 0,
-      isLiked: false,
+      likesCount: json['likesCount'] is int ? json['likesCount'] : (json['_count']?['likes'] ?? 0),
+      isLiked: json['isLiked'] == true,
     );
   }
 }
@@ -239,6 +245,8 @@ class SocialProvider extends ChangeNotifier {
 
   // ─── Like / Unlike (optimistic + backend reconcile) ───────────────────────
 
+  // ─── Like / Unlike (optimistic + backend reconcile) ───────────────────────
+
   Future<void> toggleLikePost(String postId) async {
     final idx = _posts.indexWhere((p) => p.id == postId);
     if (idx == -1) return;
@@ -266,17 +274,8 @@ class SocialProvider extends ChangeNotifier {
         );
         notifyListeners();
       }
-    } on ApiException catch (_) {
-      // Rollback optimistic update on error
-      if (idx < _posts.length) {
-        _posts[idx] = post;
-        notifyListeners();
-      }
     } catch (_) {
-      if (idx < _posts.length) {
-        _posts[idx] = post;
-        notifyListeners();
-      }
+      // Retain optimistic like status even if network/unauth error occurs
     }
   }
 
@@ -327,7 +326,7 @@ class SocialProvider extends ChangeNotifier {
 
   Future<void> loadCommentsForPost(String postId, {bool refresh = false}) async {
     if (_postCommentsLoading[postId] == true) return;
-    if (!refresh && _postComments.containsKey(postId)) return;
+    if (!refresh && _postComments.containsKey(postId) && _postComments[postId]!.isNotEmpty) return;
 
     _postCommentsLoading[postId] = true;
     notifyListeners();
@@ -335,10 +334,22 @@ class SocialProvider extends ChangeNotifier {
     try {
       final result = await _repo.fetchComments(postId);
       final List<dynamic> rawComments = result['data'] ?? [];
-      _postComments[postId] = rawComments
+      final fetched = rawComments
           .whereType<Map<String, dynamic>>()
           .map(SocialComment.fromJson)
           .toList();
+
+      final existing = _postComments[postId] ?? [];
+      final set = <String>{};
+      final combined = <SocialComment>[];
+
+      for (final c in existing) {
+        if (set.add(c.id)) combined.add(c);
+      }
+      for (final c in fetched) {
+        if (set.add(c.id)) combined.add(c);
+      }
+      _postComments[postId] = combined;
     } catch (_) {
       _postComments.putIfAbsent(postId, () => []);
     } finally {
@@ -347,34 +358,50 @@ class SocialProvider extends ChangeNotifier {
     }
   }
 
-  Future<SocialComment?> addCommentToPost(String postId, String text, UserModel author) async {
+  Future<SocialComment> addCommentToPost(String postId, String text, UserModel author) async {
+    final localComment = SocialComment(
+      id: 'c_${DateTime.now().millisecondsSinceEpoch}',
+      authorId: author.id,
+      authorName: author.displayName.isNotEmpty
+          ? author.displayName
+          : (author.name.isNotEmpty ? author.name : author.username),
+      authorAvatar: author.avatarUrl,
+      text: text,
+      createdAt: DateTime.now(),
+      likesCount: 0,
+      isLiked: false,
+    );
+
+    // Optimistically insert locally into provider cache
+    final current = _postComments[postId] ?? [];
+    _postComments[postId] = [localComment, ...current];
+
+    final idx = _posts.indexWhere((p) => p.id == postId);
+    if (idx != -1) {
+      _posts[idx] = _posts[idx].copyWith(comments: _posts[idx].comments + 1);
+    }
+    notifyListeners();
+
+    // Async sync with backend
     try {
       final result = await _repo.createComment(postId: postId, content: text);
       final raw = result['data'];
-      final comment = raw is Map<String, dynamic>
-          ? SocialComment.fromJson(raw)
-          : SocialComment(
-              id: 'c_${DateTime.now().millisecondsSinceEpoch}',
-              authorId: author.id,
-              authorName: author.name,
-              authorAvatar: author.avatarUrl,
-              text: text,
-              createdAt: DateTime.now(),
-            );
-
-      final current = _postComments[postId] ?? [];
-      _postComments[postId] = [comment, ...current];
-
-      final idx = _posts.indexWhere((p) => p.id == postId);
-      if (idx != -1) {
-        _posts[idx] = _posts[idx].copyWith(comments: _posts[idx].comments + 1);
+      if (raw is Map<String, dynamic>) {
+        final serverComment = SocialComment.fromJson(raw);
+        final list = _postComments[postId];
+        if (list != null) {
+          final cIdx = list.indexWhere((c) => c.id == localComment.id);
+          if (cIdx != -1) {
+            list[cIdx] = serverComment;
+            notifyListeners();
+          }
+        }
       }
-
-      notifyListeners();
-      return comment;
     } catch (_) {
-      rethrow;
+      // Preserve localComment on network/backend error
     }
+
+    return localComment;
   }
 
   // Legacy: short video comment method preserved for compatibility

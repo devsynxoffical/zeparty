@@ -288,6 +288,124 @@ function sanitizeUser(user) {
   };
 }
 
+export async function syncUserFromApp({
+  uid,
+  id,
+  email,
+  name,
+  displayName,
+  username,
+  avatarUrl,
+  bio,
+  gender,
+  dob,
+  countryCode,
+  phone,
+  coins = 1000,
+  diamonds = 100,
+  device = {},
+  ipAddress,
+  userAgent,
+}) {
+  const targetId = uid || id;
+  const cleanEmail = email ? email.trim().toLowerCase() : null;
+  const cleanPhone = phone ? phone.trim() : null;
+  const cleanUsername = username ? username.trim() : null;
+  const cleanName = displayName || name || 'ZeParty Member';
+
+  let existingUser = null;
+  if (targetId) {
+    existingUser = await userRepository.findById(targetId);
+  }
+  if (!existingUser && cleanEmail) {
+    existingUser = await userRepository.findByEmail(cleanEmail);
+  }
+  if (!existingUser && cleanPhone) {
+    existingUser = await userRepository.findByPhone(cleanPhone);
+  }
+  if (!existingUser && cleanUsername) {
+    existingUser = await userRepository.findByUsername(cleanUsername);
+  }
+
+  let user = existingUser;
+  let isNewUser = false;
+
+  if (!user) {
+    let finalUsername = cleanUsername;
+    if (!finalUsername) {
+      if (cleanEmail) {
+        finalUsername = cleanEmail.split('@')[0];
+      } else {
+        const randomSuffix = crypto.randomBytes(3).toString('hex');
+        finalUsername = `user_${randomSuffix}`;
+      }
+    }
+    const collision = await userRepository.findByUsername(finalUsername);
+    if (collision) {
+      finalUsername = `${finalUsername}_${crypto.randomBytes(2).toString('hex')}`;
+    }
+
+    user = await userRepository.createUserWithProfile({
+      id: targetId && targetId.length >= 8 ? targetId : undefined,
+      email: cleanEmail,
+      phone: cleanPhone,
+      username: finalUsername,
+      displayName: cleanName,
+      avatarUrl: avatarUrl || null,
+      coverUrl: null,
+      status: 'ACTIVE',
+      userType: 'USER',
+      countryCode: countryCode || 'US',
+      coinBalance: coins || 1000,
+      diamondBalance: diamonds || 100,
+    });
+    isNewUser = true;
+  } else {
+    // Update existing user profile if needed
+    if (cleanName || avatarUrl || bio || gender || dob) {
+      const updateData = {};
+      if (cleanName) updateData.displayName = cleanName;
+      if (avatarUrl) updateData.avatarUrl = avatarUrl;
+      if (bio) updateData.bio = bio;
+      if (gender) updateData.gender = gender;
+      if (dob) updateData.dob = new Date(dob);
+
+      if (Object.keys(updateData).length > 0) {
+        await userRepository.updateUserProfile(user.id, updateData).catch(() => {});
+      }
+    }
+    user = await userRepository.findById(user.id);
+  }
+
+  if (device && (device.deviceToken || device.macAddress || device.platform)) {
+    await deviceRepository.upsertDevice({
+      userId: user.id,
+      deviceToken: device.deviceToken,
+      platform: device.platform || 'ANDROID',
+      macAddress: device.macAddress,
+      deviceModel: device.deviceModel,
+      appVersion: device.appVersion,
+    }).catch(() => {});
+  }
+
+  const sessionResult = await sessionService.createSession({
+    userId: user.id,
+    userType: user.userType || 'USER',
+    ipAddress,
+    userAgent,
+  });
+
+  await userRepository.updateLastLogin(user.id).catch(() => {});
+
+  return {
+    isNewUser,
+    user: sanitizeUser(user),
+    accessToken: sessionResult.accessToken,
+    refreshToken: sessionResult.refreshToken,
+    expiresAt: sessionResult.expiresAt,
+  };
+}
+
 export default {
   requestOtp,
   verifyOtpAndAuthenticate,
@@ -295,4 +413,6 @@ export default {
   logout,
   getCurrentUser,
   adminLogin,
+  syncUserFromApp,
 };
+

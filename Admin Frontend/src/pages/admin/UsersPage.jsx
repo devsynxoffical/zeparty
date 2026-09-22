@@ -800,6 +800,9 @@ export function UsersPage() {
   const { canPerformAction } = usePermission();
 
   const [users, setUsers] = useState([]);
+  const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0, limit: 20 });
+  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [search, setSearch] = useState('');
@@ -827,8 +830,30 @@ export function UsersPage() {
     setIsLoading(true);
     setLoadError('');
     try {
-      const data = await getUsers();
-      setUsers(data);
+      const res = await getUsers({
+        page: currentPage,
+        limit: pageSize,
+        ...(search.trim() ? { search: search.trim() } : {}),
+        ...(statusFilter !== 'all' ? { status: statusFilter.toUpperCase() } : {}),
+      });
+
+      const userList = res?.users || res?.data || (Array.isArray(res) ? res : []);
+      setUsers(userList);
+      if (res?.pagination) {
+        setPagination({
+          page: Number(res.pagination.page) || currentPage,
+          totalPages: Number(res.pagination.totalPages) || 1,
+          total: Number(res.pagination.total) || userList.length,
+          limit: Number(res.pagination.limit) || pageSize,
+        });
+      } else {
+        setPagination({
+          page: currentPage,
+          totalPages: 1,
+          total: userList.length,
+          limit: pageSize,
+        });
+      }
     } catch (err) {
       console.error('Failed to load users:', err);
       setLoadError(err.message || 'Failed to load users from database.');
@@ -837,10 +862,10 @@ export function UsersPage() {
     }
   };
 
-  // Load on mount
+  // Reload on page, pageSize, search or status change
   useEffect(() => {
     loadUsers();
-  }, []);
+  }, [currentPage, pageSize, search, statusFilter]);
 
   // Create User Handler
   async function handleCreateUser(payload) {
@@ -908,33 +933,30 @@ export function UsersPage() {
     }
   }
 
-  const filtered = useMemo(() => {
-    return users.filter((u) => {
-      const matchStatus = statusFilter === 'all' || u.status === statusFilter;
-      const q = search.toLowerCase();
-      const matchSearch =
-        !q ||
-        u.username.toLowerCase().includes(q) ||
-        u.displayName.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q) ||
-        (u.phone && u.phone.includes(q));
-      return matchStatus && matchSearch;
-    });
-  }, [users, search, statusFilter]);
-
   const columns = [
     {
       key: 'user',
       header: 'User',
       render: (row) => (
         <div className="flex items-center gap-3">
-          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-sm">
-            {row.displayName.charAt(0)}
-          </div>
-          <div>
-            <p className="font-medium text-white text-sm leading-tight">{row.displayName}</p>
-            <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
-              <span>@{row.username}</span>
+          {row.avatarUrl ? (
+            <img
+              src={row.avatarUrl}
+              alt={row.displayName}
+              className="h-9 w-9 rounded-full object-cover shadow-sm ring-1 ring-slate-700 shrink-0"
+              onError={(e) => {
+                e.target.style.display = 'none';
+              }}
+            />
+          ) : (
+            <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-sm">
+              {(row.displayName || row.username || 'U').charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="font-semibold text-white text-sm leading-tight truncate">{row.displayName}</p>
+            <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5 flex-wrap">
+              <span className="font-mono text-indigo-300">@{row.username}</span>
               <span>•</span>
               <CountryFlag code={row.country} className="w-3.5 h-2.5 rounded-sm inline-block" />
               <span>{row.country || 'Global'}</span>
@@ -947,9 +969,9 @@ export function UsersPage() {
       key: 'phone',
       header: 'Phone / Email',
       render: (row) => (
-        <div className="text-xs">
+        <div className="text-xs space-y-0.5">
           <p className="text-white font-mono">{row.phone || '—'}</p>
-          <p className="text-slate-500">{row.email || '—'}</p>
+          <p className="text-slate-400">{row.email || '—'}</p>
         </div>
       ),
     },
@@ -1049,6 +1071,11 @@ export function UsersPage() {
     },
   ];
 
+  const totalUsersCount = pagination.total || users.length;
+  const activeCount = users.filter((u) => u.status === 'active').length;
+  const suspendedCount = users.filter((u) => u.status === 'suspended').length;
+  const bannedCount = users.filter((u) => u.status === 'banned').length;
+
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
@@ -1081,25 +1108,54 @@ export function UsersPage() {
         <Input
           placeholder="Search by username, name, phone, or email…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setCurrentPage(1);
+          }}
           leftIcon={Search}
           containerClassName="flex-1 max-w-md w-full min-w-0"
         />
-        <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-slate-400 flex-shrink-0" aria-hidden="true" />
-          <div className="flex gap-1 flex-wrap">
-            {USER_STATUSES.map((s) => (
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-slate-400 flex-shrink-0" aria-hidden="true" />
+            <div className="flex gap-1 flex-wrap">
+              {USER_STATUSES.map((s) => (
+                <button
+                  key={s}
+                  onClick={() => {
+                    setStatusFilter(s);
+                    setCurrentPage(1);
+                  }}
+                  className={[
+                    'px-3 py-1.5 rounded-lg text-xs font-medium capitalize border transition-colors',
+                    statusFilter === s
+                      ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400'
+                      : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:border-slate-600',
+                  ].join(' ')}
+                >
+                  {s === 'all' ? 'All' : s}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 ml-auto sm:ml-0">
+            <span>Show:</span>
+            {[20, 50, 100].map((sz) => (
               <button
-                key={s}
-                onClick={() => setStatusFilter(s)}
+                key={sz}
+                onClick={() => {
+                  setPageSize(sz);
+                  setCurrentPage(1);
+                }}
                 className={[
-                  'px-3 py-1.5 rounded-lg text-xs font-medium capitalize border transition-colors',
-                  statusFilter === s
-                    ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400'
-                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:border-slate-600',
+                  'px-2 py-1 rounded text-xs font-mono border transition-colors',
+                  pageSize === sz
+                    ? 'bg-indigo-600 text-white border-indigo-500 font-bold'
+                    : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white',
                 ].join(' ')}
               >
-                {s === 'all' ? 'All' : s}
+                {sz}
               </button>
             ))}
           </div>
@@ -1109,10 +1165,10 @@ export function UsersPage() {
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Total Users', value: users.length,                                            color: 'text-white' },
-          { label: 'Active',      value: users.filter((u) => u.status === 'active').length,    color: 'text-emerald-400' },
-          { label: 'Suspended',   value: users.filter((u) => u.status === 'suspended').length, color: 'text-amber-400' },
-          { label: 'Banned',      value: users.filter((u) => u.status === 'banned').length,    color: 'text-red-400' },
+          { label: 'Total Users', value: totalUsersCount,                               color: 'text-white' },
+          { label: 'Active',      value: activeCount > 0 ? (totalUsersCount > 0 && activeCount === users.length ? totalUsersCount : activeCount) : 0, color: 'text-emerald-400' },
+          { label: 'Suspended',   value: suspendedCount,                                color: 'text-amber-400' },
+          { label: 'Banned',      value: bannedCount,                                   color: 'text-red-400' },
         ].map((s) => (
           <Card key={s.label} className="p-4 text-center">
             <p className={`text-2xl font-bold ${s.color}`}>{s.value}</p>
@@ -1133,14 +1189,19 @@ export function UsersPage() {
         </div>
       )}
 
-      {/* Table */}
+      {/* Table with real pagination */}
       <DataTable
         columns={columns}
-        data={filtered}
+        data={users}
         isLoading={isLoading}
         emptyTitle="No users found"
         emptyDescription="Try adjusting your search or status filter."
-        pagination={{ page: 1, totalPages: 1, total: filtered.length }}
+        pagination={{
+          page: pagination.page,
+          totalPages: pagination.totalPages,
+          total: pagination.total,
+        }}
+        onPageChange={(newPage) => setCurrentPage(newPage)}
       />
 
       {/* Modals */}

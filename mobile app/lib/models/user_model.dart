@@ -4,6 +4,8 @@ class UserModel {
   final String id;
   final String username;
   final String name;
+  final String? email;
+  final String? phone;
   final String avatarUrl;
   final String? coverUrl;
   final String bio;
@@ -56,6 +58,7 @@ class UserModel {
   final String? nobleTitle;
   final String status;
 
+
   static const UserModel empty = UserModel(
     id: '',
     username: '',
@@ -97,6 +100,8 @@ class UserModel {
     required this.id,
     required this.username,
     required this.name,
+    this.email,
+    this.phone,
     required this.avatarUrl,
     this.coverUrl,
     this.bio = 'Creator on ZeParty ✨',
@@ -183,6 +188,8 @@ class UserModel {
     final name = (rawName.isNotEmpty && !rawName.startsWith('user_'))
         ? rawName
         : (username.isNotEmpty && !username.startsWith('user_') ? username : (rawName.isNotEmpty ? rawName : username));
+    final email = json['email']?.toString();
+    final phone = json['phone']?.toString();
     final avatarUrl = profile['avatarUrl']?.toString() ?? json['avatarUrl']?.toString() ?? '';
     final bio = profile['bio']?.toString() ?? json['bio']?.toString() ?? '';
     final gender = profile['gender']?.toString() ?? json['gender']?.toString() ?? 'Not Specified';
@@ -220,6 +227,8 @@ class UserModel {
       id: id,
       username: username,
       name: name,
+      email: email,
+      phone: phone,
       avatarUrl: avatarUrl,
       coverUrl: json['coverUrl']?.toString(),
       bio: bio,
@@ -274,6 +283,8 @@ class UserModel {
       'id': id,
       'username': username,
       'name': name,
+      'email': email,
+      'phone': phone,
       'avatarUrl': avatarUrl,
       'coverUrl': coverUrl,
       'bio': bio,
@@ -312,6 +323,8 @@ class UserModel {
     String? id,
     String? username,
     String? name,
+    String? email,
+    String? phone,
     String? avatarUrl,
     String? coverUrl,
     String? bio,
@@ -360,6 +373,8 @@ class UserModel {
       id: id ?? this.id,
       username: username ?? this.username,
       name: name ?? this.name,
+      email: email ?? this.email,
+      phone: phone ?? this.phone,
       avatarUrl: avatarUrl ?? this.avatarUrl,
       coverUrl: coverUrl ?? this.coverUrl,
       bio: bio ?? this.bio,
@@ -406,3 +421,4 @@ class UserModel {
     );
   }
 }
+

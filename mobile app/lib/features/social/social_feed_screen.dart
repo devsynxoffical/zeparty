@@ -230,10 +230,10 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
     }
 
     return SizedBox(
-      height: 90,
+      height: 98,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         children: [
           _buildAddStoryItem(auth, myStories),
           ...otherUsersStoryMap.values.map((storyList) => _buildGroupedStoryItem(storyList)),
@@ -770,20 +770,23 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
                     children: [
                       UserAvatar(imageUrl: avatar, radius: 18),
                       const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            authorName,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                          ),
-                          Text(
-                            'Story ${_currentIndex + 1} of ${widget.stories.length}',
-                            style: const TextStyle(color: Colors.white70, fontSize: 10),
-                          ),
-                        ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              authorName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            Text(
+                              'Story ${_currentIndex + 1} of ${widget.stories.length}',
+                              style: const TextStyle(color: Colors.white70, fontSize: 10),
+                            ),
+                          ],
+                        ),
                       ),
-                      const Spacer(),
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.white, size: 24),
                         onPressed: () => Navigator.pop(context),

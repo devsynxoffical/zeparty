@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:math';
-import 'package:camera/camera.dart';
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
@@ -46,17 +47,18 @@ class LiveRoomScreen extends StatefulWidget {
 class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStateMixin {
   final TextEditingController _chatController = TextEditingController();
   final GlobalKey _hostAvatarKey = GlobalKey();
-  CameraController? _cameraController;
-  List<CameraDescription> _cameras = [];
-  int _selectedCameraIndex = 0;
-  bool _isCameraInitialized = false;
   bool _isMicMuted = false;
+  int? _remoteHostUid;
 
   Timer? _durationTimer;
   int _streamDurationSeconds = 0;
 
   final List<FloatingHeart> _hearts = [];
   final GlobalKey<GiftAnimationOverlayState> _giftOverlayKey = GlobalKey<GiftAnimationOverlayState>();
+
+  StreamSubscription? _socketLikeSub;
+  StreamSubscription? _remoteUsersSub;
+  StreamSubscription? _firstFrameSub;
 
   void _toggleMic() {
     setState(() => _isMicMuted = !_isMicMuted);
@@ -72,14 +74,36 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     );
   }
 
+  void _switchCamera() {
+    AgoraRtcService().switchCamera();
+  }
+
   @override
   void initState() {
     super.initState();
-    _initLiveCamera();
     _startDurationTimer();
+
+    // Listen to remote host video stream arrival for audience viewers
+    _remoteUsersSub = AgoraRtcService().remoteUsersStream.listen((uids) {
+      if (mounted && uids.isNotEmpty) {
+        setState(() {
+          _remoteHostUid = uids.first;
+        });
+      }
+    });
+
+    _firstFrameSub = AgoraRtcService().firstRemoteVideoFrameStream.listen((uid) {
+      if (mounted) {
+        setState(() {
+          _remoteHostUid = uid;
+        });
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentUser = context.read<AuthProvider>().currentUser;
-      context.read<LiveProvider>().joinRoom(widget.room, currentUser: currentUser);
+      final liveProv = context.read<LiveProvider>();
+      liveProv.joinRoom(widget.room, currentUser: currentUser);
       context.read<LiveGiftProvider>().setActiveRoom(widget.room.id);
       final emojiProv = context.read<EmojiReactionProvider>();
       emojiProv.setActiveRoom(widget.room.id);
@@ -88,6 +112,15 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       
       // Mock SVIP entry for demonstration
       emojiProv.registerAnchor('user_${currentUser.id}', _hostAvatarKey);
+
+      _socketLikeSub = liveProv.onLikeReceived.listen((data) {
+        final rand = Random();
+        final dx = 180.0 + rand.nextDouble() * 120.0;
+        final dy = 350.0 + rand.nextDouble() * 150.0;
+        if (mounted) {
+          _triggerFloatingHeartAt(Offset(dx, dy));
+        }
+      });
 
       if (currentUser.isVip) {
         Future.delayed(const Duration(seconds: 2), () {
@@ -103,54 +136,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     _durationTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (mounted) setState(() => _streamDurationSeconds++);
     });
-  }
-
-  Future<void> _initLiveCamera() async {
-    try {
-      // Small delay to ensure previous screen's CameraController has released camera hardware
-      await Future.delayed(const Duration(milliseconds: 250));
-      if (!mounted) return;
-
-      _cameras = await availableCameras();
-      if (_cameras.isNotEmpty) {
-        int frontIdx = _cameras.indexWhere((c) => c.lensDirection == CameraLensDirection.front);
-        _selectedCameraIndex = frontIdx != -1 ? frontIdx : 0;
-        await _setupCamera(_cameras[_selectedCameraIndex]);
-      }
-    } catch (e) {
-      debugPrint('Live stream camera init safely skipped: $e');
-      if (mounted) setState(() => _isCameraInitialized = false);
-    }
-  }
-
-  Future<void> _setupCamera(CameraDescription desc) async {
-    if (_cameraController != null) {
-      try {
-        await _cameraController!.dispose();
-        _cameraController = null;
-      } catch (_) {}
-    }
-    try {
-      final ctrl = CameraController(
-        desc,
-        ResolutionPreset.medium,
-        enableAudio: false,
-      );
-      _cameraController = ctrl;
-      await ctrl.initialize();
-      if (mounted) setState(() => _isCameraInitialized = true);
-    } catch (e) {
-      debugPrint('Live camera setup error: $e');
-      if (mounted) setState(() => _isCameraInitialized = false);
-    }
-  }
-
-  void _switchCamera() async {
-    if (_cameras.length > 1) {
-      _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
-      setState(() => _isCameraInitialized = false);
-      await _setupCamera(_cameras[_selectedCameraIndex]);
-    }
   }
 
   void _triggerFloatingHeartAt(Offset position) {
@@ -189,6 +174,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   }
 
   Widget _buildLiveHostBackground(bool isDark) {
+    final bgUrl = widget.room.coverUrl.isNotEmpty
+        ? widget.room.coverUrl
+        : widget.room.host.avatarUrl;
+
     return Container(
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -202,16 +191,27 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // If valid coverUrl, render blurred background cover
-          if (widget.room.coverUrl.isNotEmpty && widget.room.coverUrl.startsWith('http'))
+          // Background cover / host avatar image
+          if (bgUrl.isNotEmpty)
             Positioned.fill(
               child: Opacity(
-                opacity: 0.35,
-                child: Image.network(
-                  widget.room.coverUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-                ),
+                opacity: 0.45,
+                child: bgUrl.startsWith('http')
+                    ? Image.network(
+                        bgUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(color: Colors.black26),
+                      )
+                    : Container(
+                        decoration: BoxDecoration(
+                          gradient: RadialGradient(
+                            colors: [
+                              (isDark ? AppColors.warmGold : AppColors.royalBlue).withValues(alpha: 0.3),
+                              Colors.black,
+                            ],
+                          ),
+                        ),
+                      ),
               ),
             ),
 
@@ -307,10 +307,42 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     );
   }
 
+  Widget _buildVideoStream(bool isDark, bool isHost, LiveRoomModel activeRoom) {
+    final agora = AgoraRtcService.instance;
+
+    if (isHost) {
+      if (agora.isInitialized && agora.engine != null) {
+        return AgoraVideoView(
+          controller: VideoViewController(
+            rtcEngine: agora.engine!,
+            canvas: const VideoCanvas(uid: 0),
+          ),
+        );
+      }
+    } else {
+      // Audience Viewer
+      final targetUid = _remoteHostUid ?? (agora.remoteUids.isNotEmpty ? agora.remoteUids.first : null);
+      if (agora.isInitialized && agora.engine != null && targetUid != null) {
+        return AgoraVideoView(
+          controller: VideoViewController.remote(
+            rtcEngine: agora.engine!,
+            canvas: VideoCanvas(uid: targetUid),
+            connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+          ),
+        );
+      }
+    }
+
+    // Fallback if video is connecting or audio-only
+    return _buildLiveHostBackground(isDark);
+  }
+
   @override
   void dispose() {
+    _socketLikeSub?.cancel();
+    _remoteUsersSub?.cancel();
+    _firstFrameSub?.cancel();
     _durationTimer?.cancel();
-    _cameraController?.dispose();
     _chatController.dispose();
     try {
       context.read<LiveProvider>().leaveRoom();
@@ -322,23 +354,19 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final liveProvider = context.watch<LiveProvider>();
+    final activeRoom = liveProvider.activeRoom ?? widget.room;
     final activeGift = liveProvider.activeGiftAnimation;
+    final currentUser = context.read<AuthProvider>().currentUser;
+    final isHost = (activeRoom.host.id == currentUser.id) ||
+        (activeRoom.creatorUserId == currentUser.id) ||
+        (currentUser.name.trim().isNotEmpty && currentUser.name.trim().toLowerCase() == activeRoom.host.name.trim().toLowerCase());
 
     return Scaffold(
       body: Stack(
         children: [
-          // Background Stream (Camera preview or Cover Image/Live Host fallback)
+          // Background Stream (Native Agora Video or Cover Image fallback)
           Positioned.fill(
-            child: _isCameraInitialized && _cameraController != null && _cameraController!.value.isInitialized
-                ? FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: _cameraController!.value.previewSize?.height ?? 1,
-                      height: _cameraController!.value.previewSize?.width ?? 1,
-                      child: CameraPreview(_cameraController!),
-                    ),
-                  )
-                : _buildLiveHostBackground(isDark),
+            child: _buildVideoStream(isDark, isHost, activeRoom),
           ),
 
           // Double Tap Screen for Like Hearts
@@ -399,7 +427,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
           // Header Overlay Controls
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Column(
                 children: [
                   Row(
@@ -429,16 +457,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                 borderRadius: BorderRadius.circular(8),
                                 child: Image.network(
                                   widget.room.coverUrl,
-                                  width: 36,
-                                  height: 36,
+                                  width: 34,
+                                  height: 34,
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, _, _) => Container(
-                                    width: 36, height: 36, color: Colors.grey,
-                                    child: const Icon(Icons.music_note, color: Colors.white, size: 20),
+                                    width: 34, height: 34, color: Colors.grey,
+                                    child: const Icon(Icons.music_note, color: Colors.white, size: 18),
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 6),
                               Flexible(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -449,7 +477,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 13,
+                                        fontSize: 12.5,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -458,7 +486,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                       'ID:${widget.room.id.length > 8 ? widget.room.id.substring(0, 8) : widget.room.id}',
                                       style: TextStyle(
                                         color: Colors.white.withValues(alpha: 0.7),
-                                        fontSize: 10,
+                                        fontSize: 9.5,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
@@ -470,7 +498,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
 
                       // Follow Button (Small Purple Pill)
                       Consumer<AuthProvider>(
@@ -489,7 +517,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               }, reason: 'Sign in to follow hosts');
                             },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                               decoration: BoxDecoration(
                                 color: isFollowing ? AppColors.liveGreen : const Color(0xFF9B51E0),
                                 borderRadius: BorderRadius.circular(16),
@@ -497,82 +525,99 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               child: Icon(
                                 isFollowing ? Icons.check_rounded : Icons.add_rounded,
                                 color: Colors.white,
-                                size: 16,
+                                size: 15,
                               ),
                             ),
                           );
                         },
                       ),
                       
-                      const Spacer(),
+                      const SizedBox(width: 6),
 
-                      // Right Controls (Trophy, Settings, Close)
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Likes & Trophy Badges
-                          Row(
+                      // Right Controls (Viewers, Likes, Trophy, Settings, Close)
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 15),
-                              const SizedBox(width: 3),
-                              Text(
-                                liveProvider.likeCountFormatted,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                              // Viewers, Likes & Trophy Badges
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.remove_red_eye_rounded, color: Colors.white, size: 13),
+                                  const SizedBox(width: 2.5),
+                                  Text(
+                                    '${activeRoom.viewerCount}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 14),
+                                  const SizedBox(width: 2.5),
+                                  Text(
+                                    liveProvider.likeCountFormatted,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.emoji_events_rounded, color: AppColors.gold, size: 14),
+                                  const SizedBox(width: 2.5),
+                                  Text(
+                                    liveProvider.pointsFormatted,
+                                    style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.9),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
                               ),
                               const SizedBox(width: 8),
-                              const Icon(Icons.emoji_events_rounded, color: AppColors.gold, size: 15),
-                              const SizedBox(width: 3),
-                              Text(
-                                liveProvider.pointsFormatted,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.9),
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
+                              
+                              // Settings (if authorized)
+                              if (widget.room.host.id == context.read<AuthProvider>().currentUser.id)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: GestureDetector(
+                                    onTap: () => _showRoomTools(context, isDark),
+                                    child: const Icon(Icons.settings_outlined, color: Colors.white, size: 20),
+                                  ),
                                 ),
+                                
+                              // Switch Camera
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: GestureDetector(
+                                  onTap: _switchCamera,
+                                  child: const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 20),
+                                ),
+                              ),
+
+                              // Close
+                              GestureDetector(
+                                onTap: () {
+                                  context.read<LiveProvider>().leaveRoom();
+                                  Navigator.pop(context);
+                                },
+                                child: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
                               ),
                             ],
                           ),
-                          const SizedBox(width: 12),
-                          
-                          // Settings (if authorized)
-                          if (widget.room.host.id == context.read<AuthProvider>().currentUser.id)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 12),
-                              child: GestureDetector(
-                                onTap: () => _showRoomTools(context, isDark),
-                                child: const Icon(Icons.settings_outlined, color: Colors.white, size: 22),
-                              ),
-                            ),
-                            
-                          // Switch Camera
-                          Padding(
-                            padding: const EdgeInsets.only(right: 12),
-                            child: GestureDetector(
-                              onTap: _switchCamera,
-                              child: const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 22),
-                            ),
-                          ),
-
-                          // Close
-                          GestureDetector(
-                            onTap: () {
-                              context.read<LiveProvider>().leaveRoom();
-                              Navigator.pop(context);
-                            },
-                            child: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
-                          ),
-                        ],
+                        ),
                       ),
                     ],
                   ),
                 ],
               ),
-
             ),
           ),
 

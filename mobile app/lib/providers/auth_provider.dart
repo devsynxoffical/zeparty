@@ -161,8 +161,23 @@ class AuthProvider extends ChangeNotifier {
           notifyListeners();
         } on ApiException catch (e) {
           if (e.statusCode == 401) {
-            // Keep local session if we have one or soft re-auth
-            if (_currentUser == null) {
+            if (_currentUser != null && !_isGuest) {
+              // Try auto re-syncing with backend
+              try {
+                final authRes = await _authRepository.syncUser(
+                  uid: _currentUser!.id,
+                  email: _currentUser!.email,
+                  phone: _currentUser!.phone,
+                  username: _currentUser!.username,
+                  displayName: _currentUser!.name,
+                  avatarUrl: _currentUser!.avatarUrl,
+                );
+                _currentUser = authRes.user;
+                await _saveUserLocalSession(_currentUser!);
+                FcmService.instance.registerWithBackend();
+                notifyListeners();
+              } catch (_) {}
+            } else if (_currentUser == null) {
               await _clearUserLocalSession();
               _isAuthenticated = false;
               notifyListeners();
@@ -170,6 +185,25 @@ class AuthProvider extends ChangeNotifier {
           }
         } catch (e) {
           debugPrint('Backend sync during restore session fallback: $e');
+        }
+      } else if (_currentUser != null && !_isGuest) {
+        // Auto-register/sync active local user with backend
+        try {
+          final authRes = await _authRepository.syncUser(
+            uid: _currentUser!.id,
+            email: _currentUser!.email,
+            phone: _currentUser!.phone,
+            username: _currentUser!.username,
+            displayName: _currentUser!.name,
+            avatarUrl: _currentUser!.avatarUrl,
+          );
+          _currentUser = authRes.user;
+          _isAuthenticated = true;
+          await _saveUserLocalSession(_currentUser!);
+          FcmService.instance.registerWithBackend();
+          notifyListeners();
+        } catch (e) {
+          debugPrint('Failed to auto-sync local user with backend: $e');
         }
       } else if (_currentUser == null) {
         _isAuthenticated = false;
@@ -254,7 +288,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Login with email & password via Firebase Auth
+  /// Login with email & password via Firebase Auth + Real Backend Sync
   Future<bool> login(String usernameOrEmail, String password) async {
     _isLoading = true;
     _errorMessage = null;
@@ -274,17 +308,36 @@ class AuthProvider extends ChangeNotifier {
       );
 
       final firebaseUser = userCredential.user;
+      final cleanEmail = usernameOrEmail.trim();
+      final baseUsername = cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail;
+      final displayName = firebaseUser?.displayName ?? baseUsername;
+
+      // Synchronize with ZeParty backend database & save JWT tokens
+      try {
+        final authRes = await _authRepository.syncUser(
+          uid: firebaseUser?.uid,
+          email: cleanEmail,
+          displayName: displayName,
+          username: baseUsername,
+          avatarUrl: firebaseUser?.photoURL,
+        );
+        _currentUser = authRes.user;
+      } catch (syncErr) {
+        debugPrint('Backend sync fallback in email login: $syncErr');
+        _currentUser = UserModel(
+          id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
+          username: baseUsername,
+          name: displayName,
+          email: cleanEmail,
+          avatarUrl: firebaseUser?.photoURL ?? '',
+          profileCompleted: true,
+        );
+      }
+
       _isAuthenticated = true;
       _isGuest = false;
-      _currentUser = UserModel(
-        id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
-        username: usernameOrEmail.contains('@') ? usernameOrEmail.split('@').first : usernameOrEmail,
-        name: firebaseUser?.displayName ?? usernameOrEmail.split('@').first,
-        avatarUrl: firebaseUser?.photoURL ?? '',
-        profileCompleted: true,
-      );
-
       await _saveUserLocalSession(_currentUser!);
+      FcmService.instance.registerWithBackend();
       _isLoading = false;
       notifyListeners();
       return true;
@@ -296,7 +349,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Sign up with email & password via Firebase Auth
+  /// Sign up with email & password via Firebase Auth + Real Backend Database Registration
   Future<bool> signup({
     required String name,
     required String email,
@@ -329,24 +382,46 @@ class AuthProvider extends ChangeNotifier {
 
       final firebaseUser = userCredential.user;
       if (firebaseUser != null && name.trim().isNotEmpty) {
-        await firebaseUser.updateDisplayName(name.trim());
+        await firebaseUser.updateDisplayName(name.trim()).catchError((_) {});
+      }
+
+      final cleanEmail = email.trim();
+      final cleanName = name.trim();
+      final baseUsername = cleanEmail.split('@').first;
+
+      // Register and persist user into PostgreSQL backend
+      try {
+        final authRes = await _authRepository.syncUser(
+          uid: firebaseUser?.uid,
+          email: cleanEmail,
+          phone: phone,
+          displayName: cleanName,
+          username: baseUsername,
+          coins: 1000,
+          diamonds: 100,
+        );
+        _currentUser = authRes.user;
+      } catch (syncErr) {
+        debugPrint('Backend sync fallback in email signup: $syncErr');
+        _currentUser = UserModel(
+          id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
+          username: baseUsername,
+          name: cleanName,
+          email: cleanEmail,
+          phone: phone,
+          avatarUrl: '',
+          bio: 'New creator on ZeParty! ✨',
+          coins: 1000,
+          diamonds: 100,
+          role: UserRole.user,
+          profileCompleted: false,
+        );
       }
 
       _isAuthenticated = true;
       _isGuest = false;
-      _currentUser = UserModel(
-        id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
-        username: email.split('@').first,
-        name: name.trim(),
-        avatarUrl: '',
-        bio: 'New creator on ZeParty! ✨',
-        coins: 1000,
-        diamonds: 100,
-        role: UserRole.user,
-        profileCompleted: false,
-      );
-
       await _saveUserLocalSession(_currentUser!);
+      FcmService.instance.registerWithBackend();
       _isLoading = false;
       notifyListeners();
       return true;
@@ -358,7 +433,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  /// Google Sign-In
+  /// Google Sign-In + Real Backend Database Registration
   Future<bool> loginWithGoogle() async {
     _isLoading = true;
     _errorMessage = null;
@@ -391,20 +466,42 @@ class AuthProvider extends ChangeNotifier {
       final userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
       final firebaseUser = userCredential.user;
 
+      final cleanEmail = googleUser.email.trim();
+      final cleanName = googleUser.displayName ?? 'Google Creator';
+      final baseUsername = cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail;
+      final photoUrl = googleUser.photoUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80';
+
+      // Register and persist Google user into PostgreSQL backend
+      try {
+        final authRes = await _authRepository.syncUser(
+          uid: firebaseUser?.uid,
+          email: cleanEmail,
+          displayName: cleanName,
+          username: baseUsername,
+          avatarUrl: photoUrl,
+          coins: 1000,
+          diamonds: 100,
+        );
+        _currentUser = authRes.user;
+      } catch (syncErr) {
+        debugPrint('Backend sync fallback in Google login: $syncErr');
+        _currentUser = UserModel(
+          id: firebaseUser?.uid ?? 'google_${DateTime.now().millisecondsSinceEpoch}',
+          username: baseUsername,
+          name: cleanName,
+          email: cleanEmail,
+          avatarUrl: photoUrl,
+          coins: 1000,
+          diamonds: 100,
+          role: UserRole.user,
+          profileCompleted: false,
+        );
+      }
+
       _isAuthenticated = true;
       _isGuest = false;
-      _currentUser = UserModel(
-        id: firebaseUser?.uid ?? 'google_${DateTime.now().millisecondsSinceEpoch}',
-        username: googleUser.email.contains('@') ? googleUser.email.split('@').first : googleUser.email,
-        name: googleUser.displayName ?? 'Google Creator',
-        avatarUrl: googleUser.photoUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-        coins: 1000,
-        diamonds: 100,
-        role: UserRole.user,
-        profileCompleted: false,
-      );
-
       await _saveUserLocalSession(_currentUser!);
+      FcmService.instance.registerWithBackend();
       _isLoading = false;
       notifyListeners();
       return true;
@@ -415,6 +512,7 @@ class AuthProvider extends ChangeNotifier {
       return false;
     }
   }
+
 
   /// Password reset email
   Future<bool> forgotPassword(String email) async {

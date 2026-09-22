@@ -85,7 +85,9 @@ class _CommentsSheetState extends State<CommentsSheet> {
       final newComment = SocialComment(
         id: 'c_${DateTime.now().millisecondsSinceEpoch}',
         authorId: currentUser.id,
-        authorName: currentUser.name.isNotEmpty ? currentUser.name : currentUser.username,
+        authorName: currentUser.displayName.isNotEmpty
+            ? currentUser.displayName
+            : (currentUser.name.isNotEmpty ? currentUser.name : currentUser.username),
         authorAvatar: currentUser.avatarUrl,
         text: text,
         createdAt: DateTime.now(),
@@ -98,28 +100,12 @@ class _CommentsSheetState extends State<CommentsSheet> {
       });
 
       if (widget.isPost) {
-        social.addCommentToPost(widget.targetId, text, currentUser).then((_) {
-          if (mounted) setState(() => _isSubmitting = false);
-        }).catchError((_) {
-          if (mounted) setState(() => _isSubmitting = false);
-        });
+        social.addCommentToPost(widget.targetId, text, currentUser);
       } else {
-        final newComment = SocialComment(
-          id: 'c_${DateTime.now().millisecondsSinceEpoch}',
-          authorId: currentUser.id,
-          authorName: currentUser.name.isNotEmpty ? currentUser.name : currentUser.username,
-          authorAvatar: currentUser.avatarUrl,
-          text: text,
-          createdAt: DateTime.now(),
-          likesCount: 0,
-          isLiked: false,
-        );
-        setState(() {
-          _localComments.insert(0, newComment);
-        });
         social.addCommentToShortVideo(widget.targetId, text, currentUser);
-        if (mounted) setState(() => _isSubmitting = false);
       }
+
+      if (mounted) setState(() => _isSubmitting = false);
 
       widget.onCommentSubmitted?.call(text);
       _commentController.clear();
@@ -166,10 +152,20 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
   // Build the final displayed comment list
   List<SocialComment> _resolveComments(SocialProvider social) {
-    if (widget.isPost) {
-      return social.getCommentsForPost(widget.targetId);
+    final providerComments = widget.isPost
+        ? social.getCommentsForPost(widget.targetId)
+        : social.getCommentsForVideo(widget.targetId);
+
+    final set = <String>{};
+    final combined = <SocialComment>[];
+
+    for (final c in _localComments) {
+      if (set.add(c.id)) combined.add(c);
     }
-    return _localComments;
+    for (final c in providerComments) {
+      if (set.add(c.id)) combined.add(c);
+    }
+    return combined;
   }
 
   @override

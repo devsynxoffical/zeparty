@@ -2,32 +2,41 @@
 // ZeParty Admin Portal — Utility Functions (JavaScript)
 // ============================================================
 
+function sanitizeNum(val) {
+  if (val === null || val === undefined) return 0;
+  const num = Number(val);
+  return isNaN(num) || !isFinite(num) ? 0 : num;
+}
+
 /**
  * Format a number with locale-aware comma separation
  */
 export function formatNumber(value) {
-  return new Intl.NumberFormat('en-US').format(value);
+  const num = sanitizeNum(value);
+  return new Intl.NumberFormat('en-US').format(num);
 }
 
 /**
  * Format a compact number (e.g. 1.2K, 4.5M)
  */
 export function formatCompact(value) {
+  const num = sanitizeNum(value);
   return new Intl.NumberFormat('en-US', {
     notation: 'compact',
     maximumFractionDigits: 1,
-  }).format(value);
+  }).format(num);
 }
 
 /**
  * Format currency value in USD
  */
 export function formatCurrency(value, currency = 'USD') {
+  const num = sanitizeNum(value);
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(num);
 }
 
 /**

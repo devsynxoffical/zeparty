@@ -48,6 +48,10 @@ class LiveProvider extends ChangeNotifier {
   StreamSubscription? _socketGiftSentSub;
   StreamSubscription? _socketChatMessageSub;
   StreamSubscription? _socketRoomClosedSub;
+  StreamSubscription? _socketRoomLikeSub;
+
+  final _likeReceivedController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onLikeReceived => _likeReceivedController.stream;
 
   // ── Room Tool State ──────────────────────────────────────
   bool _isRoomLocked = false;
@@ -96,7 +100,7 @@ class LiveProvider extends ChangeNotifier {
   // ── Core Methods ─────────────────────────────────────────
 
   Future<void> joinRoom(LiveRoomModel room, {UserModel? currentUser}) async {
-    _activeRoom = room;
+    _activeRoom = room.copyWith(viewerCount: room.viewerCount + 1);
     _currentUser = currentUser;
     _isRoomLocked = false;
     _currentMusicTrack = null;
@@ -104,8 +108,13 @@ class LiveProvider extends ChangeNotifier {
     _activeEffect = 'None';
     _likeCount = 0;
     _giftPoints = 0;
+    final displayName = currentUser?.displayName.isNotEmpty == true
+        ? currentUser!.displayName
+        : (currentUser?.name.isNotEmpty == true ? currentUser!.name : (currentUser?.username ?? 'User'));
+
     _messages = [
       LiveMessage(sender: 'System', text: 'Welcome to ${room.title}! Remember to follow community rules.'),
+      LiveMessage(sender: 'System', text: '👋 $displayName joined the room! 🔥'),
     ];
     notifyListeners();
 
@@ -118,6 +127,21 @@ class LiveProvider extends ChangeNotifier {
       _socketService.joinRoom(room.id);
       _setupSocketSubscriptions(currentUser);
 
+      // Broadcast user joined event to room subscribers
+      final userMap = currentUser != null
+          ? {
+              'id': currentUser.id,
+              'name': currentUser.name,
+              'username': currentUser.username,
+              'avatarUrl': currentUser.avatarUrl,
+            }
+          : null;
+      _socketService.sendUserJoined(
+        roomId: room.id,
+        user: userMap,
+        viewerCount: _activeRoom?.viewerCount ?? (room.viewerCount + 1),
+      );
+
       // 2. REST Join
       await _roomRepository.joinRoom(room.id);
 
@@ -126,51 +150,91 @@ class LiveProvider extends ChangeNotifier {
       if (agoraData['token'] != null) {
         final token = agoraData['token'] as String;
         final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
-        final uid = agoraData['uid'] as int? ?? 0;
+        final uid = agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
         final appId = agoraData['appId'] as String?;
 
-        await _agoraService.initialize(appId: appId);
+        final isVideo = (room.roomType == 'LIVE_VIDEO' || room.roomType == 'VIDEO_PARTY' || room.roomType == null || !room.roomType!.contains('AUDIO'));
+
+        await _agoraService.initialize(appId: appId, enableVideo: isVideo);
         await _agoraService.joinChannel(
           token,
           channelName,
           uid,
           isHost: isHost,
+          isVideo: isVideo,
         );
       }
     } catch (e) {
       debugPrint('[LiveProvider] joinRoom error: $e');
     }
+    notifyListeners();
   }
 
   void _setupSocketSubscriptions(UserModel? currentUser) {
     _socketUserJoinedSub?.cancel();
     _socketUserJoinedSub = _socketService.userJoinedStream.listen((data) {
-      final userName = data['name'] ?? data['username'] ?? 'A user';
-      final joinedId = data['userId'] ?? data['id'];
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      final userObj = data['user'] is Map ? Map<String, dynamic>.from(data['user']) : data;
+      final userName = userObj['name'] ?? userObj['displayName'] ?? userObj['username'] ?? data['name'] ?? data['username'] ?? 'A user';
+      final joinedId = data['userId'] ?? data['id'] ?? userObj['id'];
+
       if (joinedId != currentUser?.id) {
-        sendMessage('$userName joined the stream', 'System');
-        if (data['viewerCount'] != null && _activeRoom != null) {
-          _activeRoom = _activeRoom!.copyWith(viewerCount: data['viewerCount'] as int);
-          notifyListeners();
+        _messages.add(LiveMessage(
+          sender: 'System',
+          text: '👋 $userName joined the room! 🔥',
+        ));
+        if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
+
+        final rawCount = data['viewerCount'] ?? data['count'];
+        final newCount = rawCount is int ? rawCount : (_activeRoom != null ? _activeRoom!.viewerCount + 1 : 1);
+        if (_activeRoom != null) {
+          _activeRoom = _activeRoom!.copyWith(viewerCount: newCount);
         }
+        notifyListeners();
       }
     });
 
     _socketUserLeftSub?.cancel();
     _socketUserLeftSub = _socketService.userLeftStream.listen((data) {
-      if (data['viewerCount'] != null && _activeRoom != null) {
-        _activeRoom = _activeRoom!.copyWith(viewerCount: data['viewerCount'] as int);
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      final rawCount = data['viewerCount'] ?? data['count'];
+      if (_activeRoom != null) {
+        final newCount = rawCount is int ? rawCount : (_activeRoom!.viewerCount > 1 ? _activeRoom!.viewerCount - 1 : 1);
+        _activeRoom = _activeRoom!.copyWith(viewerCount: newCount);
         notifyListeners();
       }
     });
 
     _socketViewerCountSub?.cancel();
     _socketViewerCountSub = _socketService.viewerCountStream.listen((data) {
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
       final count = data['viewerCount'] ?? data['count'];
       if (count is int && _activeRoom != null) {
         _activeRoom = _activeRoom!.copyWith(viewerCount: count);
         notifyListeners();
       }
+    });
+
+    _socketRoomLikeSub?.cancel();
+    _socketRoomLikeSub = _socketService.onRoomLike.listen((data) {
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender']) : {};
+      final senderId = senderMap['id'] ?? data['userId'];
+      final addedLikes = data['count'] is int ? data['count'] as int : 1;
+
+      if (senderId != currentUser?.id) {
+        _likeCount += addedLikes;
+        notifyListeners();
+      }
+      _likeReceivedController.add(data);
     });
 
     _socketGiftSentSub?.cancel();
@@ -233,6 +297,7 @@ class LiveProvider extends ChangeNotifier {
     _socketUserJoinedSub?.cancel();
     _socketUserLeftSub?.cancel();
     _socketViewerCountSub?.cancel();
+    _socketRoomLikeSub?.cancel();
     _socketGiftSentSub?.cancel();
     _socketChatMessageSub?.cancel();
     _socketRoomClosedSub?.cancel();
@@ -253,6 +318,21 @@ class LiveProvider extends ChangeNotifier {
   void sendLike({int count = 1}) {
     _likeCount += count;
     notifyListeners();
+    if (_activeRoom != null) {
+      final senderMap = _currentUser != null
+          ? {
+              'id': _currentUser!.id,
+              'name': _currentUser!.name,
+              'username': _currentUser!.username,
+              'avatarUrl': _currentUser!.avatarUrl,
+            }
+          : null;
+      _socketService.sendRoomLike(
+        roomId: _activeRoom!.id,
+        count: count,
+        sender: senderMap,
+      );
+    }
   }
 
   void sendMessage(String text, String sender) {
@@ -408,11 +488,13 @@ class LiveProvider extends ChangeNotifier {
     _socketUserJoinedSub?.cancel();
     _socketUserLeftSub?.cancel();
     _socketViewerCountSub?.cancel();
+    _socketRoomLikeSub?.cancel();
     _socketGiftSentSub?.cancel();
     _socketChatMessageSub?.cancel();
     _socketRoomClosedSub?.cancel();
     _pkTimer?.cancel();
     _giftTimer?.cancel();
+    _likeReceivedController.close();
     super.dispose();
   }
 }

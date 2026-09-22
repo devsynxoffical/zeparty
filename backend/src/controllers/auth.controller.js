@@ -195,6 +195,35 @@ export async function adminLogin(req, res, next) {
   }
 }
 
+export async function syncAppUser(req, res, next) {
+  try {
+    const validated = syncUserSchema.parse(req.body);
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+    const userAgent = req.headers['user-agent'];
+
+    const result = await authService.syncUserFromApp({
+      ...validated,
+      ipAddress,
+      userAgent,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: result.isNewUser ? 'User registered and synchronized successfully' : 'User synchronized successfully',
+      data: {
+        token: result.accessToken,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        expiresAt: result.expiresAt,
+        isNewUser: result.isNewUser,
+        user: result.user,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   requestOtp,
   verifyOtp,
@@ -202,4 +231,6 @@ export default {
   logout,
   me,
   adminLogin,
+  syncAppUser,
 };
+

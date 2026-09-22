@@ -1,6 +1,7 @@
 import roomRepository from '../repositories/room.repository.js';
 import roomService from '../services/room.service.js';
 import presenceService from './presence.service.js';
+import { deriveAgoraUid } from '../utils/agoraToken.util.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
 import { withRateLimit } from './rateLimiter.socket.js';
 
@@ -9,6 +10,8 @@ import { withRateLimit } from './rateLimiter.socket.js';
  */
 export function buildRoomSnapshot(room, viewerCount) {
   if (!room) return null;
+
+  const hostUserId = room.creatorUserId || room.creator?.id;
 
   return {
     roomId: room.id,
@@ -20,6 +23,7 @@ export function buildRoomSnapshot(room, viewerCount) {
     pinPosition: room.pinPosition || null,
     currentViewersCount: typeof viewerCount === 'number' ? viewerCount : room.currentViewersCount || 0,
     agoraChannelName: room.agoraChannelName || null,
+    agoraHostUid: hostUserId ? deriveAgoraUid(hostUserId) : null,
     host: room.creator ? {
       id: room.creator.id,
       username: room.creator.username,

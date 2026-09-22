@@ -137,20 +137,47 @@ export async function findUsersPaginated(
         select: { id: true, email: true, username: true, isOwner: true },
       })
     : [];
-  const adminIds = allAdmins.map((a) => a.id);
+  const adminIds = allAdmins.map((a) => a.id).filter(Boolean);
   const adminEmails = allAdmins.map((a) => a.email).filter(Boolean);
   const adminUsernames = allAdmins.map((a) => a.username).filter(Boolean);
   const shadowUsernames = adminUsernames.map((u) => `admin_${u}`);
 
-  where.NOT = [
-    ...(where.NOT ? (Array.isArray(where.NOT) ? where.NOT : [where.NOT]) : []),
-    { id: { in: adminIds } },
-    { email: { in: adminEmails } },
-    { username: { in: [...adminUsernames, ...shadowUsernames] } },
-    { username: { startsWith: 'admin_' } },
-    { username: { startsWith: 'rootowner' } },
-    { email: { endsWith: '@zeparty.app', contains: 'owner' } },
-  ];
+  const andFilters = [];
+
+  if (adminIds.length > 0) {
+    andFilters.push({ id: { notIn: adminIds } });
+  }
+
+  if (adminEmails.length > 0) {
+    andFilters.push({
+      OR: [
+        { email: null },
+        {
+          AND: [
+            { email: { notIn: adminEmails } },
+            { email: { not: { contains: 'owner@zeparty.app' } } },
+          ],
+        },
+      ],
+    });
+  }
+
+  andFilters.push({
+    username: {
+      notIn: [...adminUsernames, ...shadowUsernames],
+      not: { startsWith: 'admin_' },
+    },
+  });
+
+  if (where.AND) {
+    if (Array.isArray(where.AND)) {
+      where.AND.push(...andFilters);
+    } else {
+      where.AND = [where.AND, ...andFilters];
+    }
+  } else {
+    where.AND = andFilters;
+  }
 
   const parsedPage = Math.max(1, Number(page) || 1);
   const parsedLimit = Math.max(1, Math.min(100, Number(limit) || 20));
