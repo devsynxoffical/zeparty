@@ -46,6 +46,14 @@ export const occupySeatParamSchema = z.object({
   seatIndex: z.coerce.number().int().min(0, 'Seat index must be between 0 and 7').max(7, 'Seat index must be between 0 and 7'),
 });
 
+export const pinRoomSchema = z.object({
+  pinnedPosition: z.coerce.number().int().min(1).max(3).default(1),
+});
+
+export const adminCloseRoomSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+});
+
 export const adminWarnRoomSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
