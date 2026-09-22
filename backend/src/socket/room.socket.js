@@ -542,7 +542,7 @@ export async function onSendRoomLike(arg1, arg2, arg3, arg4, arg5) {
       timestamp: new Date().toISOString(),
     };
 
-    const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
+    const broadcastTarget = socket.to ? socket.to(`room:${roomId}`) : (io ? io.to(`room:${roomId}`) : socket);
     broadcastTarget.emit('room:like', payload);
     broadcastTarget.emit('room:like_sent', payload);
     broadcastTarget.emit('room_like', payload);

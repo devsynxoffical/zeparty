@@ -128,7 +128,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
         final dx = 180.0 + rand.nextDouble() * 120.0;
         final dy = 350.0 + rand.nextDouble() * 150.0;
         if (mounted) {
-          _triggerFloatingHeartAt(Offset(dx, dy));
+          _showFloatingHeartAnimation(Offset(dx, dy));
         }
       });
 
@@ -143,20 +143,20 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 children: [
                   Icon(Icons.shield, color: Colors.amber),
                   SizedBox(width: 8),
-                  Text('Moderation Notice', style: TextStyle(color: Colors.white, fontSize: 16)),
+                  Text('Room Alert', style: TextStyle(color: Colors.white, fontSize: 16)),
                 ],
               ),
               content: Text(
-                reason,
-                style: const TextStyle(color: Colors.white70, fontSize: 14),
+                reason.isNotEmpty ? reason : 'You were removed from this room by the host.',
+                style: const TextStyle(color: Colors.white70),
               ),
               actions: [
                 TextButton(
                   onPressed: () {
-                    Navigator.of(ctx).pop();
-                    if (mounted) Navigator.of(context).pop();
+                    Navigator.pop(ctx);
+                    Navigator.pop(context);
                   },
-                  child: const Text('OK', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold)),
+                  child: const Text('OK', style: TextStyle(color: AppColors.live)),
                 ),
               ],
             ),
@@ -164,9 +164,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
         }
       });
 
-      if (currentUser.isVip) {
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) {
+      if (mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (currentUser.isVip || (currentUser.nobleTitle != null && currentUser.nobleTitle!.isNotEmpty)) {
             SvipEntryManager().showEntry(currentUser);
           }
         });
@@ -180,11 +180,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     });
   }
 
-  void _triggerFloatingHeartAt(Offset position) {
-    try {
-      context.read<LiveProvider>().sendLike();
-    } catch (_) {}
-
+  /// Displays floating heart animation locally without sending network events
+  void _showFloatingHeartAnimation(Offset position) {
+    if (!mounted) return;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final rand = Random();
     final colors = isDark
@@ -211,9 +209,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     });
   }
 
-  void _triggerFloatingHeart() {
-    _triggerFloatingHeartAt(const Offset(250, 450));
+  /// Sends 1 like and renders floating heart for local user
+  void _sendLikeWithHeart([Offset? position]) {
+    try {
+      context.read<LiveProvider>().sendLike(count: 1);
+    } catch (_) {}
+    _showFloatingHeartAnimation(position ?? const Offset(250, 450));
   }
+
+  void _triggerFloatingHeartAt(Offset position) => _sendLikeWithHeart(position);
+  void _triggerFloatingHeart() => _sendLikeWithHeart(const Offset(250, 450));
 
   Widget _buildLiveHostBackground(bool isDark) {
     final bgUrl = widget.room.coverUrl.isNotEmpty
