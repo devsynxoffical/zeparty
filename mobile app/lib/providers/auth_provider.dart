@@ -309,27 +309,29 @@ class AuthProvider extends ChangeNotifier {
 
       final firebaseUser = userCredential.user;
       final cleanEmail = usernameOrEmail.trim();
-      final baseUsername = cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail;
-      final displayName = firebaseUser?.displayName ?? baseUsername;
 
       // Synchronize with ZeParty backend database & save JWT tokens
+      // We do NOT send email as username or displayName so backend never overwrites them
       try {
         final authRes = await _authRepository.syncUser(
           uid: firebaseUser?.uid,
-          email: cleanEmail,
-          displayName: displayName,
-          username: baseUsername,
+          email: cleanEmail.contains('@') ? cleanEmail : null,
           avatarUrl: firebaseUser?.photoURL,
         );
         _currentUser = authRes.user;
       } catch (syncErr) {
         debugPrint('Backend sync fallback in email login: $syncErr');
+        final existingLocal = _currentUser;
         _currentUser = UserModel(
           id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
-          username: baseUsername,
-          name: displayName,
-          email: cleanEmail,
-          avatarUrl: firebaseUser?.photoURL ?? '',
+          username: (existingLocal != null && existingLocal.username.isNotEmpty && !existingLocal.username.startsWith('user_'))
+              ? existingLocal.username
+              : (cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail),
+          name: (existingLocal != null && existingLocal.name.isNotEmpty && existingLocal.name != 'ZeParty Member')
+              ? existingLocal.name
+              : (firebaseUser?.displayName ?? (cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail)),
+          email: cleanEmail.contains('@') ? cleanEmail : (existingLocal?.email ?? ''),
+          avatarUrl: firebaseUser?.photoURL ?? (existingLocal?.avatarUrl ?? ''),
           profileCompleted: true,
         );
       }
@@ -354,6 +356,7 @@ class AuthProvider extends ChangeNotifier {
     required String name,
     required String email,
     required String password,
+    String? username,
     String? phone,
   }) async {
     _isLoading = true;
@@ -387,7 +390,9 @@ class AuthProvider extends ChangeNotifier {
 
       final cleanEmail = email.trim();
       final cleanName = name.trim();
-      final baseUsername = cleanEmail.split('@').first;
+      final finalUsername = (username != null && username.trim().isNotEmpty)
+          ? username.trim().replaceAll('@', '').trim()
+          : cleanEmail.split('@').first;
 
       // Register and persist user into PostgreSQL backend
       try {
@@ -396,7 +401,7 @@ class AuthProvider extends ChangeNotifier {
           email: cleanEmail,
           phone: phone,
           displayName: cleanName,
-          username: baseUsername,
+          username: finalUsername,
           coins: 1000,
           diamonds: 100,
         );
@@ -405,7 +410,7 @@ class AuthProvider extends ChangeNotifier {
         debugPrint('Backend sync fallback in email signup: $syncErr');
         _currentUser = UserModel(
           id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
-          username: baseUsername,
+          username: finalUsername,
           name: cleanName,
           email: cleanEmail,
           phone: phone,

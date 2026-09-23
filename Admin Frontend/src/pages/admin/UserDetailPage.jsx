@@ -73,7 +73,9 @@ export function UserDetailPage() {
     });
   }
 
-  // Avatar update state
+  // Avatar and Country/Region update state
+  const [newCountry, setNewCountry] = useState('PK');
+  const [newRegion, setNewRegion] = useState('South Asia');
   const [newAvatarInput, setNewAvatarInput] = useState('');
   const [isSavingAvatar, setIsSavingAvatar] = useState(false);
   const [isViewerOpen, setIsViewerOpen] = useState(false);

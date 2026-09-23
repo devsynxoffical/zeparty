@@ -848,10 +848,12 @@ export function UsersPage() {
   const [statusModal, setStatusModal] = useState({ open: false, user: null });
   const [deleteModal, setDeleteModal] = useState({ open: false, user: null });
 
-  // Selection & Photo Preview state
+  // Selection & Photo Preview & Batch state
   const [selectedUserIds, setSelectedUserIds] = useState([]);
   const [previewPhoto, setPreviewPhoto] = useState(null);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
+  const [batchDeleteModalOpen, setBatchDeleteModalOpen] = useState(false);
+  const [batchDeleteReason, setBatchDeleteReason] = useState('');
 
   function showFeedback(type, message, title = '') {
     setFeedback({
@@ -971,6 +973,39 @@ export function UsersPage() {
     link.click();
     document.body.removeChild(link);
     showFeedback('success', `Exported ${selectedUsers.length} user records to CSV file.`, 'Export Completed');
+  };
+
+  // Batch Delete Handler
+  const handleBatchDelete = async () => {
+    if (selectedUserIds.length === 0) return;
+    setIsBatchProcessing(true);
+    let successCount = 0;
+    let failCount = 0;
+    try {
+      for (const userId of selectedUserIds) {
+        try {
+          await deleteUser(userId, batchDeleteReason || 'Batch admin deletion');
+          successCount++;
+        } catch (e) {
+          console.error(`Failed to delete user ${userId}:`, e);
+          failCount++;
+        }
+      }
+      if (successCount > 0) {
+        showFeedback('success', `Permanently deleted ${successCount} user accounts and cleaned up their database records.`, 'Batch Deletion Complete');
+      }
+      if (failCount > 0) {
+        showFeedback('error', `Failed to delete ${failCount} users.`, 'Partial Deletion Failure');
+      }
+      setSelectedUserIds([]);
+      setBatchDeleteModalOpen(false);
+      setBatchDeleteReason('');
+      await loadUsers();
+    } catch (err) {
+      showFeedback('error', err.message || 'Batch delete failed.', 'Batch Error');
+    } finally {
+      setIsBatchProcessing(false);
+    }
   };
 
   // Create User Handler
@@ -1421,6 +1456,15 @@ export function UsersPage() {
             >
               <Download className="h-3.5 w-3.5 mr-1" /> Export CSV
             </Button>
+            <Button
+              variant="danger"
+              size="xs"
+              onClick={() => setBatchDeleteModalOpen(true)}
+              isLoading={isBatchProcessing}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete ({selectedUserIds.length})
+            </Button>
             <button
               onClick={() => setSelectedUserIds([])}
               className="px-2.5 py-1 text-xs text-slate-400 hover:text-white transition-colors"
@@ -1472,6 +1516,65 @@ export function UsersPage() {
         user={deleteModal.user}
         onConfirm={handleDeleteUser}
       />
+
+      {/* Batch Delete Confirmation Modal */}
+      <Modal
+        isOpen={batchDeleteModalOpen}
+        onClose={() => {
+          if (!isBatchProcessing) {
+            setBatchDeleteModalOpen(false);
+            setBatchDeleteReason('');
+          }
+        }}
+        title={`Batch Delete ${selectedUserIds.length} Users`}
+        size="md"
+      >
+        <div className="space-y-4">
+          <div className="p-3.5 rounded-lg bg-red-500/10 border border-red-500/30 flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-xs font-semibold text-red-400">Irreversible Permanent Batch Deletion</p>
+              <p className="text-[11px] text-slate-300 mt-1">
+                This action will permanently remove <span className="font-bold text-white">{selectedUserIds.length} selected user accounts</span>, their wallets, devices, sessions, posts, comments, likes, and relational records from PostgreSQL.
+              </p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Deletion Reason (Audit Log)
+            </label>
+            <Input
+              value={batchDeleteReason}
+              onChange={(e) => setBatchDeleteReason(e.target.value)}
+              placeholder="e.g. Terms violation, spam cleanup, bulk GDPR purge..."
+              disabled={isBatchProcessing}
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-slate-700/60">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setBatchDeleteModalOpen(false);
+                setBatchDeleteReason('');
+              }}
+              disabled={isBatchProcessing}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleBatchDelete}
+              isLoading={isBatchProcessing}
+            >
+              <Trash2 className="h-4 w-4 mr-1" /> Delete All {selectedUserIds.length} Users Permanently
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

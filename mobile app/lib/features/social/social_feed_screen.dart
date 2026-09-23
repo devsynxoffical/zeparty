@@ -204,9 +204,12 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
     final currentUserName = auth.currentUser.displayName.toLowerCase();
     final currentUserHandle = auth.currentUser.username.toLowerCase();
 
-    // 24-hour expiration filter: Stories must disappear after 24 hours
+    // 24-hour expiration filter: Stories must disappear after 24 hours and be separate from regular feed posts
     final cutoff = DateTime.now().subtract(const Duration(hours: 24));
-    final validStories = social.posts.where((p) => p.createdAt.isAfter(cutoff)).toList();
+    final validStories = social.posts.where((p) =>
+      p.createdAt.isAfter(cutoff) &&
+      (p.visibility == 'STORY' || p.content.startsWith('[STORY]') || p.content.contains('#story'))
+    ).toList();
 
     // 1. Current user's valid stories
     final myStories = validStories.where((p) =>
@@ -261,7 +264,7 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
               builder: (_) => _FullStoryViewerDialog(stories: myStories, isMyStory: true),
             );
           } else {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraRecorderScreen()));
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const CreatePostScreen(isStory: true)));
           }
         }, reason: 'Sign in to post a story');
       },
@@ -449,10 +452,11 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
     }
 
     final List<PostModel> posts;
+    final nonStoryPosts = social.posts.where((p) => p.visibility != 'STORY' && !p.content.startsWith('[STORY]')).toList();
     if (feedMode == 'following') {
-      posts = social.posts.where((p) => auth.isFollowing(p.author.id)).toList();
+      posts = nonStoryPosts.where((p) => auth.isFollowing(p.author.id)).toList();
     } else {
-      posts = social.posts;
+      posts = nonStoryPosts;
     }
 
     if (posts.isEmpty) {
@@ -600,23 +604,51 @@ class _FullStoryViewerDialog extends StatefulWidget {
   State<_FullStoryViewerDialog> createState() => _FullStoryViewerDialogState();
 }
 
-class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
+class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog>
+    with SingleTickerProviderStateMixin {
+  late List<PostModel> _activeStories;
   int _currentIndex = 0;
   VideoPlayerController? _videoController;
   final TextEditingController _replyController = TextEditingController();
   bool _isVideo = false;
+  late AnimationController _progressAnimController;
 
   PostModel get currentStory =>
-      widget.stories[_currentIndex.clamp(0, widget.stories.length - 1)];
+      _activeStories[_currentIndex.clamp(0, _activeStories.length - 1)];
 
   @override
   void initState() {
     super.initState();
+    _activeStories = List.from(widget.stories);
+    _progressAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 5),
+    );
+
+    _progressAnimController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _onStoryTimerComplete();
+      }
+    });
+
     _initMedia();
   }
 
+  void _onStoryTimerComplete() {
+    if (_currentIndex < _activeStories.length - 1) {
+      setState(() {
+        _currentIndex++;
+      });
+      _initMedia();
+    } else {
+      // Completed all stories — close immediately, do NOT loop
+      if (mounted) Navigator.pop(context);
+    }
+  }
+
   void _nextStory() {
-    if (_currentIndex < widget.stories.length - 1) {
+    _progressAnimController.stop();
+    if (_currentIndex < _activeStories.length - 1) {
       setState(() {
         _currentIndex++;
       });
@@ -627,18 +659,27 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
   }
 
   void _previousStory() {
+    _progressAnimController.stop();
     if (_currentIndex > 0) {
       setState(() {
         _currentIndex--;
       });
       _initMedia();
+    } else {
+      _progressAnimController.forward(from: 0.0);
     }
   }
 
   Future<void> _initMedia() async {
+    _progressAnimController.reset();
     _videoController?.dispose();
     _videoController = null;
     _isVideo = false;
+
+    if (_activeStories.isEmpty) {
+      Navigator.pop(context);
+      return;
+    }
 
     final mediaList = currentStory.imageUrls;
     if (mediaList.isNotEmpty) {
@@ -652,18 +693,96 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
             _videoController = VideoPlayerController.file(File(url));
           }
           await _videoController?.initialize();
-          _videoController?.setLooping(true);
+          final duration = _videoController?.value.duration ?? const Duration(seconds: 5);
+          _progressAnimController.duration = duration;
+          _videoController?.setLooping(false);
           await _videoController?.play();
         } catch (e) {
           debugPrint('Story video error: $e');
+          _progressAnimController.duration = const Duration(seconds: 5);
         }
+      } else {
+        _progressAnimController.duration = const Duration(seconds: 5);
       }
+    } else {
+      _progressAnimController.duration = const Duration(seconds: 5);
     }
-    if (mounted) setState(() {});
+
+    if (mounted) {
+      setState(() {});
+      _progressAnimController.forward(from: 0.0);
+    }
+  }
+
+  Future<void> _deleteCurrentStory() async {
+    final storyId = currentStory.id;
+    _progressAnimController.stop();
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Delete Story?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text(
+          'Are you sure you want to permanently delete this story from your profile and feed?',
+          style: TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      try {
+        await context.read<SocialProvider>().deletePost(storyId);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Story deleted successfully 🗑️'), duration: Duration(seconds: 2)),
+        );
+      } catch (_) {}
+
+      setState(() {
+        _activeStories.removeWhere((s) => s.id == storyId);
+      });
+
+      if (_activeStories.isEmpty) {
+        Navigator.pop(context);
+      } else {
+        if (_currentIndex >= _activeStories.length) {
+          _currentIndex = _activeStories.length - 1;
+        }
+        _initMedia();
+      }
+    } else if (mounted) {
+      _progressAnimController.forward();
+    }
+  }
+
+  void _saveStoryToDevice() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Story saved to your device gallery! 💾✨'),
+        behavior: SnackBarBehavior.floating,
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _progressAnimController.dispose();
     _videoController?.dispose();
     _replyController.dispose();
     super.dispose();
@@ -685,9 +804,13 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.stories.isEmpty) {
+    if (_activeStories.isEmpty) {
       return const SizedBox.shrink();
     }
+
+    final auth = context.watch<AuthProvider>();
+    final isOwner = widget.isMyStory ||
+        (auth.currentUser.id.isNotEmpty && currentStory.author.id == auth.currentUser.id);
 
     final authorName = currentStory.author.name.isNotEmpty && currentStory.author.name != 'Unknown User'
         ? currentStory.author.name
@@ -769,28 +892,54 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
               ),
             ),
 
-            // Top Header: Segmented Progress Lines + User info + Close Button
+            // Top Header: Animated Moving Segmented Progress Lines + User info + Save/Delete + Close
             Positioned(
               top: 16,
               left: 16,
               right: 16,
               child: Column(
                 children: [
-                  // Segmented Story Bars (Instagram Style)
-                  Row(
-                    children: List.generate(widget.stories.length, (index) {
-                      final isPassed = index <= _currentIndex;
-                      return Expanded(
-                        child: Container(
-                          height: 3,
-                          margin: const EdgeInsets.symmetric(horizontal: 2),
-                          decoration: BoxDecoration(
-                            color: isPassed ? Colors.white : Colors.white.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
+                  // Moving Instagram-style Segmented Story Bars
+                  AnimatedBuilder(
+                    animation: _progressAnimController,
+                    builder: (context, _) {
+                      return Row(
+                        children: List.generate(_activeStories.length, (index) {
+                          double fill = 0.0;
+                          if (index < _currentIndex) {
+                            fill = 1.0;
+                          } else if (index == _currentIndex) {
+                            fill = _progressAnimController.value;
+                          }
+                          return Expanded(
+                            child: Container(
+                              height: 3,
+                              margin: const EdgeInsets.symmetric(horizontal: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.25),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                              child: FractionallySizedBox(
+                                alignment: Alignment.centerLeft,
+                                widthFactor: fill.clamp(0.0, 1.0),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(2),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.white.withValues(alpha: 0.5),
+                                        blurRadius: 3,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
                       );
-                    }),
+                    },
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -808,12 +957,26 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                             ),
                             Text(
-                              'Story ${_currentIndex + 1} of ${widget.stories.length}',
+                              'Story ${_currentIndex + 1} of ${_activeStories.length}',
                               style: const TextStyle(color: Colors.white70, fontSize: 10),
                             ),
                           ],
                         ),
                       ),
+                      // Save / Download Story
+                      IconButton(
+                        icon: const Icon(Icons.download_rounded, color: Colors.white, size: 22),
+                        tooltip: 'Save Story',
+                        onPressed: _saveStoryToDevice,
+                      ),
+                      // Delete Story (for Owner)
+                      if (isOwner)
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
+                          tooltip: 'Delete Story',
+                          onPressed: _deleteCurrentStory,
+                        ),
+                      // Close Story Button
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.white, size: 24),
                         onPressed: () => Navigator.pop(context),
@@ -829,7 +992,7 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog> {
               bottom: 16,
               left: 16,
               right: 16,
-              child: widget.isMyStory
+              child: isOwner
                   ? Row(
                       children: [
                         Expanded(

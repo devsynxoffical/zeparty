@@ -144,7 +144,7 @@ export async function findFeedPosts(
           },
         },
       },
-      likes: viewerUserId ? { where: { userId: viewerUserId }, select: { id: true } } : false,
+      ...(viewerUserId ? { likes: { where: { userId: viewerUserId }, select: { id: true } } } : {}),
       _count: {
         select: {
           comments: { where: { deletedAt: null } },
@@ -232,7 +232,7 @@ export async function findPostById(id, viewerUserId = null, db = prisma) {
           },
         },
       },
-      likes: viewerUserId ? { where: { userId: viewerUserId }, select: { id: true } } : false,
+      ...(viewerUserId ? { likes: { where: { userId: viewerUserId }, select: { id: true } } } : {}),
       _count: {
         select: {
           comments: { where: { deletedAt: null } },

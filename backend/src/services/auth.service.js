@@ -361,18 +361,34 @@ export async function syncUserFromApp({
     });
     isNewUser = true;
   } else {
-    // Update existing user profile if needed
-    if (cleanName || avatarUrl || bio || gender || dob) {
-      const updateData = {};
-      if (cleanName) updateData.displayName = cleanName;
-      if (avatarUrl) updateData.avatarUrl = avatarUrl;
-      if (bio) updateData.bio = bio;
-      if (gender) updateData.gender = gender;
-      if (dob) updateData.dob = new Date(dob);
-
-      if (Object.keys(updateData).length > 0) {
-        await userRepository.updateUserProfile(user.id, updateData).catch(() => {});
+    // Ensure email and phone are permanently associated if not already set
+    try {
+      if (cleanEmail && !user.email) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { email: cleanEmail },
+        });
       }
+      if (cleanPhone && !user.phone) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { phone: cleanPhone },
+        });
+      }
+    } catch (_) {}
+
+    // Only set profile fields if the existing profile is unpopulated, never overwrite custom usernames/names
+    const updateData = {};
+    if (cleanName && (!user.profile?.displayName || user.profile.displayName === 'ZeParty Member')) {
+      updateData.displayName = cleanName;
+    }
+    if (avatarUrl && !user.avatarUrl) updateData.avatarUrl = avatarUrl;
+    if (bio && !user.bio) updateData.bio = bio;
+    if (gender && !user.gender) updateData.gender = gender;
+    if (dob && !user.dob) updateData.dob = new Date(dob);
+
+    if (Object.keys(updateData).length > 0) {
+      await userRepository.updateUserProfile(user.id, updateData).catch(() => {});
     }
     user = await userRepository.findById(user.id);
   }

@@ -17,6 +17,7 @@ class SignupScreen extends StatefulWidget {
 class _SignupScreenState extends State<SignupScreen> with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPassController = TextEditingController();
@@ -46,6 +47,7 @@ class _SignupScreenState extends State<SignupScreen> with SingleTickerProviderSt
   void dispose() {
     _animCtrl.dispose();
     _nameController.dispose();
+    _usernameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmPassController.dispose();
@@ -59,6 +61,7 @@ class _SignupScreenState extends State<SignupScreen> with SingleTickerProviderSt
 
     final success = await auth.signup(
       name: _nameController.text.trim(),
+      username: _usernameController.text.trim().replaceAll('@', ''),
       email: _emailController.text.trim(),
       password: _passwordController.text,
     );
@@ -253,6 +256,49 @@ class _SignupScreenState extends State<SignupScreen> with SingleTickerProviderSt
                                   labelText: 'Full Name',
                                   hintText: 'Enter your full name',
                                   prefixIcon: const Icon(Icons.person_outline_rounded, size: 20),
+                                  filled: true,
+                                  fillColor: AppColors.getSurface(isDark),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(color: AppColors.getBorder(isDark), width: 1.2),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(color: AppColors.getBorder(isDark).withValues(alpha: 0.6), width: 1.2),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: BorderSide(color: AppColors.getPrimary(isDark), width: 1.8),
+                                  ),
+                                  errorBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: const BorderSide(color: AppColors.liveRed, width: 1.2),
+                                  ),
+                                  focusedErrorBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                    borderSide: const BorderSide(color: AppColors.liveRed, width: 1.8),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+
+                              // Username
+                              TextFormField(
+                                controller: _usernameController,
+                                validator: (val) {
+                                  if (val == null || val.trim().isEmpty) return 'Choose a username';
+                                  final clean = val.trim().replaceAll('@', '');
+                                  if (clean.length < 3) return 'Username must be at least 3 characters';
+                                  if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(clean)) {
+                                    return 'Only letters, numbers, and underscores allowed';
+                                  }
+                                  return null;
+                                },
+                                decoration: InputDecoration(
+                                  labelText: 'Username',
+                                  hintText: 'e.g. awesome_streamer',
+                                  prefixIcon: const Icon(Icons.alternate_email_rounded, size: 20),
                                   filled: true,
                                   fillColor: AppColors.getSurface(isDark),
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),

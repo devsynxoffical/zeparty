@@ -526,17 +526,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
 
-        // Action Arrow
-        IconButton(
-          icon: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: AppColors.getTextSecondary(isDark)),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => UserProfileDetailsScreen(userId: user.id),
+        // Action Column: Footprint Profile Visitors Icon + Profile Navigation Arrow
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.directions_walk_rounded, size: 18, color: primary),
               ),
-            );
-          },
+              tooltip: 'Profile Visitors 🐾',
+              onPressed: () {
+                final popularUsers = BackendRepository.instance.popularUsers;
+                UserListSheet.show(context, 'Profile Visitors 🐾', popularUsers.take(6).toList());
+              },
+            ),
+            IconButton(
+              icon: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: AppColors.getTextSecondary(isDark)),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => UserProfileDetailsScreen(userId: user.id),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
       ],
     );
@@ -544,16 +564,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildUserStatistics(UserModel user, bool isDark) {
     final popularUsers = BackendRepository.instance.popularUsers;
+    int totalLikes = 0;
+    try {
+      final social = context.watch<SocialProvider>();
+      final myPosts = social.posts.where((p) =>
+          (user.id.isNotEmpty && p.author.id == user.id) ||
+          (user.username.isNotEmpty && p.author.username.toLowerCase() == user.username.toLowerCase())
+      ).toList();
+      totalLikes = myPosts.fold(0, (acc, p) => acc + p.likes);
+    } catch (_) {}
+
+    String formattedLikes;
+    if (totalLikes >= 1000000) {
+      formattedLikes = '${(totalLikes / 1000000).toStringAsFixed(1)}M';
+    } else if (totalLikes >= 1000) {
+      formattedLikes = '${(totalLikes / 1000).toStringAsFixed(1)}K';
+    } else {
+      formattedLikes = '$totalLikes';
+    }
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _buildStatItem(
-          '12',
-          'Visitors',
-          isDark,
-          () => UserListSheet.show(context, 'Profile Visitors', popularUsers.take(4).toList()),
-        ),
         _buildStatItem(
           AppFormatters.formatNumber(user.following),
           'Following',
@@ -565,6 +597,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'Followers',
           isDark,
           () => UserListSheet.show(context, 'Followers', popularUsers),
+        ),
+        _buildStatItem(
+          formattedLikes,
+          'Likes',
+          isDark,
+          () {
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: AppColors.getCard(isDark),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Row(
+                  children: [
+                    const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 24),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Total Likes',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
+                    ),
+                  ],
+                ),
+                content: Text(
+                  'You have total $totalLikes likes across all your videos and posts.',
+                  style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(isDark)),
+                ),
+                actions: [
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.getPrimary(isDark),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ],
     );

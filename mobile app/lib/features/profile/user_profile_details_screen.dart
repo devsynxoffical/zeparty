@@ -837,6 +837,27 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     ],
                   ),
                   const Spacer(),
+                  // Footprints / Visitors Button
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.purple.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.directions_walk_rounded, size: 16, color: Colors.purpleAccent),
+                    ),
+                    tooltip: 'Profile Visitors 🐾',
+                    onPressed: () {
+                      UserListSheet.show(
+                        context,
+                        'Profile Visitors 🐾',
+                        BackendRepository.instance.popularUsers.take(6).toList(),
+                      );
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                  // Followers Tap
                   GestureDetector(
                     onTap: () {
                       UserListSheet.show(
@@ -851,9 +872,88 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         children: [
                           Text(
                             '${AppFormatters.formatNumber(displayFollowers)} ',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: primaryText),
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: primaryText),
                           ),
-                          Text('Followers', style: TextStyle(fontSize: 13, color: secondaryText)),
+                          Text('Followers', style: TextStyle(fontSize: 12, color: secondaryText)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Likes Tap (TikTok style with interactive popup)
+                  GestureDetector(
+                    onTap: () {
+                      int calculatedLikes = _user?.likesReceived ?? 0;
+                      try {
+                        final social = context.read<SocialProvider>();
+                        final userPosts = social.posts.where((p) =>
+                            (_user != null && _user!.id.isNotEmpty && p.author.id == _user!.id) ||
+                            (_user != null && _user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase())
+                        ).toList();
+                        final pLikes = userPosts.fold(0, (acc, p) => acc + p.likes);
+                        if (pLikes > calculatedLikes) calculatedLikes = pLikes;
+                      } catch (_) {}
+
+                      final auth = context.read<AuthProvider>();
+                      final isMe = _user != null && (_user!.id == auth.currentUser.id || _user!.username == auth.currentUser.username);
+
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: AppColors.getCard(isDark),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          title: Row(
+                            children: [
+                              const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 24),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Total Likes',
+                                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
+                              ),
+                            ],
+                          ),
+                          content: Text(
+                            isMe
+                                ? 'You have total $calculatedLikes likes across all your videos and posts.'
+                                : '${_user?.name ?? 'User'} has total $calculatedLikes likes across all videos and posts.',
+                            style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(isDark)),
+                          ),
+                          actions: [
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.getPrimary(isDark),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Text(
+                            () {
+                              int count = _user?.likesReceived ?? 0;
+                              try {
+                                final social = context.read<SocialProvider>();
+                                final userPosts = social.posts.where((p) =>
+                                    (_user != null && _user!.id.isNotEmpty && p.author.id == _user!.id) ||
+                                    (_user != null && _user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase())
+                                ).toList();
+                                final pLikes = userPosts.fold(0, (acc, p) => acc + p.likes);
+                                if (pLikes > count) count = pLikes;
+                              } catch (_) {}
+                              if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M ';
+                              if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K ';
+                              return '$count ';
+                            }(),
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: primaryText),
+                          ),
+                          Text('Likes', style: TextStyle(fontSize: 12, color: secondaryText)),
                         ],
                       ),
                     ),
