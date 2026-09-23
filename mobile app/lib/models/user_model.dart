@@ -57,6 +57,7 @@ class UserModel {
   // Noble Title (Addendum 32)
   final String? nobleTitle;
   final String status;
+  final int likesReceived;
 
 
   static const UserModel empty = UserModel(
@@ -94,6 +95,7 @@ class UserModel {
     accountLevel: 1,
     accountXp: 0,
     profileCompleted: false,
+    likesReceived: 0,
   );
 
   const UserModel({
@@ -145,7 +147,28 @@ class UserModel {
     this.pendingCpRequests = const [],
     this.nobleTitle,
     this.status = 'ACTIVE',
+    this.likesReceived = 0,
   });
+
+  /// Country Flag extracted from region
+  String get countryFlag {
+    if (region.isEmpty) return '🌍';
+    final parts = region.trim().split(' ');
+    if (parts.isNotEmpty && parts.first.runes.length <= 4) {
+      return parts.first;
+    }
+    return '🌍';
+  }
+
+  /// Country Name extracted from region
+  String get country {
+    if (region.isEmpty) return 'Global';
+    final parts = region.trim().split(' ');
+    if (parts.length > 1 && parts.first.runes.length <= 4) {
+      return parts.sublist(1).join(' ');
+    }
+    return region;
+  }
 
   /// Automatically calculate exact age from date of birth securely
   int get age {
@@ -285,6 +308,11 @@ class UserModel {
       pendingCpRequests: json['pendingCpRequests'] is List ? List<String>.from(json['pendingCpRequests']) : const [],
       nobleTitle: json['nobleTitle']?.toString(),
       status: json['status']?.toString() ?? 'ACTIVE',
+      likesReceived: profile['likesReceived'] is int
+          ? profile['likesReceived'] as int
+          : (json['likesReceived'] is int
+              ? json['likesReceived'] as int
+              : (json['likesCount'] is int ? json['likesCount'] as int : 0)),
     );
   }
 
@@ -326,6 +354,7 @@ class UserModel {
       'wealthLevel': wealthLevel,
       'charmLevel': charmLevel,
       'accountLevel': accountLevel,
+      'likesReceived': likesReceived,
     };
   }
 
@@ -378,6 +407,7 @@ class UserModel {
     List<String>? pendingCpRequests,
     String? nobleTitle,
     String? status,
+    int? likesReceived,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -428,6 +458,7 @@ class UserModel {
       pendingCpRequests: pendingCpRequests ?? this.pendingCpRequests,
       nobleTitle: nobleTitle ?? this.nobleTitle,
       status: status ?? this.status,
+      likesReceived: likesReceived ?? this.likesReceived,
     );
   }
 }
