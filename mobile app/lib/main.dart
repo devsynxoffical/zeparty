@@ -44,7 +44,6 @@ import 'providers/support_provider.dart';
 import 'core/config/app_config.dart';
 import 'core/repositories/backend_repository.dart';
 import 'features/auth/splash_screen.dart';
-import 'widgets/floating_party_mini_player.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -117,15 +116,8 @@ class LiveStreamApp extends StatelessWidget {
                 debugShowCheckedModeBanner: false,
                 theme: AppTheme.lightTheme,
                 darkTheme: AppTheme.darkTheme,
+                themeMode: themeProvider.themeMode,
                 home: const SplashScreen(),
-                builder: (context, child) {
-                  return Stack(
-                    children: [
-                      if (child != null) child,
-                      const FloatingPartyMiniPlayer(),
-                    ],
-                  );
-                },
               );
             },
           );

@@ -172,13 +172,6 @@ class LivePartyProvider extends ChangeNotifier {
   final Set<int> _lockedSeatIndices = {};
   Set<int> get lockedSeatIndices => _lockedSeatIndices;
 
-  bool _isMinimized = false;
-  bool get isMinimized => _isMinimized;
-  void setMinimized(bool value) {
-    _isMinimized = value;
-    notifyListeners();
-  }
-
   void toggleGiftEffects(bool value) {
     _giftEffectsEnabled = value;
     notifyListeners();
@@ -872,23 +865,6 @@ class LivePartyProvider extends ChangeNotifier {
     );
 
     sendSystemMessage(lock ? '🔒 Mic ${seatIndex + 1} locked.' : '🔓 Mic ${seatIndex + 1} unlocked.');
-    notifyListeners();
-  }
-
-  void lockAllSeats(bool lock, {required UserModel actor}) {
-    final capacity = _activeRoom?.seatCapacity ?? 8;
-    for (int i = 1; i < capacity; i++) {
-      if (lock) {
-        if (!_lockedSeatIndices.contains(i)) {
-          _lockedSeatIndices.add(i);
-          final onSeat = _participants.where((p) => p.seatNumber == i && p.role != ParticipantRole.host).firstOrNull;
-          if (onSeat != null) clearMicSeat(i, actor: actor);
-        }
-      } else {
-        _lockedSeatIndices.remove(i);
-      }
-    }
-    sendSystemMessage(lock ? '🔒 All guest mic seats locked by Host.' : '🔓 All guest mic seats unlocked by Host.');
     notifyListeners();
   }
 

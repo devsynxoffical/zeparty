@@ -173,16 +173,6 @@ class UserModel {
     return name.isNotEmpty ? name : 'ZeParty Member';
   }
 
-  /// Unique 7-digit formatted display ID
-  String get displayId {
-    if (id.isEmpty) return '1000000';
-    if (RegExp(r'^\d{1,7}$').hasMatch(id)) {
-      return id;
-    }
-    final hash = (id.hashCode.abs() % 9000000) + 1000000;
-    return hash.toString();
-  }
-
   /// Effective cover image URL fallback
   String get effectiveCoverUrl => (coverUrl != null && coverUrl!.isNotEmpty) ? coverUrl! : avatarUrl;
 

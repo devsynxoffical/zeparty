@@ -1021,66 +1021,29 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
               const SizedBox(height: 6),
 
-              // System-generated 7-Digit ID + Copy Button + Country Flag/Name + Room/Agency Roles
+              // Bounded User ID + Copy Button + Country Flag + Room/Agency Roles
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                    decoration: BoxDecoration(
-                      color: AppColors.getPrimary(isDark).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.getPrimary(isDark).withValues(alpha: 0.3)),
+                  Flexible(
+                    child: Text(
+                      '@${_user!.username.isNotEmpty ? _user!.username : _user!.id}',
+                      style: TextStyle(color: secondaryText, fontSize: 13, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'ID: ${_user!.displayId}',
-                          style: TextStyle(
-                            color: AppColors.getPrimary(isDark),
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        GestureDetector(
-                          onTap: () {
-                            Clipboard.setData(ClipboardData(text: _user!.displayId));
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('ID ${_user!.displayId} copied to clipboard!'),
-                                duration: const Duration(seconds: 1),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          },
-                          child: Icon(Icons.copy_rounded, color: AppColors.getPrimary(isDark), size: 12),
-                        ),
-                      ],
-                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: _user!.username.isNotEmpty ? _user!.username : _user!.id));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Username copied to clipboard!')),
+                      );
+                    },
+                    child: Icon(Icons.copy_rounded, color: secondaryText, size: 14),
                   ),
                   const SizedBox(width: 8),
-                  // Country Flag & Name
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.getBorder(isDark)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(_user!.countryFlag.isNotEmpty ? _user!.countryFlag : '🌍', style: const TextStyle(fontSize: 12)),
-                        const SizedBox(width: 4),
-                        Text(
-                          _user!.country.isNotEmpty ? _user!.country : 'Global',
-                          style: TextStyle(color: secondaryText, fontSize: 11, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
+                  const Text('🇵🇰', style: TextStyle(fontSize: 15)), // Country Flag
 
                   const SizedBox(width: 8),
 
@@ -1093,6 +1056,24 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     _buildRoleTag('BD Admin 🛡️', const Color(0xFF8C38FF)),
                 ],
               ),
+
+              if (_user!.email != null && _user!.email!.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.email_outlined, size: 13, color: secondaryText),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        _user!.email!,
+                        style: TextStyle(color: secondaryText, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
 
               const SizedBox(height: 12),
               _buildProfileTags(isDark, svip),

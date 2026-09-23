@@ -48,30 +48,16 @@ export async function findByUsername(username, db = prisma) {
 }
 
 export async function createUserWithProfile(
-  { id = null, phone = null, email = null, username, displayName = null, avatarUrl = null, coverUrl = null, status = 'ACTIVE', userType = 'USER', countryCode = 'PK', coinBalance = 0, diamondBalance = 0 },
+  { id = null, phone = null, email = null, username, displayName = null, avatarUrl = null, coverUrl = null, status = 'ACTIVE', userType = 'USER', countryCode = 'US', coinBalance = 0, diamondBalance = 0 },
   db = prisma
 ) {
-  let finalId = id;
-  if (!finalId) {
-    let unique = false;
-    while (!unique) {
-      const candidateId = Math.floor(1000000 + Math.random() * 9000000).toString();
-      const existing = await db.user.findUnique({ where: { id: candidateId } });
-      if (!existing) {
-        finalId = candidateId;
-        unique = true;
-      }
-    }
-  }
-
   const data = {
-    id: finalId,
     phone: phone || null,
     email: email || null,
     username,
     status,
     userType,
-    countryCode: countryCode || 'PK',
+    countryCode: countryCode || 'US',
     avatarUrl: avatarUrl || null,
     profile: {
       create: {
@@ -85,6 +71,9 @@ export async function createUserWithProfile(
       },
     },
   };
+  if (id) {
+    data.id = id;
+  }
   return await db.user.create({
     data,
     include: {
