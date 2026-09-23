@@ -1,11 +1,8 @@
-// ============================================================
-// ZeParty Admin Portal — User Management Page (JSX)
-// ============================================================
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Search, Filter, Eye, Ban, DollarSign, UserCheck, Plus, Edit2, Trash2, CheckCircle2, AlertTriangle, ChevronDown, History, ArrowUpRight, ArrowDownRight,
+  CheckSquare, Square, Download, ShieldCheck, ShieldAlert
 } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
@@ -15,6 +12,7 @@ import { Card } from '../../components/ui/Card';
 import { Modal } from '../../components/ui/Modal';
 import { Select } from '../../components/ui/Select';
 import { Toast } from '../../components/ui/Toast';
+import { ImageViewerModal } from '../../components/ui/ImageViewerModal';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import {
   COUNTRY_PHONE_CONFIG,
@@ -43,6 +41,7 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
   const [formData, setFormData] = useState({
     username: '',
     displayName: '',
+    avatarUrl: '',
     phone: '',
     email: '',
     countryCode: 'PK',
@@ -114,6 +113,7 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
       await onConfirm({
         username: formData.username.trim(),
         displayName: formData.displayName.trim() || formData.username.trim(),
+        avatarUrl: formData.avatarUrl.trim() || undefined,
         phone: formattedPhone,
         email: formData.email.trim() || undefined,
         countryCode: formData.countryCode.trim().toUpperCase() || 'PK',
@@ -211,6 +211,13 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
             placeholder="e.g. user@example.com"
           />
 
+          <Input
+            label="Avatar Image URL"
+            value={formData.avatarUrl}
+            onChange={(e) => setFormData({ ...formData, avatarUrl: e.target.value })}
+            placeholder="https://example.com/avatar.jpg"
+          />
+
           <Select
             label="Status"
             value={formData.status}
@@ -277,6 +284,7 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
 // ---- Edit User Modal ----
 function EditUserModal({ isOpen, onClose, user, onConfirm }) {
   const [displayName, setDisplayName] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [countryCode, setCountryCode] = useState('PK');
@@ -288,6 +296,7 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
   useEffect(() => {
     if (isOpen && user) {
       setDisplayName(user.displayName || '');
+      setAvatarUrl(user.avatarUrl || '');
       const rawCountry = (user.country || 'PK').toUpperCase();
       setCountryCode(rawCountry);
       // Clean up phone if it includes country dial code
@@ -325,6 +334,7 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
 
       await onConfirm(user.id, {
         displayName: displayName.trim() || user.username,
+        avatarUrl: avatarUrl.trim() || undefined,
         phone: formattedPhone,
         email: email.trim() || undefined,
         countryCode: countryCode.trim().toUpperCase() || 'PK',
@@ -409,6 +419,28 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
+
+        <div className="space-y-1.5">
+          <Input
+            label="Avatar Image URL"
+            value={avatarUrl}
+            onChange={(e) => setAvatarUrl(e.target.value)}
+            placeholder="https://example.com/avatar.jpg"
+          />
+          {avatarUrl && (
+            <div className="flex items-center gap-2 pt-1">
+              <img
+                src={avatarUrl}
+                alt="Preview"
+                className="h-8 w-8 rounded-full object-cover border border-slate-700 ring-1 ring-indigo-500"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                }}
+              />
+              <span className="text-[11px] text-slate-400">Avatar Preview</span>
+            </div>
+          )}
+        </div>
 
         {error && (
           <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-xs text-red-400 flex items-center gap-2">
@@ -816,6 +848,11 @@ export function UsersPage() {
   const [statusModal, setStatusModal] = useState({ open: false, user: null });
   const [deleteModal, setDeleteModal] = useState({ open: false, user: null });
 
+  // Selection & Photo Preview state
+  const [selectedUserIds, setSelectedUserIds] = useState([]);
+  const [previewPhoto, setPreviewPhoto] = useState(null);
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
+
   function showFeedback(type, message, title = '') {
     setFeedback({
       type,
@@ -839,6 +876,7 @@ export function UsersPage() {
 
       const userList = res?.users || res?.data || (Array.isArray(res) ? res : []);
       setUsers(userList);
+      setSelectedUserIds([]); // reset selection on page change or reload
       if (res?.pagination) {
         setPagination({
           page: Number(res.pagination.page) || currentPage,
@@ -866,6 +904,74 @@ export function UsersPage() {
   useEffect(() => {
     loadUsers();
   }, [currentPage, pageSize, search, statusFilter]);
+
+  // Selection handlers
+  const toggleSelectUser = (id) => {
+    setSelectedUserIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (users.length > 0 && selectedUserIds.length === users.length) {
+      setSelectedUserIds([]);
+    } else {
+      setSelectedUserIds(users.map((u) => u.id));
+    }
+  };
+
+  // Batch Status Change Handler
+  const handleBatchStatus = async (newStatus) => {
+    if (selectedUserIds.length === 0) return;
+    setIsBatchProcessing(true);
+    let successCount = 0;
+    try {
+      for (const userId of selectedUserIds) {
+        try {
+          if (newStatus === 'banned') await banUser(userId, 'Batch admin ban');
+          else if (newStatus === 'suspended') await suspendUser(userId, 'Batch admin suspension');
+          else await unbanUser(userId, 'Batch admin reactivation');
+          successCount++;
+        } catch (e) {
+          console.error(`Failed to update user ${userId}:`, e);
+        }
+      }
+      showFeedback('success', `Successfully updated status to ${newStatus.toUpperCase()} for ${successCount} users.`, 'Batch Update Complete');
+      setSelectedUserIds([]);
+      await loadUsers();
+    } catch (err) {
+      showFeedback('error', err.message || 'Batch update encountered an error.', 'Batch Operation Error');
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  };
+
+  // Batch Export Handler (CSV)
+  const handleBatchExport = () => {
+    const selectedUsers = users.filter((u) => selectedUserIds.includes(u.id));
+    if (selectedUsers.length === 0) return;
+    const headers = ['ID', 'Username', 'DisplayName', 'Email', 'Phone', 'Country', 'Status', 'Coins', 'Diamonds'];
+    const rows = selectedUsers.map((u) => [
+      u.id,
+      u.username,
+      `"${(u.displayName || '').replace(/"/g, '""')}"`,
+      u.email || '',
+      u.phone || '',
+      u.country || '',
+      u.status || '',
+      u.coins || 0,
+      u.diamonds || 0,
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `zeparty_users_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showFeedback('success', `Exported ${selectedUsers.length} user records to CSV file.`, 'Export Completed');
+  };
 
   // Create User Handler
   async function handleCreateUser(payload) {
@@ -933,28 +1039,89 @@ export function UsersPage() {
     }
   }
 
+  const isAllSelected = users.length > 0 && selectedUserIds.length === users.length;
+
   const columns = [
+    {
+      key: 'select',
+      header: (
+        <button
+          type="button"
+          onClick={toggleSelectAll}
+          className="p-1 rounded text-slate-400 hover:text-white transition-colors"
+          title={isAllSelected ? 'Deselect All' : 'Select All'}
+        >
+          {isAllSelected ? (
+            <CheckSquare className="h-4 w-4 text-indigo-400" />
+          ) : (
+            <Square className="h-4 w-4 text-slate-500" />
+          )}
+        </button>
+      ),
+      render: (row) => {
+        const isSelected = selectedUserIds.includes(row.id);
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleSelectUser(row.id);
+            }}
+            className="p-1 rounded text-slate-400 hover:text-white transition-colors"
+          >
+            {isSelected ? (
+              <CheckSquare className="h-4 w-4 text-indigo-400" />
+            ) : (
+              <Square className="h-4 w-4 text-slate-600" />
+            )}
+          </button>
+        );
+      },
+    },
     {
       key: 'user',
       header: 'User',
       render: (row) => (
         <div className="flex items-center gap-3">
-          {row.avatarUrl ? (
-            <img
-              src={row.avatarUrl}
-              alt={row.displayName}
-              className="h-9 w-9 rounded-full object-cover shadow-sm ring-1 ring-slate-700 shrink-0"
-              onError={(e) => {
-                e.target.style.display = 'none';
-              }}
-            />
-          ) : (
-            <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-sm">
-              {(row.displayName || row.username || 'U').charAt(0).toUpperCase()}
-            </div>
-          )}
+          <div
+            className="cursor-pointer relative group/avatar shrink-0"
+            onClick={() =>
+              row.avatarUrl &&
+              setPreviewPhoto({
+                url: row.avatarUrl,
+                title: `@${row.username}'s Profile Picture`,
+                subtitle: row.displayName,
+              })
+            }
+            title={row.avatarUrl ? 'Click to view full photo' : ''}
+          >
+            {row.avatarUrl ? (
+              <img
+                src={row.avatarUrl}
+                alt={row.displayName}
+                className="h-9 w-9 rounded-full object-cover shadow-sm ring-1 ring-slate-700 group-hover/avatar:ring-indigo-400 transition-all"
+                onError={(e) => {
+                  e.target.style.display = 'none';
+                }}
+              />
+            ) : (
+              <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-sm">
+                {(row.displayName || row.username || 'U').charAt(0).toUpperCase()}
+              </div>
+            )}
+            {row.avatarUrl && (
+              <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover/avatar:opacity-100 flex items-center justify-center transition-opacity">
+                <Eye className="h-3 w-3 text-white" />
+              </div>
+            )}
+          </div>
           <div className="min-w-0">
-            <p className="font-semibold text-white text-sm leading-tight truncate">{row.displayName}</p>
+            <p
+              onClick={() => navigate(`/admin/users/${row.id}`)}
+              className="font-semibold text-white text-sm leading-tight truncate hover:text-indigo-300 cursor-pointer"
+            >
+              {row.displayName}
+            </p>
             <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5 flex-wrap">
               <span className="font-mono text-indigo-300">@{row.username}</span>
               <span>•</span>
@@ -1203,6 +1370,77 @@ export function UsersPage() {
         }}
         onPageChange={(newPage) => setCurrentPage(newPage)}
       />
+
+      {/* Floating Multi-User Selection / Batch Actions Toolbar */}
+      {selectedUserIds.length > 0 && (
+        <div className="sticky bottom-6 z-30 p-4 rounded-xl bg-slate-900/95 border border-indigo-500/40 shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-between gap-4 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-center gap-3">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-xs font-bold text-white">
+              {selectedUserIds.length}
+            </span>
+            <div>
+              <p className="text-xs font-semibold text-white">
+                {selectedUserIds.length} {selectedUserIds.length === 1 ? 'user' : 'users'} selected
+              </p>
+              <p className="text-[11px] text-slate-400">Perform bulk administrative operations</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => handleBatchStatus('active')}
+              isLoading={isBatchProcessing}
+              className="text-emerald-400 hover:text-emerald-300 border-emerald-500/30"
+            >
+              <UserCheck className="h-3.5 w-3.5 mr-1" /> Activate
+            </Button>
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => handleBatchStatus('suspended')}
+              isLoading={isBatchProcessing}
+              className="text-amber-400 hover:text-amber-300 border-amber-500/30"
+            >
+              <AlertTriangle className="h-3.5 w-3.5 mr-1" /> Suspend
+            </Button>
+            <Button
+              variant="danger"
+              size="xs"
+              onClick={() => handleBatchStatus('banned')}
+              isLoading={isBatchProcessing}
+            >
+              <Ban className="h-3.5 w-3.5 mr-1" /> Ban
+            </Button>
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={handleBatchExport}
+              className="text-indigo-400 border-indigo-500/30"
+            >
+              <Download className="h-3.5 w-3.5 mr-1" /> Export CSV
+            </Button>
+            <button
+              onClick={() => setSelectedUserIds([])}
+              className="px-2.5 py-1 text-xs text-slate-400 hover:text-white transition-colors"
+            >
+              Clear Selection
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Profile Picture High-Res Viewer Modal */}
+      {previewPhoto && (
+        <ImageViewerModal
+          isOpen={true}
+          onClose={() => setPreviewPhoto(null)}
+          imageUrl={previewPhoto.url}
+          title={previewPhoto.title}
+          subtitle={previewPhoto.subtitle}
+        />
+      )}
 
       {/* Modals */}
       <CreateUserModal

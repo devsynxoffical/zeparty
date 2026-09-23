@@ -15,6 +15,7 @@ import '../../models/post_model.dart';
 import '../../providers/social_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/user_list_sheet.dart';
+import '../../widgets/full_screen_image_viewer.dart';
 import '../../core/repositories/backend_repository.dart';
 import 'level_center_screen.dart';
 import 'modules/gift_showcase_screen.dart';
@@ -94,7 +95,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _showAvatarPickerOptions(BuildContext context, bool isDark, Color primary) {
+  void _showAvatarPickerOptions(BuildContext context, bool isDark, Color primary, String? avatarUrl) {
     showModalBottomSheet(
       context: context,
       backgroundColor: isDark ? const Color(0xFF1E1E2E) : Colors.white,
@@ -118,7 +119,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Change Profile Picture',
+                  'Profile Picture',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -126,6 +127,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                if (avatarUrl != null && avatarUrl.isNotEmpty) ...[
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.fullscreen_rounded, color: Colors.teal),
+                    ),
+                    title: Text('View Profile Picture', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.w600)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      FullScreenImageViewer.show(context, imageUrl: avatarUrl, tag: 'my_profile_avatar');
+                    },
+                  ),
+                ],
                 ListTile(
                   leading: Container(
                     padding: const EdgeInsets.all(10),
@@ -294,9 +312,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Avatar with Image Picker Badge
+        // Avatar with Image Picker Badge & Click-to-View
         GestureDetector(
-          onTap: () => _showAvatarPickerOptions(context, isDark, primary),
+          onTap: () => _showAvatarPickerOptions(context, isDark, primary, effectiveAvatar),
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -478,6 +496,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ],
                 ),
+                if (user.email.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.email_outlined, size: 12, color: AppColors.getTextSecondary(isDark)),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          user.email,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.getTextSecondary(isDark),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 6),
                 OnlineStatusBadge(
                   isOnline: user.isOnline,
@@ -510,8 +548,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _buildStatItem('0', 'Room', isDark, null),
-        _buildStatItem('0', 'Visitors', isDark, null),
+        _buildStatItem(
+          '12',
+          'Visitors',
+          isDark,
+          () => UserListSheet.show(context, 'Profile Visitors', popularUsers.take(4).toList()),
+        ),
         _buildStatItem(
           AppFormatters.formatNumber(user.following),
           'Following',

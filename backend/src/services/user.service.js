@@ -219,7 +219,7 @@ export async function updateUserByAdmin(
     throw error;
   }
 
-  const { displayName, phone, email, countryCode, status, userType, bio, gender, dob } = updateData;
+  const { displayName, phone, email, countryCode, status, userType, avatarUrl, bio, gender, dob } = updateData;
 
   const userUpdate = {};
   if (phone !== undefined) userUpdate.phone = phone || null;
@@ -227,12 +227,14 @@ export async function updateUserByAdmin(
   if (countryCode !== undefined) userUpdate.countryCode = countryCode;
   if (status !== undefined) userUpdate.status = status;
   if (userType !== undefined) userUpdate.userType = userType;
+  if (avatarUrl !== undefined) userUpdate.avatarUrl = avatarUrl || null;
   if (bio !== undefined) userUpdate.bio = bio;
   if (gender !== undefined) userUpdate.gender = gender;
   if (dob !== undefined) userUpdate.dob = dob ? new Date(dob) : null;
 
   const profileUpdate = {};
   if (displayName !== undefined) profileUpdate.displayName = displayName;
+  if (avatarUrl !== undefined) profileUpdate.avatarUrl = avatarUrl || null;
 
   await db.$transaction(async (tx) => {
     if (Object.keys(userUpdate).length > 0) {
@@ -248,6 +250,7 @@ export async function updateUserByAdmin(
         create: {
           userId,
           displayName: profileUpdate.displayName || existingUser.username,
+          avatarUrl: profileUpdate.avatarUrl || null,
         },
         update: profileUpdate,
       });

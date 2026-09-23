@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/country_picker_sheet.dart';
 import '../../widgets/user_avatar.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -583,14 +584,30 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Region / Country
-              TextField(
-                controller: _regionController,
-                decoration: InputDecoration(
-                  labelText: 'Country / Region',
-                  prefixIcon: const Icon(Icons.public),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                  helperText: 'Region changes follow product account policy',
+              // Region / Country (Searchable Picker)
+              InkWell(
+                onTap: () {
+                  CountryPickerSheet.show(
+                    context,
+                    onSelect: (country) {
+                      setState(() {
+                        _regionController.text = '${country.flag} ${country.name}';
+                      });
+                    },
+                  );
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: IgnorePointer(
+                  child: TextField(
+                    controller: _regionController,
+                    decoration: InputDecoration(
+                      labelText: 'Country / Region',
+                      hintText: 'Tap to select country...',
+                      prefixIcon: const Icon(Icons.public),
+                      suffixIcon: const Icon(Icons.arrow_drop_down),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -658,71 +675,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 }).toList(),
               ),
 
-              const SizedBox(height: 28),
-
-              // ─── Prohibited / Server-Protected Fields Section ───
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: cardColor,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: borderColor),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.shield_rounded, color: Colors.orangeAccent, size: 18),
-                        SizedBox(width: 8),
-                        Text(
-                          'Server-Protected Fields (Read-Only)',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'User ID, financial balances, levels, and identity credentials are permanent server-authoritative fields.',
-                      style: TextStyle(fontSize: 10.5, color: secondaryText),
-                    ),
-                    const SizedBox(height: 12),
-                    _buildReadOnlyRow('User ID', user.id, isDark),
-                    _buildReadOnlyRow('Coins Balance', '${AppFormatters.formatNumber(user.coins)} 🪙', isDark),
-                    _buildReadOnlyRow('Diamonds Count', '${AppFormatters.formatNumber(user.diamonds)} 💎', isDark),
-                    _buildReadOnlyRow('Wealth / Charm / Game Levels', 'Lv. ${user.wealthLevel} / Lv. ${user.charmLevel} / Lv. ${user.gameLevel}', isDark),
-                    _buildReadOnlyRow('SVIP Tier', 'SVIP 11', isDark),
-                    _buildReadOnlyRow('Agency Affiliation', user.agencyName ?? 'Independent', isDark),
-                    _buildReadOnlyRow('Registration Date', '2026-01-01', isDark),
-                  ],
-                ),
-              ),
-
               const SizedBox(height: 30),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildReadOnlyRow(String label, String value, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark))),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
-            ),
-          ),
-        ],
       ),
     );
   }

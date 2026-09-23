@@ -48,6 +48,7 @@ import { WalletPage } from '../pages/admin/WalletPage';
 import { FinancePage } from '../pages/admin/FinancePage';
 import { StorePage } from '../pages/admin/StorePage';
 import { BannersPage } from '../pages/admin/BannersPage';
+import { PostsPage } from '../pages/admin/PostsPage';
 import { ModerationPage } from '../pages/admin/ModerationPage';
 import { ReportsPage } from '../pages/admin/ReportsPage';
 import { SupportPage } from '../pages/admin/SupportPage';
@@ -159,6 +160,7 @@ export function AppRoutes() {
         <Route path="leaderboards" element={<ModuleRouteGuard requiredPermission="view_users"><LeaderboardsPage /></ModuleRouteGuard>} />
         <Route path="referrals" element={<ModuleRouteGuard requiredPermission="view_users"><ReferralsPage /></ModuleRouteGuard>} />
         <Route path="banners" element={<ModuleRouteGuard requiredPermission="view_banners"><BannersPage /></ModuleRouteGuard>} />
+        <Route path="posts" element={<ModuleRouteGuard requiredPermission="view_users"><PostsPage /></ModuleRouteGuard>} />
         <Route path="announcements" element={<ModuleRouteGuard requiredPermission="view_announcements"><AnnouncementsPage /></ModuleRouteGuard>} />
         <Route path="room-theme-approval" element={<ModuleRouteGuard requiredPermission="manage_banners"><RoomThemeApprovalPage /></ModuleRouteGuard>} />
         <Route path="notifications" element={<ModuleRouteGuard requiredPermission="view_notifications"><NotificationsPage /></ModuleRouteGuard>} />

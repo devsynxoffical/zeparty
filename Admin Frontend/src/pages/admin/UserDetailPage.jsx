@@ -10,7 +10,7 @@ import {
   ArrowLeft, Mail, Globe, Phone, Building, ShieldCheck, ShieldAlert,
   Smartphone, Lock, RefreshCw, Key, Award, Sparkles, AlertTriangle,
   Coins, Diamond, CheckCircle, XCircle, Slash, MessageSquare, Heart,
-  Share2, Trash2, FileText
+  Share2, Trash2, FileText, Camera, Eye
 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
@@ -18,6 +18,7 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Toast } from '../../components/ui/Toast';
+import { ImageViewerModal } from '../../components/ui/ImageViewerModal';
 import { DataTable } from '../../components/tables/DataTable';
 import { getUserById, updateUser, updateUserStatus } from '../../services/modules/users.service';
 import { getBDCenters } from '../../services/modules/bdCenter.service';
@@ -72,9 +73,10 @@ export function UserDetailPage() {
     });
   }
 
-  // Country Change state
-  const [newCountry, setNewCountry] = useState('PK');
-  const [newRegion, setNewRegion] = useState('South Asia');
+  // Avatar update state
+  const [newAvatarInput, setNewAvatarInput] = useState('');
+  const [isSavingAvatar, setIsSavingAvatar] = useState(false);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
 
   useEffect(() => {
     getBDCenters().then(bds => setBdCenters(bds || [])).catch(() => setBdCenters([]));
@@ -86,6 +88,7 @@ export function UserDetailPage() {
           setSelectedBDCenter(userData.bdCenterId || '');
           setNewCountry(userData.country || 'PK');
           setNewRegion(userData.region || 'South Asia');
+          setNewAvatarInput(userData.avatarUrl || '');
           setUserError(null);
         })
         .catch((err) => {
@@ -117,6 +120,32 @@ export function UserDetailPage() {
     });
     setModalAction(null);
     setActionReason('');
+  };
+
+  const handleAvatarChange = async () => {
+    if (!user) return;
+    setIsSavingAvatar(true);
+    try {
+      await updateUser(user.id, { avatarUrl: newAvatarInput.trim() });
+      setUser({ ...user, avatarUrl: newAvatarInput.trim() });
+      showToast('Profile picture updated successfully in database.', 'success', 'Avatar Updated');
+      await logEvent({
+        action: 'USER_AVATAR_UPDATED',
+        targetId: user.id,
+        targetType: 'USER',
+        operatorName: 'Super Admin',
+        reason: actionReason || 'Updated profile picture via admin panel',
+        riskLevel: 'LOW',
+        status: 'SUCCESS'
+      });
+      setModalAction(null);
+      setActionReason('');
+    } catch (err) {
+      console.error('Failed to update avatar on backend:', err);
+      showToast(err.message || 'Failed to update profile picture', 'error', 'Update Failed');
+    } finally {
+      setIsSavingAvatar(false);
+    }
   };
 
   useEffect(() => {
@@ -381,10 +410,35 @@ export function UserDetailPage() {
         <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-6">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
             <div
-              className="h-20 w-20 rounded-2xl flex items-center justify-center text-white text-3xl font-bold flex-shrink-0 shadow-xl border border-white/10"
-              style={{ backgroundColor: bgColor }}
+              className="relative group cursor-pointer h-20 w-20 rounded-2xl overflow-hidden shadow-xl border border-white/20 ring-2 ring-indigo-500/20 shrink-0"
+              onClick={() => {
+                if (user.avatarUrl) {
+                  setIsViewerOpen(true);
+                } else {
+                  setNewAvatarInput('');
+                  setModalAction('update_avatar');
+                }
+              }}
+              title={user.avatarUrl ? 'Click to view full-size photo' : 'Click to add profile picture'}
             >
-              {user.displayName.charAt(0)}
+              {user.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.displayName}
+                  className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
+                />
+              ) : (
+                <div
+                  className="h-full w-full flex items-center justify-center text-white text-3xl font-bold"
+                  style={{ backgroundColor: bgColor }}
+                >
+                  {user.displayName.charAt(0)}
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white text-[10px] font-medium p-1 text-center">
+                <Eye className="h-4 w-4 mb-0.5" />
+                <span>{user.avatarUrl ? 'View Photo' : 'Upload'}</span>
+              </div>
             </div>
 
             <div className="text-center sm:text-left">
@@ -416,6 +470,25 @@ export function UserDetailPage() {
 
           {/* Quick Account Controls */}
           <div className="flex flex-wrap gap-2 justify-center md:justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setNewAvatarInput(user.avatarUrl || '');
+                setModalAction('update_avatar');
+              }}
+            >
+              <Camera className="h-4 w-4 mr-1 text-indigo-400" /> Update Picture
+            </Button>
+            {user.avatarUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsViewerOpen(true)}
+              >
+                <Eye className="h-4 w-4 mr-1 text-emerald-400" /> View Picture
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -1028,6 +1101,70 @@ export function UserDetailPage() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Update Avatar Modal */}
+      {modalAction === 'update_avatar' && (
+        <Modal
+          isOpen={true}
+          onClose={() => setModalAction(null)}
+          title={`Update Profile Picture — @${user.username}`}
+          size="sm"
+        >
+          <div className="space-y-4 text-xs text-slate-300">
+            <p>
+              Set a new avatar image URL for <strong className="text-white">{user.displayName}</strong>.
+            </p>
+
+            {newAvatarInput && (
+              <div className="flex justify-center my-2">
+                <img
+                  src={newAvatarInput}
+                  alt="Preview"
+                  className="h-20 w-20 rounded-full object-cover ring-2 ring-indigo-500 shadow-md"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                  }}
+                />
+              </div>
+            )}
+
+            <Input
+              label="Avatar Image URL"
+              placeholder="https://example.com/avatar.jpg"
+              value={newAvatarInput}
+              onChange={(e) => setNewAvatarInput(e.target.value)}
+              required
+            />
+
+            <Input
+              label="Audit Reason for Update"
+              placeholder="e.g. User requested photo change / offensive avatar moderation"
+              value={actionReason}
+              onChange={(e) => setActionReason(e.target.value)}
+            />
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setModalAction(null)} disabled={isSavingAvatar}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleAvatarChange} isLoading={isSavingAvatar}>
+                Save Avatar
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Profile Picture Full Image Viewer Modal */}
+      {isViewerOpen && user.avatarUrl && (
+        <ImageViewerModal
+          isOpen={isViewerOpen}
+          onClose={() => setIsViewerOpen(false)}
+          imageUrl={user.avatarUrl}
+          title={`@${user.username}'s Profile Picture`}
+          subtitle={user.displayName}
+        />
       )}
     </div>
   );

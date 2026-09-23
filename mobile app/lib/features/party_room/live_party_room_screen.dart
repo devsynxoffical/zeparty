@@ -247,8 +247,15 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     final canManage = isHost || provider.participants.any(
         (p) => p.user.id == currentUser.id && p.role == ParticipantRole.moderator);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0D0B18),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _leaveRoom();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0D0B18),
       body: Stack(
         children: [
           // TikTok Live Gifting Overlay
@@ -495,7 +502,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           GiftAnimationOverlay(key: _giftOverlayKey),
         ],
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildHeader(

@@ -25,7 +25,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> _tabs = ['Mine', 'Party', 'Live', 'Shorts', 'Games', 'PK'];
+  final List<String> _tabs = ['Mine', 'Party', 'Live', 'Games', 'PK'];
 
   @override
   void initState() {
@@ -202,7 +202,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 isDark: isDark,
                 isPartyTab: false,
               ),
-              ShortsTab(isDark: isDark),
               GamesTab(isDark: isDark),
               LiveDiscoveryGrid(liveRooms: liveRooms.where((r) => r.category.toUpperCase() == 'PK').toList(), isDark: isDark),
             ],

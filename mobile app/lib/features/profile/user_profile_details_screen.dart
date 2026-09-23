@@ -16,6 +16,7 @@ import '../../providers/social_provider.dart';
 import '../party_room/live_party_room_screen.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/user_list_sheet.dart';
+import '../../widgets/full_screen_image_viewer.dart';
 import '../../widgets/gift_dialog.dart';
 import '../../core/repositories/backend_repository.dart';
 
@@ -762,44 +763,56 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  // Main Avatar Stack with CP Mini Avatar Decoration
+                  // Main Avatar Stack with CP Mini Avatar Decoration & Click to view
                   Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.amberAccent, width: 2.5),
-                          boxShadow: [
-                            BoxShadow(color: Colors.amber.withValues(alpha: 0.4), blurRadius: 10),
-                          ],
-                        ),
-                        child: Builder(
-                          builder: (ctx) {
-                            String? effAvatar = _user!.avatarUrl.isNotEmpty ? _user!.avatarUrl : null;
-                            if (effAvatar == null || effAvatar.isEmpty) {
-                              try {
-                                final social = ctx.watch<SocialProvider>();
-                                final myPost = social.posts.cast<PostModel?>().firstWhere(
-                                  (p) => p != null && (
-                                    (_user!.id.isNotEmpty && p.author.id == _user!.id) ||
-                                    (_user!.displayName.isNotEmpty && p.author.displayName.toLowerCase() == _user!.displayName.toLowerCase()) ||
-                                    (_user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase())
-                                  ),
-                                  orElse: () => null,
+                      Builder(
+                        builder: (ctx) {
+                          String? effAvatar = _user!.avatarUrl.isNotEmpty ? _user!.avatarUrl : null;
+                          if (effAvatar == null || effAvatar.isEmpty) {
+                            try {
+                              final social = ctx.watch<SocialProvider>();
+                              final myPost = social.posts.cast<PostModel?>().firstWhere(
+                                (p) => p != null && (
+                                  (_user!.id.isNotEmpty && p.author.id == _user!.id) ||
+                                  (_user!.displayName.isNotEmpty && p.author.displayName.toLowerCase() == _user!.displayName.toLowerCase()) ||
+                                  (_user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase())
+                                ),
+                                orElse: () => null,
+                              );
+                              if (myPost != null && myPost.author.avatarUrl.isNotEmpty) {
+                                effAvatar = myPost.author.avatarUrl;
+                              }
+                            } catch (_) {}
+                          }
+
+                          return GestureDetector(
+                            onTap: () {
+                              if (effAvatar != null && effAvatar.isNotEmpty) {
+                                FullScreenImageViewer.show(
+                                  context,
+                                  imageUrl: effAvatar,
+                                  tag: 'user_details_avatar_${_user!.id}',
                                 );
-                                if (myPost != null && myPost.author.avatarUrl.isNotEmpty) {
-                                  effAvatar = myPost.author.avatarUrl;
-                                }
-                              } catch (_) {}
-                            }
-                            return UserAvatar(
-                              imageUrl: effAvatar,
-                              name: _user!.displayName,
-                              radius: 38,
-                            );
-                          },
-                        ),
+                              }
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.amberAccent, width: 2.5),
+                                boxShadow: [
+                                  BoxShadow(color: Colors.amber.withValues(alpha: 0.4), blurRadius: 10),
+                                ],
+                              ),
+                              child: UserAvatar(
+                                imageUrl: effAvatar,
+                                name: _user!.displayName,
+                                radius: 38,
+                              ),
+                            ),
+                          );
+                        },
                       ),
 
                       // CP Partner Mini-Avatar Decoration (Reference Image 15 & Diagram B)
@@ -853,7 +866,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
         const SizedBox(height: 12),
 
-        // User Details (Name | Gender/Age Pill | Bounded User ID + Copy | Country)
+        // User Details (Name | Gender/Age Pill | Bounded User ID + Copy | Country | Email)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Column(
@@ -943,6 +956,24 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     _buildRoleTag('BD Admin 🛡️', const Color(0xFF8C38FF)),
                 ],
               ),
+
+              if (_user!.email.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(Icons.email_outlined, size: 13, color: secondaryText),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        _user!.email,
+                        style: TextStyle(color: secondaryText, fontSize: 12),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
 
               const SizedBox(height: 12),
               _buildProfileTags(isDark, svip),

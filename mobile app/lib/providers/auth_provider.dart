@@ -410,7 +410,7 @@ class AuthProvider extends ChangeNotifier {
           email: cleanEmail,
           phone: phone,
           avatarUrl: '',
-          bio: 'New creator on ZeParty! ✨',
+          bio: '',
           coins: 1000,
           diamonds: 100,
           role: UserRole.user,

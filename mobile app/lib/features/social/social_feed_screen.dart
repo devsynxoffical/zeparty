@@ -170,8 +170,8 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
                 labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 tabs: const [
                   Tab(text: '🏠 For You'),
+                  Tab(text: '👥 Following'),
                   Tab(text: '🎬 Shorts'),
-                  Tab(text: '🔥 Trending'),
                 ],
               ),
             ),
@@ -180,9 +180,9 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
         body: TabBarView(
           controller: _tabController,
           children: [
-            _buildPostFeed(social, isTrending: false),
-            ShortVideosScreen(isActive: widget.isScreenActive && _tabController.index == 1),
-            _buildPostFeed(social, isTrending: true),
+            _buildPostFeed(social, auth, feedMode: 'forYou'),
+            _buildPostFeed(social, auth, feedMode: 'following'),
+            ShortVideosScreen(isActive: widget.isScreenActive && _tabController.index == 2),
           ],
         ),
       ),
@@ -204,8 +204,12 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
     final currentUserName = auth.currentUser.displayName.toLowerCase();
     final currentUserHandle = auth.currentUser.username.toLowerCase();
 
-    // 1. Current user's stories
-    final myStories = social.posts.where((p) =>
+    // 24-hour expiration filter: Stories must disappear after 24 hours
+    final cutoff = DateTime.now().subtract(const Duration(hours: 24));
+    final validStories = social.posts.where((p) => p.createdAt.isAfter(cutoff)).toList();
+
+    // 1. Current user's valid stories
+    final myStories = validStories.where((p) =>
       (currentUserId.isNotEmpty && p.author.id == currentUserId) ||
       (currentUserName.isNotEmpty && p.author.displayName.toLowerCase() == currentUserName) ||
       (currentUserHandle.isNotEmpty && p.author.username.toLowerCase() == currentUserHandle)
@@ -213,7 +217,7 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
 
     // 2. Group other users' stories strictly by unique author name/handle
     final Map<String, List<PostModel>> otherUsersStoryMap = {};
-    for (final post in social.posts) {
+    for (final post in validStories) {
       final isMyPost = (currentUserId.isNotEmpty && post.author.id == currentUserId) ||
                        (currentUserName.isNotEmpty && post.author.displayName.toLowerCase() == currentUserName) ||
                        (currentUserHandle.isNotEmpty && post.author.username.toLowerCase() == currentUserHandle);
@@ -300,16 +304,25 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
                     Positioned(
                       bottom: -2,
                       right: -2,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: BoxDecoration(
-                          color: AppColors.getPrimary(isDark),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          hasStory ? Icons.remove_red_eye_rounded : Icons.add,
-                          size: 10,
-                          color: AppColors.onPrimary(isDark: isDark),
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          AuthGuard.require(context, () {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraRecorderScreen()));
+                          }, reason: 'Sign in to post a story');
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color: AppColors.getPrimary(isDark),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1.5),
+                          ),
+                          child: Icon(
+                            Icons.add,
+                            size: 11,
+                            color: AppColors.onPrimary(isDark: isDark),
+                          ),
                         ),
                       ),
                     ),
@@ -319,7 +332,7 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
             ),
             const SizedBox(height: 4),
             Text(
-              hasStory ? 'My Story (${myStories.length})' : 'Your Story',
+              hasStory ? 'My Story (${myStories.length})' : 'Add Story',
               style: TextStyle(
                 fontSize: 9.5,
                 fontWeight: hasStory ? FontWeight.bold : FontWeight.w600,
@@ -409,7 +422,7 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildPostFeed(SocialProvider social, {required bool isTrending}) {
+  Widget _buildPostFeed(SocialProvider social, AuthProvider auth, {required String feedMode}) {
     if (social.feedLoading && social.posts.isEmpty) {
       return const Center(
         child: CircularProgressIndicator(color: AppColors.primary),
@@ -435,16 +448,30 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
       );
     }
 
-    final posts = isTrending ? social.posts.reversed.toList() : social.posts;
+    final List<PostModel> posts;
+    if (feedMode == 'following') {
+      posts = social.posts.where((p) => auth.isFollowing(p.author.id)).toList();
+    } else {
+      posts = social.posts;
+    }
 
     if (posts.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.post_add_rounded, size: 64, color: AppColors.textSecondary),
+            Icon(
+              feedMode == 'following' ? Icons.people_outline_rounded : Icons.post_add_rounded,
+              size: 64,
+              color: AppColors.textSecondary,
+            ),
             const SizedBox(height: 16),
-            const Text('No posts yet', style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
+            Text(
+              feedMode == 'following'
+                  ? 'No posts from creators you follow yet'
+                  : 'No posts yet',
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 16),
+            ),
             const SizedBox(height: 8),
             ElevatedButton.icon(
               onPressed: () {
@@ -453,7 +480,7 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
                 }, reason: 'Sign in to create posts');
               },
               icon: const Icon(Icons.add),
-              label: const Text('Create First Post'),
+              label: Text(feedMode == 'following' ? 'Discover Creators' : 'Create First Post'),
             ),
           ],
         ),

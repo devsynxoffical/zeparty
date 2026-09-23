@@ -104,7 +104,7 @@ class UserModel {
     this.phone,
     required this.avatarUrl,
     this.coverUrl,
-    this.bio = 'Creator on ZeParty ✨',
+    this.bio = '',
     this.gender = 'Not Specified',
     this.region = 'Global',
     this.dateOfBirth,

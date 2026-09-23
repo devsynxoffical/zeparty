@@ -233,18 +233,22 @@ class _CountryPickerWidgetState extends State<CountryPickerWidget> {
   }
 
   void _showCountrySheet() {
+    String searchQuery = '';
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: AppColors.getCard(widget.isDark),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
-        String searchQuery = '';
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
             final filteredCountries = _countries.where((c) {
-              return c['name']!.toLowerCase().contains(searchQuery.toLowerCase());
+              final q = searchQuery.toLowerCase().trim();
+              return q.isEmpty ||
+                  c['name']!.toLowerCase().contains(q) ||
+                  c['code']!.toLowerCase().contains(q);
             }).toList();
 
             return Padding(

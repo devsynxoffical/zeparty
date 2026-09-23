@@ -54,16 +54,17 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   }
 
   void _showCountryPicker() {
+    String searchQuery = '';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) {
-        String searchQuery = '';
         return StatefulBuilder(
           builder: (context, setModalState) {
             final filtered = _countries.where((c) {
-              final query = searchQuery.toLowerCase();
+              final query = searchQuery.toLowerCase().trim();
+              if (query.isEmpty) return true;
               return c.name.toLowerCase().contains(query) || c.dialCode.contains(query) || c.code.toLowerCase().contains(query);
             }).toList();
 
