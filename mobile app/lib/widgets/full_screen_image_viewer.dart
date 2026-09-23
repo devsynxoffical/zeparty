@@ -11,12 +11,18 @@ class FullScreenImageViewer extends StatelessWidget {
     this.title,
   });
 
-  static void show(BuildContext context, String imageUrl, {String? title}) {
-    if (imageUrl.isEmpty) return;
+  static void show(
+    BuildContext context, {
+    String? imageUrl,
+    String? title,
+    String? tag,
+  }) {
+    final url = imageUrl ?? '';
+    if (url.isEmpty) return;
     Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => FullScreenImageViewer(imageUrl: imageUrl, title: title),
+        builder: (_) => FullScreenImageViewer(imageUrl: url, title: title),
       ),
     );
   }

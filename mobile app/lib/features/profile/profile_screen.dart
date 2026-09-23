@@ -496,7 +496,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ],
                   ],
                 ),
-                if (user.email.isNotEmpty) ...[
+                if (user.email != null && user.email!.isNotEmpty) ...[
                   const SizedBox(height: 4),
                   Row(
                     children: [
@@ -504,7 +504,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
-                          user.email,
+                          user.email!,
                           style: TextStyle(
                             fontSize: 11,
                             color: AppColors.getTextSecondary(isDark),

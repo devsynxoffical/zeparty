@@ -85,9 +85,14 @@ class CountryPickerSheet extends StatefulWidget {
     CountryInfo(code: 'AT', name: 'Austria', flag: '🇦🇹', dialCode: '+43'),
   ];
 
-  static Future<CountryInfo?> show(BuildContext context, {String? initialCode}) {
+  static Future<CountryInfo?> show(
+    BuildContext context, {
+    String? initialCode,
+    ValueChanged<CountryInfo>? onSelect,
+    ValueChanged<CountryInfo>? onSelected,
+  }) async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return showModalBottomSheet<CountryInfo>(
+    final res = await showModalBottomSheet<CountryInfo>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.getCard(isDark),
@@ -97,9 +102,14 @@ class CountryPickerSheet extends StatefulWidget {
       builder: (ctx) => CountryPickerSheet(
         isDark: isDark,
         initialCode: initialCode,
-        onSelected: (country) => Navigator.pop(ctx, country),
+        onSelected: (country) {
+          if (onSelect != null) onSelect(country);
+          if (onSelected != null) onSelected(country);
+          Navigator.pop(ctx, country);
+        },
       ),
     );
+    return res;
   }
 
   @override

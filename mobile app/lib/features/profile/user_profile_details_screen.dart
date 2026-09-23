@@ -957,7 +957,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 ],
               ),
 
-              if (_user!.email.isNotEmpty) ...[
+              if (_user!.email != null && _user!.email!.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -965,7 +965,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     const SizedBox(width: 5),
                     Flexible(
                       child: Text(
-                        _user!.email,
+                        _user!.email!,
                         style: TextStyle(color: secondaryText, fontSize: 12),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
