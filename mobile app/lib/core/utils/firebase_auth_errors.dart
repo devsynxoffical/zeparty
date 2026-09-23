@@ -31,15 +31,20 @@ class FirebaseAuthErrorHandler {
 
     final errorString = error.toString().toLowerCase();
     if (errorString.contains('10:') || errorString.contains('developer_error')) {
-      return 'Google Sign-In configuration error. Please ensure SHA-1 fingerprint & Google Sign-In are enabled in Firebase Console.';
+      return 'Google Sign-In configuration error (ApiException: 10). Please ensure SHA-1 fingerprint & Google Sign-In are enabled in Firebase Console.';
     }
     if (errorString.contains('12500') || errorString.contains('sign_in_failed')) {
-      return 'Google Sign-In failed. Please check Google Play Services or network connection.';
+      return 'Google Sign-In failed (ApiException: 12500). Please check Google Play Services or network connection.';
     }
     if (errorString.contains('cancelled') || errorString.contains('canceled') || errorString.contains('sign_in_canceled')) {
       return 'Sign in was cancelled.';
     }
 
-    return 'Authentication failed: ${error is Exception ? error.toString().replaceAll('PlatformException', '').trim() : 'Please try again.'}';
+    if (error != null) {
+      final msg = error.toString().replaceAll('PlatformException(', '').replaceAll('Exception: ', '').trim();
+      return 'Authentication failed: $msg';
+    }
+
+    return 'Authentication failed. Please try again.';
   }
 }

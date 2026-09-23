@@ -442,6 +442,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       final GoogleSignIn googleSignIn = GoogleSignIn(
         scopes: ['email', 'profile'],
+        serverClientId: '13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com',
       );
 
       try {
@@ -451,6 +452,7 @@ class AuthProvider extends ChangeNotifier {
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
       if (googleUser == null) {
+        debugPrint('[GoogleSignIn] User canceled account selection dialog.');
         _errorMessage = null;
         _isLoading = false;
         notifyListeners();
@@ -458,6 +460,8 @@ class AuthProvider extends ChangeNotifier {
       }
 
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      debugPrint('[GoogleSignIn] Obtained tokens - idToken present: ${googleAuth.idToken != null}, accessToken present: ${googleAuth.accessToken != null}');
+
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
@@ -467,7 +471,9 @@ class AuthProvider extends ChangeNotifier {
       final firebaseUser = userCredential.user;
 
       final cleanEmail = googleUser.email.trim();
-      final cleanName = googleUser.displayName ?? 'Google Creator';
+      final cleanName = (googleUser.displayName != null && googleUser.displayName!.trim().isNotEmpty)
+          ? googleUser.displayName!.trim()
+          : 'Google Creator';
       final baseUsername = cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail;
       final photoUrl = googleUser.photoUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80';
 
@@ -505,7 +511,8 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       return true;
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[GoogleSignIn] Failed with exception: $e\n$stack');
       _errorMessage = FirebaseAuthErrorHandler.getErrorMessage(e);
       _isLoading = false;
       notifyListeners();
