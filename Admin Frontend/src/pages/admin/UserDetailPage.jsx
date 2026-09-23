@@ -10,7 +10,7 @@ import {
   ArrowLeft, Mail, Globe, Phone, Building, ShieldCheck, ShieldAlert,
   Smartphone, Lock, RefreshCw, Key, Award, Sparkles, AlertTriangle,
   Coins, Diamond, CheckCircle, XCircle, Slash, MessageSquare, Heart,
-  Share2, Trash2, FileText, Camera, Eye
+  Share2, Trash2, FileText, Camera, Eye, Film, Play, ExternalLink
 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
@@ -50,7 +50,9 @@ export function UserDetailPage() {
   // Posts State
   const [userPosts, setUserPosts] = useState([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
-  const [postToDelete, setPostToDelete] = useState(null);  // BD Center Assignment State
+  const [postToDelete, setPostToDelete] = useState(null);
+  const [inspectingPost, setInspectingPost] = useState(null);
+  const [previewMedia, setPreviewMedia] = useState(null);
   const [bdCenters, setBdCenters] = useState([]);
   const [selectedBDCenter, setSelectedBDCenter] = useState('');
 
@@ -748,50 +750,105 @@ export function UserDetailPage() {
             </div>
           ) : (
             <div className="grid md:grid-cols-2 gap-4">
-              {userPosts.map((post) => (
-                <div key={post.id} className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col justify-between space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] font-mono text-gold-400">{post.id}</span>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={(post?.visibility || 'public').toLowerCase() === 'public' ? 'success' : 'warning'}>
-                          {String(post?.visibility || 'PUBLIC').toUpperCase()}
-                        </Badge>
-                        <Badge variant={(post?.status || 'active').toLowerCase() === 'active' ? 'purple' : 'danger'}>
-                          {String(post?.status || 'ACTIVE').toUpperCase()}
-                        </Badge>
+              {userPosts.map((post) => {
+                const isVideo = Boolean(
+                  post.mediaUrl && (post.mediaUrl.match(/\.(mp4|webm|mov|m4v|ogg)(\?.*)?$/i) || post.mediaType === 'VIDEO')
+                );
+                return (
+                  <div key={post.id} className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col justify-between space-y-3 hover:border-slate-600 transition-all">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-mono text-gold-400">Post #{post.id?.slice(0, 12) || post.id}</span>
+                        <div className="flex items-center gap-1.5">
+                          {isVideo && (
+                            <Badge variant="purple" className="flex items-center gap-1 text-[10px]">
+                              <Film className="h-3 w-3" /> Video
+                            </Badge>
+                          )}
+                          <Badge variant={(post?.visibility || 'public').toLowerCase() === 'public' ? 'success' : 'warning'}>
+                            {String(post?.visibility || 'PUBLIC').toUpperCase()}
+                          </Badge>
+                          <Badge variant={(post?.status || 'active').toLowerCase() === 'active' ? 'purple' : 'danger'}>
+                            {String(post?.status || 'ACTIVE').toUpperCase()}
+                          </Badge>
+                        </div>
                       </div>
-                    </div>
-                    <p className="text-xs text-slate-200 line-clamp-3 mb-2">{post.content}</p>
-                    {post.mediaUrl && (
-                      <div className="rounded-lg overflow-hidden border border-slate-700/50 max-h-40 mb-2">
-                        <img src={post.mediaUrl} alt="Post Media" className="w-full h-36 object-cover" />
-                      </div>
-                    )}
-                  </div>
 
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-700/40">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-rose-400" /> {post.likesCount}</span>
-                        <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3 text-sky-400" /> {post.commentsCount}</span>
-                        <span className="flex items-center gap-1"><Share2 className="h-3 w-3 text-emerald-400" /> {post.sharesCount}</span>
-                      </div>
-                      <span>{new Date(post.createdAt).toLocaleDateString()}</span>
+                      {post.content && (
+                        <p className="text-xs text-slate-200 line-clamp-3 mb-2.5 bg-slate-900/40 p-2.5 rounded-lg border border-slate-800">
+                          {post.content}
+                        </p>
+                      )}
+
+                      {post.mediaUrl && (
+                        <div className="relative rounded-xl overflow-hidden bg-black/60 border border-slate-700/50 mb-2 group">
+                          {isVideo ? (
+                            <video
+                              src={post.mediaUrl}
+                              controls
+                              className="w-full max-h-48 object-cover bg-black"
+                              preload="metadata"
+                            />
+                          ) : (
+                            <div
+                              onClick={() =>
+                                setPreviewMedia({
+                                  url: post.mediaUrl,
+                                  title: `Post Attachment (${post.id})`,
+                                  subtitle: post.content || `@${user.username}`,
+                                  isVideo: false,
+                                })
+                              }
+                              className="cursor-pointer relative"
+                            >
+                              <img
+                                src={post.mediaUrl}
+                                alt="Post Media"
+                                className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-200"
+                                onError={(e) => {
+                                  e.target.src = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=60';
+                                }}
+                              />
+                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-medium gap-1">
+                                <Eye className="h-4 w-4" /> Click to enlarge
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="pt-2 flex justify-end">
-                      <Button
-                        variant="danger"
-                        size="xs"
-                        onClick={() => setPostToDelete(post)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete Post
-                      </Button>
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2.5 border-t border-slate-700/40">
+                        <div className="flex items-center gap-3">
+                          <span className="flex items-center gap-1 font-mono text-rose-400"><Heart className="h-3 w-3" /> {post.likesCount}</span>
+                          <span className="flex items-center gap-1 font-mono text-sky-400"><MessageSquare className="h-3 w-3" /> {post.commentsCount}</span>
+                          <span className="flex items-center gap-1 font-mono text-emerald-400"><Share2 className="h-3 w-3" /> {post.sharesCount}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono">{new Date(post.createdAt).toLocaleDateString()}</span>
+                      </div>
+
+                      <div className="pt-2.5 flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => setInspectingPost(post)}
+                          className="text-indigo-400 hover:text-indigo-300"
+                        >
+                          <Eye className="h-3.5 w-3.5 mr-1" /> View Post
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="xs"
+                          onClick={() => setPostToDelete(post)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete Post
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>
@@ -1166,6 +1223,143 @@ export function UserDetailPage() {
           imageUrl={user.avatarUrl}
           title={`@${user.username}'s Profile Picture`}
           subtitle={user.displayName}
+        />
+      )}
+
+      {/* Post Detailed Inspection Modal */}
+      {inspectingPost && (
+        <Modal
+          isOpen={true}
+          onClose={() => setInspectingPost(null)}
+          title="User Post Details"
+          description={`Inspecting post #${inspectingPost.id} published by @${user.username}`}
+          size="lg"
+        >
+          <div className="space-y-4">
+            {/* Header info */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <div className="flex items-center gap-3">
+                <img
+                  src={user.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                  alt={user.username}
+                  className="h-10 w-10 rounded-full object-cover ring-1 ring-slate-700"
+                />
+                <div>
+                  <h4 className="text-sm font-bold text-white">{user.displayName || user.username}</h4>
+                  <p className="text-xs text-indigo-400 font-mono">@{user.username} • <span className="text-slate-400">{new Date(inspectingPost.createdAt).toLocaleString()}</span></p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Badge variant={(inspectingPost.visibility || 'public').toLowerCase() === 'public' ? 'success' : 'warning'}>
+                  {String(inspectingPost.visibility || 'PUBLIC').toUpperCase()}
+                </Badge>
+                <Badge variant={(inspectingPost.status || 'active').toLowerCase() === 'active' ? 'purple' : 'danger'}>
+                  {String(inspectingPost.status || 'ACTIVE').toUpperCase()}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Post Content */}
+            {inspectingPost.content && (
+              <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">
+                {inspectingPost.content}
+              </div>
+            )}
+
+            {/* Media Gallery / Player */}
+            {inspectingPost.mediaUrl && (
+              <div className="rounded-xl overflow-hidden bg-black/80 border border-slate-800 flex items-center justify-center p-2">
+                {Boolean(inspectingPost.mediaUrl.match(/\.(mp4|webm|mov|m4v|ogg)(\?.*)?$/i) || inspectingPost.mediaType === 'VIDEO') ? (
+                  <video
+                    src={inspectingPost.mediaUrl}
+                    controls
+                    autoPlay
+                    className="max-h-[50vh] max-w-full rounded-lg object-contain bg-black shadow-xl"
+                  />
+                ) : (
+                  <img
+                    src={inspectingPost.mediaUrl}
+                    alt="Post Media Full"
+                    className="max-h-[50vh] max-w-full rounded-lg object-contain cursor-pointer hover:opacity-95 transition-opacity"
+                    onClick={() =>
+                      setPreviewMedia({
+                        url: inspectingPost.mediaUrl,
+                        title: `Post #${inspectingPost.id}`,
+                        subtitle: inspectingPost.content || `@${user.username}`,
+                        isVideo: false,
+                      })
+                    }
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Engagement Stats */}
+            <div className="grid grid-cols-3 gap-3 p-3 rounded-xl bg-slate-900/50 border border-slate-800 text-center text-xs">
+              <div className="flex flex-col items-center">
+                <span className="text-slate-400 flex items-center gap-1"><Heart className="h-3.5 w-3.5 text-rose-400" /> Likes</span>
+                <span className="font-bold text-white text-sm mt-0.5">{inspectingPost.likesCount || 0}</span>
+              </div>
+              <div className="flex flex-col items-center border-x border-slate-800">
+                <span className="text-slate-400 flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5 text-sky-400" /> Comments</span>
+                <span className="font-bold text-white text-sm mt-0.5">{inspectingPost.commentsCount || 0}</span>
+              </div>
+              <div className="flex flex-col items-center">
+                <span className="text-slate-400 flex items-center gap-1"><Share2 className="h-3.5 w-3.5 text-emerald-400" /> Shares</span>
+                <span className="font-bold text-white text-sm mt-0.5">{inspectingPost.sharesCount || 0}</span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              {inspectingPost.mediaUrl ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => window.open(inspectingPost.mediaUrl, '_blank')}
+                  className="text-xs text-indigo-400 hover:text-indigo-300"
+                >
+                  <ExternalLink className="h-4 w-4 mr-1" /> Open Media in New Tab
+                </Button>
+              ) : <div />}
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  onClick={() => {
+                    const toDel = inspectingPost;
+                    setInspectingPost(null);
+                    setPostToDelete(toDel);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete Post
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setInspectingPost(null)}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* General Media Lightbox Preview */}
+      {previewMedia && (
+        <ImageViewerModal
+          isOpen={true}
+          onClose={() => setPreviewMedia(null)}
+          imageUrl={previewMedia.url}
+          title={previewMedia.title || 'Media Preview'}
+          subtitle={previewMedia.subtitle || ''}
+          isVideo={previewMedia.isVideo}
         />
       )}
     </div>
