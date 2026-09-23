@@ -466,56 +466,79 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ],
                 ),
                 const SizedBox(height: 6),
+                // System-generated 7-Digit ID with Copy Button + Country
                 Row(
                   children: [
-                    Flexible(
-                      child: Text(
-                        '@${user.username.isNotEmpty ? user.username : (user.name.isNotEmpty ? user.name : user.id)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.getTextSecondary(isDark),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: primary.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'ID: ${user.displayId}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: primary,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          GestureDetector(
+                            onTap: () {
+                              Clipboard.setData(ClipboardData(text: user.displayId));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('ID ${user.displayId} copied to clipboard'),
+                                  duration: const Duration(seconds: 1),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            },
+                            child: Icon(Icons.copy_rounded, size: 12, color: primary),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 4),
-                    GestureDetector(
-                      onTap: () {
-                        Clipboard.setData(ClipboardData(text: user.username.isNotEmpty ? user.username : user.id));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Username copied to clipboard')),
-                        );
-                      },
-                      child: Icon(Icons.copy_rounded, size: 12, color: AppColors.getTextSecondary(isDark)),
+                    const SizedBox(width: 8),
+                    // User Country (Flag + Name)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: AppColors.getBorder(isDark)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            user.countryFlag.isNotEmpty ? user.countryFlag : '🌍',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            user.country.isNotEmpty ? user.country : 'Global',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.getTextSecondary(isDark),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     if (user.isVip) ...[
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Icon(Icons.workspace_premium_rounded, size: 14, color: AppColors.primary),
                     ],
                   ],
                 ),
-                if (user.email != null && user.email!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.email_outlined, size: 12, color: AppColors.getTextSecondary(isDark)),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          user.email!,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.getTextSecondary(isDark),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
                 const SizedBox(height: 6),
                 OnlineStatusBadge(
                   isOnline: user.isOnline,

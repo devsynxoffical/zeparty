@@ -128,49 +128,115 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       context: context,
       builder: (d) => AlertDialog(
         backgroundColor: const Color(0xFF1E1B2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Leave Party Room?',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFB524E4).withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.headset_mic_rounded, color: Color(0xFFE056FD), size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Party Room',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          ],
         ),
-        content: Text(
-          isHost
-              ? 'You are about to leave this party room. The room will stay active so other speakers and listeners can continue chatting.'
-              : 'Are you sure you want to leave this party room?',
-          style: const TextStyle(color: Colors.white70),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isHost
+                  ? 'Would you like to keep listening in floating mini-player mode or exit the room?'
+                  : 'Would you like to stay connected in floating mini-player mode or leave the room?',
+              style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.picture_in_picture_alt_rounded, color: Color(0xFF00E5FF), size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Tapping Stay minimizes the room so you can browse the app with continuous live audio.',
+                      style: TextStyle(color: Colors.white60, fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(d),
-            child: const Text('Stay', style: TextStyle(color: Colors.white60)),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.exit_to_app_rounded, size: 16, color: Colors.redAccent),
+                  label: const Text('Leave', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Colors.redAccent, width: 1.2),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(d);
+                    await provider.leaveParty();
+                    if (mounted) {
+                      Navigator.pop(context);
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.picture_in_picture_alt_rounded, size: 16),
+                  label: const Text('Stay', style: TextStyle(fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFB524E4),
+                    foregroundColor: Colors.white,
+                    elevation: 3,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(d);
+                    provider.setMinimized(true);
+                    Navigator.pop(context);
+                  },
+                ),
+              ),
+            ],
           ),
-          if (isHost)
-            TextButton(
-              onPressed: () async {
-                Navigator.pop(d);
-                await provider.closeRoom();
-                if (mounted) {
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('End Room for All', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+          if (isHost) ...[
+            const SizedBox(height: 6),
+            Center(
+              child: TextButton(
+                onPressed: () async {
+                  Navigator.pop(d);
+                  await provider.closeRoom();
+                  if (mounted) {
+                    Navigator.pop(context);
+                  }
+                },
+                child: const Text('End Room for All', style: TextStyle(color: Colors.white38, fontSize: 11)),
+              ),
             ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFB524E4),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () async {
-              Navigator.pop(d);
-              // Leave without closing room so other users can stay inside
-              await provider.leaveParty();
-              if (mounted) {
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Leave Room'),
-          ),
+          ],
         ],
       ),
     );
@@ -1535,8 +1601,44 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       IconButton(icon: const Icon(Icons.close, color: Colors.white70, size: 20), onPressed: () => Navigator.pop(lCtx)),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  const Text('Tap a seat to lock or unlock it. Locked seats cannot be joined by listeners.', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                  const SizedBox(height: 6),
+                  const Text('Tap a seat to lock/unlock selectively, or use quick actions below.', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.lock_rounded, size: 14, color: Colors.redAccent),
+                          label: const Text('Lock All Seats', style: TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.redAccent, width: 1.2),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                          ),
+                          onPressed: () {
+                            provider.lockAllSeats(true);
+                            setLockState(() {});
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.lock_open_rounded, size: 14, color: Colors.cyanAccent),
+                          label: const Text('Unlock All', style: TextStyle(color: Colors.cyanAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.cyanAccent, width: 1.2),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                          ),
+                          onPressed: () {
+                            provider.lockAllSeats(false);
+                            setLockState(() {});
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 16),
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxHeight: 280),

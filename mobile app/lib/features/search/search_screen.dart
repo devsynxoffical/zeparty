@@ -192,11 +192,13 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
     if (_currentQuery.isNotEmpty) {
       filtered = filtered.where((u) {
+        final matchDisplayName = u.displayName.toLowerCase().contains(_currentQuery);
         final matchName = u.name.toLowerCase().contains(_currentQuery);
         final matchUsername = u.username.toLowerCase().contains(_currentQuery);
+        final matchDisplayId = u.displayId.toLowerCase().contains(_currentQuery);
         final matchId = u.id.toLowerCase().contains(_currentQuery);
         final matchBio = u.bio.toLowerCase().contains(_currentQuery);
-        return matchName || matchUsername || matchId || matchBio;
+        return matchDisplayName || matchName || matchUsername || matchDisplayId || matchId || matchBio;
       }).toList();
     }
 
@@ -244,7 +246,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
               children: [
                 Flexible(
                   child: Text(
-                    user.name,
+                    user.displayName.isNotEmpty ? user.displayName : user.name,
                     style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -261,7 +263,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
               ],
             ),
             subtitle: Text(
-              '@${user.username} • ${AppFormatters.formatNumber(user.followers)} followers',
+              '@${user.username.isNotEmpty ? user.username : user.displayId} • ID: ${user.displayId} • ${AppFormatters.formatNumber(user.followers)} followers',
               style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
