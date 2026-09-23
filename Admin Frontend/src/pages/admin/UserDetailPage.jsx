@@ -341,8 +341,8 @@ export function UserDetailPage() {
       key: 'status',
       header: 'Status',
       render: (row) => (
-        <Badge variant={row.status === 'active' ? 'success' : 'danger'}>
-          {row.status.toUpperCase()}
+        <Badge variant={(row?.status || 'active').toLowerCase() === 'active' ? 'success' : 'danger'}>
+          {String(row?.status || 'ACTIVE').toUpperCase()}
         </Badge>
       ),
     },
@@ -754,11 +754,11 @@ export function UserDetailPage() {
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[11px] font-mono text-gold-400">{post.id}</span>
                       <div className="flex items-center gap-2">
-                        <Badge variant={post.visibility === 'public' ? 'success' : 'warning'}>
-                          {post.visibility.toUpperCase()}
+                        <Badge variant={(post?.visibility || 'public').toLowerCase() === 'public' ? 'success' : 'warning'}>
+                          {String(post?.visibility || 'PUBLIC').toUpperCase()}
                         </Badge>
-                        <Badge variant={post.status === 'active' ? 'purple' : 'danger'}>
-                          {post.status.toUpperCase()}
+                        <Badge variant={(post?.status || 'active').toLowerCase() === 'active' ? 'purple' : 'danger'}>
+                          {String(post?.status || 'ACTIVE').toUpperCase()}
                         </Badge>
                       </div>
                     </div>
