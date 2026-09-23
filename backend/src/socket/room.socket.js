@@ -208,7 +208,7 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_CLOSED, {
           roomId,
           status: 'ENDED',
-          reason: 'HOST_LEFT',
+          reason: 'NO_MEMBERS_REMAINING',
         });
         if (io) {
           io.emit('room:closed', { roomId, status: 'ENDED' });
@@ -318,7 +318,7 @@ export async function onSocketDisconnect(io, socket) {
             io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_CLOSED, {
               roomId,
               status: 'ENDED',
-              reason: 'HOST_DISCONNECTED',
+              reason: 'NO_MEMBERS_REMAINING',
             });
             io.emit('room:closed', { roomId, status: 'ENDED' });
             io.emit('room:deleted', { roomId });
@@ -326,7 +326,7 @@ export async function onSocketDisconnect(io, socket) {
             socket.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_CLOSED, {
               roomId,
               status: 'ENDED',
-              reason: 'HOST_DISCONNECTED',
+              reason: 'NO_MEMBERS_REMAINING',
             });
           }
         } else {

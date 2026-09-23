@@ -57,7 +57,7 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
 
     _sub = SocketService.instance.userJoinedStream.listen((data) {
       final eventRoomId = data['roomId']?.toString() ?? '';
-      if (eventRoomId.isNotEmpty && eventRoomId != widget.roomId) return;
+      if (eventRoomId.isNotEmpty && widget.roomId.isNotEmpty && eventRoomId != widget.roomId && !widget.roomId.contains(eventRoomId) && !eventRoomId.contains(widget.roomId)) return;
 
       final userObj = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : <String, dynamic>{};
       final displayName = userObj['displayName']?.toString() ?? userObj['name']?.toString() ?? userObj['username']?.toString() ?? data['name']?.toString() ?? 'Viewer';

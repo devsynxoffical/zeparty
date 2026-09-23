@@ -13,6 +13,23 @@ export async function createRoomWithSeats(
   },
   db = prisma
 ) {
+  // Archive any previous active rooms created by this user to avoid multiple duplicate rooms
+  try {
+    await db.room.updateMany({
+      where: {
+        creatorUserId,
+        status: 'LIVE',
+      },
+      data: {
+        status: 'ENDED',
+        endedAt: new Date(),
+        currentViewersCount: 0,
+      },
+    });
+  } catch (err) {
+    console.warn('[RoomRepository] Could not archive previous rooms:', err?.message);
+  }
+
   // Initialize 8 seats (indices 0 to 7)
   const seatsData = Array.from({ length: 8 }, (_, i) => ({
     seatIndex: i,
@@ -423,15 +440,11 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
     where: { roomId },
   });
 
-  const isHostLeaving = room.creatorUserId === userId;
-  const shouldDeleteRoom = isHostLeaving || memberCount === 0;
+  // Do NOT terminate room when host leaves; keep room active so other users and speakers stay inside
+  const shouldDeleteRoom = memberCount === 0;
 
   if (shouldDeleteRoom) {
     try {
-      await db.room.delete({
-        where: { id: roomId },
-      });
-    } catch {
       await db.room.update({
         where: { id: roomId },
         data: {
@@ -440,7 +453,7 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
           endedAt: new Date(),
         },
       });
-    }
+    } catch {}
     return { id: roomId, currentViewersCount: 0, status: 'ENDED' };
   }
 
