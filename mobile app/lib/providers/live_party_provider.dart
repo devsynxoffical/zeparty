@@ -310,6 +310,7 @@ class LivePartyProvider extends ChangeNotifier {
               id: 'agora_$uid',
               username: 'User_$uid',
               name: 'Guest $uid',
+              displayName: 'Guest $uid',
               avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
             );
             _participants.add(PartyParticipantModel(
@@ -874,15 +875,14 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void lockAllSeats(bool lock, {UserModel? actor}) {
-    final effectiveActor = actor ?? _activeRoom?.host ?? UserModel.empty;
+  void lockAllSeats(bool lock, {required UserModel actor}) {
     final capacity = _activeRoom?.seatCapacity ?? 8;
     for (int i = 1; i < capacity; i++) {
       if (lock) {
         if (!_lockedSeatIndices.contains(i)) {
           _lockedSeatIndices.add(i);
           final onSeat = _participants.where((p) => p.seatNumber == i && p.role != ParticipantRole.host).firstOrNull;
-          if (onSeat != null) clearMicSeat(i, actor: effectiveActor);
+          if (onSeat != null) clearMicSeat(i, actor: actor);
         }
       } else {
         _lockedSeatIndices.remove(i);
