@@ -41,6 +41,34 @@ export function requirePermission(requiredPermission) {
   return async (req, res, next) => {
     try {
       if (!req.auth || !req.auth.isAdmin) {
+        const potentialAdminId = req.admin?.id || req.auth?.userId || req.user?.id;
+        if (potentialAdminId) {
+          const admin = await prisma.admin.findFirst({
+            where: {
+              OR: [
+                { id: String(potentialAdminId) },
+                { username: String(potentialAdminId) },
+                { email: String(potentialAdminId) },
+              ],
+              status: 'ACTIVE',
+            },
+          });
+          if (admin) {
+            req.admin = admin;
+            req.auth = {
+              userId: admin.id,
+              sessionId: req.auth?.sessionId || 'admin_session',
+              userType: 'ADMIN',
+              isAdmin: true,
+              isOwner: Boolean(admin.isOwner),
+              isSuperAdmin: Boolean(admin.isSuperAdmin),
+              roleId: admin.roleId,
+            };
+          }
+        }
+      }
+
+      if (!req.auth || !req.auth.isAdmin) {
         return res.status(401).json({
           success: false,
           message: 'Authentication required for administrative resources',

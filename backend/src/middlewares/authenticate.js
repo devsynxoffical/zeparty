@@ -69,10 +69,22 @@ export async function authenticate(req, res, next) {
       throw jwtErr;
     }
 
-    // Resolve Identity: User or Admin
-    if (decoded.isAdmin || decoded.userType === 'ADMIN') {
-      const admin = await adminRepository.findById(decoded.sub);
-      if (!admin || admin.status !== 'ACTIVE') {
+    // Resolve Identity: Admin or User
+    let admin = null;
+    if (decoded.isAdmin || decoded.userType === 'ADMIN' || decoded.role === 'ADMIN' || decoded.roleId) {
+      admin = await adminRepository.findById(decoded.sub);
+      if (!admin) {
+        admin = await adminRepository.findByUsernameOrEmail(decoded.sub);
+      }
+    } else {
+      admin = await adminRepository.findById(decoded.sub);
+      if (!admin && decoded.sub?.includes('@')) {
+        admin = await adminRepository.findByUsernameOrEmail(decoded.sub);
+      }
+    }
+
+    if (admin) {
+      if (admin.status !== 'ACTIVE') {
         return res.status(403).json({
           success: false,
           message: 'Admin account is inactive or suspended',
@@ -91,36 +103,41 @@ export async function authenticate(req, res, next) {
         roleId: admin.roleId,
       };
       req.session = { id: decoded.sessionId || 'admin_session', userId: admin.id };
-    } else {
-      let user = await userRepository.findById(decoded.sub);
-      if (!user && decoded.sub?.includes('@')) {
-        user = await userRepository.findByEmail(decoded.sub);
-      }
-      if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authenticated user account not found',
-          error: { code: 'UNAUTHORIZED' },
-        });
-      }
-
-      if (user.status !== 'ACTIVE') {
-        return res.status(403).json({
-          success: false,
-          message: `Account is ${user.status.toLowerCase()}`,
-          error: { code: user.status === 'SUSPENDED' ? 'ACCOUNT_SUSPENDED' : 'ACCOUNT_BANNED' },
-        });
-      }
-
-      req.user = user;
-      req.auth = {
-        userId: user.id,
-        sessionId: decoded.sessionId || 'active_session',
-        userType: user.userType || 'USER',
-        isAdmin: false,
-      };
-      req.session = { id: decoded.sessionId || 'active_session', userId: user.id };
+      return next();
     }
+
+    // Regular User Resolution
+    let user = await userRepository.findById(decoded.sub);
+    if (!user && decoded.sub?.includes('@')) {
+      user = await userRepository.findByEmail(decoded.sub);
+    }
+    if (!user) {
+      user = await userRepository.findByUsername(decoded.sub);
+    }
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authenticated user account not found',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    if (user.status !== 'ACTIVE') {
+      return res.status(403).json({
+        success: false,
+        message: `Account is ${user.status.toLowerCase()}`,
+        error: { code: user.status === 'SUSPENDED' ? 'ACCOUNT_SUSPENDED' : 'ACCOUNT_BANNED' },
+      });
+    }
+
+    req.user = user;
+    req.auth = {
+      userId: user.id,
+      sessionId: decoded.sessionId || 'active_session',
+      userType: user.userType || 'USER',
+      isAdmin: false,
+    };
+    req.session = { id: decoded.sessionId || 'active_session', userId: user.id };
 
     next();
   } catch (err) {
