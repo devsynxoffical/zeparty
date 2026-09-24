@@ -303,7 +303,6 @@ class LivePartyProvider extends ChangeNotifier {
               id: 'agora_$uid',
               username: 'User_$uid',
               name: 'Guest $uid',
-              displayName: 'Guest $uid',
               avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
             );
             _participants.add(PartyParticipantModel(
