@@ -51,6 +51,7 @@ export function UserDetailPage() {
   const [userPosts, setUserPosts] = useState([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
   const [postToDelete, setPostToDelete] = useState(null);
+  const [isDeletingPost, setIsDeletingPost] = useState(false);
   const [inspectingPost, setInspectingPost] = useState(null);
   const [previewMedia, setPreviewMedia] = useState(null);
   const [bdCenters, setBdCenters] = useState([]);
@@ -168,28 +169,35 @@ export function UserDetailPage() {
 
   const handleDeletePost = async () => {
     if (!postToDelete) return;
+    setIsDeletingPost(true);
+    const finalReason = actionReason.trim() || 'Administrative content moderation';
     try {
-      await deleteUserPost(postToDelete.id, actionReason || 'Violation of content policy');
+      await deleteUserPost(postToDelete.id, finalReason);
       setUserPosts((prev) => prev.filter((p) => p.id !== postToDelete.id));
       showToast('Post deleted successfully.', 'success', 'Post Deleted');
+      
+      try {
+        await logEvent({
+          action: 'DELETE_USER_POST',
+          targetId: user.id,
+          targetType: 'POST',
+          operatorName: 'Super Admin',
+          reason: finalReason,
+          riskLevel: 'MEDIUM',
+          status: 'SUCCESS',
+        });
+        const freshLogs = await getLogsForTarget(user.id);
+        if (freshLogs) setHistory(freshLogs);
+      } catch (_) {}
+
+      setPostToDelete(null);
+      setActionReason('');
     } catch (err) {
+      console.error('Failed to delete post:', err);
       showToast(err.message || 'Failed to delete post', 'error', 'Deletion Failed');
+    } finally {
+      setIsDeletingPost(false);
     }
-
-    await logEvent({
-      action: 'DELETE_USER_POST',
-      targetId: user.id,
-      targetType: 'POST',
-      operatorName: 'Super Admin',
-      reason: actionReason || 'Moderation content removal',
-      riskLevel: 'MEDIUM',
-      status: 'SUCCESS',
-    });
-
-    setPostToDelete(null);
-    setActionReason('');
-    const freshLogs = await getLogsForTarget(user.id);
-    setHistory(freshLogs);
   };
 
   const handleApplyControl = async (newStatus, actionLabel, defaultReason = 'Platform security alignment and moderation compliance') => {
@@ -944,22 +952,22 @@ export function UserDetailPage() {
 
             <Input
               id="deletePostReason"
-              label="Reason for Post Removal (Audit Log Required)"
-              placeholder="e.g. Inappropriate content or copyright policy violation"
+              label="Reason for Post Removal (Optional)"
+              placeholder="e.g. Inappropriate content or copyright policy violation (optional)"
               value={actionReason}
               onChange={(e) => setActionReason(e.target.value)}
-              required
             />
 
             <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setPostToDelete(null)}>
+              <Button variant="outline" size="sm" onClick={() => setPostToDelete(null)} disabled={isDeletingPost}>
                 Cancel
               </Button>
               <Button
                 variant="danger"
                 size="sm"
                 onClick={handleDeletePost}
-                disabled={!actionReason}
+                isLoading={isDeletingPost}
+                disabled={isDeletingPost}
               >
                 Delete Post & Record Audit Log
               </Button>

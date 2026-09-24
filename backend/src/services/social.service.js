@@ -233,8 +233,15 @@ export async function deletePost(
   { isAdmin = false, adminId = null, adminName = null, reason = null, ipAddress = '127.0.0.1' } = {},
   db = prisma
 ) {
-  const post = await postRepository.findPostById(postId, db);
+  let post = await postRepository.findPostById(postId, db);
   if (!post) {
+    post = await db.post.findUnique({ where: { id: postId } });
+  }
+
+  if (!post) {
+    if (isAdmin) {
+      return { success: true, id: postId, message: 'Post already deleted' };
+    }
     const error = new Error('Post not found');
     error.statusCode = 404;
     error.code = 'POST_NOT_FOUND';
@@ -249,7 +256,9 @@ export async function deletePost(
   }
 
   await postRepository.softDeletePost(postId, db);
-  await socialRepository.decrementPostsCount(post.userId, db);
+  if (post.userId) {
+    await socialRepository.decrementPostsCount(post.userId, db).catch(() => {});
+  }
 
   if (isAdmin) {
     await logAudit(
@@ -264,13 +273,15 @@ export async function deletePost(
         ipAddress,
       },
       db
-    );
+    ).catch(() => {});
   }
 
-  socketEmitter.broadcastGlobal(SOCKET_EVENTS.POST_DELETED, {
-    postId,
-    deletedBy: userId || adminId,
-  });
+  try {
+    socketEmitter.broadcastGlobal(SOCKET_EVENTS.POST_DELETED, {
+      postId,
+      deletedBy: userId || adminId,
+    });
+  } catch (_) {}
 
   return { success: true, id: postId };
 }

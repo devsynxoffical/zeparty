@@ -413,11 +413,10 @@ export function PostsPage() {
             )}
 
             <Input
-              label="Moderation Reason (Required for Audit Log)"
+              label="Moderation Reason (Optional)"
               value={deleteReason}
               onChange={(e) => setDeleteReason(e.target.value)}
-              placeholder="e.g. Terms violation, inappropriate content..."
-              required
+              placeholder="e.g. Terms violation, inappropriate content (optional)..."
             />
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
@@ -430,7 +429,7 @@ export function PostsPage() {
                 size="sm"
                 isLoading={isDeleting}
                 onClick={handleDeletePost}
-                disabled={!deleteReason.trim()}
+                disabled={isDeleting}
               >
                 Delete Post
               </Button>
