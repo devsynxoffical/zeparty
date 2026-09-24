@@ -74,24 +74,16 @@ export async function authenticate(req, res, next) {
         }
 
         // Check if subId belongs to a User
-        let user = await userRepository.findById(subId);
-        if (!user && subId.includes('@')) {
-          user = await userRepository.findByEmail(subId);
-        }
-        if (!user) {
-          user = await userRepository.findByUsername(subId);
-        }
-        if (!user) {
-          const baseName = unverified?.displayName || unverified?.name || subId.split('@')[0];
-          user = await userRepository.createUserWithProfile({
-            id: /^[1-9]\d{6}$/.test(subId) ? subId : undefined,
-            username: subId.startsWith('user_') ? subId : (subId.includes('@') ? subId.split('@')[0] : `user_${subId.slice(0, 10)}`),
-            displayName: baseName || 'ZeParty Member',
-            status: 'ACTIVE',
-            userType: 'USER',
-          }).catch(async () => {
-            return await userRepository.findById(subId);
-          });
+        let user = null;
+        if (/^[1-9]\d{6}$/.test(subId)) {
+          user = await userRepository.findById(subId);
+        } else if (subId.includes('@')) {
+          user = await userRepository.findByEmail(subId.trim().toLowerCase());
+        } else {
+          user = await userRepository.findById(subId);
+          if (!user && !subId.startsWith('google_') && !subId.startsWith('user_')) {
+            user = await userRepository.findByUsername(subId);
+          }
         }
 
         if (user) {
@@ -193,12 +185,16 @@ export async function authenticate(req, res, next) {
     }
 
     // Regular User Resolution
-    let user = await userRepository.findById(subIdentifier);
-    if (!user && typeof subIdentifier === 'string' && subIdentifier.includes('@')) {
-      user = await userRepository.findByEmail(subIdentifier);
-    }
-    if (!user && typeof subIdentifier === 'string') {
-      user = await userRepository.findByUsername(subIdentifier);
+    let user = null;
+    if (/^[1-9]\d{6}$/.test(String(subIdentifier))) {
+      user = await userRepository.findById(String(subIdentifier));
+    } else if (typeof subIdentifier === 'string' && subIdentifier.includes('@')) {
+      user = await userRepository.findByEmail(subIdentifier.trim().toLowerCase());
+    } else {
+      user = await userRepository.findById(String(subIdentifier));
+      if (!user && typeof subIdentifier === 'string' && !subIdentifier.startsWith('google_') && !subIdentifier.startsWith('user_')) {
+        user = await userRepository.findByUsername(subIdentifier);
+      }
     }
     if (!user) {
       return res.status(401).json({

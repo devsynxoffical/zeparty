@@ -5,6 +5,7 @@ import '../../widgets/design/gold_button.dart';
 import '../../widgets/app_logo.dart';
 import '../../providers/auth_provider.dart';
 import '../main_layout.dart';
+import 'profile_setup_screen.dart';
 import 'phone_login_screen.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -96,15 +97,22 @@ class _SignupScreenState extends State<SignupScreen> with SingleTickerProviderSt
 
     if (mounted) {
       if (success) {
-        navigator.pushAndRemoveUntil(
-          PageRouteBuilder(
-            transitionDuration: const Duration(milliseconds: 400),
-            pageBuilder: (context, anim1, anim2) => const MainLayout(),
-            transitionsBuilder: (context, anim, secondaryAnim, child) =>
-                FadeTransition(opacity: anim, child: child),
-          ),
-          (route) => false,
-        );
+        if (auth.isNewUser) {
+          navigator.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
+            (route) => false,
+          );
+        } else {
+          navigator.pushAndRemoveUntil(
+            PageRouteBuilder(
+              transitionDuration: const Duration(milliseconds: 400),
+              pageBuilder: (context, anim1, anim2) => const MainLayout(),
+              transitionsBuilder: (context, anim, secondaryAnim, child) =>
+                  FadeTransition(opacity: anim, child: child),
+            ),
+            (route) => false,
+          );
+        }
       } else if (auth.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

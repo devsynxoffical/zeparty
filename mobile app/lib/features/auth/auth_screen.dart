@@ -142,7 +142,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     final success = await authProvider.loginWithGoogle();
     if (!mounted) return;
     if (success) {
-      if (authProvider.currentUser?.profileCompleted == false) {
+      if (authProvider.isNewUser) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
           (route) => false,

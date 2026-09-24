@@ -21,6 +21,7 @@ class AuthProvider extends ChangeNotifier {
   bool _isGuest = false;
   bool _isLoading = false;
   bool _isInitialized = false;
+  bool _isNewUser = false;
   String? _errorMessage;
   StreamSubscription<User?>? _authStateSubscription;
   StreamSubscription<Map<String, dynamic>>? _banSubscription;
@@ -34,6 +35,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isGuest => _isGuest;
   bool get isLoading => _isLoading;
   bool get isInitialized => _isInitialized;
+  bool get isNewUser => _isNewUser;
   Future<void> get initFuture => _initFuture;
   String? get errorMessage => _errorMessage;
 
@@ -493,9 +495,13 @@ class AuthProvider extends ChangeNotifier {
           coins: 1000,
           diamonds: 100,
         );
-        _currentUser = authRes.user;
+        _isNewUser = authRes.isNewUser;
+        _currentUser = authRes.user.copyWith(
+          profileCompleted: !authRes.isNewUser || authRes.user.profileCompleted,
+        );
       } catch (syncErr) {
         debugPrint('Backend sync fallback in Google login: $syncErr');
+        _isNewUser = false;
         _currentUser = UserModel(
           id: firebaseUser?.uid ?? 'google_${DateTime.now().millisecondsSinceEpoch}',
           username: baseUsername,
@@ -505,7 +511,7 @@ class AuthProvider extends ChangeNotifier {
           coins: 1000,
           diamonds: 100,
           role: UserRole.user,
-          profileCompleted: false,
+          profileCompleted: true,
         );
       }
 
