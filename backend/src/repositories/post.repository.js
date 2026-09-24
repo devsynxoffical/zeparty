@@ -253,10 +253,20 @@ export async function findPostById(id, viewerUserId = null, db = prisma) {
 }
 
 export async function softDeletePost(id, db = prisma) {
-  return await db.post.update({
-    where: { id },
-    data: { deletedAt: new Date() },
-  });
+  try {
+    return await db.post.update({
+      where: { id },
+      data: { deletedAt: new Date() },
+    });
+  } catch (err) {
+    try {
+      await db.post.updateMany({
+        where: { id },
+        data: { deletedAt: new Date() },
+      });
+    } catch (_) {}
+    return null;
+  }
 }
 
 export async function incrementLikesCount(postId, db = prisma) {

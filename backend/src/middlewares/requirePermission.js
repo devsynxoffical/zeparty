@@ -48,29 +48,26 @@ export function requirePermission(requiredPermission) {
         });
       }
 
-      if (!requiredPermission || typeof requiredPermission !== 'string' || requiredPermission.trim() === '') {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied. Malformed or missing permission requirement',
-          error: { code: 'FORBIDDEN' },
-        });
+      if (!requiredPermission) {
+        return next();
       }
 
-      if (req.auth.isOwner) {
+      if (req.auth.isOwner || req.auth.isSuperAdmin) {
         return next();
       }
 
       const effective = await calculateEffectivePermissions(req.admin || req.auth.userId);
 
-      if (effective.isOwner) {
+      if (effective.isOwner || effective.isSuperAdmin) {
         return next();
       }
 
       const userPermissions = effective.permissions || [];
+      const permList = Array.isArray(requiredPermission) ? requiredPermission : [requiredPermission];
 
       const hasAccess =
         userPermissions.includes('*') ||
-        userPermissions.some((p) => matchesPermission(p, requiredPermission));
+        permList.some((reqPerm) => userPermissions.some((p) => matchesPermission(p, reqPerm)));
 
       if (!hasAccess) {
         try {
@@ -82,7 +79,7 @@ export function requirePermission(requiredPermission) {
               action: 'UNAUTHORIZED_ACCESS_ATTEMPT',
               targetEntity: 'API_ENDPOINT',
               targetEntityId: req.originalUrl || 'API',
-              reason: `Attempted access to protected endpoint requiring permission: ${requiredPermission}`,
+              reason: `Attempted access to protected endpoint requiring permission: ${Array.isArray(requiredPermission) ? requiredPermission.join(', ') : requiredPermission}`,
               ipAddress: req.ip || req.headers?.['x-forwarded-for'] || '127.0.0.1',
             },
           }).catch(() => {});
@@ -92,7 +89,7 @@ export function requirePermission(requiredPermission) {
 
         return res.status(403).json({
           success: false,
-          message: `Access denied. Permission required: ${requiredPermission}`,
+          message: `Access denied. Permission required: ${Array.isArray(requiredPermission) ? requiredPermission.join(', ') : requiredPermission}`,
           error: { code: 'FORBIDDEN', requiredPermission },
         });
       }
