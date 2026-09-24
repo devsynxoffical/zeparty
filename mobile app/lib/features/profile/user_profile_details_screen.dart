@@ -1025,23 +1025,30 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               // Bounded User ID + Copy Button + Country Flag + Room/Agency Roles
               Row(
                 children: [
-                  Flexible(
-                    child: Text(
-                      '@${_user!.username.isNotEmpty ? _user!.username : _user!.id}',
-                      style: TextStyle(color: secondaryText, fontSize: 13, fontWeight: FontWeight.w600),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  Text(
+                    'ID: ${_user!.id}',
+                    style: TextStyle(color: secondaryText, fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(width: 4),
                   GestureDetector(
                     onTap: () {
-                      Clipboard.setData(ClipboardData(text: _user!.username.isNotEmpty ? _user!.username : _user!.id));
+                      Clipboard.setData(ClipboardData(text: _user!.id));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Username copied to clipboard!')),
+                        const SnackBar(content: Text('User ID copied to clipboard!')),
                       );
                     },
                     child: Icon(Icons.copy_rounded, color: secondaryText, size: 14),
+                  ),
+                  const SizedBox(width: 8),
+                  Text('•', style: TextStyle(color: secondaryText)),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      '@${_user!.username}',
+                      style: TextStyle(color: secondaryText, fontSize: 13, fontWeight: FontWeight.w600),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   const Text('🇵🇰', style: TextStyle(fontSize: 15)), // Country Flag

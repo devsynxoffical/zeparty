@@ -468,9 +468,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 6),
                 Row(
                   children: [
+                    Text(
+                      'ID: ${user.id}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.getTextSecondary(isDark),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: user.id));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('User ID copied to clipboard')),
+                        );
+                      },
+                      child: Icon(Icons.copy_rounded, size: 12, color: AppColors.getTextSecondary(isDark)),
+                    ),
+                    const SizedBox(width: 6),
+                    Text('•', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(isDark))),
+                    const SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        '@${user.username.isNotEmpty ? user.username : (user.name.isNotEmpty ? user.name : user.id)}',
+                        '@${user.username.isNotEmpty ? user.username : user.name}',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -479,16 +500,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    GestureDetector(
-                      onTap: () {
-                        Clipboard.setData(ClipboardData(text: user.username.isNotEmpty ? user.username : user.id));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Username copied to clipboard')),
-                        );
-                      },
-                      child: Icon(Icons.copy_rounded, size: 12, color: AppColors.getTextSecondary(isDark)),
                     ),
                     if (user.isVip) ...[
                       const SizedBox(width: 8),

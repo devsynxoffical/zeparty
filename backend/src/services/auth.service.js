@@ -346,7 +346,6 @@ export async function syncUserFromApp({
     }
 
     user = await userRepository.createUserWithProfile({
-      id: targetId && targetId.length >= 8 ? targetId : undefined,
       email: cleanEmail,
       phone: cleanPhone,
       username: finalUsername,

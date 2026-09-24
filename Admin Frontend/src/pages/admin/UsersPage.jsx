@@ -1158,6 +1158,8 @@ export function UsersPage() {
               {row.displayName}
             </p>
             <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5 flex-wrap">
+              <span className="font-mono text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded font-bold border border-amber-500/20">ID: {row.id}</span>
+              <span>•</span>
               <span className="font-mono text-indigo-300">@{row.username}</span>
               <span>•</span>
               <CountryFlag code={row.country} className="w-3.5 h-2.5 rounded-sm inline-block" />

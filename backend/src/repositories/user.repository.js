@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import { generate7DigitUserId } from '../utils/idGenerator.util.js';
 
 export async function findByPhone(phone, db = prisma) {
   if (!phone) return null;
@@ -51,7 +52,9 @@ export async function createUserWithProfile(
   { id = null, phone = null, email = null, username, displayName = null, avatarUrl = null, coverUrl = null, status = 'ACTIVE', userType = 'USER', countryCode = 'US', coinBalance = 0, diamondBalance = 0 },
   db = prisma
 ) {
+  const finalId = id || await generate7DigitUserId(db);
   const data = {
+    id: finalId,
     phone: phone || null,
     email: email || null,
     username,
@@ -71,9 +74,6 @@ export async function createUserWithProfile(
       },
     },
   };
-  if (id) {
-    data.id = id;
-  }
   return await db.user.create({
     data,
     include: {
@@ -681,11 +681,11 @@ export async function searchUsers(query, { limit = 20, excludeUserId = null } = 
   const where = {
     status: 'ACTIVE',
     OR: [
+      { id: { contains: q } },
       { username: { contains: q, mode: 'insensitive' } },
       { phone: { contains: q, mode: 'insensitive' } },
       { bio: { contains: q, mode: 'insensitive' } },
       { profile: { displayName: { contains: q, mode: 'insensitive' } } },
-      ...(q.length === 36 ? [{ id: q }] : []),
     ],
   };
 

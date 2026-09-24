@@ -45,8 +45,8 @@ export async function authenticate(req, res, next) {
           // Create or register active user record bound to this specific subId
           const baseName = unverified?.displayName || unverified?.name || subId.split('@')[0];
           user = await userRepository.createUserWithProfile({
-            id: subId.length >= 8 ? subId : undefined,
-            username: subId.startsWith('user_') ? subId : (subId.includes('@') ? subId.split('@')[0] : `user_${subId}`),
+            id: /^[1-9]\d{6}$/.test(subId) ? subId : undefined,
+            username: subId.startsWith('user_') ? subId : (subId.includes('@') ? subId.split('@')[0] : `user_${subId.slice(0, 10)}`),
             displayName: baseName || 'ZeParty Member',
             status: 'ACTIVE',
             userType: 'USER',
