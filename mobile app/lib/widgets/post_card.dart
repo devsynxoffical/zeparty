@@ -7,7 +7,9 @@ import '../models/post_model.dart';
 import '../core/utils/formatters.dart';
 import '../core/utils/auth_guard.dart';
 import '../providers/auth_provider.dart';
+import '../providers/social_provider.dart';
 import '../features/profile/user_profile_details_screen.dart';
+import 'report_sheet.dart';
 import 'user_avatar.dart';
 
 class PostCard extends StatelessWidget {
@@ -154,7 +156,7 @@ class PostCard extends StatelessWidget {
                   ),
                 ),
               ),
-              if (!isMe)
+              if (!isMe) ...[
                 Consumer<AuthProvider>(
                   builder: (context, authProv, _) {
                     final isFollowing = authProv.isFollowing(post.author.id);
@@ -188,6 +190,7 @@ class PostCard extends StatelessWidget {
                     );
                   },
                 ),
+              ],
             ],
           ),
             const SizedBox(height: 12),

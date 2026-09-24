@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
@@ -1814,6 +1815,22 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
   Widget _buildPostTab(bool isDark) {
     final primaryText = AppColors.getTextPrimary(isDark);
+    final secondaryText = AppColors.getTextSecondary(isDark);
+    final auth = context.watch<AuthProvider>();
+    final isMe = auth.currentUser.id.isNotEmpty && (
+      auth.currentUser.id == _user!.id ||
+      auth.currentUser.username == _user!.username ||
+      (auth.currentUser.name.isNotEmpty && _user!.name.isNotEmpty && auth.currentUser.name.toLowerCase() == _user!.name.toLowerCase()) ||
+      (auth.currentUser.displayName.isNotEmpty && _user!.displayName.isNotEmpty && auth.currentUser.displayName.toLowerCase() == _user!.displayName.toLowerCase())
+    );
+
+    final social = context.watch<SocialProvider>();
+    final userPosts = social.posts.where((p) {
+      if (p.author.id.isNotEmpty && _user!.id.isNotEmpty && p.author.id == _user!.id) return true;
+      if (p.author.username.isNotEmpty && _user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase()) return true;
+      if (p.author.displayName.isNotEmpty && _user!.displayName.isNotEmpty && p.author.displayName.toLowerCase() == _user!.displayName.toLowerCase()) return true;
+      return false;
+    }).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1848,7 +1865,481 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         const Text('Voice introduction', style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         const _ExpandedMessagePlayer(),
+
+        const SizedBox(height: 24),
+        Divider(color: AppColors.getBorder(isDark)),
+        const SizedBox(height: 14),
+
+        // Section Title: My Posts & Videos
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF8C38FF).withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.video_collection_rounded, color: Color(0xFF8C38FF), size: 18),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  isMe ? 'My Posts & Videos' : 'Posts & Videos',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: primaryText),
+                ),
+              ],
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.getSurface(isDark),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.getBorder(isDark)),
+              ),
+              child: Text(
+                '${userPosts.length} items',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: secondaryText),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 14),
+
+        if (userPosts.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+            decoration: BoxDecoration(
+              color: AppColors.getCard(isDark),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.getBorder(isDark)),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.video_library_outlined, size: 40, color: Colors.grey.withValues(alpha: 0.6)),
+                const SizedBox(height: 10),
+                Text(
+                  isMe ? 'You haven\'t uploaded any posts yet' : 'No posts uploaded yet',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: primaryText),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isMe ? 'Share videos, photos and moments from the Feed tab!' : 'When this creator uploads videos or photos, they will appear here.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: secondaryText),
+                ),
+              ],
+            ),
+          )
+        else
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: userPosts.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 0.85,
+            ),
+            itemBuilder: (context, index) {
+              final post = userPosts[index];
+              return _buildUserPostGridItem(post, isMe, isDark);
+            },
+          ),
       ],
+    );
+  }
+
+  Widget _buildUserPostGridItem(PostModel post, bool isMe, bool isDark) {
+    final hasMedia = post.imageUrls.isNotEmpty && post.imageUrls.first.isNotEmpty;
+    final mediaPath = hasMedia ? post.imageUrls.first : '';
+    final cleanPath = mediaPath.replaceFirst('file://', '');
+    final lower = cleanPath.toLowerCase();
+    final isVideo = lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.webm') ||
+        cleanPath.contains('/videos/');
+
+    final isLocal = !cleanPath.startsWith('http://') && !cleanPath.startsWith('https://');
+    final localFile = isLocal && cleanPath.isNotEmpty ? File(cleanPath) : null;
+
+    return GestureDetector(
+      onTap: () => _showPostDetailModal(context, post, isMe, isDark),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.getCard(isDark),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.getBorder(isDark)),
+          boxShadow: AppColors.cardShadow,
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Media thumbnail or Gradient Fallback
+            if (hasMedia && isLocal && localFile != null && localFile.existsSync())
+              Image.file(
+                localFile,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _buildMediaFallback(post, isDark),
+              )
+            else if (hasMedia && cleanPath.startsWith('http'))
+              Image.network(
+                cleanPath,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _buildMediaFallback(post, isDark),
+              )
+            else
+              _buildMediaFallback(post, isDark),
+
+            // Top Video Badge
+            if (isVideo)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.play_arrow_rounded, color: Colors.white, size: 14),
+                      SizedBox(width: 2),
+                      Text('VIDEO', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Bottom Gradient Overlay + Content & Stats
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.85),
+                    ],
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (post.content.isNotEmpty)
+                      Text(
+                        post.content,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 13),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${post.likes}',
+                              style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                        if (isMe)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.8),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('Manage', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMediaFallback(PostModel post, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [const Color(0xFF2A1B4E), const Color(0xFF16102B)]
+              : [const Color(0xFFEDE7F6), const Color(0xFFD1C4E9)],
+        ),
+      ),
+      child: Center(
+        child: Text(
+          post.content.isNotEmpty ? post.content : 'ZeParty Moment ✨',
+          maxLines: 4,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: isDark ? Colors.white70 : Colors.black87,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showPostDetailModal(BuildContext context, PostModel post, bool isMe, bool isDark) {
+    final primaryText = AppColors.getTextPrimary(isDark);
+    final secondaryText = AppColors.getTextSecondary(isDark);
+    final hasMedia = post.imageUrls.isNotEmpty && post.imageUrls.first.isNotEmpty;
+    final mediaPath = hasMedia ? post.imageUrls.first : '';
+    final cleanPath = mediaPath.replaceFirst('file://', '');
+    final lower = cleanPath.toLowerCase();
+    final isVideo = lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.webm') ||
+        cleanPath.contains('/videos/');
+
+    final isLocal = !cleanPath.startsWith('http://') && !cleanPath.startsWith('https://');
+    final localFile = isLocal && cleanPath.isNotEmpty ? File(cleanPath) : null;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.getCard(isDark),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top drag bar
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+
+              // Author Info & Close Button
+              Row(
+                children: [
+                  UserAvatar(
+                    imageUrl: post.author.avatarUrl.isNotEmpty ? post.author.avatarUrl : _user?.avatarUrl,
+                    name: post.author.displayName,
+                    radius: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          post.author.displayName.isNotEmpty ? post.author.displayName : (_user?.displayName ?? 'Creator'),
+                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: primaryText),
+                        ),
+                        Text(
+                          AppFormatters.formatTimeAgo(post.createdAt),
+                          style: TextStyle(fontSize: 12, color: secondaryText),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close_rounded, color: secondaryText),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 14),
+
+              // Media Player / Viewer
+              if (hasMedia) ...[
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: isVideo
+                      ? _ProfileVideoPlayerWidget(videoUrl: cleanPath)
+                      : (isLocal && localFile != null && localFile.existsSync()
+                          ? Image.file(localFile, width: double.infinity, height: 260, fit: BoxFit.cover)
+                          : Image.network(cleanPath, width: double.infinity, height: 260, fit: BoxFit.cover)),
+                ),
+                const SizedBox(height: 14),
+              ],
+
+              // Post Caption Text
+              if (post.content.isNotEmpty) ...[
+                Text(
+                  post.content,
+                  style: TextStyle(fontSize: 14, height: 1.4, color: primaryText),
+                ),
+                const SizedBox(height: 14),
+              ],
+
+              // Stats Row (Likes, Comments, Shares)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.getSurface(isDark),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.getBorder(isDark)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 18),
+                        const SizedBox(width: 6),
+                        Text('${post.likes} Likes', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: primaryText)),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        const Icon(Icons.chat_bubble_outline_rounded, color: Colors.blueAccent, size: 18),
+                        const SizedBox(width: 6),
+                        Text('${post.comments} Comments', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: primaryText)),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        const Icon(Icons.share_outlined, color: Colors.greenAccent, size: 18),
+                        const SizedBox(width: 6),
+                        Text('${post.shares} Shares', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: primaryText)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 18),
+
+              // DELETE BUTTON (Available for own uploads)
+              if (isMe) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      elevation: 0,
+                    ),
+                    icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                    label: const Text(
+                      'Delete This Upload',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _confirmDeletePost(context, post);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _confirmDeletePost(BuildContext context, PostModel post) {
+    showDialog(
+      context: context,
+      builder: (d) => AlertDialog(
+        backgroundColor: Theme.of(context).cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+            SizedBox(width: 8),
+            Text('Delete Upload?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to permanently delete this post? The video/media will be removed from your profile, feeds, and server storage.',
+          style: TextStyle(fontSize: 13, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(d),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () async {
+              Navigator.pop(d);
+              try {
+                await context.read<SocialProvider>().deletePost(post.id);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Post deleted successfully 🗑️'),
+                      backgroundColor: Colors.redAccent,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  setState(() {});
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Failed to delete post: $e'),
+                      backgroundColor: Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete Permanently', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1921,6 +2412,124 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           ),
           const SizedBox(height: 4),
           const Text('Authorized Ranking Badges & Distinctive Badges', style: TextStyle(color: Colors.grey, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfileVideoPlayerWidget extends StatefulWidget {
+  final String videoUrl;
+  const _ProfileVideoPlayerWidget({required this.videoUrl});
+
+  @override
+  State<_ProfileVideoPlayerWidget> createState() => _ProfileVideoPlayerWidgetState();
+}
+
+class _ProfileVideoPlayerWidgetState extends State<_ProfileVideoPlayerWidget> {
+  VideoPlayerController? _controller;
+  bool _isInitialized = false;
+  bool _hasError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initVideo();
+  }
+
+  Future<void> _initVideo() async {
+    try {
+      final cleanUrl = widget.videoUrl.replaceFirst('file://', '');
+      if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+        _controller = VideoPlayerController.networkUrl(Uri.parse(cleanUrl));
+      } else {
+        _controller = VideoPlayerController.file(File(cleanUrl));
+      }
+      await _controller!.initialize();
+      _controller!.setLooping(true);
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.pause();
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_hasError) {
+      return Container(
+        width: double.infinity,
+        height: 240,
+        color: Colors.black87,
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.videocam_off_rounded, color: Colors.grey, size: 36),
+              SizedBox(height: 6),
+              Text('Video unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (!_isInitialized || _controller == null) {
+      return Container(
+        width: double.infinity,
+        height: 240,
+        color: Colors.black54,
+        child: const Center(
+          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF8C38FF)),
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _controller!.value.isPlaying ? _controller!.pause() : _controller!.play();
+        });
+      },
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            height: 260,
+            child: FittedBox(
+              fit: BoxFit.cover,
+              clipBehavior: Clip.hardEdge,
+              child: SizedBox(
+                width: _controller!.value.size.width,
+                height: _controller!.value.size.height,
+                child: VideoPlayer(_controller!),
+              ),
+            ),
+          ),
+          if (!_controller!.value.isPlaying)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 36),
+            ),
         ],
       ),
     );
