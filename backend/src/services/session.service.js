@@ -82,7 +82,10 @@ export async function rotateRefreshToken({ refreshToken, ipAddress, userAgent })
   }
 
   // Determine whether session.userId belongs to an Admin identity
-  const admin = await adminRepository.findById(session.userId);
+  let admin = await adminRepository.findById(session.userId);
+  if (!admin && typeof session.userId === 'string') {
+    admin = await adminRepository.findByUsernameOrEmail(session.userId);
+  }
   let isAdmin = false;
   let userType = 'USER';
   let roleId = null;
