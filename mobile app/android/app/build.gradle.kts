@@ -26,16 +26,20 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    val keystoreFile = if (keystoreProperties.getProperty("storeFile") != null) {
+        file(keystoreProperties.getProperty("storeFile"))
+    } else {
+        file("upload-keystore.jks")
+    }
+
     signingConfigs {
-        create("release") {
-            keyAlias = keystoreProperties.getProperty("keyAlias") ?: "upload"
-            keyPassword = keystoreProperties.getProperty("keyPassword") ?: "zeparty123"
-            storeFile = if (keystoreProperties.getProperty("storeFile") != null) {
-                file(keystoreProperties.getProperty("storeFile"))
-            } else {
-                file("upload-keystore.jks")
+        if (keystoreFile.exists()) {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias") ?: "upload"
+                keyPassword = keystoreProperties.getProperty("keyPassword") ?: "zeparty123"
+                storeFile = keystoreFile
+                storePassword = keystoreProperties.getProperty("storePassword") ?: "zeparty123"
             }
-            storePassword = keystoreProperties.getProperty("storePassword") ?: "zeparty123"
         }
     }
 
@@ -56,7 +60,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (keystoreFile.exists()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 }

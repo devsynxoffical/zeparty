@@ -594,6 +594,7 @@ class AuthProvider extends ChangeNotifier {
 
       if (_isAuthenticated && await _authRepository.hasSavedToken()) {
         final updated = await _authRepository.updateProfile(
+          username: username.trim(),
           displayName: username.trim(),
           gender: gender,
           birthDate: dateOfBirth,
