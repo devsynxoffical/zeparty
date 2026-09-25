@@ -17,7 +17,9 @@ export async function getUserPosts(userId, params = {}) {
     mediaUrls: p.mediaUrls || (p.mediaUrl ? [p.mediaUrl] : []),
     likesCount: Number(p.likesCount || p._count?.likes || 0),
     commentsCount: Number(p.commentsCount || p._count?.comments || 0),
+    sharesCount: Number(p.sharesCount || 0),
     createdAt: p.createdAt,
+    visibility: p.visibility || 'public',
     status: p.status || 'ACTIVE',
     author: p.author ? {
       id: p.author.id,

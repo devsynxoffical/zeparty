@@ -33,6 +33,7 @@ class LivePartyProvider extends ChangeNotifier {
 
   // Stream Subscriptions
   StreamSubscription? _speakerSub;
+  StreamSubscription? _remoteUsersSub;
   StreamSubscription? _socketUserJoinedSub;
   StreamSubscription? _socketUserLeftSub;
   StreamSubscription? _socketSeatOccupiedSub;
@@ -288,6 +289,32 @@ class LivePartyProvider extends ChangeNotifier {
         if (speakerParticipant != null) {
           // Temporarily pulse active speaking
         }
+      });
+
+      // 5. Listen to Agora Remote Users to ensure audio callers are immediately visible in participants
+      _remoteUsersSub?.cancel();
+      _remoteUsersSub = _agoraService.remoteUsersStream.listen((uids) {
+        for (final uid in uids) {
+          final isAlreadyTracked = _participants.any(
+            (p) => p.user.id == uid.toString() || p.user.id == 'agora_$uid'
+          );
+          if (!isAlreadyTracked) {
+            final guestUser = UserModel(
+              id: 'agora_$uid',
+              username: 'User_$uid',
+              name: 'Guest $uid',
+              avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
+            );
+            _participants.add(PartyParticipantModel(
+              user: guestUser,
+              role: ParticipantRole.listener,
+              seatNumber: null,
+              joinedAt: DateTime.now(),
+            ));
+            sendSystemMessage('👋 Guest ($uid) joined audio!');
+          }
+        }
+        notifyListeners();
       });
 
       final displayName = currentUser.displayName.isNotEmpty
@@ -685,6 +712,7 @@ class LivePartyProvider extends ChangeNotifier {
     await _agoraService.leaveChannel();
 
     _speakerSub?.cancel();
+    _remoteUsersSub?.cancel();
     _socketRoomSnapshotSub?.cancel();
     _socketUserJoinedSub?.cancel();
     _socketUserLeftSub?.cancel();

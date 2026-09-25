@@ -200,18 +200,47 @@ export class StorageService {
   }
 
   /**
-   * Delete file from storage
+   * Delete file from storage (handles local disk and S3/R2 cloud storage)
    */
-  async deleteFile(storageKey) {
-    if (!storageKey) return false;
+  async deleteFile(storageKeyOrUrl) {
+    if (!storageKeyOrUrl || typeof storageKeyOrUrl !== 'string') return false;
 
-    if (this.storageProvider === 'local') {
-      const targetPath = path.join(this.uploadDir, storageKey);
+    let cleanKey = storageKeyOrUrl.trim();
+    if (cleanKey.includes('/uploads/')) {
+      cleanKey = cleanKey.split('/uploads/')[1];
+    } else if (cleanKey.startsWith('http://') || cleanKey.startsWith('https://')) {
+      try {
+        const u = new URL(cleanKey);
+        cleanKey = u.pathname.replace(/^\/+/, '');
+        if (cleanKey.includes('uploads/')) {
+          cleanKey = cleanKey.split('uploads/')[1];
+        }
+      } catch (_) {}
+    }
+    cleanKey = cleanKey.replace(/^\/+/, '');
+
+    // 1. Delete from local disk
+    try {
+      const targetPath = path.join(this.uploadDir, cleanKey);
       if (fs.existsSync(targetPath)) {
-        await fs.promises.unlink(targetPath);
-        return true;
+        await fs.promises.unlink(targetPath).catch(() => {});
       }
-      return false;
+    } catch (localErr) {
+      console.warn('[StorageService] Local file deletion notice:', localErr.message);
+    }
+
+    // 2. Delete from Cloud Storage (S3 / R2) if configured
+    try {
+      const s3Client = await this._getS3Client();
+      if (s3Client) {
+        const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+        await s3Client.send(new DeleteObjectCommand({
+          Bucket: process.env.S3_BUCKET_NAME || 'zeparty-media',
+          Key: cleanKey,
+        })).catch(() => {});
+      }
+    } catch (cloudErr) {
+      console.warn('[StorageService] Cloud file deletion notice:', cloudErr.message);
     }
 
     return true;

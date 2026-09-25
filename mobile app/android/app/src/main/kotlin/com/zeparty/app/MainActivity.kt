@@ -1,4 +1,4 @@
-package com.example.live_stream_app
+package com.zeparty.app
 
 import io.flutter.embedding.android.FlutterActivity
 

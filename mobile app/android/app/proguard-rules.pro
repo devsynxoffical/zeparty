@@ -25,3 +25,12 @@
 -keepattributes *Annotation*
 -dontwarn sun.misc.**
 -keep class com.google.gson.** { *; }
+
+# Google Sign-In & Google Play Services Auth
+-keep class com.google.android.gms.auth.api.signin.** { *; }
+-keep class com.google.android.gms.common.** { *; }
+-keep class com.google.android.gms.tasks.** { *; }
+-keep class com.google.firebase.auth.** { *; }
+-keep class com.google.firebase.** { *; }
+-dontwarn com.google.android.gms.**
+-dontwarn com.google.firebase.**

@@ -15,6 +15,7 @@ import '../../models/post_model.dart';
 import '../../providers/social_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/user_list_sheet.dart';
+import '../../widgets/full_screen_image_viewer.dart';
 import '../../core/repositories/backend_repository.dart';
 import 'level_center_screen.dart';
 import 'modules/gift_showcase_screen.dart';
@@ -94,7 +95,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  void _showAvatarPickerOptions(BuildContext context, bool isDark, Color primary) {
+  void _showAvatarPickerOptions(BuildContext context, bool isDark, Color primary, String? avatarUrl) {
     showModalBottomSheet(
       context: context,
       backgroundColor: isDark ? const Color(0xFF1E1E2E) : Colors.white,
@@ -118,7 +119,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Change Profile Picture',
+                  'Profile Picture',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -126,6 +127,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                if (avatarUrl != null && avatarUrl.isNotEmpty) ...[
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.teal.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.fullscreen_rounded, color: Colors.teal),
+                    ),
+                    title: Text('View Profile Picture', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.w600)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      FullScreenImageViewer.show(context, imageUrl: avatarUrl, tag: 'my_profile_avatar');
+                    },
+                  ),
+                ],
                 ListTile(
                   leading: Container(
                     padding: const EdgeInsets.all(10),
@@ -294,9 +312,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        // Avatar with Image Picker Badge
+        // Avatar with Image Picker Badge & Click-to-View
         GestureDetector(
-          onTap: () => _showAvatarPickerOptions(context, isDark, primary),
+          onTap: () => _showAvatarPickerOptions(context, isDark, primary, effectiveAvatar),
           child: Stack(
             clipBehavior: Clip.none,
             children: [
@@ -450,9 +468,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 6),
                 Row(
                   children: [
+                    Text(
+                      'ID: ${user.id}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.getTextSecondary(isDark),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    GestureDetector(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: user.id));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('User ID copied to clipboard')),
+                        );
+                      },
+                      child: Icon(Icons.copy_rounded, size: 12, color: AppColors.getTextSecondary(isDark)),
+                    ),
+                    const SizedBox(width: 6),
+                    Text('•', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(isDark))),
+                    const SizedBox(width: 6),
                     Flexible(
                       child: Text(
-                        '@${user.username.isNotEmpty ? user.username : (user.name.isNotEmpty ? user.name : user.id)}',
+                        '@${user.username.isNotEmpty ? user.username : user.name}',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -462,22 +501,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 4),
-                    GestureDetector(
-                      onTap: () {
-                        Clipboard.setData(ClipboardData(text: user.username.isNotEmpty ? user.username : user.id));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Username copied to clipboard')),
-                        );
-                      },
-                      child: Icon(Icons.copy_rounded, size: 12, color: AppColors.getTextSecondary(isDark)),
-                    ),
                     if (user.isVip) ...[
                       const SizedBox(width: 8),
                       Icon(Icons.workspace_premium_rounded, size: 14, color: AppColors.primary),
                     ],
                   ],
                 ),
+                if (user.email != null && user.email!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.email_outlined, size: 12, color: AppColors.getTextSecondary(isDark)),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          user.email!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.getTextSecondary(isDark),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 6),
                 OnlineStatusBadge(
                   isOnline: user.isOnline,
@@ -488,17 +537,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
 
-        // Action Arrow
-        IconButton(
-          icon: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: AppColors.getTextSecondary(isDark)),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => UserProfileDetailsScreen(userId: user.id),
+        // Action Column: Footprint Profile Visitors Icon + Profile Navigation Arrow
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.directions_walk_rounded, size: 18, color: primary),
               ),
-            );
-          },
+              tooltip: 'Profile Visitors 🐾',
+              onPressed: () {
+                final popularUsers = BackendRepository.instance.popularUsers;
+                UserListSheet.show(context, 'Profile Visitors 🐾', popularUsers.take(6).toList());
+              },
+            ),
+            IconButton(
+              icon: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: AppColors.getTextSecondary(isDark)),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => UserProfileDetailsScreen(userId: user.id),
+                  ),
+                );
+              },
+            ),
+          ],
         ),
       ],
     );
@@ -506,12 +575,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildUserStatistics(UserModel user, bool isDark) {
     final popularUsers = BackendRepository.instance.popularUsers;
+    int totalLikes = 0;
+    try {
+      final social = context.watch<SocialProvider>();
+      final myPosts = social.posts.where((p) =>
+          (user.id.isNotEmpty && p.author.id == user.id) ||
+          (user.username.isNotEmpty && p.author.username.toLowerCase() == user.username.toLowerCase())
+      ).toList();
+      totalLikes = myPosts.fold(0, (acc, p) => acc + p.likes);
+    } catch (_) {}
+
+    String formattedLikes;
+    if (totalLikes >= 1000000) {
+      formattedLikes = '${(totalLikes / 1000000).toStringAsFixed(1)}M';
+    } else if (totalLikes >= 1000) {
+      formattedLikes = '${(totalLikes / 1000).toStringAsFixed(1)}K';
+    } else {
+      formattedLikes = '$totalLikes';
+    }
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
-        _buildStatItem('0', 'Room', isDark, null),
-        _buildStatItem('0', 'Visitors', isDark, null),
         _buildStatItem(
           AppFormatters.formatNumber(user.following),
           'Following',
@@ -523,6 +608,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'Followers',
           isDark,
           () => UserListSheet.show(context, 'Followers', popularUsers),
+        ),
+        _buildStatItem(
+          formattedLikes,
+          'Likes',
+          isDark,
+          () {
+            showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                backgroundColor: AppColors.getCard(isDark),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                title: Row(
+                  children: [
+                    const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 24),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Total Likes',
+                      style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
+                    ),
+                  ],
+                ),
+                content: Text(
+                  'You have total $totalLikes likes across all your videos and posts.',
+                  style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(isDark)),
+                ),
+                actions: [
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.getPrimary(isDark),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            );
+          },
         ),
       ],
     );

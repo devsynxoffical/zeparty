@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import postRepository from '../repositories/post.repository.js';
 import socialRepository from '../repositories/social.repository.js';
+import storageService from './storage.service.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
 
@@ -233,8 +234,15 @@ export async function deletePost(
   { isAdmin = false, adminId = null, adminName = null, reason = null, ipAddress = '127.0.0.1' } = {},
   db = prisma
 ) {
-  const post = await postRepository.findPostById(postId, db);
+  let post = await postRepository.findPostById(postId, db).catch(() => null);
   if (!post) {
+    post = await db.post.findUnique({ where: { id: postId } }).catch(() => null);
+  }
+
+  if (!post) {
+    if (isAdmin) {
+      return { success: true, id: postId, message: 'Post already deleted' };
+    }
     const error = new Error('Post not found');
     error.statusCode = 404;
     error.code = 'POST_NOT_FOUND';
@@ -248,9 +256,46 @@ export async function deletePost(
     throw error;
   }
 
-  await postRepository.softDeletePost(postId, db);
-  await socialRepository.decrementPostsCount(post.userId, db);
+  // 1. Storage media cleanup: remove physical files from local disk and S3/R2 cloud storage
+  try {
+    const rawMedia = post.mediaUrls;
+    const mediaList = Array.isArray(rawMedia)
+      ? rawMedia
+      : (typeof rawMedia === 'string'
+          ? (() => {
+              try { return JSON.parse(rawMedia); } catch (_) { return [rawMedia]; }
+            })()
+          : []);
 
+    for (const url of mediaList) {
+      if (url && typeof url === 'string') {
+        await storageService.deleteFile(url).catch(() => {});
+      }
+    }
+    if (post.mediaUrl && typeof post.mediaUrl === 'string') {
+      await storageService.deleteFile(post.mediaUrl).catch(() => {});
+    }
+  } catch (mediaErr) {
+    console.warn('[deletePost] Storage media cleanup notice:', mediaErr.message);
+  }
+
+  // 2. Database cleanup: permanently hard delete post record so it never comes back on page refresh
+  try {
+    await db.post.delete({ where: { id: postId } });
+  } catch (err) {
+    try {
+      await db.post.deleteMany({ where: { id: postId } });
+    } catch (_) {
+      await postRepository.softDeletePost(postId, db).catch(() => {});
+    }
+  }
+
+  // 3. Decrement user's postsCount
+  if (post.userId) {
+    await socialRepository.decrementPostsCount(post.userId, db).catch(() => {});
+  }
+
+  // 4. Audit logging
   if (isAdmin) {
     await logAudit(
       {
@@ -264,13 +309,16 @@ export async function deletePost(
         ipAddress,
       },
       db
-    );
+    ).catch(() => {});
   }
 
-  socketEmitter.broadcastGlobal(SOCKET_EVENTS.POST_DELETED, {
-    postId,
-    deletedBy: userId || adminId,
-  });
+  // 5. Global real-time socket broadcast
+  try {
+    socketEmitter.broadcastGlobal(SOCKET_EVENTS.POST_DELETED, {
+      postId,
+      deletedBy: userId || adminId,
+    });
+  } catch (_) {}
 
   return { success: true, id: postId };
 }

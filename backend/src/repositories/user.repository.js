@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import { generate7DigitUserId } from '../utils/idGenerator.util.js';
 
 export async function findByPhone(phone, db = prisma) {
   if (!phone) return null;
@@ -51,7 +52,9 @@ export async function createUserWithProfile(
   { id = null, phone = null, email = null, username, displayName = null, avatarUrl = null, coverUrl = null, status = 'ACTIVE', userType = 'USER', countryCode = 'US', coinBalance = 0, diamondBalance = 0 },
   db = prisma
 ) {
+  const finalId = id || await generate7DigitUserId(db);
   const data = {
+    id: finalId,
     phone: phone || null,
     email: email || null,
     username,
@@ -71,9 +74,6 @@ export async function createUserWithProfile(
       },
     },
   };
-  if (id) {
-    data.id = id;
-  }
   return await db.user.create({
     data,
     include: {
@@ -587,30 +587,84 @@ export async function deleteUserById(id, db = prisma) {
     }
   } catch (_) {}
 
-  // 7. Clean up Reports, Support Tickets, User Blocks
+  // 7. Clean up Social, Likes, Comments, Posts, Follows, Messages
+  try {
+    if (db.like?.deleteMany) {
+      await db.like.deleteMany({ where: { userId: id } });
+    }
+    if (db.comment?.deleteMany) {
+      await db.comment.deleteMany({ where: { userId: id } });
+    }
+    const userPosts = await db.post?.findMany?.({ where: { userId: id }, select: { id: true } });
+    if (userPosts && userPosts.length > 0) {
+      const pIds = userPosts.map((p) => p.id);
+      if (db.like?.deleteMany) await db.like.deleteMany({ where: { postId: { in: pIds } } });
+      if (db.comment?.deleteMany) await db.comment.deleteMany({ where: { postId: { in: pIds } } });
+      if (db.post?.deleteMany) await db.post.deleteMany({ where: { id: { in: pIds } } });
+    }
+    if (db.follow?.deleteMany) {
+      await db.follow.deleteMany({
+        where: { OR: [{ followerId: id }, { followingId: id }] },
+      });
+    }
+    if (db.message?.deleteMany) {
+      await db.message.deleteMany({
+        where: { OR: [{ senderUserId: id }, { recipientUserId: id }] },
+      });
+    }
+    if (db.notification?.deleteMany) {
+      await db.notification.deleteMany({ where: { userId: id } });
+    }
+    if (db.notificationPreference?.deleteMany) {
+      await db.notificationPreference.deleteMany({ where: { userId: id } });
+    }
+  } catch (_) {}
+
+  // 8. Clean up Reports, Moderation, Support Tickets, Restrictions, Transactions
   try {
     if (db.report?.deleteMany) {
       await db.report.deleteMany({
         where: {
-          OR: [{ reporterId: id }, { reportedUserId: id }],
+          OR: [{ reporterUserId: id }, { reportedUserId: id }],
         },
       });
     }
+    if (db.restriction?.deleteMany) {
+      await db.restriction.deleteMany({ where: { userId: id } });
+    }
+    if (db.moderationAction?.deleteMany) {
+      await db.moderationAction.deleteMany({ where: { targetId: id } });
+    }
     if (db.supportTicket?.deleteMany) {
-      await db.supportTicket.deleteMany({
-        where: { userId: id },
-      });
+      await db.supportTicket.deleteMany({ where: { userId: id } });
     }
     if (db.userBlock?.deleteMany) {
       await db.userBlock.deleteMany({
-        where: {
-          OR: [{ blockerId: id }, { blockedId: id }],
-        },
+        where: { OR: [{ blockerId: id }, { blockedId: id }] },
       });
     }
+    if (db.onlineRecharge?.deleteMany) await db.onlineRecharge.deleteMany({ where: { userId: id } });
+    if (db.offlineRecharge?.deleteMany) await db.offlineRecharge.deleteMany({ where: { userId: id } });
+    if (db.withdrawalRequest?.deleteMany) await db.withdrawalRequest.deleteMany({ where: { userId: id } });
+    if (db.coinRefund?.deleteMany) await db.coinRefund.deleteMany({ where: { userId: id } });
+    if (db.chargeback?.deleteMany) await db.chargeback.deleteMany({ where: { userId: id } });
+    if (db.userAsset?.deleteMany) await db.userAsset.deleteMany({ where: { userId: id } });
+    if (db.gameTransaction?.deleteMany) await db.gameTransaction.deleteMany({ where: { userId: id } });
+    if (db.settlementRecord?.deleteMany) await db.settlementRecord.deleteMany({ where: { userId: id } });
+    if (db.settlementAdjustment?.deleteMany) await db.settlementAdjustment.deleteMany({ where: { userId: id } });
+    if (db.hostApplication?.deleteMany) await db.hostApplication.deleteMany({ where: { userId: id } });
+    if (db.coinSeller?.deleteMany) await db.coinSeller.deleteMany({ where: { userId: id } });
+    if (db.merchant?.deleteMany) await db.merchant.deleteMany({ where: { userId: id } });
+    if (db.roomMember?.deleteMany) await db.roomMember.deleteMany({ where: { userId: id } });
+    if (db.roomSeat?.deleteMany) await db.roomSeat.deleteMany({ where: { userId: id } });
+    if (db.userSession?.deleteMany) await db.userSession.deleteMany({ where: { userId: id } });
+    if (db.userDevice?.deleteMany) await db.userDevice.deleteMany({ where: { userId: id } });
+    if (db.hostProfile?.deleteMany) await db.hostProfile.deleteMany({ where: { userId: id } });
+    if (db.userProfile?.deleteMany) await db.userProfile.deleteMany({ where: { userId: id } });
+    if (db.wallet?.deleteMany) await db.wallet.deleteMany({ where: { userId: id } });
   } catch (_) {}
 
-  // 8. Delete the user (Prisma schema cascades UserProfile, Wallet, HostProfile, UserSession, UserDevice, Posts, Likes, Comments, etc.)
+  // 9. Delete the user safely from PostgreSQL
   return await db.user.delete({
     where: { id },
   });
@@ -627,11 +681,11 @@ export async function searchUsers(query, { limit = 20, excludeUserId = null } = 
   const where = {
     status: 'ACTIVE',
     OR: [
+      { id: { contains: q } },
       { username: { contains: q, mode: 'insensitive' } },
       { phone: { contains: q, mode: 'insensitive' } },
       { bio: { contains: q, mode: 'insensitive' } },
       { profile: { displayName: { contains: q, mode: 'insensitive' } } },
-      ...(q.length === 36 ? [{ id: q }] : []),
     ],
   };
 

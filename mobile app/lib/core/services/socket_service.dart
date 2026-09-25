@@ -484,6 +484,13 @@ class SocketService {
     }
   }
 
+  /// Generic emit helper for real-time events
+  void emit(String event, dynamic data) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit(event, data);
+    }
+  }
+
   /// Disconnect socket cleanly
   void disconnect() {
     _socket?.disconnect();

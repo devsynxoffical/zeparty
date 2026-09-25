@@ -7,6 +7,9 @@ import '../models/post_model.dart';
 import '../core/utils/formatters.dart';
 import '../core/utils/auth_guard.dart';
 import '../providers/auth_provider.dart';
+import '../providers/social_provider.dart';
+import '../features/profile/user_profile_details_screen.dart';
+import 'report_sheet.dart';
 import 'user_avatar.dart';
 
 class PostCard extends StatelessWidget {
@@ -105,24 +108,55 @@ class PostCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              UserAvatar(imageUrl: displayAvatarUrl, radius: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              GestureDetector(
+                onTap: () {
+                  final targetId = post.author.id.isNotEmpty ? post.author.id : auth.currentUser.id;
+                  if (targetId.isNotEmpty) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => UserProfileDetailsScreen(userId: targetId),
+                      ),
+                    );
+                  }
+                },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      displayAuthorName,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      AppFormatters.formatTimeAgo(post.createdAt),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                    UserAvatar(imageUrl: displayAvatarUrl, radius: 20),
+                    const SizedBox(width: 10),
                   ],
                 ),
               ),
-              if (!isMe)
+              Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    final targetId = post.author.id.isNotEmpty ? post.author.id : auth.currentUser.id;
+                    if (targetId.isNotEmpty) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => UserProfileDetailsScreen(userId: targetId),
+                        ),
+                      );
+                    }
+                  },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        displayAuthorName,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        AppFormatters.formatTimeAgo(post.createdAt),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (!isMe) ...[
                 Consumer<AuthProvider>(
                   builder: (context, authProv, _) {
                     final isFollowing = authProv.isFollowing(post.author.id);
@@ -156,6 +190,7 @@ class PostCard extends StatelessWidget {
                     );
                   },
                 ),
+              ],
             ],
           ),
             const SizedBox(height: 12),

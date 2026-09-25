@@ -11,7 +11,8 @@ import '../../widgets/design/gold_button.dart';
 import '../../widgets/user_avatar.dart';
 
 class CreatePostScreen extends StatefulWidget {
-  const CreatePostScreen({super.key});
+  final bool isStory;
+  const CreatePostScreen({super.key, this.isStory = false});
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -59,16 +60,20 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       if (_selectedImage != null) {
         final uploadResult = await MediaUploadService.instance.uploadFile(
           filePath: _selectedImage!.path,
-          folder: 'posts',
+          folder: widget.isStory ? 'stories' : 'posts',
         );
         mediaUrls.add(uploadResult.url);
       }
 
       if (!mounted) return;
+      final finalContent = widget.isStory
+          ? (content.isNotEmpty ? '[STORY] $content' : '[STORY] Shared a 24h story ✨')
+          : (content.isNotEmpty ? content : 'Shared a moment ✨');
+
       await context.read<SocialProvider>().createPost(
-            content: content.isNotEmpty ? content : 'Shared a moment ✨',
+            content: finalContent,
             mediaUrls: mediaUrls.isEmpty ? null : mediaUrls,
-            visibility: 'PUBLIC',
+            visibility: widget.isStory ? 'STORY' : 'PUBLIC',
           );
 
       if (!mounted) return;

@@ -6,12 +6,13 @@ import { generateRandomToken, hashToken } from '../utils/crypto.util.js';
  * Generate short-lived JWT access token carrying essential claims.
  */
 export function generateAccessToken(payload) {
+  const isAdmin = Boolean(payload.isAdmin || payload.userType === 'ADMIN');
   const claims = {
     sub: payload.userId || payload.adminId,
     sessionId: payload.sessionId,
-    userType: payload.userType || (payload.isAdmin ? 'ADMIN' : 'USER'),
+    userType: payload.userType || (isAdmin ? 'ADMIN' : 'USER'),
     roleId: payload.roleId || null,
-    isAdmin: Boolean(payload.isAdmin),
+    isAdmin,
   };
 
   return jwt.sign(claims, env.JWT_SECRET, {

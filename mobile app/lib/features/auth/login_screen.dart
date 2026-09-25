@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../widgets/design/gold_button.dart';
 import '../../widgets/app_logo.dart';
 import '../../providers/auth_provider.dart';
+import 'profile_setup_screen.dart';
 import '../main_layout.dart';
 import 'signup_screen.dart';
 import 'phone_login_screen.dart';
@@ -61,15 +62,23 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
     if (mounted) {
       if (success) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          PageRouteBuilder(
-            transitionDuration: const Duration(milliseconds: 400),
-            pageBuilder: (context, anim1, anim2) => const MainLayout(),
-            transitionsBuilder: (context, anim, secondaryAnim, child) => FadeTransition(opacity: anim, child: child),
-          ),
-          (route) => false,
-        );
+        if (auth.isNewUser) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
+            (route) => false,
+          );
+        } else {
+          Navigator.pushAndRemoveUntil(
+            context,
+            PageRouteBuilder(
+              transitionDuration: const Duration(milliseconds: 400),
+              pageBuilder: (context, anim1, anim2) => const MainLayout(),
+              transitionsBuilder: (context, anim, secondaryAnim, child) => FadeTransition(opacity: anim, child: child),
+            ),
+            (route) => false,
+          );
+        }
       } else if (auth.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -87,15 +96,23 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
     if (mounted) {
       if (success) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          PageRouteBuilder(
-            transitionDuration: const Duration(milliseconds: 400),
-            pageBuilder: (context, anim1, anim2) => const MainLayout(),
-            transitionsBuilder: (context, anim, secondaryAnim, child) => FadeTransition(opacity: anim, child: child),
-          ),
-          (route) => false,
-        );
+        if (auth.isNewUser) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
+            (route) => false,
+          );
+        } else {
+          Navigator.pushAndRemoveUntil(
+            context,
+            PageRouteBuilder(
+              transitionDuration: const Duration(milliseconds: 400),
+              pageBuilder: (context, anim1, anim2) => const MainLayout(),
+              transitionsBuilder: (context, anim, secondaryAnim, child) => FadeTransition(opacity: anim, child: child),
+            ),
+            (route) => false,
+          );
+        }
       } else if (auth.errorMessage != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

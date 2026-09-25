@@ -310,43 +310,45 @@ export async function syncUserFromApp({
   const targetId = uid || id;
   const cleanEmail = email ? email.trim().toLowerCase() : null;
   const cleanPhone = phone ? phone.trim() : null;
-  const cleanUsername = username ? username.trim() : null;
   const cleanName = displayName || name || 'ZeParty Member';
 
   let existingUser = null;
-  if (targetId) {
-    existingUser = await userRepository.findById(targetId);
-  }
-  if (!existingUser && cleanEmail) {
+  // 1. Look up strictly by verified unique email
+  if (cleanEmail) {
     existingUser = await userRepository.findByEmail(cleanEmail);
   }
+  // 2. Look up strictly by verified phone
   if (!existingUser && cleanPhone) {
     existingUser = await userRepository.findByPhone(cleanPhone);
   }
-  if (!existingUser && cleanUsername) {
-    existingUser = await userRepository.findByUsername(cleanUsername);
+  // 3. Look up by 7-digit PostgreSQL user ID if valid
+  if (!existingUser && targetId && /^[1-9]\d{6}$/.test(String(targetId))) {
+    existingUser = await userRepository.findById(String(targetId));
   }
 
   let user = existingUser;
   let isNewUser = false;
 
   if (!user) {
-    let finalUsername = cleanUsername;
-    if (!finalUsername) {
+    // Generate guaranteed unique username without colliding with existing users
+    let finalUsername = username ? username.trim().toLowerCase().replaceAll(/[^a-z0-9_]/g, '') : null;
+    if (!finalUsername || finalUsername.length < 3) {
       if (cleanEmail) {
-        finalUsername = cleanEmail.split('@')[0];
-      } else {
-        const randomSuffix = crypto.randomBytes(3).toString('hex');
-        finalUsername = `user_${randomSuffix}`;
+        finalUsername = cleanEmail.split('@')[0].toLowerCase().replaceAll(/[^a-z0-9_]/g, '');
+      }
+      if (!finalUsername || finalUsername.length < 3) {
+        finalUsername = `user_${crypto.randomBytes(3).toString('hex')}`;
       }
     }
-    const collision = await userRepository.findByUsername(finalUsername);
-    if (collision) {
-      finalUsername = `${finalUsername}_${crypto.randomBytes(2).toString('hex')}`;
+    
+    // Check collision and guarantee uniqueness
+    let collision = await userRepository.findByUsername(finalUsername);
+    while (collision) {
+      finalUsername = `${finalUsername.slice(0, 15)}_${Math.floor(100 + Math.random() * 900)}`;
+      collision = await userRepository.findByUsername(finalUsername);
     }
 
     user = await userRepository.createUserWithProfile({
-      id: targetId && targetId.length >= 8 ? targetId : undefined,
       email: cleanEmail,
       phone: cleanPhone,
       username: finalUsername,
@@ -361,19 +363,21 @@ export async function syncUserFromApp({
     });
     isNewUser = true;
   } else {
-    // Update existing user profile if needed
-    if (cleanName || avatarUrl || bio || gender || dob) {
-      const updateData = {};
-      if (cleanName) updateData.displayName = cleanName;
-      if (avatarUrl) updateData.avatarUrl = avatarUrl;
-      if (bio) updateData.bio = bio;
-      if (gender) updateData.gender = gender;
-      if (dob) updateData.dob = new Date(dob);
-
-      if (Object.keys(updateData).length > 0) {
-        await userRepository.updateUserProfile(user.id, updateData).catch(() => {});
+    // Existing user: ensure email/phone are recorded if empty, but NEVER overwrite existing profile data
+    try {
+      if (cleanEmail && !user.email) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { email: cleanEmail },
+        });
       }
-    }
+      if (cleanPhone && !user.phone) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { phone: cleanPhone },
+        });
+      }
+    } catch (_) {}
     user = await userRepository.findById(user.id);
   }
 

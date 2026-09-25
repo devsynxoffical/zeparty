@@ -21,6 +21,7 @@ class AuthProvider extends ChangeNotifier {
   bool _isGuest = false;
   bool _isLoading = false;
   bool _isInitialized = false;
+  bool _isNewUser = false;
   String? _errorMessage;
   StreamSubscription<User?>? _authStateSubscription;
   StreamSubscription<Map<String, dynamic>>? _banSubscription;
@@ -34,6 +35,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isGuest => _isGuest;
   bool get isLoading => _isLoading;
   bool get isInitialized => _isInitialized;
+  bool get isNewUser => _isNewUser;
   Future<void> get initFuture => _initFuture;
   String? get errorMessage => _errorMessage;
 
@@ -309,27 +311,29 @@ class AuthProvider extends ChangeNotifier {
 
       final firebaseUser = userCredential.user;
       final cleanEmail = usernameOrEmail.trim();
-      final baseUsername = cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail;
-      final displayName = firebaseUser?.displayName ?? baseUsername;
 
       // Synchronize with ZeParty backend database & save JWT tokens
+      // We do NOT send email as username or displayName so backend never overwrites them
       try {
         final authRes = await _authRepository.syncUser(
           uid: firebaseUser?.uid,
-          email: cleanEmail,
-          displayName: displayName,
-          username: baseUsername,
+          email: cleanEmail.contains('@') ? cleanEmail : null,
           avatarUrl: firebaseUser?.photoURL,
         );
         _currentUser = authRes.user;
       } catch (syncErr) {
         debugPrint('Backend sync fallback in email login: $syncErr');
+        final existingLocal = _currentUser;
         _currentUser = UserModel(
           id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
-          username: baseUsername,
-          name: displayName,
-          email: cleanEmail,
-          avatarUrl: firebaseUser?.photoURL ?? '',
+          username: (existingLocal != null && existingLocal.username.isNotEmpty && !existingLocal.username.startsWith('user_'))
+              ? existingLocal.username
+              : (cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail),
+          name: (existingLocal != null && existingLocal.name.isNotEmpty && existingLocal.name != 'ZeParty Member')
+              ? existingLocal.name
+              : (firebaseUser?.displayName ?? (cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail)),
+          email: cleanEmail.contains('@') ? cleanEmail : (existingLocal?.email ?? ''),
+          avatarUrl: firebaseUser?.photoURL ?? (existingLocal?.avatarUrl ?? ''),
           profileCompleted: true,
         );
       }
@@ -354,6 +358,7 @@ class AuthProvider extends ChangeNotifier {
     required String name,
     required String email,
     required String password,
+    String? username,
     String? phone,
   }) async {
     _isLoading = true;
@@ -387,7 +392,9 @@ class AuthProvider extends ChangeNotifier {
 
       final cleanEmail = email.trim();
       final cleanName = name.trim();
-      final baseUsername = cleanEmail.split('@').first;
+      final finalUsername = (username != null && username.trim().isNotEmpty)
+          ? username.trim().replaceAll('@', '').trim()
+          : cleanEmail.split('@').first;
 
       // Register and persist user into PostgreSQL backend
       try {
@@ -396,7 +403,7 @@ class AuthProvider extends ChangeNotifier {
           email: cleanEmail,
           phone: phone,
           displayName: cleanName,
-          username: baseUsername,
+          username: finalUsername,
           coins: 1000,
           diamonds: 100,
         );
@@ -405,12 +412,12 @@ class AuthProvider extends ChangeNotifier {
         debugPrint('Backend sync fallback in email signup: $syncErr');
         _currentUser = UserModel(
           id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
-          username: baseUsername,
+          username: finalUsername,
           name: cleanName,
           email: cleanEmail,
           phone: phone,
           avatarUrl: '',
-          bio: 'New creator on ZeParty! ✨',
+          bio: '',
           coins: 1000,
           diamonds: 100,
           role: UserRole.user,
@@ -442,6 +449,7 @@ class AuthProvider extends ChangeNotifier {
     try {
       final GoogleSignIn googleSignIn = GoogleSignIn(
         scopes: ['email', 'profile'],
+        serverClientId: '13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com',
       );
 
       try {
@@ -451,6 +459,7 @@ class AuthProvider extends ChangeNotifier {
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
       if (googleUser == null) {
+        debugPrint('[GoogleSignIn] User canceled account selection dialog.');
         _errorMessage = null;
         _isLoading = false;
         notifyListeners();
@@ -458,6 +467,8 @@ class AuthProvider extends ChangeNotifier {
       }
 
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      debugPrint('[GoogleSignIn] Obtained tokens - idToken present: ${googleAuth.idToken != null}, accessToken present: ${googleAuth.accessToken != null}');
+
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
@@ -467,7 +478,9 @@ class AuthProvider extends ChangeNotifier {
       final firebaseUser = userCredential.user;
 
       final cleanEmail = googleUser.email.trim();
-      final cleanName = googleUser.displayName ?? 'Google Creator';
+      final cleanName = (googleUser.displayName != null && googleUser.displayName!.trim().isNotEmpty)
+          ? googleUser.displayName!.trim()
+          : 'Google Creator';
       final baseUsername = cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail;
       final photoUrl = googleUser.photoUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80';
 
@@ -482,9 +495,13 @@ class AuthProvider extends ChangeNotifier {
           coins: 1000,
           diamonds: 100,
         );
-        _currentUser = authRes.user;
+        _isNewUser = authRes.isNewUser;
+        _currentUser = authRes.user.copyWith(
+          profileCompleted: !authRes.isNewUser || authRes.user.profileCompleted,
+        );
       } catch (syncErr) {
         debugPrint('Backend sync fallback in Google login: $syncErr');
+        _isNewUser = false;
         _currentUser = UserModel(
           id: firebaseUser?.uid ?? 'google_${DateTime.now().millisecondsSinceEpoch}',
           username: baseUsername,
@@ -494,7 +511,7 @@ class AuthProvider extends ChangeNotifier {
           coins: 1000,
           diamonds: 100,
           role: UserRole.user,
-          profileCompleted: false,
+          profileCompleted: true,
         );
       }
 
@@ -505,7 +522,8 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       return true;
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[GoogleSignIn] Failed with exception: $e\n$stack');
       _errorMessage = FirebaseAuthErrorHandler.getErrorMessage(e);
       _isLoading = false;
       notifyListeners();

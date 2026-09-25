@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
@@ -7,8 +10,14 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 android {
-    namespace = "com.example.live_stream_app"
+    namespace = "com.zeparty.app"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
@@ -17,8 +26,21 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties.getProperty("keyAlias") ?: "upload"
+            keyPassword = keystoreProperties.getProperty("keyPassword") ?: "zeparty123"
+            storeFile = if (keystoreProperties.getProperty("storeFile") != null) {
+                file(keystoreProperties.getProperty("storeFile"))
+            } else {
+                file("upload-keystore.jks")
+            }
+            storePassword = keystoreProperties.getProperty("storePassword") ?: "zeparty123"
+        }
+    }
+
     defaultConfig {
-        applicationId = "com.example.live_stream_app"
+        applicationId = "com.zeparty.app"
         minSdk = 24
         targetSdk = 36
         versionCode = flutter.versionCode
@@ -34,7 +56,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

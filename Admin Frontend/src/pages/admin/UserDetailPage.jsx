@@ -10,7 +10,7 @@ import {
   ArrowLeft, Mail, Globe, Phone, Building, ShieldCheck, ShieldAlert,
   Smartphone, Lock, RefreshCw, Key, Award, Sparkles, AlertTriangle,
   Coins, Diamond, CheckCircle, XCircle, Slash, MessageSquare, Heart,
-  Share2, Trash2, FileText
+  Share2, Trash2, FileText, Camera, Eye, Film, Play, ExternalLink
 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
@@ -18,6 +18,7 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
 import { Toast } from '../../components/ui/Toast';
+import { ImageViewerModal } from '../../components/ui/ImageViewerModal';
 import { DataTable } from '../../components/tables/DataTable';
 import { getUserById, updateUser, updateUserStatus } from '../../services/modules/users.service';
 import { getBDCenters } from '../../services/modules/bdCenter.service';
@@ -49,7 +50,10 @@ export function UserDetailPage() {
   // Posts State
   const [userPosts, setUserPosts] = useState([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(false);
-  const [postToDelete, setPostToDelete] = useState(null);  // BD Center Assignment State
+  const [postToDelete, setPostToDelete] = useState(null);
+  const [isDeletingPost, setIsDeletingPost] = useState(false);
+  const [inspectingPost, setInspectingPost] = useState(null);
+  const [previewMedia, setPreviewMedia] = useState(null);
   const [bdCenters, setBdCenters] = useState([]);
   const [selectedBDCenter, setSelectedBDCenter] = useState('');
 
@@ -72,9 +76,12 @@ export function UserDetailPage() {
     });
   }
 
-  // Country Change state
+  // Avatar and Country/Region update state
   const [newCountry, setNewCountry] = useState('PK');
   const [newRegion, setNewRegion] = useState('South Asia');
+  const [newAvatarInput, setNewAvatarInput] = useState('');
+  const [isSavingAvatar, setIsSavingAvatar] = useState(false);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
 
   useEffect(() => {
     getBDCenters().then(bds => setBdCenters(bds || [])).catch(() => setBdCenters([]));
@@ -86,6 +93,7 @@ export function UserDetailPage() {
           setSelectedBDCenter(userData.bdCenterId || '');
           setNewCountry(userData.country || 'PK');
           setNewRegion(userData.region || 'South Asia');
+          setNewAvatarInput(userData.avatarUrl || '');
           setUserError(null);
         })
         .catch((err) => {
@@ -119,6 +127,32 @@ export function UserDetailPage() {
     setActionReason('');
   };
 
+  const handleAvatarChange = async () => {
+    if (!user) return;
+    setIsSavingAvatar(true);
+    try {
+      await updateUser(user.id, { avatarUrl: newAvatarInput.trim() });
+      setUser({ ...user, avatarUrl: newAvatarInput.trim() });
+      showToast('Profile picture updated successfully in database.', 'success', 'Avatar Updated');
+      await logEvent({
+        action: 'USER_AVATAR_UPDATED',
+        targetId: user.id,
+        targetType: 'USER',
+        operatorName: 'Super Admin',
+        reason: actionReason || 'Updated profile picture via admin panel',
+        riskLevel: 'LOW',
+        status: 'SUCCESS'
+      });
+      setModalAction(null);
+      setActionReason('');
+    } catch (err) {
+      console.error('Failed to update avatar on backend:', err);
+      showToast(err.message || 'Failed to update profile picture', 'error', 'Update Failed');
+    } finally {
+      setIsSavingAvatar(false);
+    }
+  };
+
   useEffect(() => {
     if (user?.id) {
       getLogsForTarget(user.id).then((data) => {
@@ -135,28 +169,35 @@ export function UserDetailPage() {
 
   const handleDeletePost = async () => {
     if (!postToDelete) return;
+    setIsDeletingPost(true);
+    const finalReason = actionReason.trim() || 'Administrative content moderation';
     try {
-      await deleteUserPost(postToDelete.id, actionReason || 'Violation of content policy');
+      await deleteUserPost(postToDelete.id, finalReason);
       setUserPosts((prev) => prev.filter((p) => p.id !== postToDelete.id));
       showToast('Post deleted successfully.', 'success', 'Post Deleted');
+      
+      try {
+        await logEvent({
+          action: 'DELETE_USER_POST',
+          targetId: user.id,
+          targetType: 'POST',
+          operatorName: 'Super Admin',
+          reason: finalReason,
+          riskLevel: 'MEDIUM',
+          status: 'SUCCESS',
+        });
+        const freshLogs = await getLogsForTarget(user.id);
+        if (freshLogs) setHistory(freshLogs);
+      } catch (_) {}
+
+      setPostToDelete(null);
+      setActionReason('');
     } catch (err) {
+      console.error('Failed to delete post:', err);
       showToast(err.message || 'Failed to delete post', 'error', 'Deletion Failed');
+    } finally {
+      setIsDeletingPost(false);
     }
-
-    await logEvent({
-      action: 'DELETE_USER_POST',
-      targetId: user.id,
-      targetType: 'POST',
-      operatorName: 'Super Admin',
-      reason: actionReason || 'Moderation content removal',
-      riskLevel: 'MEDIUM',
-      status: 'SUCCESS',
-    });
-
-    setPostToDelete(null);
-    setActionReason('');
-    const freshLogs = await getLogsForTarget(user.id);
-    setHistory(freshLogs);
   };
 
   const handleApplyControl = async (newStatus, actionLabel, defaultReason = 'Platform security alignment and moderation compliance') => {
@@ -310,8 +351,8 @@ export function UserDetailPage() {
       key: 'status',
       header: 'Status',
       render: (row) => (
-        <Badge variant={row.status === 'active' ? 'success' : 'danger'}>
-          {row.status.toUpperCase()}
+        <Badge variant={(row?.status || 'active').toLowerCase() === 'active' ? 'success' : 'danger'}>
+          {String(row?.status || 'ACTIVE').toUpperCase()}
         </Badge>
       ),
     },
@@ -381,10 +422,35 @@ export function UserDetailPage() {
         <div className="flex flex-col md:flex-row items-center md:items-start justify-between gap-6">
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
             <div
-              className="h-20 w-20 rounded-2xl flex items-center justify-center text-white text-3xl font-bold flex-shrink-0 shadow-xl border border-white/10"
-              style={{ backgroundColor: bgColor }}
+              className="relative group cursor-pointer h-20 w-20 rounded-2xl overflow-hidden shadow-xl border border-white/20 ring-2 ring-indigo-500/20 shrink-0"
+              onClick={() => {
+                if (user.avatarUrl) {
+                  setIsViewerOpen(true);
+                } else {
+                  setNewAvatarInput('');
+                  setModalAction('update_avatar');
+                }
+              }}
+              title={user.avatarUrl ? 'Click to view full-size photo' : 'Click to add profile picture'}
             >
-              {user.displayName.charAt(0)}
+              {user.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt={user.displayName}
+                  className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
+                />
+              ) : (
+                <div
+                  className="h-full w-full flex items-center justify-center text-white text-3xl font-bold"
+                  style={{ backgroundColor: bgColor }}
+                >
+                  {user.displayName.charAt(0)}
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-opacity text-white text-[10px] font-medium p-1 text-center">
+                <Eye className="h-4 w-4 mb-0.5" />
+                <span>{user.avatarUrl ? 'View Photo' : 'Upload'}</span>
+              </div>
             </div>
 
             <div className="text-center sm:text-left">
@@ -416,6 +482,25 @@ export function UserDetailPage() {
 
           {/* Quick Account Controls */}
           <div className="flex flex-wrap gap-2 justify-center md:justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setNewAvatarInput(user.avatarUrl || '');
+                setModalAction('update_avatar');
+              }}
+            >
+              <Camera className="h-4 w-4 mr-1 text-indigo-400" /> Update Picture
+            </Button>
+            {user.avatarUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsViewerOpen(true)}
+              >
+                <Eye className="h-4 w-4 mr-1 text-emerald-400" /> View Picture
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -673,50 +758,105 @@ export function UserDetailPage() {
             </div>
           ) : (
             <div className="grid md:grid-cols-2 gap-4">
-              {userPosts.map((post) => (
-                <div key={post.id} className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col justify-between space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[11px] font-mono text-gold-400">{post.id}</span>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={post.visibility === 'public' ? 'success' : 'warning'}>
-                          {post.visibility.toUpperCase()}
-                        </Badge>
-                        <Badge variant={post.status === 'active' ? 'purple' : 'danger'}>
-                          {post.status.toUpperCase()}
-                        </Badge>
+              {userPosts.map((post) => {
+                const isVideo = Boolean(
+                  post.mediaUrl && (post.mediaUrl.match(/\.(mp4|webm|mov|m4v|ogg)(\?.*)?$/i) || post.mediaType === 'VIDEO')
+                );
+                return (
+                  <div key={post.id} className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col justify-between space-y-3 hover:border-slate-600 transition-all">
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] font-mono text-gold-400">Post #{post.id?.slice(0, 12) || post.id}</span>
+                        <div className="flex items-center gap-1.5">
+                          {isVideo && (
+                            <Badge variant="purple" className="flex items-center gap-1 text-[10px]">
+                              <Film className="h-3 w-3" /> Video
+                            </Badge>
+                          )}
+                          <Badge variant={(post?.visibility || 'public').toLowerCase() === 'public' ? 'success' : 'warning'}>
+                            {String(post?.visibility || 'PUBLIC').toUpperCase()}
+                          </Badge>
+                          <Badge variant={(post?.status || 'active').toLowerCase() === 'active' ? 'purple' : 'danger'}>
+                            {String(post?.status || 'ACTIVE').toUpperCase()}
+                          </Badge>
+                        </div>
                       </div>
-                    </div>
-                    <p className="text-xs text-slate-200 line-clamp-3 mb-2">{post.content}</p>
-                    {post.mediaUrl && (
-                      <div className="rounded-lg overflow-hidden border border-slate-700/50 max-h-40 mb-2">
-                        <img src={post.mediaUrl} alt="Post Media" className="w-full h-36 object-cover" />
-                      </div>
-                    )}
-                  </div>
 
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-700/40">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center gap-1"><Heart className="h-3 w-3 text-rose-400" /> {post.likesCount}</span>
-                        <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3 text-sky-400" /> {post.commentsCount}</span>
-                        <span className="flex items-center gap-1"><Share2 className="h-3 w-3 text-emerald-400" /> {post.sharesCount}</span>
-                      </div>
-                      <span>{new Date(post.createdAt).toLocaleDateString()}</span>
+                      {post.content && (
+                        <p className="text-xs text-slate-200 line-clamp-3 mb-2.5 bg-slate-900/40 p-2.5 rounded-lg border border-slate-800">
+                          {post.content}
+                        </p>
+                      )}
+
+                      {post.mediaUrl && (
+                        <div className="relative rounded-xl overflow-hidden bg-black/60 border border-slate-700/50 mb-2 group">
+                          {isVideo ? (
+                            <video
+                              src={post.mediaUrl}
+                              controls
+                              className="w-full max-h-48 object-cover bg-black"
+                              preload="metadata"
+                            />
+                          ) : (
+                            <div
+                              onClick={() =>
+                                setPreviewMedia({
+                                  url: post.mediaUrl,
+                                  title: `Post Attachment (${post.id})`,
+                                  subtitle: post.content || `@${user.username}`,
+                                  isVideo: false,
+                                })
+                              }
+                              className="cursor-pointer relative"
+                            >
+                              <img
+                                src={post.mediaUrl}
+                                alt="Post Media"
+                                className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-200"
+                                onError={(e) => {
+                                  e.target.src = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500&auto=format&fit=crop&q=60';
+                                }}
+                              />
+                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-medium gap-1">
+                                <Eye className="h-4 w-4" /> Click to enlarge
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="pt-2 flex justify-end">
-                      <Button
-                        variant="danger"
-                        size="xs"
-                        onClick={() => setPostToDelete(post)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete Post
-                      </Button>
+                    <div>
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2.5 border-t border-slate-700/40">
+                        <div className="flex items-center gap-3">
+                          <span className="flex items-center gap-1 font-mono text-rose-400"><Heart className="h-3 w-3" /> {post.likesCount}</span>
+                          <span className="flex items-center gap-1 font-mono text-sky-400"><MessageSquare className="h-3 w-3" /> {post.commentsCount}</span>
+                          <span className="flex items-center gap-1 font-mono text-emerald-400"><Share2 className="h-3 w-3" /> {post.sharesCount}</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono">{new Date(post.createdAt).toLocaleDateString()}</span>
+                      </div>
+
+                      <div className="pt-2.5 flex items-center justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => setInspectingPost(post)}
+                          className="text-indigo-400 hover:text-indigo-300"
+                        >
+                          <Eye className="h-3.5 w-3.5 mr-1" /> View Post
+                        </Button>
+                        <Button
+                          variant="danger"
+                          size="xs"
+                          onClick={() => setPostToDelete(post)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete Post
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>
@@ -812,22 +952,22 @@ export function UserDetailPage() {
 
             <Input
               id="deletePostReason"
-              label="Reason for Post Removal (Audit Log Required)"
-              placeholder="e.g. Inappropriate content or copyright policy violation"
+              label="Reason for Post Removal (Optional)"
+              placeholder="e.g. Inappropriate content or copyright policy violation (optional)"
               value={actionReason}
               onChange={(e) => setActionReason(e.target.value)}
-              required
             />
 
             <div className="flex justify-end gap-3 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setPostToDelete(null)}>
+              <Button variant="outline" size="sm" onClick={() => setPostToDelete(null)} disabled={isDeletingPost}>
                 Cancel
               </Button>
               <Button
                 variant="danger"
                 size="sm"
                 onClick={handleDeletePost}
-                disabled={!actionReason}
+                isLoading={isDeletingPost}
+                disabled={isDeletingPost}
               >
                 Delete Post & Record Audit Log
               </Button>
@@ -1028,6 +1168,207 @@ export function UserDetailPage() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* Update Avatar Modal */}
+      {modalAction === 'update_avatar' && (
+        <Modal
+          isOpen={true}
+          onClose={() => setModalAction(null)}
+          title={`Update Profile Picture — @${user.username}`}
+          size="sm"
+        >
+          <div className="space-y-4 text-xs text-slate-300">
+            <p>
+              Set a new avatar image URL for <strong className="text-white">{user.displayName}</strong>.
+            </p>
+
+            {newAvatarInput && (
+              <div className="flex justify-center my-2">
+                <img
+                  src={newAvatarInput}
+                  alt="Preview"
+                  className="h-20 w-20 rounded-full object-cover ring-2 ring-indigo-500 shadow-md"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                  }}
+                />
+              </div>
+            )}
+
+            <Input
+              label="Avatar Image URL"
+              placeholder="https://example.com/avatar.jpg"
+              value={newAvatarInput}
+              onChange={(e) => setNewAvatarInput(e.target.value)}
+              required
+            />
+
+            <Input
+              label="Audit Reason for Update"
+              placeholder="e.g. User requested photo change / offensive avatar moderation"
+              value={actionReason}
+              onChange={(e) => setActionReason(e.target.value)}
+            />
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" size="sm" onClick={() => setModalAction(null)} disabled={isSavingAvatar}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleAvatarChange} isLoading={isSavingAvatar}>
+                Save Avatar
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Profile Picture Full Image Viewer Modal */}
+      {isViewerOpen && user.avatarUrl && (
+        <ImageViewerModal
+          isOpen={isViewerOpen}
+          onClose={() => setIsViewerOpen(false)}
+          imageUrl={user.avatarUrl}
+          title={`@${user.username}'s Profile Picture`}
+          subtitle={user.displayName}
+        />
+      )}
+
+      {/* Post Detailed Inspection Modal */}
+      {inspectingPost && (
+        <Modal
+          isOpen={true}
+          onClose={() => setInspectingPost(null)}
+          title="User Post Details"
+          description={`Inspecting post #${inspectingPost.id} published by @${user.username}`}
+          size="lg"
+        >
+          <div className="space-y-4">
+            {/* Header info */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-800">
+              <div className="flex items-center gap-3">
+                <img
+                  src={user.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                  alt={user.username}
+                  className="h-10 w-10 rounded-full object-cover ring-1 ring-slate-700"
+                />
+                <div>
+                  <h4 className="text-sm font-bold text-white">{user.displayName || user.username}</h4>
+                  <p className="text-xs text-indigo-400 font-mono">@{user.username} • <span className="text-slate-400">{new Date(inspectingPost.createdAt).toLocaleString()}</span></p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Badge variant={(inspectingPost.visibility || 'public').toLowerCase() === 'public' ? 'success' : 'warning'}>
+                  {String(inspectingPost.visibility || 'PUBLIC').toUpperCase()}
+                </Badge>
+                <Badge variant={(inspectingPost.status || 'active').toLowerCase() === 'active' ? 'purple' : 'danger'}>
+                  {String(inspectingPost.status || 'ACTIVE').toUpperCase()}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Post Content */}
+            {inspectingPost.content && (
+              <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">
+                {inspectingPost.content}
+              </div>
+            )}
+
+            {/* Media Gallery / Player */}
+            {inspectingPost.mediaUrl && (
+              <div className="rounded-xl overflow-hidden bg-black/80 border border-slate-800 flex items-center justify-center p-2">
+                {Boolean(inspectingPost.mediaUrl.match(/\.(mp4|webm|mov|m4v|ogg)(\?.*)?$/i) || inspectingPost.mediaType === 'VIDEO') ? (
+                  <video
+                    src={inspectingPost.mediaUrl}
+                    controls
+                    autoPlay
+                    className="max-h-[50vh] max-w-full rounded-lg object-contain bg-black shadow-xl"
+                  />
+                ) : (
+                  <img
+                    src={inspectingPost.mediaUrl}
+                    alt="Post Media Full"
+                    className="max-h-[50vh] max-w-full rounded-lg object-contain cursor-pointer hover:opacity-95 transition-opacity"
+                    onClick={() =>
+                      setPreviewMedia({
+                        url: inspectingPost.mediaUrl,
+                        title: `Post #${inspectingPost.id}`,
+                        subtitle: inspectingPost.content || `@${user.username}`,
+                        isVideo: false,
+                      })
+                    }
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Engagement Stats */}
+            <div className="grid grid-cols-3 gap-3 p-3 rounded-xl bg-slate-900/50 border border-slate-800 text-center text-xs">
+              <div className="flex flex-col items-center">
+                <span className="text-slate-400 flex items-center gap-1"><Heart className="h-3.5 w-3.5 text-rose-400" /> Likes</span>
+                <span className="font-bold text-white text-sm mt-0.5">{inspectingPost.likesCount || 0}</span>
+              </div>
+              <div className="flex flex-col items-center border-x border-slate-800">
+                <span className="text-slate-400 flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5 text-sky-400" /> Comments</span>
+                <span className="font-bold text-white text-sm mt-0.5">{inspectingPost.commentsCount || 0}</span>
+              </div>
+              <div className="flex flex-col items-center">
+                <span className="text-slate-400 flex items-center gap-1"><Share2 className="h-3.5 w-3.5 text-emerald-400" /> Shares</span>
+                <span className="font-bold text-white text-sm mt-0.5">{inspectingPost.sharesCount || 0}</span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              {inspectingPost.mediaUrl ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => window.open(inspectingPost.mediaUrl, '_blank')}
+                  className="text-xs text-indigo-400 hover:text-indigo-300"
+                >
+                  <ExternalLink className="h-4 w-4 mr-1" /> Open Media in New Tab
+                </Button>
+              ) : <div />}
+
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="danger"
+                  size="sm"
+                  onClick={() => {
+                    const toDel = inspectingPost;
+                    setInspectingPost(null);
+                    setPostToDelete(toDel);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete Post
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setInspectingPost(null)}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* General Media Lightbox Preview */}
+      {previewMedia && (
+        <ImageViewerModal
+          isOpen={true}
+          onClose={() => setPreviewMedia(null)}
+          imageUrl={previewMedia.url}
+          title={previewMedia.title || 'Media Preview'}
+          subtitle={previewMedia.subtitle || ''}
+          isVideo={previewMedia.isVideo}
+        />
       )}
     </div>
   );

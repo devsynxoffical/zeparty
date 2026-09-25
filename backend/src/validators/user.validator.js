@@ -64,6 +64,7 @@ export const updateAdminUserByAdminSchema = z.object({
   countryCode: z.string().trim().length(2).optional(),
   status: z.enum(['ACTIVE', 'SUSPENDED', 'BANNED']).optional(),
   userType: z.enum(['USER', 'HOST', 'AGENCY_OWNER', 'BD_AGENT', 'COIN_SELLER', 'MERCHANT']).optional(),
+  avatarUrl: z.string().max(1000).optional().or(z.literal('')),
   bio: z.string().trim().max(500).optional(),
   gender: z.string().max(20).optional(),
   dob: z.string().optional(),

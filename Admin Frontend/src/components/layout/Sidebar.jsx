@@ -162,6 +162,7 @@ const NAV_GROUPS = [
     icon: ImageIcon,
     children: [
       { id: 'banners', label: 'Banners & Home', path: '/admin/banners' },
+      { id: 'posts', label: 'Posts & Dynamics', path: '/admin/posts' },
       { id: 'announcements', label: 'Announcements', path: '/admin/announcements' },
       { id: 'room-theme-approval', label: 'Room Theme Approval', path: '/admin/room-theme-approval' },
       { id: 'notifications', label: 'Notifications', path: '/admin/notifications' },

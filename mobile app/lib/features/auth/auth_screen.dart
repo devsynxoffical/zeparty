@@ -140,10 +140,29 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     FocusScope.of(context).unfocus();
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final success = await authProvider.loginWithGoogle();
-    if (success && mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
-        (route) => false,
+    if (!mounted) return;
+    if (success) {
+      if (authProvider.isNewUser) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const ProfileSetupScreen()),
+          (route) => false,
+        );
+      } else {
+        Navigator.of(context).pushAndRemoveUntil(
+          PageRouteBuilder(
+            transitionDuration: const Duration(milliseconds: 400),
+            pageBuilder: (context, anim1, anim2) => const MainLayout(),
+            transitionsBuilder: (context, anim, secondaryAnim, child) => FadeTransition(opacity: anim, child: child),
+          ),
+          (route) => false,
+        );
+      }
+    } else if (authProvider.errorMessage != null && authProvider.errorMessage!.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authProvider.errorMessage!),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     }
   }

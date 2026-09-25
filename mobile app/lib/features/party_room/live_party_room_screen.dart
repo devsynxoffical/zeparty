@@ -129,13 +129,13 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       builder: (d) => AlertDialog(
         backgroundColor: const Color(0xFF1E1B2E),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          isHost ? 'End Party Room?' : 'Leave Party?',
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        title: const Text(
+          'Leave Party Room?',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         content: Text(
           isHost
-              ? 'Are you sure you want to end this live party room? All participants will be disconnected and the live stream will close.'
+              ? 'You are about to leave this party room. The room will stay active so other speakers and listeners can continue chatting.'
               : 'Are you sure you want to leave this party room?',
           style: const TextStyle(color: Colors.white70),
         ),
@@ -144,24 +144,32 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             onPressed: () => Navigator.pop(d),
             child: const Text('Stay', style: TextStyle(color: Colors.white60)),
           ),
+          if (isHost)
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(d);
+                await provider.closeRoom();
+                if (mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('End Room for All', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+            ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.redAccent,
+              backgroundColor: const Color(0xFFB524E4),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () async {
               Navigator.pop(d);
-              if (isHost) {
-                await provider.closeRoom();
-              } else {
-                await provider.leaveParty();
-              }
+              // Leave without closing room so other users can stay inside
+              await provider.leaveParty();
               if (mounted) {
                 Navigator.pop(context);
               }
             },
-            child: Text(isHost ? 'End Live' : 'Leave'),
+            child: const Text('Leave Room'),
           ),
         ],
       ),
@@ -247,8 +255,15 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     final canManage = isHost || provider.participants.any(
         (p) => p.user.id == currentUser.id && p.role == ParticipantRole.moderator);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF0D0B18),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _leaveRoom();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF0D0B18),
       body: Stack(
         children: [
           // TikTok Live Gifting Overlay
@@ -374,6 +389,9 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 // Top Header
                 _buildHeader(context, isHost, canManage, provider),
 
+                // Audience & Participants Avatar Bar (Shows active listeners & users in real-time)
+                _buildAudienceRow(provider, canManage, isDark),
+
                 // PK Battle Banner (If Active)
                 if (provider.isPkActive) _buildPkBanner(provider),
 
@@ -486,16 +504,17 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           ),
 
           // TikTok User Join Entrance Banner
-          TikTokUserJoinBanner(roomId: widget.room.id, bottomOffset: 240),
+          TikTokUserJoinBanner(roomId: provider.activeRoom?.id ?? widget.room.id, bottomOffset: 240),
 
           // Realtime Animated Emoji Reaction Overlay Layer (Top of Stack)
-          EmojiReactionOverlay(roomId: widget.room.id),
+          EmojiReactionOverlay(roomId: provider.activeRoom?.id ?? widget.room.id),
 
           // Onscreen 3D Gift Animation Overlay
           GiftAnimationOverlay(key: _giftOverlayKey),
         ],
       ),
-    );
+    ),
+  );
   }
 
   Widget _buildHeader(
@@ -654,6 +673,110 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAudienceRow(LivePartyProvider provider, bool canManage, bool isDark) {
+    final audience = provider.participants;
+    if (audience.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      height: 38,
+      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.people_alt_rounded, color: Colors.cyanAccent, size: 13),
+                const SizedBox(width: 4),
+                Text(
+                  '${audience.length}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: audience.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 6),
+              itemBuilder: (ctx, i) {
+                final p = audience[i];
+                final onSeat = p.seatNumber != null;
+                return GestureDetector(
+                  onTap: () {
+                    InRoomProfileCardSheet.show(
+                      context,
+                      participant: p,
+                      canManage: canManage,
+                      isDark: isDark,
+                    );
+                  },
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: onSeat ? Colors.amberAccent : Colors.purpleAccent.withValues(alpha: 0.7),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: ClipOval(
+                          child: (p.user.avatarUrl.isNotEmpty)
+                              ? Image.network(
+                                  p.user.avatarUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => _buildDefaultAvatar(p.user.name),
+                                )
+                              : _buildDefaultAvatar(p.user.name),
+                        ),
+                      ),
+                      if (onSeat)
+                        Positioned(
+                          bottom: -2,
+                          right: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFB524E4),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.mic, color: Colors.white, size: 8),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultAvatar(String name) {
+    return Container(
+      color: const Color(0xFF6C5CE7),
+      alignment: Alignment.center,
+      child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : 'U',
+        style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
       ),
     );
   }

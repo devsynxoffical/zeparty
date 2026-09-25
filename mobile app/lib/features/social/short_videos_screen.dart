@@ -124,14 +124,9 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
     }).toList();
 
     final allVideos = [...userVideoPosts, ...BackendRepository.instance.shortVideos];
-    final primary = AppColors.getPrimary(isDark);
-
-    // Filter videos based on tab selection
-    final videos = _selectedTabIndex == 0
-        ? allVideos.where((v) => v.isLiked || v.creator.isVip).toList()
-        : allVideos;
-
-    final activeVideosList = videos.isEmpty ? allVideos : videos;
+    // Sort trending by viral engagement (likes + comments)
+    allVideos.sort((a, b) => (b.likes + b.comments).compareTo(a.likes + a.comments));
+    final activeVideosList = allVideos;
 
     return Scaffold(
       backgroundColor: AppColors.black,
@@ -159,7 +154,7 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
           // Double Tap Floating Hearts Layer
           ..._floatingHearts,
 
-          // TOP BAR: TIKTOK STYLE TABS (Following | For You) Centered Header
+          // TOP BAR: Trending Header
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
             left: 0,
@@ -167,64 +162,25 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                GestureDetector(
-                  onTap: () {
-                    setState(() => _selectedTabIndex = 0);
-                    if (_pageController.hasClients) {
-                      _pageController.jumpToPage(0);
-                    }
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Following',
-                        style: TextStyle(
-                          color: _selectedTabIndex == 0 ? Colors.white : Colors.white60,
-                          fontSize: 16,
-                          fontWeight: _selectedTabIndex == 0 ? FontWeight.bold : FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: 28,
-                        height: 2.5,
-                        decoration: BoxDecoration(
-                          color: _selectedTabIndex == 0 ? primary : Colors.transparent,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ],
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                   ),
-                ),
-                const SizedBox(width: 24),
-                GestureDetector(
-                  onTap: () {
-                    setState(() => _selectedTabIndex = 1);
-                    if (_pageController.hasClients) {
-                      _pageController.jumpToPage(0);
-                    }
-                  },
-                  child: Column(
+                  child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      Text('🔥', style: TextStyle(fontSize: 14)),
+                      SizedBox(width: 6),
                       Text(
-                        'For You',
+                        'Trending Shorts',
                         style: TextStyle(
-                          color: _selectedTabIndex == 1 ? Colors.white : Colors.white60,
-                          fontSize: 16,
-                          fontWeight: _selectedTabIndex == 1 ? FontWeight.bold : FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: 28,
-                        height: 2.5,
-                        decoration: BoxDecoration(
-                          color: _selectedTabIndex == 1 ? primary : Colors.transparent,
-                          borderRadius: BorderRadius.circular(2),
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 0.3,
                         ),
                       ),
                     ],
