@@ -277,8 +277,8 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
                 },
               ),
 
-              // 3. Mute / Unmute the Mic (Only Host/Admin or Self Occupant)
-              if (canManageSeats || (isOccupied && occupant.user.id == authUser.id))
+              // 3. Mute / Unmute the Mic (Only for occupied seat when authorized)
+              if (isOccupied && (canManageSeats || occupant.user.id == authUser.id))
                 _buildActionTile(
                   context,
                   icon: isMuted ? Icons.mic_rounded : Icons.mic_off_rounded,

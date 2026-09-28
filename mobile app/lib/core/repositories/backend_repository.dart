@@ -118,9 +118,14 @@ class BackendRepository extends ChangeNotifier {
     }
   }
 
+  LiveRoomModel? getExistingRoomForHost(String hostId) {
+    return _liveRooms.where((r) => r.host.id == hostId).firstOrNull;
+  }
+
   // Dynamic Room Management
   void addLiveRoom(LiveRoomModel room) {
-    _liveRooms.removeWhere((r) => r.id == room.id);
+    // Enforce 1 active room per owner: remove existing room for host
+    _liveRooms.removeWhere((r) => r.id == room.id || r.host.id == room.host.id);
     _liveRooms.insert(0, room);
     notifyListeners();
   }

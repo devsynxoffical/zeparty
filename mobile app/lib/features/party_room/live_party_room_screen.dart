@@ -3,6 +3,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:file_picker/file_picker.dart';
+import '../../core/services/media_upload_service.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../models/live_room_model.dart';
@@ -848,30 +850,13 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       lockedSeats: provider.lockedSeatIndices,
       micSizePreset: gameProvider.roomMicSizePreset,
       onSeatTap: (index) {
-        if (canManage) {
-          MicSeatManagementSheet.show(
-            context,
-            micIndex: index,
-            occupant: null,
-            isLocked: provider.isSeatLocked(index),
-            isMuted: false,
-          );
-          return;
-        }
-
-        if (provider.isSeatLocked(index)) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Seat is locked by Host 🔒')),
-          );
-          return;
-        }
-        provider.takeSeat(currentUser, index);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Joined Seat ${index + 1} 🎙️'),
-            duration: const Duration(seconds: 1),
-            behavior: SnackBarBehavior.floating,
-          ),
+        final occupant = provider.participants.where((p) => p.seatNumber == index).firstOrNull;
+        MicSeatManagementSheet.show(
+          context,
+          micIndex: index,
+          occupant: occupant,
+          isLocked: provider.isSeatLocked(index),
+          isMuted: provider.isSeatMuted(index),
         );
       },
       onParticipantTap: (participant) {
@@ -2409,113 +2394,156 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
   void _showImportMusicDialog(BuildContext context, StateSetter setParentState) {
     final titleController = TextEditingController();
-    final localFiles = [
-      {'name': 'Club_Banger_2026.mp3', 'genre': 'Phone Storage / Music', 'duration': '3:45'},
-      {'name': 'Acoustic_Guitar_Vibe.wav', 'genre': 'Downloads / Audio', 'duration': '2:30'},
-      {'name': 'Podcast_Intro_Session.m4a', 'genre': 'Device Recordings', 'duration': '1:50'},
-      {'name': 'Deep_Bass_Drop.flac', 'genre': 'Storage / ZeParty', 'duration': '4:10'},
-    ];
+    bool isUploading = false;
 
     showDialog(
       context: context,
-      builder: (dCtx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1B2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: const [
-            Icon(Icons.sd_storage_rounded, color: Colors.pinkAccent, size: 22),
-            SizedBox(width: 8),
-            Text('Host Audio Storage', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Select audio file from phone storage:', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                const SizedBox(height: 10),
-                ...localFiles.map((file) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                    tileColor: Colors.white.withValues(alpha: 0.05),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    leading: const Icon(Icons.audio_file_rounded, color: Colors.pinkAccent),
-                    title: Text(file['name']!, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                    subtitle: Text('${file['genre']} • ${file['duration']}', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 10)),
-                    trailing: const Icon(Icons.add_circle_outline_rounded, color: Colors.greenAccent, size: 20),
-                    onTap: () {
-                      setState(() {
-                        _musicPlaylist.add({
-                          'title': file['name']!.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), ''),
-                          'genre': 'Device Storage',
-                          'duration': file['duration']!,
-                        });
-                        _currentTrackIndex = _musicPlaylist.length - 1;
-                        _isPlayingMusic = true;
-                      });
-                      setParentState(() {});
-                      Navigator.pop(dCtx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('🎵 Playing Imported Track: ${file['name']}'),
-                          backgroundColor: Colors.pinkAccent,
-                        ),
-                      );
-                    },
+      builder: (dCtx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: const Color(0xFF1E1B2E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: const [
+              Icon(Icons.sd_storage_rounded, color: Colors.pinkAccent, size: 22),
+              SizedBox(width: 8),
+              Text('Host Audio Storage', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Select audio file from phone storage:', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  const SizedBox(height: 12),
+                  
+                  // Real System Audio File Picker Button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.pinkAccent,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: isUploading
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.folder_open_rounded, size: 20),
+                      label: Text(
+                        isUploading ? 'Uploading Audio Track...' : 'Browse Phone Audio (MP3, M4A, WAV)',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      onPressed: isUploading
+                          ? null
+                          : () async {
+                              try {
+                                setDialogState(() => isUploading = true);
+                                final result = await FilePicker.platform.pickFiles(
+                                  type: FileType.custom,
+                                  allowedExtensions: ['mp3', 'm4a', 'wav', 'flac'],
+                                );
+
+                                if (result != null && result.files.single.path != null) {
+                                  final pickedFile = result.files.single;
+                                  final filePath = pickedFile.path!;
+                                  final fileName = pickedFile.name;
+                                  final cleanTitle = fileName.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '');
+
+                                  // Upload file via MediaUploadService
+                                  final uploadRes = await MediaUploadService.instance.uploadFile(
+                                    filePath: filePath,
+                                    folder: 'room_music',
+                                  );
+
+                                  if (mounted) {
+                                    setState(() {
+                                      _musicPlaylist.add({
+                                        'title': cleanTitle,
+                                        'genre': 'Device Music',
+                                        'duration': '3:45',
+                                        'url': uploadRes.url.isNotEmpty ? uploadRes.url : filePath,
+                                      });
+                                      _currentTrackIndex = _musicPlaylist.length - 1;
+                                      _isPlayingMusic = true;
+                                    });
+                                    setParentState(() {});
+                                    Navigator.pop(dCtx);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('🎵 Playing Imported Audio: $cleanTitle'),
+                                        backgroundColor: Colors.pinkAccent,
+                                      ),
+                                    );
+                                  }
+                                } else {
+                                  setDialogState(() => isUploading = false);
+                                }
+                              } catch (e) {
+                                setDialogState(() => isUploading = false);
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('❌ Failed to import audio: $e'), backgroundColor: Colors.redAccent),
+                                  );
+                                }
+                              }
+                            },
+                    ),
                   ),
-                )),
-                const SizedBox(height: 12),
-                const Text('Or Enter Custom Track Title:', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: titleController,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: 'e.g. My Favorite Song',
-                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                    filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.06),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  const SizedBox(height: 16),
+                  const Divider(color: Colors.white24),
+                  const SizedBox(height: 10),
+
+                  const Text('Or Enter Custom Track Title:', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: titleController,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'e.g. My Favorite Banger',
+                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                      filled: true,
+                      fillColor: Colors.white.withValues(alpha: 0.06),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dCtx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent),
-            onPressed: () {
-              final title = titleController.text.trim();
-              if (title.isNotEmpty) {
-                setState(() {
-                  _musicPlaylist.add({
-                    'title': title,
-                    'genre': 'Local Audio',
-                    'duration': '3:30',
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dCtx),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.purpleAccent),
+              onPressed: () {
+                final title = titleController.text.trim();
+                if (title.isNotEmpty) {
+                  setState(() {
+                    _musicPlaylist.add({
+                      'title': title,
+                      'genre': 'Custom Track',
+                      'duration': '3:30',
+                    });
+                    _currentTrackIndex = _musicPlaylist.length - 1;
+                    _isPlayingMusic = true;
                   });
-                  _currentTrackIndex = _musicPlaylist.length - 1;
-                  _isPlayingMusic = true;
-                });
-                setParentState(() {});
-                Navigator.pop(dCtx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('🎵 Playing "$title" for the room!')),
-                );
-              }
-            },
-            child: const Text('Add & Play', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
+                  setParentState(() {});
+                  Navigator.pop(dCtx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('🎵 Added "$title" to playlist!')),
+                  );
+                }
+              },
+              child: const Text('Add & Play', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -445,6 +445,7 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                           try {
                             await _cameraController!.dispose();
                             _cameraController = null;
+                            await Future.delayed(const Duration(milliseconds: 350));
                           } catch (_) {}
                         }
 

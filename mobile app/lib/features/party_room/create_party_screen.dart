@@ -44,6 +44,27 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
 
     LiveRoomModel roomToJoin;
 
+    // Check if owner already has an active room to prevent duplicates (Idempotent room creation)
+    final existingRoom = BackendRepository.instance.getExistingRoomForHost(currentUser.id);
+    if (existingRoom != null) {
+      final updatedRoom = existingRoom.copyWith(
+        title: title,
+        coverUrl: coverUrl,
+        category: _selectedCategory,
+        isPrivate: _privacy != 'Public',
+        roomType: 'AUDIO_PARTY',
+      );
+      BackendRepository.instance.addLiveRoom(updatedRoom);
+      if (mounted) {
+        setState(() => _isCreating = false);
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: updatedRoom)),
+        );
+      }
+      return;
+    }
+
     try {
       roomToJoin = await RoomRepository.instance.createRoom(
         title: title,
@@ -55,7 +76,7 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
     } catch (e) {
       debugPrint('[CreateParty] Backend createRoom error: $e, using local fallback');
       roomToJoin = LiveRoomModel(
-        id: 'party_${DateTime.now().millisecondsSinceEpoch}',
+        id: 'party_${currentUser.id}',
         title: title,
         host: currentUser,
         coverUrl: coverUrl,
@@ -177,9 +198,10 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
             // Room Type
             DropdownButtonFormField<String>(
               initialValue: _roomType,
-              items: ['Voice Room', 'Video Room']
-                  .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                  .toList(),
+              items: const [
+                DropdownMenuItem(value: 'AUDIO_PARTY', child: Text('Voice Room (Party)')),
+                DropdownMenuItem(value: 'LIVE_VIDEO', child: Text('Video Room (Live)')),
+              ],
               onChanged: (val) => setState(() => _roomType = val!),
               decoration: InputDecoration(
                 labelText: 'Room Type',

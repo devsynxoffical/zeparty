@@ -310,7 +310,28 @@ export async function syncUserFromApp({
   const targetId = uid || id;
   const cleanEmail = email ? email.trim().toLowerCase() : null;
   const cleanPhone = phone ? phone.trim() : null;
-  const cleanName = displayName || name || 'ZeParty Member';
+
+  // Sanitize display name to filter out raw technical IDs/UIDs and clamp to 25 chars max
+  const isTechIdStr = (str) => {
+    if (!str || typeof str !== 'string') return true;
+    const t = str.trim();
+    return t.length >= 20 || /^[a-zA-Z0-9_-]{20,}$/.test(t) || t.startsWith('user_') || t.startsWith('google_');
+  };
+
+  let cleanName = null;
+  const rawInputName = displayName || name;
+  if (rawInputName && !isTechIdStr(rawInputName)) {
+    cleanName = rawInputName.trim().slice(0, 25).trim();
+  }
+  if (!cleanName && cleanEmail) {
+    const handle = cleanEmail.split('@')[0].trim();
+    if (handle) {
+      cleanName = (handle.charAt(0).toUpperCase() + handle.slice(1)).slice(0, 25).trim();
+    }
+  }
+  if (!cleanName) {
+    cleanName = 'ZeParty Member';
+  }
 
   let existingUser = null;
   // 1. Look up strictly by verified unique email
@@ -332,7 +353,7 @@ export async function syncUserFromApp({
   if (!user) {
     // Generate guaranteed unique username without colliding with existing users
     let finalUsername = username ? username.trim().toLowerCase().replaceAll(/[^a-z0-9_]/g, '') : null;
-    if (!finalUsername || finalUsername.length < 3) {
+    if (!finalUsername || finalUsername.length < 3 || isTechIdStr(finalUsername)) {
       if (cleanEmail) {
         finalUsername = cleanEmail.split('@')[0].toLowerCase().replaceAll(/[^a-z0-9_]/g, '');
       }
@@ -363,7 +384,7 @@ export async function syncUserFromApp({
     });
     isNewUser = true;
   } else {
-    // Existing user: ensure email/phone are recorded if empty, but NEVER overwrite existing profile data
+    // Existing user: ensure email/phone are recorded if empty, and repair technical ID display names
     try {
       if (cleanEmail && !user.email) {
         await prisma.user.update({
@@ -375,6 +396,13 @@ export async function syncUserFromApp({
         await prisma.user.update({
           where: { id: user.id },
           data: { phone: cleanPhone },
+        });
+      }
+      // If user profile has an empty or technical ID display name (like raw Firebase UID), update it
+      if (user.profile && isTechIdStr(user.profile.displayName) && !isTechIdStr(cleanName)) {
+        await prisma.userProfile.update({
+          where: { userId: user.id },
+          data: { displayName: cleanName },
         });
       }
     } catch (_) {}

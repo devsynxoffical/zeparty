@@ -73,7 +73,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       await context.read<SocialProvider>().createPost(
             content: finalContent,
             mediaUrls: mediaUrls.isEmpty ? null : mediaUrls,
-            visibility: widget.isStory ? 'STORY' : 'PUBLIC',
+            visibility: 'PUBLIC',
           );
 
       if (!mounted) return;

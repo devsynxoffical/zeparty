@@ -144,14 +144,20 @@ class PostCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        displayAuthorName,
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        AppFormatters.formatTimeAgo(post.createdAt),
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          displayAuthorName,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 8),
+                        OnlineStatusBadge(isOnline: post.author.isOnline),
+                      ],
+                    ),
+                    Text(
+                      AppFormatters.formatTimeAgo(post.createdAt),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                     ],
                   ),
                 ),

@@ -16,6 +16,7 @@ import 'create_post_screen.dart';
 import 'short_videos_screen.dart';
 import 'camera_recorder_screen.dart';
 import '../../core/services/room_share_service.dart';
+import '../../providers/messaging_provider.dart';
 
 class SocialFeedScreen extends StatefulWidget {
   final bool isScreenActive;
@@ -1019,8 +1020,23 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog>
                           child: TextField(
                             controller: _replyController,
                             style: const TextStyle(color: Colors.white, fontSize: 13),
+                            onSubmitted: (val) {
+                              if (val.trim().isNotEmpty) {
+                                final text = val.trim();
+                                _replyController.clear();
+                                final currentUserId = context.read<AuthProvider>().currentUser.id;
+                                context.read<MessagingProvider>().sendMessage(
+                                  currentStory.author.id,
+                                  '📸 Replied to story (${currentStory.id}): "$text"',
+                                  currentUserId: currentUserId,
+                                );
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('✉️ Reply sent to $authorName!'), backgroundColor: Colors.green),
+                                );
+                              }
+                            },
                             decoration: InputDecoration(
-                              hintText: 'Send message to $authorName...',
+                              hintText: 'Reply to $authorName...',
                               hintStyle: const TextStyle(color: Colors.white60, fontSize: 12),
                               filled: true,
                               fillColor: Colors.white.withValues(alpha: 0.2),
@@ -1032,9 +1048,33 @@ class _FullStoryViewerDialogState extends State<_FullStoryViewerDialog>
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         IconButton(
-                          icon: const Icon(Icons.favorite_rounded, color: Colors.redAccent, size: 28),
+                          icon: const Icon(Icons.send_rounded, color: Colors.amber, size: 24),
+                          tooltip: 'Send Reply',
+                          onPressed: () {
+                            final text = _replyController.text.trim();
+                            if (text.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Please write a message to send.'), backgroundColor: Colors.orange),
+                              );
+                              return;
+                            }
+                            _replyController.clear();
+                            final currentUserId = context.read<AuthProvider>().currentUser.id;
+                            context.read<MessagingProvider>().sendMessage(
+                              currentStory.author.id,
+                              '📸 Replied to story (${currentStory.id}): "$text"',
+                              currentUserId: currentUserId,
+                            );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('✉️ Reply sent to $authorName!'), backgroundColor: Colors.green),
+                            );
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.favorite_rounded, color: Colors.redAccent, size: 24),
+                          tooltip: 'Like Story',
                           onPressed: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(content: Text('Liked story! ❤️'), duration: Duration(seconds: 1)),

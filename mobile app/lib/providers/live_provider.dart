@@ -174,28 +174,42 @@ class LiveProvider extends ChangeNotifier {
       // 2. REST Join
       await _roomRepository.joinRoom(room.id);
 
-      // 3. Acquire short-lived Agora RTC token
-      final agoraData = await _roomRepository.getAgoraToken(room.id);
-      if (agoraData['token'] != null) {
-        final token = agoraData['token'] as String;
-        final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
-        final uid = agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
-        final appId = agoraData['appId'] as String?;
-
-        final isVideo = (room.roomType == 'LIVE_VIDEO' || room.roomType == 'VIDEO_PARTY' || !room.roomType.contains('AUDIO'));
-
-        await _agoraService.initialize(appId: appId, enableVideo: isVideo);
-        await _agoraService.joinChannel(
-          token,
-          channelName,
-          uid,
-          isHost: isHost,
-          isVideo: isVideo,
-        );
-
-        if (_isRoomMuted && isHost) {
-          await _agoraService.muteLocalAudio(true);
+      // 3. Acquire short-lived Agora RTC token & initialize video camera
+      final isVideo = (room.roomType == 'LIVE_VIDEO' || room.roomType == 'VIDEO_PARTY' || !room.roomType.contains('AUDIO'));
+      try {
+        await _agoraService.initialize(enableVideo: isVideo);
+        if (isHost && isVideo) {
+          await _agoraService.startPreview();
         }
+
+        final agoraData = await _roomRepository.getAgoraToken(room.id);
+        if (agoraData['token'] != null && (agoraData['token'] as String).isNotEmpty) {
+          final token = agoraData['token'] as String;
+          final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
+          final uid = agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
+          final appId = agoraData['appId'] as String?;
+
+          await _agoraService.initialize(appId: appId, enableVideo: isVideo);
+          await _agoraService.joinChannel(
+            token,
+            channelName,
+            uid,
+            isHost: isHost,
+            isVideo: isVideo,
+          );
+        }
+      } catch (e) {
+        debugPrint('[LiveProvider] Agora initialize / joinChannel error: $e');
+        if (isVideo) {
+          try {
+            await _agoraService.initialize(enableVideo: true);
+            if (isHost) await _agoraService.startPreview();
+          } catch (_) {}
+        }
+      }
+
+      if (_isRoomMuted && isHost) {
+        await _agoraService.muteLocalAudio(true);
       }
     } catch (e) {
       debugPrint('[LiveProvider] joinRoom error: $e');

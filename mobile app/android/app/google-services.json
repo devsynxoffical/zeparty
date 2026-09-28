@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "13274132785-gi696sfte0t2jt5c54654cc5jopu87m5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.live_stream_app",
+            "certificate_hash": "592960e6ae6154a80f0aa4742e63ce6554fe9ac1"
+          }
+        },
+        {
           "client_id": "13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -71,6 +79,14 @@
           "android_info": {
             "package_name": "com.zeparty.app",
             "certificate_hash": "7a1c73afdef8ef4c8edf17a628ec3f55f1381c95"
+          }
+        },
+        {
+          "client_id": "13274132785-gi696sfte0t2jt5c54654cc5jopu87m5.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.zeparty.app",
+            "certificate_hash": "592960e6ae6154a80f0aa4742e63ce6554fe9ac1"
           }
         },
         {

@@ -125,8 +125,10 @@ class AgoraRtcService {
 
   Future<void> startPreview() async {
     try {
-      if (_engine != null && _isVideoEnabled) {
+      if (_engine != null) {
+        await _engine!.enableVideo();
         await _engine!.startPreview();
+        _isVideoEnabled = true;
       }
     } catch (e) {
       debugPrint('[AgoraRtcService] startPreview error: $e');

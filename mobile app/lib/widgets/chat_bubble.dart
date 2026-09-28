@@ -48,16 +48,34 @@ class _ChatBubbleState extends State<ChatBubble> {
         final mediaUrl = widget.message.mediaUrl;
         if (mediaUrl != null && mediaUrl.isNotEmpty) {
           _audioController?.dispose();
-          if (mediaUrl.startsWith('http')) {
+          if (mediaUrl.startsWith('http') || mediaUrl.startsWith('https')) {
             _audioController = VideoPlayerController.networkUrl(Uri.parse(mediaUrl));
           } else {
             _audioController = VideoPlayerController.file(File(mediaUrl));
           }
           await _audioController?.initialize();
+          await _audioController?.setVolume(1.0);
           await _audioController?.play();
+        } else {
+          throw Exception('Media URL is empty');
         }
       } catch (e) {
         debugPrint('Voice note playback error: $e');
+        _playbackTimer?.cancel();
+        if (mounted) {
+          setState(() {
+            _isPlayingVoice = false;
+            _playbackProgress = 0.0;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('⚠️ Cannot play voice note: $e'),
+              backgroundColor: Colors.redAccent,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          return;
+        }
       }
 
       _playbackTimer = Timer.periodic(const Duration(milliseconds: 150), (timer) {

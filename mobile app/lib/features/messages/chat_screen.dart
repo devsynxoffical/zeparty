@@ -15,6 +15,7 @@ import '../../widgets/chat_bubble.dart';
 import '../../widgets/gift_dialog.dart';
 import '../../widgets/gift_animation_overlay.dart';
 import '../../widgets/report_sheet.dart';
+import '../../core/services/media_upload_service.dart';
 import '../profile/user_profile_details_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -205,13 +206,28 @@ class _ChatScreenState extends State<ChatScreen> {
     
     if (path != null && mounted) {
       final currentUser = context.read<AuthProvider>().currentUser;
-      context.read<MessagingProvider>().sendMessage(
-        widget.user.id,
-        '🎤 Voice Note ($durationText)',
-        type: 'voice',
-        mediaUrl: path,
-        currentUserId: currentUser.id,
-      );
+      try {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Uploading voice note...'), duration: Duration(seconds: 1)),
+        );
+        final result = await MediaUploadService.instance.uploadFile(
+          filePath: path,
+          folder: 'voice_notes',
+        );
+        if (!mounted) return;
+        context.read<MessagingProvider>().sendMessage(
+          widget.user.id,
+          '🎤 Voice Note ($durationText)',
+          type: 'voice',
+          mediaUrl: result.url.isNotEmpty ? result.url : path,
+          currentUserId: currentUser.id,
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('❌ Voice note upload failed: $e'), backgroundColor: Colors.redAccent),
+        );
+      }
     }
   }
 
@@ -568,15 +584,30 @@ class _ChatScreenState extends State<ChatScreen> {
                                 _scrollToBottom();
                               }
                               if (_selectedImage != null) {
-                                messaging.sendMessage(
-                                  widget.user.id,
-                                  '📷 Photo',
-                                  type: 'image',
-                                  mediaUrl: _selectedImage!.path,
-                                  currentUserId: currentUser.id,
-                                );
+                                final localFile = _selectedImage!;
                                 setState(() => _selectedImage = null);
-                                _scrollToBottom();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Uploading photo...'), duration: Duration(seconds: 1)),
+                                );
+                                MediaUploadService.instance.uploadFile(
+                                  filePath: localFile.path,
+                                  folder: 'chat_images',
+                                ).then((result) {
+                                  if (!mounted) return;
+                                  messaging.sendMessage(
+                                    widget.user.id,
+                                    '📷 Photo',
+                                    type: 'image',
+                                    mediaUrl: result.url.isNotEmpty ? result.url : localFile.path,
+                                    currentUserId: currentUser.id,
+                                  );
+                                  _scrollToBottom();
+                                }).catchError((err) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('❌ Photo upload failed: $err'), backgroundColor: Colors.redAccent),
+                                  );
+                                });
                               }
                             } else {
                               _toggleRecordingState();

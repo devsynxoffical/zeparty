@@ -753,49 +753,66 @@ class LivePartyProvider extends ChangeNotifier {
     }
     if (_activeRoom == null) return 'No active room.';
 
+    // Check if target seat is already occupied by someone else
+    final occupant = _participants.where((p) => p.seatNumber == seatIndex).firstOrNull;
+    if (occupant != null && occupant.user.id != actor.id) {
+      return 'Mic ${seatIndex + 1} is already occupied by ${occupant.user.name}.';
+    }
+
+    // Atomic move: release previous seat if actor was sitting elsewhere
+    final existingIdx = _participants.indexWhere((p) => p.user.id == actor.id);
+    if (existingIdx != -1 && _participants[existingIdx].seatNumber != null && _participants[existingIdx].seatNumber != seatIndex) {
+      final oldSeat = _participants[existingIdx].seatNumber!;
+      try {
+        await _roomRepository.leaveSeat(_activeRoom!.id, oldSeat);
+        _socketService.leaveSeat(_activeRoom!.id, oldSeat);
+      } catch (_) {}
+    }
+
     try {
       await _roomRepository.occupySeat(_activeRoom!.id, seatIndex);
       _socketService.occupySeat(_activeRoom!.id, seatIndex);
-
-      // Update local state
-      final existingIdx = _participants.indexWhere((p) => p.user.id == actor.id);
-      if (existingIdx != -1) {
-        _participants[existingIdx] = _participants[existingIdx].copyWith(
-          seatNumber: seatIndex,
-          role: ParticipantRole.speaker,
-          micStatus: MicStatus.on,
-        );
-      } else {
-        _participants.add(PartyParticipantModel(
-          user: actor,
-          role: ParticipantRole.speaker,
-          seatNumber: seatIndex,
-          micStatus: MicStatus.on,
-          joinedAt: DateTime.now(),
-        ));
-      }
-
-      // Promote Agora Role to Broadcaster if actor is current user
-      if (actor.id == _currentUser?.id) {
-        await _agoraService.switchRole(isHost: true);
-      }
-
-      _logMicAudit(
-        seatIndex: seatIndex,
-        actorId: actor.id,
-        actorRole: _getRoleString(actor.id),
-        targetId: actor.id,
-        action: 'TAKE_MIC',
-        previousState: 'Audience',
-        newState: 'Mic ${seatIndex + 1}',
-      );
-
-      sendSystemMessage('🎙️ ${actor.name} took Mic ${seatIndex + 1}.');
-      notifyListeners();
-      return null;
     } catch (e) {
-      return e.toString();
+      debugPrint('[LivePartyProvider] Backend occupySeat error: $e, executing local state seat update');
     }
+
+    // Update local state
+    if (existingIdx != -1) {
+      _participants[existingIdx] = _participants[existingIdx].copyWith(
+        seatNumber: seatIndex,
+        role: ParticipantRole.speaker,
+        micStatus: MicStatus.on,
+      );
+    } else {
+      _participants.add(PartyParticipantModel(
+        user: actor,
+        role: ParticipantRole.speaker,
+        seatNumber: seatIndex,
+        micStatus: MicStatus.on,
+        joinedAt: DateTime.now(),
+      ));
+    }
+
+    // Promote Agora Role to Broadcaster if actor is current user
+    if (actor.id == _currentUser?.id) {
+      try {
+        await _agoraService.switchRole(isHost: true);
+      } catch (_) {}
+    }
+
+    _logMicAudit(
+      seatIndex: seatIndex,
+      actorId: actor.id,
+      actorRole: _getRoleString(actor.id),
+      targetId: actor.id,
+      action: 'TAKE_MIC',
+      previousState: 'Audience',
+      newState: 'Mic ${seatIndex + 1}',
+    );
+
+    sendSystemMessage('🎙️ ${actor.name} took Mic ${seatIndex + 1}.');
+    notifyListeners();
+    return null;
   }
 
   Future<void> clearMicSeat(int seatIndex, {required UserModel actor}) async {

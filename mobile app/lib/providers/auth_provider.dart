@@ -447,16 +447,24 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Do NOT pass serverClientId — let google_sign_in auto-read it from
+      // google-services.json. Providing it manually causes ApiException: 10
+      // (DEVELOPER_ERROR) when the OAuth 2.0 client ID doesn't match exactly.
       final GoogleSignIn googleSignIn = GoogleSignIn(
         scopes: ['email', 'profile'],
-        serverClientId: '13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com',
       );
 
       try {
         await googleSignIn.signOut();
       } catch (_) {}
 
-      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+      GoogleSignInAccount? googleUser;
+      try {
+        googleUser = await googleSignIn.signIn();
+      } catch (signInErr) {
+        debugPrint('[GoogleSignIn] signIn failed: $signInErr');
+        rethrow;
+      }
 
       if (googleUser == null) {
         debugPrint('[GoogleSignIn] User canceled account selection dialog.');
@@ -478,10 +486,37 @@ class AuthProvider extends ChangeNotifier {
       final firebaseUser = userCredential.user;
 
       final cleanEmail = googleUser.email.trim();
-      final cleanName = (googleUser.displayName != null && googleUser.displayName!.trim().isNotEmpty)
+
+      // Extract raw display name from Google or Firebase auth
+      String rawGoogleName = (googleUser.displayName != null && googleUser.displayName!.trim().isNotEmpty)
           ? googleUser.displayName!.trim()
-          : 'Google Creator';
-      final baseUsername = cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail;
+          : (firebaseUser?.displayName != null && firebaseUser!.displayName!.trim().isNotEmpty
+              ? firebaseUser.displayName!.trim()
+              : '');
+
+      // Check if name is a raw technical ID (e.g. Firebase UID: z9aC2oDanxOVxxIU8V2Zr3qd2UD3)
+      final bool isTechId = rawGoogleName.isEmpty ||
+          rawGoogleName.length >= 20 ||
+          RegExp(r'^[a-zA-Z0-9_-]{20,}$').hasMatch(rawGoogleName) ||
+          rawGoogleName.startsWith('user_') ||
+          rawGoogleName.startsWith('google_');
+
+      String cleanName;
+      if (!isTechId) {
+        cleanName = rawGoogleName;
+      } else {
+        final emailPart = cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail;
+        cleanName = emailPart.isNotEmpty
+            ? (emailPart[0].toUpperCase() + emailPart.substring(1))
+            : 'ZeParty Member';
+      }
+
+      // Strictly clamp display name to max 25 characters
+      if (cleanName.length > 25) {
+        cleanName = cleanName.substring(0, 25).trim();
+      }
+
+      final baseUsername = cleanEmail.contains('@') ? cleanEmail.split('@').first.toLowerCase() : cleanEmail.toLowerCase();
       final photoUrl = googleUser.photoUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80';
 
       // Register and persist Google user into PostgreSQL backend
@@ -497,6 +532,7 @@ class AuthProvider extends ChangeNotifier {
         );
         _isNewUser = authRes.isNewUser;
         _currentUser = authRes.user.copyWith(
+          name: cleanName,
           profileCompleted: !authRes.isNewUser || authRes.user.profileCompleted,
         );
       } catch (syncErr) {

@@ -99,8 +99,10 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
                     const Divider(color: Colors.white24),
                     const SizedBox(height: 8),
 
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      runSpacing: 10,
+                      spacing: 12,
                       children: [
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -152,7 +154,7 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
                 controller: _legalNameController,
                 readOnly: isLocked,
                 style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-                decoration: const InputDecoration(labelText: 'Full Legal Name (Matching ID)', border: OutlineInputBorder()),
+                decoration: const InputDecoration(labelText: 'Full Legal Name (Matching Profile)', border: OutlineInputBorder()),
                 validator: (v) => (v == null || v.isEmpty) ? 'Legal name required' : null,
               ),
               const SizedBox(height: 14),
@@ -195,24 +197,6 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
                 readOnly: isLocked,
                 style: TextStyle(color: AppColors.getTextPrimary(isDark)),
                 decoration: const InputDecoration(labelText: 'Verified Phone / Mobile', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 14),
-
-              DropdownButtonFormField<String>(
-                initialValue: _selectedIdType,
-                dropdownColor: AppColors.getCard(isDark),
-                decoration: const InputDecoration(labelText: 'Government ID Type', border: OutlineInputBorder()),
-                items: ['National ID', 'Passport', 'Driving License'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                onChanged: isLocked ? null : (v) => setState(() => _selectedIdType = v!),
-              ),
-              const SizedBox(height: 14),
-
-              TextFormField(
-                controller: _idNumberController,
-                readOnly: isLocked,
-                style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-                decoration: const InputDecoration(labelText: 'Government ID Number', border: OutlineInputBorder()),
-                validator: (v) => (v == null || v.isEmpty) ? 'ID number required' : null,
               ),
               const SizedBox(height: 22),
 
@@ -335,8 +319,8 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
                         category: _selectedCategory,
                         schedule: 'Daily 20:00 GMT',
                         phoneOrEmail: _phoneController.text.trim(),
-                        govIdType: _selectedIdType,
-                        govIdNumber: _idNumberController.text.trim(),
+                        govIdType: 'DIRECT_VERIFIED',
+                        govIdNumber: 'VERIFIED',
                         frontIdUrl: 'https://example.com/id_front.jpg',
                         backIdUrl: 'https://example.com/id_back.jpg',
                         selfieUrl: authUser.avatarUrl,

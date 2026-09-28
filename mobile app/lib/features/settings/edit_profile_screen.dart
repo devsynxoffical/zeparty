@@ -65,7 +65,24 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   void initState() {
     super.initState();
     final user = context.read<AuthProvider>().currentUser;
-    _initialName = user.name;
+    String rawName = user.name;
+    final isTechId = rawName.isEmpty ||
+        rawName.length >= 20 ||
+        RegExp(r'^[a-zA-Z0-9_-]{20,}$').hasMatch(rawName) ||
+        rawName.startsWith('user_') ||
+        rawName.startsWith('google_') ||
+        rawName == 'Guest';
+    if (isTechId) {
+      if (user.username.isNotEmpty && !user.username.startsWith('user_') && user.username.length < 20) {
+        rawName = user.username[0].toUpperCase() + user.username.substring(1);
+      } else if (user.email != null && user.email!.contains('@')) {
+        final part = user.email!.split('@').first;
+        rawName = part.isNotEmpty ? (part[0].toUpperCase() + part.substring(1)) : 'ZeParty Member';
+      } else {
+        rawName = 'ZeParty Member';
+      }
+    }
+    _initialName = rawName.length > 25 ? rawName.substring(0, 25).trim() : rawName;
     _initialUsername = user.username;
     _initialBio = user.bio;
     _initialRegion = user.region;

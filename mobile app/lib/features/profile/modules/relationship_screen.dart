@@ -25,11 +25,13 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
-        final candidates = BackendRepository.instance.popularUsers;
+        final allUsers = BackendRepository.instance.popularUsers;
         final user = auth.currentUser;
-        
+        final followedFriends = allUsers.where((u) => u.id != user.id && auth.isFollowing(u.id)).toList();
+        final candidates = followedFriends.isNotEmpty ? followedFriends : allUsers.where((u) => u.id != user.id).toList();
+
         return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20),
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -37,33 +39,54 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
                 'Build New Relationship',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
+              const SizedBox(height: 6),
+              const Text(
+                'Select an eligible friend to send a relationship card invitation.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 16),
               Expanded(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: candidates.length,
-                  itemBuilder: (ctx, idx) {
-                    final candidate = candidates[idx];
-                    if (candidate.id == user.id) return const SizedBox.shrink();
-
-                    return ListTile(
-                      leading: UserAvatar(imageUrl: candidate.avatarUrl, radius: 24),
-                      title: Text(candidate.name),
-                      subtitle: Text('Wealth Lv ${candidate.wealthLevel}'),
-                      trailing: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.purpleAccent,
-                          foregroundColor: Colors.white,
+                child: candidates.isEmpty
+                    ? const Center(
+                        child: Text(
+                          'No eligible friends found.\nFollow creators or users to start building relationships!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white60, fontSize: 13),
                         ),
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _showRelationshipCardChooser(context, candidate);
+                      )
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: candidates.length,
+                        itemBuilder: (ctx, idx) {
+                          final candidate = candidates[idx];
+
+                          return ListTile(
+                            leading: UserAvatar(imageUrl: candidate.avatarUrl, radius: 24),
+                            title: Text(candidate.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Text(
+                              auth.isFollowing(candidate.id)
+                                  ? '✨ Friend • Wealth Lv ${candidate.wealthLevel}'
+                                  : 'Eligible Candidate • Wealth Lv ${candidate.wealthLevel}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: auth.isFollowing(candidate.id) ? Colors.amberAccent : Colors.grey,
+                              ),
+                            ),
+                            trailing: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.purpleAccent,
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _showRelationshipCardChooser(context, candidate);
+                              },
+                              child: const Text('Invite'),
+                            ),
+                          );
                         },
-                        child: const Text('Invite'),
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),

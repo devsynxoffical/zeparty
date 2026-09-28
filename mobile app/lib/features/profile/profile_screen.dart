@@ -575,6 +575,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildUserStatistics(UserModel user, bool isDark) {
     final popularUsers = BackendRepository.instance.popularUsers;
+    final auth = context.read<AuthProvider>();
     int totalLikes = 0;
     try {
       final social = context.watch<SocialProvider>();
@@ -601,13 +602,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
           AppFormatters.formatNumber(user.following),
           'Following',
           isDark,
-          () => UserListSheet.show(context, 'Following', popularUsers.take(3).toList()),
+          () {
+            final authProv = context.read<AuthProvider>();
+            final followedList = popularUsers.where((u) => authProv.isFollowing(u.id)).toList();
+            UserListSheet.show(context, 'Following', followedList);
+          },
         ),
         _buildStatItem(
           AppFormatters.formatNumber(user.followers),
           'Followers',
           isDark,
-          () => UserListSheet.show(context, 'Followers', popularUsers),
+          () {
+            final followersList = popularUsers.where((u) => u.id != user.id).toList();
+            UserListSheet.show(context, 'Followers', followersList);
+          },
         ),
         _buildStatItem(
           formattedLikes,
@@ -1094,21 +1102,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             AuthGuard.require(context, () {
               Navigator.push(context, MaterialPageRoute(builder: (c) => const RewardsScreen()));
             }, reason: 'Sign in to view Rewards & Referrals');
-          },
-        ),
-        _buildOptionRow(
-          context,
-          icon: Icons.video_camera_front_rounded,
-          title: user.hostApplicationStatus == 'approved' ? 'Host Center' : 'Become a Live Host',
-          isDark: isDark,
-          onTap: () {
-            AuthGuard.require(context, () {
-              if (user.hostApplicationStatus == 'approved') {
-                Navigator.push(context, MaterialPageRoute(builder: (c) => const HostDashboardScreen()));
-              } else {
-                Navigator.push(context, MaterialPageRoute(builder: (c) => const HostVerificationScreen()));
-              }
-            }, reason: 'Sign in to apply for Host');
           },
         ),
         _buildOptionRow(

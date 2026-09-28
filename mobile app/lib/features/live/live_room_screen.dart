@@ -358,7 +358,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     final agora = AgoraRtcService.instance;
 
     if (isHost) {
-      if (agora.isInitialized && agora.engine != null) {
+      if (agora.engine != null) {
+        agora.startPreview();
         return AgoraVideoView(
           controller: VideoViewController(
             rtcEngine: agora.engine!,
@@ -369,7 +370,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     } else {
       // Audience Viewer
       final targetUid = _remoteHostUid ?? (agora.remoteUids.isNotEmpty ? agora.remoteUids.first : null);
-      if (agora.isInitialized && agora.engine != null && targetUid != null) {
+      if (agora.engine != null && targetUid != null) {
         return AgoraVideoView(
           controller: VideoViewController.remote(
             rtcEngine: agora.engine!,
