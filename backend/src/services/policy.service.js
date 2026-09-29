@@ -399,9 +399,89 @@ export async function updateConfiguration({
     status: 'ACTIVE',
   });
 
+  // Sync with Policy and PolicyVersion if this matches a canonical policy domain
+  let policyType = null;
+  if (normKey === 'ECONOMY' || normKey === 'ECONOMY_POLICY_GLOBAL' || normKey.startsWith('ECONOMY_POLICY')) {
+    policyType = 'ECONOMY';
+  } else if (normKey === 'LIVE_HOST' || normKey === 'LIVE_HOST_TIERS' || normKey.startsWith('LIVE_HOST')) {
+    policyType = 'LIVE_HOST';
+  } else if (normKey === 'AUDIO_HOST' || normKey === 'AUDIO_HOST_TIERS' || normKey.startsWith('AUDIO_HOST')) {
+    policyType = 'AUDIO_HOST';
+  } else if (normKey === 'RESELLER' || normKey === 'RESELLER_PACKAGES' || normKey.startsWith('RESELLER')) {
+    policyType = 'RESELLER';
+  }
+
+  if (policyType) {
+    try {
+      const existingPolicy = await policyRepository.findByType(policyType);
+      const newVersionTag = `v3.${Date.now().toString().slice(-4)}`;
+      if (existingPolicy) {
+        await policyRepository.updateActiveVersion(existingPolicy.id, newVersionTag);
+        await policyRepository.createVersion({
+          policyId: existingPolicy.id,
+          version: newVersionTag,
+          summary: `Admin updated ${normKey} policy configuration`,
+          configJson: typeof valueJson === 'object' && valueJson !== null ? valueJson : { value: valueJson },
+          approvedBy: isOwner ? 'Root Owner' : 'Administrator',
+        });
+      } else {
+        const created = await policyRepository.createPolicy({
+          policyType,
+          version: newVersionTag,
+          description: `Authoritative ${policyType} Policy`,
+        });
+        await policyRepository.createVersion({
+          policyId: created.id,
+          version: newVersionTag,
+          summary: `Initial ${policyType} policy release`,
+          configJson: typeof valueJson === 'object' && valueJson !== null ? valueJson : { value: valueJson },
+          approvedBy: isOwner ? 'Root Owner' : 'Administrator',
+        });
+      }
+      await invalidateCache(`policy:effective:${policyType}`);
+    } catch (err) {
+      console.warn(`[PolicyService] Could not sync policy table for ${policyType}:`, err.message);
+    }
+
+    // Sync to HostLevelConfig if host tiers
+    if ((policyType === 'LIVE_HOST' || policyType === 'AUDIO_HOST') && valueJson) {
+      try {
+        const tiers = Array.isArray(valueJson) ? valueJson : (valueJson.tiers || []);
+        const hostType = policyType === 'AUDIO_HOST' ? 'AUDIO_HOST' : 'LIVE_HOST';
+        for (const [idx, tier] of tiers.entries()) {
+          const lvl = Number(tier.level || idx + 1);
+          await prisma.hostLevelConfig.upsert({
+            where: {
+              level_hostType: {
+                level: lvl,
+                hostType,
+              },
+            },
+            update: {
+              targetDiamonds: BigInt(tier.targetDiamonds || tier.targetCoins || 0),
+              basicSalaryUSD: Number(tier.basicSalaryUSD || tier.dailyRewardUSD || 0),
+              dailyHoursRequired: Number(tier.dailyHoursRequired || tier.minDailyHours || (hostType === 'AUDIO_HOST' ? 2.0 : 1.0)),
+              daysRequiredPerMonth: Number(tier.durationDays || tier.daysRequiredPerMonth || 10),
+            },
+            create: {
+              level: lvl,
+              hostType,
+              targetDiamonds: BigInt(tier.targetDiamonds || tier.targetCoins || 0),
+              basicSalaryUSD: Number(tier.basicSalaryUSD || tier.dailyRewardUSD || 0),
+              dailyHoursRequired: Number(tier.dailyHoursRequired || tier.minDailyHours || (hostType === 'AUDIO_HOST' ? 2.0 : 1.0)),
+              daysRequiredPerMonth: Number(tier.durationDays || tier.daysRequiredPerMonth || 10),
+            },
+          });
+        }
+      } catch (tierErr) {
+        console.warn(`[PolicyService] Could not sync HostLevelConfig:`, tierErr.message);
+      }
+    }
+  }
+
   await prisma.auditLog.create({
     data: {
-      adminId,
+      adminId: adminId || 'dev-admin-main-001',
       adminName: isOwner ? 'Root Owner' : 'Administrator',
       action: 'CONFIG_UPDATED',
       targetEntity: 'PolicyConfiguration',

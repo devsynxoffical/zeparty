@@ -26,22 +26,24 @@ export const rollbackPolicySchema = z.object({
 
 export const updateConfigSchema = z.object({
   key: z.string().min(2).max(100).transform((val) => val.toUpperCase().trim()),
-  valueJson: z.record(z.any(), { required_error: 'Configuration value object is required' }).refine(
+  valueJson: z.union([z.record(z.any()), z.array(z.any()), z.any()]).refine(
     (val) => {
-      // Validate percentage boundaries if ratePercent is present
-      if (val.ratePercent !== undefined) {
-        const p = Number(val.ratePercent);
-        if (isNaN(p) || p < 0 || p > 100) return false;
-      }
-      // Validate positive rate if rate is present
-      if (val.rate !== undefined) {
-        const r = Number(val.rate);
-        if (isNaN(r) || r <= 0) return false;
-      }
-      // Validate positive amountUSD if present
-      if (val.amountUSD !== undefined) {
-        const a = Number(val.amountUSD);
-        if (isNaN(a) || a <= 0) return false;
+      if (val && typeof val === 'object' && !Array.isArray(val)) {
+        // Validate percentage boundaries if ratePercent is present
+        if (val.ratePercent !== undefined) {
+          const p = Number(val.ratePercent);
+          if (isNaN(p) || p < 0 || p > 100) return false;
+        }
+        // Validate positive rate if rate is present
+        if (val.rate !== undefined) {
+          const r = Number(val.rate);
+          if (isNaN(r) || r <= 0) return false;
+        }
+        // Validate positive amountUSD if present
+        if (val.amountUSD !== undefined) {
+          const a = Number(val.amountUSD);
+          if (isNaN(a) || a <= 0) return false;
+        }
       }
       return true;
     },
