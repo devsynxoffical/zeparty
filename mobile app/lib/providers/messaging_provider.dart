@@ -13,6 +13,11 @@ class SystemMessageItem {
   final String category; // 'Official', 'Security', 'Moderation', 'Wallet', 'Policy', 'Support'
   final DateTime timestamp;
   bool isRead;
+  final String? invitationType; // 'Agency Owner' or 'Host'
+  final String? invitationId;
+  final String? inviterName;
+  final String? targetId;
+  String status; // 'Pending', 'Accepted', 'Declined'
 
   SystemMessageItem({
     required this.id,
@@ -21,6 +26,11 @@ class SystemMessageItem {
     required this.category,
     required this.timestamp,
     this.isRead = false,
+    this.invitationType,
+    this.invitationId,
+    this.inviterName,
+    this.targetId,
+    this.status = 'Pending',
   });
 }
 
@@ -638,6 +648,42 @@ class MessagingProvider extends ChangeNotifier {
     }
     _saveStringList(_prefsReadSystemIds, _readSystemIds);
     notifyListeners();
+  }
+
+  // Official System Inbox Invitation Delivery
+  void sendOfficialInvitation({
+    required String title,
+    required String content,
+    required String invitationType, // 'Agency Owner' or 'Host'
+    required String invitationId,
+    required String inviterName,
+    required String targetId,
+  }) {
+    final msg = SystemMessageItem(
+      id: 'sys_inv_${DateTime.now().millisecondsSinceEpoch}',
+      title: title,
+      content: content,
+      category: 'Official',
+      timestamp: DateTime.now(),
+      invitationType: invitationType,
+      invitationId: invitationId,
+      inviterName: inviterName,
+      targetId: targetId,
+      status: 'Pending',
+    );
+
+    _systemMessages.insert(0, msg);
+    notifyListeners();
+  }
+
+  void respondToSystemInvitation(String messageId, bool accept) {
+    final idx = _systemMessages.indexWhere((m) => m.id == messageId);
+    if (idx != -1) {
+      final msg = _systemMessages[idx];
+      msg.status = accept ? 'Accepted' : 'Declined';
+      msg.isRead = true;
+      notifyListeners();
+    }
   }
 
   void markAllRewardsRead() {

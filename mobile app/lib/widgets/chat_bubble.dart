@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import '../core/theme/app_colors.dart';
 import '../models/message_model.dart';
 import '../core/utils/formatters.dart';
+import '../features/social/short_videos_screen.dart';
 
 class ChatBubble extends StatefulWidget {
   final MessageModel message;
@@ -346,6 +347,57 @@ class _ChatBubbleState extends State<ChatBubble> {
                     ],
                   ),
                 ],
+              ),
+            ] else if (widget.message.text.contains('zeparty.app/short/')) ...[
+              // ─── Clickable Short Video Link Preview Card ───
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ShortVideosScreen()),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.play_circle_fill_rounded, color: AppColors.primary, size: 26),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              widget.message.text,
+                              style: TextStyle(color: textColor, fontSize: 13, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.open_in_new_rounded, size: 12, color: AppColors.primary),
+                            SizedBox(width: 4),
+                            Text('Tap to Watch Short 🎬', style: TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ] else ...[
               Text(

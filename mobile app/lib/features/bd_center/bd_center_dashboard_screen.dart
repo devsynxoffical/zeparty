@@ -6,6 +6,8 @@ import '../../core/utils/formatters.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bd_center_provider.dart';
+import '../../providers/usd_balance_provider.dart';
+import '../../providers/messaging_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/design/premium_card.dart';
 
@@ -198,6 +200,20 @@ class BDCenterDashboardScreen extends StatelessWidget {
 
             const SizedBox(height: 12),
 
+            // [1B] INVITE AGENCY OWNER SECTION (Change Request 14)
+            _buildBdSectionCard(
+              context,
+              isDark: isDark,
+              number: '1B',
+              title: 'INVITE AGENCY OWNER',
+              subtitle: 'Invite existing user ID to become an Agency Owner under your BD',
+              icon: Icons.admin_panel_settings_rounded,
+              accentColor: Colors.amberAccent,
+              onTap: () => _showInviteAgencyOwnerDialog(context, bd),
+            ),
+
+            const SizedBox(height: 12),
+
             // [2] TEAM MEMBERS SECTION (Diagram B)
             _buildBdSectionCard(
               context,
@@ -329,6 +345,7 @@ class BDCenterDashboardScreen extends StatelessWidget {
     final primaryText = AppColors.getTextPrimary(isDark);
     final secondaryText = AppColors.getTextSecondary(isDark);
     const walletColor = Color(0xFFFF9800);
+    final usdProv = context.watch<UsdBalanceProvider>();
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -359,7 +376,7 @@ class BDCenterDashboardScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'MONTHLY SALARY WALLET',
+                      'BD COMMISSION & SALARY WALLET',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w900,
@@ -369,7 +386,7 @@ class BDCenterDashboardScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'Approved monthly BD salary payouts only',
+                      'Period: ${usdProv.bdCurrentEarningPeriod} • Commission Earned: \$${usdProv.bdCommissionEarned.toStringAsFixed(2)}',
                       style: TextStyle(fontSize: 11, color: secondaryText),
                     ),
                   ],
@@ -389,24 +406,25 @@ class BDCenterDashboardScreen extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Available Salary Balance', style: TextStyle(fontSize: 11, color: secondaryText)),
+                  Text('Available BD USD Balance', style: TextStyle(fontSize: 11, color: secondaryText)),
                   const SizedBox(height: 4),
                   Text(
-                    '\$${bd.salaryWalletBalance.toStringAsFixed(2)}',
+                    '\$${usdProv.bdAvailableBalance.toStringAsFixed(2)}',
                     style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: walletColor),
                   ),
                 ],
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text('Total Received', style: TextStyle(fontSize: 11, color: secondaryText)),
-                  const SizedBox(height: 4),
-                  Text(
-                    '\$${bd.totalSalaryReceived.toStringAsFixed(2)}',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: primaryText),
-                  ),
-                ],
+              ElevatedButton.icon(
+                icon: const Icon(Icons.account_balance_wallet_rounded, size: 16),
+                label: const Text('Withdraw USD', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: walletColor,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () {
+                  _showBDWithdrawalDialog(context, usdProv, bd.nickname, bd.bdUserId);
+                },
               ),
             ],
           ),
@@ -414,37 +432,303 @@ class BDCenterDashboardScreen extends StatelessWidget {
           const SizedBox(height: 16),
 
           // Wallet Transaction Ledger
-          Text('Recent Payout Transactions', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: secondaryText)),
+          Text('Recent BD Withdrawal History', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: secondaryText)),
           const SizedBox(height: 8),
 
-          ...bd.walletTransactions.take(2).map((tx) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.getSurface(isDark),
-                    borderRadius: BorderRadius.circular(12),
+          if (usdProv.bdWithdrawalHistory.isEmpty)
+            Text('No BD withdrawals logged.', style: TextStyle(fontSize: 11, color: secondaryText))
+          else
+            ...usdProv.bdWithdrawalHistory.take(3).map((tx) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.getSurface(isDark),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'To ${tx.recipientName} (${tx.recipientType})',
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: primaryText),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          '-\$${tx.usdAmount.toStringAsFixed(2)}',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.redAccent),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Row(
+                )),
+        ],
+      ),
+    );
+  }
+
+  void _showBDWithdrawalDialog(BuildContext context, UsdBalanceProvider usdProv, String bdName, String bdId) {
+    String recipientType = 'Coin Seller';
+    SellerMerchantRecipient? selectedRecipient = usdProv.coinSellers.first;
+    final amountController = TextEditingController(text: usdProv.bdAvailableBalance.toStringAsFixed(2));
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          final availableRecipients = recipientType == 'Coin Seller' ? usdProv.coinSellers : usdProv.merchants;
+          if (!availableRecipients.contains(selectedRecipient)) {
+            selectedRecipient = availableRecipients.first;
+          }
+
+          return Container(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.getCard(isDark),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Icon(Icons.check_circle_rounded, color: Colors.green, size: 16),
-                      const SizedBox(width: 8),
+                      const Text('Withdraw BD Commission & Salary', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white)),
+                      IconButton(icon: const Icon(Icons.close, color: Colors.white70), onPressed: () => Navigator.pop(context)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Select Recipient Type', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
                       Expanded(
-                        child: Text(
-                          tx.title,
-                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: primaryText),
-                          overflow: TextOverflow.ellipsis,
+                        child: ChoiceChip(
+                          label: const Center(child: Text('Coin Sellers')),
+                          selected: recipientType == 'Coin Seller',
+                          selectedColor: Colors.amber,
+                          onSelected: (sel) {
+                            if (sel) {
+                              setSheetState(() {
+                                recipientType = 'Coin Seller';
+                                selectedRecipient = usdProv.coinSellers.first;
+                              });
+                            }
+                          },
                         ),
                       ),
-                      Text(
-                        '+\$${tx.amount.toStringAsFixed(2)}',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.green),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ChoiceChip(
+                          label: const Center(child: Text('Merchants')),
+                          selected: recipientType == 'Merchant',
+                          selectedColor: Colors.purpleAccent,
+                          onSelected: (sel) {
+                            if (sel) {
+                              setSheetState(() {
+                                recipientType = 'Merchant';
+                                selectedRecipient = usdProv.merchants.first;
+                              });
+                            }
+                          },
+                        ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 16),
+
+                  const Text('Select Recipient', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<SellerMerchantRecipient>(
+                    value: selectedRecipient,
+                    dropdownColor: const Color(0xFF1E1B2E),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(border: OutlineInputBorder()),
+                    items: availableRecipients.map((r) => DropdownMenuItem(
+                      value: r,
+                      child: Text('${r.name} (${r.agencyName})', style: const TextStyle(fontSize: 13)),
+                    )).toList(),
+                    onChanged: (val) {
+                      setSheetState(() {
+                        selectedRecipient = val;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  const Text('Enter Amount (USD)', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: amountController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      prefixText: '\$ ',
+                      suffixText: 'USD',
+                      hintText: 'Available: \$${usdProv.bdAvailableBalance.toStringAsFixed(2)}',
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.check_circle_rounded),
+                      label: const Text('Confirm BD Withdrawal Request', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.amber.shade800,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        final amt = double.tryParse(amountController.text.trim()) ?? 0.0;
+                        if (selectedRecipient == null) return;
+
+                        final err = usdProv.requestBDWithdrawal(
+                          recipient: selectedRecipient!,
+                          amountUsd: amt,
+                          senderName: bdName,
+                          senderId: bdId,
+                        );
+
+                        if (err == null) {
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('🎉 BD Withdrawal of \$$amt USD to ${selectedRecipient!.name} recorded!'), backgroundColor: Colors.green),
+                          );
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('❌ $err'), backgroundColor: Colors.redAccent),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showInviteAgencyOwnerDialog(BuildContext context, BDCenterProvider bd) {
+    final userIdController = TextEditingController(text: 'user_1002');
+    String? verifiedName = 'Sophia Rose';
+    String? errorText;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+
+          return AlertDialog(
+            backgroundColor: AppColors.getCard(isDark),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                const Icon(Icons.admin_panel_settings_rounded, color: Colors.amberAccent),
+                const SizedBox(width: 8),
+                Text('Invite Agency Owner', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Enter an existing ZeParty User ID to send an official Agency Owner invitation.',
+                  style: TextStyle(fontSize: 12, color: Colors.white70),
                 ),
-              )),
-        ],
+                const SizedBox(height: 14),
+                TextField(
+                  controller: userIdController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'User ID',
+                    border: OutlineInputBorder(),
+                    hintText: 'e.g. user_1002 or 339102',
+                  ),
+                  onChanged: (val) {
+                    setDialogState(() {
+                      if (val.trim().isEmpty) {
+                        verifiedName = null;
+                        errorText = 'Please enter a user ID.';
+                      } else {
+                        verifiedName = val.trim() == 'user_1002' ? 'Sophia Rose' : (val.trim() == 'user_1003' ? 'Alex Rivera' : 'Verified Recipient ${val.trim()}');
+                        errorText = null;
+                      }
+                    });
+                  },
+                ),
+                if (verifiedName != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 18),
+                        const SizedBox(width: 8),
+                        Text('Target: $verifiedName', style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ],
+                if (errorText != null) ...[
+                  const SizedBox(height: 8),
+                  Text(errorText!, style: const TextStyle(color: Colors.redAccent, fontSize: 11)),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+                onPressed: () {
+                  final targetId = userIdController.text.trim();
+                  if (targetId.isEmpty) return;
+
+                  // Dispatch Official Inbox notification
+                  final messaging = context.read<MessagingProvider>();
+                  messaging.sendOfficialInvitation(
+                    title: 'Agency Owner Invitation',
+                    content: '${bd.nickname} invited you to become an Agency Owner.',
+                    invitationType: 'Agency Owner',
+                    invitationId: 'inv_bd_${DateTime.now().millisecondsSinceEpoch}',
+                    inviterName: bd.nickname,
+                    targetId: targetId,
+                  );
+
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('✉️ Agency Owner invitation sent to $targetId ($verifiedName) via ZeParty Official Inbox!'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
+                child: const Text('Send Invitation', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

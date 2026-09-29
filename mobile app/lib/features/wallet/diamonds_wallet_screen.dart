@@ -6,8 +6,6 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/wallet_details_provider.dart';
-import 'diamond_exchange_screen.dart';
-import 'diamond_transfer_screen.dart';
 import 'wallet_details_screen.dart';
 
 class DiamondsWalletScreen extends StatelessWidget {
@@ -43,14 +41,6 @@ class DiamondsWalletScreen extends StatelessWidget {
         child: Column(
           children: [
             _buildBalanceCard(context, wallet.diamonds, isDark),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(child: _buildActionCard(context, 'Exchange Gold\nCoins', Icons.currency_exchange_rounded, isDark, true)),
-                const SizedBox(width: 16),
-                Expanded(child: _buildActionCard(context, 'Transfer', Icons.move_up_rounded, isDark, false)),
-              ],
-            ),
           ],
         ),
       ),
@@ -127,61 +117,6 @@ class DiamondsWalletScreen extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildActionCard(BuildContext context, String title, IconData icon, bool isDark, bool isExchange) {
-    return GestureDetector(
-      onTap: () {
-        if (isExchange) {
-          Navigator.push(context, MaterialPageRoute(builder: (c) => const DiamondExchangeScreen()));
-        } else {
-          Navigator.push(context, MaterialPageRoute(builder: (c) => const DiamondTransferScreen()));
-        }
-      },
-      child: Container(
-        height: 120,
-        decoration: BoxDecoration(
-          color: isExchange ? AppColors.getCard(isDark) : (isDark ? const Color(0xFF1F1F1F) : Colors.white),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isExchange ? AppColors.getPrimary(isDark).withValues(alpha: 0.5) : (isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.05))),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            )
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isExchange ? AppColors.getPrimary(isDark).withValues(alpha: 0.1) : (isDark ? Colors.white12 : Colors.grey.shade100),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                color: isExchange ? AppColors.getPrimary(isDark) : Colors.blueAccent,
-                size: 28,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: isExchange ? AppColors.getPrimary(isDark) : AppColors.getTextPrimary(isDark),
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                height: 1.2,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

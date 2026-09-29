@@ -41,6 +41,7 @@ import 'providers/emoji_reaction_provider.dart';
 import 'providers/live_gift_provider.dart';
 import 'providers/backpack_provider.dart';
 import 'providers/support_provider.dart';
+import 'providers/usd_balance_provider.dart';
 import 'core/config/app_config.dart';
 import 'core/repositories/backend_repository.dart';
 import 'features/auth/splash_screen.dart';
@@ -104,6 +105,7 @@ class LiveStreamApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => EmojiReactionProvider()),
         ChangeNotifierProvider(create: (_) => LiveGiftProvider()),
         ChangeNotifierProvider(create: (_) => SupportProvider()),
+        ChangeNotifierProvider.value(value: UsdBalanceProvider.instance),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {

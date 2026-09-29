@@ -5,6 +5,28 @@ import '../models/agency_wallet_ledger_model.dart';
 import '../models/agency_invitation_model.dart';
 import '../models/audio_host_model.dart';
 
+class AgencyHostRequest {
+  final String id;
+  final String agencyId;
+  final String agencyName;
+  final String applicantUserId;
+  final String applicantName;
+  final String applicantAvatar;
+  String status; // 'Pending', 'Accepted', 'Declined'
+  final DateTime createdAt;
+
+  AgencyHostRequest({
+    required this.id,
+    required this.agencyId,
+    required this.agencyName,
+    required this.applicantUserId,
+    required this.applicantName,
+    required this.applicantAvatar,
+    this.status = 'Pending',
+    required this.createdAt,
+  });
+}
+
 class AgencyProvider extends ChangeNotifier {
   AgencyModel? _userAgency;
   final List<AgencyMemberModel> _members = [];
@@ -12,6 +34,42 @@ class AgencyProvider extends ChangeNotifier {
   final List<AgencyWalletLedgerModel> _walletLedger = [];
   final List<AgencyInvitationModel> _invitations = [];
   final List<Map<String, dynamic>> _auditLogs = [];
+  final List<AgencyHostRequest> _hostRequests = [];
+
+  final List<AgencyModel> _allAgencies = [
+    AgencyModel(
+      id: 'agency_101',
+      name: 'ZeParty Premier Agency',
+      logoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+      description: 'Official ZeParty Elite Audio Host Network',
+      ownerUserId: '6076247',
+      ownerName: 'ZeParty Official Owner',
+      status: 'Active',
+      totalHosts: 12,
+      totalMembers: 15,
+      cycle15DayId: 'cycle_2026_09_A',
+      pendingBalanceUsd: 250.0,
+      availableBalanceUsd: 1200.0,
+      countryCode: 'GLOBAL',
+      createdAt: DateTime.now().subtract(const Duration(days: 90)),
+    ),
+    AgencyModel(
+      id: 'agency_102',
+      name: 'Global Star Talent Agency',
+      logoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
+      description: 'Top-tier audio broadcasting and live show hosts',
+      ownerUserId: 'user_star_owner',
+      ownerName: 'Alex Mercer',
+      status: 'Active',
+      totalHosts: 8,
+      totalMembers: 10,
+      cycle15DayId: 'cycle_2026_09_A',
+      pendingBalanceUsd: 180.0,
+      availableBalanceUsd: 750.0,
+      countryCode: 'US',
+      createdAt: DateTime.now().subtract(const Duration(days: 60)),
+    ),
+  ];
 
   AgencyModel? get userAgency => _userAgency;
   List<AgencyMemberModel> get members => List.unmodifiable(_members);
@@ -19,6 +77,92 @@ class AgencyProvider extends ChangeNotifier {
   List<AgencyWalletLedgerModel> get walletLedger => List.unmodifiable(_walletLedger);
   List<AgencyInvitationModel> get invitations => List.unmodifiable(_invitations);
   List<Map<String, dynamic>> get auditLogs => List.unmodifiable(_auditLogs);
+  List<AgencyHostRequest> get hostRequests => List.unmodifiable(_hostRequests);
+
+  List<AgencyModel> get allAgencies {
+    final list = List<AgencyModel>.from(_allAgencies);
+    if (_userAgency != null && !list.any((a) => a.id == _userAgency!.id)) {
+      list.insert(0, _userAgency!);
+    }
+    return List.unmodifiable(list);
+  }
+
+  List<AgencyModel> searchAgencies(String query) {
+    if (query.trim().isEmpty) return allAgencies;
+    final q = query.trim().toLowerCase();
+    return allAgencies.where((a) => a.id.toLowerCase().contains(q) || a.name.toLowerCase().contains(q)).toList();
+  }
+
+  AgencyHostRequest? getHostRequestForUser(String userId) {
+    return _hostRequests.where((r) => r.applicantUserId == userId).firstOrNull;
+  }
+
+  String submitHostJoinRequest({
+    required String agencyId,
+    required String userId,
+    required String userName,
+    required String userAvatar,
+  }) {
+    final existing = _hostRequests.where((r) => r.applicantUserId == userId && r.agencyId == agencyId && r.status == 'Pending').firstOrNull;
+    if (existing != null) {
+      return 'You already have a pending join request for this agency.';
+    }
+
+    final targetAgency = allAgencies.where((a) => a.id == agencyId).firstOrNull;
+    final agencyName = targetAgency?.name ?? 'ZeParty Agency';
+
+    final req = AgencyHostRequest(
+      id: 'req_${DateTime.now().millisecondsSinceEpoch}',
+      agencyId: agencyId,
+      agencyName: agencyName,
+      applicantUserId: userId,
+      applicantName: userName,
+      applicantAvatar: userAvatar,
+      status: 'Pending',
+      createdAt: DateTime.now(),
+    );
+
+    _hostRequests.insert(0, req);
+    notifyListeners();
+    return 'Join request sent to $agencyName!';
+  }
+
+  void acceptHostJoinRequest(String requestId) {
+    final idx = _hostRequests.indexWhere((r) => r.id == requestId);
+    if (idx == -1) return;
+
+    final req = _hostRequests[idx];
+    req.status = 'Accepted';
+
+    // Add applicant as host
+    if (!_audioHosts.any((h) => h.userId == req.applicantUserId)) {
+      _audioHosts.add(
+        AudioHostModel(
+          hostId: 'host_${DateTime.now().millisecondsSinceEpoch}',
+          userId: req.applicantUserId,
+          userName: req.applicantName,
+          avatarUrl: req.applicantAvatar,
+          agencyId: req.agencyId,
+          agencyName: req.agencyName,
+          achievedDiamonds: 15000,
+          completedValidDays: 10,
+          dailyOnlineMinutes: 120,
+          status: 'Active',
+          joinDate: DateTime.now(),
+        ),
+      );
+    }
+
+    notifyListeners();
+  }
+
+  void declineHostJoinRequest(String requestId) {
+    final idx = _hostRequests.indexWhere((r) => r.id == requestId);
+    if (idx == -1) return;
+
+    _hostRequests[idx].status = 'Declined';
+    notifyListeners();
+  }
 
   AgencyProvider() {
     // Clean initial state for authentic user data
@@ -48,6 +192,7 @@ class AgencyProvider extends ChangeNotifier {
       countryCode: 'GLOBAL',
       createdAt: now,
     );
+    _allAgencies.insert(0, _userAgency!);
     notifyListeners();
   }
 

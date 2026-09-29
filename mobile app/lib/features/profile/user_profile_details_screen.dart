@@ -27,6 +27,7 @@ import '../settings/edit_profile_screen.dart';
 import 'level_center_screen.dart';
 import 'modules/medal_screen.dart';
 import 'modules/relationship_screen.dart';
+import 'visitors_screen.dart';
 import '../../widgets/report_sheet.dart';
 
 class UserProfileDetailsScreen extends StatefulWidget {
@@ -837,108 +838,86 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         ),
                     ],
                   ),
-                  const Spacer(),
-                  // Footprints / Visitors Button
-                  IconButton(
-                    icon: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.directions_walk_rounded, size: 16, color: Colors.purpleAccent),
-                    ),
-                    tooltip: 'Profile Visitors 🐾',
-                    onPressed: () {
-                      UserListSheet.show(
-                        context,
-                        'Profile Visitors 🐾',
-                        BackendRepository.instance.popularUsers.take(6).toList(),
-                      );
-                    },
-                  ),
-                  const SizedBox(width: 4),
-                  // Followers Tap
-                  GestureDetector(
-                    onTap: () {
-                      UserListSheet.show(
-                        context,
-                        'Followers',
-                        BackendRepository.instance.popularUsers,
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
+                  // Stat Items & Footprints Button inside scrollable Row to prevent overflow
+                  Expanded(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
                       child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text(
-                            '${AppFormatters.formatNumber(displayFollowers)} ',
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: primaryText),
-                          ),
-                          Text('Followers', style: TextStyle(fontSize: 12, color: secondaryText)),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Likes Tap (TikTok style with interactive popup)
-                  GestureDetector(
-                    onTap: () {
-                      int calculatedLikes = _user?.likesReceived ?? 0;
-                      try {
-                        final social = context.read<SocialProvider>();
-                        final userPosts = social.posts.where((p) =>
-                            (_user != null && _user!.id.isNotEmpty && p.author.id == _user!.id) ||
-                            (_user != null && _user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase())
-                        ).toList();
-                        final pLikes = userPosts.fold(0, (acc, p) => acc + p.likes);
-                        if (pLikes > calculatedLikes) calculatedLikes = pLikes;
-                      } catch (_) {}
-
-                      final auth = context.read<AuthProvider>();
-                      final isMe = _user != null && (_user!.id == auth.currentUser.id || _user!.username == auth.currentUser.username);
-
-                      showDialog(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          backgroundColor: AppColors.getCard(isDark),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                          title: Row(
-                            children: [
-                              const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 24),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Total Likes',
-                                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
+                          // Footprints / Visitors Button
+                          IconButton(
+                            icon: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.purple.withValues(alpha: 0.15),
+                                shape: BoxShape.circle,
                               ),
-                            ],
-                          ),
-                          content: Text(
-                            isMe
-                                ? 'You have total $calculatedLikes likes across all your videos and posts.'
-                                : '${_user?.name ?? 'User'} has total $calculatedLikes likes across all videos and posts.',
-                            style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(isDark)),
-                          ),
-                          actions: [
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.getPrimary(isDark),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              ),
-                              onPressed: () => Navigator.pop(ctx),
-                              child: const Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                              child: const Icon(Icons.directions_walk_rounded, size: 16, color: Colors.purpleAccent),
                             ),
-                          ],
-                        ),
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        children: [
-                          Text(
-                            () {
-                              int count = _user?.likesReceived ?? 0;
+                            tooltip: 'Profile Visitors 🐾',
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => VisitorsScreen()),
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 2),
+                          // Followers Tap
+                          GestureDetector(
+                            onTap: () {
+                              final followers = context.read<AuthProvider>().getFollowerUsers();
+                              UserListSheet.show(
+                                context,
+                                'Followers',
+                                followers,
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    '${AppFormatters.formatNumber(displayFollowers)} ',
+                                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: primaryText),
+                                  ),
+                                  Text('Followers', style: TextStyle(fontSize: 12, color: secondaryText)),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          // Following Tap
+                          GestureDetector(
+                            onTap: () {
+                              final followedList = context.read<AuthProvider>().getFollowingUsers();
+                              UserListSheet.show(
+                                context,
+                                'Following',
+                                followedList,
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    '${AppFormatters.formatNumber(context.read<AuthProvider>().followingUserIds.length)} ',
+                                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: primaryText),
+                                  ),
+                                  Text('Following', style: TextStyle(fontSize: 12, color: secondaryText)),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          // Likes Tap (TikTok style with interactive popup)
+                          GestureDetector(
+                            onTap: () {
+                              int calculatedLikes = _user?.likesReceived ?? 0;
                               try {
                                 final social = context.read<SocialProvider>();
                                 final userPosts = social.posts.where((p) =>
@@ -946,15 +925,73 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                     (_user != null && _user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase())
                                 ).toList();
                                 final pLikes = userPosts.fold(0, (acc, p) => acc + p.likes);
-                                if (pLikes > count) count = pLikes;
+                                if (pLikes > calculatedLikes) calculatedLikes = pLikes;
                               } catch (_) {}
-                              if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M ';
-                              if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K ';
-                              return '$count ';
-                            }(),
-                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: primaryText),
+
+                              final auth = context.read<AuthProvider>();
+                              final isMe = _user != null && (_user!.id == auth.currentUser.id || _user!.username == auth.currentUser.username);
+
+                              showDialog(
+                                context: context,
+                                builder: (ctx) => AlertDialog(
+                                  backgroundColor: AppColors.getCard(isDark),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                  title: Row(
+                                    children: [
+                                      const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 24),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Total Likes',
+                                        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
+                                      ),
+                                    ],
+                                  ),
+                                  content: Text(
+                                    isMe
+                                        ? 'You have total $calculatedLikes likes across all your videos and posts.'
+                                        : '${_user?.name ?? 'User'} has total $calculatedLikes likes across all videos and posts.',
+                                    style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(isDark)),
+                                  ),
+                                  actions: [
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.getPrimary(isDark),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                      onPressed: () => Navigator.pop(ctx),
+                                      child: const Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.only(bottom: 6),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    () {
+                                      int count = _user?.likesReceived ?? 0;
+                                      try {
+                                        final social = context.read<SocialProvider>();
+                                        final userPosts = social.posts.where((p) =>
+                                            (_user != null && _user!.id.isNotEmpty && p.author.id == _user!.id) ||
+                                            (_user != null && _user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase())
+                                        ).toList();
+                                        final pLikes = userPosts.fold(0, (acc, p) => acc + p.likes);
+                                        if (pLikes > count) count = pLikes;
+                                      } catch (_) {}
+                                      if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M ';
+                                      if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K ';
+                                      return '$count ';
+                                    }(),
+                                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: primaryText),
+                                  ),
+                                  Text('Likes', style: TextStyle(fontSize: 12, color: secondaryText)),
+                                ],
+                              ),
+                            ),
                           ),
-                          Text('Likes', style: TextStyle(fontSize: 12, color: secondaryText)),
                         ],
                       ),
                     ),
@@ -1051,7 +1088,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     ),
                   ),
                   const SizedBox(width: 8),
-                  const Text('🇵🇰', style: TextStyle(fontSize: 15)), // Country Flag
+                  Text(_user!.countryFlag, style: const TextStyle(fontSize: 15)), // Country Flag
 
                   const SizedBox(width: 8),
 

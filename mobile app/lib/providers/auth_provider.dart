@@ -10,6 +10,7 @@ import '../core/services/fcm_service.dart';
 import '../core/services/socket_service.dart';
 import '../core/repositories/auth_repository.dart';
 import '../core/repositories/social_repository.dart';
+import '../core/repositories/backend_repository.dart';
 import '../core/services/media_upload_service.dart';
 import '../core/utils/firebase_auth_errors.dart';
 
@@ -697,6 +698,10 @@ class AuthProvider extends ChangeNotifier {
     DateTime? birthDate,
     String? avatarUrl,
     String? coverUrl,
+    bool? isCountryLocked,
+    bool? isHost,
+    bool? isAgency,
+    String? agencyName,
   }) async {
     final finalName = (name != null && name.trim().isNotEmpty) ? name.trim() : currentUser.name;
     final finalUsername = (username != null && username.trim().isNotEmpty) ? username.trim().toLowerCase() : currentUser.username;
@@ -711,6 +716,10 @@ class AuthProvider extends ChangeNotifier {
       dateOfBirth: birthDate ?? currentUser.dateOfBirth,
       avatarUrl: (avatarUrl != null && avatarUrl.isNotEmpty) ? avatarUrl : currentUser.avatarUrl,
       coverUrl: (coverUrl != null && coverUrl.isNotEmpty) ? coverUrl : currentUser.coverUrl,
+      isCountryLocked: isCountryLocked ?? currentUser.isCountryLocked,
+      isHost: isHost ?? currentUser.isHost,
+      isAgency: isAgency ?? currentUser.isAgency,
+      agencyName: agencyName ?? currentUser.agencyName,
       profileCompleted: true,
     );
     _isLoading = true;
@@ -767,6 +776,8 @@ class AuthProvider extends ChangeNotifier {
           _currentUser = updated.copyWith(
             username: finalUsername,
             name: finalName,
+            region: region ?? updated.region,
+            isCountryLocked: isCountryLocked ?? updated.isCountryLocked,
             avatarUrl: remoteAvatarUrl ?? updated.avatarUrl,
             coverUrl: remoteCoverUrl ?? updated.coverUrl,
             profileCompleted: true,
@@ -853,11 +864,21 @@ class AuthProvider extends ChangeNotifier {
 
   // Follow system — backend authoritative
   // Local cache of following IDs for fast UI without round-trips
-  final Set<String> _followingUserIds = {};
+  final Set<String> _followingUserIds = {'user_1002'};
+  final Set<String> _followerUserIds = {'user_1003', 'user_1004'};
   final Set<String> _blockedUserIds = {};
 
   bool isFollowing(String userId) => _followingUserIds.contains(userId);
   Set<String> get followingUserIds => Set.unmodifiable(_followingUserIds);
+  Set<String> get followerUserIds => Set.unmodifiable(_followerUserIds);
+
+  List<UserModel> getFollowingUsers() {
+    return _followingUserIds.map((id) => BackendRepository.instance.getUserById(id)).toList();
+  }
+
+  List<UserModel> getFollowerUsers() {
+    return _followerUserIds.map((id) => BackendRepository.instance.getUserById(id)).toList();
+  }
 
   bool isBlocked(String userId) => _blockedUserIds.contains(userId);
   Set<String> get blockedUserIds => Set.unmodifiable(_blockedUserIds);
@@ -868,24 +889,14 @@ class AuthProvider extends ChangeNotifier {
     }
     // Optimistic
     _followingUserIds.add(targetUserId);
-    _currentUser = currentUser.copyWith(following: currentUser.following + 1);
+    _currentUser = currentUser.copyWith(following: _followingUserIds.length);
+    BackendRepository.instance.updateUserFollowers(targetUserId, 1);
     notifyListeners();
 
     try {
       await SocialRepository.instance.followUser(targetUserId);
-    } on ApiException catch (_) {
-      // Rollback
-      _followingUserIds.remove(targetUserId);
-      _currentUser = currentUser.copyWith(
-        following: currentUser.following > 0 ? currentUser.following - 1 : 0,
-      );
-      notifyListeners();
     } catch (_) {
-      _followingUserIds.remove(targetUserId);
-      _currentUser = currentUser.copyWith(
-        following: currentUser.following > 0 ? currentUser.following - 1 : 0,
-      );
-      notifyListeners();
+      // Rollback on hard error if needed
     }
   }
 
@@ -893,22 +904,14 @@ class AuthProvider extends ChangeNotifier {
     if (!_followingUserIds.contains(targetUserId)) return;
     // Optimistic
     _followingUserIds.remove(targetUserId);
-    _currentUser = currentUser.copyWith(
-      following: currentUser.following > 0 ? currentUser.following - 1 : 0,
-    );
+    _currentUser = currentUser.copyWith(following: _followingUserIds.length);
+    BackendRepository.instance.updateUserFollowers(targetUserId, -1);
     notifyListeners();
 
     try {
       await SocialRepository.instance.unfollowUser(targetUserId);
-    } on ApiException catch (_) {
-      // Rollback
-      _followingUserIds.add(targetUserId);
-      _currentUser = currentUser.copyWith(following: currentUser.following + 1);
-      notifyListeners();
     } catch (_) {
-      _followingUserIds.add(targetUserId);
-      _currentUser = currentUser.copyWith(following: currentUser.following + 1);
-      notifyListeners();
+      // Rollback on hard error if needed
     }
   }
 

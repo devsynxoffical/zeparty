@@ -319,6 +319,7 @@ model User {
   avatarUrl         String?
   coverUrl          String?
   region            String?
+  isCountryLocked   Boolean    @default(false)
   isUnderageBlocked Boolean    @default(false)
   lastLoginAt       DateTime?
   createdAt         DateTime   @default(now())

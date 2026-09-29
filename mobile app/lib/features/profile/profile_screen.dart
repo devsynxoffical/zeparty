@@ -38,6 +38,8 @@ import '../agency/apply_agency_screen.dart';
 import '../live_host/apply_live_host_screen.dart';
 import '../live_host/live_host_center_screen.dart';
 import '../host/host_center_screen.dart';
+import 'visitors_screen.dart';
+import 'profile_rooms_screen.dart';
 import '../recharge_agency/recharge_agency_screen.dart';
 import '../merchant/merchant_center_screen.dart';
 import '../bd_center/bd_center_dashboard_screen.dart';
@@ -477,6 +479,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(width: 4),
+                    Text(user.countryFlag, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(width: 4),
                     GestureDetector(
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: user.id));
@@ -552,8 +556,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               tooltip: 'Profile Visitors 🐾',
               onPressed: () {
-                final popularUsers = BackendRepository.instance.popularUsers;
-                UserListSheet.show(context, 'Profile Visitors 🐾', popularUsers.take(6).toList());
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const VisitorsScreen()));
               },
             ),
             IconButton(
@@ -574,85 +577,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildUserStatistics(UserModel user, bool isDark) {
-    final popularUsers = BackendRepository.instance.popularUsers;
     final auth = context.read<AuthProvider>();
-    int totalLikes = 0;
-    try {
-      final social = context.watch<SocialProvider>();
-      final myPosts = social.posts.where((p) =>
-          (user.id.isNotEmpty && p.author.id == user.id) ||
-          (user.username.isNotEmpty && p.author.username.toLowerCase() == user.username.toLowerCase())
-      ).toList();
-      totalLikes = myPosts.fold(0, (acc, p) => acc + p.likes);
-    } catch (_) {}
-
-    String formattedLikes;
-    if (totalLikes >= 1000000) {
-      formattedLikes = '${(totalLikes / 1000000).toStringAsFixed(1)}M';
-    } else if (totalLikes >= 1000) {
-      formattedLikes = '${(totalLikes / 1000).toStringAsFixed(1)}K';
-    } else {
-      formattedLikes = '$totalLikes';
-    }
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _buildStatItem(
-          AppFormatters.formatNumber(user.following),
+          '0',
+          'Room',
+          isDark,
+          () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => ProfileRoomsScreen(user: user)));
+          },
+        ),
+        _buildStatItem(
+          '0',
+          'Visitors',
+          isDark,
+          () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const VisitorsScreen()));
+          },
+        ),
+        _buildStatItem(
+          AppFormatters.formatNumber(auth.followingUserIds.length),
           'Following',
           isDark,
           () {
-            final authProv = context.read<AuthProvider>();
-            final followedList = popularUsers.where((u) => authProv.isFollowing(u.id)).toList();
+            final followedList = auth.getFollowingUsers();
             UserListSheet.show(context, 'Following', followedList);
           },
         ),
         _buildStatItem(
-          AppFormatters.formatNumber(user.followers),
+          AppFormatters.formatNumber(auth.followerUserIds.length),
           'Followers',
           isDark,
           () {
-            final followersList = popularUsers.where((u) => u.id != user.id).toList();
+            final followersList = auth.getFollowerUsers();
             UserListSheet.show(context, 'Followers', followersList);
-          },
-        ),
-        _buildStatItem(
-          formattedLikes,
-          'Likes',
-          isDark,
-          () {
-            showDialog(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                backgroundColor: AppColors.getCard(isDark),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: Row(
-                  children: [
-                    const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 24),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Total Likes',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
-                    ),
-                  ],
-                ),
-                content: Text(
-                  'You have total $totalLikes likes across all your videos and posts.',
-                  style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(isDark)),
-                ),
-                actions: [
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.getPrimary(isDark),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            );
           },
         ),
       ],
@@ -793,6 +754,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final liveHostApp = liveHostProv.getApplicationByUserId(user.id);
     final hasLiveHostAccess = liveHostProv.activeLiveHost != null || liveHostApp?.status == 'Approved';
 
+    final isBdAuthorized = user.role == UserRole.bd || user.role == UserRole.admin;
+    final isSellerAuthorized = user.role == UserRole.seller || user.role == UserRole.admin;
+    final isMerchantAuthorized = user.role == UserRole.admin;
+    final isAdminAuthorized = user.role == UserRole.admin;
+
     final List<Map<String, dynamic>> features = [
       {
         'title': 'Level Center',
@@ -862,16 +828,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
       },
       {
         'title': 'Host Center',
-        'imagePath': 'assets/images/profile_host_center.jpg',
+        'iconData': Icons.mic_external_on_rounded,
+        'iconColor': const Color(0xFFFFC107),
         'badge': hasAudioHostAccess ? 'AUDIO' : null,
         'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => HostCenterScreen())),
       },
-      {
-        'title': 'BD Center',
-        'iconData': Icons.business_center_rounded,
-        'badge': 'BD',
-        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const BDCenterDashboardScreen())),
-      },
+      if (isBdAuthorized)
+        {
+          'title': 'BD Center',
+          'iconData': Icons.business_center_rounded,
+          'badge': 'BD',
+          'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const BDCenterDashboardScreen())),
+        },
       {
         'title': hasLiveHostAccess ? 'Live Host Center' : 'Become a Live Host',
         'imagePath': 'assets/images/profile_livehost.jpg',
@@ -884,23 +852,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
         },
       },
-      {
-        'title': 'Recharge Agency',
-        'imagePath': 'assets/images/profile_recharge_agency.jpg',
-        'badge': 'SELLER',
-        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const RechargeAgencyScreen())),
-      },
-      {
-        'title': 'Merchant Center',
-        'imagePath': 'assets/images/profile_merchant.jpg',
-        'badge': 'MERCHANT',
-        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const MerchantCenterScreen())),
-      },
-      {
-        'title': 'Admin',
-        'imagePath': 'assets/images/profile_admin.jpg',
-        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const AdminAgencyPanel())),
-      },
+      if (isSellerAuthorized)
+        {
+          'title': 'Recharge Agency',
+          'imagePath': 'assets/images/profile_recharge_agency.jpg',
+          'badge': 'SELLER',
+          'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const RechargeAgencyScreen())),
+        },
+      if (isMerchantAuthorized)
+        {
+          'title': 'Merchant Center',
+          'iconData': Icons.workspace_premium_rounded,
+          'iconColor': const Color(0xFFFFD700),
+          'badge': 'MERCHANT',
+          'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const MerchantCenterScreen())),
+        },
+      if (isAdminAuthorized)
+        {
+          'title': 'Admin',
+          'imagePath': 'assets/images/profile_admin.jpg',
+          'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const AdminAgencyPanel())),
+        },
     ];
 
     return Wrap(
@@ -933,7 +905,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           onError: (e, s) => {},
                         ) : null,
                       ),
-                      child: feature['iconData'] != null ? Icon(feature['iconData'] as IconData, size: 28, color: Colors.pinkAccent) : null,
+                      child: feature['iconData'] != null ? Icon(feature['iconData'] as IconData, size: 28, color: (feature['iconColor'] as Color?) ?? Colors.pinkAccent) : null,
                     ),
                     if (feature['hasDot'] == true)
                       Positioned(

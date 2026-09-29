@@ -14,6 +14,7 @@ import '../../widgets/user_avatar.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/services/room_share_service.dart';
 import '../../core/utils/auth_guard.dart';
+import '../../widgets/gift_dialog.dart';
 
 class ShortVideosScreen extends StatefulWidget {
   final bool isActive;
@@ -357,7 +358,54 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
                     ),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
+
+                  // Gift Action Button
+                  GestureDetector(
+                    onTap: () {
+                      AuthGuard.require(context, () {
+                        final currentUserId = auth.currentUser.id;
+                        if (currentUserId.isNotEmpty &&
+                            (currentUserId == video.creator.id ||
+                             (video.creator.username.isNotEmpty && currentUserId == video.creator.username))) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('⚠️ You cannot send a gift to your own Short.'),
+                              backgroundColor: Colors.orangeAccent,
+                            ),
+                          );
+                          return;
+                        }
+
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => GiftDialog(
+                            streamerName: video.creator.displayName,
+                            targetReceiver: video.creator,
+                            onGiftSent: (gift) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('🎁 Sent ${gift.name} to @${video.creator.username}!'),
+                                  backgroundColor: AppColors.success,
+                                ),
+                              );
+                            },
+                          ),
+                        );
+                      }, reason: 'Sign in to gift creators');
+                    },
+                    child: const Column(
+                      children: [
+                        Icon(Icons.card_giftcard_rounded, color: AppColors.gold, size: 32),
+                        SizedBox(height: 4),
+                        Text('Gift', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
 
                   // Spinning Sound Disc
                   RotationTransition(

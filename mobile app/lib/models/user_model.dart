@@ -58,6 +58,7 @@ class UserModel {
   final String? nobleTitle;
   final String status;
   final int likesReceived;
+  final bool isCountryLocked;
 
 
   static const UserModel empty = UserModel(
@@ -96,6 +97,7 @@ class UserModel {
     accountXp: 0,
     profileCompleted: false,
     likesReceived: 0,
+    isCountryLocked: false,
   );
 
   const UserModel({
@@ -108,7 +110,7 @@ class UserModel {
     this.coverUrl,
     this.bio = '',
     this.gender = 'Not Specified',
-    this.region = 'Global',
+    this.region = '🇵🇰 Pakistan',
     this.dateOfBirth,
     this.profileCompleted = true,
     this.followers = 0,
@@ -148,6 +150,7 @@ class UserModel {
     this.nobleTitle,
     this.status = 'ACTIVE',
     this.likesReceived = 0,
+    this.isCountryLocked = false,
   });
 
   /// Automatically calculate exact age from date of birth securely
@@ -314,8 +317,6 @@ class UserModel {
       accountLevel: accountLevel,
       accountXp: 0,
       cpPartnerId: json['cpPartnerId']?.toString(),
-      cpPoints: json['cpPoints'] is int ? json['cpPoints'] as int : 0,
-      pendingCpRequests: json['pendingCpRequests'] is List ? List<String>.from(json['pendingCpRequests']) : const [],
       nobleTitle: json['nobleTitle']?.toString(),
       status: json['status']?.toString() ?? 'ACTIVE',
       likesReceived: profile['likesReceived'] is int
@@ -323,7 +324,50 @@ class UserModel {
           : (json['likesReceived'] is int
               ? json['likesReceived'] as int
               : (json['likesCount'] is int ? json['likesCount'] as int : 0)),
+      isCountryLocked: json['isCountryLocked'] == true || profile['isCountryLocked'] == true,
     );
+  }
+
+  /// Extracts or computes country flag for display on user ID and profile
+  String get countryFlag {
+    if (region.isEmpty) return '🇵🇰';
+
+    // 1. Extract emoji flag directly if present in region string
+    final emojiRegExp = RegExp(r'[\u{1F1E6}-\u{1F1FF}]{2}', unicode: true);
+    final match = emojiRegExp.firstMatch(region);
+    if (match != null) return match.group(0)!;
+
+    final lower = region.toLowerCase().trim();
+    if (lower.contains('pakistan') || lower == 'pk') return '🇵🇰';
+    if (lower.contains('united states') || lower.contains('usa') || lower == 'us') return '🇺🇸';
+    if (lower.contains('united kingdom') || lower.contains('uk') || lower == 'gb') return '🇬🇧';
+    if (lower.contains('saudi') || lower == 'sa') return '🇸🇦';
+    if (lower.contains('emirates') || lower.contains('uae') || lower == 'ae') return '🇦🇪';
+    if (lower.contains('india') || lower == 'in') return '🇮🇳';
+    if (lower.contains('bangladesh') || lower == 'bd') return '🇧🇩';
+    if (lower.contains('canada') || lower == 'ca') return '🇨🇦';
+    if (lower.contains('australia') || lower == 'au') return '🇦🇺';
+    if (lower.contains('germany') || lower == 'de') return '🇩🇪';
+    if (lower.contains('france') || lower == 'fr') return '🇫🇷';
+    if (lower.contains('turkey') || lower == 'tr') return '🇹🇷';
+    if (lower.contains('egypt') || lower == 'eg') return '🇪🇬';
+    if (lower.contains('indonesia') || lower == 'id') return '🇮🇩';
+    if (lower.contains('malaysia') || lower == 'my') return '🇲🇾';
+    if (lower.contains('philippines') || lower == 'ph') return '🇵🇭';
+    if (lower.contains('japan') || lower == 'jp') return '🇯🇵';
+    if (lower.contains('korea') || lower == 'kr') return '🇰🇷';
+    if (lower.contains('china') || lower == 'cn') return '🇨🇳';
+    if (lower.contains('qatar') || lower == 'qa') return '🇶🇦';
+    if (lower.contains('kuwait') || lower == 'kw') return '🇰🇼';
+    if (lower.contains('oman') || lower == 'om') return '🇴🇲';
+    if (lower.contains('bahrain') || lower == 'bh') return '🇧🇭';
+
+    return '🇵🇰';
+  }
+
+  /// Clean country name without flag emoji prefix
+  String get cleanCountryName {
+    return region.replaceAll(RegExp(r'[\u{1F1E6}-\u{1F1FF}]{2}', unicode: true), '').trim();
   }
 
   Map<String, dynamic> toJson() {
@@ -365,6 +409,7 @@ class UserModel {
       'charmLevel': charmLevel,
       'accountLevel': accountLevel,
       'likesReceived': likesReceived,
+      'isCountryLocked': isCountryLocked,
     };
   }
 
@@ -418,6 +463,7 @@ class UserModel {
     String? nobleTitle,
     String? status,
     int? likesReceived,
+    bool? isCountryLocked,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -469,6 +515,7 @@ class UserModel {
       nobleTitle: nobleTitle ?? this.nobleTitle,
       status: status ?? this.status,
       likesReceived: likesReceived ?? this.likesReceived,
+      isCountryLocked: isCountryLocked ?? this.isCountryLocked,
     );
   }
 }

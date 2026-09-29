@@ -85,7 +85,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _initialName = rawName.length > 25 ? rawName.substring(0, 25).trim() : rawName;
     _initialUsername = user.username;
     _initialBio = user.bio;
-    _initialRegion = user.region;
+    String initialCountryStr = user.region.trim();
+    if (initialCountryStr.isEmpty || initialCountryStr == 'Global' || initialCountryStr == 'United States') {
+      initialCountryStr = '${user.countryFlag} ${user.cleanCountryName.isNotEmpty && user.cleanCountryName != "United States" ? user.cleanCountryName : "Pakistan"}';
+    } else if (!initialCountryStr.contains(RegExp(r'[\u{1F1E6}-\u{1F1FF}]{2}', unicode: true))) {
+      initialCountryStr = '${user.countryFlag} ${user.cleanCountryName.isNotEmpty ? user.cleanCountryName : "Pakistan"}';
+    }
+    _initialRegion = initialCountryStr;
     _initialGender = user.gender.isEmpty ? 'Not Specified' : user.gender;
 
     _nameController = TextEditingController(text: _initialName);
@@ -103,8 +109,29 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _regionController.addListener(_onFieldChanged);
   }
 
+  bool _pendingCountryLock = false;
+
   void _onFieldChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _showCountrySelectionDialog(BuildContext context, bool isDark) {
+    final user = context.read<AuthProvider>().currentUser;
+    CountryPickerSheet.show(
+      context,
+      initialCode: user.countryFlag,
+      onSelect: (country) {
+        setState(() {
+          _regionController.text = '${country.flag} ${country.name}';
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Selected ${country.flag} ${country.name}. Tap Save to update profile.'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -357,15 +384,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     final auth = context.read<AuthProvider>();
 
+    final user = auth.currentUser;
     final success = await auth.updateProfile(
       name: name,
       username: username.isNotEmpty ? username : null,
       bio: bio,
       gender: _selectedGender,
-      region: region.isEmpty ? 'Global' : region,
+      region: region.isEmpty ? '🇵🇰 Pakistan' : region,
       birthDate: _selectedBirthday,
       avatarUrl: _avatarImagePath,
       coverUrl: _coverImagePath,
+      isCountryLocked: _pendingCountryLock || user.isCountryLocked,
     );
 
     if (!mounted) return;
@@ -601,31 +630,57 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Region / Country (Searchable Picker)
-              InkWell(
-                onTap: () {
-                  CountryPickerSheet.show(
-                    context,
-                    onSelect: (country) {
-                      setState(() {
-                        _regionController.text = '${country.flag} ${country.name}';
-                      });
-                    },
+              // Region / Country (1-time change flag-based searchable picker)
+              Consumer<AuthProvider>(
+                builder: (context, authProv, _) {
+                  final isLocked = authProv.currentUser.isCountryLocked || _pendingCountryLock;
+                  final currentFlag = RegExp(r'[\u{1F1E6}-\u{1F1FF}]{2}', unicode: true).firstMatch(_regionController.text)?.group(0) ?? authProv.currentUser.countryFlag;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      InkWell(
+                        onTap: () => _showCountrySelectionDialog(context, isDark),
+                        borderRadius: BorderRadius.circular(14),
+                        child: IgnorePointer(
+                          child: TextField(
+                            controller: _regionController,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            decoration: InputDecoration(
+                              labelText: 'Country / Region',
+                              hintText: 'Tap to select country...',
+                              prefixIcon: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                child: Text(currentFlag, style: const TextStyle(fontSize: 22)),
+                              ),
+                              suffixIcon: Icon(
+                                isLocked ? Icons.lock_rounded : Icons.arrow_drop_down,
+                                color: isLocked ? Colors.amberAccent : AppColors.getTextSecondary(isDark),
+                              ),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                              filled: isLocked,
+                              fillColor: isLocked ? (isDark ? Colors.black26 : Colors.grey.shade100) : null,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Text(
+                          isLocked
+                              ? '🔒 Permanent Account Country (1-time change limit reached)'
+                              : 'Region changes follow product account policy (1-time permanent change limit)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isLocked ? Colors.amber.shade700 : AppColors.getTextSecondary(isDark),
+                            fontWeight: isLocked ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                    ],
                   );
                 },
-                borderRadius: BorderRadius.circular(14),
-                child: IgnorePointer(
-                  child: TextField(
-                    controller: _regionController,
-                    decoration: InputDecoration(
-                      labelText: 'Country / Region',
-                      hintText: 'Tap to select country...',
-                      prefixIcon: const Icon(Icons.public),
-                      suffixIcon: const Icon(Icons.arrow_drop_down),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                  ),
-                ),
               ),
               const SizedBox(height: 16),
 

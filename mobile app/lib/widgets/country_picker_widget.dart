@@ -220,7 +220,6 @@ class _CountryPickerWidgetState extends State<CountryPickerWidget> {
     {'code': 'YE', 'name': 'Yemen', 'flag': '🇾🇪'},
     {'code': 'ZM', 'name': 'Zambia', 'flag': '🇿🇲'},
     {'code': 'ZW', 'name': 'Zimbabwe', 'flag': '🇿🇼'},
-    {'code': 'GLOBAL', 'name': 'Global', 'flag': '🌍'},
   ];
 
   @override

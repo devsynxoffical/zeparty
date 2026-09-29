@@ -11,6 +11,7 @@ import '../providers/social_provider.dart';
 import '../features/profile/user_profile_details_screen.dart';
 import 'report_sheet.dart';
 import 'user_avatar.dart';
+import 'gift_dialog.dart';
 
 class PostCard extends StatelessWidget {
   final PostModel post;
@@ -123,7 +124,25 @@ class PostCard extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    UserAvatar(imageUrl: displayAvatarUrl, radius: 20),
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        UserAvatar(imageUrl: displayAvatarUrl, radius: 20),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: post.author.isOnline ? const Color(0xFF00E676) : Colors.grey.shade600,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Theme.of(context).cardColor, width: 1.8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(width: 10),
                   ],
                 ),
@@ -144,20 +163,16 @@ class PostCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                    Row(
-                      children: [
-                        Text(
-                          displayAuthorName,
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(width: 8),
-                        OnlineStatusBadge(isOnline: post.author.isOnline),
-                      ],
-                    ),
-                    Text(
-                      AppFormatters.formatTimeAgo(post.createdAt),
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
+                      Text(
+                        displayAuthorName,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        AppFormatters.formatTimeAgo(post.createdAt),
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ],
                   ),
                 ),
@@ -197,6 +212,63 @@ class PostCard extends StatelessWidget {
                   },
                 ),
               ],
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert_rounded, size: 20, color: Colors.grey),
+                onSelected: (val) {
+                  if (val == 'delete') {
+                    showDialog(
+                      context: context,
+                      builder: (dlgCtx) => AlertDialog(
+                        title: const Text('Delete Post?'),
+                        content: const Text('Are you sure you want to delete this post? This action cannot be undone.'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(dlgCtx),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                            onPressed: () {
+                              Navigator.pop(dlgCtx);
+                              context.read<SocialProvider>().deletePost(post.id);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Post deleted successfully.')),
+                              );
+                            },
+                            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+                          ),
+                        ],
+                      ),
+                    );
+                  } else if (val == 'report') {
+                    ReportSheet.show(context, targetTitle: 'Post by $displayAuthorName', reportedPostId: post.id);
+                  }
+                },
+                itemBuilder: (ctx) => [
+                  if (isMe)
+                    const PopupMenuItem<String>(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                          SizedBox(width: 8),
+                          Text('Delete Post', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    )
+                  else
+                    const PopupMenuItem<String>(
+                      value: 'report',
+                      child: Row(
+                        children: [
+                          Icon(Icons.flag_outlined, color: Colors.amberAccent, size: 20),
+                          SizedBox(width: 8),
+                          Text('Report Post', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
             const SizedBox(height: 12),
@@ -236,6 +308,49 @@ class PostCard extends StatelessWidget {
                     const Icon(Icons.chat_bubble_outline, size: 20),
                     const SizedBox(width: 4),
                     Text('${post.comments}'),
+                  ],
+                ),
+              ),
+              InkWell(
+                onTap: () {
+                  AuthGuard.require(context, () {
+                    final currentUserId = auth.currentUser.id;
+                    if (currentUserId.isNotEmpty &&
+                        (currentUserId == post.author.id ||
+                         (post.author.username.isNotEmpty && currentUserId == post.author.username))) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('⚠️ You cannot send a gift to your own post.'),
+                          backgroundColor: Colors.orangeAccent,
+                        ),
+                      );
+                      return;
+                    }
+
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => GiftDialog(
+                        streamerName: displayAuthorName,
+                        targetReceiver: post.author,
+                        onGiftSent: (gift) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('🎁 Sent ${gift.name} to $displayAuthorName!'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  }, reason: 'Sign in to gift creators');
+                },
+                child: const Row(
+                  children: [
+                    Icon(Icons.card_giftcard_rounded, color: AppColors.primary, size: 20),
+                    SizedBox(width: 4),
+                    Text('Gift'),
                   ],
                 ),
               ),

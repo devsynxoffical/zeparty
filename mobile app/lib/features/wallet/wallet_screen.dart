@@ -10,6 +10,7 @@ import '../recharge/recharge_screen.dart';
 import 'agency_recharge_screen.dart';
 import 'wallet_details_screen.dart';
 import 'coin_records_screen.dart';
+import 'diamond_transfer_screen.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -84,17 +85,17 @@ class _WalletScreenState extends State<WalletScreen> {
               ),
               const SizedBox(height: 16),
 
-              // 2. Action Buttons: Top Up & Buy from Authorized Sellers
+              // 2. Action Buttons: Top Up, Authorized Sellers & Transfer
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      icon: const Icon(Icons.add_circle_rounded),
-                      label: const Text('Top Up Coins'),
+                      icon: const Icon(Icons.add_circle_rounded, size: 18),
+                      label: const Text('Top Up', style: TextStyle(fontSize: 12)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryColor,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
                       onPressed: () {
                         AuthGuard.require(context, () {
@@ -103,18 +104,35 @@ class _WalletScreenState extends State<WalletScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton.icon(
-                      icon: const Icon(Icons.storefront_rounded),
-                      label: const Text('Authorized Sellers'),
+                      icon: const Icon(Icons.storefront_rounded, size: 18),
+                      label: const Text('Sellers', style: TextStyle(fontSize: 12)),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.getTextPrimary(isDark),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
                         side: BorderSide(color: primaryColor.withValues(alpha: 0.5)),
                       ),
                       onPressed: () {
                         Navigator.push(context, MaterialPageRoute(builder: (c) => const AgencyRechargeScreen()));
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                      label: const Text('Transfer', style: TextStyle(fontSize: 12)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueAccent,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                      onPressed: () {
+                        AuthGuard.require(context, () {
+                          Navigator.push(context, MaterialPageRoute(builder: (c) => const DiamondTransferScreen()));
+                        }, reason: 'Sign in to transfer');
                       },
                     ),
                   ),

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/user_model.dart';
 import '../../providers/messaging_provider.dart';
+import '../../providers/auth_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/report_sheet.dart';
 import '../profile/user_profile_details_screen.dart';
@@ -680,18 +681,104 @@ class _InboxScreenState extends State<InboxScreen> {
                 ...messaging.systemMessages.map((m) => Card(
                       color: const Color(0xFF26213B),
                       margin: const EdgeInsets.only(bottom: 10),
-                      child: ListTile(
-                        leading: Icon(
-                          m.category == 'Security' ? Icons.security_rounded : Icons.account_balance_wallet_rounded,
-                          color: Colors.blueAccent,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.2), shape: BoxShape.circle),
+                                  child: const Icon(Icons.verified_rounded, color: Colors.amberAccent, size: 18),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '${m.title} (ZeParty Official)',
+                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                      ),
+                                      Text(
+                                        '${m.timestamp.hour}:${m.timestamp.minute.toString().padLeft(2, '0')}',
+                                        style: const TextStyle(color: Colors.grey, fontSize: 10),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (m.invitationType != null)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: m.status == 'Accepted' ? Colors.green.withValues(alpha: 0.2) : (m.status == 'Declined' ? Colors.red.withValues(alpha: 0.2) : Colors.orange.withValues(alpha: 0.2)),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      m.status,
+                                      style: TextStyle(
+                                        color: m.status == 'Accepted' ? Colors.greenAccent : (m.status == 'Declined' ? Colors.redAccent : Colors.orangeAccent),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(m.content, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                            if (m.invitationType != null && m.status == 'Pending') ...[
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      icon: const Icon(Icons.check_circle_rounded, size: 16),
+                                      label: const Text('Accept', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 8),
+                                      ),
+                                      onPressed: () {
+                                        messaging.respondToSystemInvitation(m.id, true);
+                                        final auth = context.read<AuthProvider>();
+                                        if (m.invitationType == 'Agency Owner') {
+                                          auth.updateProfile(isAgency: true, agencyName: '${m.inviterName} Agency');
+                                        } else if (m.invitationType == 'Host') {
+                                          auth.updateProfile(isHost: true);
+                                        }
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('🎉 You accepted the invitation to become a ${m.invitationType}!'), backgroundColor: Colors.green),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      icon: const Icon(Icons.cancel_rounded, size: 16),
+                                      label: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.redAccent,
+                                        side: const BorderSide(color: Colors.redAccent),
+                                        padding: const EdgeInsets.symmetric(vertical: 8),
+                                      ),
+                                      onPressed: () {
+                                        messaging.respondToSystemInvitation(m.id, false);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Invitation declined.'), backgroundColor: Colors.orangeAccent),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
                         ),
-                        title: Text(m.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                        subtitle: Text(m.content, style: const TextStyle(color: Colors.white70, fontSize: 11)),
-                        trailing: Text(
-                          '${m.timestamp.hour}:${m.timestamp.minute.toString().padLeft(2, '0')}',
-                          style: const TextStyle(color: Colors.grey, fontSize: 10),
-                        ),
-                        onTap: () => messaging.markSystemMessageRead(m.id),
                       ),
                     )),
             ],

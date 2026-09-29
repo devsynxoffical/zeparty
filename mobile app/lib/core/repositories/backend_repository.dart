@@ -10,6 +10,7 @@ import '../../models/transaction_model.dart';
 import '../../models/notification_model.dart';
 import '../../models/message_model.dart';
 import '../services/socket_service.dart';
+import '../constants/dummy_data.dart';
 import 'room_repository.dart';
 
 /// Production-ready Reactive Backend Repository Service
@@ -69,7 +70,7 @@ class BackendRepository extends ChangeNotifier {
   final List<TransactionModel> _transactions = [];
   final List<GiftModel> _gifts = List.from(GiftModel.defaultCatalog);
   final List<MessageModel> _messages = [];
-  final List<UserModel> _popularUsers = [];
+  final List<UserModel> _popularUsers = List.from(DummyData.popularUsers);
 
   List<ShortVideoModel> get shortVideos => List.unmodifiable(_shortVideos);
   List<LiveRoomModel> get liveRooms => List.unmodifiable(_liveRooms);
@@ -79,6 +80,20 @@ class BackendRepository extends ChangeNotifier {
   List<GiftModel> get gifts => List.unmodifiable(_gifts);
   List<MessageModel> get messages => List.unmodifiable(_messages);
   List<UserModel> get popularUsers => List.unmodifiable(_popularUsers);
+
+  UserModel getUserById(String userId) {
+    return _popularUsers.firstWhere(
+      (u) => u.id == userId,
+      orElse: () => UserModel(
+        id: userId,
+        name: 'ZeParty User ${userId.length > 5 ? userId.substring(userId.length - 4) : userId}',
+        username: 'user_$userId',
+        avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
+        followers: 1,
+        following: 0,
+      ),
+    );
+  }
 
   // Dynamic Video Upload
   Future<ShortVideoModel> publishVideo({

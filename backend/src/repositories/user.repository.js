@@ -352,7 +352,7 @@ export async function updateUserStatus(id, status, db = prisma) {
 
 export async function updateUserProfile(
   userId,
-  { username, name, displayName, bio, gender, dob, birthDate, dateOfBirth, avatarUrl, coverUrl, signature, countryCode, region },
+  { username, name, displayName, bio, gender, dob, birthDate, dateOfBirth, avatarUrl, coverUrl, signature, countryCode, region, isCountryLocked },
   db = prisma
 ) {
   const userUpdateData = {};
@@ -383,6 +383,7 @@ export async function updateUserProfile(
   if (coverUrl !== undefined && coverUrl !== null) userUpdateData.coverUrl = coverUrl;
   if (countryCode !== undefined) userUpdateData.countryCode = countryCode;
   if (region !== undefined && region !== null && region.trim().length > 0) userUpdateData.region = region.trim();
+  if (isCountryLocked !== undefined) userUpdateData.isCountryLocked = isCountryLocked;
 
   const profileUpdateData = {};
   const effectiveDisplayName = displayName || name;

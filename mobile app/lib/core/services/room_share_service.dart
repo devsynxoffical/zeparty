@@ -5,6 +5,7 @@ import '../../features/party_room/live_party_room_screen.dart';
 import '../../features/live/live_room_screen.dart';
 import '../../models/live_room_model.dart';
 import '../../models/user_model.dart';
+import '../../widgets/short_share_sheet.dart';
 
 /// Unified Deep Link & Share Service across Live Rooms, Party Rooms, Shorts & Feeds
 class RoomShareService {
@@ -200,7 +201,7 @@ class RoomShareService {
     );
   }
 
-  /// Share Short Video with deep link
+  /// Share Short Video with deep link and in-app friends list
   static Future<void> shareShort(
     BuildContext context, {
     required String shortId,
@@ -210,7 +211,7 @@ class RoomShareService {
     await Clipboard.setData(ClipboardData(text: link));
 
     if (!context.mounted) return;
-    _showShareDialog(context, title: title ?? 'Short Video', link: link);
+    await ShortShareSheet.show(context, shortId: shortId, title: title);
   }
 
   /// Share Social Post with deep link

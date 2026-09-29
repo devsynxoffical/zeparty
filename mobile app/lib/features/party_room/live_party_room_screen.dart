@@ -180,6 +180,22 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
   void _toggleMic() {
     final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+    final authProv = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProv.currentUser;
+    final isHost = partyProv.activeRoom?.host.id == user.id || partyProv.activeRoom?.creatorUserId == user.id;
+    final isSeated = partyProv.participants.any((p) => (p.user.id == user.id || p.user.username == user.username) && p.seatNumber != null);
+
+    if (!isHost && !isSeated) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ You must take a mic seat to enable your microphone.'),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     if (partyProv.isRoomMuted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -194,7 +210,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     partyProv.muteLocalMic(_isMicMuted);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(_isMicMuted ? 'Mic Muted 🔇' : 'Mic Live 🎙️'),
+        content: Text(_isMicMuted ? 'Microphone Muted 🔇' : 'Microphone Active 🎙️'),
         duration: const Duration(seconds: 1),
         behavior: SnackBarBehavior.floating,
       ),
@@ -1002,29 +1018,66 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             ),
             const SizedBox(width: 10),
 
-            // ── Far Right Action Icons (Gift & Microphone) ──
+            // ── Far Right Action Icons (Gift, Sound Speaker & Microphone) ──
             if (!isKeyboardOpen) ...[
-              // Gift Icon Button (Pink Accent)
+              // Gift Icon Button
               IconButton(
-                icon: const Icon(Icons.card_giftcard_rounded, color: Color(0xFFFF4081), size: 25),
+                icon: const Icon(Icons.card_giftcard_rounded, color: Color(0xFFFF4081), size: 24),
                 onPressed: _openGiftDialog,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
                 tooltip: 'Send Gift',
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
 
-              // Microphone Toggle Button (Green when Active, Red when Muted)
+              // Room Sound / Speaker Button (Cyan when Active, Red when Muted)
               IconButton(
                 icon: Icon(
-                  (provider.isRoomMuted || _isMicMuted) ? Icons.mic_off_rounded : Icons.mic_rounded,
-                  color: (provider.isRoomMuted || _isMicMuted) ? Colors.redAccent : const Color(0xFF00E676),
-                  size: 25,
+                  provider.isSpeakerMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                  color: provider.isSpeakerMuted ? Colors.redAccent : const Color(0xFF00E5FF),
+                  size: 24,
                 ),
-                onPressed: _toggleMic,
+                onPressed: () {
+                  provider.toggleSpeakerOutput();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(provider.isSpeakerMuted ? 'Room Audio Off 🔇' : 'Room Audio On 🔊'),
+                      duration: const Duration(seconds: 1),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                tooltip: (provider.isRoomMuted || _isMicMuted) ? 'Unmute Mic' : 'Mute Mic',
+                tooltip: provider.isSpeakerMuted ? 'Turn Sound On' : 'Turn Sound Off',
+              ),
+              const SizedBox(width: 10),
+
+              // Microphone Toggle Button (Green when Active, Red/Grey when Muted)
+              Builder(
+                builder: (ctx) {
+                  final user = ctx.watch<AuthProvider>().currentUser;
+                  final isHost = provider.activeRoom?.host.id == user.id || provider.activeRoom?.creatorUserId == user.id;
+                  final isSeated = provider.participants.any((p) => (p.user.id == user.id || p.user.username == user.username) && p.seatNumber != null);
+                  final canSpeak = isHost || isSeated;
+
+                  final isMuted = provider.isRoomMuted || _isMicMuted || !canSpeak;
+                  final micColor = !canSpeak
+                      ? Colors.grey
+                      : (isMuted ? Colors.redAccent : const Color(0xFF00E676));
+
+                  return IconButton(
+                    icon: Icon(
+                      isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                      color: micColor,
+                      size: 24,
+                    ),
+                    onPressed: _toggleMic,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    tooltip: isMuted ? 'Unmute Mic' : 'Mute Mic',
+                  );
+                },
               ),
             ],
           ],

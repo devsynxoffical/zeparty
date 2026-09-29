@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../models/audio_host_model.dart';
 import '../../providers/agency_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/messaging_provider.dart';
 import '../../widgets/user_avatar.dart';
 
 class AgencyCenterScreen extends StatefulWidget {
@@ -25,7 +26,7 @@ class _AgencyCenterScreenState extends State<AgencyCenterScreen> with SingleTick
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -92,6 +93,7 @@ class _AgencyCenterScreenState extends State<AgencyCenterScreen> with SingleTick
           tabs: const [
             Tab(icon: Icon(Icons.dashboard_rounded, size: 18), text: 'Overview'),
             Tab(icon: Icon(Icons.people_alt_rounded, size: 18), text: 'Team Members'),
+            Tab(icon: Icon(Icons.how_to_reg_rounded, size: 18), text: 'Join Requests'),
             Tab(icon: Icon(Icons.bar_chart_rounded, size: 18), text: 'Data'),
             Tab(icon: Icon(Icons.account_balance_wallet_rounded, size: 18), text: 'Agency Wallet'),
           ],
@@ -102,6 +104,7 @@ class _AgencyCenterScreenState extends State<AgencyCenterScreen> with SingleTick
         children: [
           _buildOverviewTab(context, agencyProv, isDark, primary),
           _buildTeamMembersTab(context, agencyProv, authUser.id, isDark, primary),
+          _buildJoinRequestsTab(context, agencyProv, isDark, primary),
           _buildDataTab(context, agencyProv, isDark, primary),
           _buildAgencyWalletTab(context, agencyProv, authUser.id, isDark, primary),
         ],
@@ -819,24 +822,44 @@ class _AgencyCenterScreenState extends State<AgencyCenterScreen> with SingleTick
       builder: (dlgCtx) => AlertDialog(
         backgroundColor: AppColors.getCard(isDark),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Add Host by User ID', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
+        title: Text('Invite Host by User ID', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
         content: TextField(
           controller: _addHostIdController,
-          decoration: const InputDecoration(hintText: 'Enter User ID (e.g. user_101)'),
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Enter User ID (e.g. user_1002 or user_1003)',
+            border: OutlineInputBorder(),
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dlgCtx), child: const Text('Cancel')),
           ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.getPrimary(isDark), foregroundColor: Colors.white),
             onPressed: () {
               final id = _addHostIdController.text.trim();
               if (id.isNotEmpty) {
-                prov.inviteMember(targetUserId: id, targetName: 'Host $id', inviterUserId: currentUserId, inviterName: 'Agency Manager');
+                final agencyName = prov.userAgency?.name ?? 'ZeParty Agency';
+                prov.inviteMember(targetUserId: id, targetName: 'Host $id', inviterUserId: currentUserId, inviterName: agencyName);
+
+                // Dispatch Official Inbox Notification (Change Request 14)
+                final messaging = context.read<MessagingProvider>();
+                messaging.sendOfficialInvitation(
+                  title: 'Host Invitation',
+                  content: '$agencyName invited you to join as a Host.',
+                  invitationType: 'Host',
+                  invitationId: 'inv_host_${DateTime.now().millisecondsSinceEpoch}',
+                  inviterName: agencyName,
+                  targetId: id,
+                );
+
                 _addHostIdController.clear();
                 Navigator.pop(dlgCtx);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Invitation sent to Host $id!')));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('✉️ Host invitation sent to $id via ZeParty Official Inbox!'), backgroundColor: Colors.green),
+                );
               }
             },
-            child: const Text('Add Host'),
+            child: const Text('Send Host Invitation', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -877,6 +900,143 @@ class _AgencyCenterScreenState extends State<AgencyCenterScreen> with SingleTick
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildJoinRequestsTab(BuildContext context, AgencyProvider prov, bool isDark, Color primary) {
+    final requests = prov.hostRequests;
+
+    if (requests.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.how_to_reg_rounded, size: 56, color: AppColors.getTextSecondary(isDark)),
+              const SizedBox(height: 12),
+              Text(
+                'No Pending Host Join Requests',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.getTextPrimary(isDark)),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Host applicants who search your agency ID and submit a request will appear here for approval.',
+                style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(isDark)),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: requests.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (context, idx) {
+        final req = requests[idx];
+        final isPending = req.status == 'Pending';
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.getCard(isDark),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: primary.withValues(alpha: 0.2)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    backgroundImage: NetworkImage(req.applicantAvatar),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          req.applicantName,
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppColors.getTextPrimary(isDark)),
+                        ),
+                        Text(
+                          'Applicant User ID: ${req.applicantUserId}',
+                          style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(isDark)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isPending
+                          ? Colors.amber.withValues(alpha: 0.2)
+                          : (req.status == 'Accepted' ? Colors.green.withValues(alpha: 0.2) : Colors.red.withValues(alpha: 0.2)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      req.status,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: isPending ? Colors.amber : (req.status == 'Accepted' ? Colors.green : Colors.red),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (isPending) ...[
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.redAccent,
+                          side: const BorderSide(color: Colors.redAccent),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () {
+                          prov.declineHostJoinRequest(req.id);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Declined host join request from ${req.applicantName}')),
+                          );
+                        },
+                        child: const Text('Decline'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onPressed: () {
+                          prov.acceptHostJoinRequest(req.id);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Accepted ${req.applicantName}! User added to agency host roster.'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+                        },
+                        child: const Text('Accept Host'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 }

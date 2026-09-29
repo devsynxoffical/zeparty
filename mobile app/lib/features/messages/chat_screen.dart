@@ -288,16 +288,20 @@ class _ChatScreenState extends State<ChatScreen> {
                         style: TextStyle(fontSize: 10, color: Color(0xFF00E5FF), fontWeight: FontWeight.bold),
                       )
                     else if (widget.user.isLive)
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(4)),
-                            child: const Text('🔴 LIVE', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
-                          ),
-                          const SizedBox(width: 4),
-                          const Text('Streaming now', style: TextStyle(fontSize: 10, color: Colors.redAccent)),
-                        ],
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(4)),
+                              child: const Text('🔴 LIVE', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
+                            ),
+                            const SizedBox(width: 4),
+                            const Text('Streaming now', style: TextStyle(fontSize: 10, color: Colors.redAccent), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          ],
+                        ),
                       )
                     else
                       const Row(
