@@ -28,8 +28,6 @@ import {
   updateEconomyConfig,
   disableEconomyConfig,
   restoreEconomyConfig,
-  getEffectivePolicy,
-  getEconomyConfigByKey,
 } from '../../services/modules/economy.service';
 
 // Authoritative Baseline Defaults
@@ -56,7 +54,7 @@ const DEFAULT_EXCHANGE_RATES = [
     rateType: 'USD_TO_COIN',
     name: 'USD to Coin Standard Rate',
     currency: 'USD',
-    country: 'GLOBAL',
+    country: 'US',
     currentRate: 10000,
     proposedRate: 10500,
     unit: 'Coins / $1 USD',
@@ -72,7 +70,7 @@ const DEFAULT_EXCHANGE_RATES = [
     rateType: 'DIAMOND_TO_USD',
     name: 'Diamond to USD Payout Rate',
     currency: 'USD',
-    country: 'GLOBAL',
+    country: 'US',
     currentRate: 10000,
     proposedRate: 10000,
     unit: 'Diamonds / $1 USD',
@@ -213,11 +211,11 @@ export function EconomySettingsPage() {
   // Draft Rate Modal
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [draftForm, setDraftForm] = useState({
-    name: '',
+    name: 'Promotional USD Coin Rate',
     currency: 'USD',
-    country: 'GLOBAL',
+    country: 'US',
     proposedRate: 10000,
-    unit: 'Coins / 1 Unit'
+    unit: 'Coins / 1 USD'
   });
 
   // Country Override Modal
@@ -332,7 +330,6 @@ export function EconomySettingsPage() {
     setTimeout(() => setFeedback(null), 4500);
   };
 
-  // Helper to format country name safely
   const formatCountryLabel = (codeOrName) => {
     if (!codeOrName || codeOrName === 'GLOBAL' || codeOrName === 'Global' || codeOrName === 'All') {
       return '🌐 Global Default';
@@ -529,13 +526,13 @@ export function EconomySettingsPage() {
   };
 
   const handleOpenCreateDraft = () => {
-    const defaultCurr = 'USD';
     const defaultCountry = 'US';
+    const defaultCurr = getCurrencyForCountry(defaultCountry);
     setDraftForm({
-      name: 'Promotional USD Coin Rate',
+      name: `${getCountryName(defaultCountry)} ${defaultCurr} Standard Rate`,
       currency: defaultCurr,
       country: defaultCountry,
-      proposedRate: 11000,
+      proposedRate: 10000,
       unit: `Coins / 1 ${defaultCurr}`
     });
     setShowDraftModal(true);
@@ -543,12 +540,13 @@ export function EconomySettingsPage() {
 
   const handleDraftCountryChange = (countryCode) => {
     const autoCurr = getCurrencyForCountry(countryCode);
+    const countryName = getCountryName(countryCode);
     setDraftForm((prev) => ({
       ...prev,
       country: countryCode,
       currency: autoCurr,
       unit: `Coins / 1 ${autoCurr}`,
-      name: prev.name || `${getCountryName(countryCode)} ${autoCurr} Rate`
+      name: `${countryName} ${autoCurr} Rate`
     }));
   };
 
@@ -1967,24 +1965,25 @@ export function EconomySettingsPage() {
         </Modal>
       )}
 
-      {/* Create Rate Draft Modal with Country & Currency Dropdowns */}
+      {/* Create Rate Draft Modal with Country Dropdown & Currency Selector */}
       {showDraftModal && (
-        <Modal isOpen={true} onClose={() => setShowDraftModal(false)} title="Create New Currency Exchange Rate Draft">
-          <form onSubmit={handleCreateDraft} className="space-y-3 text-xs text-slate-300">
+        <Modal isOpen={true} onClose={() => setShowDraftModal(false)} title="Create New Exchange Rate Draft">
+          <form onSubmit={handleCreateDraft} className="space-y-4 text-xs text-slate-300">
             <div>
-              <label className="text-slate-400 mb-1 block font-medium">Rate Display Name *</label>
+              <label className="text-slate-400 mb-1 block font-medium">Rate Name *</label>
               <Input
                 value={draftForm.name}
                 onChange={(e) => setDraftForm({ ...draftForm, name: e.target.value })}
                 required
-                placeholder="e.g. Saudi Arabia SAR Standard Rate"
+                placeholder="e.g. Pakistan PKR Standard Rate"
               />
             </div>
 
+            {/* Country & Currency Dropdowns */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <CountrySelect
-                  label="Target Country / Region *"
+                  label="Select Country / Region *"
                   value={draftForm.country}
                   onChange={handleDraftCountryChange}
                 />
@@ -2000,7 +1999,7 @@ export function EconomySettingsPage() {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block font-medium">Proposed Conversion Rate *</label>
+                <label className="text-slate-400 mb-1 block font-medium">Proposed Rate (Coins / 1 Unit) *</label>
                 <Input
                   type="number"
                   step="0.01"
@@ -2017,18 +2016,18 @@ export function EconomySettingsPage() {
                   value={draftForm.unit}
                   onChange={(e) => setDraftForm({ ...draftForm, unit: e.target.value })}
                   placeholder={`Coins / 1 ${draftForm.currency}`}
-                  className="font-mono"
+                  className="font-mono text-slate-300"
                 />
               </div>
             </div>
 
             <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-400">
-              💡 <strong>Instant Database Sync:</strong> Clicking "Create & Save Draft" immediately writes this configuration to PostgreSQL <code>EXCHANGE_RATES</code>.
+              💡 <strong>Instant Database Sync:</strong> Selecting your country automatically detects the official currency code. Submitting saves this rate directly to PostgreSQL table <code>PolicyConfiguration</code> (Key: <code>EXCHANGE_RATES</code>).
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
               <Button type="button" variant="outline" size="sm" onClick={() => setShowDraftModal(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" size="sm">Create & Save Draft</Button>
+              <Button type="submit" variant="primary" size="sm">Create Draft & Save</Button>
             </div>
           </form>
         </Modal>
