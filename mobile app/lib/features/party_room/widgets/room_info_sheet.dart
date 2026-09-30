@@ -1239,9 +1239,13 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
                       ),
                       subtitle: Row(
                         children: [
-                          Text(
-                            'ID: ${targetUser.id.length > 8 ? targetUser.id.substring(0, 8) : targetUser.id}',
-                            style: TextStyle(color: secondaryColor, fontSize: 11),
+                          Flexible(
+                            child: Text(
+                              'ID: ${targetUser.id.length > 8 ? targetUser.id.substring(0, 8) : targetUser.id}',
+                              style: TextStyle(color: secondaryColor, fontSize: 11),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Container(width: 3, height: 3, decoration: BoxDecoration(color: secondaryColor, shape: BoxShape.circle)),

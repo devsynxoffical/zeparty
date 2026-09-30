@@ -182,6 +182,8 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                               Text(
                                 'ID: ${user.id} • 🌐 ${user.region}',
                                 style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(widget.isDark)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 4),
                               Wrap(

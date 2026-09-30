@@ -1062,9 +1062,13 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               // Bounded User ID + Copy Button + Country Flag + Room/Agency Roles
               Row(
                 children: [
-                  Text(
-                    'ID: ${_user!.id}',
-                    style: TextStyle(color: secondaryText, fontSize: 13, fontWeight: FontWeight.bold),
+                  Flexible(
+                    child: Text(
+                      'ID: ${_user!.id}',
+                      style: TextStyle(color: secondaryText, fontSize: 13, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   const SizedBox(width: 4),
                   GestureDetector(
