@@ -448,11 +448,10 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Do NOT pass serverClientId — let google_sign_in auto-read it from
-      // google-services.json. Providing it manually causes ApiException: 10
-      // (DEVELOPER_ERROR) when the OAuth 2.0 client ID doesn't match exactly.
+      // Use Web Client ID as serverClientId to ensure Google OAuth returns valid OIDC idToken for Firebase
       final GoogleSignIn googleSignIn = GoogleSignIn(
         scopes: ['email', 'profile'],
+        serverClientId: '13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com',
       );
 
       try {
