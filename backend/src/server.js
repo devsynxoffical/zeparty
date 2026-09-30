@@ -22,7 +22,26 @@ async function connectDatabaseWithRetry(maxRetries = 20, delayMs = 3000) {
         console.log(`🔄 Connecting to PostgreSQL database via Prisma (attempt ${attempt}/${maxRetries})...`);
       }
       await prisma.$connect();
-      console.log('✅ Database connected successfully');
+      // Ensure required schema columns and enum values are present idempotently
+      await prisma.$executeRawUnsafe(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_type t 
+            JOIN pg_enum e ON t.oid = e.enumtypid 
+            WHERE t.typname = 'UserStatus' AND e.enumlabel = 'DELETED'
+          ) THEN
+            ALTER TYPE "UserStatus" ADD VALUE 'DELETED';
+          END IF;
+        END$$;
+      `).catch(() => {});
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "scheduledPermanentDeletionAt" TIMESTAMP(3);
+      `).catch(() => {});
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "deletionReason" TEXT;
+      `).catch(() => {});
+      console.log('✅ Database connected and verified successfully');
       return;
     } catch (err) {
       console.warn(`⚠️ Database connection attempt ${attempt}/${maxRetries} failed: ${err.message}`);
