@@ -4,7 +4,7 @@ export const queryUsersSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().trim().optional(),
-  status: z.enum(['ACTIVE', 'SUSPENDED', 'BANNED']).optional(),
+  status: z.enum(['ACTIVE', 'SUSPENDED', 'BANNED', 'DELETED']).optional(),
   userType: z.enum(['USER', 'HOST', 'AGENCY_OWNER', 'BD_AGENT', 'COIN_SELLER', 'MERCHANT']).optional(),
   countryCode: z.string().length(2).optional(),
   createdFrom: z.string().optional(),
@@ -12,9 +12,14 @@ export const queryUsersSchema = z.object({
 });
 
 export const updateUserStatusSchema = z.object({
-  status: z.enum(['ACTIVE', 'SUSPENDED', 'BANNED'], {
-    required_error: 'Status is required and must be ACTIVE, SUSPENDED, or BANNED',
+  status: z.enum(['ACTIVE', 'SUSPENDED', 'BANNED', 'DELETED'], {
+    required_error: 'Status is required and must be ACTIVE, SUSPENDED, BANNED, or DELETED',
   }),
+  reason: z.string().trim().max(500).optional(),
+});
+
+export const deleteAccountSchema = z.object({
+  password: z.string().optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
@@ -62,7 +67,7 @@ export const updateAdminUserByAdminSchema = z.object({
   phone: z.string().trim().max(30).optional().or(z.literal('')),
   email: z.string().trim().email().optional().or(z.literal('')),
   countryCode: z.string().trim().length(2).optional(),
-  status: z.enum(['ACTIVE', 'SUSPENDED', 'BANNED']).optional(),
+  status: z.enum(['ACTIVE', 'SUSPENDED', 'BANNED', 'DELETED']).optional(),
   userType: z.enum(['USER', 'HOST', 'AGENCY_OWNER', 'BD_AGENT', 'COIN_SELLER', 'MERCHANT']).optional(),
   avatarUrl: z.string().max(1000).optional().or(z.literal('')),
   bio: z.string().trim().max(500).optional(),
@@ -77,6 +82,7 @@ export const userIdParamSchema = z.object({
 export default {
   queryUsersSchema,
   updateUserStatusSchema,
+  deleteAccountSchema,
   updateUserProfileSchema,
   createAdminUserSchema,
   updateAdminUserByAdminSchema,

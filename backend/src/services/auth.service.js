@@ -303,13 +303,15 @@ export async function syncUserFromApp({
   phone,
   coins = 1000,
   diamonds = 100,
+  isSignup = false,
   device = {},
   ipAddress,
   userAgent,
 }) {
-  const targetId = uid || id;
-  const cleanEmail = email ? email.trim().toLowerCase() : null;
-  const cleanPhone = phone ? phone.trim() : null;
+  const targetId = id || uid;
+  const cleanEmail = email && typeof email === 'string' && email.trim() ? email.trim().toLowerCase() : null;
+  const cleanPhone = phone && typeof phone === 'string' && phone.trim() ? phone.trim() : null;
+  const firebaseUid = (uid && !/^[1-9]\d{6}$/.test(String(uid))) ? String(uid) : null;
 
   // Sanitize display name to filter out raw technical IDs/UIDs and clamp to 25 chars max
   const isTechIdStr = (str) => {
@@ -333,24 +335,49 @@ export async function syncUserFromApp({
     cleanName = 'ZeParty Member';
   }
 
-  let existingUser = null;
-  // 1. Look up strictly by verified unique email
-  if (cleanEmail) {
-    existingUser = await userRepository.findByEmail(cleanEmail);
-  }
-  // 2. Look up strictly by verified phone
-  if (!existingUser && cleanPhone) {
-    existingUser = await userRepository.findByPhone(cleanPhone);
-  }
-  // 3. Look up by 7-digit PostgreSQL user ID if valid
-  if (!existingUser && targetId && /^[1-9]\d{6}$/.test(String(targetId))) {
-    existingUser = await userRepository.findById(String(targetId));
-  }
-
-  let user = existingUser;
+  let user = null;
   let isNewUser = false;
 
-  if (!user) {
+  if (isSignup) {
+    // ----------------------------------------------------
+    // STRICT SIGNUP VALIDATION - NEVER MERGE OR OVERLAP USERS
+    // ----------------------------------------------------
+    if (cleanEmail) {
+      const existing = await userRepository.findByEmail(cleanEmail);
+      if (existing) {
+        if (existing.status === 'DELETED') {
+          const err = new Error('An account with this email is currently in the 3-day recovery period. Please log in to restore your account.');
+          err.statusCode = 409;
+          err.code = 'EMAIL_IN_RECOVERY';
+          throw err;
+        }
+        const err = new Error('This email is already registered. Please log in or use a different email.');
+        err.statusCode = 409;
+        err.code = 'EMAIL_ALREADY_EXISTS';
+        throw err;
+      }
+    }
+
+    if (cleanPhone) {
+      const existing = await userRepository.findByPhone(cleanPhone);
+      if (existing) {
+        const err = new Error('This phone number is already registered. Please log in or use a different phone number.');
+        err.statusCode = 409;
+        err.code = 'PHONE_ALREADY_EXISTS';
+        throw err;
+      }
+    }
+
+    if (firebaseUid) {
+      const existing = await userRepository.findByFirebaseUid(firebaseUid);
+      if (existing) {
+        const err = new Error('An account associated with this login already exists. Please log in.');
+        err.statusCode = 409;
+        err.code = 'ACCOUNT_ALREADY_EXISTS';
+        throw err;
+      }
+    }
+
     // Generate guaranteed unique username without colliding with existing users
     let finalUsername = username ? username.trim().toLowerCase().replaceAll(/[^a-z0-9_]/g, '') : null;
     if (!finalUsername || finalUsername.length < 3 || isTechIdStr(finalUsername)) {
@@ -370,6 +397,7 @@ export async function syncUserFromApp({
     }
 
     user = await userRepository.createUserWithProfile({
+      firebaseUid,
       email: cleanEmail,
       phone: cleanPhone,
       username: finalUsername,
@@ -384,29 +412,96 @@ export async function syncUserFromApp({
     });
     isNewUser = true;
   } else {
-    // Existing user: ensure email/phone are recorded if empty, and repair technical ID display names
-    try {
-      if (cleanEmail && !user.email) {
+    // ----------------------------------------------------
+    // LOGIN / SYNC FLOW
+    // ----------------------------------------------------
+    let existingUser = null;
+    if (cleanEmail) {
+      existingUser = await userRepository.findByEmail(cleanEmail);
+    }
+    if (!existingUser && cleanPhone) {
+      existingUser = await userRepository.findByPhone(cleanPhone);
+    }
+    if (!existingUser && firebaseUid) {
+      existingUser = await userRepository.findByFirebaseUid(firebaseUid);
+    }
+    if (!existingUser && targetId && /^[1-9]\d{6}$/.test(String(targetId))) {
+      existingUser = await userRepository.findById(String(targetId));
+    }
+
+    if (existingUser) {
+      user = existingUser;
+
+      // Check account status
+      if (user.status === 'BANNED') {
+        const err = new Error('Your account has been banned by the platform administrator.');
+        err.statusCode = 403;
+        err.code = 'ACCOUNT_BANNED';
+        throw err;
+      }
+      if (user.status === 'SUSPENDED') {
+        const err = new Error('Your account is temporarily suspended.');
+        err.statusCode = 403;
+        err.code = 'ACCOUNT_SUSPENDED';
+        throw err;
+      }
+      if (user.status === 'DELETED') {
+        const now = new Date();
+        if (user.scheduledPermanentDeletionAt && new Date(user.scheduledPermanentDeletionAt) > now) {
+          // Account is within 3-day recovery window -> automatically restore it!
+          await userRepository.restoreDeletedUser(user.id);
+          user = await userRepository.findById(user.id);
+        } else {
+          // Account expired past 3 days -> purge permanently
+          await userRepository.purgeExpiredDeletedUsers().catch(() => {});
+          const err = new Error('This account has been permanently deleted.');
+          err.statusCode = 404;
+          err.code = 'ACCOUNT_PERMANENTLY_DELETED';
+          throw err;
+        }
+      }
+
+      // Link firebaseUid if missing
+      if (firebaseUid && !user.firebaseUid) {
         await prisma.user.update({
           where: { id: user.id },
-          data: { email: cleanEmail },
-        });
+          data: { firebaseUid },
+        }).catch(() => {});
       }
-      if (cleanPhone && !user.phone) {
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { phone: cleanPhone },
-        });
+    } else {
+      // First-time login / sync (e.g. Google Sign-in on fresh account)
+      let finalUsername = username ? username.trim().toLowerCase().replaceAll(/[^a-z0-9_]/g, '') : null;
+      if (!finalUsername || finalUsername.length < 3 || isTechIdStr(finalUsername)) {
+        if (cleanEmail) {
+          finalUsername = cleanEmail.split('@')[0].toLowerCase().replaceAll(/[^a-z0-9_]/g, '');
+        }
+        if (!finalUsername || finalUsername.length < 3) {
+          finalUsername = `user_${crypto.randomBytes(3).toString('hex')}`;
+        }
       }
-      // If user profile has an empty or technical ID display name (like raw Firebase UID), update it
-      if (user.profile && isTechIdStr(user.profile.displayName) && !isTechIdStr(cleanName)) {
-        await prisma.userProfile.update({
-          where: { userId: user.id },
-          data: { displayName: cleanName },
-        });
+      
+      let collision = await userRepository.findByUsername(finalUsername);
+      while (collision) {
+        finalUsername = `${finalUsername.slice(0, 15)}_${Math.floor(100 + Math.random() * 900)}`;
+        collision = await userRepository.findByUsername(finalUsername);
       }
-    } catch (_) {}
-    user = await userRepository.findById(user.id);
+
+      user = await userRepository.createUserWithProfile({
+        firebaseUid,
+        email: cleanEmail,
+        phone: cleanPhone,
+        username: finalUsername,
+        displayName: cleanName,
+        avatarUrl: avatarUrl || null,
+        coverUrl: null,
+        status: 'ACTIVE',
+        userType: 'USER',
+        countryCode: countryCode || 'US',
+        coinBalance: coins || 1000,
+        diamondBalance: diamonds || 100,
+      });
+      isNewUser = true;
+    }
   }
 
   if (device && (device.deviceToken || device.macAddress || device.platform)) {
@@ -438,6 +533,60 @@ export async function syncUserFromApp({
   };
 }
 
+export async function recoverAccount({ email, phone, ipAddress, userAgent }) {
+  const cleanEmail = email ? email.trim().toLowerCase() : null;
+  const cleanPhone = phone ? phone.trim() : null;
+
+  let user = null;
+  if (cleanEmail) {
+    user = await userRepository.findByEmail(cleanEmail);
+  } else if (cleanPhone) {
+    user = await userRepository.findByPhone(cleanPhone);
+  }
+
+  if (!user) {
+    const err = new Error('No account found with the provided details.');
+    err.statusCode = 404;
+    err.code = 'USER_NOT_FOUND';
+    throw err;
+  }
+
+  if (user.status !== 'DELETED') {
+    const err = new Error('This account is already active.');
+    err.statusCode = 400;
+    err.code = 'ACCOUNT_ALREADY_ACTIVE';
+    throw err;
+  }
+
+  const now = new Date();
+  if (user.scheduledPermanentDeletionAt && new Date(user.scheduledPermanentDeletionAt) <= now) {
+    await userRepository.purgeExpiredDeletedUsers().catch(() => {});
+    const err = new Error('The 3-day recovery window has expired. This account has been permanently deleted.');
+    err.statusCode = 410;
+    err.code = 'ACCOUNT_PERMANENTLY_DELETED';
+    throw err;
+  }
+
+  await userRepository.restoreDeletedUser(user.id);
+  const restoredUser = await userRepository.findById(user.id);
+
+  const sessionResult = await sessionService.createSession({
+    userId: restoredUser.id,
+    userType: restoredUser.userType || 'USER',
+    ipAddress,
+    userAgent,
+  });
+
+  await userRepository.updateLastLogin(restoredUser.id).catch(() => {});
+
+  return {
+    user: sanitizeUser(restoredUser),
+    accessToken: sessionResult.accessToken,
+    refreshToken: sessionResult.refreshToken,
+    expiresAt: sessionResult.expiresAt,
+  };
+}
+
 export default {
   requestOtp,
   verifyOtpAndAuthenticate,
@@ -446,5 +595,6 @@ export default {
   getCurrentUser,
   adminLogin,
   syncUserFromApp,
+  recoverAccount,
 };
 

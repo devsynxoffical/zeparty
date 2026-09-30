@@ -17,6 +17,7 @@ router.post('/firebase-sync', authController.syncAppUser);
 router.post('/social-login', authController.syncAppUser);
 router.post('/register-app-user', authController.syncAppUser);
 
+router.post('/recover-account', authController.recoverAccount);
 router.post('/refresh', authController.refresh);
 router.post('/admin/login', authController.adminLogin);
 

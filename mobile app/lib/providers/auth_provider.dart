@@ -305,6 +305,8 @@ class AuthProvider extends ChangeNotifier {
     }
 
     try {
+      await _clearUserLocalSession();
+
       final userCredential = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: usernameOrEmail.trim(),
         password: password,
@@ -314,16 +316,22 @@ class AuthProvider extends ChangeNotifier {
       final cleanEmail = usernameOrEmail.trim();
 
       // Synchronize with ZeParty backend database & save JWT tokens
-      // We do NOT send email as username or displayName so backend never overwrites them
       try {
         final authRes = await _authRepository.syncUser(
           uid: firebaseUser?.uid,
           email: cleanEmail.contains('@') ? cleanEmail : null,
           avatarUrl: firebaseUser?.photoURL,
+          isSignup: false,
         );
         _currentUser = authRes.user;
       } catch (syncErr) {
         debugPrint('Backend sync fallback in email login: $syncErr');
+        if (syncErr is ApiException && syncErr.statusCode == 409) {
+          _errorMessage = syncErr.message;
+          _isLoading = false;
+          notifyListeners();
+          return false;
+        }
         final existingLocal = _currentUser;
         _currentUser = UserModel(
           id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
@@ -381,6 +389,9 @@ class AuthProvider extends ChangeNotifier {
     }
 
     try {
+      // Clear any existing stale session tokens before starting fresh signup
+      await _clearUserLocalSession();
+
       final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password,
@@ -397,7 +408,7 @@ class AuthProvider extends ChangeNotifier {
           ? username.trim().replaceAll('@', '').trim()
           : cleanEmail.split('@').first;
 
-      // Register and persist user into PostgreSQL backend
+      // Register and persist user into PostgreSQL backend with isSignup: true
       try {
         final authRes = await _authRepository.syncUser(
           uid: firebaseUser?.uid,
@@ -407,10 +418,17 @@ class AuthProvider extends ChangeNotifier {
           username: finalUsername,
           coins: 1000,
           diamonds: 100,
+          isSignup: true,
         );
         _currentUser = authRes.user;
       } catch (syncErr) {
-        debugPrint('Backend sync fallback in email signup: $syncErr');
+        debugPrint('Backend sync error in email signup: $syncErr');
+        if (syncErr is ApiException) {
+          _errorMessage = syncErr.message;
+          _isLoading = false;
+          notifyListeners();
+          return false;
+        }
         _currentUser = UserModel(
           id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
           username: finalUsername,
@@ -434,7 +452,12 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = FirebaseAuthErrorHandler.getErrorMessage(e);
+      final msg = FirebaseAuthErrorHandler.getErrorMessage(e);
+      if (msg.toLowerCase().contains('already in use') || msg.toLowerCase().contains('already registered')) {
+        _errorMessage = 'This email is already registered. Please log in or use a different email.';
+      } else {
+        _errorMessage = msg;
+      }
       _isLoading = false;
       notifyListeners();
       return false;
@@ -448,7 +471,8 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Use Web Client ID as serverClientId to ensure Google OAuth returns valid OIDC idToken for Firebase
+      await _clearUserLocalSession();
+
       final GoogleSignIn googleSignIn = GoogleSignIn(
         scopes: ['email', 'profile'],
         serverClientId: '13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com',
@@ -463,6 +487,13 @@ class AuthProvider extends ChangeNotifier {
         googleUser = await googleSignIn.signIn();
       } catch (signInErr) {
         debugPrint('[GoogleSignIn] signIn failed: $signInErr');
+        final str = signInErr.toString();
+        if (str.contains('10') || str.contains('12500') || str.contains('DEVELOPER_ERROR') || str.contains('ApiException: 10')) {
+          _errorMessage = 'Google Sign-In configuration error: Please ensure SHA-1 and SHA-256 fingerprints are added and Google Sign-in is enabled in the Firebase Console.';
+          _isLoading = false;
+          notifyListeners();
+          return false;
+        }
         rethrow;
       }
 
@@ -494,7 +525,7 @@ class AuthProvider extends ChangeNotifier {
               ? firebaseUser.displayName!.trim()
               : '');
 
-      // Check if name is a raw technical ID (e.g. Firebase UID: z9aC2oDanxOVxxIU8V2Zr3qd2UD3)
+      // Check if name is a raw technical ID (e.g. Firebase UID)
       final bool isTechId = rawGoogleName.isEmpty ||
           rawGoogleName.length >= 20 ||
           RegExp(r'^[a-zA-Z0-9_-]{20,}$').hasMatch(rawGoogleName) ||
@@ -511,7 +542,6 @@ class AuthProvider extends ChangeNotifier {
             : 'ZeParty Member';
       }
 
-      // Strictly clamp display name to max 25 characters
       if (cleanName.length > 25) {
         cleanName = cleanName.substring(0, 25).trim();
       }
@@ -519,7 +549,7 @@ class AuthProvider extends ChangeNotifier {
       final baseUsername = cleanEmail.contains('@') ? cleanEmail.split('@').first.toLowerCase() : cleanEmail.toLowerCase();
       final photoUrl = googleUser.photoUrl ?? 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80';
 
-      // Register and persist Google user into PostgreSQL backend
+      // Register / sync Google user into PostgreSQL backend
       try {
         final authRes = await _authRepository.syncUser(
           uid: firebaseUser?.uid,
@@ -529,6 +559,7 @@ class AuthProvider extends ChangeNotifier {
           avatarUrl: photoUrl,
           coins: 1000,
           diamonds: 100,
+          isSignup: false,
         );
         _isNewUser = authRes.isNewUser;
         _currentUser = authRes.user.copyWith(
@@ -560,7 +591,94 @@ class AuthProvider extends ChangeNotifier {
       return true;
     } catch (e, stack) {
       debugPrint('[GoogleSignIn] Failed with exception: $e\n$stack');
-      _errorMessage = FirebaseAuthErrorHandler.getErrorMessage(e);
+      final str = e.toString();
+      if (str.contains('10') || str.contains('12500') || str.contains('DEVELOPER_ERROR') || str.contains('ApiException: 10')) {
+        _errorMessage = 'Google Sign-In configuration error: Please verify your Firebase configuration. Ensure SHA-1 & SHA-256 fingerprints are added and Google Sign-in is enabled in Firebase Console.';
+      } else {
+        _errorMessage = FirebaseAuthErrorHandler.getErrorMessage(e);
+      }
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Delete current user's account with password verification (3-day recovery grace period)
+  Future<bool> deleteAccount({required String password, String? reason}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null && user.email != null && user.email!.isNotEmpty) {
+        try {
+          final cred = EmailAuthProvider.credential(
+            email: user.email!,
+            password: password,
+          );
+          await user.reauthenticateWithCredential(cred);
+        } catch (authErr) {
+          debugPrint('Firebase reauthentication warning: $authErr');
+        }
+      }
+
+      await _authRepository.deleteAccount(
+        password: password,
+        reason: reason ?? 'User requested self deletion',
+      );
+
+      try {
+        await FirebaseAuth.instance.signOut();
+      } catch (_) {}
+      await _clearUserLocalSession();
+
+      _currentUser = null;
+      _isAuthenticated = false;
+      _isGuest = false;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _errorMessage = e.message;
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Failed to delete account. Please verify your password and try again.';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Recover a soft-deleted account within the 3-day recovery window
+  Future<bool> recoverAccount({String? email, String? phone, String? password}) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final authRes = await _authRepository.recoverAccount(
+        email: email,
+        phone: phone,
+        password: password,
+      );
+      _currentUser = authRes.user;
+      _isAuthenticated = true;
+      _isGuest = false;
+      _isLoading = false;
+      await _saveUserLocalSession(_currentUser!);
+      FcmService.instance.registerWithBackend();
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _errorMessage = e.message;
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = 'Failed to recover account. Please check your credentials.';
       _isLoading = false;
       notifyListeners();
       return false;

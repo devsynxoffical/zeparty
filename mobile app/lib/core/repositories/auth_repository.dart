@@ -97,6 +97,7 @@ class AuthRepository {
     String? countryCode,
     int? coins,
     int? diamonds,
+    bool isSignup = false,
   }) async {
     final platformName = Platform.isAndroid ? 'ANDROID' : (Platform.isIOS ? 'IOS' : 'FLUTTER');
     final cleanPhone = phone?.replaceAll(' ', '');
@@ -117,6 +118,7 @@ class AuthRepository {
         if (countryCode != null && countryCode.isNotEmpty) 'countryCode': countryCode,
         if (coins != null) 'coins': coins,
         if (diamonds != null) 'diamonds': diamonds,
+        'isSignup': isSignup,
         'device': {
           'platform': platformName,
           'appVersion': '1.0.0',
@@ -145,6 +147,50 @@ class AuthRepository {
     );
   }
 
+  /// Delete current user's account with password verification (3-day recovery window)
+  Future<void> deleteAccount({required String password, String? reason}) async {
+    await _apiClient.post(
+      '/v1/users/delete-account',
+      data: {
+        'password': password,
+        'reason': reason ?? 'User requested self deletion',
+      },
+    );
+    await _apiClient.clearTokens();
+  }
+
+  /// Recover a soft-deleted account within the 3-day grace period
+  Future<AuthResponse> recoverAccount({
+    String? email,
+    String? phone,
+    String? password,
+  }) async {
+    final response = await _apiClient.post(
+      '/v1/auth/recover-account',
+      data: {
+        if (email != null && email.isNotEmpty) 'email': email.trim().toLowerCase(),
+        if (phone != null && phone.isNotEmpty) 'phone': phone.replaceAll(' ', ''),
+        if (password != null && password.isNotEmpty) 'password': password,
+      },
+    );
+
+    final data = response.data?['data'] as Map<String, dynamic>;
+    final token = (data['token'] ?? data['accessToken']) as String;
+    final refreshToken = (data['refreshToken'] ?? '') as String;
+    final userData = data['user'] as Map<String, dynamic>;
+
+    await _apiClient.saveTokens(
+      accessToken: token,
+      refreshToken: refreshToken,
+    );
+
+    return AuthResponse(
+      token: token,
+      refreshToken: refreshToken,
+      isNewUser: false,
+      user: UserModel.fromJson(userData),
+    );
+  }
 
   /// Fetch currently authenticated user's self profile from backend
   Future<UserModel> getCurrentUser() async {

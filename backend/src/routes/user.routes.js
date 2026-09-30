@@ -16,12 +16,17 @@ adminUserRouter.patch('/:id', requirePermission('view_users'), userController.pu
 adminUserRouter.patch('/:id/status', requirePermission('suspend_users'), userController.patchAdminUserStatus);
 adminUserRouter.put('/:id/status', requirePermission('suspend_users'), userController.patchAdminUserStatus);
 adminUserRouter.delete('/:id', requirePermission('suspend_users'), userController.deleteAdminUser);
+adminUserRouter.post('/:id/restore', requirePermission('suspend_users'), userController.restoreAdminUser);
+adminUserRouter.delete('/:id/purge', requirePermission('suspend_users'), userController.purgeAdminUser);
 
 // User Self & Public Profile Routes
 userProfileRouter.get('/search', authenticate, userController.searchUsers);
 userProfileRouter.get('/me', authenticate, userController.getMe);
 userProfileRouter.put('/profile', authenticate, userController.putMyProfile);
 userProfileRouter.patch('/profile', authenticate, userController.putMyProfile);
+userProfileRouter.post('/delete-account', authenticate, userController.deleteSelfAccount);
+userProfileRouter.delete('/delete-account', authenticate, userController.deleteSelfAccount);
+userProfileRouter.delete('/me', authenticate, userController.deleteSelfAccount);
 userProfileRouter.get('/:id', authenticate, userController.getPublicUserById);
 
 export default {

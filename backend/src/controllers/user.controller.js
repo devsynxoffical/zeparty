@@ -2,6 +2,7 @@ import userService from '../services/user.service.js';
 import {
   queryUsersSchema,
   updateUserStatusSchema,
+  deleteAccountSchema,
   updateUserProfileSchema,
   createAdminUserSchema,
   updateAdminUserByAdminSchema,
@@ -118,9 +119,59 @@ export async function deleteAdminUser(req, res, next) {
     const adminId = req.auth?.userId || 'ADMIN';
     const adminName = req.admin?.name || 'Administrator';
     const ipAddress = req.ip || req.headers['x-forwarded-for'];
-    const reason = req.body?.reason || 'User deleted by Administrator';
+    const reason = req.body?.reason || 'User moved to deleted section by Administrator';
+    const permanent = req.query?.permanent === 'true' || req.body?.permanent === true;
 
     await userService.deleteUserByAdmin(id, {
+      adminId,
+      adminName,
+      ipAddress,
+      reason,
+      permanent,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: permanent ? 'User permanently purged successfully' : 'User soft-deleted successfully and moved to Deleted Users section (3-day recovery period)',
+      data: { id },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function restoreAdminUser(req, res, next) {
+  try {
+    const { id } = userIdParamSchema.parse(req.params);
+    const adminId = req.auth?.userId || 'ADMIN';
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const restoredUser = await userService.restoreUserByAdmin(id, {
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'User restored to active state successfully',
+      data: restoredUser,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function purgeAdminUser(req, res, next) {
+  try {
+    const { id } = userIdParamSchema.parse(req.params);
+    const adminId = req.auth?.userId || 'ADMIN';
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+    const reason = req.body?.reason || 'User permanently purged by Administrator';
+
+    await userService.permanentlyPurgeUserByAdmin(id, {
       adminId,
       adminName,
       ipAddress,
@@ -129,8 +180,40 @@ export async function deleteAdminUser(req, res, next) {
 
     return res.status(200).json({
       success: true,
-      message: 'User deleted successfully',
+      message: 'User permanently purged from database',
       data: { id },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteSelfAccount(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const { password, reason } = deleteAccountSchema.parse(req.body);
+    const deletedUser = await userService.deleteSelfAccount(userId, {
+      password,
+      reason: reason || 'User requested account deletion',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Account scheduled for deletion. You have 3 days to recover your account by logging in.',
+      data: {
+        id: deletedUser.id,
+        status: deletedUser.status,
+        deletedAt: deletedUser.deletedAt,
+        scheduledPermanentDeletionAt: deletedUser.scheduledPermanentDeletionAt,
+      },
     });
   } catch (err) {
     next(err);
@@ -216,6 +299,9 @@ export default {
   postAdminUser,
   putAdminUser,
   deleteAdminUser,
+  restoreAdminUser,
+  purgeAdminUser,
+  deleteSelfAccount,
   getMe,
   putMyProfile,
   getPublicUserById,

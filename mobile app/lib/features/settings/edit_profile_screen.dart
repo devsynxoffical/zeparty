@@ -582,6 +582,102 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
               const SizedBox(height: 20),
 
+              // ─── Account Identity & Registered Email (Read-Only) ───
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: borderColor),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.verified_user_rounded, size: 16, color: AppColors.primary),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Account Identity',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: primaryText,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // User ID
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.between,
+                      children: [
+                        Text('User ID (7-Digit)', style: TextStyle(fontSize: 12, color: secondaryText)),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                              ),
+                              child: Text(
+                                user.id,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: Colors.amber,
+                                  fontFamily: 'monospace',
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            InkWell(
+                              onTap: () {
+                                Clipboard.setData(ClipboardData(text: user.id));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('User ID copied to clipboard'), duration: Duration(seconds: 2)),
+                                );
+                              },
+                              child: const Icon(Icons.copy_rounded, size: 16, color: AppColors.primary),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 18),
+                    // Registered Email (Read-Only)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.between,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.lock_outline_rounded, size: 14, color: Colors.grey),
+                            const SizedBox(width: 4),
+                            Text('Registered Email', style: TextStyle(fontSize: 12, color: secondaryText)),
+                          ],
+                        ),
+                        Text(
+                          user.email.isNotEmpty ? user.email : (user.phone.isNotEmpty ? user.phone : 'Not linked'),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: primaryText,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '🔒 Registered email is permanent and cannot be modified.',
+                      style: TextStyle(fontSize: 10, color: secondaryText),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
               // ─── User Profile Editable Fields ───
               Text('Personal Information', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: primaryText)),
               const SizedBox(height: 12),

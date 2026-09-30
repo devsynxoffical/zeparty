@@ -15,6 +15,7 @@ enum UserStatus {
   ACTIVE
   SUSPENDED
   BANNED
+  DELETED
 }
 
 enum UserType {
@@ -325,6 +326,8 @@ model User {
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
   deletedAt         DateTime?
+  scheduledPermanentDeletionAt DateTime?
+  deletionReason    String?
 
   profile                  UserProfile?
   sessions                 UserSession[]

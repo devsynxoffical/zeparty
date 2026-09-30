@@ -285,7 +285,75 @@ export async function updateUserByAdmin(
   return updatedUser;
 }
 
-export async function deleteUserByAdmin(
+export async function deleteSelfAccount(
+  userId,
+  { password, reason = 'User initiated self-deletion' } = {},
+  db = prisma
+) {
+  const existingUser = await userRepository.findById(userId, db);
+  if (!existingUser) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
+  // Soft-delete user with 3-day recovery window
+  const deletedUser = await userRepository.softDeleteUser(userId, {
+    reason: reason || 'User initiated self-deletion',
+    deletionPeriodDays: 3,
+  }, db);
+
+  // Invalidate all active sessions for this user
+  await db.userSession.deleteMany({
+    where: { userId },
+  }).catch(() => {});
+
+  return deletedUser;
+}
+
+export async function restoreUserByAdmin(
+  userId,
+  { adminId, adminName, ipAddress },
+  db = prisma
+) {
+  const existingUser = await userRepository.findById(userId, db);
+  if (!existingUser) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
+  const restoredUser = await userRepository.restoreDeletedUser(userId, db);
+
+  await logAudit(
+    {
+      adminId,
+      adminName,
+      action: 'USER_RESTORED_BY_ADMIN',
+      targetEntity: 'User',
+      targetEntityId: userId,
+      beforeStateJson: {
+        id: existingUser.id,
+        username: existingUser.username,
+        status: existingUser.status,
+      },
+      afterStateJson: {
+        id: restoredUser.id,
+        username: restoredUser.username,
+        status: restoredUser.status,
+      },
+      reason: 'User restored from deleted state by Administrator',
+      ipAddress,
+    },
+    db
+  );
+
+  return restoredUser;
+}
+
+export async function permanentlyPurgeUserByAdmin(
   userId,
   { adminId, adminName, ipAddress, reason },
   db = prisma
@@ -302,7 +370,7 @@ export async function deleteUserByAdmin(
     {
       adminId,
       adminName,
-      action: 'USER_DELETED_BY_ADMIN',
+      action: 'USER_PERMANENTLY_PURGED_BY_ADMIN',
       targetEntity: 'User',
       targetEntityId: userId,
       beforeStateJson: {
@@ -311,13 +379,67 @@ export async function deleteUserByAdmin(
         status: existingUser.status,
       },
       afterStateJson: null,
-      reason: reason || 'Deleted by Administrator',
+      reason: reason || 'Permanently purged by Administrator',
       ipAddress,
     },
     db
   );
 
   return await userRepository.deleteUserById(userId, db);
+}
+
+export async function deleteUserByAdmin(
+  userId,
+  { adminId, adminName, ipAddress, reason, permanent = false },
+  db = prisma
+) {
+  const existingUser = await userRepository.findById(userId, db);
+  if (!existingUser) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
+  if (permanent) {
+    return await permanentlyPurgeUserByAdmin(userId, { adminId, adminName, ipAddress, reason }, db);
+  }
+
+  // Soft-delete user into Deleted Users section with 3-day recovery window
+  const softDeleted = await userRepository.softDeleteUser(userId, {
+    reason: reason || 'Deleted by Administrator',
+    deletionPeriodDays: 3,
+  }, db);
+
+  await logAudit(
+    {
+      adminId,
+      adminName,
+      action: 'USER_SOFT_DELETED_BY_ADMIN',
+      targetEntity: 'User',
+      targetEntityId: userId,
+      beforeStateJson: {
+        id: existingUser.id,
+        username: existingUser.username,
+        status: existingUser.status,
+      },
+      afterStateJson: {
+        id: softDeleted.id,
+        username: softDeleted.username,
+        status: softDeleted.status,
+      },
+      reason: reason || 'Moved to Deleted Users section by Administrator',
+      ipAddress,
+    },
+    db
+  );
+
+  // Invalidate sessions
+  await db.userSession.deleteMany({
+    where: { userId },
+  }).catch(() => {});
+
+  return softDeleted;
 }
 
 export async function searchUsers(query, options = {}) {
@@ -331,6 +453,9 @@ export default {
   createUserByAdmin,
   updateUserByAdmin,
   deleteUserByAdmin,
+  deleteSelfAccount,
+  restoreUserByAdmin,
+  permanentlyPurgeUserByAdmin,
   getSelfProfile,
   updateSelfProfile,
   getPublicProfile,

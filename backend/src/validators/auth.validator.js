@@ -51,6 +51,7 @@ export const syncUserSchema = z.object({
   countryCode: z.string().optional().nullable(),
   coins: z.number().optional().nullable(),
   diamonds: z.number().optional().nullable(),
+  isSignup: z.boolean().optional().default(false),
   device: z
     .object({
       deviceToken: z.string().optional(),
@@ -62,11 +63,18 @@ export const syncUserSchema = z.object({
     .optional(),
 });
 
+export const recoverAccountSchema = z.object({
+  email: z.string().email().optional().or(z.literal('')).nullable(),
+  phone: z.string().optional().nullable(),
+  password: z.string().optional(),
+});
+
 export default {
   requestOtpSchema,
   verifyOtpSchema,
   refreshTokenSchema,
   adminLoginSchema,
   syncUserSchema,
+  recoverAccountSchema,
 };
 

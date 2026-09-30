@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Search, Filter, Eye, Ban, DollarSign, UserCheck, Plus, Edit2, Trash2, CheckCircle2, AlertTriangle, ChevronDown, History, ArrowUpRight, ArrowDownRight,
-  CheckSquare, Square, Download, ShieldCheck, ShieldAlert
+  CheckSquare, Square, Download, ShieldCheck, ShieldAlert, RotateCcw, Clock
 } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
@@ -21,7 +21,7 @@ import {
   formatLocalPhoneNumber,
   toE164,
 } from '../../constants/phoneCountryCodes';
-const USER_STATUSES = ['all', 'active', 'suspended', 'banned'];
+const USER_STATUSES = ['all', 'active', 'suspended', 'banned', 'deleted'];
 import { formatDistanceToNow } from '../../utils/formatters';
 import { usePermission } from '../../hooks/usePermission';
 import { getMasterLedger } from '../../services/modules/finance.service';
@@ -30,6 +30,8 @@ import {
   createUser,
   updateUser,
   deleteUser,
+  restoreUser,
+  purgeUser,
   suspendUser,
   banUser,
   unbanUser,
@@ -1032,15 +1034,37 @@ export function UsersPage() {
     }
   }
 
-  // Delete User Handler
+  // Delete User Handler (Soft-delete to deleted section)
   async function handleDeleteUser(id, reason) {
     try {
       await deleteUser(id, reason);
-      showFeedback('success', 'User account and associated records permanently deleted.', 'User Deleted Successfully');
+      showFeedback('success', 'User moved to Deleted Users section (3-day recovery window active).', 'User Soft-Deleted');
       await loadUsers();
     } catch (err) {
       showFeedback('error', err.message || 'Failed to delete user', 'Deletion Failed');
       throw err;
+    }
+  }
+
+  // Restore User Handler
+  async function handleRestoreUser(id) {
+    try {
+      await restoreUser(id);
+      showFeedback('success', 'User account successfully restored and reactivated.', 'Account Restored');
+      await loadUsers();
+    } catch (err) {
+      showFeedback('error', err.message || 'Failed to restore user', 'Restore Failed');
+    }
+  }
+
+  // Purge User Handler (Permanent deletion)
+  async function handlePurgeUser(id, reason = '') {
+    try {
+      await purgeUser(id, reason);
+      showFeedback('success', 'User account permanently purged from database.', 'Account Purged');
+      await loadUsers();
+    } catch (err) {
+      showFeedback('error', err.message || 'Failed to permanently purge user', 'Purge Failed');
     }
   }
 
@@ -1180,7 +1204,19 @@ export function UsersPage() {
     {
       key: 'status',
       header: 'Status',
-      render: (row) => <StatusBadge status={row.status} />,
+      render: (row) => (
+        <div>
+          <StatusBadge status={row.status} />
+          {row.status === 'deleted' && row.scheduledPermanentDeletionAt && (
+            <div className="mt-1 flex items-center gap-1 text-[11px] text-red-400 font-medium">
+              <Clock className="h-3 w-3" />
+              <span>
+                {Math.max(0, Math.ceil((new Date(row.scheduledPermanentDeletionAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} days left
+              </span>
+            </div>
+          )}
+        </div>
+      ),
     },
     {
       key: 'vip',
@@ -1220,54 +1256,80 @@ export function UsersPage() {
       header: 'Actions',
       render: (row) => (
         <div className="flex items-center gap-1">
-          <button
-            title="View Details"
-            onClick={() => navigate(`/admin/users/${row.id}`)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
-          >
-            <Eye className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
-            title="Edit User"
-            onClick={() => setEditModal({ open: true, user: row })}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-slate-700 transition-colors"
-          >
-            <Edit2 className="h-4 w-4" aria-hidden="true" />
-          </button>
-          {canPerformAction('adjust_user_coins') && (
-            <button
-              title="Adjust Balance"
-              onClick={() => setBalanceModal({ open: true, user: row })}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-slate-700 transition-colors"
-            >
-              <DollarSign className="h-4 w-4" aria-hidden="true" />
-            </button>
-          )}
-          {(canPerformAction('suspend_users') || canPerformAction('ban_users')) && (
-            <button
-              title="Change Status"
-              onClick={() => setStatusModal({ open: true, user: row })}
-              className={[
-                'p-1.5 rounded-lg transition-colors',
-                row.status === 'active'
-                  ? 'text-slate-400 hover:text-red-400 hover:bg-slate-700'
-                  : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-700',
-              ].join(' ')}
-            >
-              {row.status === 'active' ? (
-                <Ban className="h-4 w-4" aria-hidden="true" />
-              ) : (
-                <UserCheck className="h-4 w-4" aria-hidden="true" />
+          {row.status === 'deleted' ? (
+            <>
+              <button
+                title="Restore User (Active Status)"
+                onClick={() => handleRestoreUser(row.id)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30 transition-colors"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Restore
+              </button>
+              <button
+                title="Permanently Purge Immediately"
+                onClick={() => {
+                  if (window.confirm(`Permanently and irreversibly purge @${row.username} (${row.displayName}) from database immediately?`)) {
+                    handlePurgeUser(row.id, 'Immediate admin permanent purge');
+                  }
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-700 transition-colors"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                title="View Details"
+                onClick={() => navigate(`/admin/users/${row.id}`)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+              >
+                <Eye className="h-4 w-4" aria-hidden="true" />
+              </button>
+              <button
+                title="Edit User"
+                onClick={() => setEditModal({ open: true, user: row })}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-slate-700 transition-colors"
+              >
+                <Edit2 className="h-4 w-4" aria-hidden="true" />
+              </button>
+              {canPerformAction('adjust_user_coins') && (
+                <button
+                  title="Adjust Balance"
+                  onClick={() => setBalanceModal({ open: true, user: row })}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-yellow-400 hover:bg-slate-700 transition-colors"
+                >
+                  <DollarSign className="h-4 w-4" aria-hidden="true" />
+                </button>
               )}
-            </button>
+              {(canPerformAction('suspend_users') || canPerformAction('ban_users')) && (
+                <button
+                  title="Change Status"
+                  onClick={() => setStatusModal({ open: true, user: row })}
+                  className={[
+                    'p-1.5 rounded-lg transition-colors',
+                    row.status === 'active'
+                      ? 'text-slate-400 hover:text-red-400 hover:bg-slate-700'
+                      : 'text-slate-400 hover:text-emerald-400 hover:bg-slate-700',
+                  ].join(' ')}
+                >
+                  {row.status === 'active' ? (
+                    <Ban className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <UserCheck className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+              )}
+              <button
+                title="Move to Deleted (3-Day Recovery Period)"
+                onClick={() => setDeleteModal({ open: true, user: row })}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-700 transition-colors"
+              >
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </>
           )}
-          <button
-            title="Delete User"
-            onClick={() => setDeleteModal({ open: true, user: row })}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-slate-700 transition-colors"
-          >
-            <Trash2 className="h-4 w-4" aria-hidden="true" />
-          </button>
         </div>
       ),
     },

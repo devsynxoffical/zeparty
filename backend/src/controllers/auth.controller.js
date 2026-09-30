@@ -6,6 +6,8 @@ import {
   verifyOtpSchema,
   refreshTokenSchema,
   adminLoginSchema,
+  syncUserSchema,
+  recoverAccountSchema,
 } from '../validators/auth.validator.js';
 
 export async function requestOtp(req, res, next) {
@@ -224,6 +226,34 @@ export async function syncAppUser(req, res, next) {
   }
 }
 
+export async function recoverAccount(req, res, next) {
+  try {
+    const validated = recoverAccountSchema.parse(req.body);
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+    const userAgent = req.headers['user-agent'];
+
+    const result = await authService.recoverAccount({
+      ...validated,
+      ipAddress,
+      userAgent,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Account successfully recovered and activated',
+      data: {
+        token: result.accessToken,
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        expiresAt: result.expiresAt,
+        user: result.user,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   requestOtp,
   verifyOtp,
@@ -232,5 +262,6 @@ export default {
   me,
   adminLogin,
   syncAppUser,
+  recoverAccount,
 };
 

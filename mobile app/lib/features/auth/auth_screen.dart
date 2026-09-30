@@ -421,8 +421,9 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
                                       // Email / Phone Field
                                       _buildAnimatedTextField(
                                         controller: _emailOrPhoneController,
-                                        hintText: 'Email or Phone',
-                                        icon: Icons.alternate_email_rounded,
+                                        hintText: _currentMode == AuthMode.signup ? 'Email Address' : 'Email or Phone',
+                                        icon: _currentMode == AuthMode.signup ? Icons.email_outlined : Icons.alternate_email_rounded,
+                                        keyboardType: _currentMode == AuthMode.signup ? TextInputType.emailAddress : TextInputType.text,
                                         isDark: isDark,
                                         compact: keyboardOpen,
                                       ),
@@ -641,6 +642,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
     bool obscureText = false,
     Widget? suffixIcon,
     bool compact = false,
+    TextInputType? keyboardType,
   }) {
     return Focus(
       child: Builder(
@@ -662,6 +664,7 @@ class _AuthScreenState extends State<AuthScreen> with SingleTickerProviderStateM
             child: TextField(
               controller: controller,
               obscureText: obscureText,
+              keyboardType: keyboardType,
               style: TextStyle(
                 color: AppColors.getTextPrimary(isDark),
                 fontSize: 14,

@@ -145,29 +145,152 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showDeleteAccountConfirmation() {
+    final passwordController = TextEditingController();
+    bool isObscured = true;
+    bool isProcessing = false;
+    String? localError;
+
     showDialog(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text('Delete Account', style: TextStyle(color: Colors.red)),
-        content: const Text('Are you sure you want to permanently delete your account? This action cannot be undone.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-            onPressed: () async {
-              Navigator.pop(c);
-              await context.read<AuthProvider>().logout();
-              if (mounted) {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (ctx) => const AuthScreen(initialMode: AuthMode.login)),
-                  (route) => false,
-                );
-              }
-            },
-            child: const Text('Delete Permanently'),
-          ),
-        ],
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          final isDark = Theme.of(dialogCtx).brightness == Brightness.dark;
+
+          return AlertDialog(
+            title: Row(
+              children: const [
+                Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+                SizedBox(width: 8),
+                Text('Delete Account', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: const [
+                        Text(
+                          '⏳ 3-Day Recovery Window',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.redAccent),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Your account will be removed from active users and stored in our secure deleted section for 3 days.\n\nIf you log in within 3 days, your account will be instantly restored. After 3 days, it will be permanently deleted.',
+                          style: TextStyle(fontSize: 12, height: 1.4),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Enter your password to verify ownership:',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: isObscured,
+                    decoration: InputDecoration(
+                      hintText: 'Current Password',
+                      prefixIcon: const Icon(Icons.lock_outline_rounded, size: 20),
+                      suffixIcon: IconButton(
+                        icon: Icon(isObscured ? Icons.visibility_off : Icons.visibility, size: 18),
+                        onPressed: () {
+                          setDialogState(() {
+                            isObscured = !isObscured;
+                          });
+                        },
+                      ),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    ),
+                  ),
+                  if (localError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      localError!,
+                      style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isProcessing ? null : () => Navigator.pop(dialogCtx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: isProcessing
+                    ? null
+                    : () async {
+                        final enteredPassword = passwordController.text.trim();
+                        if (enteredPassword.isEmpty) {
+                          setDialogState(() {
+                            localError = 'Password is required to confirm deletion.';
+                          });
+                          return;
+                        }
+
+                        setDialogState(() {
+                          isProcessing = true;
+                          localError = null;
+                        });
+
+                        final authProvider = context.read<AuthProvider>();
+                        final success = await authProvider.deleteAccount(password: enteredPassword);
+
+                        if (!dialogCtx.mounted) return;
+
+                        if (success) {
+                          Navigator.pop(dialogCtx);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Account deactivated. You have 3 days to recover your account by logging in.'),
+                                backgroundColor: Colors.amber,
+                                duration: Duration(seconds: 4),
+                              ),
+                            );
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(builder: (c) => const AuthScreen(initialMode: AuthMode.login)),
+                              (route) => false,
+                            );
+                          }
+                        } else {
+                          setDialogState(() {
+                            isProcessing = false;
+                            localError = authProvider.errorMessage ?? 'Verification failed. Incorrect password.';
+                          });
+                        }
+                      },
+                child: isProcessing
+                    ? const SizedBox(
+                        height: 16,
+                        width: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Text('Confirm Deletion'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

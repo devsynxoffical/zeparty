@@ -57,6 +57,9 @@ function formatUserRecord(u) {
     bdCenterId: hostProfile.bdCenterId || null,
     agencyId: hostProfile.agencyId || null,
     agencyName: hostProfile.agency?.name || null,
+    deletedAt: u.deletedAt || null,
+    scheduledPermanentDeletionAt: u.scheduledPermanentDeletionAt || null,
+    deletionReason: u.deletionReason || null,
   };
 }
 
@@ -132,6 +135,24 @@ export async function unbanUser(id, reason) {
   return updateUserStatus(id, { status: 'ACTIVE', reason: reason || 'Account unbanned by administrator' });
 }
 
+export async function restoreUser(id) {
+  try {
+    const res = await apiClient.post(`/v1/admin/users/${id}/restore`);
+    return res.data;
+  } catch (err) {
+    throw new Error(err.response?.data?.message || err.message || 'Failed to restore user on backend.');
+  }
+}
+
+export async function purgeUser(id, reason = '') {
+  try {
+    const res = await apiClient.delete(`/v1/admin/users/${id}/purge`, { data: { reason } });
+    return res.data;
+  } catch (err) {
+    throw new Error(err.response?.data?.message || err.message || 'Failed to purge user on backend.');
+  }
+}
+
 export async function adjustUserBalance(id, amount, currencyType = 'coins', action = 'add', reason = '') {
   const isDiamond = String(currencyType).toLowerCase().includes('diamond');
   const asset = isDiamond ? 'DIAMONDS' : 'COINS';
@@ -199,6 +220,8 @@ export default {
   createUser,
   updateUser,
   deleteUser,
+  restoreUser,
+  purgeUser,
   updateUserStatus,
   suspendUser,
   banUser,

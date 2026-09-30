@@ -28,10 +28,22 @@ export async function findById(id, db = prisma) {
 export async function findByEmail(email, db = prisma) {
   if (!email) return null;
   return await db.user.findUnique({
-    where: { email },
+    where: { email: email.trim().toLowerCase() },
     include: {
       profile: true,
       wallet: true,
+    },
+  });
+}
+
+export async function findByFirebaseUid(firebaseUid, db = prisma) {
+  if (!firebaseUid) return null;
+  return await db.user.findUnique({
+    where: { firebaseUid },
+    include: {
+      profile: true,
+      wallet: true,
+      hostProfile: true,
     },
   });
 }
@@ -49,19 +61,35 @@ export async function findByUsername(username, db = prisma) {
 }
 
 export async function createUserWithProfile(
-  { id = null, phone = null, email = null, username, displayName = null, avatarUrl = null, coverUrl = null, status = 'ACTIVE', userType = 'USER', countryCode = 'US', coinBalance = 0, diamondBalance = 0 },
+  {
+    id = null,
+    firebaseUid = null,
+    phone = null,
+    email = null,
+    username,
+    displayName = null,
+    avatarUrl = null,
+    coverUrl = null,
+    status = 'ACTIVE',
+    userType = 'USER',
+    countryCode = 'US',
+    coinBalance = 0,
+    diamondBalance = 0,
+  },
   db = prisma
 ) {
-  const finalId = id || await generate7DigitUserId(db);
+  const finalId = (id && /^[1-9]\d{6}$/.test(String(id))) ? String(id) : await generate7DigitUserId(db);
   const data = {
     id: finalId,
+    firebaseUid: firebaseUid || (id && !/^[1-9]\d{6}$/.test(String(id)) ? String(id) : null),
     phone: phone || null,
-    email: email || null,
+    email: email ? email.trim().toLowerCase() : null,
     username,
     status,
     userType,
     countryCode: countryCode || 'US',
     avatarUrl: avatarUrl || null,
+    coverUrl: coverUrl || null,
     profile: {
       create: {
         displayName: displayName || username,
@@ -106,8 +134,10 @@ export async function findUsersPaginated(
 ) {
   const where = {};
 
-  if (status) {
-    where.status = status;
+  if (status && status.toUpperCase() !== 'ALL') {
+    where.status = status.toUpperCase();
+  } else if (!status || status.toUpperCase() === 'ALL') {
+    where.status = { not: 'DELETED' };
   }
   if (userType) {
     where.userType = userType;
@@ -206,6 +236,9 @@ export async function findUsersPaginated(
         lastLoginAt: true,
         createdAt: true,
         updatedAt: true,
+        deletedAt: true,
+        scheduledPermanentDeletionAt: true,
+        deletionReason: true,
         profile: {
           select: {
             id: true,
@@ -731,11 +764,63 @@ export async function searchUsers(query, { limit = 20, excludeUserId = null } = 
   }));
 }
 
+export async function softDeleteUser(userId, { reason = 'User requested account deletion', deletionPeriodDays = 3 } = {}, db = prisma) {
+  const now = new Date();
+  const scheduledAt = new Date(now.getTime() + deletionPeriodDays * 24 * 60 * 60 * 1000);
+  return await db.user.update({
+    where: { id: userId },
+    data: {
+      status: 'DELETED',
+      deletedAt: now,
+      scheduledPermanentDeletionAt: scheduledAt,
+      deletionReason: reason,
+    },
+    include: {
+      profile: true,
+      wallet: true,
+    },
+  });
+}
+
+export async function restoreDeletedUser(userId, db = prisma) {
+  return await db.user.update({
+    where: { id: userId },
+    data: {
+      status: 'ACTIVE',
+      deletedAt: null,
+      scheduledPermanentDeletionAt: null,
+      deletionReason: null,
+    },
+    include: {
+      profile: true,
+      wallet: true,
+    },
+  });
+}
+
+export async function purgeExpiredDeletedUsers(db = prisma) {
+  const now = new Date();
+  const expired = await db.user.findMany({
+    where: {
+      status: 'DELETED',
+      scheduledPermanentDeletionAt: { lte: now },
+    },
+    select: { id: true },
+  });
+  if (!expired.length) return 0;
+  const ids = expired.map((u) => u.id);
+  const result = await db.user.deleteMany({
+    where: { id: { in: ids } },
+  });
+  return result.count;
+}
+
 export default {
   findByPhone,
   findById,
   findUserById: findById,
   findByEmail,
+  findByFirebaseUid,
   findByUsername,
   createUserWithProfile,
   updateLastLogin,
@@ -745,6 +830,9 @@ export default {
   updateUserProfile,
   findPublicProfileById,
   deleteUserById,
+  softDeleteUser,
+  restoreDeletedUser,
+  purgeExpiredDeletedUsers,
   searchUsers,
 };
 
