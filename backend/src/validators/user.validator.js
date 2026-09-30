@@ -55,7 +55,7 @@ export const createAdminUserSchema = z.object({
   displayName: z.string().trim().min(1).max(50).optional(),
   phone: z.string().trim().max(30).optional().or(z.literal('')),
   email: z.string().trim().email('Invalid email address').optional().or(z.literal('')),
-  countryCode: z.string().trim().length(2).default('US').optional(),
+  countryCode: z.string().trim().length(2).optional(),
   status: z.enum(['ACTIVE', 'SUSPENDED', 'BANNED']).default('ACTIVE').optional(),
   userType: z.enum(['USER', 'HOST', 'AGENCY_OWNER', 'BD_AGENT', 'COIN_SELLER', 'MERCHANT']).default('USER').optional(),
   coins: z.coerce.number().min(0).default(0).optional(),

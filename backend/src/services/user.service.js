@@ -1,5 +1,6 @@
 import prisma from '../config/database.js';
 import userRepository from '../repositories/user.repository.js';
+import { resolveEffectiveCountryCode } from '../utils/geo.util.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -135,7 +136,7 @@ export async function getPublicProfile(userId, db = prisma) {
 }
 
 export async function createUserByAdmin(
-  { username, displayName, phone, email, countryCode = 'US', status = 'ACTIVE', userType = 'USER', coins = 0, diamonds = 0, adminId, adminName, ipAddress },
+  { username, displayName, phone, email, countryCode, status = 'ACTIVE', userType = 'USER', coins = 0, diamonds = 0, adminId, adminName, ipAddress },
   db = prisma
 ) {
   // Check if username already exists
@@ -167,13 +168,18 @@ export async function createUserByAdmin(
     }
   }
 
+  const effectiveCountry = resolveEffectiveCountryCode({
+    countryCode,
+    phone,
+  });
+
   const createdUser = await userRepository.createUserWithProfile(
     {
       username,
       displayName: displayName || username,
       phone: phone || null,
       email: email || null,
-      countryCode: countryCode || 'US',
+      countryCode: effectiveCountry,
       status,
       userType,
       coinBalance: coins || 0,
@@ -234,7 +240,6 @@ export async function updateUserByAdmin(
 
   const profileUpdate = {};
   if (displayName !== undefined) profileUpdate.displayName = displayName;
-  if (avatarUrl !== undefined) profileUpdate.avatarUrl = avatarUrl || null;
 
   await db.$transaction(async (tx) => {
     if (Object.keys(userUpdate).length > 0) {
@@ -250,7 +255,6 @@ export async function updateUserByAdmin(
         create: {
           userId,
           displayName: profileUpdate.displayName || existingUser.username,
-          avatarUrl: profileUpdate.avatarUrl || null,
         },
         update: profileUpdate,
       });

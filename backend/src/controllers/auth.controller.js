@@ -45,6 +45,7 @@ export async function verifyOtp(req, res, next) {
       code: validated.code,
       purpose: validated.purpose,
       device: validated.device,
+      headers: req.headers,
       ipAddress,
       userAgent,
       logger: req.log,
@@ -205,6 +206,7 @@ export async function syncAppUser(req, res, next) {
 
     const result = await authService.syncUserFromApp({
       ...validated,
+      headers: req.headers,
       ipAddress,
       userAgent,
     });

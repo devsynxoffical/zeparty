@@ -8,6 +8,7 @@ import adminRepository from '../repositories/admin.repository.js';
 import { comparePassword, hashToken } from '../utils/crypto.util.js';
 import sessionRepository from '../repositories/session.repository.js';
 import effectivePermissionsService from './effectivePermissions.service.js';
+import { resolveEffectiveCountryCode } from '../utils/geo.util.js';
 
 export async function requestOtp({ phone, purpose = 'LOGIN', ipAddress, logger }) {
   return await otpService.requestOtp({ phone, purpose, ipAddress, logger });
@@ -18,6 +19,7 @@ export async function verifyOtpAndAuthenticate({
   code,
   purpose = 'LOGIN',
   device = {},
+  headers = {},
   ipAddress,
   userAgent,
   logger,
@@ -69,10 +71,12 @@ export async function verifyOtpAndAuthenticate({
   if (!user) {
     const randomSuffix = crypto.randomBytes(4).toString('hex');
     const defaultUsername = `user_${randomSuffix}`;
+    const resolvedCountry = resolveEffectiveCountryCode({ phone: normalizedPhone, headers });
 
     user = await userRepository.createUserWithProfile({
       phone: normalizedPhone,
       username: defaultUsername,
+      countryCode: resolvedCountry,
       status: 'ACTIVE',
       userType: 'USER',
     });
@@ -305,6 +309,7 @@ export async function syncUserFromApp({
   diamonds = 100,
   isSignup = false,
   device = {},
+  headers = {},
   ipAddress,
   userAgent,
 }) {
@@ -396,6 +401,12 @@ export async function syncUserFromApp({
       collision = await userRepository.findByUsername(finalUsername);
     }
 
+    const resolvedCountryCode = resolveEffectiveCountryCode({
+      countryCode,
+      phone: cleanPhone,
+      headers,
+    });
+
     user = await userRepository.createUserWithProfile({
       firebaseUid,
       email: cleanEmail,
@@ -406,7 +417,7 @@ export async function syncUserFromApp({
       coverUrl: null,
       status: 'ACTIVE',
       userType: 'USER',
-      countryCode: countryCode || 'US',
+      countryCode: resolvedCountryCode,
       coinBalance: coins || 1000,
       diamondBalance: diamonds || 100,
     });
@@ -486,6 +497,12 @@ export async function syncUserFromApp({
         collision = await userRepository.findByUsername(finalUsername);
       }
 
+      const resolvedCountryCode = resolveEffectiveCountryCode({
+        countryCode,
+        phone: cleanPhone,
+        headers,
+      });
+
       user = await userRepository.createUserWithProfile({
         firebaseUid,
         email: cleanEmail,
@@ -496,7 +513,7 @@ export async function syncUserFromApp({
         coverUrl: null,
         status: 'ACTIVE',
         userType: 'USER',
-        countryCode: countryCode || 'US',
+        countryCode: resolvedCountryCode,
         coinBalance: coins || 1000,
         diamondBalance: diamonds || 100,
       });
