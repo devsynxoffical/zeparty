@@ -8,13 +8,19 @@ import {
   Sliders, Save, History, CheckCircle2, ShieldAlert, DollarSign,
   Plus, RefreshCw, BarChart3, ShieldCheck, ArrowRightLeft,
   AlertCircle, RotateCcw, Sparkles, Eye, Check, Lock, Building,
-  Mic, Video, Trash2, Edit2, Info, Settings2, Percent, Layers
+  Mic, Video, Trash2, Edit2, Info, Settings2, Percent, Layers,
+  HelpCircle, Database, FileText, CheckCircle
 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Badge } from '../../components/ui/Badge';
 import { Modal } from '../../components/ui/Modal';
+import { CountrySelect } from '../../components/ui/CountrySelect';
+import { CurrencySelect } from '../../components/ui/CurrencySelect';
+import { CountryFlag } from '../../components/ui/CountryFlag';
+import { getCountryName } from '../../constants/countries.data';
+import { getCurrencyForCountry } from '../../constants/currencies.data';
 import { formatNumber } from '../../utils/format';
 import { useAuditLog } from '../../context/AuditLogContext';
 import {
@@ -26,7 +32,7 @@ import {
   getEconomyConfigByKey,
 } from '../../services/modules/economy.service';
 
-// Authoritative Baseline Defaults (used if database has fresh/empty tables)
+// Authoritative Baseline Defaults
 const DEFAULT_ECONOMY_POLICY = {
   version: 'v3.0.0',
   platformShare: 45,
@@ -37,10 +43,11 @@ const DEFAULT_ECONOMY_POLICY = {
 };
 
 const DEFAULT_COUNTRY_OVERRIDES = [
-  { id: 'ov-1', country: '🇵🇰 Pakistan (PK)', platform: 40, host: 40, agency: 12, room: 8, status: 'ACTIVE' },
-  { id: 'ov-2', country: '🇸🇦 Saudi Arabia (SA)', platform: 42, host: 38, agency: 12, room: 8, status: 'ACTIVE' },
-  { id: 'ov-3', country: '🇺🇸 United States (US)', platform: 45, host: 35, agency: 12, room: 8, status: 'DEFAULT' },
-  { id: 'ov-4', country: '🇧🇷 Brazil (BR)', platform: 40, host: 40, agency: 12, room: 8, status: 'ACTIVE' }
+  { id: 'ov-1', country: 'PK', platform: 40, host: 40, agency: 12, room: 8, status: 'ACTIVE' },
+  { id: 'ov-2', country: 'SA', platform: 42, host: 38, agency: 12, room: 8, status: 'ACTIVE' },
+  { id: 'ov-3', country: 'US', platform: 45, host: 35, agency: 12, room: 8, status: 'DEFAULT' },
+  { id: 'ov-4', country: 'BR', platform: 40, host: 40, agency: 12, room: 8, status: 'ACTIVE' },
+  { id: 'ov-5', country: 'TR', platform: 41, host: 39, agency: 12, room: 8, status: 'ACTIVE' }
 ];
 
 const DEFAULT_EXCHANGE_RATES = [
@@ -178,6 +185,7 @@ export function EconomySettingsPage() {
   const [activeTab, setActiveTab] = useState('general');
   const [feedback, setFeedback] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Core Editable States
   const [economyPolicy, setEconomyPolicy] = useState(DEFAULT_ECONOMY_POLICY);
@@ -198,21 +206,27 @@ export function EconomySettingsPage() {
 
   // Modals state
   const [previewModal, setPreviewModal] = useState(null);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showPublishRevenueModal, setShowPublishRevenueModal] = useState(false);
+  const [revenuePublishNotes, setRevenuePublishNotes] = useState('Production platform revenue split update');
+
+  // Draft Rate Modal
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [draftForm, setDraftForm] = useState({
-    name: 'Promotional USD Coin Rate',
+    name: '',
     currency: 'USD',
     country: 'GLOBAL',
-    proposedRate: 11000,
-    unit: 'Coins / $1 USD'
+    proposedRate: 10000,
+    unit: 'Coins / 1 Unit'
   });
 
+  // Country Override Modal
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [overrideForm, setOverrideForm] = useState({
     id: '',
-    country: '🇹🇷 Turkey (TR)',
-    platform: 41,
-    host: 39,
+    country: 'PK',
+    platform: 40,
+    host: 40,
     agency: 12,
     room: 8
   });
@@ -222,9 +236,10 @@ export function EconomySettingsPage() {
   const [showEditRateModal, setShowEditRateModal] = useState(false);
   const [editingRate, setEditingRate] = useState(null);
 
-  // Transfer fee edit modal
+  // Transfer fee edit / add modal
   const [showEditTransferModal, setShowEditTransferModal] = useState(false);
   const [editingTransfer, setEditingTransfer] = useState(null);
+  const [isEditingTransfer, setIsEditingTransfer] = useState(false);
 
   // Live Host Tier Modal
   const [showLiveHostModal, setShowLiveHostModal] = useState(false);
@@ -262,16 +277,21 @@ export function EconomySettingsPage() {
   });
   const [isEditingReseller, setIsEditingReseller] = useState(false);
 
+  // -------------------------------------------------------------
   // Initial Load from PostgreSQL Database
+  // -------------------------------------------------------------
   useEffect(() => {
     async function loadData() {
+      setIsLoading(true);
       try {
         const configs = await getEconomyConfigs();
-        if (Array.isArray(configs)) {
+        if (Array.isArray(configs) && configs.length > 0) {
           for (const item of configs) {
             if (item.key === 'ECONOMY_POLICY_GLOBAL' && item.valueJson) {
               if (item.valueJson.revenueSplit) setEconomyPolicy((prev) => ({ ...prev, ...item.valueJson.revenueSplit }));
-              if (item.valueJson.countryOverrides) setCountryOverrides(item.valueJson.countryOverrides);
+              if (item.valueJson.countryOverrides && Array.isArray(item.valueJson.countryOverrides)) {
+                setCountryOverrides(item.valueJson.countryOverrides);
+              }
             }
             if (item.key === 'EXCHANGE_RATES' && item.valueJson) {
               const rates = Array.isArray(item.valueJson) ? item.valueJson : (item.valueJson.rates || []);
@@ -298,21 +318,9 @@ export function EconomySettingsPage() {
           }
         }
       } catch (err) {
-        console.warn('Could not load dynamic configurations, checking effective policies:', err.message);
-      }
-
-      // Also query master policies for live/audio host fallback
-      try {
-        const livePol = await getEffectivePolicy('LIVE_HOST');
-        if (livePol?.config?.tiers?.length) {
-          setLiveHostTiers(livePol.config.tiers);
-        }
-        const audioPol = await getEffectivePolicy('AUDIO_HOST');
-        if (audioPol?.config?.tiers?.length) {
-          setAudioHostTiers(audioPol.config.tiers);
-        }
-      } catch (err) {
-        // Fallback gracefully to default state
+        console.warn('Could not load dynamic configurations:', err.message);
+      } finally {
+        setIsLoading(false);
       }
     }
 
@@ -321,63 +329,88 @@ export function EconomySettingsPage() {
 
   const showToast = (msg) => {
     setFeedback(msg);
-    setTimeout(() => setFeedback(null), 4000);
+    setTimeout(() => setFeedback(null), 4500);
+  };
+
+  // Helper to format country name safely
+  const formatCountryLabel = (codeOrName) => {
+    if (!codeOrName || codeOrName === 'GLOBAL' || codeOrName === 'Global' || codeOrName === 'All') {
+      return '🌐 Global Default';
+    }
+    const name = getCountryName(codeOrName);
+    return `${codeOrName.toUpperCase()} — ${name}`;
   };
 
   // -------------------------------------------------------------
-  // General Tab Handlers
+  // TAB 1: General Revenue Split Handlers
   // -------------------------------------------------------------
   const totalRevenueSplit = (Number(economyPolicy.platformShare) || 0) +
     (Number(economyPolicy.hostShare) || 0) +
     (Number(economyPolicy.agencyShare) || 0) +
     (Number(economyPolicy.roomReward) || 0);
 
-  const handleSaveRevenuePolicy = async () => {
+  const handleOpenPublishRevenueModal = () => {
     if (totalRevenueSplit !== 100) {
-      alert(`Warning: Revenue split shares must total exactly 100%. Current total is ${totalRevenueSplit}%. Please adjust before publishing.`);
+      alert(`⚠️ Revenue split allocation must equal exactly 100%. Current total is ${totalRevenueSplit}%. Please adjust before publishing.`);
       return;
     }
+    setShowPublishRevenueModal(true);
+  };
+
+  const handleConfirmPublishRevenue = async () => {
     setIsSaving(true);
     try {
+      const versionTag = `v3.${Date.now().toString().slice(-4)}`;
+      const updatedPolicy = {
+        ...economyPolicy,
+        version: versionTag,
+        status: 'ACTIVE'
+      };
+      setEconomyPolicy(updatedPolicy);
+
       await updateEconomyConfig('ECONOMY_POLICY_GLOBAL', {
-        revenueSplit: economyPolicy,
+        revenueSplit: updatedPolicy,
         countryOverrides,
+        notes: revenuePublishNotes,
         updatedAt: new Date().toISOString()
-      }, 'Updated global platform revenue split policy & regional overrides');
+      }, revenuePublishNotes || 'Updated global platform revenue split policy & regional overrides');
 
       await logAdminAction({
         action: 'UPDATE_ECONOMY_POLICY',
         module: 'Economy',
         targetType: 'POLICY',
         targetId: 'ECONOMY_POLICY_GLOBAL',
-        reason: 'Updated platform revenue shares and country overrides',
+        reason: revenuePublishNotes || 'Published new revenue allocation policy',
         riskLevel: 'HIGH',
         status: 'SUCCESS'
       });
-      showToast('Global Revenue Allocation Policy & Overrides successfully saved to PostgreSQL database!');
+
+      setShowPublishRevenueModal(false);
+      showToast(`✅ Global Revenue Policy (${versionTag}) published and saved to backend database!`);
     } catch (err) {
-      showToast(`Error saving policy: ${err.message}`);
+      showToast(`❌ Error saving policy: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
   };
 
   const applyPresetSplit = (p, h, a, r) => {
-    setEconomyPolicy({
+    const updated = {
       ...economyPolicy,
       platformShare: p,
       hostShare: h,
       agencyShare: a,
       roomReward: r
-    });
-    showToast(`Applied preset split: Platform ${p}% / Host ${h}% / Agency ${a}% / Room ${r}%`);
+    };
+    setEconomyPolicy(updated);
+    showToast(`Applied preset split: Platform ${p}% / Host ${h}% / Agency ${a}% / Room ${r}%. Click "Publish Revenue Policy" to confirm.`);
   };
 
   const handleOpenAddOverride = () => {
     setIsEditingOverride(false);
     setOverrideForm({
       id: `ov-${Date.now().toString().slice(-4)}`,
-      country: '',
+      country: 'PK',
       platform: 40,
       host: 40,
       agency: 12,
@@ -392,28 +425,67 @@ export function EconomySettingsPage() {
     setShowOverrideModal(true);
   };
 
-  const handleDeleteOverride = (countryName) => {
-    if (window.confirm(`Delete regional override for "${countryName}"?`)) {
-      const updated = countryOverrides.filter((c) => c.country !== countryName);
+  const handleDeleteOverride = async (countryCode) => {
+    if (window.confirm(`Delete regional override for "${formatCountryLabel(countryCode)}"?`)) {
+      const updated = countryOverrides.filter((c) => c.country !== countryCode && c.id !== countryCode);
       setCountryOverrides(updated);
-      showToast(`Removed override for "${countryName}". Click "Publish Revenue Policy" to persist.`);
+      try {
+        await updateEconomyConfig('ECONOMY_POLICY_GLOBAL', {
+          revenueSplit: economyPolicy,
+          countryOverrides: updated,
+          updatedAt: new Date().toISOString()
+        }, `Removed country override for ${countryCode}`);
+        showToast(`✅ Removed override for "${countryCode}" and saved to backend database.`);
+      } catch (err) {
+        showToast(`❌ Error persisting delete: ${err.message}`);
+      }
     }
   };
 
-  const handleSaveOverrideSubmit = (e) => {
+  const handleSaveOverrideSubmit = async (e) => {
     e.preventDefault();
-    if (isEditingOverride) {
-      setCountryOverrides(countryOverrides.map((c) => (c.country === overrideForm.country ? { ...overrideForm, status: 'ACTIVE' } : c)));
-      showToast(`Updated override for "${overrideForm.country}"!`);
-    } else {
-      setCountryOverrides([{ ...overrideForm, id: `ov-${Date.now().toString().slice(-4)}`, status: 'ACTIVE' }, ...countryOverrides]);
-      showToast(`Added override for "${overrideForm.country}"!`);
+    const sum = Number(overrideForm.platform) + Number(overrideForm.host) + Number(overrideForm.agency) + Number(overrideForm.room);
+    if (sum !== 100) {
+      alert(`⚠️ Regional split shares must total 100%. Current total: ${sum}%.`);
+      return;
     }
+
+    let updatedList;
+    if (isEditingOverride) {
+      updatedList = countryOverrides.map((c) =>
+        (c.country === overrideForm.country || c.id === overrideForm.id)
+          ? { ...overrideForm, status: 'ACTIVE' }
+          : c
+      );
+    } else {
+      const exists = countryOverrides.some((c) => c.country.toUpperCase() === overrideForm.country.toUpperCase());
+      if (exists) {
+        alert(`An override for ${overrideForm.country} already exists! Please edit the existing override.`);
+        return;
+      }
+      updatedList = [
+        { ...overrideForm, id: `ov-${Date.now().toString().slice(-4)}`, status: 'ACTIVE' },
+        ...countryOverrides
+      ];
+    }
+
+    setCountryOverrides(updatedList);
     setShowOverrideModal(false);
+
+    try {
+      await updateEconomyConfig('ECONOMY_POLICY_GLOBAL', {
+        revenueSplit: economyPolicy,
+        countryOverrides: updatedList,
+        updatedAt: new Date().toISOString()
+      }, `Saved regional override for ${overrideForm.country}`);
+      showToast(`✅ Override for "${overrideForm.country}" saved & synced to PostgreSQL database!`);
+    } catch (err) {
+      showToast(`⚠️ Stored locally. Click "Publish Revenue Policy" to retry backend sync.`);
+    }
   };
 
   // -------------------------------------------------------------
-  // Exchange Rates Handlers
+  // TAB 2: Exchange Rates Handlers
   // -------------------------------------------------------------
   const handleSaveExchangeRates = async () => {
     setIsSaving(true);
@@ -428,13 +500,13 @@ export function EconomySettingsPage() {
         module: 'Economy',
         targetType: 'CONFIG',
         targetId: 'EXCHANGE_RATES',
-        reason: 'Updated currency exchange rates',
+        reason: 'Updated currency exchange rates catalog',
         riskLevel: 'HIGH',
         status: 'SUCCESS'
       });
-      showToast('Exchange rates saved and published to PostgreSQL database!');
+      showToast('✅ Exchange rates catalog saved and published to PostgreSQL database!');
     } catch (err) {
-      showToast(`Error saving exchange rates: ${err.message}`);
+      showToast(`❌ Error saving exchange rates: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -446,35 +518,86 @@ export function EconomySettingsPage() {
     try {
       if (next) {
         await disableEconomyConfig('EXCHANGE_RATES', 'Admin switched off exchange system (15-day countdown active)');
-        showToast('Exchange rates turned OFF worldwide. 15-day auto-return countdown started.');
+        showToast('🛑 Exchange rates turned OFF worldwide. 15-day auto-return countdown started.');
       } else {
         await restoreEconomyConfig('EXCHANGE_RATES');
-        showToast('Exchange rates manually restored to ACTIVE worldwide.');
+        showToast('✅ Exchange rates manually restored to ACTIVE worldwide.');
       }
     } catch (err) {
       console.warn('API error toggling exchange:', err.message);
     }
   };
 
-  const handleCreateDraft = (e) => {
+  const handleOpenCreateDraft = () => {
+    const defaultCurr = 'USD';
+    const defaultCountry = 'US';
+    setDraftForm({
+      name: 'Promotional USD Coin Rate',
+      currency: defaultCurr,
+      country: defaultCountry,
+      proposedRate: 11000,
+      unit: `Coins / 1 ${defaultCurr}`
+    });
+    setShowDraftModal(true);
+  };
+
+  const handleDraftCountryChange = (countryCode) => {
+    const autoCurr = getCurrencyForCountry(countryCode);
+    setDraftForm((prev) => ({
+      ...prev,
+      country: countryCode,
+      currency: autoCurr,
+      unit: `Coins / 1 ${autoCurr}`,
+      name: prev.name || `${getCountryName(countryCode)} ${autoCurr} Rate`
+    }));
+  };
+
+  const handleDraftCurrencyChange = (currCode) => {
+    setDraftForm((prev) => ({
+      ...prev,
+      currency: currCode,
+      unit: `Coins / 1 ${currCode}`
+    }));
+  };
+
+  const handleCreateDraft = async (e) => {
     e.preventDefault();
     const newRate = {
       id: `ex-${Date.now().toString().slice(-4)}`,
       rateType: 'CUSTOM_RATE',
-      name: draftForm.name,
+      name: draftForm.name || `${draftForm.currency} Exchange Rate`,
       currency: draftForm.currency.toUpperCase(),
       country: draftForm.country.toUpperCase(),
       currentRate: Number(draftForm.proposedRate),
       proposedRate: Number(draftForm.proposedRate),
-      unit: draftForm.unit || `Coins / $1 ${draftForm.currency}`,
+      unit: draftForm.unit || `Coins / 1 ${draftForm.currency}`,
       status: 'ACTIVE',
       version: `v3.${Date.now().toString().slice(-3)}`,
       effectiveDate: new Date().toISOString().split('T')[0],
-      history: []
+      history: [
+        {
+          version: `v3.${Date.now().toString().slice(-3)}`,
+          rate: Number(draftForm.proposedRate),
+          effectiveDate: new Date().toISOString().split('T')[0],
+          changedBy: 'Administrator',
+          notes: 'Initial rate configuration created.'
+        }
+      ]
     };
-    setExchangeRates([newRate, ...exchangeRates]);
+
+    const updatedRates = [newRate, ...exchangeRates];
+    setExchangeRates(updatedRates);
     setShowDraftModal(false);
-    showToast(`New currency rate "${draftForm.name}" created! Remember to click "Publish Exchange Rates".`);
+
+    try {
+      await updateEconomyConfig('EXCHANGE_RATES', {
+        rates: updatedRates,
+        updatedAt: new Date().toISOString()
+      }, `Created new exchange rate ${newRate.name}`);
+      showToast(`✅ New exchange rate "${newRate.name}" created and saved to PostgreSQL database!`);
+    } catch (err) {
+      showToast(`⚠️ Rate added to local list. Click "Publish Exchange Rates" to retry sync.`);
+    }
   };
 
   const handleOpenEditRate = (rate) => {
@@ -482,26 +605,60 @@ export function EconomySettingsPage() {
     setShowEditRateModal(true);
   };
 
-  const handleSaveRateEdit = (e) => {
+  const handleSaveRateEdit = async (e) => {
     e.preventDefault();
-    setExchangeRates(exchangeRates.map((r) => (r.id === editingRate.id ? {
-      ...editingRate,
-      currentRate: Number(editingRate.currentRate),
-      proposedRate: Number(editingRate.proposedRate)
-    } : r)));
+    const updatedRates = exchangeRates.map((r) =>
+      r.id === editingRate.id
+        ? {
+            ...editingRate,
+            currentRate: Number(editingRate.currentRate),
+            proposedRate: Number(editingRate.proposedRate),
+            history: [
+              {
+                version: `v3.${Date.now().toString().slice(-3)}`,
+                rate: Number(editingRate.proposedRate),
+                effectiveDate: new Date().toISOString().split('T')[0],
+                changedBy: 'Administrator',
+                notes: 'Adjusted rate conversion value.'
+              },
+              ...(r.history || [])
+            ]
+          }
+        : r
+    );
+
+    setExchangeRates(updatedRates);
     setShowEditRateModal(false);
-    showToast(`Exchange rate for "${editingRate.name}" updated!`);
+
+    try {
+      await updateEconomyConfig('EXCHANGE_RATES', {
+        rates: updatedRates,
+        updatedAt: new Date().toISOString()
+      }, `Updated exchange rate ${editingRate.name}`);
+      showToast(`✅ Exchange rate for "${editingRate.name}" updated & saved to backend database!`);
+    } catch (err) {
+      showToast(`⚠️ Rate updated locally. Click "Publish Exchange Rates" to confirm.`);
+    }
   };
 
-  const handleDeleteRate = (id, name) => {
+  const handleDeleteRate = async (id, name) => {
     if (window.confirm(`Delete exchange rate configuration "${name}"?`)) {
-      setExchangeRates(exchangeRates.filter((r) => r.id !== id));
-      showToast(`Removed exchange rate "${name}".`);
+      const updatedRates = exchangeRates.filter((r) => r.id !== id);
+      setExchangeRates(updatedRates);
+      try {
+        await updateEconomyConfig('EXCHANGE_RATES', {
+          rates: updatedRates,
+          updatedAt: new Date().toISOString()
+        }, `Deleted exchange rate ${name}`);
+        showToast(`✅ Removed exchange rate "${name}" and saved to backend database.`);
+      } catch (err) {
+        showToast(`❌ Error deleting rate: ${err.message}`);
+      }
     }
   };
 
   // -------------------------------------------------------------
-  // Transfer Rates Handlers
+  // TAB 3: Transfer Rates Handlers
   // -------------------------------------------------------------
   const handleSaveTransferRates = async () => {
     setIsSaving(true);
@@ -520,9 +677,9 @@ export function EconomySettingsPage() {
         riskLevel: 'MEDIUM',
         status: 'SUCCESS'
       });
-      showToast('Transfer commission rules saved to PostgreSQL database!');
+      showToast('✅ Transfer commission rules saved to PostgreSQL database!');
     } catch (err) {
-      showToast(`Error saving transfer rates: ${err.message}`);
+      showToast(`❌ Error saving transfer rates: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -534,41 +691,94 @@ export function EconomySettingsPage() {
     try {
       if (next) {
         await disableEconomyConfig('TRANSFER_RATES', 'Admin switched off transfer fee system (15-day auto return)');
-        showToast('Transfer fee rules turned OFF. 15-day worldwide auto-ON timer active.');
+        showToast('🛑 Transfer fee rules turned OFF. 15-day worldwide auto-ON timer active.');
       } else {
         await restoreEconomyConfig('TRANSFER_RATES');
-        showToast('Transfer fee system manually restored to ACTIVE.');
+        showToast('✅ Transfer fee system manually restored to ACTIVE.');
       }
     } catch (err) {
       console.warn('API error toggling transfer:', err.message);
     }
   };
 
+  const handleOpenAddTransfer = () => {
+    setIsEditingTransfer(false);
+    setEditingTransfer({
+      id: `tr-${Date.now().toString().slice(-4)}`,
+      transferType: 'CUSTOM_TRANSFER_FEE',
+      name: '',
+      description: '',
+      currentRatePercent: 2.0,
+      proposedRatePercent: 2.0,
+      status: 'ACTIVE',
+      version: 'v1.0.0'
+    });
+    setShowEditTransferModal(true);
+  };
+
   const handleOpenEditTransfer = (t) => {
+    setIsEditingTransfer(true);
     setEditingTransfer({ ...t });
     setShowEditTransferModal(true);
   };
 
-  const handleSaveTransferEdit = (e) => {
+  const handleSaveTransferEdit = async (e) => {
     e.preventDefault();
-    setTransferRates(transferRates.map((t) => (t.id === editingTransfer.id ? {
-      ...editingTransfer,
-      currentRatePercent: Number(editingTransfer.currentRatePercent),
-      proposedRatePercent: Number(editingTransfer.proposedRatePercent)
-    } : t)));
+    let updatedList;
+    if (isEditingTransfer) {
+      updatedList = transferRates.map((t) =>
+        t.id === editingTransfer.id
+          ? {
+              ...editingTransfer,
+              currentRatePercent: Number(editingTransfer.currentRatePercent),
+              proposedRatePercent: Number(editingTransfer.proposedRatePercent)
+            }
+          : t
+      );
+    } else {
+      updatedList = [
+        {
+          ...editingTransfer,
+          id: `tr-${Date.now().toString().slice(-4)}`,
+          currentRatePercent: Number(editingTransfer.currentRatePercent),
+          proposedRatePercent: Number(editingTransfer.proposedRatePercent || editingTransfer.currentRatePercent)
+        },
+        ...transferRates
+      ];
+    }
+
+    setTransferRates(updatedList);
     setShowEditTransferModal(false);
-    showToast(`Transfer commission "${editingTransfer.name}" updated!`);
+
+    try {
+      await updateEconomyConfig('TRANSFER_RATES', {
+        transferRates: updatedList,
+        updatedAt: new Date().toISOString()
+      }, `Updated transfer commission rule ${editingTransfer.name}`);
+      showToast(`✅ Transfer commission "${editingTransfer.name}" saved to PostgreSQL database!`);
+    } catch (err) {
+      showToast(`⚠️ Updated locally. Click "Publish Transfer Rates" to retry backend sync.`);
+    }
   };
 
-  const handleDeleteTransfer = (id, name) => {
+  const handleDeleteTransfer = async (id, name) => {
     if (window.confirm(`Delete transfer rule "${name}"?`)) {
-      setTransferRates(transferRates.filter((t) => t.id !== id));
-      showToast(`Removed transfer rule "${name}".`);
+      const updatedList = transferRates.filter((t) => t.id !== id);
+      setTransferRates(updatedList);
+      try {
+        await updateEconomyConfig('TRANSFER_RATES', {
+          transferRates: updatedList,
+          updatedAt: new Date().toISOString()
+        }, `Deleted transfer rule ${name}`);
+        showToast(`✅ Removed transfer rule "${name}" and saved to backend database.`);
+      } catch (err) {
+        showToast(`❌ Error deleting transfer rule: ${err.message}`);
+      }
     }
   };
 
   // -------------------------------------------------------------
-  // Live Host Tiers Handlers
+  // TAB 4: Live Host Tiers Handlers
   // -------------------------------------------------------------
   const handleSaveLiveHostTiers = async () => {
     setIsSaving(true);
@@ -590,9 +800,9 @@ export function EconomySettingsPage() {
         riskLevel: 'HIGH',
         status: 'SUCCESS'
       });
-      showToast('Live Host Tiers successfully published to PostgreSQL database & HostLevelConfig!');
+      showToast('✅ Live Host Tiers successfully published and saved to PostgreSQL database!');
     } catch (err) {
-      showToast(`Error saving live host tiers: ${err.message}`);
+      showToast(`❌ Error saving live host tiers: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -617,7 +827,7 @@ export function EconomySettingsPage() {
     setShowLiveHostModal(true);
   };
 
-  const handleSaveLiveHostSubmit = (e) => {
+  const handleSaveLiveHostSubmit = async (e) => {
     e.preventDefault();
     const formatted = {
       level: Number(liveHostForm.level),
@@ -627,30 +837,56 @@ export function EconomySettingsPage() {
       dailyHoursRequired: Number(liveHostForm.dailyHoursRequired || 1.0)
     };
 
+    let updatedTiers;
     if (isEditingLiveHost) {
-      setLiveHostTiers(liveHostTiers.map((t) => (t.level === formatted.level ? formatted : t)));
-      showToast(`Updated Level ${formatted.level} tier.`);
+      updatedTiers = liveHostTiers.map((t) => (t.level === formatted.level ? formatted : t));
     } else {
       const exists = liveHostTiers.some((t) => t.level === formatted.level);
       if (exists) {
         alert(`Level ${formatted.level} already exists in the matrix. Please edit the existing tier or change the level number.`);
         return;
       }
-      setLiveHostTiers([...liveHostTiers, formatted].sort((a, b) => a.level - b.level));
-      showToast(`Added Level ${formatted.level} to live host matrix.`);
+      updatedTiers = [...liveHostTiers, formatted].sort((a, b) => a.level - b.level);
     }
+
+    setLiveHostTiers(updatedTiers);
     setShowLiveHostModal(false);
+
+    try {
+      await updateEconomyConfig('LIVE_HOST_TIERS', {
+        version: 'v3.0.0',
+        minDailyHours: 1.0,
+        minDaysPerMonth: 10,
+        tiers: updatedTiers,
+        updatedAt: new Date().toISOString()
+      }, `Updated Live Host Tier Level ${formatted.level}`);
+      showToast(`✅ Level ${formatted.level} live host tier saved and synced to backend database!`);
+    } catch (err) {
+      showToast(`⚠️ Tier updated locally. Click "Publish Host Tiers" to confirm backend sync.`);
+    }
   };
 
-  const handleDeleteLiveHostTier = (level) => {
+  const handleDeleteLiveHostTier = async (level) => {
     if (window.confirm(`Delete Level ${level} from Live Host Tier Matrix?`)) {
-      setLiveHostTiers(liveHostTiers.filter((t) => t.level !== level));
-      showToast(`Removed Level ${level}. Click "Publish Host Tiers" to save.`);
+      const updatedTiers = liveHostTiers.filter((t) => t.level !== level);
+      setLiveHostTiers(updatedTiers);
+      try {
+        await updateEconomyConfig('LIVE_HOST_TIERS', {
+          version: 'v3.0.0',
+          minDailyHours: 1.0,
+          minDaysPerMonth: 10,
+          tiers: updatedTiers,
+          updatedAt: new Date().toISOString()
+        }, `Deleted Live Host Tier Level ${level}`);
+        showToast(`✅ Removed Level ${level} and saved to backend database.`);
+      } catch (err) {
+        showToast(`❌ Error deleting tier: ${err.message}`);
+      }
     }
   };
 
   // -------------------------------------------------------------
-  // Audio Host Tiers Handlers (NEW!)
+  // TAB 5: Audio Host Tiers Handlers
   // -------------------------------------------------------------
   const handleSaveAudioHostTiers = async () => {
     setIsSaving(true);
@@ -671,9 +907,9 @@ export function EconomySettingsPage() {
         riskLevel: 'HIGH',
         status: 'SUCCESS'
       });
-      showToast('Audio Host Tiers successfully published to PostgreSQL database & HostLevelConfig!');
+      showToast('✅ Audio Host Tiers successfully published and saved to PostgreSQL database!');
     } catch (err) {
-      showToast(`Error saving audio host tiers: ${err.message}`);
+      showToast(`❌ Error saving audio host tiers: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -700,7 +936,7 @@ export function EconomySettingsPage() {
     setShowAudioHostModal(true);
   };
 
-  const handleSaveAudioHostSubmit = (e) => {
+  const handleSaveAudioHostSubmit = async (e) => {
     e.preventDefault();
     const formatted = {
       level: Number(audioHostForm.level || 1),
@@ -712,25 +948,51 @@ export function EconomySettingsPage() {
       durationDays: Number(audioHostForm.durationDays || 10)
     };
 
+    let updatedTiers;
     if (isEditingAudioHost) {
-      setAudioHostTiers(audioHostTiers.map((t) => (t.level === formatted.level || t.tierName === formatted.tierName ? formatted : t)));
-      showToast(`Updated audio host tier "${formatted.tierName}".`);
+      updatedTiers = audioHostTiers.map((t) =>
+        (t.level === formatted.level || t.tierName === formatted.tierName) ? formatted : t
+      );
     } else {
-      setAudioHostTiers([...audioHostTiers, formatted].sort((a, b) => a.level - b.level));
-      showToast(`Added audio host tier "${formatted.tierName}".`);
+      updatedTiers = [...audioHostTiers, formatted].sort((a, b) => (a.level || 0) - (b.level || 0));
     }
+
+    setAudioHostTiers(updatedTiers);
     setShowAudioHostModal(false);
+
+    try {
+      await updateEconomyConfig('AUDIO_HOST_TIERS', {
+        version: 'v3.0.0',
+        minDailyHours: 2.0,
+        tiers: updatedTiers,
+        updatedAt: new Date().toISOString()
+      }, `Updated audio host tier "${formatted.tierName}"`);
+      showToast(`✅ Audio host tier "${formatted.tierName}" saved to PostgreSQL database!`);
+    } catch (err) {
+      showToast(`⚠️ Tier saved locally. Click "Publish Audio Tiers" to confirm backend sync.`);
+    }
   };
 
-  const handleDeleteAudioHostTier = (tierName) => {
+  const handleDeleteAudioHostTier = async (tierName) => {
     if (window.confirm(`Delete audio tier "${tierName}"?`)) {
-      setAudioHostTiers(audioHostTiers.filter((t) => t.tierName !== tierName));
-      showToast(`Removed audio tier "${tierName}". Click "Publish Audio Tiers" to save.`);
+      const updatedTiers = audioHostTiers.filter((t) => t.tierName !== tierName);
+      setAudioHostTiers(updatedTiers);
+      try {
+        await updateEconomyConfig('AUDIO_HOST_TIERS', {
+          version: 'v3.0.0',
+          minDailyHours: 2.0,
+          tiers: updatedTiers,
+          updatedAt: new Date().toISOString()
+        }, `Deleted audio tier "${tierName}"`);
+        showToast(`✅ Removed audio tier "${tierName}" and saved to backend database.`);
+      } catch (err) {
+        showToast(`❌ Error deleting tier: ${err.message}`);
+      }
     }
   };
 
   // -------------------------------------------------------------
-  // Reseller Packages Handlers
+  // TAB 6: Reseller Packages Handlers
   // -------------------------------------------------------------
   const handleSaveResellerPackages = async () => {
     setIsSaving(true);
@@ -749,9 +1011,9 @@ export function EconomySettingsPage() {
         riskLevel: 'MEDIUM',
         status: 'SUCCESS'
       });
-      showToast('Reseller pricing tiers successfully saved to PostgreSQL database!');
+      showToast('✅ Reseller pricing tiers successfully saved to PostgreSQL database!');
     } catch (err) {
-      showToast(`Error saving reseller packages: ${err.message}`);
+      showToast(`❌ Error saving reseller packages: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -761,7 +1023,7 @@ export function EconomySettingsPage() {
     setIsEditingReseller(false);
     setResellerForm({
       id: `res-${Date.now().toString().slice(-4)}`,
-      tierName: '',
+      tierName: 'VIP Emerald Reseller Tier',
       priceUSD: 100,
       totalCoins: 1100000,
       bonusCoins: 100000,
@@ -776,7 +1038,7 @@ export function EconomySettingsPage() {
     setShowResellerModal(true);
   };
 
-  const handleSaveResellerSubmit = (e) => {
+  const handleSaveResellerSubmit = async (e) => {
     e.preventDefault();
     const formatted = {
       id: resellerForm.id || `res-${Date.now().toString().slice(-4)}`,
@@ -787,25 +1049,47 @@ export function EconomySettingsPage() {
       profitPercent: Number(resellerForm.profitPercent)
     };
 
+    let updatedList;
     if (isEditingReseller) {
-      setResellerPackages(resellerPackages.map((p) => (p.id === formatted.id || p.tierName === formatted.tierName ? formatted : p)));
-      showToast(`Updated reseller tier "${formatted.tierName}".`);
+      updatedList = resellerPackages.map((p) =>
+        (p.id === formatted.id || p.tierName === formatted.tierName) ? formatted : p
+      );
     } else {
-      setResellerPackages([...resellerPackages, formatted]);
-      showToast(`Added reseller tier "${formatted.tierName}".`);
+      updatedList = [...resellerPackages, formatted];
     }
+
+    setResellerPackages(updatedList);
     setShowResellerModal(false);
+
+    try {
+      await updateEconomyConfig('RESELLER_PACKAGES', {
+        packages: updatedList,
+        updatedAt: new Date().toISOString()
+      }, `Updated reseller tier "${formatted.tierName}"`);
+      showToast(`✅ Reseller tier "${formatted.tierName}" saved to PostgreSQL database!`);
+    } catch (err) {
+      showToast(`⚠️ Updated locally. Click "Save Reseller Tiers" to confirm backend sync.`);
+    }
   };
 
-  const handleDeleteResellerPackage = (id, name) => {
+  const handleDeleteResellerPackage = async (id, name) => {
     if (window.confirm(`Delete reseller package "${name}"?`)) {
-      setResellerPackages(resellerPackages.filter((p) => p.id !== id && p.tierName !== name));
-      showToast(`Removed reseller package "${name}".`);
+      const updatedList = resellerPackages.filter((p) => p.id !== id && p.tierName !== name);
+      setResellerPackages(updatedList);
+      try {
+        await updateEconomyConfig('RESELLER_PACKAGES', {
+          packages: updatedList,
+          updatedAt: new Date().toISOString()
+        }, `Deleted reseller package "${name}"`);
+        showToast(`✅ Removed reseller package "${name}" and saved to backend database.`);
+      } catch (err) {
+        showToast(`❌ Error deleting reseller package: ${err.message}`);
+      }
     }
   };
 
   // -------------------------------------------------------------
-  // Financial Simulation Math
+  // TAB 7: Financial Simulation Math
   // -------------------------------------------------------------
   const val = Number(simAmount || 0);
   const pShare = Number(economyPolicy.platformShare) || 45;
@@ -831,18 +1115,21 @@ export function EconomySettingsPage() {
             Economy & Policy Settings Engine
           </h1>
           <p className="text-xs text-slate-400 mt-0.5">
-            Master control suite for platform revenue splits, currency exchange rates, transfer fees, live & audio host tiers, and reseller margins.
+            Server-authoritative control suite for platform revenue splits, currency exchange rates, transfer fees, host tiers, and reseller catalogs.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowInfoModal(true)} className="text-xs">
+            <HelpCircle className="h-4 w-4 mr-1 text-gold-400" /> System Data Guide
+          </Button>
           <Badge variant="success">DB Status: ONLINE</Badge>
           <Badge variant="purple">v3.0.0 Multi-Tier Engine</Badge>
         </div>
       </div>
 
       {feedback && (
-        <div className="p-3.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-pulse">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+        <div className="p-3.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-2 shadow-lg animate-in fade-in duration-200">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
           <span>{feedback}</span>
         </div>
       )}
@@ -890,8 +1177,8 @@ export function EconomySettingsPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleSaveRevenuePolicy} disabled={isSaving}>
-                  <Save className="h-4 w-4 mr-1" /> {isSaving ? 'Saving...' : 'Publish Revenue Policy'}
+                <Button variant="primary" size="sm" onClick={handleOpenPublishRevenueModal} disabled={isSaving}>
+                  <Save className="h-4 w-4 mr-1" /> {isSaving ? 'Publishing...' : 'Publish Revenue Policy'}
                 </Button>
               </div>
             </div>
@@ -900,17 +1187,17 @@ export function EconomySettingsPage() {
             <div className="space-y-2 bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
               <div className="flex justify-between text-xs font-semibold">
                 <span className="text-slate-300">Revenue Split Allocation Breakdown:</span>
-                <span className={totalRevenueSplit === 100 ? 'text-emerald-400 font-mono' : 'text-rose-400 font-mono font-bold'}>
-                  Total: {totalRevenueSplit}% {totalRevenueSplit === 100 ? '✅ Balanced' : '⚠️ Must Equal 100%'}
+                <span className={totalRevenueSplit === 100 ? 'text-emerald-400 font-mono font-bold' : 'text-rose-400 font-mono font-bold'}>
+                  Total: {totalRevenueSplit}% {totalRevenueSplit === 100 ? '✅ 100% Balanced' : '⚠️ Must Equal 100%'}
                 </span>
               </div>
-              <div className="h-3 w-full bg-slate-800 rounded-full overflow-hidden flex">
+              <div className="h-3.5 w-full bg-slate-800 rounded-full overflow-hidden flex shadow-inner">
                 <div style={{ width: `${Math.min(100, Number(economyPolicy.platformShare) || 0)}%` }} className="bg-gold-500 h-full transition-all" title={`Platform Cut: ${economyPolicy.platformShare}%`} />
                 <div style={{ width: `${Math.min(100, Number(economyPolicy.hostShare) || 0)}%` }} className="bg-purple-500 h-full transition-all" title={`Host Split: ${economyPolicy.hostShare}%`} />
                 <div style={{ width: `${Math.min(100, Number(economyPolicy.agencyShare) || 0)}%` }} className="bg-emerald-500 h-full transition-all" title={`Agency Bonus: ${economyPolicy.agencyShare}%`} />
                 <div style={{ width: `${Math.min(100, Number(economyPolicy.roomReward) || 0)}%` }} className="bg-sky-500 h-full transition-all" title={`Room Incentive: ${economyPolicy.roomReward}%`} />
               </div>
-              <div className="flex flex-wrap gap-4 text-[11px] pt-1">
+              <div className="flex flex-wrap gap-4 text-[11px] pt-1 font-semibold">
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-gold-500" /> Platform ({economyPolicy.platformShare}%)</span>
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-purple-500" /> Host Creators ({economyPolicy.hostShare}%)</span>
                 <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-500" /> Agency Partners ({economyPolicy.agencyShare}%)</span>
@@ -923,19 +1210,19 @@ export function EconomySettingsPage() {
               <span className="text-slate-400 font-medium mr-1">Quick Presets:</span>
               <button
                 onClick={() => applyPresetSplit(45, 35, 12, 8)}
-                className="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700 hover:border-gold-500 text-slate-300 hover:text-white transition-all text-xs"
+                className="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700 hover:border-gold-500 text-slate-300 hover:text-white transition-all text-xs font-semibold"
               >
                 Standard (45 / 35 / 12 / 8)
               </button>
               <button
                 onClick={() => applyPresetSplit(35, 45, 12, 8)}
-                className="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700 hover:border-purple-500 text-slate-300 hover:text-white transition-all text-xs"
+                className="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700 hover:border-purple-500 text-slate-300 hover:text-white transition-all text-xs font-semibold"
               >
                 Creator Boost (35 / 45 / 12 / 8)
               </button>
               <button
                 onClick={() => applyPresetSplit(40, 30, 20, 10)}
-                className="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700 hover:border-emerald-500 text-slate-300 hover:text-white transition-all text-xs"
+                className="px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700 hover:border-emerald-500 text-slate-300 hover:text-white transition-all text-xs font-semibold"
               >
                 Agency Growth (40 / 30 / 20 / 10)
               </button>
@@ -950,7 +1237,7 @@ export function EconomySettingsPage() {
                   <Badge variant="success">Active</Badge>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">Platform Retention Share (%)</label>
+                  <label className="text-[11px] text-slate-400 font-medium">Platform Retention Share (%)</label>
                   <div className="flex items-center gap-2">
                     <Input
                       type="number"
@@ -964,7 +1251,7 @@ export function EconomySettingsPage() {
                     <span className="text-xs font-bold text-slate-400">%</span>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-500">Net platform revenue retained from virtual gift transactions.</p>
+                <p className="text-[11px] text-slate-500">Gross platform revenue retained from stream gifts and game activities.</p>
               </div>
 
               {/* Host Split */}
@@ -974,7 +1261,7 @@ export function EconomySettingsPage() {
                   <Badge variant="purple">Streamers</Badge>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">Host Payout Allocation (%)</label>
+                  <label className="text-[11px] text-slate-400 font-medium">Host Payout Allocation (%)</label>
                   <div className="flex items-center gap-2">
                     <Input
                       type="number"
@@ -988,7 +1275,7 @@ export function EconomySettingsPage() {
                     <span className="text-xs font-bold text-slate-400">%</span>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-500">Portion allocated to streamer diamond cashout balance.</p>
+                <p className="text-[11px] text-slate-500">Credited directly to streamer diamond cashout balance for withdrawals.</p>
               </div>
 
               {/* Agency Bonus */}
@@ -998,7 +1285,7 @@ export function EconomySettingsPage() {
                   <Badge variant="success">Partners</Badge>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">Agency Commission Bonus (%)</label>
+                  <label className="text-[11px] text-slate-400 font-medium">Agency Commission Bonus (%)</label>
                   <div className="flex items-center gap-2">
                     <Input
                       type="number"
@@ -1012,7 +1299,7 @@ export function EconomySettingsPage() {
                     <span className="text-xs font-bold text-slate-400">%</span>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-500">Commission credited to managing agency syndicate.</p>
+                <p className="text-[11px] text-slate-500">Commission credited to managing agency syndicate on monthly cycles.</p>
               </div>
 
               {/* Room Owner Reward */}
@@ -1022,7 +1309,7 @@ export function EconomySettingsPage() {
                   <Badge variant="info">Party Rooms</Badge>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] text-slate-400">Party Room Reward (%)</label>
+                  <label className="text-[11px] text-slate-400 font-medium">Party Room Reward (%)</label>
                   <div className="flex items-center gap-2">
                     <Input
                       type="number"
@@ -1043,12 +1330,12 @@ export function EconomySettingsPage() {
 
           {/* Regional Country Overrides Table */}
           <Card className="p-5 space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-800 pb-3">
               <div>
                 <h4 className="text-sm font-bold text-white flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-gold-400" /> Regional Country Overrides
                 </h4>
-                <p className="text-xs text-slate-400">Localized split adjustments override global defaults for compliance, market expansion, or local tax requirements.</p>
+                <p className="text-xs text-slate-400">Localized split adjustments override global defaults for compliance, regional taxes, or market expansion.</p>
               </div>
               <Button variant="outline" size="sm" onClick={handleOpenAddOverride}>
                 <Plus className="h-4 w-4 mr-1 text-gold-400" /> Add Country Override
@@ -1071,11 +1358,14 @@ export function EconomySettingsPage() {
                 <tbody className="divide-y divide-slate-800 text-slate-300">
                   {countryOverrides.map((r, i) => (
                     <tr key={r.id || i} className="hover:bg-slate-900/50">
-                      <td className="p-3 font-bold text-white">{r.country}</td>
-                      <td className="p-3 font-mono text-gold-400">{r.platform}%</td>
-                      <td className="p-3 font-mono text-purple-400">{r.host}%</td>
-                      <td className="p-3 font-mono text-emerald-400">{r.agency}%</td>
-                      <td className="p-3 font-mono text-sky-400">{r.room}%</td>
+                      <td className="p-3 font-bold text-white flex items-center gap-2">
+                        <CountryFlag code={r.country} className="w-4 h-3 object-cover rounded-sm shrink-0" />
+                        <span>{formatCountryLabel(r.country)}</span>
+                      </td>
+                      <td className="p-3 font-mono text-gold-400 font-bold">{r.platform}%</td>
+                      <td className="p-3 font-mono text-purple-400 font-bold">{r.host}%</td>
+                      <td className="p-3 font-mono text-emerald-400 font-bold">{r.agency}%</td>
+                      <td className="p-3 font-mono text-sky-400 font-bold">{r.room}%</td>
                       <td className="p-3">
                         <Badge variant={r.status === 'DEFAULT' ? 'purple' : 'success'}>{r.status}</Badge>
                       </td>
@@ -1108,7 +1398,7 @@ export function EconomySettingsPage() {
                 <p className="text-xs text-slate-400 mt-0.5">Enforced server-side for real-time wallet conversions. Turning OFF starts a 15-day worldwide auto-return countdown.</p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={handleToggleExchangeStatus}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
@@ -1119,7 +1409,7 @@ export function EconomySettingsPage() {
                 >
                   {isExchangeDisabled ? '🛑 Exchange OFF (15-Day Auto Return)' : '✅ Exchange System ACTIVE'}
                 </button>
-                <Button variant="outline" size="sm" onClick={() => setShowDraftModal(true)}>
+                <Button variant="outline" size="sm" onClick={handleOpenCreateDraft}>
                   <Plus className="h-4 w-4 mr-1 text-gold-400" /> Create Rate Draft
                 </Button>
                 <Button variant="primary" size="sm" onClick={handleSaveExchangeRates} disabled={isSaving}>
@@ -1133,6 +1423,7 @@ export function EconomySettingsPage() {
                 <thead className="bg-slate-900 text-slate-400 border-b border-slate-800">
                   <tr>
                     <th className="p-3">Rate Configuration</th>
+                    <th className="p-3">Country / Region</th>
                     <th className="p-3">Currency</th>
                     <th className="p-3">Active Rate</th>
                     <th className="p-3">Proposed Rate</th>
@@ -1147,7 +1438,13 @@ export function EconomySettingsPage() {
                         <p className="font-bold text-white">{r.name}</p>
                         <p className="text-[10px] text-slate-400 font-mono">{r.unit}</p>
                       </td>
-                      <td className="p-3 font-mono text-purple-300">{r.currency} ({r.country})</td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1.5">
+                          <CountryFlag code={r.country} className="w-4 h-3 object-cover rounded-sm shrink-0" />
+                          <span className="font-mono text-slate-300">{r.country}</span>
+                        </div>
+                      </td>
+                      <td className="p-3 font-mono text-purple-300 font-bold">{r.currency}</td>
                       <td className="p-3 font-mono text-gold-400 font-bold">{formatNumber(r.currentRate)}</td>
                       <td className="p-3 font-mono text-emerald-400 font-bold">{formatNumber(r.proposedRate)}</td>
                       <td className="p-3">
@@ -1185,7 +1482,7 @@ export function EconomySettingsPage() {
                 <p className="text-xs text-slate-400 mt-0.5">Commission percentages applied to reseller transfers, merchant coin allocations, and host payouts.</p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   onClick={handleToggleTransferStatus}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
@@ -1196,6 +1493,9 @@ export function EconomySettingsPage() {
                 >
                   {isTransferDisabled ? '🛑 Transfer System OFF (15-Day Auto Return)' : '✅ Transfer System ACTIVE'}
                 </button>
+                <Button variant="outline" size="sm" onClick={handleOpenAddTransfer}>
+                  <Plus className="h-4 w-4 mr-1 text-gold-400" /> Add Transfer Rule
+                </Button>
                 <Button variant="primary" size="sm" onClick={handleSaveTransferRates} disabled={isSaving}>
                   <Save className="h-4 w-4 mr-1" /> {isSaving ? 'Saving...' : 'Publish Transfer Rates'}
                 </Button>
@@ -1222,7 +1522,7 @@ export function EconomySettingsPage() {
                       <td className="p-3 font-mono text-emerald-400 font-bold">{t.currentRatePercent}%</td>
                       <td className="p-3 font-mono text-gold-400 font-bold">{t.proposedRatePercent || t.currentRatePercent}%</td>
                       <td className="p-3">
-                        <Badge variant="success">{t.status}</Badge>
+                        <Badge variant="success">{t.status || 'ACTIVE'}</Badge>
                       </td>
                       <td className="p-3 text-right space-x-1">
                         <Button variant="outline" size="xs" onClick={() => handleOpenEditTransfer(t)}>
@@ -1283,7 +1583,7 @@ export function EconomySettingsPage() {
                     <td className="p-3 font-mono text-gold-400 font-bold">{formatNumber(t.targetDiamonds)} 💎</td>
                     <td className="p-3">{t.durationDays} Days</td>
                     <td className="p-3 font-mono text-slate-400">{t.dailyHoursRequired || 1.0} hr/day</td>
-                    <td className="p-3 font-mono text-emerald-400 font-bold">${t.basicSalaryUSD.toFixed(2)} USD</td>
+                    <td className="p-3 font-mono text-emerald-400 font-bold">${Number(t.basicSalaryUSD).toFixed(2)} USD</td>
                     <td className="p-3 text-right space-x-1">
                       <Button variant="outline" size="xs" onClick={() => handleOpenEditLiveHost(t)}>
                         <Edit2 className="h-3 w-3 mr-1" /> Edit
@@ -1300,7 +1600,7 @@ export function EconomySettingsPage() {
         </Card>
       )}
 
-      {/* TAB 5: AUDIO HOST TIERS (NEW DEDICATED OPTION) */}
+      {/* TAB 5: AUDIO HOST TIERS */}
       {activeTab === 'audio_host' && (
         <div className="space-y-4">
           <Card className="p-5 space-y-4">
@@ -1533,53 +1833,202 @@ export function EconomySettingsPage() {
       {/* MODALS */}
       {/* ------------------------------------------------------------- */}
 
-      {/* Impact Preview Modal */}
-      {previewModal && (
-        <Modal isOpen={true} onClose={() => setPreviewModal(null)} title={`Impact Preview: ${previewModal.name}`}>
-          <div className="space-y-3 text-xs text-slate-300">
-            <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1 font-mono">
-              <p><strong className="text-slate-400">Current Rate / Fee:</strong> {formatNumber(previewModal.currentRate || previewModal.currentRatePercent)}</p>
-              <p><strong className="text-slate-400">Proposed Rate / Fee:</strong> <span className="text-emerald-400">{formatNumber(previewModal.proposedRate || previewModal.proposedRatePercent)}</span></p>
+      {/* System Data Guide Modal */}
+      {showInfoModal && (
+        <Modal isOpen={true} onClose={() => setShowInfoModal(false)} title="System Architecture & Data Storage Guide">
+          <div className="space-y-4 text-xs text-slate-300">
+            <p className="text-slate-300 leading-relaxed">
+              Every button and action on this page directly updates PostgreSQL tables via RESTful APIs with Redis caching and audit trail logging.
+            </p>
+
+            <div className="space-y-3 font-mono">
+              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
+                <p className="text-gold-400 font-bold text-sm mb-1 flex items-center gap-1.5">
+                  <Database className="h-4 w-4" /> 1. Platform Revenue Split & Overrides
+                </p>
+                <p className="text-slate-300"><strong>PostgreSQL Table:</strong> <code>PolicyConfiguration</code> (Key: <code>ECONOMY_POLICY_GLOBAL</code>)</p>
+                <p className="text-slate-300"><strong>Master Policy Sync:</strong> <code>Policy</code> & <code>PolicyVersion</code> (PolicyType: <code>ECONOMY</code>)</p>
+                <p className="text-slate-400 text-[11px] mt-1">Impacts: Virtual gift revenue split between platform, streamer, agency, and party room.</p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
+                <p className="text-purple-400 font-bold text-sm mb-1 flex items-center gap-1.5">
+                  <Database className="h-4 w-4" /> 2. Currency Exchange Rates
+                </p>
+                <p className="text-slate-300"><strong>PostgreSQL Table:</strong> <code>PolicyConfiguration</code> (Key: <code>EXCHANGE_RATES</code>)</p>
+                <p className="text-slate-400 text-[11px] mt-1">Impacts: In-app coin purchase conversion, local fiat conversions (PKR, BRL, SAR, etc.), and diamond cashout rate.</p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
+                <p className="text-emerald-400 font-bold text-sm mb-1 flex items-center gap-1.5">
+                  <Database className="h-4 w-4" /> 3. Live & Audio Host Tiers
+                </p>
+                <p className="text-slate-300"><strong>PostgreSQL Tables:</strong> <code>PolicyConfiguration</code> (Keys: <code>LIVE_HOST_TIERS</code>, <code>AUDIO_HOST_TIERS</code>)</p>
+                <p className="text-slate-300"><strong>Master Policies:</strong> <code>Policy</code> & <code>PolicyVersion</code> (Types: <code>LIVE_HOST</code>, <code>AUDIO_HOST</code>)</p>
+                <p className="text-slate-400 text-[11px] mt-1">Impacts: Bi-weekly creator salary payroll calculation, hour requirements, and agency profit bonuses.</p>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
+                <p className="text-sky-400 font-bold text-sm mb-1 flex items-center gap-1.5">
+                  <Database className="h-4 w-4" /> 4. Reseller Pricing & Transfer Fees
+                </p>
+                <p className="text-slate-300"><strong>PostgreSQL Table:</strong> <code>PolicyConfiguration</code> (Keys: <code>RESELLER_PACKAGES</code>, <code>TRANSFER_RATES</code>)</p>
+                <p className="text-slate-400 text-[11px] mt-1">Impacts: Authorized merchant coin packages, wholesale discounts, and transfer commission deduction.</p>
+              </div>
             </div>
-            <p className="text-slate-400">Publishing this change will immediately update conversion math across all active client apps and background settlement workers.</p>
+
+            <div className="flex justify-end pt-2 border-t border-slate-800">
+              <Button variant="primary" size="sm" onClick={() => setShowInfoModal(false)}>Got It</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Publish Revenue Policy Confirmation Modal */}
+      {showPublishRevenueModal && (
+        <Modal isOpen={true} onClose={() => setShowPublishRevenueModal(false)} title="Publish Master Platform Revenue Split Policy">
+          <div className="space-y-4 text-xs text-slate-300">
+            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="flex justify-between items-center text-sm font-bold text-white border-b border-slate-800 pb-2">
+                <span>Proposed Revenue Allocation Split</span>
+                <Badge variant={totalRevenueSplit === 100 ? 'success' : 'danger'}>
+                  {totalRevenueSplit === 100 ? '100% Balanced' : `${totalRevenueSplit}% Invalid`}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center font-mono">
+                <div className="p-2 rounded bg-slate-950/70 border border-slate-800">
+                  <span className="text-slate-400 text-[10px] block">Platform Cut</span>
+                  <span className="text-gold-400 font-bold text-sm">{economyPolicy.platformShare}%</span>
+                </div>
+                <div className="p-2 rounded bg-slate-950/70 border border-slate-800">
+                  <span className="text-slate-400 text-[10px] block">Host Streamers</span>
+                  <span className="text-purple-400 font-bold text-sm">{economyPolicy.hostShare}%</span>
+                </div>
+                <div className="p-2 rounded bg-slate-950/70 border border-slate-800">
+                  <span className="text-slate-400 text-[10px] block">Agency Syndicate</span>
+                  <span className="text-emerald-400 font-bold text-sm">{economyPolicy.agencyShare}%</span>
+                </div>
+                <div className="p-2 rounded bg-slate-950/70 border border-slate-800">
+                  <span className="text-slate-400 text-[10px] block">Party Rooms</span>
+                  <span className="text-sky-400 font-bold text-sm">{economyPolicy.roomReward}%</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-slate-400 mb-1 block font-medium">Regional Country Overrides ({countryOverrides.length} Configured)</label>
+              <div className="max-h-24 overflow-y-auto p-2 bg-slate-950/60 rounded-lg border border-slate-800 space-y-1 font-mono text-[11px]">
+                {countryOverrides.map((c, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-slate-300">
+                    <span className="flex items-center gap-1.5"><CountryFlag code={c.country} className="w-3.5 h-2.5 rounded-xs" /> {formatCountryLabel(c.country)}</span>
+                    <span className="text-slate-400">P:{c.platform}% / H:{c.host}% / A:{c.agency}% / R:{c.room}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-slate-400 mb-1 block font-medium">Changelog & Policy Notes</label>
+              <Input
+                value={revenuePublishNotes}
+                onChange={(e) => setRevenuePublishNotes(e.target.value)}
+                placeholder="Reason or notes for this policy update..."
+                className="text-xs"
+              />
+            </div>
+
+            <div className="p-2.5 rounded-lg bg-gold-950/30 border border-gold-800/40 text-[11px] text-gold-300">
+              <strong className="text-gold-200">Database Action:</strong> This action creates an immutable version record in PostgreSQL <code>PolicyVersion</code> and updates active global policy <code>ECONOMY_POLICY_GLOBAL</code>.
+            </div>
+
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-              <Button variant="outline" size="sm" onClick={() => setPreviewModal(null)}>Cancel</Button>
-              <Button variant="primary" size="sm" onClick={() => {
-                showToast(`Rate change for "${previewModal.name}" validated.`);
-                setPreviewModal(null);
-              }}>
-                Confirm
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowPublishRevenueModal(false)}>Cancel</Button>
+              <Button type="button" variant="primary" size="sm" onClick={handleConfirmPublishRevenue} disabled={isSaving || totalRevenueSplit !== 100}>
+                {isSaving ? 'Publishing...' : 'Confirm & Publish Policy'}
               </Button>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* Create Rate Draft Modal */}
+      {/* Impact Preview Modal */}
+      {previewModal && (
+        <Modal isOpen={true} onClose={() => setPreviewModal(null)} title={`Impact Preview: ${previewModal.name}`}>
+          <div className="space-y-3 text-xs text-slate-300">
+            <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1 font-mono">
+              <p><strong className="text-slate-400">Current Rate / Fee:</strong> {formatNumber(previewModal.currentRate || previewModal.currentRatePercent)}</p>
+              <p><strong className="text-slate-400">Proposed Rate / Fee:</strong> <span className="text-emerald-400 font-bold">{formatNumber(previewModal.proposedRate || previewModal.proposedRatePercent)}</span></p>
+            </div>
+            <p className="text-slate-400">Publishing this change updates real-time conversion math across all active client mobile apps and background settlement workers.</p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <Button variant="outline" size="sm" onClick={() => setPreviewModal(null)}>Close</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Create Rate Draft Modal with Country & Currency Dropdowns */}
       {showDraftModal && (
-        <Modal isOpen={true} onClose={() => setShowDraftModal(false)} title="Create New Exchange Rate Draft">
+        <Modal isOpen={true} onClose={() => setShowDraftModal(false)} title="Create New Currency Exchange Rate Draft">
           <form onSubmit={handleCreateDraft} className="space-y-3 text-xs text-slate-300">
             <div>
-              <label className="text-slate-400 mb-1 block">Rate Name *</label>
-              <Input value={draftForm.name} onChange={(e) => setDraftForm({ ...draftForm, name: e.target.value })} required />
+              <label className="text-slate-400 mb-1 block font-medium">Rate Display Name *</label>
+              <Input
+                value={draftForm.name}
+                onChange={(e) => setDraftForm({ ...draftForm, name: e.target.value })}
+                required
+                placeholder="e.g. Saudi Arabia SAR Standard Rate"
+              />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Currency Code *</label>
-                <Input value={draftForm.currency} onChange={(e) => setDraftForm({ ...draftForm, currency: e.target.value.toUpperCase() })} required placeholder="e.g. EUR, PKR" />
+                <CountrySelect
+                  label="Target Country / Region *"
+                  value={draftForm.country}
+                  onChange={handleDraftCountryChange}
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Country Code *</label>
-                <Input value={draftForm.country} onChange={(e) => setDraftForm({ ...draftForm, country: e.target.value.toUpperCase() })} required placeholder="e.g. EU, PK" />
+                <CurrencySelect
+                  label="Currency Code *"
+                  value={draftForm.currency}
+                  onChange={handleDraftCurrencyChange}
+                />
               </div>
             </div>
-            <div>
-              <label className="text-slate-400 mb-1 block">Proposed Rate (Coins per $1 / 1 Unit) *</label>
-              <Input type="number" value={draftForm.proposedRate} onChange={(e) => setDraftForm({ ...draftForm, proposedRate: e.target.value })} required />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-slate-400 mb-1 block font-medium">Proposed Conversion Rate *</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={draftForm.proposedRate}
+                  onChange={(e) => setDraftForm({ ...draftForm, proposedRate: e.target.value })}
+                  required
+                  placeholder="e.g. 10000"
+                  className="font-mono text-gold-400 font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 mb-1 block font-medium">Display Unit Label</label>
+                <Input
+                  value={draftForm.unit}
+                  onChange={(e) => setDraftForm({ ...draftForm, unit: e.target.value })}
+                  placeholder={`Coins / 1 ${draftForm.currency}`}
+                  className="font-mono"
+                />
+              </div>
             </div>
+
+            <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-400">
+              💡 <strong>Instant Database Sync:</strong> Clicking "Create & Save Draft" immediately writes this configuration to PostgreSQL <code>EXCHANGE_RATES</code>.
+            </div>
+
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
               <Button type="button" variant="outline" size="sm" onClick={() => setShowDraftModal(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" size="sm">Create Draft</Button>
+              <Button type="submit" variant="primary" size="sm">Create & Save Draft</Button>
             </div>
           </form>
         </Modal>
@@ -1590,88 +2039,194 @@ export function EconomySettingsPage() {
         <Modal isOpen={true} onClose={() => setShowEditRateModal(false)} title={`Edit Exchange Rate: ${editingRate.name}`}>
           <form onSubmit={handleSaveRateEdit} className="space-y-3 text-xs text-slate-300">
             <div>
-              <label className="text-slate-400 mb-1 block">Rate Name *</label>
-              <Input value={editingRate.name} onChange={(e) => setEditingRate({ ...editingRate, name: e.target.value })} required />
+              <label className="text-slate-400 mb-1 block font-medium">Rate Name *</label>
+              <Input
+                value={editingRate.name}
+                onChange={(e) => setEditingRate({ ...editingRate, name: e.target.value })}
+                required
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Active Rate</label>
-                <Input type="number" value={editingRate.currentRate} onChange={(e) => setEditingRate({ ...editingRate, currentRate: e.target.value })} required />
+                <CountrySelect
+                  label="Country"
+                  value={editingRate.country}
+                  onChange={(c) => setEditingRate({ ...editingRate, country: c })}
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Proposed Rate</label>
-                <Input type="number" value={editingRate.proposedRate} onChange={(e) => setEditingRate({ ...editingRate, proposedRate: e.target.value })} required />
+                <CurrencySelect
+                  label="Currency"
+                  value={editingRate.currency}
+                  onChange={(curr) => setEditingRate({ ...editingRate, currency: curr })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-slate-400 mb-1 block font-medium">Active Rate</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editingRate.currentRate}
+                  onChange={(e) => setEditingRate({ ...editingRate, currentRate: e.target.value })}
+                  required
+                  className="font-mono text-gold-400 font-bold"
+                />
+              </div>
+              <div>
+                <label className="text-slate-400 mb-1 block font-medium">Proposed Rate</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editingRate.proposedRate}
+                  onChange={(e) => setEditingRate({ ...editingRate, proposedRate: e.target.value })}
+                  required
+                  className="font-mono text-emerald-400 font-bold"
+                />
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
               <Button type="button" variant="outline" size="sm" onClick={() => setShowEditRateModal(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" size="sm">Save Rate</Button>
+              <Button type="submit" variant="primary" size="sm">Save Rate to Database</Button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* Edit Transfer Fee Modal */}
+      {/* Edit / Add Transfer Fee Modal */}
       {showEditTransferModal && editingTransfer && (
-        <Modal isOpen={true} onClose={() => setShowEditTransferModal(false)} title={`Edit Transfer Rule: ${editingTransfer.name}`}>
+        <Modal isOpen={true} onClose={() => setShowEditTransferModal(false)} title={isEditingTransfer ? `Edit Transfer Rule: ${editingTransfer.name}` : 'Add New Transfer Commission Rule'}>
           <form onSubmit={handleSaveTransferEdit} className="space-y-3 text-xs text-slate-300">
             <div>
-              <label className="text-slate-400 mb-1 block">Rule Name *</label>
-              <Input value={editingTransfer.name} onChange={(e) => setEditingTransfer({ ...editingTransfer, name: e.target.value })} required />
+              <label className="text-slate-400 mb-1 block font-medium">Rule Name *</label>
+              <Input
+                value={editingTransfer.name}
+                onChange={(e) => setEditingTransfer({ ...editingTransfer, name: e.target.value })}
+                required
+                placeholder="e.g. VIP Merchant Settlement Fee"
+              />
             </div>
             <div>
-              <label className="text-slate-400 mb-1 block">Description</label>
-              <Input value={editingTransfer.description} onChange={(e) => setEditingTransfer({ ...editingTransfer, description: e.target.value })} />
+              <label className="text-slate-400 mb-1 block font-medium">Description</label>
+              <Input
+                value={editingTransfer.description}
+                onChange={(e) => setEditingTransfer({ ...editingTransfer, description: e.target.value })}
+                placeholder="Rule description..."
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Current Fee (%)</label>
-                <Input type="number" step="0.1" value={editingTransfer.currentRatePercent} onChange={(e) => setEditingTransfer({ ...editingTransfer, currentRatePercent: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Current Fee (%)</label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={editingTransfer.currentRatePercent}
+                  onChange={(e) => setEditingTransfer({ ...editingTransfer, currentRatePercent: e.target.value })}
+                  required
+                  className="font-mono text-emerald-400 font-bold"
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Proposed Fee (%)</label>
-                <Input type="number" step="0.1" value={editingTransfer.proposedRatePercent || editingTransfer.currentRatePercent} onChange={(e) => setEditingTransfer({ ...editingTransfer, proposedRatePercent: e.target.value })} />
+                <label className="text-slate-400 mb-1 block font-medium">Proposed Fee (%)</label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={editingTransfer.proposedRatePercent || editingTransfer.currentRatePercent}
+                  onChange={(e) => setEditingTransfer({ ...editingTransfer, proposedRatePercent: e.target.value })}
+                  className="font-mono text-gold-400 font-bold"
+                />
               </div>
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
               <Button type="button" variant="outline" size="sm" onClick={() => setShowEditTransferModal(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" size="sm">Save Transfer Rule</Button>
+              <Button type="submit" variant="primary" size="sm">{isEditingTransfer ? 'Save Rule to Database' : 'Add Rule & Save'}</Button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* Create / Edit Country Override Modal */}
+      {/* Create / Edit Country Override Modal with Country Select */}
       {showOverrideModal && (
-        <Modal isOpen={true} onClose={() => setShowOverrideModal(false)} title={isEditingOverride ? 'Edit Regional Override' : 'Add Regional Economy Override'}>
+        <Modal isOpen={true} onClose={() => setShowOverrideModal(false)} title={isEditingOverride ? `Edit Regional Override: ${formatCountryLabel(overrideForm.country)}` : 'Add Regional Economy Override'}>
           <form onSubmit={handleSaveOverrideSubmit} className="space-y-3 text-xs text-slate-300">
             <div>
-              <label className="text-slate-400 mb-1 block">Country Name & Flag *</label>
-              <Input value={overrideForm.country} onChange={(e) => setOverrideForm({ ...overrideForm, country: e.target.value })} required placeholder="e.g. 🇩🇪 Germany (DE)" />
+              <CountrySelect
+                label="Country / Region *"
+                value={overrideForm.country}
+                onChange={(c) => setOverrideForm({ ...overrideForm, country: c })}
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Platform Cut %</label>
-                <Input type="number" step="0.5" value={overrideForm.platform} onChange={(e) => setOverrideForm({ ...overrideForm, platform: Number(e.target.value) })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Platform Cut %</label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="100"
+                  value={overrideForm.platform}
+                  onChange={(e) => setOverrideForm({ ...overrideForm, platform: Number(e.target.value) })}
+                  required
+                  className="font-mono text-gold-400 font-bold"
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Host Split %</label>
-                <Input type="number" step="0.5" value={overrideForm.host} onChange={(e) => setOverrideForm({ ...overrideForm, host: Number(e.target.value) })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Host Split %</label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="100"
+                  value={overrideForm.host}
+                  onChange={(e) => setOverrideForm({ ...overrideForm, host: Number(e.target.value) })}
+                  required
+                  className="font-mono text-purple-400 font-bold"
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Agency Bonus %</label>
-                <Input type="number" step="0.5" value={overrideForm.agency} onChange={(e) => setOverrideForm({ ...overrideForm, agency: Number(e.target.value) })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Agency Bonus %</label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="100"
+                  value={overrideForm.agency}
+                  onChange={(e) => setOverrideForm({ ...overrideForm, agency: Number(e.target.value) })}
+                  required
+                  className="font-mono text-emerald-400 font-bold"
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Room Incentive %</label>
-                <Input type="number" step="0.5" value={overrideForm.room} onChange={(e) => setOverrideForm({ ...overrideForm, room: Number(e.target.value) })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Room Incentive %</label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="100"
+                  value={overrideForm.room}
+                  onChange={(e) => setOverrideForm({ ...overrideForm, room: Number(e.target.value) })}
+                  required
+                  className="font-mono text-sky-400 font-bold"
+                />
               </div>
             </div>
+
+            <div className="p-2 bg-slate-900 rounded-lg text-center font-mono text-xs">
+              Total Allocation: <span className={Number(overrideForm.platform) + Number(overrideForm.host) + Number(overrideForm.agency) + Number(overrideForm.room) === 100 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                {Number(overrideForm.platform) + Number(overrideForm.host) + Number(overrideForm.agency) + Number(overrideForm.room)}%
+              </span>
+            </div>
+
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
               <Button type="button" variant="outline" size="sm" onClick={() => setShowOverrideModal(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" size="sm">{isEditingOverride ? 'Save Changes' : 'Add Override'}</Button>
+              <Button type="submit" variant="primary" size="sm">{isEditingOverride ? 'Save Changes to Database' : 'Add Override & Save'}</Button>
             </div>
           </form>
         </Modal>
@@ -1683,77 +2238,173 @@ export function EconomySettingsPage() {
           <form onSubmit={handleSaveLiveHostSubmit} className="space-y-3 text-xs text-slate-300">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Level Number *</label>
-                <Input type="number" value={liveHostForm.level} onChange={(e) => setLiveHostForm({ ...liveHostForm, level: e.target.value })} required disabled={isEditingLiveHost} />
+                <label className="text-slate-400 mb-1 block font-medium">Level Number *</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={liveHostForm.level}
+                  onChange={(e) => setLiveHostForm({ ...liveHostForm, level: e.target.value })}
+                  required
+                  disabled={isEditingLiveHost}
+                  className="font-mono font-bold"
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Target Diamonds (15d) *</label>
-                <Input type="number" value={liveHostForm.targetDiamonds} onChange={(e) => setLiveHostForm({ ...liveHostForm, targetDiamonds: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Target Diamonds (15d) *</label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={liveHostForm.targetDiamonds}
+                  onChange={(e) => setLiveHostForm({ ...liveHostForm, targetDiamonds: e.target.value })}
+                  required
+                  className="font-mono text-gold-400 font-bold"
+                />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Base Salary ($ USD) *</label>
-                <Input type="number" step="0.5" value={liveHostForm.basicSalaryUSD} onChange={(e) => setLiveHostForm({ ...liveHostForm, basicSalaryUSD: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Base Salary ($ USD) *</label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={liveHostForm.basicSalaryUSD}
+                  onChange={(e) => setLiveHostForm({ ...liveHostForm, basicSalaryUSD: e.target.value })}
+                  required
+                  className="font-mono text-emerald-400 font-bold"
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Stream Days Req. *</label>
-                <Input type="number" value={liveHostForm.durationDays} onChange={(e) => setLiveHostForm({ ...liveHostForm, durationDays: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Stream Days Req. *</label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={liveHostForm.durationDays}
+                  onChange={(e) => setLiveHostForm({ ...liveHostForm, durationDays: e.target.value })}
+                  required
+                  className="font-mono"
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Daily Hours Req.</label>
-                <Input type="number" step="0.5" value={liveHostForm.dailyHoursRequired || 1.0} onChange={(e) => setLiveHostForm({ ...liveHostForm, dailyHoursRequired: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Daily Hours Req.</label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0.5"
+                  value={liveHostForm.dailyHoursRequired || 1.0}
+                  onChange={(e) => setLiveHostForm({ ...liveHostForm, dailyHoursRequired: e.target.value })}
+                  required
+                  className="font-mono"
+                />
               </div>
+            </div>
+            <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-400">
+              💾 <strong>Backend Persistence:</strong> Clicking "Save Tier" will immediately persist this tier directly to PostgreSQL table <code>PolicyConfiguration</code> (Key: <code>LIVE_HOST_TIERS</code>).
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
               <Button type="button" variant="outline" size="sm" onClick={() => setShowLiveHostModal(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" size="sm">{isEditingLiveHost ? 'Save Tier' : 'Add Tier'}</Button>
+              <Button type="submit" variant="primary" size="sm">{isEditingLiveHost ? 'Save Tier to Database' : 'Add Tier & Save'}</Button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* Create / Edit Audio Host Tier Modal (NEW!) */}
+      {/* Create / Edit Audio Host Tier Modal */}
       {showAudioHostModal && (
         <Modal isOpen={true} onClose={() => setShowAudioHostModal(false)} title={isEditingAudioHost ? `Edit Audio Host Tier: ${audioHostForm.tierName}` : 'Add Social Audio Host Tier'}>
           <form onSubmit={handleSaveAudioHostSubmit} className="space-y-3 text-xs text-slate-300">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Level #</label>
-                <Input type="number" value={audioHostForm.level || 1} onChange={(e) => setAudioHostForm({ ...audioHostForm, level: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Level Number *</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={audioHostForm.level || 1}
+                  onChange={(e) => setAudioHostForm({ ...audioHostForm, level: e.target.value })}
+                  required
+                  className="font-mono font-bold"
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Tier Display Name *</label>
-                <Input value={audioHostForm.tierName} onChange={(e) => setAudioHostForm({ ...audioHostForm, tierName: e.target.value })} required placeholder="e.g. 50K Audio Tier" />
+                <label className="text-slate-400 mb-1 block font-medium">Tier Display Name *</label>
+                <Input
+                  value={audioHostForm.tierName}
+                  onChange={(e) => setAudioHostForm({ ...audioHostForm, tierName: e.target.value })}
+                  required
+                  placeholder="e.g. 50K Audio Tier"
+                />
               </div>
             </div>
             <div>
-              <label className="text-slate-400 mb-1 block">Target Coins / Diamonds *</label>
-              <Input type="number" value={audioHostForm.targetCoins} onChange={(e) => setAudioHostForm({ ...audioHostForm, targetCoins: e.target.value })} required />
+              <label className="text-slate-400 mb-1 block font-medium">Target Coins / Diamonds (15d) *</label>
+              <Input
+                type="number"
+                min="0"
+                value={audioHostForm.targetCoins}
+                onChange={(e) => setAudioHostForm({ ...audioHostForm, targetCoins: e.target.value })}
+                required
+                className="font-mono text-gold-400 font-bold"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Daily Host Reward ($ USD) *</label>
-                <Input type="number" step="0.05" value={audioHostForm.dailyRewardUSD} onChange={(e) => setAudioHostForm({ ...audioHostForm, dailyRewardUSD: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Daily Host Reward ($ USD) *</label>
+                <Input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  value={audioHostForm.dailyRewardUSD}
+                  onChange={(e) => setAudioHostForm({ ...audioHostForm, dailyRewardUSD: e.target.value })}
+                  required
+                  className="font-mono text-emerald-400 font-bold"
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Agency Profit Share ($ USD) *</label>
-                <Input type="number" step="0.05" value={audioHostForm.agencyProfitUSD} onChange={(e) => setAudioHostForm({ ...audioHostForm, agencyProfitUSD: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Agency Profit Share ($ USD) *</label>
+                <Input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  value={audioHostForm.agencyProfitUSD}
+                  onChange={(e) => setAudioHostForm({ ...audioHostForm, agencyProfitUSD: e.target.value })}
+                  required
+                  className="font-mono text-purple-400 font-bold"
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Min Daily Audio Hours</label>
-                <Input type="number" step="0.5" value={audioHostForm.minDailyHours || 2.0} onChange={(e) => setAudioHostForm({ ...audioHostForm, minDailyHours: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Min Daily Audio Hours</label>
+                <Input
+                  type="number"
+                  step="0.5"
+                  min="0.5"
+                  value={audioHostForm.minDailyHours || 2.0}
+                  onChange={(e) => setAudioHostForm({ ...audioHostForm, minDailyHours: e.target.value })}
+                  required
+                  className="font-mono"
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Required Days</label>
-                <Input type="number" value={audioHostForm.durationDays || 10} onChange={(e) => setAudioHostForm({ ...audioHostForm, durationDays: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Required Days (15d Cycle)</label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={audioHostForm.durationDays || 10}
+                  onChange={(e) => setAudioHostForm({ ...audioHostForm, durationDays: e.target.value })}
+                  required
+                  className="font-mono"
+                />
               </div>
+            </div>
+            <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-400">
+              💾 <strong>Backend Persistence:</strong> Clicking "Save Audio Tier" directly updates PostgreSQL table <code>PolicyConfiguration</code> (Key: <code>AUDIO_HOST_TIERS</code>).
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
               <Button type="button" variant="outline" size="sm" onClick={() => setShowAudioHostModal(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" size="sm">{isEditingAudioHost ? 'Save Audio Tier' : 'Add Audio Tier'}</Button>
+              <Button type="submit" variant="primary" size="sm">{isEditingAudioHost ? 'Save Audio Tier to Database' : 'Add Audio Tier & Save'}</Button>
             </div>
           </form>
         </Modal>
@@ -1764,32 +2415,68 @@ export function EconomySettingsPage() {
         <Modal isOpen={true} onClose={() => setShowResellerModal(false)} title={isEditingReseller ? `Edit Reseller Package: ${resellerForm.tierName}` : 'Add Reseller Package'}>
           <form onSubmit={handleSaveResellerSubmit} className="space-y-3 text-xs text-slate-300">
             <div>
-              <label className="text-slate-400 mb-1 block">Package Name *</label>
-              <Input value={resellerForm.tierName} onChange={(e) => setResellerForm({ ...resellerForm, tierName: e.target.value })} required placeholder="e.g. VIP Master Reseller Tier" />
+              <label className="text-slate-400 mb-1 block font-medium">Package Name *</label>
+              <Input
+                value={resellerForm.tierName}
+                onChange={(e) => setResellerForm({ ...resellerForm, tierName: e.target.value })}
+                required
+                placeholder="e.g. VIP Master Reseller Tier"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Price ($ USD) *</label>
-                <Input type="number" value={resellerForm.priceUSD} onChange={(e) => setResellerForm({ ...resellerForm, priceUSD: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Wholesale Price ($ USD) *</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={resellerForm.priceUSD}
+                  onChange={(e) => setResellerForm({ ...resellerForm, priceUSD: e.target.value })}
+                  required
+                  className="font-mono text-white font-bold"
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Total Coins *</label>
-                <Input type="number" value={resellerForm.totalCoins} onChange={(e) => setResellerForm({ ...resellerForm, totalCoins: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Total Coins *</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={resellerForm.totalCoins}
+                  onChange={(e) => setResellerForm({ ...resellerForm, totalCoins: e.target.value })}
+                  required
+                  className="font-mono text-gold-400 font-bold"
+                />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 mb-1 block">Bonus Coins</label>
-                <Input type="number" value={resellerForm.bonusCoins || 0} onChange={(e) => setResellerForm({ ...resellerForm, bonusCoins: e.target.value })} />
+                <label className="text-slate-400 mb-1 block font-medium">Bonus Coins</label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={resellerForm.bonusCoins || 0}
+                  onChange={(e) => setResellerForm({ ...resellerForm, bonusCoins: e.target.value })}
+                  className="font-mono text-emerald-400"
+                />
               </div>
               <div>
-                <label className="text-slate-400 mb-1 block">Profit Margin (%)</label>
-                <Input type="number" value={resellerForm.profitPercent} onChange={(e) => setResellerForm({ ...resellerForm, profitPercent: e.target.value })} required />
+                <label className="text-slate-400 mb-1 block font-medium">Profit Margin (%)</label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={resellerForm.profitPercent}
+                  onChange={(e) => setResellerForm({ ...resellerForm, profitPercent: e.target.value })}
+                  required
+                  className="font-mono text-purple-400 font-bold"
+                />
               </div>
+            </div>
+            <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] text-slate-400">
+              💾 <strong>Backend Persistence:</strong> Clicking "Save Package" immediately writes the package to PostgreSQL table <code>PolicyConfiguration</code> (Key: <code>RESELLER_PACKAGES</code>).
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
               <Button type="button" variant="outline" size="sm" onClick={() => setShowResellerModal(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" size="sm">{isEditingReseller ? 'Save Package' : 'Add Package'}</Button>
+              <Button type="submit" variant="primary" size="sm">{isEditingReseller ? 'Save Package to Database' : 'Add Package & Save'}</Button>
             </div>
           </form>
         </Modal>
@@ -1797,3 +2484,5 @@ export function EconomySettingsPage() {
     </div>
   );
 }
+
+export default EconomySettingsPage;

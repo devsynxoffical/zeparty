@@ -381,7 +381,192 @@ export async function rollbackPolicy({
 // --- Dynamic Configuration Key-Value Management ---
 
 export async function getConfigurations() {
-  return await configurationRepository.findAll();
+  let configs = await configurationRepository.findAll();
+  if (!configs || configs.length === 0) {
+    const baselineKeys = [
+      {
+        key: 'ECONOMY_POLICY_GLOBAL',
+        valueJson: {
+          revenueSplit: {
+            version: 'v3.0.0',
+            platformShare: 45,
+            hostShare: 35,
+            agencyShare: 12,
+            roomReward: 8,
+            status: 'ACTIVE'
+          },
+          countryOverrides: [
+            { id: 'ov-1', country: '🇵🇰 Pakistan (PK)', platform: 40, host: 40, agency: 12, room: 8, status: 'ACTIVE' },
+            { id: 'ov-2', country: '🇸🇦 Saudi Arabia (SA)', platform: 42, host: 38, agency: 12, room: 8, status: 'ACTIVE' },
+            { id: 'ov-3', country: '🇺🇸 United States (US)', platform: 45, host: 35, agency: 12, room: 8, status: 'DEFAULT' },
+            { id: 'ov-4', country: '🇧🇷 Brazil (BR)', platform: 40, host: 40, agency: 12, room: 8, status: 'ACTIVE' },
+            { id: 'ov-5', country: '🇹🇷 Turkey (TR)', platform: 41, host: 39, agency: 12, room: 8, status: 'ACTIVE' }
+          ]
+        }
+      },
+      {
+        key: 'EXCHANGE_RATES',
+        valueJson: {
+          rates: [
+            {
+              id: 'ex-101',
+              rateType: 'USD_TO_COIN',
+              name: 'USD to Coin Standard Rate',
+              currency: 'USD',
+              country: 'GLOBAL',
+              currentRate: 10000,
+              proposedRate: 10500,
+              unit: 'Coins / $1 USD',
+              status: 'ACTIVE',
+              version: 'v3.2.0',
+              effectiveDate: '2026-08-01',
+              history: [{ version: 'v3.2.0', rate: 10000, effectiveDate: '2026-08-01', changedBy: 'Super Admin', notes: 'Baseline standard coin conversion.' }]
+            },
+            {
+              id: 'ex-102',
+              rateType: 'DIAMOND_TO_USD',
+              name: 'Diamond to USD Payout Rate',
+              currency: 'USD',
+              country: 'GLOBAL',
+              currentRate: 10000,
+              proposedRate: 10000,
+              unit: 'Diamonds / $1 USD',
+              status: 'ACTIVE',
+              version: 'v3.0.0',
+              effectiveDate: '2026-01-01',
+              history: [{ version: 'v3.0.0', rate: 10000, effectiveDate: '2026-01-01', changedBy: 'Finance Admin', notes: 'Established host payout conversion baseline.' }]
+            },
+            {
+              id: 'ex-103',
+              rateType: 'PK_LOCAL_CURRENCY',
+              name: 'PKR Local Fiat to Coin Rate',
+              currency: 'PKR',
+              country: 'PK',
+              currentRate: 35,
+              proposedRate: 38,
+              unit: 'Coins / 1 PKR',
+              status: 'SCHEDULED',
+              version: 'v3.3.0-draft',
+              effectiveDate: '2026-09-01',
+              history: [{ version: 'v3.2.0', rate: 35, effectiveDate: '2026-06-01', changedBy: 'Regional Admin PK', notes: 'Adjusted for FX inflation.' }]
+            },
+            {
+              id: 'ex-104',
+              rateType: 'BRL_LOCAL_CURRENCY',
+              name: 'BRL Local Fiat to Coin Rate',
+              currency: 'BRL',
+              country: 'BR',
+              currentRate: 1800,
+              proposedRate: 1800,
+              unit: 'Coins / 1 BRL',
+              status: 'ACTIVE',
+              version: 'v3.1.0',
+              effectiveDate: '2026-04-10',
+              history: [{ version: 'v3.1.0', rate: 1800, effectiveDate: '2026-04-10', changedBy: 'Finance Admin', notes: 'LATAM expansion localized rate.' }]
+            }
+          ]
+        }
+      },
+      {
+        key: 'TRANSFER_RATES',
+        valueJson: {
+          transferRates: [
+            {
+              id: 'tr-201',
+              transferType: 'COIN_RESELLER_FEE',
+              name: 'Reseller Coin Transfer Commission',
+              description: 'Percentage fee applied to bulk coin transfers between platform and resellers',
+              currentRatePercent: 2.5,
+              proposedRatePercent: 3.0,
+              status: 'ACTIVE',
+              version: 'v2.1.0'
+            },
+            {
+              id: 'tr-202',
+              transferType: 'MERCHANT_ALLOCATION_FEE',
+              name: 'Merchant Coin Allocation Fee',
+              description: 'Processing percentage fee for custom merchant coin allocations',
+              currentRatePercent: 1.8,
+              proposedRatePercent: 2.0,
+              status: 'ACTIVE',
+              version: 'v1.4.0'
+            },
+            {
+              id: 'tr-203',
+              transferType: 'HOST_TO_HOST_TRANSFER_FEE',
+              name: 'Host-to-Host Coin Transfer Fee',
+              description: 'Commission fee for direct user/host coin transfers in room chats',
+              currentRatePercent: 5.0,
+              proposedRatePercent: 5.0,
+              status: 'ACTIVE',
+              version: 'v3.0.0'
+            }
+          ]
+        }
+      },
+      {
+        key: 'LIVE_HOST_TIERS',
+        valueJson: {
+          version: 'v3.0.0',
+          minDailyHours: 1.0,
+          minDaysPerMonth: 10,
+          tiers: [
+            { level: 1, targetDiamonds: 25000, durationDays: 10, basicSalaryUSD: 2.00, dailyHoursRequired: 1.0 },
+            { level: 2, targetDiamonds: 50000, durationDays: 10, basicSalaryUSD: 4.00, dailyHoursRequired: 1.0 },
+            { level: 3, targetDiamonds: 100000, durationDays: 10, basicSalaryUSD: 8.00, dailyHoursRequired: 1.0 },
+            { level: 4, targetDiamonds: 250000, durationDays: 10, basicSalaryUSD: 20.00, dailyHoursRequired: 1.0 },
+            { level: 5, targetDiamonds: 500000, durationDays: 8, basicSalaryUSD: 40.00, dailyHoursRequired: 1.0 },
+            { level: 6, targetDiamonds: 1000000, durationDays: 8, basicSalaryUSD: 80.00, dailyHoursRequired: 1.0 },
+            { level: 7, targetDiamonds: 2500000, durationDays: 8, basicSalaryUSD: 200.00, dailyHoursRequired: 1.0 },
+            { level: 8, targetDiamonds: 5000000, durationDays: 5, basicSalaryUSD: 400.00, dailyHoursRequired: 1.0 },
+            { level: 9, targetDiamonds: 10000000, durationDays: 5, basicSalaryUSD: 800.00, dailyHoursRequired: 1.0 },
+            { level: 10, targetDiamonds: 20000000, durationDays: 5, basicSalaryUSD: 1600.00, dailyHoursRequired: 1.0 }
+          ]
+        }
+      },
+      {
+        key: 'AUDIO_HOST_TIERS',
+        valueJson: {
+          version: 'v3.0.0',
+          minDailyHours: 2.0,
+          tiers: [
+            { level: 1, tierName: '30K Audio Starter', targetCoins: 30000, dailyRewardUSD: 0.80, agencyProfitUSD: 0.15, minDailyHours: 2.0, durationDays: 10 },
+            { level: 2, tierName: '60K Audio Bronze', targetCoins: 60000, dailyRewardUSD: 1.60, agencyProfitUSD: 0.30, minDailyHours: 2.0, durationDays: 10 },
+            { level: 3, tierName: '100K Audio Silver', targetCoins: 100000, dailyRewardUSD: 2.80, agencyProfitUSD: 0.50, minDailyHours: 2.0, durationDays: 10 },
+            { level: 4, tierName: '350K Audio Gold', targetCoins: 350000, dailyRewardUSD: 9.50, agencyProfitUSD: 1.70, minDailyHours: 2.0, durationDays: 10 },
+            { level: 5, tierName: '1M Audio Platinum', targetCoins: 1000000, dailyRewardUSD: 28.00, agencyProfitUSD: 5.00, minDailyHours: 2.0, durationDays: 8 },
+            { level: 6, tierName: '3M Audio VIP Master', targetCoins: 3000000, dailyRewardUSD: 90.00, agencyProfitUSD: 16.00, minDailyHours: 2.0, durationDays: 8 },
+            { level: 7, tierName: '10M Audio Crown Royalty', targetCoins: 10000000, dailyRewardUSD: 320.00, agencyProfitUSD: 55.00, minDailyHours: 2.0, durationDays: 5 }
+          ]
+        }
+      },
+      {
+        key: 'RESELLER_PACKAGES',
+        valueJson: {
+          packages: [
+            { id: 'res-1', tierName: 'Silver Reseller Tier', priceUSD: 50, totalCoins: 525000, bonusCoins: 25000, profitPercent: 8 },
+            { id: 'res-2', tierName: 'Gold Reseller Tier', priceUSD: 200, totalCoins: 2160000, bonusCoins: 160000, profitPercent: 10 },
+            { id: 'res-3', tierName: 'Platinum Reseller Tier', priceUSD: 1000, totalCoins: 11200000, bonusCoins: 1200000, profitPercent: 12 },
+            { id: 'res-4', tierName: 'VIP Master Reseller Tier', priceUSD: 5000, totalCoins: 58000000, bonusCoins: 8000000, profitPercent: 15 }
+          ]
+        }
+      }
+    ];
+
+    try {
+      for (const b of baselineKeys) {
+        await configurationRepository.upsertConfig({
+          key: b.key,
+          valueJson: b.valueJson,
+          status: 'ACTIVE'
+        });
+      }
+      configs = await configurationRepository.findAll();
+    } catch (seedErr) {
+      console.warn('[PolicyService] Baseline seed warning:', seedErr.message);
+    }
+  }
+  return configs;
 }
 
 export async function updateConfiguration({
@@ -441,41 +626,6 @@ export async function updateConfiguration({
       await invalidateCache(`policy:effective:${policyType}`);
     } catch (err) {
       console.warn(`[PolicyService] Could not sync policy table for ${policyType}:`, err.message);
-    }
-
-    // Sync to HostLevelConfig if host tiers
-    if ((policyType === 'LIVE_HOST' || policyType === 'AUDIO_HOST') && valueJson) {
-      try {
-        const tiers = Array.isArray(valueJson) ? valueJson : (valueJson.tiers || []);
-        const hostType = policyType === 'AUDIO_HOST' ? 'AUDIO_HOST' : 'LIVE_HOST';
-        for (const [idx, tier] of tiers.entries()) {
-          const lvl = Number(tier.level || idx + 1);
-          await prisma.hostLevelConfig.upsert({
-            where: {
-              level_hostType: {
-                level: lvl,
-                hostType,
-              },
-            },
-            update: {
-              targetDiamonds: BigInt(tier.targetDiamonds || tier.targetCoins || 0),
-              basicSalaryUSD: Number(tier.basicSalaryUSD || tier.dailyRewardUSD || 0),
-              dailyHoursRequired: Number(tier.dailyHoursRequired || tier.minDailyHours || (hostType === 'AUDIO_HOST' ? 2.0 : 1.0)),
-              daysRequiredPerMonth: Number(tier.durationDays || tier.daysRequiredPerMonth || 10),
-            },
-            create: {
-              level: lvl,
-              hostType,
-              targetDiamonds: BigInt(tier.targetDiamonds || tier.targetCoins || 0),
-              basicSalaryUSD: Number(tier.basicSalaryUSD || tier.dailyRewardUSD || 0),
-              dailyHoursRequired: Number(tier.dailyHoursRequired || tier.minDailyHours || (hostType === 'AUDIO_HOST' ? 2.0 : 1.0)),
-              daysRequiredPerMonth: Number(tier.durationDays || tier.daysRequiredPerMonth || 10),
-            },
-          });
-        }
-      } catch (tierErr) {
-        console.warn(`[PolicyService] Could not sync HostLevelConfig:`, tierErr.message);
-      }
     }
   }
 
