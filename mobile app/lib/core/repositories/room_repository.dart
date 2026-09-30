@@ -127,4 +127,27 @@ class RoomRepository {
     final response = await _apiClient.post('/v1/rooms/$roomId/agora-token/refresh');
     return response.data?['data'] as Map<String, dynamic>? ?? {};
   }
+
+  /// Get room members with optional search filtering
+  Future<Map<String, dynamic>> getRoomMembers(String roomId, {String? search}) async {
+    final queryParams = <String, dynamic>{};
+    if (search != null && search.isNotEmpty) queryParams['search'] = search;
+    final response = await _apiClient.get('/v1/rooms/$roomId/members', queryParameters: queryParams);
+    return response.data as Map<String, dynamic>? ?? {};
+  }
+
+  /// Update a room member's role (Host or Admin only)
+  Future<Map<String, dynamic>> updateMemberRole(String roomId, String targetUserId, String role) async {
+    final response = await _apiClient.put(
+      '/v1/rooms/$roomId/members/$targetUserId/role',
+      data: {'role': role},
+    );
+    return response.data?['data'] as Map<String, dynamic>? ?? {};
+  }
+
+  /// Get Room Sending Rankings (Daily, Weekly, Monthly)
+  Future<Map<String, dynamic>> getRoomSendingRankings(String roomId, {String period = 'daily'}) async {
+    final response = await _apiClient.get('/v1/rooms/$roomId/rankings', queryParameters: {'period': period});
+    return response.data?['data'] as Map<String, dynamic>? ?? {};
+  }
 }

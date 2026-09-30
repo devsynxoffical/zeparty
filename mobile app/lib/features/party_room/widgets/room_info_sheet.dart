@@ -15,6 +15,7 @@ import '../../../../core/utils/formatters.dart';
 import '../../../../core/services/room_share_service.dart';
 import '../../../../core/services/media_upload_service.dart';
 import '../../recharge/recharge_screen.dart';
+import '../room_settings_screen.dart';
 
 class RoomInfoSheet extends StatefulWidget {
   final LiveRoomModel room;
@@ -38,6 +39,8 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
   late TabController _tabController;
   late String _currentTitle;
   late String _currentCoverUrl;
+  String _memberSearchQuery = '';
+  final TextEditingController _memberSearchController = TextEditingController();
 
   @override
   void initState() {
@@ -61,6 +64,7 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
   @override
   void dispose() {
     _tabController.dispose();
+    _memberSearchController.dispose();
     super.dispose();
   }
 
@@ -660,8 +664,17 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
                 child: Column(
                   children: [
                     if (widget.canManage)
-                      _buildActionIcon(Icons.settings_outlined, secondaryColor, () {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Room Settings opened')));
+                      _buildActionIcon(Icons.settings_outlined, secondaryColor, () async {
+                        final updated = await Navigator.push<LiveRoomModel>(
+                          context,
+                          MaterialPageRoute(builder: (_) => RoomSettingsScreen(room: widget.room)),
+                        );
+                        if (updated != null && mounted) {
+                          setState(() {
+                            _currentTitle = updated.title;
+                            _currentCoverUrl = updated.coverUrl;
+                          });
+                        }
                       }),
                     if (widget.canManage) const SizedBox(height: 12),
                     _buildActionIcon(Icons.star_border_rounded, secondaryColor, () {
@@ -738,7 +751,7 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
                 const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider(height: 1, thickness: 0.5)),
                 _buildDetailRow('Member', '$memberCount/200', textColor, secondaryColor, highlightValue: '$memberCount', highlightColor: primaryColor),
                 const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Divider(height: 1, thickness: 0.5)),
-                _buildDetailRow('Room mode', 'Friend mode', textColor, secondaryColor, showArrow: widget.canManage),
+                _buildDetailRow('Room mode', widget.room.roomMode.isNotEmpty ? widget.room.roomMode : 'Friend mode', textColor, secondaryColor, showArrow: widget.canManage),
               ],
             ),
           ),
@@ -788,6 +801,10 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
               _buildShareNetworkGroup(),
             ],
           ),
+          const SizedBox(height: 24),
+
+          // CR 36 Side-by-Side Follow & Join Bottom Actions
+          _buildFollowAndJoinSection(textColor, primaryColor),
           const SizedBox(height: 20),
         ],
       ),
@@ -992,25 +1009,649 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
   }
 
   Widget _buildMemberTab(Color textColor, Color secondaryColor) {
-    final members = widget.participants ?? [];
-    if (members.isEmpty) {
-      return Center(
-        child: Text('No members available.', style: TextStyle(color: secondaryColor)),
+    final livePartyProv = Provider.of<LivePartyProvider>(context);
+    final authProv = Provider.of<AuthProvider>(context, listen: false);
+    final currentUser = authProv.currentUser;
+
+    final roomHostId = widget.room.host.id;
+    final isOwner = currentUser.id == roomHostId || widget.room.creatorUserId == currentUser.id;
+
+    // Check if viewer is an admin
+    final isViewerAdmin = livePartyProv.participants.any(
+      (p) => p.user.id == currentUser.id && p.role == ParticipantRole.moderator,
+    );
+    final canManageRoles = isOwner || isViewerAdmin;
+
+    final allMembers = livePartyProv.participants.isNotEmpty
+        ? livePartyProv.participants
+        : (widget.participants ?? []);
+
+    final filteredMembers = allMembers.where((p) {
+      if (_memberSearchQuery.trim().isEmpty) return true;
+      final q = _memberSearchQuery.trim().toLowerCase();
+      final name = p.user.name.toLowerCase();
+      final username = p.user.username.toLowerCase();
+      final userId = p.user.id.toLowerCase();
+      return name.contains(q) || username.contains(q) || userId.contains(q);
+    }).toList();
+
+    return Column(
+      children: [
+        // Search & Counter Header Bar
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Member: ${allMembers.length}',
+                    style: TextStyle(
+                      color: textColor,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Icon(Icons.info_outline, color: secondaryColor, size: 16),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Search Field matching reference
+              Container(
+                decoration: BoxDecoration(
+                  color: widget.isDark ? const Color(0xFF252136) : const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: AppColors.getPrimary(widget.isDark).withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 12),
+                    Icon(Icons.search_rounded, color: secondaryColor, size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _memberSearchController,
+                        style: TextStyle(color: textColor, fontSize: 14),
+                        onChanged: (val) {
+                          setState(() {
+                            _memberSearchQuery = val;
+                          });
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'User ID',
+                          hintStyle: TextStyle(color: secondaryColor.withValues(alpha: 0.6), fontSize: 14),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                      ),
+                    ),
+                    if (_memberSearchQuery.isNotEmpty)
+                      GestureDetector(
+                        onTap: () {
+                          _memberSearchController.clear();
+                          setState(() {
+                            _memberSearchQuery = '';
+                          });
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Icon(Icons.clear_rounded, color: secondaryColor, size: 18),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: TextButton(
+                        onPressed: () {
+                          FocusScope.of(context).unfocus();
+                        },
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text(
+                          'Search',
+                          style: TextStyle(
+                            color: Color(0xFFB524E4),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // List of Members
+        Expanded(
+          child: filteredMembers.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.search_off_rounded, color: secondaryColor.withValues(alpha: 0.5), size: 48),
+                      const SizedBox(height: 8),
+                      Text(
+                        'No room members match your search.',
+                        style: TextStyle(color: secondaryColor, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  itemCount: filteredMembers.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1, thickness: 0.3, color: Colors.white10),
+                  itemBuilder: (context, index) {
+                    final participant = filteredMembers[index];
+                    final targetUser = participant.user;
+
+                    final isTargetHost = targetUser.id == roomHostId || participant.role == ParticipantRole.host;
+                    final isTargetAdmin = participant.role == ParticipantRole.moderator;
+
+                    String roleLabel = 'Member';
+                    Color roleColor = secondaryColor;
+                    if (isTargetHost) {
+                      roleLabel = 'Host';
+                      roleColor = Colors.amber;
+                    } else if (isTargetAdmin) {
+                      roleLabel = 'Admin';
+                      roleColor = Colors.cyanAccent;
+                    }
+
+                    final canPerformAction = canManageRoles &&
+                        !isTargetHost &&
+                        targetUser.id != currentUser.id &&
+                        (isOwner || (!isTargetAdmin));
+
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      leading: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          CircleAvatar(
+                            radius: 22,
+                            backgroundColor: AppColors.getPrimary(widget.isDark).withValues(alpha: 0.2),
+                            backgroundImage: targetUser.avatarUrl.isNotEmpty ? NetworkImage(targetUser.avatarUrl) : null,
+                            child: targetUser.avatarUrl.isEmpty
+                                ? Text(
+                                    targetUser.name.isNotEmpty ? targetUser.name[0].toUpperCase() : 'U',
+                                    style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
+                                  )
+                                : null,
+                          ),
+                          if (isTargetHost)
+                            const Positioned(
+                              top: -4,
+                              right: -4,
+                              child: Text('👑', style: TextStyle(fontSize: 12)),
+                            )
+                          else if (isTargetAdmin)
+                            const Positioned(
+                              top: -4,
+                              right: -4,
+                              child: Text('🛡️', style: TextStyle(fontSize: 12)),
+                            ),
+                        ],
+                      ),
+                      title: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              targetUser.name.isNotEmpty ? targetUser.name : targetUser.username,
+                              style: TextStyle(
+                                color: textColor,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Role Badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: roleColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: roleColor.withValues(alpha: 0.4), width: 0.5),
+                            ),
+                            child: Text(
+                              roleLabel,
+                              style: TextStyle(
+                                color: roleColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      subtitle: Row(
+                        children: [
+                          Text(
+                            'ID: ${targetUser.id.length > 8 ? targetUser.id.substring(0, 8) : targetUser.id}',
+                            style: TextStyle(color: secondaryColor, fontSize: 11),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(width: 3, height: 3, decoration: BoxDecoration(color: secondaryColor, shape: BoxShape.circle)),
+                          const SizedBox(width: 8),
+                          Text(
+                            'active today',
+                            style: TextStyle(color: secondaryColor, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                      trailing: canPerformAction
+                          ? PopupMenuButton<String>(
+                              icon: Icon(Icons.more_vert_rounded, color: secondaryColor, size: 20),
+                              color: const Color(0xFF1E1B2E),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                              onSelected: (action) async {
+                                if (action == 'appoint_admin') {
+                                  _showAdminRoleConfirmDialog(context, livePartyProv, targetUser, 'ADMIN');
+                                } else if (action == 'remove_admin') {
+                                  _showAdminRoleConfirmDialog(context, livePartyProv, targetUser, 'MEMBER');
+                                } else if (action == 'kick') {
+                                  _showKickConfirmDialog(context, livePartyProv, targetUser);
+                                }
+                              },
+                              itemBuilder: (ctx) => [
+                                if (!isTargetAdmin)
+                                  const PopupMenuItem(
+                                    value: 'appoint_admin',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.shield_outlined, color: Colors.cyanAccent, size: 18),
+                                        SizedBox(width: 10),
+                                        Text('Appoint as Admin', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                      ],
+                                    ),
+                                  )
+                                else
+                                  const PopupMenuItem(
+                                    value: 'remove_admin',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.remove_moderator_outlined, color: Colors.amber, size: 18),
+                                        SizedBox(width: 10),
+                                        Text('Remove Admin Role', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                      ],
+                                    ),
+                                  ),
+                                const PopupMenuItem(
+                                  value: 'kick',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.person_remove_rounded, color: Colors.redAccent, size: 18),
+                                      SizedBox(width: 10),
+                                      Text('Remove from Room', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            )
+                          : null,
+                    );
+                  },
+                ),
+        ),
+
+        // Leave / Unjoin Room Button Footer
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: widget.isDark ? const Color(0xFF191627) : const Color(0xFFF9FAFB),
+            border: Border(top: BorderSide(color: secondaryColor.withValues(alpha: 0.1))),
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent.withValues(alpha: 0.15),
+                foregroundColor: Colors.redAccent,
+                elevation: 0,
+                side: BorderSide(color: Colors.redAccent.withValues(alpha: 0.4)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+              icon: const Icon(Icons.exit_to_app_rounded, size: 20),
+              label: const Text(
+                'Leave / Unjoin Room',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              onPressed: () => _showUnjoinConfirmDialog(context, livePartyProv),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showAdminRoleConfirmDialog(BuildContext context, LivePartyProvider provider, UserModel targetUser, String newRole) {
+    final isAppoint = newRole == 'ADMIN';
+    showDialog(
+      context: context,
+      builder: (d) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          isAppoint ? 'Appoint Room Admin' : 'Remove Admin Role',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          isAppoint
+              ? 'Are you sure you want to appoint ${targetUser.name} as a Room Admin?'
+              : 'Are you sure you want to remove the Admin role from ${targetUser.name}?',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(d),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isAppoint ? Colors.cyan : Colors.amber,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () async {
+              Navigator.pop(d);
+              try {
+                await provider.updateMemberRoleOnBackend(targetUser.id, newRole);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(isAppoint ? '✨ Appointed ${targetUser.name} as Admin!' : 'ℹ️ Removed Admin role from ${targetUser.name}'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to update role: $e'), backgroundColor: Colors.redAccent),
+                  );
+                }
+              }
+            },
+            child: Text(isAppoint ? 'Appoint' : 'Remove Role', style: const TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showKickConfirmDialog(BuildContext context, LivePartyProvider provider, UserModel targetUser) {
+    showDialog(
+      context: context,
+      builder: (d) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Remove from Room', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Text('Are you sure you want to remove ${targetUser.name} from this party room?', style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel', style: TextStyle(color: Colors.white60))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            onPressed: () {
+              Navigator.pop(d);
+              provider.removeParticipant(targetUser.id);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('🚫 Removed ${targetUser.name} from room.')),
+                );
+              }
+            },
+            child: const Text('Remove User'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUnjoinConfirmDialog(BuildContext context, LivePartyProvider provider) {
+    showDialog(
+      context: context,
+      builder: (d) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Unjoin Party Room?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: const Text(
+          'Leaving will remove your membership from this room and release any occupied mic seat.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Stay', style: TextStyle(color: Colors.white60))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            onPressed: () async {
+              Navigator.pop(d);
+              if (Navigator.canPop(context)) {
+                Navigator.pop(context);
+              }
+              await provider.unjoinCurrentRoom();
+            },
+            child: const Text('Leave Room'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // CR 36 Side-by-Side Follow & Join Action Bar
+  Widget _buildFollowAndJoinSection(Color textColor, Color primaryColor) {
+    final authProv = Provider.of<AuthProvider>(context);
+    final walletProv = Provider.of<WalletProvider>(context);
+    final currentUser = authProv.currentUser;
+    final isOwner = widget.canManage || currentUser.id == widget.room.host.id;
+
+    if (isOwner) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.amber.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.stars_rounded, color: Colors.amber, size: 20),
+            SizedBox(width: 8),
+            Text('Room Owner', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 14)),
+          ],
+        ),
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: members.length,
-      itemBuilder: (context, index) {
-        final participant = members[index];
-        return ListTile(
-          leading: CircleAvatar(
-            backgroundImage: NetworkImage(participant.user.avatarUrl),
+
+    final isFollowing = authProv.isFollowing(widget.room.host.id);
+    final fee = widget.room.membershipFee;
+    final isJoined = widget.participants?.any((p) => p.user.id == currentUser.id) ?? false;
+
+    return Row(
+      children: [
+        // Follow / Following Button (Left Side)
+        Expanded(
+          child: GestureDetector(
+            onTap: () {
+              authProv.toggleFollow(widget.room.host.id);
+              final newStatus = authProv.isFollowing(widget.room.host.id);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(newStatus ? '💖 Following ${widget.room.host.name}!' : 'Unfollowed ${widget.room.host.name}.'),
+                  duration: const Duration(seconds: 2),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            child: Container(
+              height: 48,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isFollowing
+                      ? [const Color(0xFF4A4458), const Color(0xFF332D42)]
+                      : [const Color(0xFFFF4081), const Color(0xFFE91E63)],
+                ),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: isFollowing
+                    ? []
+                    : [BoxShadow(color: Colors.pinkAccent.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 4))],
+              ),
+              child: Center(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      isFollowing ? Icons.check_rounded : Icons.favorite_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isFollowing ? 'Following' : 'Follow',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-          title: Text(participant.user.name, style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
-          subtitle: Text('Role: ${participant.role.name.toUpperCase()}', style: TextStyle(color: secondaryColor, fontSize: 12)),
-        );
-      },
+        ),
+        const SizedBox(width: 14),
+
+        // Join / Joined Button (Right Side)
+        Expanded(
+          child: GestureDetector(
+            onTap: () async {
+              if (isJoined) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('✓ You are already a member of this party room.')),
+                );
+                return;
+              }
+
+              if (fee > 0) {
+                // Paid Membership Join Confirmation Flow
+                final confirmJoin = await showDialog<bool>(
+                  context: context,
+                  builder: (d) => AlertDialog(
+                    backgroundColor: const Color(0xFF1E1B2E),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    title: const Text('Join Room Membership', style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold)),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Membership Fee: $fee Coins', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 16)),
+                        const SizedBox(height: 8),
+                        Text('Your Coin Balance: ${walletProv.coins} Coins', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Joining gives you full access to member chat, mic priority, and exclusive room perks.',
+                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(d, false), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent, foregroundColor: Colors.black),
+                        onPressed: () => Navigator.pop(d, true),
+                        child: const Text('Confirm & Pay', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirmJoin != true) return;
+
+                if (walletProv.coins < fee) {
+                  if (mounted) {
+                    showDialog(
+                      context: context,
+                      builder: (d) => AlertDialog(
+                        backgroundColor: const Color(0xFF1E1B2E),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        title: const Text('Insufficient Coins', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                        content: Text('Required: $fee Coins\nYour Balance: ${walletProv.coins} Coins'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel', style: TextStyle(color: Colors.white54))),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
+                            onPressed: () {
+                              Navigator.pop(d);
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => const RechargeScreen()));
+                            },
+                            child: const Text('Recharge Now', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return;
+                }
+
+                // Deduct fee exactly once
+                walletProv.spendCoins(fee);
+              }
+
+              // Update room membership state
+              if (mounted) {
+                final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+                partyProv.joinParty(widget.room, currentUser);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(fee > 0 ? '🎉 Paid $fee coins & joined room membership!' : '🎉 Joined party room!'),
+                    backgroundColor: Colors.cyan,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+                setState(() {});
+              }
+            },
+            child: Container(
+              height: 48,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isJoined
+                      ? [const Color(0xFF00B0FF), const Color(0xFF00838F)]
+                      : [const Color(0xFF00E5FF), const Color(0xFF00B0FF)],
+                ),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(color: Colors.cyanAccent.withValues(alpha: 0.4), blurRadius: 10, offset: const Offset(0, 4)),
+                ],
+              ),
+              child: Center(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      isJoined
+                          ? 'Joined'
+                          : (fee > 0 ? 'Join ($fee 🪙)' : 'Join'),
+                      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w800, fontSize: 15),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

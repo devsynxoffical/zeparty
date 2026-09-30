@@ -31,6 +31,7 @@ class SocketService {
   final _roomUserMutedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomEmojiController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomSnapshotController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomRoleUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Social realtime event streams
   final _postCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -79,6 +80,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get onRoomUserMuted => _roomUserMutedController.stream;
   Stream<Map<String, dynamic>> get onRoomEmoji => _roomEmojiController.stream;
   Stream<Map<String, dynamic>> get onRoomSnapshot => _roomSnapshotController.stream;
+  Stream<Map<String, dynamic>> get onRoomRoleUpdated => _roomRoleUpdatedController.stream;
 
   // Stream aliases for backwards compatibility
   Stream<Map<String, dynamic>> get roomCreatedStream => onRoomCreated;
@@ -96,6 +98,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get roomMutedStream => onRoomMuted;
   Stream<Map<String, dynamic>> get roomUserMutedStream => onRoomUserMuted;
   Stream<Map<String, dynamic>> get roomSnapshotStream => onRoomSnapshot;
+  Stream<Map<String, dynamic>> get roomRoleUpdatedStream => onRoomRoleUpdated;
 
   // Getters - Social
   Stream<Map<String, dynamic>> get onPostCreated => _postCreatedController.stream;
@@ -291,6 +294,9 @@ class SocketService {
     // Emoji reactions broadcast from backend
     _socket!.on('room:emoji', (data) {
       if (data != null) _roomEmojiController.add(safeMap(data));
+    });
+    _socket!.on('room:role_updated', (data) {
+      if (data != null) _roomRoleUpdatedController.add(safeMap(data));
     });
 
     // Social Events

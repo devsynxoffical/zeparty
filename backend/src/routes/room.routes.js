@@ -16,6 +16,9 @@ userRoomRouter.post('/:id/leave', authenticate, roomController.leaveRoom);
 userRoomRouter.post('/:id/close', authenticate, roomController.closeMyRoom);
 userRoomRouter.post('/:id/seats/:seatIndex/occupy', authenticate, roomController.occupySeat);
 userRoomRouter.post('/:id/seats/:seatIndex/leave', authenticate, roomController.leaveSeat);
+userRoomRouter.get('/:id/members', roomController.getRoomMembers);
+userRoomRouter.put('/:id/members/:targetUserId/role', authenticate, roomController.updateMemberRole);
+userRoomRouter.get('/:id/rankings', roomController.getRoomSendingRankings);
 userRoomRouter.post('/:id/agora-token', authenticate, agoraController.getAgoraToken);
 userRoomRouter.post('/:id/agora-token/refresh', authenticate, agoraController.postRefreshAgoraToken);
 

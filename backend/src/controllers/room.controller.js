@@ -376,6 +376,59 @@ export async function getAdminAgoraToken(req, res, next) {
   }
 }
 
+export async function getRoomMembers(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { search } = req.query;
+    const result = await roomService.getRoomMembers(id, { search });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Room members retrieved successfully',
+      data: result.members,
+      totalCount: result.totalCount,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateMemberRole(req, res, next) {
+  try {
+    const { id, targetUserId } = req.params;
+    const { role } = req.body;
+    const actorUserId = req.auth.userId;
+
+    const result = await roomService.updateMemberRole(id, actorUserId, targetUserId, { role });
+
+    return res.status(200).json({
+      success: true,
+      message: `User role updated to ${role} successfully`,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRoomSendingRankings(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { period } = req.query;
+    const currentUserId = req.auth?.userId;
+
+    const result = await roomService.getRoomSendingRankings(id, { period: period || 'daily', currentUserId });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Room sending rankings retrieved successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -396,4 +449,7 @@ export default {
   postAdminKickUser,
   postAdminUpdateRoomDp,
   getAdminAgoraToken,
+  getRoomMembers,
+  updateMemberRole,
+  getRoomSendingRankings,
 };

@@ -46,6 +46,7 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketRoomWarningSub;
   StreamSubscription? _socketRoomMutedSub;
   StreamSubscription? _socketRoomUserMutedSub;
+  StreamSubscription? _socketRoleUpdatedSub;
 
   // Admin Moderation State
   bool _isRoomMuted = false;
@@ -724,6 +725,61 @@ class LivePartyProvider extends ChangeNotifier {
       }
       notifyListeners();
     });
+
+    // 14. Room Member Role Updated Stream
+    _socketRoleUpdatedSub?.cancel();
+    _socketRoleUpdatedSub = _socketService.onRoomRoleUpdated.listen((data) {
+      final targetUserId = data['targetUserId']?.toString();
+      final newRoleStr = data['role']?.toString().toUpperCase();
+      if (targetUserId != null && newRoleStr != null) {
+        final idx = _participants.indexWhere((p) => p.user.id == targetUserId);
+        if (idx != -1) {
+          ParticipantRole newRole = ParticipantRole.listener;
+          if (newRoleStr == 'HOST') {
+            newRole = ParticipantRole.host;
+          } else if (newRoleStr == 'ADMIN') {
+            newRole = ParticipantRole.moderator;
+          } else {
+            newRole = _participants[idx].seatNumber != null ? ParticipantRole.speaker : ParticipantRole.listener;
+          }
+          _participants[idx] = _participants[idx].copyWith(role: newRole);
+          sendSystemMessage('⭐ Role updated for ${_participants[idx].user.name}: $newRoleStr');
+          notifyListeners();
+        }
+      }
+    });
+  }
+
+  Future<void> updateMemberRoleOnBackend(String targetUserId, String newRole) async {
+    final roomId = _activeRoom?.id;
+    if (roomId == null) return;
+    try {
+      await _roomRepository.updateMemberRole(roomId, targetUserId, newRole);
+      final idx = _participants.indexWhere((p) => p.user.id == targetUserId);
+      if (idx != -1) {
+        ParticipantRole roleEnum = newRole.toUpperCase() == 'ADMIN'
+            ? ParticipantRole.moderator
+            : (_participants[idx].seatNumber != null ? ParticipantRole.speaker : ParticipantRole.listener);
+        _participants[idx] = _participants[idx].copyWith(role: roleEnum);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[LivePartyProvider] updateMemberRoleOnBackend error: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> unjoinCurrentRoom() async {
+    final user = _currentUser;
+    if (user != null && _activeRoom != null) {
+      final participant = _participants.where((p) => p.user.id == user.id).firstOrNull;
+      if (participant != null && participant.seatNumber != null) {
+        try {
+          await _roomRepository.leaveSeat(_activeRoom!.id, participant.seatNumber!);
+        } catch (_) {}
+      }
+    }
+    await leaveParty();
   }
 
   Future<void> leaveParty() async {
@@ -752,6 +808,7 @@ class LivePartyProvider extends ChangeNotifier {
     _socketRoomWarningSub?.cancel();
     _socketRoomMutedSub?.cancel();
     _socketRoomUserMutedSub?.cancel();
+    _socketRoleUpdatedSub?.cancel();
     _pkTimer?.cancel();
 
     _activeRoom = null;
@@ -1401,6 +1458,17 @@ class LivePartyProvider extends ChangeNotifier {
       sendSystemMessage('❌ User join request declined.');
     }
     notifyListeners();
+  }
+
+  bool isAdmin(String userId) {
+    if (_activeRoom == null) return false;
+    if (_activeRoom!.host.id == userId || _activeRoom!.creatorUserId == userId) return true;
+    final index = _participants.indexWhere((p) => p.user.id == userId);
+    if (index != -1) {
+      final roleStr = _participants[index].role.toString().toUpperCase();
+      return roleStr.contains('ADMIN') || roleStr.contains('HOST');
+    }
+    return false;
   }
 
   void sendGiftActivityMessage({

@@ -72,39 +72,80 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
     super.dispose();
   }
 
+  Color _getSenderColor(String id) {
+    if (id.isEmpty || id == 'system') return const Color(0xFFFFD54F);
+    final palette = [
+      const Color(0xFF00E5FF), // Cyan
+      const Color(0xFFFF4081), // Pink Accent
+      const Color(0xFF00E676), // Bright Green
+      const Color(0xFFFFD54F), // Amber Gold
+      const Color(0xFFB388FF), // Purple Accent
+      const Color(0xFFFF6E40), // Deep Orange
+      const Color(0xFF40C4FF), // Light Blue
+    ];
+    return palette[id.hashCode.abs() % palette.length];
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (widget.isSystem) {
+    final isEntryNotice = widget.text.contains('entered the room') || widget.isSystem;
+
+    if (isEntryNotice) {
+      final senderAccent = _getSenderColor(widget.senderId);
+      final isEntered = widget.text.contains('entered the room');
+
       return FadeTransition(
         opacity: _fadeAnimation,
         child: SlideTransition(
           position: _slideAnimation,
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 5),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.amber.withValues(alpha: 0.22),
-                      Colors.orange.withValues(alpha: 0.12),
-                    ],
+          child: GestureDetector(
+            onTap: widget.onTap,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: isEntered ? senderAccent.withValues(alpha: 0.5) : Colors.amber.withValues(alpha: 0.35),
+                      width: 0.8,
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.amber.withValues(alpha: 0.35),
-                    width: 0.8,
-                  ),
-                ),
-                child: Text(
-                  widget.text,
-                  style: const TextStyle(
-                    color: Color(0xFFFFD54F),
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  child: isEntered
+                      ? RichText(
+                          text: TextSpan(
+                            children: [
+                              TextSpan(
+                                text: widget.senderName.isNotEmpty ? widget.senderName : widget.senderId,
+                                style: TextStyle(
+                                  color: senderAccent,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const TextSpan(
+                                text: ' entered the room',
+                                style: TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Text(
+                          widget.text,
+                          style: const TextStyle(
+                            color: Color(0xFFFFD54F),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
             ),
@@ -119,7 +160,10 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
           )
         : (widget.isHost
             ? const Color(0xFFFFD54F)
-            : (widget.isMod ? const Color(0xFF64B5F6) : const Color(0xFF80D8FF)));
+            : (widget.isMod ? const Color(0xFF64B5F6) : _getSenderColor(widget.senderId)));
+
+    final defaultAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80';
+    final avatarToUse = (widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty) ? widget.avatarUrl! : defaultAvatar;
 
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -134,26 +178,25 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty) ...[
-                  Container(
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: widget.isHost
-                            ? Colors.amber
-                            : (widget.isVip ? Colors.purpleAccent : Colors.white24),
-                        width: 1.0,
-                      ),
-                      image: DecorationImage(
-                        image: NetworkImage(widget.avatarUrl!),
-                        fit: BoxFit.cover,
-                      ),
+                // Sender Profile Avatar (CR 39)
+                Container(
+                  width: 28,
+                  height: 28,
+                  margin: const EdgeInsets.only(right: 7, top: 2),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: widget.isHost
+                          ? Colors.amber
+                          : (widget.isVip ? Colors.purpleAccent : nameColor.withValues(alpha: 0.6)),
+                      width: 1.2,
+                    ),
+                    image: DecorationImage(
+                      image: NetworkImage(avatarToUse),
+                      fit: BoxFit.cover,
                     ),
                   ),
-                  const SizedBox(width: 7),
-                ],
+                ),
                 Flexible(
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),

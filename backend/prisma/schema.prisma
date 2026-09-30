@@ -990,6 +990,7 @@ model RoomMember {
   room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String   @default("MEMBER") // "HOST", "ADMIN", "MEMBER"
   joinedAt  DateTime @default(now())
 
   @@unique([roomId, userId])

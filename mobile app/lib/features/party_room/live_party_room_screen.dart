@@ -25,6 +25,7 @@ import '../games/rocket_game_sheet.dart';
 import '../games/game_center_sheet.dart';
 import '../pk_battle/pk_match_screen.dart';
 import 'widgets/room_info_sheet.dart';
+import 'widgets/room_sending_ranking_sheet.dart';
 import 'widgets/room_type_selector_sheet.dart';
 import 'widgets/room_entry_announcement_banner.dart';
 import 'widgets/room_entry_mount_banner.dart';
@@ -402,6 +403,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
           // Main Layout
           SafeArea(
+            bottom: false,
             child: Column(
               children: [
                 // Top Header
@@ -413,19 +415,15 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 // PK Battle Banner (If Active)
                 if (provider.isPkActive) _buildPkBanner(provider),
 
-                // 14-Seat Audio Stage (Responsive to prevent overflow)
-                Flexible(
-                  flex: 5,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    child: Center(
-                      child: _buildStageGrid(provider, currentUser, canManage, isDark),
-                    ),
+                // Audio Mic Stage Grid
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  child: Center(
+                    child: _buildStageGrid(provider, currentUser, canManage, isDark),
                   ),
                 ),
 
-                // ── Module 31 Final Correction Anchor: Placed BELOW lowest mic/seat-name boundary ──
-                // SVIP Entry Banner Strip
+                // Banners Strip
                 const SvipEntryBanner(),
 
                 // Room Entry Mount Banner Widget
@@ -441,23 +439,18 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                   },
                 ),
 
-                // Room Entry Announcement Banner (Module 03)
+                // Room Entry Announcement Banner
                 RoomEntryAnnouncementBanner(
                   roomId: widget.room.id,
                   roomEntrySessionId: _roomEntrySessionId,
                   isDark: isDark,
                 ),
 
-                // Live Chat Feed pushed to bottom, auto-shrinks on keyboard
+                // Notification & Chat stream directly following the last mic row
                 Expanded(
-                  flex: 3,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Flexible(
-                        child: _buildChatFeed(provider),
-                      ),
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: _buildChatFeed(provider),
                   ),
                 ),
 
@@ -467,14 +460,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             ),
           ),
 
-          // Right-side Floating Action Shortcuts (Rocket Game & Game Lobby) - Higher position above chat feed
+          // Right-side Floating Action Shortcuts (Rocket Game & Game Lobby) - Lower-right placement above bottom composer (CR 32)
           Positioned(
             right: 14,
-            bottom: 270,
+            bottom: MediaQuery.of(context).padding.bottom + 74 + MediaQuery.of(context).viewInsets.bottom,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Rocket Game Floating Icon
+                // Rocket Game Floating Icon (Rocket above Games)
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
@@ -486,35 +479,35 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                     );
                   },
                   child: Container(
-                    width: 46,
-                    height: 46,
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(colors: [Color(0xFFFF4081), Color(0xFF7C4DFF)]),
                       shape: BoxShape.circle,
                       boxShadow: [
-                        BoxShadow(color: Colors.purpleAccent.withValues(alpha: 0.6), blurRadius: 12, spreadRadius: 2),
+                        BoxShadow(color: Colors.purpleAccent.withValues(alpha: 0.6), blurRadius: 10, spreadRadius: 1),
                       ],
                     ),
-                    child: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 24),
+                    child: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 22),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
 
                 // Game Center Lobby Icon
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => GameCenterSheet.show(context),
                   child: Container(
-                    width: 46,
-                    height: 46,
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(colors: [Color(0xFF00E676), Color(0xFF00B0FF)]),
                       shape: BoxShape.circle,
                       boxShadow: [
-                        BoxShadow(color: Colors.cyanAccent.withValues(alpha: 0.6), blurRadius: 12, spreadRadius: 2),
+                        BoxShadow(color: Colors.cyanAccent.withValues(alpha: 0.6), blurRadius: 10, spreadRadius: 1),
                       ],
                     ),
-                    child: const Icon(Icons.sports_esports_rounded, color: Colors.white, size: 24),
+                    child: const Icon(Icons.sports_esports_rounded, color: Colors.white, size: 22),
                   ),
                 ),
               ],
@@ -665,14 +658,33 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             crossAxisAlignment: CrossAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Trophy & Points
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.emoji_events_rounded, color: Colors.amber, size: 20),
-                  const SizedBox(width: 4),
-                  const Text('373M', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                ],
+              // Trophy & Points (Tappable Room Sending Rankings Entry Point)
+              GestureDetector(
+                onTap: () {
+                  final activeRoom = provider.activeRoom ?? widget.room;
+                  RoomSendingRankingSheet.show(
+                    context,
+                    roomId: activeRoom.id,
+                    roomTitle: activeRoom.title,
+                    isDark: Theme.of(context).brightness == Brightness.dark,
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.amber.withValues(alpha: 0.4), width: 0.8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.emoji_events_rounded, color: Colors.amber, size: 18),
+                      SizedBox(width: 4),
+                      Text('373M', style: TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(width: 14),
               
@@ -1127,6 +1139,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                     crossAxisSpacing: 12,
                     childAspectRatio: 0.95,
                     children: [
+                      // Member controls (Unmarked - Available to all users)
                       _buildRoomToolBtn(_isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded, _isMicMuted ? 'Unmute Mic' : 'Mute Mic', _isMicMuted ? Colors.redAccent : Colors.green, () {
                         Navigator.pop(ctx);
                         _toggleMic();
@@ -1148,23 +1161,25 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           builder: (_) => const RocketGameSheet(),
                         );
                       }),
-                      _buildRoomToolBtn(Icons.dashboard_customize_rounded, 'Room Type', Colors.amber, () {
-                        Navigator.pop(ctx);
-                        final activeRoom = provider.activeRoom ?? widget.room;
-                        showModalBottomSheet(
-                          context: context,
-                          backgroundColor: Colors.transparent,
-                          isScrollControlled: true,
-                          builder: (_) => RoomTypeSelectorSheet(
-                            initialRoomType: activeRoom.roomType,
-                            initialCapacity: activeRoom.seatCapacity,
-                            onApply: (roomType, capacity) {
-                              provider.updateRoomTypeAndCapacity(roomType, capacity);
-                            },
-                          ),
-                        );
-                      }),
-                      if (isHost)
+
+                      // Management Controls (CR 38 - Strictly Gated to Owner & Admins)
+                      if (canManage) ...[
+                        _buildRoomToolBtn(Icons.dashboard_customize_rounded, 'Room Type', Colors.amber, () {
+                          Navigator.pop(ctx);
+                          final activeRoom = provider.activeRoom ?? widget.room;
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: Colors.transparent,
+                            isScrollControlled: true,
+                            builder: (_) => RoomTypeSelectorSheet(
+                              initialRoomType: activeRoom.roomType,
+                              initialCapacity: activeRoom.seatCapacity,
+                              onApply: (roomType, capacity) {
+                                provider.updateRoomTypeAndCapacity(roomType, capacity);
+                              },
+                            ),
+                          );
+                        }),
                         _buildRoomToolBtn(Icons.flash_on_rounded, provider.isPkActive ? 'End PK' : 'PK Match', Colors.deepOrangeAccent, () {
                           Navigator.pop(ctx);
                           if (provider.isPkActive) {
@@ -1173,53 +1188,50 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                             Navigator.push(context, MaterialPageRoute(builder: (_) => const PkMatchScreen()));
                           }
                         }),
-                      if (canManage)
                         _buildRoomToolBtn(Icons.group_rounded, 'Members', Colors.teal, () {
                           Navigator.pop(ctx);
                           _showManagementPanel(context, isDark, provider);
                         }),
-                      if (canManage)
                         _buildRoomToolBtn(Icons.lock_rounded, 'Lock Seats', Colors.redAccent, () {
                           Navigator.pop(ctx);
                           _showSeatLockDialog(context, provider);
                         }),
-                      _buildRoomToolBtn(Icons.wallpaper_rounded, 'Backgrounds', Colors.blue, () {
-                        Navigator.pop(ctx);
-                        _showBackgroundPicker(context);
-                      }),
-                      _buildRoomToolBtn(Icons.add_photo_alternate_rounded, 'Change Cover', Colors.purpleAccent, () {
-                        Navigator.pop(ctx);
-                        _showCoverPicker(context);
-                      }),
-                      _buildRoomToolBtn(Icons.palette_outlined, 'Themes', Colors.purple, () {
-                        Navigator.pop(ctx);
-                        _showThemePicker(context);
-                      }),
-                      _buildRoomToolBtn(Icons.music_note_rounded, 'Music Player', Colors.pink, () {
-                        Navigator.pop(ctx);
-                        _showMusicLibrary(context);
-                      }),
-                      _buildRoomToolBtn(Icons.auto_awesome_rounded, 'Effects Settings', Colors.amberAccent, () {
-                        Navigator.pop(ctx);
-                        EffectsSettingsSheet.show(context);
-                      }),
-                      _buildRoomToolBtn(Icons.campaign_rounded, 'Announcement', Colors.amber, () {
-                        Navigator.pop(ctx);
-                        final authUser = context.read<AuthProvider>().currentUser;
-                        final isHost = widget.room.host.id == authUser.id;
-                        final isAdmin = authUser.role == UserRole.admin || authUser.id == 'admin';
-                        RoomAnnouncementEditDialog.show(
-                          context,
-                          roomId: widget.room.id,
-                          isHost: isHost,
-                          isAdmin: isAdmin,
-                        );
-                      }),
-                      _buildRoomToolBtn(Icons.settings_suggest_outlined, 'Settings', Colors.orange, () {
-                        Navigator.pop(ctx);
-                        _showRoomSettings(context);
-                      }),
-                      if (canManage) ...[
+                        _buildRoomToolBtn(Icons.wallpaper_rounded, 'Backgrounds', Colors.blue, () {
+                          Navigator.pop(ctx);
+                          _showBackgroundPicker(context);
+                        }),
+                        _buildRoomToolBtn(Icons.add_photo_alternate_rounded, 'Change Cover', Colors.purpleAccent, () {
+                          Navigator.pop(ctx);
+                          _showCoverPicker(context);
+                        }),
+                        _buildRoomToolBtn(Icons.palette_outlined, 'Themes', Colors.purple, () {
+                          Navigator.pop(ctx);
+                          _showThemePicker(context);
+                        }),
+                        _buildRoomToolBtn(Icons.music_note_rounded, 'Music Player', Colors.pink, () {
+                          Navigator.pop(ctx);
+                          _showMusicLibrary(context);
+                        }),
+                        _buildRoomToolBtn(Icons.auto_awesome_rounded, 'Effects Settings', Colors.amberAccent, () {
+                          Navigator.pop(ctx);
+                          EffectsSettingsSheet.show(context);
+                        }),
+                        _buildRoomToolBtn(Icons.campaign_rounded, 'Announcement', Colors.amber, () {
+                          Navigator.pop(ctx);
+                          final authUser = context.read<AuthProvider>().currentUser;
+                          final isHost = widget.room.host.id == authUser.id;
+                          final isAdmin = authUser.role == UserRole.admin || authUser.id == 'admin';
+                          RoomAnnouncementEditDialog.show(
+                            context,
+                            roomId: widget.room.id,
+                            isHost: isHost,
+                            isAdmin: isAdmin,
+                          );
+                        }),
+                        _buildRoomToolBtn(Icons.settings_suggest_outlined, 'Settings', Colors.orange, () {
+                          Navigator.pop(ctx);
+                          _showRoomSettings(context);
+                        }),
                         _buildRoomToolBtn(Icons.play_circle_fill_rounded, 'YouTube', Colors.redAccent, () {
                           Navigator.pop(ctx);
                           _showYouTubeControlDialog(context);

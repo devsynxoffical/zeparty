@@ -125,7 +125,7 @@ class _InboxScreenState extends State<InboxScreen> {
                     context,
                     title: 'System Messages',
                     icon: Icons.notifications_active_rounded,
-                    color: Colors.blueAccent,
+                    gradientColors: const [Color(0xFFFF4081), Color(0xFFFF9100)],
                     unreadCount: messaging.systemUnreadCount,
                     preview: messaging.systemMessages.isNotEmpty ? messaging.systemMessages.first.title : 'No notices',
                     onTap: () => _showSystemMessagesSheet(context, isDark),
@@ -137,7 +137,7 @@ class _InboxScreenState extends State<InboxScreen> {
                     context,
                     title: 'Activity Rewards',
                     icon: Icons.card_giftcard_rounded,
-                    color: Colors.amberAccent,
+                    gradientColors: const [Color(0xFFAB47BC), Color(0xFF7E57C2)],
                     unreadCount: messaging.rewardsUnreadCount,
                     preview: messaging.activityRewards.isNotEmpty ? messaging.activityRewards.first.title : 'No rewards',
                     onTap: () => _showActivityRewardsSheet(context, isDark),
@@ -148,8 +148,8 @@ class _InboxScreenState extends State<InboxScreen> {
                   child: _buildTopActivityCard(
                     context,
                     title: 'Activity Helper',
-                    icon: Icons.lightbulb_rounded,
-                    color: Colors.purpleAccent,
+                    icon: Icons.campaign_rounded,
+                    gradientColors: const [Color(0xFF00E5FF), Color(0xFF2979FF)],
                     unreadCount: messaging.helperUnreadCount,
                     preview: messaging.activityHelpers.isNotEmpty ? messaging.activityHelpers.first.title : 'No tips',
                     onTap: () => _showActivityHelperSheet(context, isDark),
@@ -229,7 +229,7 @@ class _InboxScreenState extends State<InboxScreen> {
     BuildContext context, {
     required String title,
     required IconData icon,
-    required Color color,
+    required List<Color> gradientColors,
     required int unreadCount,
     required String preview,
     required VoidCallback onTap,
@@ -238,46 +238,95 @@ class _InboxScreenState extends State<InboxScreen> {
 
     return GestureDetector(
       onTap: onTap,
+      behavior: HitTestBehavior.opaque,
       child: Container(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         decoration: BoxDecoration(
           color: AppColors.getCard(isDark),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: gradientColors.first.withValues(alpha: 0.25)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8, offset: const Offset(0, 3)),
+          ],
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            // Squircle Icon Tile with Unread Badge Overlay
+            Stack(
+              clipBehavior: Clip.none,
               children: [
-                CircleAvatar(
-                  radius: 14,
-                  backgroundColor: color.withValues(alpha: 0.15),
-                  child: Icon(icon, size: 14, color: color),
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: gradientColors,
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: gradientColors.first.withValues(alpha: 0.4),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Icon(icon, size: 24, color: Colors.white),
+                  ),
                 ),
                 if (unreadCount > 0)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(10)),
-                    child: Text(
-                      '$unreadCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                  Positioned(
+                    top: -4,
+                    right: -4,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.getCard(isDark), width: 1.5),
+                        boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 4)],
+                      ),
+                      constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                      child: Center(
+                        child: Text(
+                          '$unreadCount',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+                        ),
+                      ),
                     ),
                   ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11, color: AppColors.getTextPrimary(isDark)),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 10),
+
+            // Complete Full Title (2 lines max, no cutting off)
+            SizedBox(
+              height: 30,
+              child: Center(
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                    color: AppColors.getTextPrimary(isDark),
+                    height: 1.15,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 4),
+
+            // Latest Message Preview Subtitle
             Text(
               preview,
-              style: TextStyle(fontSize: 9, color: AppColors.getTextSecondary(isDark)),
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 9.5, color: AppColors.getTextSecondary(isDark)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -662,10 +711,17 @@ class _InboxScreenState extends State<InboxScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('System Messages', style: TextStyle(color: Colors.amberAccent, fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Expanded(
+                    child: Text(
+                      'System Messages',
+                      style: TextStyle(color: Colors.amberAccent, fontSize: 17, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   TextButton(
                     onPressed: () => messaging.markAllSystemMessagesRead(),
-                    child: const Text('Mark All Read', style: TextStyle(color: Colors.greenAccent)),
+                    child: const Text('Mark All Read', style: TextStyle(color: Colors.greenAccent, fontSize: 13)),
                   ),
                 ],
               ),
@@ -807,10 +863,17 @@ class _InboxScreenState extends State<InboxScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Activity Rewards', style: TextStyle(color: Colors.amberAccent, fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Expanded(
+                    child: Text(
+                      'Activity Rewards',
+                      style: TextStyle(color: Colors.amberAccent, fontSize: 17, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   TextButton(
                     onPressed: () => messaging.markAllRewardsRead(),
-                    child: const Text('Mark All Read', style: TextStyle(color: Colors.greenAccent)),
+                    child: const Text('Mark All Read', style: TextStyle(color: Colors.greenAccent, fontSize: 13)),
                   ),
                 ],
               ),
@@ -874,10 +937,17 @@ class _InboxScreenState extends State<InboxScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Activity Helper & Event Tips', style: TextStyle(color: Colors.purpleAccent, fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Expanded(
+                    child: Text(
+                      'Activity Helper & Event Tips',
+                      style: TextStyle(color: Colors.purpleAccent, fontSize: 17, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   TextButton(
                     onPressed: () => messaging.markAllHelpersRead(),
-                    child: const Text('Mark All Read', style: TextStyle(color: Colors.greenAccent)),
+                    child: const Text('Mark All Read', style: TextStyle(color: Colors.greenAccent, fontSize: 13)),
                   ),
                 ],
               ),

@@ -150,7 +150,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
       color: Colors.transparent,
       child: SafeArea(
         child: Container(
-          height: MediaQuery.of(context).size.height * 0.60,
+          height: MediaQuery.of(context).size.height * 0.48,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF141024) : Colors.white,

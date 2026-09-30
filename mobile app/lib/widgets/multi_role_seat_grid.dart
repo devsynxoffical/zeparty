@@ -58,14 +58,14 @@ class MultiRoleSeatGrid extends StatelessWidget {
   }
 
   List<Widget> _buildSeatRows(BuildContext context, int totalSeats, double scale) {
-    final hostRad = 26.0 * scale;
-    final seatRad = 22.0 * scale;
+    final hostRad = 28.0 * scale;
+    final seatRad = 24.0 * scale;
 
     if (totalSeats <= 10) {
       return [
         // Row 1: Host & Co-Host
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 6),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -76,7 +76,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
         ),
         // Row 2: 4 Seats
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(vertical: 5),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: List.generate(4, (i) => _buildSeat(context, i + 2, 'Seat ${i + 3}', seatRad, false)),
@@ -84,7 +84,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
         ),
         // Row 3: 4 Seats
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(vertical: 5),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: List.generate(4, (i) => _buildSeat(context, i + 6, 'Seat ${i + 7}', seatRad, false)),
@@ -95,13 +95,13 @@ class MultiRoleSeatGrid extends StatelessWidget {
       return [
         // Row 1: 3 Top Stage Seats
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 5),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildSeat(context, 0, 'Host', 24 * scale, true),
-              _buildSeat(context, 1, 'Co-Host', 24 * scale, true),
-              _buildSeat(context, 2, 'VIP', 24 * scale, false),
+              _buildSeat(context, 0, 'Host', 26 * scale, true),
+              _buildSeat(context, 1, 'Co-Host', 26 * scale, true),
+              _buildSeat(context, 2, 'VIP', 26 * scale, false),
             ],
           ),
         ),
@@ -109,7 +109,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
         ...List.generate(3, (rowIdx) {
           int startIdx = 3 + (rowIdx * 4);
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
+            padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: List.generate(
@@ -118,7 +118,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                   context,
                   startIdx + colIdx,
                   'Seat ${startIdx + colIdx + 1}',
-                  19 * scale,
+                  21 * scale,
                   false,
                 ),
               ),
@@ -130,12 +130,12 @@ class MultiRoleSeatGrid extends StatelessWidget {
       return [
         // Row 1: 2 Host Seats
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 5),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildSeat(context, 0, 'Host', 22 * scale, true),
-              _buildSeat(context, 1, 'Co-Host', 22 * scale, true),
+              _buildSeat(context, 0, 'Host', 25 * scale, true),
+              _buildSeat(context, 1, 'Co-Host', 25 * scale, true),
             ],
           ),
         ),
@@ -143,7 +143,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
         ...List.generate(3, (rowIdx) {
           int startIdx = 2 + (rowIdx * 6);
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
+            padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: List.generate(
@@ -151,7 +151,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                 (colIdx) {
                   int idx = startIdx + colIdx;
                   if (idx >= 20) return const SizedBox();
-                  return _buildSeat(context, idx, 'Seat ${idx + 1}', 16.5 * scale, false);
+                  return _buildSeat(context, idx, 'Seat ${idx + 1}', 18.5 * scale, false);
                 },
               ),
             ),
@@ -163,12 +163,12 @@ class MultiRoleSeatGrid extends StatelessWidget {
       return [
         // Row 1: 2 Host Seats
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 4),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildSeat(context, 0, 'Host', 20 * scale, true),
-              _buildSeat(context, 1, 'Co-Host', 20 * scale, true),
+              _buildSeat(context, 0, 'Host', 23 * scale, true),
+              _buildSeat(context, 1, 'Co-Host', 23 * scale, true),
             ],
           ),
         ),
@@ -176,7 +176,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
         ...List.generate(4, (rowIdx) {
           int startIdx = 2 + (rowIdx * 7);
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: List.generate(
@@ -184,7 +184,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                 (colIdx) {
                   int idx = startIdx + colIdx;
                   if (idx >= 30) return const SizedBox();
-                  return _buildSeat(context, idx, '${idx + 1}', 14.5 * scale, false);
+                  return _buildSeat(context, idx, '${idx + 1}', 17 * scale, false);
                 },
               ),
             ),

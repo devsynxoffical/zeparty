@@ -20,6 +20,18 @@ class LiveRoomModel {
   final bool isMuted;
   final List<dynamic>? seats;
 
+  // CR 30 Room Settings Fields
+  final int membershipFee; // Coin amount (0 when free)
+  final String roomMode; // 'Friend mode', 'Public mode', 'Lock mode'
+  final bool allowGuestMic;
+  final bool allowHistoryMessages;
+  final bool allowUnderMicEmoji;
+  final bool allowUnderMicDice;
+  final bool allowAdminEditSettings;
+  final bool allowAdminChangeMode;
+  final String closeRoomEffect;
+  final List<String> bannedUserIds;
+
   const LiveRoomModel({
     required this.id,
     required this.title,
@@ -39,6 +51,16 @@ class LiveRoomModel {
     this.isPinnedTop = false,
     this.isMuted = false,
     this.seats,
+    this.membershipFee = 0,
+    this.roomMode = 'Friend mode',
+    this.allowGuestMic = true,
+    this.allowHistoryMessages = true,
+    this.allowUnderMicEmoji = true,
+    this.allowUnderMicDice = true,
+    this.allowAdminEditSettings = false,
+    this.allowAdminChangeMode = false,
+    this.closeRoomEffect = 'Standard',
+    this.bannedUserIds = const [],
   });
 
   factory LiveRoomModel.fromJson(Map<String, dynamic> json) {
@@ -68,6 +90,8 @@ class LiveRoomModel {
         ? (DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now())
         : DateTime.now();
 
+    final rawBanned = json['bannedUserIds'] is List ? (json['bannedUserIds'] as List) : [];
+
     return LiveRoomModel(
       id: id,
       title: title,
@@ -79,7 +103,7 @@ class LiveRoomModel {
       announcement: json['announcement']?.toString() ?? 'Welcome to the party room! 🎉',
       startTime: startTime,
       roomType: roomType,
-      seatCapacity: 8,
+      seatCapacity: int.tryParse(json['seatCapacity']?.toString() ?? '') ?? 8,
       nobleTitle: json['nobleTitle']?.toString() ?? 'SVIP Royalty',
       agoraChannelName: json['agoraChannelName']?.toString(),
       creatorUserId: json['creatorUserId']?.toString() ?? hostUser.id,
@@ -87,6 +111,16 @@ class LiveRoomModel {
       isPinnedTop: json['isPinnedTop'] == true,
       isMuted: json['isMuted'] == true,
       seats: json['seats'] is List ? json['seats'] as List : null,
+      membershipFee: int.tryParse(json['membershipFee']?.toString() ?? '') ?? 0,
+      roomMode: json['roomMode']?.toString() ?? 'Friend mode',
+      allowGuestMic: json['allowGuestMic'] ?? true,
+      allowHistoryMessages: json['allowHistoryMessages'] ?? true,
+      allowUnderMicEmoji: json['allowUnderMicEmoji'] ?? true,
+      allowUnderMicDice: json['allowUnderMicDice'] ?? true,
+      allowAdminEditSettings: json['allowAdminEditSettings'] ?? false,
+      allowAdminChangeMode: json['allowAdminChangeMode'] ?? false,
+      closeRoomEffect: json['closeRoomEffect']?.toString() ?? 'Standard',
+      bannedUserIds: rawBanned.map((e) => e.toString()).toList(),
     );
   }
 
@@ -106,6 +140,16 @@ class LiveRoomModel {
       'status': status,
       'isPinnedTop': isPinnedTop,
       'isMuted': isMuted,
+      'membershipFee': membershipFee,
+      'roomMode': roomMode,
+      'allowGuestMic': allowGuestMic,
+      'allowHistoryMessages': allowHistoryMessages,
+      'allowUnderMicEmoji': allowUnderMicEmoji,
+      'allowUnderMicDice': allowUnderMicDice,
+      'allowAdminEditSettings': allowAdminEditSettings,
+      'allowAdminChangeMode': allowAdminChangeMode,
+      'closeRoomEffect': closeRoomEffect,
+      'bannedUserIds': bannedUserIds,
     };
   }
 
@@ -128,6 +172,16 @@ class LiveRoomModel {
     bool? isPinnedTop,
     bool? isMuted,
     List<dynamic>? seats,
+    int? membershipFee,
+    String? roomMode,
+    bool? allowGuestMic,
+    bool? allowHistoryMessages,
+    bool? allowUnderMicEmoji,
+    bool? allowUnderMicDice,
+    bool? allowAdminEditSettings,
+    bool? allowAdminChangeMode,
+    String? closeRoomEffect,
+    List<String>? bannedUserIds,
   }) {
     return LiveRoomModel(
       id: id ?? this.id,
@@ -148,6 +202,16 @@ class LiveRoomModel {
       isPinnedTop: isPinnedTop ?? this.isPinnedTop,
       isMuted: isMuted ?? this.isMuted,
       seats: seats ?? this.seats,
+      membershipFee: membershipFee ?? this.membershipFee,
+      roomMode: roomMode ?? this.roomMode,
+      allowGuestMic: allowGuestMic ?? this.allowGuestMic,
+      allowHistoryMessages: allowHistoryMessages ?? this.allowHistoryMessages,
+      allowUnderMicEmoji: allowUnderMicEmoji ?? this.allowUnderMicEmoji,
+      allowUnderMicDice: allowUnderMicDice ?? this.allowUnderMicDice,
+      allowAdminEditSettings: allowAdminEditSettings ?? this.allowAdminEditSettings,
+      allowAdminChangeMode: allowAdminChangeMode ?? this.allowAdminChangeMode,
+      closeRoomEffect: closeRoomEffect ?? this.closeRoomEffect,
+      bannedUserIds: bannedUserIds ?? this.bannedUserIds,
     );
   }
 }

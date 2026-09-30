@@ -541,6 +541,271 @@ export async function adminUpdateRoomDp(
   return updatedRoom;
 }
 
+export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
+  const room = await db.room.findUnique({
+    where: { id: roomId },
+    select: { id: true, creatorUserId: true },
+  });
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const where = { roomId };
+  if (search && search.trim() !== '') {
+    const q = search.trim();
+    where.OR = [
+      { userId: { equals: q } },
+      { user: { username: { contains: q, mode: 'insensitive' } } },
+      { user: { profile: { displayName: { contains: q, mode: 'insensitive' } } } },
+    ];
+  }
+
+  const members = await db.roomMember.findMany({
+    where,
+    orderBy: { joinedAt: 'asc' },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          lastLoginAt: true,
+          profile: {
+            select: {
+              displayName: true,
+              level: true,
+              vipLevel: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const formatted = members.map((m) => {
+    let role = 'MEMBER';
+    if (m.userId === room.creatorUserId) {
+      role = 'HOST';
+    } else if (m.role === 'ADMIN') {
+      role = 'ADMIN';
+    }
+    return {
+      id: m.id,
+      userId: m.userId,
+      role,
+      joinedAt: m.joinedAt,
+      user: {
+        id: m.user.id,
+        username: m.user.username,
+        displayName: m.user.profile?.displayName || m.user.username,
+        avatarUrl: m.user.avatarUrl || '',
+        lastSeenAt: m.user.lastLoginAt,
+      },
+    };
+  });
+
+  const totalMembers = await db.roomMember.count({ where: { roomId } });
+
+  return {
+    members: formatted,
+    totalCount: totalMembers,
+  };
+}
+
+export async function updateMemberRole(roomId, actorUserId, targetUserId, { role }, db = prisma) {
+  const room = await db.room.findUnique({
+    where: { id: roomId },
+    select: { id: true, creatorUserId: true },
+  });
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  // Permission check: actor must be creator or admin
+  const isOwner = room.creatorUserId === actorUserId;
+  let isAdmin = false;
+  if (!isOwner) {
+    const actorMember = await db.roomMember.findUnique({
+      where: { roomId_userId: { roomId, userId: actorUserId } },
+    });
+    if (actorMember && actorMember.role === 'ADMIN') {
+      isAdmin = true;
+    }
+  }
+
+  if (!isOwner && !isAdmin) {
+    const error = new Error('Only the room owner or room admins can manage roles');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  // Cannot alter room owner
+  if (targetUserId === room.creatorUserId) {
+    const error = new Error('Cannot change or revoke the room owner role');
+    error.statusCode = 400;
+    error.code = 'OWNER_ROLE_IMMUTABLE';
+    throw error;
+  }
+
+  const targetMember = await db.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: targetUserId } },
+  });
+  if (!targetMember) {
+    const error = new Error('User is not a member of this room');
+    error.statusCode = 404;
+    error.code = 'MEMBER_NOT_FOUND';
+    throw error;
+  }
+
+  if (!isOwner && targetMember.role === 'ADMIN' && role !== 'ADMIN') {
+    const error = new Error('Admins cannot revoke other admins; only the room owner can');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  const updatedRole = role === 'ADMIN' ? 'ADMIN' : 'MEMBER';
+  const updatedMember = await db.roomMember.update({
+    where: { roomId_userId: { roomId, userId: targetUserId } },
+    data: { role: updatedRole },
+    include: {
+      user: {
+        select: { id: true, username: true, avatarUrl: true, profile: true },
+      },
+    },
+  });
+
+  try {
+    socketEmitter.emitToRoom(roomId, 'room:role_updated', {
+      roomId,
+      targetUserId,
+      role: updatedRole,
+    });
+  } catch (err) {
+    console.error('Failed to emit room:role_updated event:', err);
+  }
+
+  return updatedMember;
+}
+
+export async function getRoomSendingRankings(roomId, { period = 'daily', currentUserId } = {}, db = prisma) {
+  const room = await db.room.findUnique({
+    where: { id: roomId },
+    select: { id: true, creatorUserId: true },
+  });
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const startDate = new Date();
+
+  if (period === 'daily') {
+    startDate.setUTCHours(0, 0, 0, 0);
+  } else if (period === 'weekly') {
+    const day = startDate.getUTCDay();
+    const diff = startDate.getUTCDate() - day + (day === 0 ? -6 : 1);
+    startDate.setUTCDate(diff);
+    startDate.setUTCHours(0, 0, 0, 0);
+  } else if (period === 'monthly') {
+    startDate.setUTCDate(1);
+    startDate.setUTCHours(0, 0, 0, 0);
+  }
+
+  const txs = await db.giftTransaction.groupBy({
+    by: ['senderUserId'],
+    where: {
+      roomId,
+      createdAt: { gte: startDate },
+    },
+    _sum: {
+      totalCoins: true,
+    },
+    orderBy: {
+      _sum: {
+        totalCoins: 'desc',
+      },
+    },
+  });
+
+  const periodTotalResult = await db.giftTransaction.aggregate({
+    where: { roomId, createdAt: { gte: startDate } },
+    _sum: { totalCoins: true },
+  });
+  const periodTotalCoins = Number(periodTotalResult._sum.totalCoins || 0);
+
+  const overallTotalResult = await db.giftTransaction.aggregate({
+    where: { roomId },
+    _sum: { totalCoins: true },
+  });
+  const overallTotalCoins = Number(overallTotalResult._sum.totalCoins || 0);
+
+  const senderUserIds = txs.map((t) => t.senderUserId);
+  const senders = await db.user.findMany({
+    where: { id: { in: senderUserIds } },
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      profile: {
+        select: { displayName: true },
+      },
+    },
+  });
+
+  const senderMap = new Map(senders.map((s) => [s.id, s]));
+
+  const rankings = txs.map((t, idx) => {
+    const s = senderMap.get(t.senderUserId);
+    return {
+      rank: idx + 1,
+      userId: t.senderUserId,
+      name: s?.profile?.displayName || s?.username || 'User',
+      username: s?.username || 'user',
+      avatarUrl: s?.avatarUrl || '',
+      totalCoins: Number(t._sum.totalCoins || 0),
+    };
+  });
+
+  let viewerRank = null;
+  if (currentUserId) {
+    const userIndex = rankings.findIndex((r) => r.userId === currentUserId);
+    if (userIndex !== -1) {
+      viewerRank = rankings[userIndex];
+    } else {
+      const userTx = await db.giftTransaction.aggregate({
+        where: { roomId, senderUserId: currentUserId, createdAt: { gte: startDate } },
+        _sum: { totalCoins: true },
+      });
+      const userCoins = Number(userTx._sum.totalCoins || 0);
+      viewerRank = {
+        rank: userCoins > 0 ? rankings.length + 1 : 0,
+        userId: currentUserId,
+        name: 'You',
+        avatarUrl: '',
+        totalCoins: userCoins,
+      };
+    }
+  }
+
+  return {
+    period,
+    periodTotalCoins,
+    overallTotalCoins,
+    rankings,
+    viewerRank,
+  };
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -559,4 +824,7 @@ export default {
   adminMuteParticipant,
   adminKickUser,
   adminUpdateRoomDp,
+  getRoomMembers,
+  updateMemberRole,
+  getRoomSendingRankings,
 };
