@@ -384,9 +384,11 @@ class LiveProvider extends ChangeNotifier {
       _messages.add(LiveMessage(sender: '🛡️ Moderation Warning', text: msg.toString()));
       notifyListeners();
 
-      Timer(const Duration(seconds: 8), () {
-        _activeWarningMessage = null;
-        notifyListeners();
+      Timer(const Duration(seconds: 10), () {
+        if (_activeWarningMessage == msg.toString()) {
+          _activeWarningMessage = null;
+          notifyListeners();
+        }
       });
     });
 
@@ -415,13 +417,14 @@ class LiveProvider extends ChangeNotifier {
       }
       final targetId = data['targetUserId']?.toString();
       final muted = data['isMuted'] == true;
-      if (targetId != null && targetId == currentUser?.id) {
+      final isMe = targetId != null && (targetId == currentUser?.id || targetId == currentUser?.username);
+      if (isMe) {
         try {
           _agoraService.muteLocalAudio(muted);
         } catch (_) {}
         _messages.add(LiveMessage(
           sender: 'System',
-          text: muted ? '🔇 Your microphone has been muted by moderation.' : '🎙️ Your microphone has been unmuted.',
+          text: muted ? '🔇 Your microphone has been MUTED by moderation.' : '🎙️ Your microphone has been UNMUTED.',
         ));
         notifyListeners();
       }
@@ -434,8 +437,9 @@ class LiveProvider extends ChangeNotifier {
       }
       final targetId = data['targetUserId']?.toString() ?? data['userId']?.toString();
       final isHostKicked = data['isHost'] == true;
+      final isMe = targetId != null && (targetId == currentUser?.id || targetId == currentUser?.username);
 
-      if (targetId != null && targetId == currentUser?.id) {
+      if (isMe) {
         _wasKicked = true;
         _kickReason = data['reason']?.toString() ?? 'You have been removed from this room by moderation.';
         _kickedReceivedController.add(_kickReason!);

@@ -56,13 +56,18 @@ export function LiveRoomDetailPage() {
           if (found) {
             setRoomMuted(Boolean(found.isMuted));
             const realParticipants = [];
+            const hostSeat = Array.isArray(found.seats)
+              ? found.seats.find((s) => (s.occupiedUserId && s.occupiedUserId === found.hostId) || (s.occupiedUser && s.occupiedUser.id === found.hostId) || s.seatIndex === 0)
+              : null;
+            const isHostMuted = Boolean(found.isMuted || hostSeat?.isMuted);
+
             if (found.hostId || found.hostName) {
               realParticipants.push({
                 id: found.hostId || 'host',
                 name: found.hostName || 'Host',
                 role: 'host',
-                micOn: !found.isMuted,
-                seatIndex: 0,
+                micOn: !isHostMuted,
+                seatIndex: hostSeat?.seatIndex ?? 0,
               });
             }
             if (Array.isArray(found.seats)) {
@@ -72,7 +77,7 @@ export function LiveRoomDetailPage() {
                     id: s.occupiedUser.id,
                     name: s.occupiedUser.profile?.displayName || s.occupiedUser.username || `Speaker ${s.seatIndex + 1}`,
                     role: 'speaker',
-                    micOn: !s.isMuted,
+                    micOn: !Boolean(found.isMuted || s.isMuted),
                     seatIndex: s.seatIndex,
                   });
                 }
@@ -190,10 +195,11 @@ export function LiveRoomDetailPage() {
 
   const handleMuteParticipant = async (row) => {
     const nextMic = !row.micOn;
+    const targetSeatIndex = row.seatIndex !== undefined && row.seatIndex !== null ? row.seatIndex : (row.role === 'host' ? 0 : null);
     try {
-      await muteParticipant(room?.id, { targetUserId: row.id, seatIndex: row.seatIndex, isMuted: !nextMic });
+      await muteParticipant(room?.id, { targetUserId: row.id, seatIndex: targetSeatIndex, isMuted: !nextMic });
       await addLog(!nextMic ? 'PARTICIPANT_MUTED' : 'PARTICIPANT_UNMUTED', row.id, 'Live Rooms', `${!nextMic ? 'Muted' : 'Unmuted'} participant ${row.name}`);
-      setParticipants(participants.map((p) => (p.id === row.id ? { ...p, micOn: nextMic } : p)));
+      setParticipants((prev) => prev.map((p) => (p.id === row.id ? { ...p, micOn: nextMic } : p)));
     } catch (err) {
       console.error('Failed to mute participant:', err);
     }

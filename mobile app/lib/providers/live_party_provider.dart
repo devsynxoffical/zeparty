@@ -630,16 +630,22 @@ class LivePartyProvider extends ChangeNotifier {
     // 10. User Kicked Stream
     _socketUserKickedSub?.cancel();
     _socketUserKickedSub = _socketService.onUserKicked.listen((data) {
-      final targetUserId = data['targetUserId']?.toString();
-      if (targetUserId == currentUser.id) {
-        sendSystemMessage('🚫 You have been kicked out of this room by the host.');
+      final targetUserId = data['targetUserId']?.toString() ?? data['userId']?.toString();
+      final isHost = data['isHost'] == true;
+      final reason = data['reason']?.toString() ?? 'Removed by platform moderation';
+
+      final isMe = targetUserId != null && (targetUserId == currentUser.id || targetUserId == currentUser.username);
+      final isHostMe = isHost && (_activeRoom?.creatorUserId == currentUser.id || _activeRoom?.host.id == currentUser.id);
+
+      if (isMe || isHostMe) {
+        sendSystemMessage('🚫 You have been removed from this room by moderation: $reason');
         leaveParty();
       } else if (targetUserId != null) {
-        final kickedIdx = _participants.indexWhere((p) => p.user.id == targetUserId);
+        final kickedIdx = _participants.indexWhere((p) => p.user.id == targetUserId || p.user.username == targetUserId);
         if (kickedIdx != -1) {
           final kickedName = _participants[kickedIdx].user.name;
           _participants.removeAt(kickedIdx);
-          sendSystemMessage('🚫 $kickedName was removed from the room.');
+          sendSystemMessage('🚫 $kickedName was removed from the room by moderation.');
           notifyListeners();
         }
       }
@@ -654,9 +660,11 @@ class LivePartyProvider extends ChangeNotifier {
       _activeWarningMessage = msg.toString();
       sendSystemMessage('⚠️ MODERATION WARNING: $_activeWarningMessage');
       notifyListeners();
-      Future.delayed(const Duration(seconds: 8), () {
-        _activeWarningMessage = null;
-        notifyListeners();
+      Future.delayed(const Duration(seconds: 10), () {
+        if (_activeWarningMessage == msg.toString()) {
+          _activeWarningMessage = null;
+          notifyListeners();
+        }
       });
     });
 
@@ -674,29 +682,47 @@ class LivePartyProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // 13. Admin moderation: Specific user muted
+    // 13. Admin moderation: Specific user / seat muted
     _socketRoomUserMutedSub?.cancel();
     _socketRoomUserMutedSub = _socketService.onRoomUserMuted.listen((data) {
       final roomId = data['roomId']?.toString() ?? '';
       if (_activeRoom != null && roomId.isNotEmpty && roomId != _activeRoom!.id) return;
       final targetId = data['targetUserId']?.toString();
+      final seatIndex = (data['seatIndex'] is num)
+          ? (data['seatIndex'] as num).toInt()
+          : int.tryParse(data['seatIndex']?.toString() ?? '');
       final muted = data['isMuted'] == true;
-      if (targetId != null && targetId == currentUser.id) {
+
+      if (seatIndex != null) {
+        if (muted) {
+          _mutedSeatIndices.add(seatIndex);
+        } else {
+          _mutedSeatIndices.remove(seatIndex);
+        }
+      }
+
+      final selfParticipant = _participants.where((p) => p.user.id == currentUser.id).firstOrNull;
+      final isMeTarget = (targetId != null && (targetId == currentUser.id || targetId == currentUser.username)) ||
+          (seatIndex != null && selfParticipant?.seatNumber == seatIndex);
+
+      if (isMeTarget) {
         try {
           _agoraService.muteLocalAudio(muted);
         } catch (_) {}
-        sendSystemMessage(muted ? '🔇 Your microphone has been muted by moderation.' : '🎙️ Your microphone has been unmuted.');
-        notifyListeners();
+        sendSystemMessage(muted ? '🔇 Your microphone has been MUTED by moderation.' : '🎙️ Your microphone has been UNMUTED.');
       }
-      if (targetId != null) {
-        final idx = _participants.indexWhere((p) => p.user.id == targetId);
-        if (idx != -1) {
-          _participants[idx] = _participants[idx].copyWith(
+
+      // Update participant list
+      for (int i = 0; i < _participants.length; i++) {
+        final p = _participants[i];
+        if ((targetId != null && (p.user.id == targetId || p.user.username == targetId)) ||
+            (seatIndex != null && p.seatNumber == seatIndex)) {
+          _participants[i] = p.copyWith(
             micStatus: muted ? MicStatus.muted : MicStatus.on,
           );
-          notifyListeners();
         }
       }
+      notifyListeners();
     });
   }
 

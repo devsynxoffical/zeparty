@@ -303,9 +303,12 @@ export async function adminIssueWarning(
     db
   );
 
-  // Broadcast to room
+  // Broadcast to room and global
   socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_WARNING_ISSUED, payload);
   socketEmitter.emitToRoom(roomId, 'room:warning', payload);
+  socketEmitter.emitToRoom(roomId, 'room_warning', payload);
+  socketEmitter.broadcastGlobal('room:warning', payload);
+  socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_WARNING_ISSUED, payload);
 
   return { success: true, message: 'Warning broadcasted successfully', data: payload };
 }
@@ -347,6 +350,7 @@ export async function adminToggleRoomMute(
 
   socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_MUTED, payload);
   socketEmitter.emitToRoom(roomId, 'room:muted', payload);
+  socketEmitter.broadcastGlobal('room:muted', payload);
 
   return { success: true, isMuted: Boolean(isMuted), room: updatedRoom };
 }
@@ -356,16 +360,27 @@ export async function adminMuteParticipant(
   { targetUserId, seatIndex, isMuted, adminId, adminName, ipAddress },
   db = prisma
 ) {
-  if (seatIndex !== undefined && seatIndex !== null) {
-    await roomRepository.updateSeatMuteStatus({ roomId, seatIndex, isMuted }, db);
-  } else if (targetUserId) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const parsedSeatIndex = (seatIndex !== undefined && seatIndex !== null && seatIndex !== '') ? Number(seatIndex) : null;
+
+  if (parsedSeatIndex !== null) {
+    await roomRepository.updateSeatMuteStatus({ roomId, seatIndex: parsedSeatIndex, isMuted }, db);
+  }
+  if (targetUserId) {
     await roomRepository.updateUserSeatMuteStatus({ roomId, userId: targetUserId, isMuted }, db);
   }
 
   const payload = {
     roomId,
-    targetUserId,
-    seatIndex,
+    targetUserId: targetUserId || null,
+    seatIndex: parsedSeatIndex,
     isMuted: Boolean(isMuted),
     adminName: adminName || 'Admin Moderation',
     timestamp: new Date().toISOString(),
@@ -378,7 +393,7 @@ export async function adminMuteParticipant(
       action: isMuted ? 'PARTICIPANT_MUTED' : 'PARTICIPANT_UNMUTED',
       targetEntity: 'Room',
       targetEntityId: roomId,
-      reason: `Participant ${targetUserId || seatIndex} ${isMuted ? 'muted' : 'unmuted'} by admin`,
+      reason: `Participant ${targetUserId || parsedSeatIndex} ${isMuted ? 'muted' : 'unmuted'} by admin`,
       ipAddress,
     },
     db
@@ -386,13 +401,18 @@ export async function adminMuteParticipant(
 
   socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_USER_MUTED, payload);
   socketEmitter.emitToRoom(roomId, 'room:user_muted', payload);
+  if (targetUserId) {
+    socketEmitter.emitToUser(targetUserId, SOCKET_EVENTS.ROOM_USER_MUTED, payload);
+    socketEmitter.emitToUser(targetUserId, 'room:user_muted', payload);
+  }
+  socketEmitter.broadcastGlobal('room:user_muted', payload);
 
   return { success: true, data: payload };
 }
 
 export async function adminKickUser(
   roomId,
-  { targetUserId, adminId, adminName, ipAddress },
+  { targetUserId, reason, adminId, adminName, ipAddress },
   db = prisma
 ) {
   const room = await roomRepository.findRoomById(roomId, db);
@@ -414,12 +434,15 @@ export async function adminKickUser(
       targetUserId,
       kickedByUserId: adminId || 'admin',
       isHost: true,
-      reason: 'Host removed by platform moderation',
+      reason: reason || 'Host removed by platform moderation',
       timestamp: new Date().toISOString(),
     };
 
     socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_USER_KICKED, kickPayload);
     socketEmitter.emitToRoom(roomId, 'room:user_kicked', kickPayload);
+    socketEmitter.emitToUser(targetUserId, SOCKET_EVENTS.ROOM_USER_KICKED, kickPayload);
+    socketEmitter.emitToUser(targetUserId, 'room:user_kicked', kickPayload);
+    socketEmitter.broadcastGlobal('room:user_kicked', kickPayload);
 
     socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, {
       roomId,
@@ -434,7 +457,7 @@ export async function adminKickUser(
         action: 'HOST_KICKED_ROOM_CLOSED',
         targetEntity: 'Room',
         targetEntityId: roomId,
-        reason: `Host ${targetUserId} kicked by admin moderation`,
+        reason: `Host ${targetUserId} kicked by admin moderation: ${reason || 'Violation'}`,
         ipAddress,
       },
       db
@@ -451,12 +474,15 @@ export async function adminKickUser(
     targetUserId,
     kickedByUserId: adminId || 'admin',
     isHost: false,
-    reason: 'Participant removed by platform moderation',
+    reason: reason || 'Participant removed by platform moderation',
     timestamp: new Date().toISOString(),
   };
 
   socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_USER_KICKED, kickPayload);
   socketEmitter.emitToRoom(roomId, 'room:user_kicked', kickPayload);
+  socketEmitter.emitToUser(targetUserId, SOCKET_EVENTS.ROOM_USER_KICKED, kickPayload);
+  socketEmitter.emitToUser(targetUserId, 'room:user_kicked', kickPayload);
+  socketEmitter.broadcastGlobal('room:user_kicked', kickPayload);
 
   await logAudit(
     {
@@ -465,7 +491,7 @@ export async function adminKickUser(
       action: 'PARTICIPANT_KICKED',
       targetEntity: 'Room',
       targetEntityId: roomId,
-      reason: `Participant ${targetUserId} kicked by admin`,
+      reason: `Participant ${targetUserId} kicked by admin: ${reason || 'Violation'}`,
       ipAddress,
     },
     db

@@ -690,29 +690,59 @@ export async function updateRoomMuteStatus({ roomId, isMuted }, db = prisma) {
 }
 
 export async function updateSeatMuteStatus({ roomId, seatIndex, isMuted }, db = prisma) {
-  return await db.roomSeat.update({
-    where: {
-      roomId_seatIndex: {
-        roomId,
-        seatIndex: Number(seatIndex),
+  const index = Number(seatIndex);
+  try {
+    return await db.roomSeat.update({
+      where: {
+        roomId_seatIndex: {
+          roomId,
+          seatIndex: index,
+        },
       },
-    },
-    data: { isMuted: Boolean(isMuted) },
-  });
+      data: { isMuted: Boolean(isMuted) },
+    });
+  } catch {
+    return await db.roomSeat.upsert({
+      where: {
+        roomId_seatIndex: {
+          roomId,
+          seatIndex: index,
+        },
+      },
+      update: { isMuted: Boolean(isMuted) },
+      create: {
+        roomId,
+        seatIndex: index,
+        isMuted: Boolean(isMuted),
+      },
+    });
+  }
 }
 
 export async function updateUserSeatMuteStatus({ roomId, userId, isMuted }, db = prisma) {
-  await db.roomSeat.updateMany({
-    where: {
-      roomId,
-      occupiedUserId: userId,
-    },
-    data: { isMuted: Boolean(isMuted) },
-  });
-
-  return await db.roomSeat.findFirst({
+  // Check if user occupies a seat
+  const seat = await db.roomSeat.findFirst({
     where: { roomId, occupiedUserId: userId },
   });
+
+  if (seat) {
+    return await db.roomSeat.update({
+      where: { id: seat.id },
+      data: { isMuted: Boolean(isMuted) },
+    });
+  }
+
+  // Check if user is the room creator
+  const room = await db.room.findUnique({
+    where: { id: roomId },
+    select: { creatorUserId: true },
+  });
+
+  if (room && room.creatorUserId === userId) {
+    return await updateSeatMuteStatus({ roomId, seatIndex: 0, isMuted }, db);
+  }
+
+  return null;
 }
 
 export async function kickUserFromRoomTx({ roomId, targetUserId }, db = prisma) {

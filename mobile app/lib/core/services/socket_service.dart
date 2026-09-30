@@ -264,16 +264,28 @@ class SocketService {
     _socket!.on('user_kicked', (data) {
       if (data != null) _userKickedController.add(safeMap(data));
     });
+    _socket!.on('room_user_kicked', (data) {
+      if (data != null) _userKickedController.add(safeMap(data));
+    });
     _socket!.on('room:warning', (data) {
       if (data != null) _roomWarningController.add(safeMap(data));
     });
     _socket!.on('room_warning', (data) {
       if (data != null) _roomWarningController.add(safeMap(data));
     });
+    _socket!.on('room:warning_issued', (data) {
+      if (data != null) _roomWarningController.add(safeMap(data));
+    });
     _socket!.on('room:muted', (data) {
       if (data != null) _roomMutedController.add(safeMap(data));
     });
+    _socket!.on('room_muted', (data) {
+      if (data != null) _roomMutedController.add(safeMap(data));
+    });
     _socket!.on('room:user_muted', (data) {
+      if (data != null) _roomUserMutedController.add(safeMap(data));
+    });
+    _socket!.on('room_user_muted', (data) {
       if (data != null) _roomUserMutedController.add(safeMap(data));
     });
     // Emoji reactions broadcast from backend

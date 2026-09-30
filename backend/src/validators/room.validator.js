@@ -63,8 +63,8 @@ export const adminMuteRoomSchema = z.object({
 });
 
 export const adminMuteParticipantSchema = z.object({
-  targetUserId: z.string().optional(),
-  seatIndex: z.coerce.number().int().optional(),
+  targetUserId: z.string().nullable().optional(),
+  seatIndex: z.coerce.number().int().nullable().optional(),
   isMuted: z.boolean().default(true),
 });
 
