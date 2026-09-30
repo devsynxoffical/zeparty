@@ -610,7 +610,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const SizedBox(height: 10),
                     // User ID
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.between,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text('User ID (7-Digit)', style: TextStyle(fontSize: 12, color: secondaryText)),
                         Row(
@@ -649,7 +649,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const Divider(height: 18),
                     // Registered Email (Read-Only)
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.between,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Row(
                           children: [
@@ -659,7 +659,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           ],
                         ),
                         Text(
-                          user.email.isNotEmpty ? user.email : (user.phone.isNotEmpty ? user.phone : 'Not linked'),
+                          (user.email != null && user.email!.isNotEmpty)
+                              ? user.email!
+                              : ((user.phone != null && user.phone!.isNotEmpty) ? user.phone! : 'Not linked'),
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
