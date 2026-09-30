@@ -13,7 +13,7 @@ import {
 let server;
 let io;
 
-async function connectDatabaseWithRetry(maxRetries = 3, delayMs = 2000) {
+async function connectDatabaseWithRetry(maxRetries = 20, delayMs = 3000) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       if (attempt === 1) {
@@ -25,9 +25,13 @@ async function connectDatabaseWithRetry(maxRetries = 3, delayMs = 2000) {
       console.log('✅ Database connected successfully');
       return;
     } catch (err) {
-      console.warn(`⚠️ Database connection attempt ${attempt} failed: ${err.message}`);
-      if (attempt === maxRetries) throw err;
-      await new Promise((r) => setTimeout(r, delayMs * attempt));
+      console.warn(`⚠️ Database connection attempt ${attempt}/${maxRetries} failed: ${err.message}`);
+      if (attempt === maxRetries) {
+        console.error('❌ Maximum database connection attempts reached. Will continue retrying in background.');
+        setTimeout(() => connectDatabaseWithRetry(maxRetries, delayMs).catch(() => {}), 10000);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, Math.min(delayMs * attempt, 10000)));
     }
   }
 }

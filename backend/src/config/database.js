@@ -11,10 +11,12 @@ const getPrismaLogLevels = () => {
   return ['error'];
 };
 
+const dbUrl = process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL || env.DATABASE_URL;
+
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: env.DATABASE_URL,
+      url: dbUrl,
     },
   },
   log: getPrismaLogLevels(),

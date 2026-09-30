@@ -7,12 +7,12 @@ dotenv.config();
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(8080),
-  DATABASE_URL: z.string().url({ message: 'DATABASE_URL must be a valid PostgreSQL connection string' }),
+  DATABASE_URL: z.string().default(process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL || 'postgresql://postgres:postgres@localhost:5432/zeparty'),
   PRISMA_LOG_QUERIES: z.preprocess((val) => {
     if (typeof val === 'string') return val.toLowerCase() === 'true' || val === '1';
     return Boolean(val);
   }, z.boolean()).default(false),
-  REDIS_URL: z.string().url({ message: 'REDIS_URL must be a valid Redis connection URL' }),
+  REDIS_URL: z.string().default(process.env.REDIS_URL || process.env.REDIS_PUBLIC_URL || 'redis://localhost:6379'),
   
   // Public Domain & CORS
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
