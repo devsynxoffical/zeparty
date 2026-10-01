@@ -244,6 +244,19 @@ export async function postReport(req, res, next) {
   }
 }
 
+export async function postShare(req, res, next) {
+  try {
+    const { id: postId } = postIdParamSchema.parse(req.params);
+    const userId = req.auth?.userId || null;
+
+    const result = await socialService.sharePost(postId, userId);
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   postCreatePost,
   getFeed,
@@ -251,6 +264,7 @@ export default {
   deletePost,
   postLike,
   deleteLike,
+  postShare,
   postCreateComment,
   getComments,
   deleteComment,

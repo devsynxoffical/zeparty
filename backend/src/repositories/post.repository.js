@@ -157,8 +157,10 @@ export async function findFeedPosts(
   const formatPostItem = (p) => ({
     ...p,
     isLiked: viewerUserId ? Boolean(p.likes && p.likes.length > 0) : false,
-    likesCount: p.likesCount ?? p._count?.likes ?? 0,
-    commentsCount: p.commentsCount ?? p._count?.comments ?? 0,
+    likesCount: typeof p._count?.likes === 'number' ? Math.max(p._count.likes, p.likesCount ?? 0) : (p.likesCount ?? 0),
+    commentsCount: typeof p._count?.comments === 'number' ? Math.max(p._count.comments, p.commentsCount ?? 0) : (p.commentsCount ?? 0),
+    shares: p.sharesCount ?? p.shares ?? 0,
+    sharesCount: p.sharesCount ?? p.shares ?? 0,
   });
 
   // If offset page requested
@@ -247,8 +249,10 @@ export async function findPostById(id, viewerUserId = null, db = prisma) {
   return {
     ...post,
     isLiked: viewerUserId ? Boolean(post.likes && post.likes.length > 0) : false,
-    likesCount: post.likesCount ?? post._count?.likes ?? 0,
-    commentsCount: post.commentsCount ?? post._count?.comments ?? 0,
+    likesCount: typeof post._count?.likes === 'number' ? Math.max(post._count.likes, post.likesCount ?? 0) : (post.likesCount ?? 0),
+    commentsCount: typeof post._count?.comments === 'number' ? Math.max(post._count.comments, post.commentsCount ?? 0) : (post.commentsCount ?? 0),
+    shares: post.sharesCount ?? post.shares ?? 0,
+    sharesCount: post.sharesCount ?? post.shares ?? 0,
   };
 }
 
@@ -306,6 +310,17 @@ export async function decrementCommentsCount(postId, db = prisma) {
   });
 }
 
+export async function incrementSharesCount(postId, db = prisma) {
+  try {
+    return await db.post.update({
+      where: { id: postId },
+      data: { sharesCount: { increment: 1 } },
+    });
+  } catch (_) {
+    return await db.post.findUnique({ where: { id: postId } });
+  }
+}
+
 export default {
   createPost,
   findFeedPosts,
@@ -315,4 +330,5 @@ export default {
   decrementLikesCount,
   incrementCommentsCount,
   decrementCommentsCount,
+  incrementSharesCount,
 };

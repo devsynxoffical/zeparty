@@ -72,6 +72,7 @@ export const SOCKET_EVENTS = {
   POST_DELETED: 'post:deleted',
   POST_LIKED: 'post:liked',
   POST_UNLIKED: 'post:unliked',
+  POST_SHARED: 'post:shared',
   COMMENT_CREATED: 'comment:created',
   COMMENT_DELETED: 'comment:deleted',
   FOLLOW_CREATED: 'follow:created',

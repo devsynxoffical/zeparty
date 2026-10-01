@@ -20,6 +20,9 @@ userPostRouter.delete('/:id', authenticate, postController.deletePost);
 userPostRouter.post('/:id/like', authenticate, postController.postLike);
 userPostRouter.delete('/:id/like', authenticate, postController.deleteLike);
 
+// Shares
+userPostRouter.post('/:id/share', optionalAuthenticate, postController.postShare);
+
 // Comments
 userPostRouter.post('/:id/comments', authenticate, postController.postCreateComment);
 userPostRouter.get('/:id/comments', optionalAuthenticate, postController.getComments);

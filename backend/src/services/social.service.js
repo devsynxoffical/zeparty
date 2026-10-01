@@ -98,13 +98,8 @@ export async function getPostById(postId, viewerUserId = null, { isAdmin = false
     return post;
   }
 
-  // Author can always view own post
-  if (viewerUserId && post.userId === viewerUserId) {
-    return post;
-  }
-
   // Check block relationship
-  if (viewerUserId) {
+  if (viewerUserId && post.userId !== viewerUserId) {
     const blocked = await socialRepository.isBlocked(viewerUserId, post.userId, db);
     if (blocked) {
       const error = new Error('Post not found');
@@ -114,45 +109,47 @@ export async function getPostById(postId, viewerUserId = null, { isAdmin = false
     }
   }
 
-  // Check visibility
-  if (post.visibility === 'PRIVATE') {
-    const error = new Error('This post is private');
-    error.statusCode = 403;
-    error.code = 'FORBIDDEN_PRIVATE_POST';
-    throw error;
-  }
-
-  if (post.visibility === 'FOLLOWERS') {
-    if (!viewerUserId) {
-      const error = new Error('Authentication required to view followers-only post');
-      error.statusCode = 401;
-      error.code = 'UNAUTHORIZED';
-      throw error;
-    }
-
-    const follow = await socialRepository.findFollow({ followerId: viewerUserId, followingId: post.userId }, db);
-    if (!follow || follow.status !== 'ACCEPTED') {
-      const error = new Error('Only followers can view this post');
+  // Check visibility for non-authors
+  if (post.userId !== viewerUserId) {
+    if (post.visibility === 'PRIVATE') {
+      const error = new Error('This post is private');
       error.statusCode = 403;
-      error.code = 'FORBIDDEN_FOLLOWERS_ONLY';
+      error.code = 'FORBIDDEN_PRIVATE_POST';
       throw error;
     }
-  }
 
-  // Check if author profile is private
-  if (post.user?.profile?.isPrivate && post.userId !== viewerUserId) {
-    if (!viewerUserId) {
-      const error = new Error('Post not found');
-      error.statusCode = 404;
-      error.code = 'POST_NOT_FOUND';
-      throw error;
+    if (post.visibility === 'FOLLOWERS') {
+      if (!viewerUserId) {
+        const error = new Error('Authentication required to view followers-only post');
+        error.statusCode = 401;
+        error.code = 'UNAUTHORIZED';
+        throw error;
+      }
+
+      const follow = await socialRepository.findFollow({ followerId: viewerUserId, followingId: post.userId }, db);
+      if (!follow || follow.status !== 'ACCEPTED') {
+        const error = new Error('Only followers can view this post');
+        error.statusCode = 403;
+        error.code = 'FORBIDDEN_FOLLOWERS_ONLY';
+        throw error;
+      }
     }
-    const follow = await socialRepository.findFollow({ followerId: viewerUserId, followingId: post.userId }, db);
-    if (!follow || follow.status !== 'ACCEPTED') {
-      const error = new Error('Post not found');
-      error.statusCode = 404;
-      error.code = 'POST_NOT_FOUND';
-      throw error;
+
+    // Check if author profile is private
+    if (post.user?.profile?.isPrivate) {
+      if (!viewerUserId) {
+        const error = new Error('Post not found');
+        error.statusCode = 404;
+        error.code = 'POST_NOT_FOUND';
+        throw error;
+      }
+      const follow = await socialRepository.findFollow({ followerId: viewerUserId, followingId: post.userId }, db);
+      if (!follow || follow.status !== 'ACCEPTED') {
+        const error = new Error('Post not found');
+        error.statusCode = 404;
+        error.code = 'POST_NOT_FOUND';
+        throw error;
+      }
     }
   }
 
@@ -884,6 +881,38 @@ export async function reportContent(
   };
 }
 
+export async function sharePost(postId, userId = null, db = prisma) {
+  const post = await postRepository.findPostById(postId, userId, db);
+  if (!post) {
+    const error = new Error('Post not found');
+    error.statusCode = 404;
+    error.code = 'POST_NOT_FOUND';
+    throw error;
+  }
+
+  const updated = await postRepository.incrementSharesCount(postId, db);
+  const newSharesCount = updated?.sharesCount ?? ((post.sharesCount ?? post.shares ?? 0) + 1);
+
+  const payload = {
+    postId,
+    sharesCount: newSharesCount,
+    sharedByUserId: userId,
+  };
+
+  try {
+    socketEmitter.broadcastGlobal(SOCKET_EVENTS.POST_SHARED, payload);
+  } catch (_) {}
+
+  return {
+    success: true,
+    message: 'Post shared successfully',
+    data: {
+      postId,
+      sharesCount: newSharesCount,
+    },
+  };
+}
+
 export default {
   createPost,
   getPostById,
@@ -891,6 +920,7 @@ export default {
   deletePost,
   likePost,
   unlikePost,
+  sharePost,
   createComment,
   getPostComments,
   deleteComment,

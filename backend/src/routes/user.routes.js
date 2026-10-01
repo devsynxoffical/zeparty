@@ -2,6 +2,8 @@ import express from 'express';
 import authenticate from '../middlewares/authenticate.js';
 import requirePermission from '../middlewares/requirePermission.js';
 import userController from '../controllers/user.controller.js';
+import socialController from '../controllers/social.controller.js';
+import { optionalAuthenticate } from '../middlewares/authenticate.js';
 
 export const adminUserRouter = express.Router();
 export const userProfileRouter = express.Router();
@@ -27,6 +29,16 @@ userProfileRouter.patch('/profile', authenticate, userController.putMyProfile);
 userProfileRouter.post('/delete-account', authenticate, userController.deleteSelfAccount);
 userProfileRouter.delete('/delete-account', authenticate, userController.deleteSelfAccount);
 userProfileRouter.delete('/me', authenticate, userController.deleteSelfAccount);
+
+// Social, Follows, Followers, & Blocks (mounted directly on /users/:id)
+userProfileRouter.get('/:id/social-profile', optionalAuthenticate, socialController.getSocialProfile);
+userProfileRouter.post('/:id/follow', authenticate, socialController.postFollow);
+userProfileRouter.delete('/:id/follow', authenticate, socialController.deleteFollow);
+userProfileRouter.get('/:id/followers', optionalAuthenticate, socialController.getFollowers);
+userProfileRouter.get('/:id/following', optionalAuthenticate, socialController.getFollowing);
+userProfileRouter.post('/:id/block', authenticate, socialController.postBlock);
+userProfileRouter.delete('/:id/block', authenticate, socialController.deleteBlock);
+
 userProfileRouter.get('/:id', authenticate, userController.getPublicUserById);
 
 export default {

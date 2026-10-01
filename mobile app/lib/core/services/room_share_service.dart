@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_colors.dart';
 import '../../features/party_room/live_party_room_screen.dart';
 import '../../features/live/live_room_screen.dart';
 import '../../models/live_room_model.dart';
 import '../../models/user_model.dart';
 import '../../widgets/short_share_sheet.dart';
+import '../../providers/social_provider.dart';
 
 /// Unified Deep Link & Share Service across Live Rooms, Party Rooms, Shorts & Feeds
 class RoomShareService {
@@ -222,6 +224,12 @@ class RoomShareService {
   }) async {
     final link = generatePostLink(postId);
     await Clipboard.setData(ClipboardData(text: link));
+
+    try {
+      if (context.mounted) {
+        context.read<SocialProvider>().sharePost(postId);
+      }
+    } catch (_) {}
 
     if (!context.mounted) return;
     _showShareDialog(context, title: title ?? 'Social Post', link: link);

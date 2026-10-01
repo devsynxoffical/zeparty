@@ -76,6 +76,14 @@ class SocialRepository {
     return response.data!;
   }
 
+  // ─── Shares ───────────────────────────────────────────────────────────────
+
+  /// POST /v1/posts/:id/share
+  Future<Map<String, dynamic>> sharePost(String postId) async {
+    final response = await _client.post<Map<String, dynamic>>('/v1/posts/$postId/share');
+    return response.data ?? {};
+  }
+
   // ─── Comments ─────────────────────────────────────────────────────────────
 
   /// GET /v1/posts/:id/comments

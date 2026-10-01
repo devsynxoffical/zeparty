@@ -68,6 +68,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   static const String _userSessionKey = 'zeparty_user_session_json';
+  static const String _followingIdsKey = 'zeparty_following_ids';
+  static const String _blockedIdsKey = 'zeparty_blocked_ids';
 
   Future<void> _saveUserLocalSession(UserModel user) async {
     try {
@@ -85,10 +87,23 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> _saveFollowState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_followingIdsKey, _followingUserIds.toList());
+      await prefs.setStringList(_blockedIdsKey, _blockedUserIds.toList());
+    } catch (_) {}
+  }
+
   Future<void> _clearUserLocalSession() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_userSessionKey);
+      await prefs.remove(_followingIdsKey);
+      await prefs.remove(_blockedIdsKey);
+      _followingUserIds.clear();
+      _followerUserIds.clear();
+      _blockedUserIds.clear();
       await _authRepository.logout();
     } catch (_) {}
   }
@@ -108,13 +123,25 @@ class AuthProvider extends ChangeNotifier {
         } catch (_) {}
       }
 
+      final savedFollowing = prefs.getStringList(_followingIdsKey);
+      if (savedFollowing != null) {
+        _followingUserIds.clear();
+        _followingUserIds.addAll(savedFollowing);
+      }
+
+      final savedBlocked = prefs.getStringList(_blockedIdsKey);
+      if (savedBlocked != null) {
+        _blockedUserIds.clear();
+        _blockedUserIds.addAll(savedBlocked);
+      }
+
       // If we restored a local user, mark initialized immediately for instant splash dismissal
       if (_currentUser != null) {
         _isInitialized = true;
         notifyListeners();
       }
 
-      // Sync latest profile from backend asynchronously
+      // Sync latest profile and following list from backend asynchronously
       _syncRemoteUser();
     } catch (e) {
       debugPrint('Session restore error: $e');
@@ -162,6 +189,7 @@ class AuthProvider extends ChangeNotifier {
           await _saveUserLocalSession(_currentUser!);
           FcmService.instance.registerWithBackend();
           notifyListeners();
+          syncFollowingList();
         } on ApiException catch (e) {
           if (e.statusCode == 401) {
             if (_currentUser != null && !_isGuest) {
@@ -179,6 +207,7 @@ class AuthProvider extends ChangeNotifier {
                 await _saveUserLocalSession(_currentUser!);
                 FcmService.instance.registerWithBackend();
                 notifyListeners();
+                syncFollowingList();
               } catch (_) {}
             } else if (_currentUser == null) {
               await _clearUserLocalSession();
@@ -981,8 +1010,8 @@ class AuthProvider extends ChangeNotifier {
 
   // Follow system — backend authoritative
   // Local cache of following IDs for fast UI without round-trips
-  final Set<String> _followingUserIds = {'user_1002'};
-  final Set<String> _followerUserIds = {'user_1003', 'user_1004'};
+  final Set<String> _followingUserIds = {};
+  final Set<String> _followerUserIds = {};
   final Set<String> _blockedUserIds = {};
 
   bool isFollowing(String userId) => _followingUserIds.contains(userId);
@@ -1000,6 +1029,28 @@ class AuthProvider extends ChangeNotifier {
   bool isBlocked(String userId) => _blockedUserIds.contains(userId);
   Set<String> get blockedUserIds => Set.unmodifiable(_blockedUserIds);
 
+  Future<void> syncFollowingList() async {
+    if (_currentUser == null || _currentUser!.id.isEmpty || _isGuest) return;
+    try {
+      final res = await SocialRepository.instance.fetchFollowing(_currentUser!.id);
+      final List<dynamic> list = res['data'] ?? res['following'] ?? [];
+      final ids = <String>{};
+      for (final item in list) {
+        if (item is Map<String, dynamic>) {
+          final id = item['id']?.toString() ?? item['userId']?.toString();
+          if (id != null && id.isNotEmpty) ids.add(id);
+        } else if (item is String && item.isNotEmpty) {
+          ids.add(item);
+        }
+      }
+      _followingUserIds.clear();
+      _followingUserIds.addAll(ids);
+      _currentUser = currentUser.copyWith(following: _followingUserIds.length);
+      await _saveFollowState();
+      notifyListeners();
+    } catch (_) {}
+  }
+
   Future<void> followUser(String targetUserId) async {
     if (targetUserId == currentUser.id || _followingUserIds.contains(targetUserId) || isBlocked(targetUserId)) {
       return;
@@ -1008,6 +1059,7 @@ class AuthProvider extends ChangeNotifier {
     _followingUserIds.add(targetUserId);
     _currentUser = currentUser.copyWith(following: _followingUserIds.length);
     BackendRepository.instance.updateUserFollowers(targetUserId, 1);
+    await _saveFollowState();
     notifyListeners();
 
     try {
@@ -1023,6 +1075,7 @@ class AuthProvider extends ChangeNotifier {
     _followingUserIds.remove(targetUserId);
     _currentUser = currentUser.copyWith(following: _followingUserIds.length);
     BackendRepository.instance.updateUserFollowers(targetUserId, -1);
+    await _saveFollowState();
     notifyListeners();
 
     try {

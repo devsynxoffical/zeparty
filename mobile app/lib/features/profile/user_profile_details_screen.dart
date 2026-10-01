@@ -121,7 +121,17 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
   Future<void> _loadUser() async {
     setState(() => _isLoading = true);
-    final user = await context.read<AuthProvider>().getUserById(widget.userId);
+    final auth = context.read<AuthProvider>();
+    final user = await auth.getUserById(widget.userId);
+    if (user != null && user.id.isNotEmpty && user.id != auth.currentUser.id) {
+      try {
+        final profileRes = await SocialRepository.instance.getSocialProfile(user.id);
+        final isFollowing = profileRes['data']?['isFollowing'] == true || profileRes['isFollowing'] == true;
+        if (isFollowing && !auth.isFollowing(user.id)) {
+          auth.syncFollowingList();
+        }
+      } catch (_) {}
+    }
     if (mounted) {
       setState(() {
         _user = user;

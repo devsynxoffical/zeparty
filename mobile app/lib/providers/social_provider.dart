@@ -303,6 +303,27 @@ class SocialProvider extends ChangeNotifier {
     }
   }
 
+  // ─── Share Post (optimistic + backend sync) ──────────────────────────────
+
+  Future<void> sharePost(String postId) async {
+    final idx = _posts.indexWhere((p) => p.id == postId);
+    if (idx != -1) {
+      _posts[idx] = _posts[idx].copyWith(shares: _posts[idx].shares + 1);
+      notifyListeners();
+    }
+
+    try {
+      final result = await _repo.sharePost(postId);
+      final serverCount = result['data']?['sharesCount'];
+      if (serverCount != null && idx != -1 && idx < _posts.length) {
+        _posts[idx] = _posts[idx].copyWith(
+          shares: serverCount is int ? serverCount : int.tryParse(serverCount.toString()) ?? _posts[idx].shares,
+        );
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
   // ─── Create Post ──────────────────────────────────────────────────────────
 
   Future<PostModel?> createPost({

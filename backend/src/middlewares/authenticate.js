@@ -280,7 +280,10 @@ export async function optionalAuthenticate(req, res, next) {
 
     if (decoded) {
       if (decoded.isAdmin || decoded.userType === 'ADMIN') {
-        const admin = await adminRepository.findById(decoded.sub);
+        let admin = await adminRepository.findById(decoded.sub);
+        if (!admin && decoded.sub) {
+          admin = await adminRepository.findByUsernameOrEmail(decoded.sub);
+        }
         if (admin && admin.status === 'ACTIVE') {
           req.admin = admin;
           req.auth = {
@@ -295,7 +298,14 @@ export async function optionalAuthenticate(req, res, next) {
           req.session = { id: decoded.sessionId || 'admin_session', userId: admin.id };
         }
       } else {
-        const user = await userRepository.findById(decoded.sub);
+        let user = await userRepository.findById(decoded.sub);
+        if (!user && decoded.sub) {
+          if (decoded.sub.includes('@')) {
+            user = await userRepository.findByEmail(decoded.sub);
+          } else {
+            user = (await userRepository.findByUsername(decoded.sub)) || (await userRepository.findByFirebaseUid(decoded.sub));
+          }
+        }
         if (user && user.status === 'ACTIVE') {
           req.user = user;
           req.auth = {
