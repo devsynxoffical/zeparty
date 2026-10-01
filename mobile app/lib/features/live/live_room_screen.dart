@@ -67,6 +67,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   StreamSubscription? _pkInviteSub;
   StreamSubscription? _pkStartedSub;
 
+  late AnimationController _vsPulseController;
+  late Animation<double> _vsScale;
+
   void _toggleMic() {
     final liveProv = context.read<LiveProvider>();
     if (liveProv.isRoomMuted) {
@@ -98,6 +101,15 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   void initState() {
     super.initState();
     _startDurationTimer();
+
+    _vsPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat(reverse: true);
+
+    _vsScale = Tween<double>(begin: 0.9, end: 1.15).animate(
+      CurvedAnimation(parent: _vsPulseController, curve: Curves.easeInOut),
+    );
 
     // Listen to remote host video stream arrival for audience viewers
     _remoteUsersSub = AgoraRtcService().remoteUsersStream.listen((uids) {
@@ -183,10 +195,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
         if (!mounted) return;
         try {
           final pk = PKBattleModel.fromJson(data);
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => PKBattleScreen(pkBattle: pk)),
-          );
+          liveProv.setPkBattle(pk);
         } catch (e) {
           debugPrint('[LiveRoomScreen] PK Started parse error: $e');
         }
@@ -383,6 +392,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   }
 
   Widget _buildVideoStream(bool isDark, bool isHost, LiveRoomModel activeRoom) {
+    final liveProv = context.watch<LiveProvider>();
+    final pk = liveProv.activePkBattle;
+
+    if (pk != null && !pk.isEnded) {
+      return _buildPkSplitVideoStream(isDark, isHost, activeRoom, pk);
+    }
+
     final agora = AgoraRtcService.instance;
 
     if (isHost) {
@@ -413,6 +429,536 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     return _buildLiveHostBackground(isDark);
   }
 
+  /// TikTok-Style Side-by-Side Split Video Screen inside Live Room
+  Widget _buildPkSplitVideoStream(
+    bool isDark,
+    bool isHost,
+    LiveRoomModel activeRoom,
+    PKBattleModel pk,
+  ) {
+    final agora = AgoraRtcService.instance;
+    final opponentUid = _remoteHostUid ?? (agora.remoteUids.isNotEmpty ? agora.remoteUids.first : null);
+
+    final scoreA = pk.scoreA;
+    final scoreB = pk.scoreB;
+    final isLeadingA = scoreA >= scoreB;
+
+    return Container(
+      color: const Color(0xFF0A071B),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // Top spacing below header & PK score pill bar
+            const SizedBox(height: 125),
+
+            // Side-by-Side Video Area (Left: Team Blue / Host A, Right: Team Red / Host B)
+            Expanded(
+              flex: 5,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    // Host A (Left / Team Blue)
+                    Expanded(
+                      child: _buildPkHostVideoCard(
+                        host: pk.hostA,
+                        score: scoreA,
+                        isLeading: isLeadingA,
+                        sideColor: const Color(0xFF00E5FF),
+                        teamLabel: 'Team Blue',
+                        isLeft: true,
+                        videoWidget: isHost
+                            ? (agora.engine != null
+                                ? AgoraVideoView(
+                                    controller: VideoViewController(
+                                      rtcEngine: agora.engine!,
+                                      canvas: const VideoCanvas(uid: 0),
+                                    ),
+                                  )
+                                : null)
+                            : (_remoteHostUid != null && agora.engine != null
+                                ? AgoraVideoView(
+                                    controller: VideoViewController.remote(
+                                      rtcEngine: agora.engine!,
+                                      canvas: VideoCanvas(uid: _remoteHostUid!),
+                                      connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+                                    ),
+                                  )
+                                : null),
+                        onSupportTap: () => _openPkGiftSheet(context, true, pk),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
+                    // Host B (Right / Team Red)
+                    Expanded(
+                      child: _buildPkHostVideoCard(
+                        host: pk.hostB,
+                        score: scoreB,
+                        isLeading: !isLeadingA,
+                        sideColor: const Color(0xFFFF4081),
+                        teamLabel: 'Team Red',
+                        isLeft: false,
+                        videoWidget: opponentUid != null && agora.engine != null && opponentUid != _remoteHostUid
+                            ? AgoraVideoView(
+                                controller: VideoViewController.remote(
+                                  rtcEngine: agora.engine!,
+                                  canvas: VideoCanvas(uid: opponentUid),
+                                  connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+                                ),
+                              )
+                            : null,
+                        onSupportTap: () => _openPkGiftSheet(context, false, pk),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Lower flex for chat feed & bottom controls
+            const Spacer(flex: 5),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Clean Video Card for Host in PK Split Screen
+  Widget _buildPkHostVideoCard({
+    required dynamic host,
+    required int score,
+    required bool isLeading,
+    required Color sideColor,
+    required String teamLabel,
+    required bool isLeft,
+    required Widget? videoWidget,
+    required VoidCallback onSupportTap,
+  }) {
+    final avatar = host.avatarUrl != null && host.avatarUrl.toString().isNotEmpty
+        ? host.avatarUrl.toString()
+        : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500';
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: sideColor, width: 2.0),
+        boxShadow: [
+          BoxShadow(
+            color: sideColor.withValues(alpha: 0.35),
+            blurRadius: 10,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Video or Avatar Background
+            if (videoWidget != null)
+              videoWidget
+            else
+              Image.network(
+                avatar,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  color: const Color(0xFF1E1035),
+                  child: const Icon(Icons.person, color: Colors.white54, size: 48),
+                ),
+              ),
+
+            // Top-down & Bottom-up subtle vignettes
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.55),
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.75),
+                  ],
+                  stops: const [0.0, 0.4, 1.0],
+                ),
+              ),
+            ),
+
+            // Top Host Badge (Avatar + Name)
+            Positioned(
+              top: 8,
+              left: isLeft ? 8 : null,
+              right: !isLeft ? 8 : null,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: sideColor.withValues(alpha: 0.8), width: 1.0),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    UserAvatar(imageUrl: avatar, name: host.name ?? '', radius: 10),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        host.name ?? 'Host',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Leading Indicator 🔥
+            if (isLeading && score > 0)
+              Positioned(
+                top: 8,
+                right: isLeft ? 8 : null,
+                left: !isLeft ? 8 : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFAB00)]),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Text(
+                    '🔥 LEADING',
+                    style: TextStyle(
+                      color: Color(0xFF0A071B),
+                      fontWeight: FontWeight.w900,
+                      fontSize: 8,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ),
+              ),
+
+            // Bottom Support Host Button
+            Positioned(
+              bottom: 8,
+              left: 6,
+              right: 6,
+              child: GestureDetector(
+                onTap: onSupportTap,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: isLeft
+                          ? const [Color(0xFF00B0FF), Color(0xFF00E5FF)]
+                          : const [Color(0xFFD81B60), Color(0xFFFF4081)],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: sideColor.withValues(alpha: 0.5),
+                        blurRadius: 6,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(isLeft ? '💙' : '❤️', style: const TextStyle(fontSize: 10)),
+                      const SizedBox(width: 3),
+                      Flexible(
+                        child: Text(
+                          'Support ${host.name != null ? host.name.toString().split(' ').first : ''}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openPkGiftSheet(BuildContext context, bool forHostA, PKBattleModel pk) {
+    final targetHost = forHostA ? pk.hostA : pk.hostB;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.transparent,
+      builder: (c) => GiftDialog(
+        streamerName: targetHost.name,
+        targetReceiver: targetHost,
+        onGiftSent: (gift) {
+          final currentUser = context.read<AuthProvider>().currentUser;
+          context.read<LiveProvider>().addPkScore(forHostA, gift.diamondPrice);
+          context.read<LiveProvider>().sendGift(gift, currentUser.name);
+          _giftOverlayKey.currentState?.playGiftAnimation(gift, senderName: currentUser.name);
+        },
+      ),
+    );
+  }
+
+  /// TikTok-Style PK Score Bar with Animated Ratio and Pulsing Timer
+  Widget _buildPkScoreAndTimerBar(PKBattleModel pk, int seconds, bool isHost) {
+    final scoreA = pk.scoreA;
+    final scoreB = pk.scoreB;
+    final totalScore = (scoreA + scoreB) == 0 ? 1 : (scoreA + scoreB);
+    final ratioA = (scoreA / totalScore).clamp(0.08, 0.92);
+
+    final minutes = (seconds / 60).floor();
+    final remSecs = (seconds % 60).toString().padLeft(2, '0');
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, left: 6, right: 6),
+      child: Column(
+        children: [
+          // Points & Pulsing Timer
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Blue Side Points
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF00E5FF), width: 1.0),
+                ),
+                child: Row(
+                  children: [
+                    const Text('💎 ', style: TextStyle(fontSize: 10)),
+                    Text(
+                      '$scoreA pts',
+                      style: const TextStyle(
+                        color: Color(0xFF00E5FF),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Timer Pill ("⚔️ PK 04:59")
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  gradient: seconds < 30
+                      ? const LinearGradient(colors: [Color(0xFFFF1744), Color(0xFFD50000)])
+                      : LinearGradient(colors: [Colors.black.withValues(alpha: 0.8), const Color(0xFF1E1035)]),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: seconds < 30 ? const Color(0xFFFF5252) : const Color(0xFFFFD700),
+                    width: 1.2,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.flash_on_rounded, color: Color(0xFFFFD700), size: 12),
+                    const SizedBox(width: 3),
+                    Text(
+                      'PK $minutes:$remSecs',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    if (isHost) ...[
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: () {
+                          context.read<LiveProvider>().endPkBattle();
+                        },
+                        child: const Text('End', style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              // Red Side Points
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF4081).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFF4081), width: 1.0),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                      '$scoreB pts',
+                      style: const TextStyle(
+                        color: Color(0xFFFF4081),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const Text(' 💎', style: TextStyle(fontSize: 10)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+
+          // Integrated Split Score Bar with 3D VS Emblem
+          SizedBox(
+            height: 18,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Row(
+                    children: [
+                      AnimatedExpandedBar(
+                        widthRatio: ratioA,
+                        color: const Color(0xFF00E5FF),
+                        gradientColors: const [Color(0xFF00B0FF), Color(0xFF00E5FF)],
+                      ),
+                      AnimatedExpandedBar(
+                        widthRatio: 1 - ratioA,
+                        color: const Color(0xFFFF4081),
+                        gradientColors: const [Color(0xFFFF4081), Color(0xFFD81B60)],
+                      ),
+                    ],
+                  ),
+                ),
+
+                ScaleTransition(
+                  scale: _vsScale,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFFFD700), Color(0xFFFFAB00)],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFFD700).withValues(alpha: 0.8),
+                          blurRadius: 8,
+                        ),
+                      ],
+                      border: Border.all(color: Colors.white, width: 1.0),
+                    ),
+                    child: const Text(
+                      'VS',
+                      style: TextStyle(
+                        color: Color(0xFF0A071B),
+                        fontWeight: FontWeight.w900,
+                        fontSize: 9,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Victory Overlay when Battle Ends in Live Room
+  Widget _buildPkVictoryOverlay(PKBattleModel pk) {
+    final scoreA = pk.scoreA;
+    final scoreB = pk.scoreB;
+    final isWinnerA = scoreA >= scoreB;
+    final winner = isWinnerA ? pk.hostA : pk.hostB;
+    final winScore = isWinnerA ? scoreA : scoreB;
+
+    return Container(
+      color: Colors.black.withValues(alpha: 0.8),
+      child: Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 24),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF4A148C), Color(0xFF8E24AA), Color(0xFFD81B60)],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: const Color(0xFFFFD700), width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFFFD700).withValues(alpha: 0.6),
+                blurRadius: 24,
+                spreadRadius: 3,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('👑', style: TextStyle(fontSize: 60)),
+              const SizedBox(height: 8),
+              const Text(
+                'PK VICTORY!',
+                style: TextStyle(
+                  color: Color(0xFFFFD700),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 24,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                winner.name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Won with $winScore 💎 diamonds!',
+                style: const TextStyle(
+                  color: Color(0xFF00E5FF),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFFFD700),
+                  foregroundColor: const Color(0xFF0A071B),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                ),
+                onPressed: () {
+                  context.read<LiveProvider>().endPkBattle();
+                },
+                child: const Text('Continue Stream', style: TextStyle(fontWeight: FontWeight.w900)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _socketLikeSub?.cancel();
@@ -421,6 +967,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     _kickedSub?.cancel();
     _pkInviteSub?.cancel();
     _pkStartedSub?.cancel();
+    _vsPulseController.dispose();
     _durationTimer?.cancel();
     _chatController.dispose();
     try {
@@ -907,6 +1454,12 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       ),
                     ],
                   ),
+                  if (liveProvider.activePkBattle != null && !liveProvider.activePkBattle!.isEnded)
+                    _buildPkScoreAndTimerBar(
+                      liveProvider.activePkBattle!,
+                      liveProvider.pkTimeRemainingSeconds,
+                      isHost,
+                    ),
                 ],
               ),
             ),
@@ -1277,6 +1830,12 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
           // Onscreen 3D Gift Animation Overlay
           GiftAnimationOverlay(key: _giftOverlayKey),
+
+          // PK Victory Celebration Overlay
+          if (liveProvider.activePkBattle != null && (liveProvider.activePkBattle!.isEnded || liveProvider.pkTimeRemainingSeconds == 0))
+            Positioned.fill(
+              child: _buildPkVictoryOverlay(liveProvider.activePkBattle!),
+            ),
         ],
       ),
     ));

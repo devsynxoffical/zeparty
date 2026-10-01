@@ -253,18 +253,15 @@ class _PkMatchScreenState extends State<PkMatchScreen> with TickerProviderStateM
 
     setState(() {
       _isMatched = true;
-      _statusText = 'Opponent Found! Entering 1v1 Arena...';
+      _statusText = 'Opponent Found! Starting 1v1 Battle...';
       _matchedOpponent = pk.hostB;
     });
 
     context.read<LiveProvider>().setPkBattle(pk);
 
-    Future.delayed(const Duration(milliseconds: 900), () {
+    Future.delayed(const Duration(milliseconds: 700), () {
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (c) => PKBattleScreen(pkBattle: pk)),
-        );
+        Navigator.pop(context);
       }
     });
   }
