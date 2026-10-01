@@ -42,7 +42,7 @@ export const updateSellerSchema = z.object({
   profitMarginPercent: z.coerce.number().min(0).max(100).optional(),
   creditLimitUSD: z.coerce.number().min(0).optional(),
   sellerStatus: z.enum(['ACTIVE', 'SUSPENDED']).optional(),
-  countryCode: z.string().length(2).optional(),
+  countryCode: z.string().trim().min(2).max(10).optional().or(z.literal('')),
 });
 
 export const allocateSellerCoinsSchema = z.object({

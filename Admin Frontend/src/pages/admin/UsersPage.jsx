@@ -299,7 +299,18 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
     if (isOpen && user) {
       setDisplayName(user.displayName || '');
       setAvatarUrl(user.avatarUrl || '');
-      const rawCountry = (user.country || 'PK').toUpperCase();
+      let rawCountry = (user.countryCode || user.country || 'PK').toUpperCase();
+      if (!COUNTRY_PHONE_CONFIG[rawCountry]) {
+        const rawPhone = user.phone || '';
+        let matched = null;
+        for (const [code, cfg] of Object.entries(COUNTRY_PHONE_CONFIG)) {
+          if (rawPhone.startsWith(cfg.dialCode)) {
+            matched = code;
+            break;
+          }
+        }
+        rawCountry = matched || 'PK';
+      }
       setCountryCode(rawCountry);
       // Clean up phone if it includes country dial code
       let rawPhone = user.phone || '';
