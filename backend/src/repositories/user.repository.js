@@ -708,19 +708,21 @@ export async function deleteUserById(id, db = prisma) {
  * Search users by username, display name, phone, or id
  */
 export async function searchUsers(query, { limit = 20, excludeUserId = null } = {}, db = prisma) {
-  if (!query || !query.trim()) return [];
-  const q = query.trim();
   const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
+  const q = (query || '').trim();
 
   const where = {
     status: 'ACTIVE',
-    OR: [
-      { id: { contains: q } },
+  };
+
+  if (q) {
+    where.OR = [
+      { id: { contains: q, mode: 'insensitive' } },
       { username: { contains: q, mode: 'insensitive' } },
       { phone: { contains: q, mode: 'insensitive' } },
       { profile: { displayName: { contains: q, mode: 'insensitive' } } },
-    ],
-  };
+    ];
+  }
 
   if (excludeUserId) {
     where.NOT = { id: excludeUserId };
@@ -742,8 +744,6 @@ export async function searchUsers(query, { limit = 20, excludeUserId = null } = 
           displayName: true,
           signature: true,
           level: true,
-          wealthLevel: true,
-          charmLevel: true,
           vipLevel: true,
           followersCount: true,
           followingCount: true,
@@ -752,16 +752,21 @@ export async function searchUsers(query, { limit = 20, excludeUserId = null } = 
       hostProfile: {
         select: {
           id: true,
-          hostCode: true,
-          status: true,
+          hostType: true,
+          hostStatus: true,
+          hostLevel: true,
         },
       },
     },
+    orderBy: [
+      { profile: { followersCount: 'desc' } },
+      { createdAt: 'desc' },
+    ],
     take: limitNum,
   });
 
   return users.map((u) => {
-    const isHost = u.userType === 'HOST' || (u.hostProfile && u.hostProfile.status === 'APPROVED');
+    const isHost = u.userType === 'HOST' || (u.hostProfile && u.hostProfile.hostStatus === 'ACTIVE');
     const followers = u.profile?.followersCount ?? 0;
     const following = u.profile?.followingCount ?? 0;
     const level = u.profile?.level ?? 1;

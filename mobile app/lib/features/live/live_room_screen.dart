@@ -436,8 +436,74 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     LiveRoomModel activeRoom,
     PKBattleModel pk,
   ) {
-    final agora = AgoraRtcService.instance;
-    final opponentUid = _remoteHostUid ?? (agora.remoteUids.isNotEmpty ? agora.remoteUids.first : null);
+    final authUser = context.read<AuthProvider>().currentUser;
+    final currentUserId = authUser?.id ?? '';
+    final isHostA = (currentUserId.isNotEmpty && currentUserId == pk.hostA.id) || (isHost && activeRoom.creator.id == pk.hostA.id);
+    final isHostB = (currentUserId.isNotEmpty && currentUserId == pk.hostB.id) || (isHost && activeRoom.creator.id == pk.hostB.id);
+
+    final remoteUids = agora.remoteUids.toList();
+    final firstRemoteUid = _remoteHostUid ?? (remoteUids.isNotEmpty ? remoteUids.first : null);
+    final secondRemoteUid = remoteUids.length > 1 ? remoteUids[1] : (remoteUids.isNotEmpty && remoteUids.first != _remoteHostUid ? remoteUids.first : null);
+
+    Widget? videoWidgetA;
+    Widget? videoWidgetB;
+
+    if (isHostA) {
+      videoWidgetA = agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController(
+                rtcEngine: agora.engine!,
+                canvas: const VideoCanvas(uid: 0),
+              ),
+            )
+          : null;
+      videoWidgetB = firstRemoteUid != null && agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController.remote(
+                rtcEngine: agora.engine!,
+                canvas: VideoCanvas(uid: firstRemoteUid),
+                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+              ),
+            )
+          : null;
+    } else if (isHostB) {
+      videoWidgetB = agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController(
+                rtcEngine: agora.engine!,
+                canvas: const VideoCanvas(uid: 0),
+              ),
+            )
+          : null;
+      videoWidgetA = firstRemoteUid != null && agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController.remote(
+                rtcEngine: agora.engine!,
+                canvas: VideoCanvas(uid: firstRemoteUid),
+                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+              ),
+            )
+          : null;
+    } else {
+      videoWidgetA = firstRemoteUid != null && agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController.remote(
+                rtcEngine: agora.engine!,
+                canvas: VideoCanvas(uid: firstRemoteUid),
+                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+              ),
+            )
+          : null;
+      videoWidgetB = secondRemoteUid != null && agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController.remote(
+                rtcEngine: agora.engine!,
+                canvas: VideoCanvas(uid: secondRemoteUid),
+                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+              ),
+            )
+          : null;
+    }
 
     final scoreA = pk.scoreA;
     final scoreB = pk.scoreB;
@@ -468,24 +534,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                         sideColor: const Color(0xFF00E5FF),
                         teamLabel: 'Team Blue',
                         isLeft: true,
-                        videoWidget: isHost
-                            ? (agora.engine != null
-                                ? AgoraVideoView(
-                                    controller: VideoViewController(
-                                      rtcEngine: agora.engine!,
-                                      canvas: const VideoCanvas(uid: 0),
-                                    ),
-                                  )
-                                : null)
-                            : (_remoteHostUid != null && agora.engine != null
-                                ? AgoraVideoView(
-                                    controller: VideoViewController.remote(
-                                      rtcEngine: agora.engine!,
-                                      canvas: VideoCanvas(uid: _remoteHostUid!),
-                                      connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
-                                    ),
-                                  )
-                                : null),
+                        videoWidget: videoWidgetA,
                         onSupportTap: () => _openPkGiftSheet(context, true, pk),
                       ),
                     ),
@@ -500,15 +549,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                         sideColor: const Color(0xFFFF4081),
                         teamLabel: 'Team Red',
                         isLeft: false,
-                        videoWidget: opponentUid != null && agora.engine != null && opponentUid != _remoteHostUid
-                            ? AgoraVideoView(
-                                controller: VideoViewController.remote(
-                                  rtcEngine: agora.engine!,
-                                  canvas: VideoCanvas(uid: opponentUid),
-                                  connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
-                                ),
-                              )
-                            : null,
+                        videoWidget: videoWidgetB,
                         onSupportTap: () => _openPkGiftSheet(context, false, pk),
                       ),
                     ),

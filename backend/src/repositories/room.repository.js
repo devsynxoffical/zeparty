@@ -174,8 +174,8 @@ export async function findActiveRooms(
     where.OR = [
       { id: { contains: s, mode: 'insensitive' } },
       { title: { contains: s, mode: 'insensitive' } },
-      { hostUser: { username: { contains: s, mode: 'insensitive' } } },
-      { hostUser: { profile: { displayName: { contains: s, mode: 'insensitive' } } } },
+      { creator: { username: { contains: s, mode: 'insensitive' } } },
+      { creator: { profile: { displayName: { contains: s, mode: 'insensitive' } } } },
     ];
   }
 

@@ -168,27 +168,18 @@ class UserModel {
   /// 18+ requirement for restricted live streaming features
   bool get isAgeEligible => age >= 18;
 
-  /// Effective display name that avoids raw generated technical IDs and enforces 25 char max limit
+  /// Effective display name
   String get displayName {
-    bool isTechId(String s) =>
-        s.isEmpty ||
-        s.length >= 20 ||
-        RegExp(r'^[a-zA-Z0-9_-]{20,}$').hasMatch(s) ||
-        s.startsWith('user_') ||
-        s.startsWith('google_') ||
-        s == 'Guest';
-
-    if (name.isNotEmpty && !isTechId(name)) {
-      return name.length > 25 ? name.substring(0, 25).trim() : name;
+    if (name.isNotEmpty && name != 'null' && name != 'undefined') {
+      return name;
     }
-    if (username.isNotEmpty && !isTechId(username)) {
-      return username.length > 25 ? username.substring(0, 25).trim() : username;
+    if (username.isNotEmpty && username != 'null' && username != 'undefined') {
+      return username;
     }
     if (email != null && email!.contains('@')) {
       final handle = email!.split('@').first.trim();
       if (handle.isNotEmpty) {
-        final formatted = handle[0].toUpperCase() + handle.substring(1);
-        return formatted.length > 25 ? formatted.substring(0, 25).trim() : formatted;
+        return handle[0].toUpperCase() + handle.substring(1);
       }
     }
     return 'ZeParty Member';
@@ -205,38 +196,25 @@ class UserModel {
     final id = json['id']?.toString() ?? json['_id']?.toString() ?? '';
     final email = json['email']?.toString();
 
-    bool isTechIdStr(String? s) {
-      if (s == null) return true;
-      final t = s.trim();
-      return t.isEmpty ||
-          t.length >= 20 ||
-          RegExp(r'^[a-zA-Z0-9_-]{20,}$').hasMatch(t) ||
-          t.startsWith('user_') ||
-          t.startsWith('google_') ||
-          t == 'Guest';
-    }
+    final rawUsername = (json['username']?.toString() ?? '').trim();
+    final rawDisplayName = (profile['displayName']?.toString() ?? '').trim();
+    final rawName = (json['name']?.toString() ?? '').trim();
+    final rawDisplayNameFallback = (json['displayName']?.toString() ?? '').trim();
 
-    final rawUsername = json['username']?.toString() ?? '';
-    final rawName = profile['displayName']?.toString() ?? json['name']?.toString() ?? '';
+    String username = rawUsername.isNotEmpty
+        ? rawUsername
+        : (email != null && email.contains('@') ? email.split('@').first.toLowerCase() : (id.isNotEmpty ? 'user_${id.substring(0, id.length > 8 ? 8 : id.length)}' : 'user'));
 
-    String username = !isTechIdStr(rawUsername)
-        ? rawUsername.trim()
-        : (email != null && email.contains('@') ? email.split('@').first.toLowerCase() : (id.isNotEmpty ? 'user_${id.substring(0, id.length > 8 ? 8 : id.length)}' : 'user_guest'));
+    String name = rawDisplayName.isNotEmpty
+        ? rawDisplayName
+        : (rawDisplayNameFallback.isNotEmpty
+            ? rawDisplayNameFallback
+            : (rawName.isNotEmpty
+                ? rawName
+                : (rawUsername.isNotEmpty ? rawUsername : 'ZeParty Member')));
 
-    String cleanName = !isTechIdStr(rawName)
-        ? rawName.trim()
-        : (!isTechIdStr(username)
-            ? (username[0].toUpperCase() + username.substring(1))
-            : (email != null && email.contains('@')
-                ? (email.split('@').first[0].toUpperCase() + email.split('@').first.substring(1))
-                : 'ZeParty Member'));
-
-    if (cleanName.length > 25) {
-      cleanName = cleanName.substring(0, 25).trim();
-    }
-    final name = cleanName;
     final phone = json['phone']?.toString();
-    final avatarUrl = profile['avatarUrl']?.toString() ?? json['avatarUrl']?.toString() ?? '';
+    final avatarUrl = profile['avatarUrl']?.toString() ?? json['avatarUrl']?.toString() ?? profile['avatar']?.toString() ?? json['avatar']?.toString() ?? '';
     final bio = profile['bio']?.toString() ?? json['bio']?.toString() ?? '';
     final gender = profile['gender']?.toString() ?? json['gender']?.toString() ?? 'Not Specified';
     final region = profile['region']?.toString() ?? profile['countryCode']?.toString() ?? json['region']?.toString() ?? 'Global';
