@@ -15,6 +15,10 @@ import '../../widgets/svip_entry_banner.dart';
 import '../party_room/widgets/room_info_sheet.dart';
 import '../../widgets/gift_animation_overlay.dart';
 import '../pk_battle/pk_match_screen.dart';
+import '../pk_battle/pk_battle_screen.dart';
+import '../../models/pk_battle_model.dart';
+import '../../core/services/api_client.dart';
+import '../../core/services/socket_service.dart';
 import '../games/game_lobby_screen.dart';
 import '../games/game_center_sheet.dart';
 import '../../widgets/emoji_reaction_overlay.dart';
@@ -60,6 +64,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   StreamSubscription? _remoteUsersSub;
   StreamSubscription? _firstFrameSub;
   StreamSubscription? _kickedSub;
+  StreamSubscription? _pkInviteSub;
+  StreamSubscription? _pkStartedSub;
 
   void _toggleMic() {
     final liveProv = context.read<LiveProvider>();
@@ -161,6 +167,28 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               ],
             ),
           );
+        }
+      });
+
+      _pkInviteSub = liveProv.onPkInvitationReceived.listen((data) {
+        if (!mounted) return;
+        final inviterUser = data['inviterUser'] is Map ? Map<String, dynamic>.from(data['inviterUser']) : {};
+        final inviterName = inviterUser['name'] ?? inviterUser['displayName'] ?? inviterUser['username'] ?? 'Live Host';
+        final inviterAvatar = inviterUser['avatarUrl'] ?? '';
+        final invitationId = data['invitationId'] ?? data['id'] ?? '';
+        _showIncomingPKInvitationDialog(invitationId.toString(), inviterName.toString(), inviterAvatar.toString());
+      });
+
+      _pkStartedSub = SocketService.instance.onPkStarted.listen((data) {
+        if (!mounted) return;
+        try {
+          final pk = PKBattleModel.fromJson(data);
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => PKBattleScreen(pkBattle: pk)),
+          );
+        } catch (e) {
+          debugPrint('[LiveRoomScreen] PK Started parse error: $e');
         }
       });
 
@@ -391,12 +419,102 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     _remoteUsersSub?.cancel();
     _firstFrameSub?.cancel();
     _kickedSub?.cancel();
+    _pkInviteSub?.cancel();
+    _pkStartedSub?.cancel();
     _durationTimer?.cancel();
     _chatController.dispose();
     try {
       context.read<LiveProvider>().leaveRoom();
     } catch (_) {}
     super.dispose();
+  }
+
+  void _showIncomingPKInvitationDialog(String invitationId, String inviterName, String inviterAvatar) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161129),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: Color(0xFFFF4081), width: 1.5),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(colors: [Color(0xFF00E5FF), Color(0xFFFF4081)]),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.flash_on_rounded, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'PK Challenge!',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            UserAvatar(imageUrl: inviterAvatar, name: inviterName, radius: 36),
+            const SizedBox(height: 12),
+            Text(
+              '$inviterName challenged you to a live PK Battle!',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Compete in real-time with live diamond gifting & audience votes.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white60, fontSize: 12),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await ApiClient.instance.post(
+                  '/v1/pk/invite/$invitationId/respond',
+                  data: {'action': 'DECLINE'},
+                );
+              } catch (_) {}
+            },
+            child: const Text('Decline', style: TextStyle(color: Colors.white60, fontSize: 14)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF4081),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await ApiClient.instance.post(
+                  '/v1/pk/invite/$invitationId/respond',
+                  data: {'action': 'ACCEPT'},
+                );
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to accept PK: $e')),
+                  );
+                }
+              }
+            },
+            child: const Text('Accept ⚔️', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _handleExitConfirmation(BuildContext context, bool isHost, LiveProvider liveProvider) async {
@@ -992,7 +1110,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                         icon: const Icon(Icons.flash_on_rounded, color: Colors.deepOrangeAccent, size: 28),
                                         onPressed: () {
                                           Navigator.pop(bCtx);
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const PkMatchScreen()));
+                                          Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
                                         },
                                       ),
                                     ],
@@ -1450,7 +1568,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     isDark: isDark,
                     onTap: () {
                       Navigator.pop(c);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const PkMatchScreen()));
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
                     },
                   ),
 

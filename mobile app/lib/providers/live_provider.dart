@@ -69,6 +69,10 @@ class LiveProvider extends ChangeNotifier {
   StreamSubscription? _socketRoomMutedSub;
   StreamSubscription? _socketRoomUserMutedSub;
   StreamSubscription? _socketRoomSnapshotSub;
+  StreamSubscription? _socketPkStartedSub;
+  StreamSubscription? _socketPkScoreSub;
+  StreamSubscription? _socketPkEndedSub;
+  StreamSubscription? _socketPkInviteSub;
 
   final _likeReceivedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onLikeReceived => _likeReceivedController.stream;
@@ -78,6 +82,9 @@ class LiveProvider extends ChangeNotifier {
 
   final _kickedReceivedController = StreamController<String>.broadcast();
   Stream<String> get onKickedReceived => _kickedReceivedController.stream;
+
+  final _pkInvitationReceivedController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onPkInvitationReceived => _pkInvitationReceivedController.stream;
 
   // ── Moderation State ─────────────────────────────────────
   bool _isRoomMuted = false;
@@ -455,6 +462,46 @@ class LiveProvider extends ChangeNotifier {
       sendMessage('🛑 Stream was closed', 'System');
       leaveRoom();
     });
+
+    // ── PK Battle Real-time Subscriptions ───────────────────
+    _socketPkStartedSub?.cancel();
+    _socketPkStartedSub = _socketService.onPkStarted.listen((data) {
+      try {
+        final pk = PKBattleModel.fromJson(data);
+        setPkBattle(pk);
+      } catch (e) {
+        debugPrint('[LiveProvider] PK started parse error: $e');
+      }
+    });
+
+    _socketPkScoreSub?.cancel();
+    _socketPkScoreSub = _socketService.onPkScoreUpdated.listen((data) {
+      if (_activePkBattle != null) {
+        final scoreA = int.tryParse(data['hostAScore']?.toString() ?? '') ?? _activePkBattle!.scoreA;
+        final scoreB = int.tryParse(data['hostBScore']?.toString() ?? '') ?? _activePkBattle!.scoreB;
+        _activePkBattle = _activePkBattle!.copyWith(scoreA: scoreA, scoreB: scoreB);
+        notifyListeners();
+      }
+    });
+
+    _socketPkEndedSub?.cancel();
+    _socketPkEndedSub = _socketService.onPkEnded.listen((data) {
+      if (_activePkBattle != null) {
+        final winner = data['winnerHostUserId']?.toString();
+        _activePkBattle = _activePkBattle!.copyWith(
+          isEnded: true,
+          winnerId: winner,
+          status: 'ENDED',
+        );
+        _pkTimer?.cancel();
+        notifyListeners();
+      }
+    });
+
+    _socketPkInviteSub?.cancel();
+    _socketPkInviteSub = _socketService.onPkInvitationReceived.listen((data) {
+      _pkInvitationReceivedController.add(data);
+    });
   }
 
   Future<void> leaveRoom() async {
@@ -487,6 +534,10 @@ class LiveProvider extends ChangeNotifier {
     _socketRoomMutedSub?.cancel();
     _socketRoomUserMutedSub?.cancel();
     _socketRoomSnapshotSub?.cancel();
+    _socketPkStartedSub?.cancel();
+    _socketPkScoreSub?.cancel();
+    _socketPkEndedSub?.cancel();
+    _socketPkInviteSub?.cancel();
     _pkTimer?.cancel();
     _giftTimer?.cancel();
 
@@ -593,29 +644,9 @@ class LiveProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void startPkBattle({UserModel? currentHost, UserModel? opponentHost}) {
-    final hostA = currentHost ?? const UserModel(
-      id: 'host_1',
-      username: 'host_alpha',
-      name: 'Team Blue',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-    );
-    final hostB = opponentHost ?? const UserModel(
-      id: 'host_2',
-      username: 'host_beta',
-      name: 'Team Red',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-    );
-
-    _activePkBattle = PKBattleModel(
-      id: 'pk_${DateTime.now().millisecondsSinceEpoch}',
-      hostA: hostA,
-      hostB: hostB,
-      scoreA: 0,
-      scoreB: 0,
-      remainingTime: const Duration(minutes: 3),
-    );
-    _pkTimeRemainingSeconds = 180;
+  void setPkBattle(PKBattleModel pk) {
+    _activePkBattle = pk;
+    _pkTimeRemainingSeconds = pk.durationSeconds > 0 ? pk.durationSeconds : 300;
     _pkTimer?.cancel();
     _pkTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_pkTimeRemainingSeconds > 0) {
@@ -626,6 +657,33 @@ class LiveProvider extends ChangeNotifier {
       }
     });
     notifyListeners();
+  }
+
+  void startPkBattle({UserModel? currentHost, UserModel? opponentHost, String? pkId, int durationSeconds = 300}) {
+    final hostA = currentHost ?? _currentUser ?? (_activeRoom != null ? _activeRoom!.host : const UserModel(
+      id: 'host_me',
+      username: 'host_me',
+      name: 'Host Me',
+      avatarUrl: '',
+    ));
+    final hostB = opponentHost ?? const UserModel(
+      id: 'host_opponent',
+      username: 'host_opponent',
+      name: 'Opponent Host',
+      avatarUrl: '',
+    );
+
+    setPkBattle(PKBattleModel(
+      id: pkId ?? 'pk_${DateTime.now().millisecondsSinceEpoch}',
+      roomAId: _activeRoom?.id ?? '',
+      roomBId: '',
+      hostA: hostA,
+      hostB: hostB,
+      scoreA: 0,
+      scoreB: 0,
+      durationSeconds: durationSeconds,
+      remainingTime: Duration(seconds: durationSeconds),
+    ));
   }
 
   void endPkBattle() {

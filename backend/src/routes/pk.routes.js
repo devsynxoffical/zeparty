@@ -6,7 +6,16 @@ import pkController from '../controllers/pk.controller.js';
 export const userPKRouter = express.Router();
 userPKRouter.use(authenticate);
 
+// Real-Time Matchmaking & Invites
+userPKRouter.post('/matchmaking/join', pkController.joinMatchmaking);
+userPKRouter.post('/matchmaking/leave', pkController.leaveMatchmaking);
+userPKRouter.post('/invite', pkController.sendPKInvite);
+userPKRouter.post('/invite/:id/respond', pkController.respondPKInvite);
+userPKRouter.get('/available-hosts', pkController.getAvailablePKHosts);
+
+// PK Battle Lifecycle
 userPKRouter.post('/start', pkController.startPK);
+userPKRouter.post('/:id/activate', pkController.activatePK);
 userPKRouter.get('/room/:roomId', pkController.getRoomPKStatus);
 userPKRouter.post('/:id/end', pkController.endPK);
 

@@ -30,13 +30,6 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
   late Animation<double> _winnerScale;
 
   final TextEditingController _chatTextController = TextEditingController();
-  final List<Map<String, String>> _liveChatMessages = [
-    {'sender': 'Danial', 'text': 'sent Rocket 🚀 x999', 'type': 'gift'},
-    {'sender': 'Sana Mughal', 'text': 'Let’s go Team Blue! 🔥🔥', 'type': 'text'},
-    {'sender': 'Usman Jutt', 'text': 'sent Gem Diamond 💎 x10', 'type': 'gift'},
-    {'sender': 'Ayesha Khan', 'text': 'Team Red push karo! 💖', 'type': 'text'},
-    {'sender': 'Danial', 'text': 'reacted 👏', 'type': 'reaction'},
-  ];
 
   // ─── Real Camera & Mic Hardware State ───
   CameraController? _cameraController;
@@ -82,8 +75,15 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentUser = context.read<AuthProvider>().currentUser;
       final liveProv = context.read<LiveProvider>();
-      liveProv.startPkBattle(currentHost: currentUser);
-      context.read<LiveGiftProvider>().setActiveRoom('pk_battle');
+      if (widget.pkBattle != null) {
+        liveProv.setPkBattle(widget.pkBattle!);
+      } else {
+        liveProv.startPkBattle(currentHost: currentUser);
+      }
+      final activeBattleRoom = widget.pkBattle?.roomAId.isNotEmpty == true
+          ? widget.pkBattle!.roomAId
+          : (liveProv.activeRoom?.id ?? 'pk_battle');
+      context.read<LiveGiftProvider>().setActiveRoom(activeBattleRoom);
     });
 
     _vsPulseController = AnimationController(
@@ -188,15 +188,9 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
         streamerName: targetHost.name,
         targetReceiver: targetHost,
         onGiftSent: (gift) {
+          final currentUser = context.read<AuthProvider>().currentUser;
           context.read<LiveProvider>().addPkScore(forHostA, gift.diamondPrice);
-          setState(() {
-            _liveChatMessages.add({
-              'sender': context.read<AuthProvider>().currentUser.name,
-              'text': 'sent ${gift.name} ${gift.icon} to ${targetHost.name}!',
-              'type': 'gift',
-            });
-            if (_liveChatMessages.length > 25) _liveChatMessages.removeAt(0);
-          });
+          context.read<LiveProvider>().sendGift(gift, currentUser.name);
         },
       ),
     );
@@ -205,27 +199,13 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
   void _sendChatMessage(String text) {
     if (text.trim().isEmpty) return;
     final currentUser = context.read<AuthProvider>().currentUser;
-    setState(() {
-      _liveChatMessages.add({
-        'sender': currentUser.name,
-        'text': text.trim(),
-        'type': 'text',
-      });
-      if (_liveChatMessages.length > 25) _liveChatMessages.removeAt(0);
-    });
+    context.read<LiveProvider>().sendMessage(text.trim(), currentUser.name, user: currentUser);
     _chatTextController.clear();
   }
 
   void _sendQuickEmojiReaction(String emoji) {
     final currentUser = context.read<AuthProvider>().currentUser;
-    setState(() {
-      _liveChatMessages.add({
-        'sender': currentUser.name,
-        'text': 'reacted $emoji',
-        'type': 'reaction',
-      });
-      if (_liveChatMessages.length > 25) _liveChatMessages.removeAt(0);
-    });
+    context.read<LiveProvider>().sendMessage(emoji, currentUser.name, user: currentUser);
   }
 
   @override
@@ -887,17 +867,30 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
 
   /// Clean Floating Chat Feed Panel
   Widget _buildFloatingChatPanel() {
+    final liveProvider = context.watch<LiveProvider>();
+    final messages = liveProvider.messages;
+
+    if (messages.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        child: const Text(
+          'Battle is LIVE! Send gifts & chats to support your host 🔥',
+          style: TextStyle(color: Colors.white54, fontSize: 11, fontStyle: FontStyle.italic),
+        ),
+      );
+    }
+
     return SizedBox(
       width: MediaQuery.of(context).size.width * 0.72,
       child: ListView.separated(
         reverse: true,
         shrinkWrap: true,
         padding: const EdgeInsets.symmetric(vertical: 2),
-        itemCount: _liveChatMessages.length,
+        itemCount: messages.length,
         separatorBuilder: (context, index) => const SizedBox(height: 4),
         itemBuilder: (context, index) {
-          final msg = _liveChatMessages[_liveChatMessages.length - 1 - index];
-          final isGift = msg['type'] == 'gift';
+          final msg = messages[messages.length - 1 - index];
+          final isGift = msg.isGift;
 
           return Align(
             alignment: Alignment.centerLeft,
@@ -916,7 +909,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                 text: TextSpan(
                   children: [
                     TextSpan(
-                      text: '${msg['sender']}: ',
+                      text: '${msg.sender}: ',
                       style: TextStyle(
                         color: isGift ? const Color(0xFFFFD700) : const Color(0xFF00E5FF),
                         fontWeight: FontWeight.bold,
@@ -924,7 +917,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                       ),
                     ),
                     TextSpan(
-                      text: msg['text'],
+                      text: msg.text,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11,

@@ -59,9 +59,23 @@ class SocketService {
   final _notificationReadAllController = StreamController<Map<String, dynamic>>.broadcast();
   final _notificationBroadcastController = StreamController<Map<String, dynamic>>.broadcast();
 
-  // Direct Messaging event streams
-  final _directMessageController = StreamController<Map<String, dynamic>>.broadcast();
-  final _typingController = StreamController<Map<String, dynamic>>.broadcast();
+  // PK Battle Real-time event streams
+  final _pkStartedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkActiveController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkScoreUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkEndedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkInvitationReceivedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkInvitationAcceptedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkInvitationDeclinedController = StreamController<Map<String, dynamic>>.broadcast();
+
+  // Getters - PK Battle
+  Stream<Map<String, dynamic>> get onPkStarted => _pkStartedController.stream;
+  Stream<Map<String, dynamic>> get onPkActive => _pkActiveController.stream;
+  Stream<Map<String, dynamic>> get onPkScoreUpdated => _pkScoreUpdatedController.stream;
+  Stream<Map<String, dynamic>> get onPkEnded => _pkEndedController.stream;
+  Stream<Map<String, dynamic>> get onPkInvitationReceived => _pkInvitationReceivedController.stream;
+  Stream<Map<String, dynamic>> get onPkInvitationAccepted => _pkInvitationAcceptedController.stream;
+  Stream<Map<String, dynamic>> get onPkInvitationDeclined => _pkInvitationDeclinedController.stream;
 
   // Getters - Room
   Stream<Map<String, dynamic>> get onUserJoined => _userJoinedController.stream;
@@ -368,8 +382,27 @@ class SocketService {
     _socket!.on('direct_message_sent', (data) {
       if (data is Map) _directMessageController.add(Map<String, dynamic>.from(data));
     });
-    _socket!.on('chat:typing', (data) {
-      if (data is Map) _typingController.add(Map<String, dynamic>.from(data));
+    // PK Battle Real-time Events
+    _socket!.on('pk:started', (data) {
+      if (data is Map) _pkStartedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:active', (data) {
+      if (data is Map) _pkActiveController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:score_updated', (data) {
+      if (data is Map) _pkScoreUpdatedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:ended', (data) {
+      if (data is Map) _pkEndedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:invitation_received', (data) {
+      if (data is Map) _pkInvitationReceivedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:invitation_accepted', (data) {
+      if (data is Map) _pkInvitationAcceptedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:invitation_declined', (data) {
+      if (data is Map) _pkInvitationDeclinedController.add(Map<String, dynamic>.from(data));
     });
 
     _socket!.connect();

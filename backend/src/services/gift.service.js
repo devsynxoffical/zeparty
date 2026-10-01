@@ -8,6 +8,7 @@ import policyService from './policy.service.js';
 import { generateReference } from '../utils/reference.util.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
+import pkService from './pk.service.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
@@ -356,6 +357,10 @@ export async function sendGift(
       totalCoins: totalCoins.toString(),
       timestamp: new Date().toISOString(),
     });
+
+    try {
+      await pkService.addPKScore({ roomId, giftCoinValue: Number(totalCoins) });
+    } catch (_) {}
   }
 
   return {

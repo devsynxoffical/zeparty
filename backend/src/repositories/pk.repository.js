@@ -1,21 +1,64 @@
 import prisma from '../config/database.js';
 
+async function ensureHostProfile(userId, db = prisma) {
+  if (!userId) return null;
+  let profile = await db.hostProfile.findUnique({ where: { userId } });
+  if (!profile) {
+    profile = await db.hostProfile.create({
+      data: {
+        userId,
+        hostCode: `H_${userId}_${Math.floor(1000 + Math.random() * 9000)}`,
+        status: 'APPROVED',
+      },
+    });
+  }
+  return profile;
+}
+
 export class PKRepository {
   async createPKEvent({ roomAId, roomBId, hostAUserId, hostBUserId, durationSeconds = 300 }, db = prisma) {
+    // Ensure HostProfile exists for both hosts
+    const [hostAProfile, hostBProfile] = await Promise.all([
+      ensureHostProfile(hostAUserId, db),
+      ensureHostProfile(hostBUserId, db),
+    ]);
+
     return db.pKEvent.create({
       data: {
         roomAId,
         roomBId,
-        hostAUserId,
-        hostBUserId,
+        hostAUserId: hostAProfile.id,
+        hostBUserId: hostBProfile.id,
         durationSeconds,
         hostAScore: 0n,
         hostBScore: 0n,
         status: 'COUNTDOWN',
       },
       include: {
-        roomA: true,
-        roomB: true,
+        roomA: {
+          include: {
+            creator: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                profile: true,
+              },
+            },
+          },
+        },
+        roomB: {
+          include: {
+            creator: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                profile: true,
+              },
+            },
+          },
+        },
         hostA: true,
         hostB: true,
       },
@@ -26,8 +69,30 @@ export class PKRepository {
     return db.pKEvent.findUnique({
       where: { id },
       include: {
-        roomA: true,
-        roomB: true,
+        roomA: {
+          include: {
+            creator: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                profile: true,
+              },
+            },
+          },
+        },
+        roomB: {
+          include: {
+            creator: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                profile: true,
+              },
+            },
+          },
+        },
         hostA: true,
         hostB: true,
       },
@@ -41,8 +106,30 @@ export class PKRepository {
         status: { in: ['COUNTDOWN', 'ACTIVE'] },
       },
       include: {
-        roomA: true,
-        roomB: true,
+        roomA: {
+          include: {
+            creator: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                profile: true,
+              },
+            },
+          },
+        },
+        roomB: {
+          include: {
+            creator: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                profile: true,
+              },
+            },
+          },
+        },
         hostA: true,
         hostB: true,
       },
@@ -59,8 +146,30 @@ export class PKRepository {
         ...(endedAt !== undefined ? { endedAt } : {}),
       },
       include: {
-        roomA: true,
-        roomB: true,
+        roomA: {
+          include: {
+            creator: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                profile: true,
+              },
+            },
+          },
+        },
+        roomB: {
+          include: {
+            creator: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                profile: true,
+              },
+            },
+          },
+        },
         hostA: true,
         hostB: true,
       },
@@ -77,6 +186,40 @@ export class PKRepository {
         },
       },
     });
+  }
+
+  async findAvailableLiveRooms({ excludeRoomId = null, excludeUserId = null } = {}, db = prisma) {
+    const where = {
+      status: 'LIVE',
+    };
+    if (excludeRoomId) where.id = { not: excludeRoomId };
+    if (excludeUserId) where.creatorUserId = { not: excludeUserId };
+
+    const activeRooms = await db.room.findMany({
+      where,
+      include: {
+        creator: {
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            userType: true,
+            profile: {
+              select: {
+                displayName: true,
+                level: true,
+                vipLevel: true,
+                followersCount: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { currentViewersCount: 'desc' },
+      take: 50,
+    });
+
+    return activeRooms;
   }
 
   async listPKEvents({ page = 1, limit = 20, status }, db = prisma) {

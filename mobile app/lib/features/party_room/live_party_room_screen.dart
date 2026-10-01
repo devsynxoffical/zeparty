@@ -1185,7 +1185,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           if (provider.isPkActive) {
                             provider.endPk();
                           } else {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => const PkMatchScreen()));
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
                           }
                         }),
                         _buildRoomToolBtn(Icons.group_rounded, 'Members', Colors.teal, () {
