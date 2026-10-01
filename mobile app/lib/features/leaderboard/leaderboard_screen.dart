@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../core/repositories/backend_repository.dart';
+import '../../providers/auth_provider.dart';
 import '../../widgets/user_avatar.dart';
 
 class LeaderboardScreen extends StatefulWidget {
@@ -155,15 +156,32 @@ class _LeaderList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final users = BackendRepository.instance.popularUsers;
-    if (users.isEmpty) return const Center(child: Text('No data yet'));
+    final authUser = context.watch<AuthProvider>().currentUser;
+    final popUsers = BackendRepository.instance.popularUsers;
+    
+    // Ensure current logged-in user is included dynamically in rankings
+    final List<dynamic> users = [
+      if (!popUsers.any((u) => u.id == authUser.id)) authUser,
+      ...popUsers,
+    ];
 
-    final top1 = users[0];
-    final top2 = users.length > 1 ? users[1] : users[0];
-    final top3 = users.length > 2 ? users[2] : users[0];
+    if (users.isEmpty) return const Center(child: Text('No rankings available yet'));
+
+    final top1 = users.isNotEmpty ? users[0] : null;
+    final top2 = users.length > 1 ? users[1] : null;
+    final top3 = users.length > 2 ? users[2] : null;
 
     final multiplier = [1.0, 0.7, 0.5][periodIndex];
     final primary = AppColors.getPrimary(isDark);
+
+    String formatUserPoints(dynamic u, double baseMult) {
+      if (u == null) return '0';
+      final val = (u.diamonds > 0 ? u.diamonds : (u.coins > 0 ? u.coins : (u.wealthLevel * 1250))) * baseMult;
+      if (val >= 1000) {
+        return '${(val / 1000).toStringAsFixed(1)}K';
+      }
+      return val.toStringAsFixed(0);
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -199,7 +217,7 @@ class _LeaderList extends StatelessWidget {
                   podiumHeight: 100,
                   avatarRadius: 28,
                   color: isDark ? AppColors.metallicGold : AppColors.metallicBlue,
-                  diamonds: '${(85.4 * multiplier).toStringAsFixed(1)}K 💎',
+                  diamonds: '${formatUserPoints(top2, multiplier * 0.8)} 💎',
                 ),
                 const SizedBox(width: 6),
                 // 1st
@@ -210,7 +228,7 @@ class _LeaderList extends StatelessWidget {
                   podiumHeight: 140,
                   avatarRadius: 38,
                   color: isDark ? AppColors.lightGold : AppColors.royalBlue,
-                  diamonds: '${(142.8 * multiplier).toStringAsFixed(1)}K 💎',
+                  diamonds: '${formatUserPoints(top1, multiplier * 1.2)} 💎',
                   crown: '👑',
                 ),
                 const SizedBox(width: 6),
@@ -222,7 +240,7 @@ class _LeaderList extends StatelessWidget {
                   podiumHeight: 80,
                   avatarRadius: 24,
                   color: isDark ? AppColors.deepBronze : AppColors.lightBlue,
-                  diamonds: '${(54.1 * multiplier).toStringAsFixed(1)}K 💎',
+                  diamonds: '${formatUserPoints(top3, multiplier * 0.6)} 💎',
                 ),
               ],
             ),
@@ -233,7 +251,7 @@ class _LeaderList extends StatelessWidget {
           // ─── RANK LIST 4+ ───
           ...List.generate(users.length > 10 ? 10 : users.length, (index) {
             final user = users[index];
-            final user2 = isCP ? users[(index + 1) % users.length] : null; // Simulated CP Partner
+            final user2 = isCP && index + 1 < users.length ? users[index + 1] : null;
 
             final rankColors = isDark
                 ? [
@@ -248,7 +266,7 @@ class _LeaderList extends StatelessWidget {
                   ];
             final isTop3 = index < 3;
             final rankColor = isTop3 ? rankColors[index] : AppColors.getTextSecondary(isDark);
-            final gifts = ((45 - index * 4) * multiplier).toStringAsFixed(0);
+            final scoreText = formatUserPoints(user, multiplier);
 
             return Container(
               margin: const EdgeInsets.only(bottom: 10),
@@ -341,7 +359,7 @@ class _LeaderList extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '$gifts K',
+                        scoreText,
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -391,6 +409,44 @@ class _PodiumColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (user == null) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 34),
+          CircleAvatar(
+            radius: avatarRadius,
+            backgroundColor: AppColors.getSurface(isDark),
+            child: Icon(Icons.person_outline_rounded, color: AppColors.getMuted(isDark), size: avatarRadius * 0.9),
+          ),
+          const SizedBox(height: 6),
+          Text('-', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12)),
+          const SizedBox(height: 2),
+          Text('-', style: TextStyle(color: AppColors.getMuted(isDark), fontSize: 10)),
+          const SizedBox(height: 8),
+          Container(
+            width: 86,
+            height: podiumHeight,
+            decoration: BoxDecoration(
+              color: AppColors.getSurface(isDark).withValues(alpha: 0.3),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+              border: Border.all(color: AppColors.getBorder(isDark), width: 1.5),
+            ),
+            child: Center(
+              child: Text(
+                '#$rank',
+                style: TextStyle(
+                  color: AppColors.getMuted(isDark),
+                  fontSize: rank == 1 ? 26 : 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -401,7 +457,7 @@ class _PodiumColumn extends StatelessWidget {
         UserAvatar(imageUrl: user.avatarUrl, radius: avatarRadius, showVipFrame: true),
         const SizedBox(height: 6),
         Text(
-          user.name.split(' ').first,
+          user.name.toString().split(' ').first,
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 12,

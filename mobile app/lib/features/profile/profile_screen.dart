@@ -384,21 +384,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 4,
                   children: [
-                    Flexible(
-                      child: Text(
-                        user.displayName,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.getTextPrimary(isDark),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    Text(
+                      user.displayName,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.getTextPrimary(isDark),
                       ),
                     ),
-                    const SizedBox(width: 8),
                     if (context.watch<LivePartyProvider>().activeRoom != null) ...[
                       GestureDetector(
                         onTap: () {
@@ -412,29 +410,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           }
                         },
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(colors: [Color(0xFFAB47BC), Color(0xFF7B1FA2)]),
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: Colors.white, width: 1),
-                            boxShadow: [
-                              BoxShadow(color: const Color(0xFFAB47BC).withValues(alpha: 0.5), blurRadius: 6),
-                            ],
                           ),
                           child: const Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 12),
-                              SizedBox(width: 3),
+                              Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 10),
+                              SizedBox(width: 2),
                               Text(
                                 'LIVE',
-                                style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+                                style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900),
                               ),
                             ],
                           ),
                         ),
                       ),
-                      const SizedBox(width: 6),
                     ],
                     // Gender Badge
                     Container(
@@ -450,7 +444,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             user.gender.toLowerCase() == 'female' 
                                 ? Icons.female_rounded 
                                 : Icons.male_rounded,
-                            size: 12,
+                            size: 11,
                             color: Colors.blueAccent,
                           ),
                           const SizedBox(width: 2),
@@ -467,24 +461,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                Row(
+                const SizedBox(height: 5),
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 4,
+                  runSpacing: 2,
                   children: [
-                    Flexible(
-                      child: Text(
-                        'ID: ${user.id}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.getTextSecondary(isDark),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    Text(
+                      'ID: ${user.id}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.getTextSecondary(isDark),
                       ),
                     ),
-                    const SizedBox(width: 4),
-                    Text(user.countryFlag, style: const TextStyle(fontSize: 14)),
-                    const SizedBox(width: 4),
+                    Text(user.countryFlag, style: const TextStyle(fontSize: 13)),
                     GestureDetector(
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: user.id));
@@ -494,48 +485,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       },
                       child: Icon(Icons.copy_rounded, size: 12, color: AppColors.getTextSecondary(isDark)),
                     ),
-                    const SizedBox(width: 6),
-                    Text('•', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(isDark))),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        '@${user.username.isNotEmpty ? user.username : user.name}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.getTextSecondary(isDark),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    Text('•', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark))),
+                    Text(
+                      '@${user.username.isNotEmpty ? user.username : user.name}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.getTextSecondary(isDark),
                       ),
                     ),
-                    if (user.isVip) ...[
-                      const SizedBox(width: 8),
-                      Icon(Icons.workspace_premium_rounded, size: 14, color: AppColors.primary),
-                    ],
+                    if (user.isVip)
+                      Icon(Icons.workspace_premium_rounded, size: 13, color: AppColors.primary),
                   ],
                 ),
-                if (user.email != null && user.email!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.email_outlined, size: 12, color: AppColors.getTextSecondary(isDark)),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          user.email!,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.getTextSecondary(isDark),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 6),
+                const SizedBox(height: 5),
                 OnlineStatusBadge(
                   isOnline: user.isOnline,
                   lastSeen: user.isOnline ? null : 'Online 3h ago',
@@ -767,7 +730,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       {
         'title': 'Level Center',
         'imagePath': 'assets/images/profile_level.jpg',
-        'badge': 'Lv 30',
+        'badge': user.wealthLevel > 1 ? 'Lv ${user.wealthLevel}' : null,
         'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const LevelCenterScreen())),
       },
       {
@@ -802,7 +765,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       {
         'title': 'Store',
         'imagePath': 'assets/images/profile_store.jpg',
-        'badge': 'NEW',
         'onTap': () {
           AuthGuard.require(context, () {
             Navigator.push(context, MaterialPageRoute(builder: (c) => const StoreScreen()));
@@ -847,7 +809,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       {
         'title': hasLiveHostAccess ? 'Live Host Center' : 'Become a Live Host',
         'imagePath': 'assets/images/profile_livehost.jpg',
-        'badge': hasLiveHostAccess ? 'DIRECT' : 'NEW',
+        'badge': hasLiveHostAccess ? 'DIRECT' : null,
         'onTap': () {
           if (hasLiveHostAccess) {
             Navigator.push(context, MaterialPageRoute(builder: (c) => const LiveHostCenterScreen()));

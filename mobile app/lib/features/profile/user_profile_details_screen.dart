@@ -1106,24 +1106,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 ],
               ),
 
-              if (_user!.email != null && _user!.email!.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(Icons.email_outlined, size: 13, color: secondaryText),
-                    const SizedBox(width: 5),
-                    Flexible(
-                      child: Text(
-                        _user!.email!,
-                        style: TextStyle(color: secondaryText, fontSize: 12),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-
               const SizedBox(height: 12),
               _buildProfileTags(isDark, svip),
 
@@ -1889,30 +1871,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           _user!.bio.isNotEmpty ? _user!.bio : 'Welcome to my official ZeParty profile! ✨',
           style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: primaryText),
         ),
-
-        const SizedBox(height: 16),
-
-        const Text('Personality tag', style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w500)),
-        const SizedBox(height: 8),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          child: Row(
-            children: [
-              _buildTagPill('Unique', const Color(0xFFFFF3E0), const Color(0xFFFF9800)),
-              const SizedBox(width: 8),
-              _buildTagPill('Entrepreneur', const Color(0xFFFFF3E0), const Color(0xFFFF9800)),
-              const SizedBox(width: 8),
-              _buildTagPill('Global Streamer', const Color(0xFFE0F7FA), const Color(0xFF00ACC1)),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        const Text('Voice introduction', style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w500)),
-        const SizedBox(height: 8),
-        const _ExpandedMessagePlayer(),
 
         const SizedBox(height: 24),
         Divider(color: AppColors.getBorder(isDark)),

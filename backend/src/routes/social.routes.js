@@ -21,6 +21,7 @@ socialRouter.get('/users/:id/followers', authenticate, socialController.getFollo
 socialRouter.get('/users/:id/following', authenticate, socialController.getFollowing);
 
 // Blocks
+socialRouter.get('/users/me/blocked', authenticate, socialController.getBlockedUsers);
 socialRouter.post('/users/:id/block', authenticate, socialController.postBlock);
 socialRouter.delete('/users/:id/block', authenticate, socialController.deleteBlock);
 

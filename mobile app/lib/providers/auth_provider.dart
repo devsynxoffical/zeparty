@@ -981,9 +981,10 @@ class AuthProvider extends ChangeNotifier {
 
   // Follow system — backend authoritative
   // Local cache of following IDs for fast UI without round-trips
-  final Set<String> _followingUserIds = {'user_1002'};
-  final Set<String> _followerUserIds = {'user_1003', 'user_1004'};
+  final Set<String> _followingUserIds = {};
+  final Set<String> _followerUserIds = {};
   final Set<String> _blockedUserIds = {};
+  final List<UserModel> _blockedUsers = [];
 
   bool isFollowing(String userId) => _followingUserIds.contains(userId);
   Set<String> get followingUserIds => Set.unmodifiable(_followingUserIds);
@@ -999,6 +1000,34 @@ class AuthProvider extends ChangeNotifier {
 
   bool isBlocked(String userId) => _blockedUserIds.contains(userId);
   Set<String> get blockedUserIds => Set.unmodifiable(_blockedUserIds);
+  List<UserModel> get blockedUsers => List.unmodifiable(_blockedUsers);
+
+  Future<List<UserModel>> loadBlockedUsers() async {
+    try {
+      final rawList = await SocialRepository.instance.fetchBlockedUsers();
+      _blockedUsers.clear();
+      _blockedUserIds.clear();
+
+      for (final item in rawList) {
+        final id = (item['id'] ?? '').toString();
+        if (id.isNotEmpty) {
+          _blockedUserIds.add(id);
+          _blockedUsers.add(UserModel(
+            id: id,
+            name: (item['name'] ?? 'Blocked User').toString(),
+            username: (item['username'] ?? id).toString(),
+            avatarUrl: (item['avatarUrl'] ?? '').toString(),
+            email: '',
+          ));
+        }
+      }
+      notifyListeners();
+      return _blockedUsers;
+    } catch (e) {
+      debugPrint('[AuthProvider] loadBlockedUsers error: $e');
+      return _blockedUsers;
+    }
+  }
 
   Future<void> followUser(String targetUserId) async {
     if (targetUserId == currentUser.id || _followingUserIds.contains(targetUserId) || isBlocked(targetUserId)) {
@@ -1046,9 +1075,13 @@ class AuthProvider extends ChangeNotifier {
       await SocialRepository.instance.blockUser(targetUserId);
       _blockedUserIds.add(targetUserId);
       _followingUserIds.remove(targetUserId);
+      _blockedUsers.removeWhere((u) => u.id == targetUserId);
       notifyListeners();
     } catch (_) {
-      rethrow;
+      // Still update local state optimistically if offline/demo
+      _blockedUserIds.add(targetUserId);
+      _followingUserIds.remove(targetUserId);
+      notifyListeners();
     }
   }
 
@@ -1056,9 +1089,13 @@ class AuthProvider extends ChangeNotifier {
     try {
       await SocialRepository.instance.unblockUser(targetUserId);
       _blockedUserIds.remove(targetUserId);
+      _blockedUsers.removeWhere((u) => u.id == targetUserId);
       notifyListeners();
     } catch (_) {
-      rethrow;
+      // Fallback local unblock
+      _blockedUserIds.remove(targetUserId);
+      _blockedUsers.removeWhere((u) => u.id == targetUserId);
+      notifyListeners();
     }
   }
 

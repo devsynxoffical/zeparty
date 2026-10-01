@@ -159,6 +159,16 @@ class SocialRepository {
 
   // ─── Block / Unblock ──────────────────────────────────────────────────────
 
+  /// GET /v1/users/me/blocked
+  Future<List<Map<String, dynamic>>> fetchBlockedUsers() async {
+    final response = await _client.get<Map<String, dynamic>>('/v1/users/me/blocked');
+    final data = response.data?['data'];
+    if (data is List) {
+      return List<Map<String, dynamic>>.from(data);
+    }
+    return [];
+  }
+
   /// POST /v1/users/:id/block
   Future<void> blockUser(String userId) async {
     await _client.post<Map<String, dynamic>>('/v1/users/$userId/block');
