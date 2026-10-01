@@ -1,19 +1,23 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../core/animations/app_animations.dart';
-import '../../core/repositories/backend_repository.dart';
+import '../../core/services/api_client.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/user_model.dart';
 import '../../models/live_room_model.dart';
+import '../../models/post_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/social_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/skeleton_widgets.dart';
 import '../profile/user_profile_details_screen.dart';
 import '../live/live_room_screen.dart';
 import '../party_room/live_party_room_screen.dart';
+import '../social/single_post_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -27,6 +31,16 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   final List<String> _tabs = ['Users', 'Hosts', 'Live Rooms', 'Videos', 'Sounds', 'Hashtags'];
   final _searchController = TextEditingController();
   String _currentQuery = '';
+  Timer? _debounceTimer;
+
+  // Real backend query results
+  List<UserModel> _searchedUsers = [];
+  List<LiveRoomModel> _searchedRooms = [];
+  List<PostModel> _searchedPosts = [];
+
+  bool _isLoadingUsers = false;
+  bool _isLoadingRooms = false;
+  bool _isLoadingPosts = false;
 
   final List<String> _trendingTags = [
     '#ZePartyFest',
@@ -50,19 +64,124 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
+    // Initial fetch of active rooms and popular users
+    _performBackendSearch('');
   }
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _tabController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   void _onSearchChanged(String query) {
+    final trimmed = query.trim();
     setState(() {
-      _currentQuery = query.trim().toLowerCase();
+      _currentQuery = trimmed;
     });
+
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () {
+      _performBackendSearch(trimmed);
+    });
+  }
+
+  Future<void> _performBackendSearch(String query) async {
+    final client = ApiClient.instance;
+
+    // 1. Search Users & Hosts
+    setState(() => _isLoadingUsers = true);
+    try {
+      final res = await client.get<Map<String, dynamic>>(
+        '/v1/users/search',
+        queryParameters: {
+          'q': query,
+          'limit': 30,
+        },
+      );
+      final rawList = res.data?['data'];
+      final List<UserModel> loadedUsers = [];
+      if (rawList is List) {
+        for (final item in rawList) {
+          if (item is Map<String, dynamic>) {
+            loadedUsers.add(UserModel.fromJson(item));
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _searchedUsers = loadedUsers;
+          _isLoadingUsers = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingUsers = false);
+    }
+
+    // 2. Search Live Rooms (by room id or host name)
+    setState(() => _isLoadingRooms = true);
+    try {
+      final res = await client.get<Map<String, dynamic>>(
+        '/v1/rooms/active',
+        queryParameters: {
+          if (query.isNotEmpty) 'search': query,
+          'limit': 30,
+        },
+      );
+      final rawRooms = res.data?['data'];
+      final List<LiveRoomModel> loadedRooms = [];
+      if (rawRooms is List) {
+        for (final item in rawRooms) {
+          if (item is Map<String, dynamic>) {
+            loadedRooms.add(LiveRoomModel.fromJson(item));
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _searchedRooms = loadedRooms;
+          _isLoadingRooms = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingRooms = false);
+    }
+
+    // 3. Search Posts & Videos
+    setState(() => _isLoadingPosts = true);
+    try {
+      final res = await client.get<Map<String, dynamic>>(
+        '/v1/feed',
+        queryParameters: {
+          'limit': 30,
+        },
+      );
+      final rawPosts = res.data?['data'];
+      final List<PostModel> loadedPosts = [];
+      if (rawPosts is List) {
+        for (final item in rawPosts) {
+          if (item is Map<String, dynamic>) {
+            final p = PostModel.fromJson(item);
+            if (query.isEmpty ||
+                p.content.toLowerCase().contains(query.toLowerCase()) ||
+                p.author.name.toLowerCase().contains(query.toLowerCase()) ||
+                p.author.username.toLowerCase().contains(query.toLowerCase())) {
+              loadedPosts.add(p);
+            }
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _searchedPosts = loadedPosts;
+          _isLoadingPosts = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingPosts = false);
+    }
   }
 
   void _toggleFollow(String userId, String userName) {
@@ -107,10 +226,6 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     final isDark = Provider.of<ThemeProvider>(context).isDarkMode;
-    final backend = context.watch<BackendRepository>();
-    final liveRooms = backend.liveRooms;
-    final allUsers = backend.popularUsers;
-    final videos = backend.shortVideos;
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -129,11 +244,11 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
           ),
           child: TextField(
             controller: _searchController,
-            autofocus: true,
+            autofocus: false,
             onChanged: _onSearchChanged,
             style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Search users, live rooms, videos, hashtags...',
+              hintText: 'Search user ID, username, room ID, host...',
               hintStyle: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
               prefixIcon: Icon(Icons.search_rounded, size: 20, color: AppColors.getPrimary(isDark)),
               suffixIcon: _searchController.text.isNotEmpty
@@ -168,13 +283,13 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         controller: _tabController,
         children: [
           // 1. Users Tab
-          _buildUsersResultList(allUsers, isDark, onlyHosts: false),
+          _buildUsersResultList(_searchedUsers, isDark, onlyHosts: false),
           // 2. Hosts Tab
-          _buildUsersResultList(allUsers, isDark, onlyHosts: true),
+          _buildUsersResultList(_searchedUsers, isDark, onlyHosts: true),
           // 3. Live Rooms Tab
-          _buildLiveRoomsResultList(liveRooms, isDark),
+          _buildLiveRoomsResultList(_searchedRooms, isDark),
           // 4. Videos Tab
-          _buildVideosResultGrid(videos, isDark),
+          _buildVideosResultGrid(_searchedPosts, isDark),
           // 5. Sounds Tab
           _buildSoundsList(isDark),
           // 6. Hashtags Tab
@@ -185,6 +300,10 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   }
 
   Widget _buildUsersResultList(List<UserModel> users, bool isDark, {required bool onlyHosts}) {
+    if (_isLoadingUsers) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2));
+    }
+
     List<UserModel> filtered = users;
     if (onlyHosts) {
       filtered = filtered.where((u) => u.isHost || u.role == UserRole.host).toList();
@@ -192,11 +311,11 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
     if (_currentQuery.isNotEmpty) {
       filtered = filtered.where((u) {
-        final matchName = u.name.toLowerCase().contains(_currentQuery);
-        final matchUsername = u.username.toLowerCase().contains(_currentQuery);
         final matchId = u.id.toLowerCase().contains(_currentQuery);
-        final matchBio = u.bio.toLowerCase().contains(_currentQuery);
-        return matchName || matchUsername || matchId || matchBio;
+        final matchUsername = u.username.toLowerCase().contains(_currentQuery);
+        final matchName = u.name.toLowerCase().contains(_currentQuery);
+        final matchDisplayName = u.displayName.toLowerCase().contains(_currentQuery);
+        return matchId || matchUsername || matchName || matchDisplayName;
       }).toList();
     }
 
@@ -217,6 +336,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       itemBuilder: (context, i) {
         final user = filtered[i];
         final isFollowed = context.watch<AuthProvider>().isFollowing(user.id);
+        final isMe = context.watch<AuthProvider>().currentUser.id == user.id;
 
         return Card(
           clipBehavior: Clip.antiAlias,
@@ -244,7 +364,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
               children: [
                 Flexible(
                   child: Text(
-                    user.name,
+                    user.displayName.isNotEmpty ? user.displayName : user.name,
                     style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -261,47 +381,49 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
               ],
             ),
             subtitle: Text(
-              '@${user.username} • ${AppFormatters.formatNumber(user.followers)} followers',
+              '@${user.username} • ID: ${user.id} • ${AppFormatters.formatNumber(user.followers)} followers',
               style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
-            trailing: isFollowed
-                ? OutlinedButton(
-                    onPressed: () => _toggleFollow(user.id, user.name),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: AppColors.getTextSecondary(isDark)),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
-                      minimumSize: const Size(0, 34),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Text('Following', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
-                  )
-                : Container(
-                    height: 34,
-                    constraints: const BoxConstraints(minWidth: 80, maxWidth: 90),
-                    decoration: BoxDecoration(
-                      gradient: AppColors.getAccentGradient(isDark),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () => _toggleFollow(user.id, user.name),
-                        child: Center(
-                          child: Text(
-                            '+ Follow',
-                            style: TextStyle(
-                              color: AppColors.onPrimary(isDark: isDark),
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
+            trailing: isMe
+                ? const SizedBox.shrink()
+                : isFollowed
+                    ? OutlinedButton(
+                        onPressed: () => _toggleFollow(user.id, user.displayName.isNotEmpty ? user.displayName : user.name),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: AppColors.getTextSecondary(isDark)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+                          minimumSize: const Size(0, 34),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: Text('Following', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
+                      )
+                    : Container(
+                        height: 34,
+                        constraints: const BoxConstraints(minWidth: 80, maxWidth: 90),
+                        decoration: BoxDecoration(
+                          gradient: AppColors.getAccentGradient(isDark),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: () => _toggleFollow(user.id, user.displayName.isNotEmpty ? user.displayName : user.name),
+                            child: Center(
+                              child: Text(
+                                '+ Follow',
+                                style: TextStyle(
+                                  color: AppColors.onPrimary(isDark: isDark),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
             onTap: () {
               Navigator.push(
                 context,
@@ -315,18 +437,11 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   }
 
   Widget _buildLiveRoomsResultList(List<LiveRoomModel> rooms, bool isDark) {
-    List<LiveRoomModel> filtered = rooms;
-    if (_currentQuery.isNotEmpty) {
-      filtered = filtered.where((r) {
-        final matchTitle = r.title.toLowerCase().contains(_currentQuery);
-        final matchHost = r.host.name.toLowerCase().contains(_currentQuery);
-        final matchCategory = r.category.toLowerCase().contains(_currentQuery);
-        final matchId = r.id.toLowerCase().contains(_currentQuery);
-        return matchTitle || matchHost || matchCategory || matchId;
-      }).toList();
+    if (_isLoadingRooms) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2));
     }
 
-    if (filtered.isEmpty) {
+    if (rooms.isEmpty) {
       return EmptyStateWidget(
         icon: Icons.live_tv_rounded,
         title: 'No Live Rooms Found',
@@ -338,9 +453,9 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: filtered.length,
+      itemCount: rooms.length,
       itemBuilder: (context, i) {
-        final room = filtered[i];
+        final room = rooms[i];
         final isParty = room.category.toLowerCase() == 'party' || room.id.startsWith('party_');
 
         return Card(
@@ -381,7 +496,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                'Host: ${room.host.name} • ${room.viewerCount} Viewers',
+                'Host: ${room.host.name} • Room ID: ${room.id} • ${room.viewerCount} Viewers',
                 style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
               ),
             ),
@@ -393,66 +508,111 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildVideosResultGrid(List videos, bool isDark) {
-    var filtered = videos;
-    if (_currentQuery.isNotEmpty) {
-      filtered = filtered.where((v) {
-        final matchCaption = (v.caption as String).toLowerCase().contains(_currentQuery);
-        final matchCreator = (v.creator?.name as String? ?? '').toLowerCase().contains(_currentQuery);
-        return matchCaption || matchCreator;
-      }).toList();
+  Widget _buildVideosResultGrid(List<PostModel> posts, bool isDark) {
+    if (_isLoadingPosts) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2));
     }
 
-    if (filtered.isEmpty) {
+    final videoPosts = posts.where((p) => p.imageUrls.isNotEmpty || p.content.isNotEmpty).toList();
+
+    if (videoPosts.isEmpty) {
       return EmptyStateWidget(
         icon: Icons.video_library_rounded,
-        title: 'No Videos Found',
+        title: 'No Posts/Videos Found',
         subtitle: _currentQuery.isNotEmpty
-            ? 'No video clips match "$_currentQuery"'
-            : 'No video clips available.',
+            ? 'No posts or clips match "$_currentQuery"'
+            : 'No posts available at this moment.',
       );
     }
 
     return GridView.builder(
       padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        childAspectRatio: 0.7,
+        crossAxisCount: 2,
+        childAspectRatio: 0.85,
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
       ),
-      itemCount: filtered.length,
+      itemCount: videoPosts.length,
       itemBuilder: (_, i) {
-        final video = filtered[i];
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Container(
-                color: AppColors.getCard(isDark),
-                child: Image.network(
-                  'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=300&q=80',
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Center(
-                    child: Icon(Icons.play_circle_fill_rounded, color: AppColors.getPrimary(isDark), size: 36),
+        final post = videoPosts[i];
+        final hasImage = post.imageUrls.isNotEmpty;
+
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => SinglePostScreen(post: post)),
+            );
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Container(
+                  color: AppColors.getCard(isDark),
+                  child: hasImage
+                      ? Image.network(
+                          post.imageUrls.first,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => Center(
+                            child: Icon(Icons.photo_library_rounded, color: AppColors.getPrimary(isDark), size: 36),
+                          ),
+                        )
+                      : Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [Colors.purple.shade900, Colors.deepPurple.shade700],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              post.content,
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ),
+                        ),
+                ),
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          post.content.isNotEmpty ? post.content : '@${post.author.username}',
+                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '❤️ ${post.likes} • 💬 ${post.comments}',
+                          style: const TextStyle(color: Colors.white70, fontSize: 10),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              Positioned(
-                bottom: 6,
-                left: 6,
-                right: 6,
-                child: Text(
-                  video.caption ?? 'ZeParty Moment',
-                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, shadows: [
-                    Shadow(color: Colors.black, blurRadius: 4),
-                  ]),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

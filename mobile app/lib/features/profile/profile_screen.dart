@@ -570,8 +570,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'Following',
           isDark,
           () {
-            final followedList = auth.getFollowingUsers();
-            UserListSheet.show(context, 'Following', followedList);
+            UserListSheet.show(context, 'Following', userId: user.id);
           },
         ),
         _buildStatItem(
@@ -579,8 +578,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'Followers',
           isDark,
           () {
-            final followersList = auth.getFollowerUsers();
-            UserListSheet.show(context, 'Followers', followersList);
+            UserListSheet.show(context, 'Followers', userId: user.id);
           },
         ),
       ],

@@ -55,7 +55,7 @@ class PostModel {
       imageUrls: media,
       likes: _parseInt(json['likesCount'] ?? json['likes']),
       comments: _parseInt(json['commentsCount'] ?? json['comments']),
-      shares: _parseInt(json['shares']),
+      shares: _parseInt(json['sharesCount'] ?? json['shares']),
       isLiked: json['isLiked'] == true,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()

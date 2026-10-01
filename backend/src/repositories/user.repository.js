@@ -718,7 +718,6 @@ export async function searchUsers(query, { limit = 20, excludeUserId = null } = 
       { id: { contains: q } },
       { username: { contains: q, mode: 'insensitive' } },
       { phone: { contains: q, mode: 'insensitive' } },
-      { bio: { contains: q, mode: 'insensitive' } },
       { profile: { displayName: { contains: q, mode: 'insensitive' } } },
     ],
   };
@@ -737,31 +736,60 @@ export async function searchUsers(query, { limit = 20, excludeUserId = null } = 
       gender: true,
       dob: true,
       countryCode: true,
+      userType: true,
       profile: {
         select: {
           displayName: true,
           signature: true,
           level: true,
+          wealthLevel: true,
+          charmLevel: true,
           vipLevel: true,
+          followersCount: true,
+          followingCount: true,
+        },
+      },
+      hostProfile: {
+        select: {
+          id: true,
+          hostCode: true,
+          status: true,
         },
       },
     },
     take: limitNum,
   });
 
-  return users.map((u) => ({
-    id: u.id,
-    username: u.username,
-    name: u.profile?.displayName || u.username,
-    displayName: u.profile?.displayName || u.username,
-    avatarUrl: u.avatarUrl || '',
-    bio: u.bio || u.profile?.signature || '',
-    gender: u.gender || 'Not Specified',
-    dob: u.dob,
-    countryCode: u.countryCode || 'US',
-    isVip: (u.profile?.vipLevel || 0) > 0,
-    vipLevel: u.profile?.vipLevel ? `VIP ${u.profile.vipLevel}` : 'None',
-  }));
+  return users.map((u) => {
+    const isHost = u.userType === 'HOST' || (u.hostProfile && u.hostProfile.status === 'APPROVED');
+    const followers = u.profile?.followersCount ?? 0;
+    const following = u.profile?.followingCount ?? 0;
+    const level = u.profile?.level ?? 1;
+    const vipLevel = u.profile?.vipLevel ?? 0;
+
+    return {
+      id: u.id,
+      username: u.username,
+      name: u.profile?.displayName || u.username,
+      displayName: u.profile?.displayName || u.username,
+      avatarUrl: u.avatarUrl || '',
+      bio: u.bio || u.profile?.signature || '',
+      gender: u.gender || 'Not Specified',
+      dob: u.dob,
+      countryCode: u.countryCode || 'US',
+      userType: u.userType || 'USER',
+      role: isHost ? 'HOST' : (u.userType || 'USER'),
+      isHost: Boolean(isHost),
+      isVip: vipLevel > 0,
+      vipLevel: vipLevel > 0 ? `VIP ${vipLevel}` : 'None',
+      level,
+      accountLevel: level,
+      followers,
+      followersCount: followers,
+      following,
+      followingCount: following,
+    };
+  });
 }
 
 export async function softDeleteUser(userId, { reason = 'User requested account deletion', deletionPeriodDays = 3 } = {}, db = prisma) {

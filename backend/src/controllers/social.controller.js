@@ -163,6 +163,57 @@ export async function getBlockedUsers(req, res, next) {
   }
 }
 
+export async function recordProfileVisit(req, res, next) {
+  try {
+    const { id: visitedId } = userIdParamSchema.parse(req.params);
+    const visitorId = req.auth?.userId;
+    const isMystery = Boolean(req.body?.isMystery);
+
+    if (visitorId && visitorId !== visitedId) {
+      await socialService.recordProfileVisit({ visitorId, visitedId, isMystery });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile visit recorded',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getProfileVisitors(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const visitors = await socialService.getProfileVisitors(userId, { limit });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile visitors retrieved successfully',
+      data: visitors,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getProfileVisited(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const visited = await socialService.getProfileVisited(userId, { limit });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Visited profiles retrieved successfully',
+      data: visited,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getSocialProfile,
   putPrivacySettings,
@@ -173,4 +224,7 @@ export default {
   postBlock,
   deleteBlock,
   getBlockedUsers,
+  recordProfileVisit,
+  getProfileVisitors,
+  getProfileVisited,
 };

@@ -520,6 +520,111 @@ export async function findSocialProfile(userId, db = prisma) {
   });
 }
 
+// ─── Profile Visitors Tracking ──────────────────────────────────────────────
+const _profileVisits = [];
+
+export async function recordProfileVisit({ visitorId, visitedId, isMystery = false }, db = prisma) {
+  if (!visitorId || !visitedId || visitorId === visitedId) return null;
+
+  const existingIdx = _profileVisits.findIndex(v => v.visitorId === visitorId && v.visitedId === visitedId);
+  if (existingIdx !== -1) {
+    _profileVisits.splice(existingIdx, 1);
+  }
+
+  const record = {
+    id: `visit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    visitorId,
+    visitedId,
+    isMystery: Boolean(isMystery),
+    visitedAt: new Date(),
+  };
+  _profileVisits.unshift(record);
+  if (_profileVisits.length > 5000) _profileVisits.pop();
+  return record;
+}
+
+export async function findProfileVisitors(visitedId, { limit = 50 } = {}, db = prisma) {
+  const matches = _profileVisits.filter(v => v.visitedId === visitedId).slice(0, limit);
+  const results = [];
+  for (const visit of matches) {
+    const user = await db.user.findUnique({
+      where: { id: visit.visitorId },
+      select: {
+        id: true,
+        username: true,
+        avatarUrl: true,
+        profile: {
+          select: {
+            displayName: true,
+            level: true,
+            vipLevel: true,
+            followersCount: true,
+          },
+        },
+      },
+    });
+    if (user) {
+      results.push({
+        id: visit.id,
+        user: {
+          id: user.id,
+          username: user.username,
+          name: user.profile?.displayName || user.username,
+          displayName: user.profile?.displayName || user.username,
+          avatarUrl: user.avatarUrl || '',
+          accountLevel: user.profile?.level || 1,
+          vipLevel: user.profile?.vipLevel ? `VIP ${user.profile.vipLevel}` : 'None',
+          followers: user.profile?.followersCount || 0,
+        },
+        visitedAt: visit.visitedAt,
+        isMystery: visit.isMystery,
+      });
+    }
+  }
+  return results;
+}
+
+export async function findProfileVisited(visitorId, { limit = 50 } = {}, db = prisma) {
+  const matches = _profileVisits.filter(v => v.visitorId === visitorId).slice(0, limit);
+  const results = [];
+  for (const visit of matches) {
+    const user = await db.user.findUnique({
+      where: { id: visit.visitedId },
+      select: {
+        id: true,
+        username: true,
+        avatarUrl: true,
+        profile: {
+          select: {
+            displayName: true,
+            level: true,
+            vipLevel: true,
+            followersCount: true,
+          },
+        },
+      },
+    });
+    if (user) {
+      results.push({
+        id: visit.id,
+        user: {
+          id: user.id,
+          username: user.username,
+          name: user.profile?.displayName || user.username,
+          displayName: user.profile?.displayName || user.username,
+          avatarUrl: user.avatarUrl || '',
+          accountLevel: user.profile?.level || 1,
+          vipLevel: user.profile?.vipLevel ? `VIP ${user.profile.vipLevel}` : 'None',
+          followers: user.profile?.followersCount || 0,
+        },
+        visitedAt: visit.visitedAt,
+        isMystery: visit.isMystery,
+      });
+    }
+  }
+  return results;
+}
+
 export default {
   createLike,
   deleteLike,
@@ -550,4 +655,7 @@ export default {
   createReport,
   updateUserPrivacy,
   findSocialProfile,
+  recordProfileVisit,
+  findProfileVisitors,
+  findProfileVisited,
 };

@@ -22,16 +22,19 @@ adminUserRouter.post('/:id/restore', requirePermission('suspend_users'), userCon
 adminUserRouter.delete('/:id/purge', requirePermission('suspend_users'), userController.purgeAdminUser);
 
 // User Self & Public Profile Routes
-userProfileRouter.get('/search', authenticate, userController.searchUsers);
+userProfileRouter.get('/search', optionalAuthenticate, userController.searchUsers);
 userProfileRouter.get('/me', authenticate, userController.getMe);
+userProfileRouter.get('/me/visitors', authenticate, socialController.getProfileVisitors);
+userProfileRouter.get('/me/visited', authenticate, socialController.getProfileVisited);
 userProfileRouter.put('/profile', authenticate, userController.putMyProfile);
 userProfileRouter.patch('/profile', authenticate, userController.putMyProfile);
 userProfileRouter.post('/delete-account', authenticate, userController.deleteSelfAccount);
 userProfileRouter.delete('/delete-account', authenticate, userController.deleteSelfAccount);
 userProfileRouter.delete('/me', authenticate, userController.deleteSelfAccount);
 
-// Social, Follows, Followers, & Blocks (mounted directly on /users/:id)
+// Social, Follows, Followers, Visitors, & Blocks (mounted directly on /users/:id)
 userProfileRouter.get('/:id/social-profile', optionalAuthenticate, socialController.getSocialProfile);
+userProfileRouter.post('/:id/visit', authenticate, socialController.recordProfileVisit);
 userProfileRouter.post('/:id/follow', authenticate, socialController.postFollow);
 userProfileRouter.delete('/:id/follow', authenticate, socialController.deleteFollow);
 userProfileRouter.get('/:id/followers', optionalAuthenticate, socialController.getFollowers);

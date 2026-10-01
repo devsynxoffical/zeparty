@@ -85,10 +85,10 @@ class BackendRepository extends ChangeNotifier {
       (u) => u.id == userId,
       orElse: () => UserModel(
         id: userId,
-        name: 'ZeParty User ${userId.length > 5 ? userId.substring(userId.length - 4) : userId}',
+        name: userId.length > 5 ? 'User ${userId.substring(userId.length - 4)}' : userId,
         username: 'user_$userId',
         avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
-        followers: 1,
+        followers: 0,
         following: 0,
       ),
     );

@@ -125,6 +125,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     final user = await auth.getUserById(widget.userId);
     if (user != null && user.id.isNotEmpty && user.id != auth.currentUser.id) {
       try {
+        SocialRepository.instance.recordProfileVisit(user.id);
         final profileRes = await SocialRepository.instance.getSocialProfile(user.id);
         final isFollowing = profileRes['data']?['isFollowing'] == true || profileRes['isFollowing'] == true;
         if (isFollowing && !auth.isFollowing(user.id)) {
@@ -879,11 +880,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                           // Followers Tap
                           GestureDetector(
                             onTap: () {
-                              final followers = context.read<AuthProvider>().getFollowerUsers();
                               UserListSheet.show(
                                 context,
                                 'Followers',
-                                followers,
+                                userId: _user?.id ?? widget.userId,
                               );
                             },
                             child: Padding(
@@ -903,11 +903,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                           // Following Tap
                           GestureDetector(
                             onTap: () {
-                              final followedList = context.read<AuthProvider>().getFollowingUsers();
                               UserListSheet.show(
                                 context,
                                 'Following',
-                                followedList,
+                                userId: _user?.id ?? widget.userId,
                               );
                             },
                             child: Padding(

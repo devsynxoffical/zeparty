@@ -214,6 +214,44 @@ class SocialRepository {
     );
   }
 
+  // ─── Profile Visitors ──────────────────────────────────────────────────────
+
+  /// POST /v1/users/:id/visit
+  Future<void> recordProfileVisit(String userId, {bool isMystery = false}) async {
+    try {
+      await _client.post<Map<String, dynamic>>(
+        '/v1/users/$userId/visit',
+        data: {'isMystery': isMystery},
+      );
+    } catch (_) {}
+  }
+
+  /// GET /v1/users/me/visitors
+  Future<List<Map<String, dynamic>>> fetchVisitors({int limit = 50}) async {
+    final response = await _client.get<Map<String, dynamic>>(
+      '/v1/users/me/visitors',
+      queryParameters: {'limit': limit},
+    );
+    final data = response.data?['data'];
+    if (data is List) {
+      return List<Map<String, dynamic>>.from(data);
+    }
+    return [];
+  }
+
+  /// GET /v1/users/me/visited
+  Future<List<Map<String, dynamic>>> fetchVisited({int limit = 50}) async {
+    final response = await _client.get<Map<String, dynamic>>(
+      '/v1/users/me/visited',
+      queryParameters: {'limit': limit},
+    );
+    final data = response.data?['data'];
+    if (data is List) {
+      return List<Map<String, dynamic>>.from(data);
+    }
+    return [];
+  }
+
   // ─── User Profile & Search ───────────────────────────────────────────────────
 
   /// GET /v1/users/:id

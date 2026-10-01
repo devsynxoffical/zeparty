@@ -928,6 +928,19 @@ export async function sharePost(postId, userId = null, db = prisma) {
   };
 }
 
+export async function recordProfileVisit({ visitorId, visitedId, isMystery = false }, db = prisma) {
+  if (!visitorId || !visitedId || visitorId === visitedId) return null;
+  return await socialRepository.recordProfileVisit({ visitorId, visitedId, isMystery }, db);
+}
+
+export async function getProfileVisitors(userId, { limit = 50 } = {}, db = prisma) {
+  return await socialRepository.findProfileVisitors(userId, { limit }, db);
+}
+
+export async function getProfileVisited(userId, { limit = 50 } = {}, db = prisma) {
+  return await socialRepository.findProfileVisited(userId, { limit }, db);
+}
+
 export default {
   createPost,
   getPostById,
@@ -949,4 +962,7 @@ export default {
   unblockUser,
   getBlockedUsers,
   reportContent,
+  recordProfileVisit,
+  getProfileVisitors,
+  getProfileVisited,
 };

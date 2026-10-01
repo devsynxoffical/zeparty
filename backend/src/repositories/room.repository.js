@@ -170,7 +170,13 @@ export async function findActiveRooms(
   if (roomType) where.roomType = roomType;
   if (category) where.category = category;
   if (search && search.trim() !== '') {
-    where.title = { contains: search.trim(), mode: 'insensitive' };
+    const s = search.trim();
+    where.OR = [
+      { id: { contains: s, mode: 'insensitive' } },
+      { title: { contains: s, mode: 'insensitive' } },
+      { hostUser: { username: { contains: s, mode: 'insensitive' } } },
+      { hostUser: { profile: { displayName: { contains: s, mode: 'insensitive' } } } },
+    ];
   }
 
   const parsedPage = Math.max(1, Number(page) || 1);
