@@ -334,7 +334,7 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
     if (hasPartner) {
       partner = BackendRepository.instance.popularUsers.firstWhere(
         (u) => u.id == user.cpPartnerId,
-        orElse: () => BackendRepository.instance.popularUsers.first,
+        orElse: () => BackendRepository.instance.getUserById(user.cpPartnerId!),
       );
     }
 

@@ -14,21 +14,34 @@ class ApplyLiveHostScreen extends StatefulWidget {
 
 class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _legalNameController = TextEditingController(text: 'Danial Khan');
-  final _displayNameController = TextEditingController(text: 'Danial Official Live');
-  final _dobController = TextEditingController(text: '1998-05-12');
-  final _cityController = TextEditingController(text: 'Lahore');
-  final _languagesController = TextEditingController(text: 'English, Urdu');
-  final _phoneController = TextEditingController(text: '+92 300 1234567');
-  final _idNumberController = TextEditingController(text: '35201-1234567-1');
-  final _introController = TextEditingController(text: 'Professional music & entertainment host on ZeParty.');
+  late final TextEditingController _legalNameController;
+  late final TextEditingController _displayNameController;
+  late final TextEditingController _dobController;
+  late final TextEditingController _cityController;
+  late final TextEditingController _languagesController;
+  late final TextEditingController _phoneController;
+  late final TextEditingController _idNumberController;
+  late final TextEditingController _introController;
 
   String _selectedGender = 'Male';
   String _selectedCategory = 'Music';
-  String _selectedIdType = 'National ID';
 
   bool _agreeRules = true;
   bool _agreePayoutTerms = true;
+
+  @override
+  void initState() {
+    super.initState();
+    final authUser = context.read<AuthProvider>().currentUser;
+    _legalNameController = TextEditingController(text: authUser.name);
+    _displayNameController = TextEditingController(text: authUser.username);
+    _dobController = TextEditingController(text: '');
+    _cityController = TextEditingController(text: '');
+    _languagesController = TextEditingController(text: '');
+    _phoneController = TextEditingController(text: authUser.phone ?? '');
+    _idNumberController = TextEditingController(text: '');
+    _introController = TextEditingController(text: '');
+  }
 
   @override
   void dispose() {

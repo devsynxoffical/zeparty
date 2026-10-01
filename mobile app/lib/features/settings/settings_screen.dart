@@ -4,11 +4,14 @@ import '../../core/theme/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/app_logo.dart';
 import '../auth/auth_screen.dart';
+import 'account_security_screen.dart';
 import 'appearance_settings_screen.dart';
 import 'edit_profile_screen.dart';
 import 'privacy_settings_screen.dart';
 import 'notification_settings_screen.dart';
 import 'support_center_screen.dart';
+import '../../models/user_model.dart';
+import '../../widgets/user_avatar.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -53,51 +56,98 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   void _showBlockedUsersDialog() {
     final auth = context.read<AuthProvider>();
+    bool isLoading = true;
 
     showDialog(
       context: context,
       builder: (c) => StatefulBuilder(
         builder: (ctx, setDlgState) {
-          final currentBlocked = auth.blockedUserIds.toList();
+          if (isLoading) {
+            auth.loadBlockedUsers().then((_) {
+              if (ctx.mounted) {
+                setDlgState(() {
+                  isLoading = false;
+                });
+              }
+            });
+          }
+
+          final blockedList = auth.blockedUsers.isNotEmpty
+              ? auth.blockedUsers
+              : auth.blockedUserIds.map((id) => UserModel(id: id, name: 'User $id', username: id, avatarUrl: '', email: '')).toList();
 
           return AlertDialog(
             title: const Row(
               children: [
                 Icon(Icons.block_rounded, color: Colors.redAccent, size: 20),
                 SizedBox(width: 8),
-                Text('Blocked Users', style: TextStyle(fontSize: 16)),
+                Text('Blocked Users List', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ],
             ),
-            content: currentBlocked.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('You have no blocked accounts.', style: TextStyle(color: Colors.grey)),
+            content: isLoading
+                ? const SizedBox(
+                    height: 100,
+                    child: Center(child: CircularProgressIndicator(color: AppColors.primary)),
                   )
-                : SizedBox(
-                    width: double.maxFinite,
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: currentBlocked.length,
-                      itemBuilder: (context, index) {
-                        final userId = currentBlocked[index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const CircleAvatar(
-                            backgroundColor: Colors.grey,
-                            child: Icon(Icons.person, color: Colors.white, size: 18),
-                          ),
-                          title: Text('User ID: $userId', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                          trailing: TextButton(
-                            onPressed: () async {
-                              await auth.unblockUser(userId);
-                              setDlgState(() {});
-                            },
-                            child: const Text('Unblock', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                : blockedList.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_circle_outline_rounded, color: Colors.grey, size: 40),
+                            SizedBox(height: 8),
+                            Text('You have no blocked accounts.', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                          ],
+                        ),
+                      )
+                    : SizedBox(
+                        width: double.maxFinite,
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: blockedList.length,
+                          separatorBuilder: (c, i) => const Divider(height: 12),
+                          itemBuilder: (context, index) {
+                            final u = blockedList[index];
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: UserAvatar(imageUrl: u.avatarUrl, name: u.name, radius: 20),
+                              title: Text(
+                                u.name.isNotEmpty ? u.name : u.id,
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                '@${u.username.isNotEmpty ? u.username : u.id}',
+                                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                              ),
+                              trailing: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red.withValues(alpha: 0.15),
+                                  foregroundColor: Colors.redAccent,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                ),
+                                onPressed: () async {
+                                  await auth.unblockUser(u.id);
+                                  setDlgState(() {});
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Unblocked ${u.name}'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  }
+                                },
+                                child: const Text('Unblock', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(c), child: const Text('Close')),
             ],
@@ -331,9 +381,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Account Security & Password',
             subtitle: 'Manage login methods & security',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Security settings updated.')),
-              );
+              Navigator.push(context, MaterialPageRoute(builder: (c) => const AccountSecurityScreen()));
             },
           ),
 

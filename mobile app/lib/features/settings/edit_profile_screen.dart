@@ -649,7 +649,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const Divider(height: 18),
                     // Registered Email (Read-Only)
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Row(
                           children: [
@@ -658,14 +657,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             Text('Registered Email', style: TextStyle(fontSize: 12, color: secondaryText)),
                           ],
                         ),
-                        Text(
-                          (user.email != null && user.email!.isNotEmpty)
-                              ? user.email!
-                              : ((user.phone != null && user.phone!.isNotEmpty) ? user.phone! : 'Not linked'),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: primaryText,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            (user.email != null && user.email!.isNotEmpty)
+                                ? user.email!
+                                : ((user.phone != null && user.phone!.isNotEmpty) ? user.phone! : 'Not linked'),
+                            textAlign: TextAlign.end,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: primaryText,
+                            ),
                           ),
                         ),
                       ],

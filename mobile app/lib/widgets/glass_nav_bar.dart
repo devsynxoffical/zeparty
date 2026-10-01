@@ -62,79 +62,83 @@ class GlassNavBar extends StatelessWidget {
                     ),
                   ],
                 ),
+                clipBehavior: Clip.antiAlias,
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final itemWidth = constraints.maxWidth / items.length;
                     final activePillLeft = selectedIndex * itemWidth + (itemWidth - (itemWidth * 0.76)) / 2;
 
-                    return Stack(
-                      children: [
-                        // Smooth Animated Pill Indicator
-                        if (selectedIndex != 2)
-                          AnimatedPositioned(
-                            duration: AppAnimations.normal,
-                            curve: AppAnimations.springCurve,
-                            left: activePillLeft,
-                            top: 8.h,
-                            width: itemWidth * 0.76,
-                            height: 52.h,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: (isDark ? AppColors.warmGold : AppColors.royalBlue).withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(20.r),
-                                border: Border.all(
-                                  color: (isDark ? AppColors.warmGold : AppColors.royalBlue).withValues(alpha: 0.35),
-                                  width: 1.2,
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(26.r),
+                      child: Stack(
+                        children: [
+                          // Smooth Animated Pill Indicator
+                          if (selectedIndex != 2)
+                            AnimatedPositioned(
+                              duration: AppAnimations.normal,
+                              curve: AppAnimations.springCurve,
+                              left: activePillLeft,
+                              top: 8.h,
+                              width: itemWidth * 0.76,
+                              height: 52.h,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: (isDark ? AppColors.warmGold : AppColors.royalBlue).withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(20.r),
+                                  border: Border.all(
+                                    color: (isDark ? AppColors.warmGold : AppColors.royalBlue).withValues(alpha: 0.35),
+                                    width: 1.2,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
 
-                        // Navigation Items Row
-                        Row(
-                          children: List.generate(items.length, (index) {
-                            if (index == 2) {
-                              return const Expanded(child: SizedBox());
-                            }
-                            final isSelected = selectedIndex == index;
+                          // Navigation Items Row
+                          Row(
+                            children: List.generate(items.length, (index) {
+                              if (index == 2) {
+                                return const Expanded(child: SizedBox());
+                              }
+                              final isSelected = selectedIndex == index;
 
-                            return Expanded(
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.opaque,
-                                onTap: () => onTabSelected(index),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    AnimatedScale(
-                                      duration: AppAnimations.fast,
-                                      scale: isSelected ? 1.18 : 1.0,
-                                      child: Icon(
-                                        items[index].icon,
-                                        color: isSelected
-                                            ? (isDark ? AppColors.warmGold : AppColors.royalBlue)
-                                            : (isDark ? AppColors.mutedText : AppColors.lightMuted),
-                                        size: 24.w,
+                              return Expanded(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => onTabSelected(index),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      AnimatedScale(
+                                        duration: AppAnimations.fast,
+                                        scale: isSelected ? 1.18 : 1.0,
+                                        child: Icon(
+                                          items[index].icon,
+                                          color: isSelected
+                                              ? (isDark ? AppColors.warmGold : AppColors.royalBlue)
+                                              : (isDark ? AppColors.mutedText : AppColors.lightMuted),
+                                          size: 24.w,
+                                        ),
                                       ),
-                                    ),
-                                    SizedBox(height: 3.h),
-                                    AnimatedDefaultTextStyle(
-                                      duration: AppAnimations.fast,
-                                      style: TextStyle(
-                                        fontSize: 10.sp,
-                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                        color: isSelected
-                                            ? (isDark ? AppColors.warmGold : AppColors.royalBlue)
-                                            : (isDark ? AppColors.mutedText : AppColors.lightMuted),
+                                      SizedBox(height: 3.h),
+                                      AnimatedDefaultTextStyle(
+                                        duration: AppAnimations.fast,
+                                        style: TextStyle(
+                                          fontSize: 10.sp,
+                                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                          color: isSelected
+                                              ? (isDark ? AppColors.warmGold : AppColors.royalBlue)
+                                              : (isDark ? AppColors.mutedText : AppColors.lightMuted),
+                                        ),
+                                        child: Text(items[index].label),
                                       ),
-                                      child: Text(items[index].label),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          }),
-                        ),
-                      ],
+                              );
+                            }),
+                          ),
+                        ],
+                      ),
                     );
                   },
                 ),

@@ -815,6 +815,14 @@ export async function purgeExpiredDeletedUsers(db = prisma) {
   return result.count;
 }
 
+export async function findUsersByIds(ids, db = prisma) {
+  if (!ids || ids.length === 0) return [];
+  return await db.user.findMany({
+    where: { id: { in: ids } },
+    include: { profile: true },
+  });
+}
+
 export default {
   findByPhone,
   findById,
@@ -834,6 +842,7 @@ export default {
   restoreDeletedUser,
   purgeExpiredDeletedUsers,
   searchUsers,
+  findUsersByIds,
 };
 
 

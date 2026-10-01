@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import postRepository from '../repositories/post.repository.js';
 import socialRepository from '../repositories/social.repository.js';
+import userRepository from '../repositories/user.repository.js';
 import storageService from './storage.service.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
@@ -822,6 +823,20 @@ export async function unblockUser(blockerId, blockedId, db = prisma) {
   }
 }
 
+export async function getBlockedUsers(userId, db = prisma) {
+  const blockedUserIds = await socialRepository.findBlockedUserIds(userId, db);
+  if (!blockedUserIds || blockedUserIds.length === 0) return [];
+
+  const users = await userRepository.findUsersByIds(blockedUserIds, db);
+  return users.map((u) => ({
+    id: u.id,
+    name: u.name || u.username || 'User',
+    username: u.username || '',
+    avatarUrl: u.profile?.avatarUrl || '',
+    displayId: u.displayId || u.id,
+  }));
+}
+
 export async function reportContent(
   { reporterUserId, targetType, targetId, violationType, description, screenshotUrl },
   db = prisma
@@ -932,5 +947,6 @@ export default {
   updatePrivacySettings,
   blockUser,
   unblockUser,
+  getBlockedUsers,
   reportContent,
 };

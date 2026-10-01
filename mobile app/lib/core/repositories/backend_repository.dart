@@ -10,7 +10,6 @@ import '../../models/transaction_model.dart';
 import '../../models/notification_model.dart';
 import '../../models/message_model.dart';
 import '../services/socket_service.dart';
-import '../constants/dummy_data.dart';
 import 'room_repository.dart';
 
 /// Production-ready Reactive Backend Repository Service
@@ -70,7 +69,7 @@ class BackendRepository extends ChangeNotifier {
   final List<TransactionModel> _transactions = [];
   final List<GiftModel> _gifts = List.from(GiftModel.defaultCatalog);
   final List<MessageModel> _messages = [];
-  final List<UserModel> _popularUsers = List.from(DummyData.popularUsers);
+  final List<UserModel> _popularUsers = [];
 
   List<ShortVideoModel> get shortVideos => List.unmodifiable(_shortVideos);
   List<LiveRoomModel> get liveRooms => List.unmodifiable(_liveRooms);

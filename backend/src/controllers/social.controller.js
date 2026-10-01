@@ -148,6 +148,21 @@ export async function deleteBlock(req, res, next) {
   }
 }
 
+export async function getBlockedUsers(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const blockedUsers = await socialService.getBlockedUsers(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Blocked users retrieved successfully',
+      data: blockedUsers,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getSocialProfile,
   putPrivacySettings,
@@ -157,4 +172,5 @@ export default {
   getFollowing,
   postBlock,
   deleteBlock,
+  getBlockedUsers,
 };
