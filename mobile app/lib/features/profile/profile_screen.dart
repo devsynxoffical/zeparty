@@ -197,6 +197,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
       body: SafeArea(
+        bottom: false,
         child: isGuest 
             ? _buildGuestView(isDark) 
             : SingleChildScrollView(
