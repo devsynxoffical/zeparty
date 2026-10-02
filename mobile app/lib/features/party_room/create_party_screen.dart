@@ -442,8 +442,9 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
             // Category
             DropdownButtonFormField<String>(
               initialValue: _selectedCategory,
+              isExpanded: true,
               items: ['Music', 'Chat', 'Games', 'PK Battle', 'Entertainment', 'Friends', 'Other']
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis)))
                   .toList(),
               onChanged: (val) => setState(() => _selectedCategory = val!),
               decoration: InputDecoration(
@@ -458,6 +459,7 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
             // Room Type
             DropdownButtonFormField<String>(
               initialValue: _roomType,
+              isExpanded: true,
               items: const [
                 DropdownMenuItem(
                   value: 'AUDIO_PARTY',
@@ -465,7 +467,12 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
                     children: [
                       Icon(Icons.mic_rounded, color: Colors.amber, size: 20),
                       SizedBox(width: 10),
-                      Text('🎙️ Voice Room (Multi-Seat Audio Party)'),
+                      Expanded(
+                        child: Text(
+                          '🎙️ Voice Room (Multi-Seat Audio Party)',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -475,7 +482,12 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
                     children: [
                       Icon(Icons.videocam_rounded, color: Colors.pinkAccent, size: 20),
                       SizedBox(width: 10),
-                      Text('📹 Video Room (Live Camera Broadcast)'),
+                      Expanded(
+                        child: Text(
+                          '📹 Video Room (Live Camera Broadcast)',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -493,6 +505,7 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
             // Capacity
             DropdownButtonFormField<int>(
               initialValue: _capacity,
+              isExpanded: true,
               items: [10, 15, 20, 30].map((c) => DropdownMenuItem(value: c, child: Text('$c Seats'))).toList(),
               onChanged: (val) => setState(() => _capacity = val!),
               decoration: InputDecoration(
@@ -507,8 +520,9 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
             // Privacy
             DropdownButtonFormField<String>(
               initialValue: _privacy,
+              isExpanded: true,
               items: ['Public', 'Followers Only', 'Private']
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                  .map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis)))
                   .toList(),
               onChanged: (val) => setState(() => _privacy = val!),
               decoration: InputDecoration(
