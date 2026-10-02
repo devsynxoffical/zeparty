@@ -19,7 +19,7 @@ import '../../widgets/user_avatar.dart';
 import '../../widgets/user_list_sheet.dart';
 import '../../widgets/full_screen_image_viewer.dart';
 import '../../widgets/gift_dialog.dart';
-import '../../core/repositories/backend_repository.dart';
+import '../../core/repositories/social_repository.dart';
 
 import '../svip/svip_center_screen.dart';
 import '../messages/chat_screen.dart';

@@ -1068,6 +1068,19 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool get isLocalMicMuted {
+    if (_isRoomMuted) return true;
+    final self = _participants.where((p) => p.user.id == _currentUser?.id).firstOrNull;
+    return self?.micStatus == MicStatus.muted;
+  }
+
+  bool toggleLocalMic() {
+    if (_isRoomMuted) return true;
+    final newMuted = !isLocalMicMuted;
+    muteLocalMic(newMuted);
+    return newMuted;
+  }
+
   void muteLocalMic(bool muted) {
     _agoraService.muteLocalAudio(muted);
     final selfIdx = _participants.indexWhere((p) => p.user.id == _currentUser?.id);

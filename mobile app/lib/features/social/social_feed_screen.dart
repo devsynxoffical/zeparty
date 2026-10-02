@@ -187,16 +187,6 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: AppColors.getPrimary(isDark),
-        onPressed: () {
-          AuthGuard.require(context, () {
-            Navigator.push(context, MaterialPageRoute(builder: (c) => const CreatePostScreen()));
-          }, reason: 'Sign in to create social posts');
-        },
-        icon: Icon(Icons.edit_rounded, color: AppColors.onPrimary(isDark: isDark), size: 18),
-        label: Text('Post', style: TextStyle(color: AppColors.onPrimary(isDark: isDark), fontWeight: FontWeight.bold)),
-      ),
     );
   }
 

@@ -13,6 +13,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/game_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/live_party_provider.dart';
+import '../../providers/room_overlay_provider.dart';
 import '../../core/utils/formatters.dart';
 import '../recharge/recharge_screen.dart';
 import '../../models/party_participant_model.dart';
@@ -94,7 +95,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     _requestMicPermission();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
-      Provider.of<LivePartyProvider>(context, listen: false).joinParty(widget.room, user);
+      final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+      if (partyProv.activeRoom?.id != widget.room.id) {
+        partyProv.joinParty(widget.room, user);
+      }
       Provider.of<EmojiReactionProvider>(context, listen: false).setActiveRoom(widget.room.id);
       Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id);
       
@@ -282,6 +286,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         }
       },
       child: Scaffold(
+        resizeToAvoidBottomInset: false,
         backgroundColor: const Color(0xFF0D0B18),
       body: Stack(
         children: [
@@ -651,56 +656,75 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             ),
           ),
           
-          const SizedBox(width: 12),
+          const SizedBox(width: 6),
           
           // Right: Controls
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Trophy & Points (Tappable Room Sending Rankings Entry Point)
-              GestureDetector(
-                onTap: () {
-                  final activeRoom = provider.activeRoom ?? widget.room;
-                  RoomSendingRankingSheet.show(
-                    context,
-                    roomId: activeRoom.id,
-                    roomTitle: activeRoom.title,
-                    isDark: Theme.of(context).brightness == Brightness.dark,
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.amber.withValues(alpha: 0.4), width: 0.8),
+          Flexible(
+            flex: 0,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Trophy & Points
+                  GestureDetector(
+                    onTap: () {
+                      final activeRoom = provider.activeRoom ?? widget.room;
+                      RoomSendingRankingSheet.show(
+                        context,
+                        roomId: activeRoom.id,
+                        roomTitle: activeRoom.title,
+                        isDark: Theme.of(context).brightness == Brightness.dark,
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.4), width: 0.8),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.emoji_events_rounded, color: Colors.amber, size: 16),
+                          SizedBox(width: 3),
+                          Text('373M', style: TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
                   ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.emoji_events_rounded, color: Colors.amber, size: 18),
-                      SizedBox(width: 4),
-                      Text('373M', style: TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold)),
-                    ],
+                  const SizedBox(width: 8),
+                  
+                  // Room Tools Button
+                  GestureDetector(
+                    onTap: () => _showRoomTools(context, canManage, isHost, provider, Theme.of(context).brightness == Brightness.dark),
+                    child: const Icon(Icons.grid_view_rounded, color: Colors.white, size: 22),
                   ),
-                ),
+                  const SizedBox(width: 8),
+
+                  // Minimize to Floating Overlay
+                  GestureDetector(
+                    onTap: () {
+                      Provider.of<RoomOverlayProvider>(context, listen: false).minimizeRoom(
+                        roomType: 'PARTY',
+                        room: widget.room,
+                      );
+                      Navigator.pop(context);
+                    },
+                    child: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 26),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // Close X
+                  GestureDetector(
+                    onTap: _leaveRoom,
+                    child: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
+                  ),
+                ],
               ),
-              const SizedBox(width: 14),
-              
-              // Room Tools Button (Accessible to all users with role-aware options)
-              GestureDetector(
-                onTap: () => _showRoomTools(context, canManage, isHost, provider, Theme.of(context).brightness == Brightness.dark),
-                child: const Icon(Icons.grid_view_rounded, color: Colors.white, size: 24),
-              ),
-              const SizedBox(width: 14),
-              
-              // Close X
-              GestureDetector(
-                onTap: _leaveRoom,
-                child: const Icon(Icons.close_rounded, color: Colors.white, size: 26),
-              ),
-            ],
+            ),
           ),
         ],
       ),
@@ -946,8 +970,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
     return SafeArea(
       top: false,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: const Color(0xFF140D24).withValues(alpha: 0.96),
           border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
@@ -1095,7 +1121,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 
   void _showRoomTools(

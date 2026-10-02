@@ -8,6 +8,7 @@ import '../../core/utils/auth_guard.dart';
 import '../../models/live_room_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/live_provider.dart';
+import '../../providers/room_overlay_provider.dart';
 import '../../widgets/animated_live_comment_item.dart';
 import '../../widgets/gift_dialog.dart';
 import '../games/rocket_game_sheet.dart';
@@ -131,7 +132,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentUser = context.read<AuthProvider>().currentUser;
       final liveProv = context.read<LiveProvider>();
-      liveProv.joinRoom(widget.room, currentUser: currentUser);
+      if (liveProv.activeRoom?.id != widget.room.id) {
+        liveProv.joinRoom(widget.room, currentUser: currentUser);
+      }
       context.read<LiveGiftProvider>().setActiveRoom(widget.room.id);
       final emojiProv = context.read<EmojiReactionProvider>();
       emojiProv.setActiveRoom(widget.room.id);
@@ -437,11 +440,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     PKBattleModel pk,
   ) {
     final authUser = context.read<AuthProvider>().currentUser;
-    final currentUserId = authUser?.id ?? '';
-    final isHostA = (currentUserId.isNotEmpty && currentUserId == pk.hostA.id) || (isHost && activeRoom.creator.id == pk.hostA.id);
-    final isHostB = (currentUserId.isNotEmpty && currentUserId == pk.hostB.id) || (isHost && activeRoom.creator.id == pk.hostB.id);
+    final currentUserId = authUser.id;
+    final creatorId = activeRoom.creatorUserId ?? activeRoom.host.id;
+    final isHostA = (currentUserId.isNotEmpty && currentUserId == pk.hostA.id) || (isHost && creatorId == pk.hostA.id);
+    final isHostB = (currentUserId.isNotEmpty && currentUserId == pk.hostB.id) || (isHost && creatorId == pk.hostB.id);
 
-    final remoteUids = agora.remoteUids.toList();
+    final agoraService = AgoraRtcService();
+    final remoteUids = agoraService.remoteUids.toList();
     final firstRemoteUid = _remoteHostUid ?? (remoteUids.isNotEmpty ? remoteUids.first : null);
     final secondRemoteUid = remoteUids.length > 1 ? remoteUids[1] : (remoteUids.isNotEmpty && remoteUids.first != _remoteHostUid ? remoteUids.first : null);
 
@@ -449,55 +454,55 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     Widget? videoWidgetB;
 
     if (isHostA) {
-      videoWidgetA = agora.engine != null
+      videoWidgetA = agoraService.engine != null
           ? AgoraVideoView(
               controller: VideoViewController(
-                rtcEngine: agora.engine!,
+                rtcEngine: agoraService.engine!,
                 canvas: const VideoCanvas(uid: 0),
               ),
             )
           : null;
-      videoWidgetB = firstRemoteUid != null && agora.engine != null
+      videoWidgetB = firstRemoteUid != null && agoraService.engine != null
           ? AgoraVideoView(
               controller: VideoViewController.remote(
-                rtcEngine: agora.engine!,
+                rtcEngine: agoraService.engine!,
                 canvas: VideoCanvas(uid: firstRemoteUid),
                 connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
               ),
             )
           : null;
     } else if (isHostB) {
-      videoWidgetB = agora.engine != null
+      videoWidgetB = agoraService.engine != null
           ? AgoraVideoView(
               controller: VideoViewController(
-                rtcEngine: agora.engine!,
+                rtcEngine: agoraService.engine!,
                 canvas: const VideoCanvas(uid: 0),
               ),
             )
           : null;
-      videoWidgetA = firstRemoteUid != null && agora.engine != null
+      videoWidgetA = firstRemoteUid != null && agoraService.engine != null
           ? AgoraVideoView(
               controller: VideoViewController.remote(
-                rtcEngine: agora.engine!,
+                rtcEngine: agoraService.engine!,
                 canvas: VideoCanvas(uid: firstRemoteUid),
                 connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
               ),
             )
           : null;
     } else {
-      videoWidgetA = firstRemoteUid != null && agora.engine != null
+      videoWidgetA = firstRemoteUid != null && agoraService.engine != null
           ? AgoraVideoView(
               controller: VideoViewController.remote(
-                rtcEngine: agora.engine!,
+                rtcEngine: agoraService.engine!,
                 canvas: VideoCanvas(uid: firstRemoteUid),
                 connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
               ),
             )
           : null;
-      videoWidgetB = secondRemoteUid != null && agora.engine != null
+      videoWidgetB = secondRemoteUid != null && agoraService.engine != null
           ? AgoraVideoView(
               controller: VideoViewController.remote(
-                rtcEngine: agora.engine!,
+                rtcEngine: agoraService.engine!,
                 canvas: VideoCanvas(uid: secondRemoteUid),
                 connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
               ),
@@ -1481,6 +1486,21 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                 child: GestureDetector(
                                   onTap: _switchCamera,
                                   child: const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 20),
+                                ),
+                              ),
+
+                              // Minimize to Floating Overlay
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: GestureDetector(
+                                  onTap: () {
+                                    Provider.of<RoomOverlayProvider>(context, listen: false).minimizeRoom(
+                                      roomType: 'LIVE',
+                                      room: widget.room,
+                                    );
+                                    Navigator.pop(context);
+                                  },
+                                  child: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 24),
                                 ),
                               ),
 

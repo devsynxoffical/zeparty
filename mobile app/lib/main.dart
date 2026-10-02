@@ -42,6 +42,8 @@ import 'providers/live_gift_provider.dart';
 import 'providers/backpack_provider.dart';
 import 'providers/support_provider.dart';
 import 'providers/usd_balance_provider.dart';
+import 'providers/room_overlay_provider.dart';
+import 'widgets/floating_room_overlay.dart';
 import 'core/config/app_config.dart';
 import 'core/repositories/backend_repository.dart';
 import 'features/auth/splash_screen.dart';
@@ -105,6 +107,7 @@ class LiveStreamApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => EmojiReactionProvider()),
         ChangeNotifierProvider(create: (_) => LiveGiftProvider()),
         ChangeNotifierProvider(create: (_) => SupportProvider()),
+        ChangeNotifierProvider(create: (_) => RoomOverlayProvider()),
         ChangeNotifierProvider.value(value: UsdBalanceProvider.instance),
       ],
       child: Consumer<ThemeProvider>(
@@ -114,11 +117,20 @@ class LiveStreamApp extends StatelessWidget {
             minTextAdapt: true,
             builder: (context, child) {
               return MaterialApp(
+                navigatorKey: RoomOverlayProvider.navigatorKey,
                 title: 'ZeParty',
                 debugShowCheckedModeBanner: false,
                 theme: AppTheme.lightTheme,
                 darkTheme: AppTheme.darkTheme,
                 themeMode: themeProvider.themeMode,
+                builder: (context, childWidget) {
+                  return Stack(
+                    children: [
+                      childWidget ?? const SizedBox.shrink(),
+                      const FloatingRoomOverlay(),
+                    ],
+                  );
+                },
                 home: const SplashScreen(),
               );
             },

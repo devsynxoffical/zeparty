@@ -11,7 +11,6 @@ import '../../models/user_model.dart';
 import '../../models/live_room_model.dart';
 import '../../models/post_model.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/social_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/skeleton_widgets.dart';
 import '../profile/user_profile_details_screen.dart';

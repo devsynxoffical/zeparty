@@ -59,6 +59,10 @@ class SocketService {
   final _notificationReadAllController = StreamController<Map<String, dynamic>>.broadcast();
   final _notificationBroadcastController = StreamController<Map<String, dynamic>>.broadcast();
 
+  // Direct Messaging Real-time event streams
+  final _directMessageController = StreamController<Map<String, dynamic>>.broadcast();
+  final _typingController = StreamController<Map<String, dynamic>>.broadcast();
+
   // PK Battle Real-time event streams
   final _pkStartedController = StreamController<Map<String, dynamic>>.broadcast();
   final _pkActiveController = StreamController<Map<String, dynamic>>.broadcast();

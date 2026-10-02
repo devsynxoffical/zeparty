@@ -108,10 +108,10 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
+                    color: Colors.black.withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: isEntered ? senderAccent.withValues(alpha: 0.5) : Colors.amber.withValues(alpha: 0.35),
+                      color: isEntered ? senderAccent.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.15),
                       width: 0.8,
                     ),
                   ),
@@ -141,9 +141,9 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                       : Text(
                           widget.text,
                           style: const TextStyle(
-                            color: Color(0xFFFFD54F),
+                            color: Colors.white70,
                             fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                 ),

@@ -50,7 +50,7 @@ class GlassNavBar extends StatelessWidget {
                   borderRadius: BorderRadius.circular(28.r),
                   border: Border.all(
                     color: isDark
-                        ? AppColors.goldBorder.withValues(alpha: 0.55)
+                        ? Colors.white.withValues(alpha: 0.12)
                         : AppColors.lightBorder.withValues(alpha: 0.8),
                     width: 1.2,
                   ),
