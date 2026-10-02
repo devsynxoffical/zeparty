@@ -130,6 +130,7 @@ class MessagingProvider extends ChangeNotifier {
 
   final SocialRepository _socialRepo = SocialRepository.instance;
   StreamSubscription<Map<String, dynamic>>? _socketSub;
+  StreamSubscription<Map<String, dynamic>>? _readSub;
 
   final Set<String> _readSystemIds = {};
   final Set<String> _readRewardIds = {};
@@ -253,6 +254,9 @@ class MessagingProvider extends ChangeNotifier {
     _socketSub = SocketService.instance.onDirectMessage.listen((data) {
       _handleIncomingSocketMessage(data);
     });
+    _readSub = SocketService.instance.onDirectMessageRead.listen((data) {
+      _handleReadReceiptSocketMessage(data);
+    });
     _typingSub = SocketService.instance.onChatTyping.listen((data) {
       final senderId = data['senderId']?.toString();
       final isTyping = data['isTyping'] == true;
@@ -263,6 +267,59 @@ class MessagingProvider extends ChangeNotifier {
     });
   }
 
+  void _handleReadReceiptSocketMessage(Map<String, dynamic> data) {
+    try {
+      final senderId = data['senderId']?.toString() ?? data['userId']?.toString() ?? '';
+      final messageId = data['messageId']?.toString();
+
+      if (senderId.isNotEmpty && _chatThreads.containsKey(senderId)) {
+        final thread = _chatThreads[senderId]!;
+        bool updated = false;
+        for (int i = 0; i < thread.length; i++) {
+          final m = thread[i];
+          if (messageId != null && messageId.isNotEmpty) {
+            if (m.id == messageId) {
+              thread[i] = m.copyWith(isRead: true, isDelivered: true, status: MessageStatus.read);
+              updated = true;
+            }
+          } else {
+            if (!m.isRead) {
+              thread[i] = m.copyWith(isRead: true, isDelivered: true, status: MessageStatus.read);
+              updated = true;
+            }
+          }
+        }
+        if (updated) notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[MessagingProvider] Error handling read receipt socket: $e');
+    }
+  }
+
+  void markMessagesAsRead(String targetUserId) {
+    if (targetUserId.isEmpty) return;
+
+    SocketService.instance.markMessageAsRead(targetUserId);
+
+    final meta = getMetaForUser(targetUserId);
+    meta.unreadCount = 0;
+
+    final thread = _chatThreads[targetUserId];
+    if (thread != null && thread.isNotEmpty) {
+      bool updated = false;
+      for (int i = 0; i < thread.length; i++) {
+        final m = thread[i];
+        if (m.receiverId != targetUserId && !m.isRead) {
+          thread[i] = m.copyWith(isRead: true, isDelivered: true, status: MessageStatus.read);
+          updated = true;
+        }
+      }
+      if (updated) notifyListeners();
+    } else {
+      notifyListeners();
+    }
+  }
+
   void _handleIncomingSocketMessage(Map<String, dynamic> data) {
     try {
       final id = data['id']?.toString() ?? 'm_${DateTime.now().millisecondsSinceEpoch}';
@@ -271,7 +328,12 @@ class MessagingProvider extends ChangeNotifier {
       final content = data['content']?.toString() ?? '';
       final createdAtRaw = data['createdAt']?.toString();
       final timestamp = createdAtRaw != null ? DateTime.tryParse(createdAtRaw) ?? DateTime.now() : DateTime.now();
-      final isRead = data['isRead'] == true;
+      final statusStr = data['status']?.toString().toUpperCase();
+      final isRead = data['isRead'] == true || statusStr == 'READ';
+      final isDelivered = data['isDelivered'] == true || statusStr == 'DELIVERED' || isRead;
+      final status = isRead
+          ? MessageStatus.read
+          : (isDelivered ? MessageStatus.delivered : MessageStatus.sent);
 
       final otherUserId = senderId;
       if (otherUserId.isEmpty) return;
@@ -283,6 +345,8 @@ class MessagingProvider extends ChangeNotifier {
         text: content,
         timestamp: timestamp,
         isRead: isRead,
+        isDelivered: isDelivered,
+        status: status,
       );
 
       final thread = _chatThreads.putIfAbsent(otherUserId, () => []);
@@ -443,7 +507,12 @@ class MessagingProvider extends ChangeNotifier {
         final text = map['content']?.toString() ?? '';
         final createdAtRaw = map['createdAt']?.toString();
         final timestamp = createdAtRaw != null ? DateTime.tryParse(createdAtRaw) ?? DateTime.now() : DateTime.now();
-        final isRead = map['isRead'] == true;
+        final statusStr = map['status']?.toString().toUpperCase();
+        final isRead = map['isRead'] == true || statusStr == 'READ';
+        final isDelivered = map['isDelivered'] == true || statusStr == 'DELIVERED' || isRead;
+        final status = isRead
+            ? MessageStatus.read
+            : (isDelivered ? MessageStatus.delivered : MessageStatus.sent);
 
         loaded.add(
           MessageModel(
@@ -453,13 +522,14 @@ class MessagingProvider extends ChangeNotifier {
             text: text,
             timestamp: timestamp,
             isRead: isRead,
+            isDelivered: isDelivered,
+            status: status,
           ),
         );
       }
 
       _chatThreads[targetUserId] = loaded;
-      final meta = getMetaForUser(targetUserId);
-      meta.unreadCount = 0;
+      markMessagesAsRead(targetUserId);
     } catch (e) {
       debugPrint('[MessagingProvider] Error loading messages for user $targetUserId: $e');
     } finally {
@@ -480,6 +550,8 @@ class MessagingProvider extends ChangeNotifier {
 
     final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}';
     final senderId = currentUserId ?? 'current_user';
+    final isRecipientOnline = _chatUsers.any((u) => u.id == receiverId);
+    final initialStatus = isRecipientOnline ? MessageStatus.delivered : MessageStatus.sent;
 
     final optimisticMsg = MessageModel(
       id: tempId,
@@ -489,7 +561,9 @@ class MessagingProvider extends ChangeNotifier {
       type: type,
       mediaUrl: mediaUrl,
       timestamp: DateTime.now(),
-      isRead: true,
+      isRead: false,
+      isDelivered: isRecipientOnline,
+      status: initialStatus,
     );
 
     if (!_chatThreads.containsKey(receiverId)) {
@@ -532,7 +606,9 @@ class MessagingProvider extends ChangeNotifier {
               type: type,
               mediaUrl: mediaUrl,
               timestamp: DateTime.now(),
-              isRead: true,
+              isRead: false,
+              isDelivered: isRecipientOnline,
+              status: initialStatus,
             );
             notifyListeners();
           }
@@ -820,6 +896,7 @@ class MessagingProvider extends ChangeNotifier {
   @override
   void dispose() {
     _socketSub?.cancel();
+    _readSub?.cancel();
     _typingSub?.cancel();
     super.dispose();
   }

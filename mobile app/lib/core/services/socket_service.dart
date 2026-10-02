@@ -61,6 +61,7 @@ class SocketService {
 
   // Direct Messaging Real-time event streams
   final _directMessageController = StreamController<Map<String, dynamic>>.broadcast();
+  final _directMessageReadController = StreamController<Map<String, dynamic>>.broadcast();
   final _typingController = StreamController<Map<String, dynamic>>.broadcast();
 
   // PK Battle Real-time event streams
@@ -146,7 +147,14 @@ class SocketService {
 
   // Getters - Direct Messaging
   Stream<Map<String, dynamic>> get onDirectMessage => _directMessageController.stream;
+  Stream<Map<String, dynamic>> get onDirectMessageRead => _directMessageReadController.stream;
   Stream<Map<String, dynamic>> get onChatTyping => _typingController.stream;
+
+  void markMessageAsRead(String senderId) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('direct_message_read', {'senderId': senderId});
+    }
+  }
 
   /// Connect to backend Socket.IO server with JWT token
   Future<void> connect({String? token}) async {
@@ -385,6 +393,12 @@ class SocketService {
     });
     _socket!.on('direct_message_sent', (data) {
       if (data is Map) _directMessageController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('direct_message_read', (data) {
+      if (data is Map) _directMessageReadController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('message_read', (data) {
+      if (data is Map) _directMessageReadController.add(Map<String, dynamic>.from(data));
     });
     // PK Battle Real-time Events
     _socket!.on('pk:started', (data) {

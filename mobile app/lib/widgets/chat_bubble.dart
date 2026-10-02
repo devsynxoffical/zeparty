@@ -408,17 +408,54 @@ class _ChatBubbleState extends State<ChatBubble> {
             const SizedBox(height: 4),
             Padding(
               padding: isImage ? const EdgeInsets.only(right: 6, bottom: 4) : EdgeInsets.zero,
-              child: Text(
-                AppFormatters.formatTimeAgo(widget.message.timestamp),
-                style: TextStyle(
-                  color: widget.isMe ? onPrimary.withValues(alpha: 0.7) : Theme.of(context).textTheme.bodySmall?.color,
-                  fontSize: 10,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    AppFormatters.formatTimeAgo(widget.message.timestamp),
+                    style: TextStyle(
+                      color: widget.isMe ? onPrimary.withValues(alpha: 0.75) : Theme.of(context).textTheme.bodySmall?.color,
+                      fontSize: 10,
+                    ),
+                  ),
+                  if (widget.isMe) ...[
+                    const SizedBox(width: 4),
+                    _buildReadReceiptIcon(widget.message.status, onPrimary),
+                  ],
+                ],
               ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildReadReceiptIcon(MessageStatus status, Color onPrimaryColor) {
+    switch (status) {
+      case MessageStatus.sent:
+        // Single Tick (Grey / Translucent) -> Sent / Recipient Offline
+        return Icon(
+          Icons.check_rounded,
+          size: 14,
+          color: onPrimaryColor.withValues(alpha: 0.65),
+        );
+      case MessageStatus.delivered:
+        // Double Tick (Grey / Translucent) -> Delivered / Recipient Online
+        return Icon(
+          Icons.done_all_rounded,
+          size: 15,
+          color: onPrimaryColor.withValues(alpha: 0.75),
+        );
+      case MessageStatus.read:
+        // Double Tick (Colorful / Vibrant Cyan/Gold) -> Read by Recipient
+        return const Icon(
+          Icons.done_all_rounded,
+          size: 15,
+          color: Color(0xFF00E5FF),
+        );
+    }
   }
 }
