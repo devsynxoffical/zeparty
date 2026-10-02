@@ -209,8 +209,11 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   }
 
   void _navigateToRoom(BuildContext context, LiveRoomModel room) {
-    final isParty = room.category.toLowerCase() == 'party' || room.id.startsWith('party_');
-    if (isParty) {
+    final isVoiceParty = room.roomType == 'AUDIO_PARTY' ||
+        room.roomType == 'AUDIO' ||
+        room.category.toLowerCase() == 'party' ||
+        room.id.startsWith('party_');
+    if (isVoiceParty) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: room)),
