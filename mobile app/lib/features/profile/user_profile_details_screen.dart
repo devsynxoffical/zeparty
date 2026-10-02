@@ -135,12 +135,20 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   Future<void> _loadUser() async {
     setState(() => _isLoading = true);
     final auth = context.read<AuthProvider>();
-    final user = await auth.getUserById(widget.userId);
+    var user = await auth.getUserById(widget.userId);
     if (user != null && user.id.isNotEmpty && user.id != auth.currentUser.id) {
       try {
         SocialRepository.instance.recordProfileVisit(user.id);
         final profileRes = await SocialRepository.instance.getSocialProfile(user.id);
-        final isFollowing = profileRes['data']?['isFollowing'] == true || profileRes['isFollowing'] == true;
+        final profileData = profileRes['data'] is Map<String, dynamic> ? profileRes['data'] as Map<String, dynamic> : profileRes;
+        final isFollowing = profileData['isFollowing'] == true;
+        final fCount = profileData['followersCount'] is int ? profileData['followersCount'] as int : user.followers;
+        final followingCount = profileData['followingCount'] is int ? profileData['followingCount'] as int : user.following;
+        user = user.copyWith(
+          followers: fCount,
+          following: followingCount,
+          isPrivate: profileData['isPrivate'] == true,
+        );
         if (isFollowing && !auth.isFollowing(user.id)) {
           auth.syncFollowingList();
         }
@@ -551,10 +559,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                             AuthGuard.require(context, () {
                               if (isFollowing) {
                                 auth.unfollowUser(_user!.id);
+                                if (_user != null) {
+                                  setState(() {
+                                    _user = _user!.copyWith(followers: (_user!.followers > 0 ? _user!.followers - 1 : 0));
+                                  });
+                                }
                               } else {
                                 auth.followUser(_user!.id);
+                                if (_user != null) {
+                                  setState(() {
+                                    _user = _user!.copyWith(followers: _user!.followers + 1);
+                                  });
+                                }
                               }
-                              setState(() {});
                             });
                           },
                           icon: Icon(

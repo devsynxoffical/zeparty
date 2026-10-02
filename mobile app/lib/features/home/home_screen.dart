@@ -56,9 +56,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     // Base live rooms from reactive repository
     var liveRooms = backend.liveRooms;
     
-    // Apply region filtering
+    // Apply region filtering with country code and flag matching fallback
     if (regionProvider.selectedRegionCode != 'GLOBAL') {
-      liveRooms = liveRooms.where((r) => r.host.region == regionProvider.selectedRegionCode).toList();
+      final filtered = liveRooms.where((r) {
+        final hostReg = r.host.region.toUpperCase();
+        final hostCountry = r.host.cleanCountryName.toUpperCase();
+        final target = regionProvider.selectedRegionCode.toUpperCase();
+        return hostReg.contains(target) || hostCountry.contains(target) || r.host.countryFlag == regionProvider.selectedRegionFlag;
+      }).toList();
+      if (filtered.isNotEmpty) {
+        liveRooms = filtered;
+      }
     }
 
     final primaryColor = AppColors.getPrimary(isDark);
@@ -218,7 +226,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               // Party Tab: Audio Voice Party Rooms
               LiveDiscoveryGrid(
                 liveRooms: liveRooms.where((r) =>
-                  r.roomType == 'AUDIO_PARTY' || r.category.toUpperCase() == 'PARTY'
+                  r.roomType == 'AUDIO_PARTY' ||
+                  r.roomType.toUpperCase().contains('VOICE') ||
+                  r.roomType.toUpperCase().contains('PARTY') ||
+                  r.category.toUpperCase() == 'PARTY' ||
+                  r.category.toUpperCase() == 'CHAT' ||
+                  r.category.toUpperCase() == 'MUSIC'
                 ).toList(),
                 isDark: isDark,
                 isPartyTab: true,
@@ -226,13 +239,30 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               // Live Tab: Video Streams & Live Broadcasts
               LiveDiscoveryGrid(
                 liveRooms: liveRooms.where((r) =>
-                  r.roomType == 'LIVE_VIDEO' || r.roomType == 'Video Room' || (r.roomType != 'AUDIO_PARTY' && r.category.toUpperCase() != 'PARTY')
+                  r.roomType == 'LIVE_VIDEO' ||
+                  r.roomType == 'Video Room' ||
+                  r.roomType.toUpperCase().contains('VIDEO') ||
+                  (r.roomType != 'AUDIO_PARTY' && !r.roomType.toUpperCase().contains('VOICE') && r.category.toUpperCase() != 'PARTY')
                 ).toList(),
                 isDark: isDark,
                 isPartyTab: false,
               ),
               GamesTab(isDark: isDark),
-              LiveDiscoveryGrid(liveRooms: liveRooms.where((r) => r.category.toUpperCase() == 'PK').toList(), isDark: isDark),
+              // PK Tab: Live PK Battles & Gaming Streams
+              LiveDiscoveryGrid(
+                liveRooms: liveRooms.where((r) =>
+                  r.category.toUpperCase() == 'PK' ||
+                  r.title.toUpperCase().contains('PK') ||
+                  r.roomType.toUpperCase().contains('PK')
+                ).toList().isNotEmpty
+                    ? liveRooms.where((r) =>
+                        r.category.toUpperCase() == 'PK' ||
+                        r.title.toUpperCase().contains('PK') ||
+                        r.roomType.toUpperCase().contains('PK')
+                      ).toList()
+                    : liveRooms,
+                isDark: isDark,
+              ),
             ],
           ),
         ),

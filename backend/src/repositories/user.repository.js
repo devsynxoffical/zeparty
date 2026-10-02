@@ -475,6 +475,10 @@ export async function findPublicProfileById(id, db = prisma) {
           svipLevel: true,
           nobleRank: true,
           signature: true,
+          followersCount: true,
+          followingCount: true,
+          postsCount: true,
+          isPrivate: true,
         },
       },
       hostProfile: {

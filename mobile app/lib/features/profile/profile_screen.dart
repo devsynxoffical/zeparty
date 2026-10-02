@@ -566,7 +566,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           },
         ),
         _buildStatItem(
-          AppFormatters.formatNumber(auth.followingUserIds.length),
+          AppFormatters.formatNumber(user.following > 0 ? user.following : auth.followingUserIds.length),
           'Following',
           isDark,
           () {
@@ -574,7 +574,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           },
         ),
         _buildStatItem(
-          AppFormatters.formatNumber(auth.followerUserIds.length),
+          AppFormatters.formatNumber(user.followers),
           'Followers',
           isDark,
           () {

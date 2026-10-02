@@ -109,6 +109,25 @@ export async function getSelfProfile(userId, db = prisma) {
     error.code = 'USER_NOT_FOUND';
     throw error;
   }
+
+  const [followersCount, followingCount] = await Promise.all([
+    db.follow.count({ where: { followingId: userId, status: 'ACCEPTED' } }),
+    db.follow.count({ where: { followerId: userId, status: 'ACCEPTED' } }),
+  ]);
+
+  if (user.profile) {
+    user.profile.followersCount = followersCount;
+    user.profile.followingCount = followingCount;
+  } else {
+    user.profile = {
+      followersCount,
+      followingCount,
+      postsCount: 0,
+      level: 1,
+      isPrivate: false,
+    };
+  }
+
   return user;
 }
 
@@ -132,6 +151,25 @@ export async function getPublicProfile(userId, db = prisma) {
     error.code = 'USER_NOT_FOUND';
     throw error;
   }
+
+  const [followersCount, followingCount] = await Promise.all([
+    db.follow.count({ where: { followingId: userId, status: 'ACCEPTED' } }),
+    db.follow.count({ where: { followerId: userId, status: 'ACCEPTED' } }),
+  ]);
+
+  if (publicUser.profile) {
+    publicUser.profile.followersCount = followersCount;
+    publicUser.profile.followingCount = followingCount;
+  } else {
+    publicUser.profile = {
+      followersCount,
+      followingCount,
+      postsCount: 0,
+      level: 1,
+      isPrivate: false,
+    };
+  }
+
   return publicUser;
 }
 

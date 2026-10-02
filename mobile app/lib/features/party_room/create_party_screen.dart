@@ -269,31 +269,6 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
 
     LiveRoomModel roomToJoin;
 
-    // Check if owner already has an active room to prevent duplicates (Idempotent room creation)
-    final existingRoom = BackendRepository.instance.getExistingRoomForHost(currentUser.id);
-    if (existingRoom != null) {
-      final updatedRoom = existingRoom.copyWith(
-        title: title,
-        coverUrl: coverUrl,
-        category: _selectedCategory,
-        isPrivate: _privacy != 'Public',
-        roomType: _roomType,
-      );
-      BackendRepository.instance.addLiveRoom(updatedRoom);
-      if (mounted) {
-        setState(() => _isCreating = false);
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => isVideo
-                ? LiveRoomScreen(room: updatedRoom)
-                : LivePartyRoomScreen(room: updatedRoom),
-          ),
-        );
-      }
-      return;
-    }
-
     try {
       roomToJoin = await RoomRepository.instance.createRoom(
         title: title,

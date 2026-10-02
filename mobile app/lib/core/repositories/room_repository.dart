@@ -18,7 +18,7 @@ class RoomRepository {
   }) async {
     String normType = 'LIVE_VIDEO';
     final uType = roomType.toUpperCase().trim();
-    if (uType.contains('AUDIO') || uType.contains('PARTY')) {
+    if (uType.contains('AUDIO') || uType.contains('PARTY') || uType.contains('VOICE')) {
       normType = 'AUDIO_PARTY';
     }
 

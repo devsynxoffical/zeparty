@@ -256,12 +256,19 @@ export async function findFollowingUserIds(followerId, db = prisma) {
 }
 
 export async function findFollowers(userId, { page = 1, limit = 20 } = {}, db = prisma) {
+  let targetId = userId;
+  const foundUser = await db.user.findFirst({
+    where: { OR: [{ id: userId }, { username: userId }] },
+    select: { id: true },
+  });
+  if (foundUser) targetId = foundUser.id;
+
   const parsedLimit = Math.max(1, Math.min(100, Number(limit) || 20));
   const parsedPage = Math.max(1, Number(page) || 1);
   const skip = (parsedPage - 1) * parsedLimit;
 
   const where = {
-    followingId: userId,
+    followingId: targetId,
     status: 'ACCEPTED',
   };
 
@@ -311,12 +318,19 @@ export async function findFollowers(userId, { page = 1, limit = 20 } = {}, db = 
 }
 
 export async function findFollowing(userId, { page = 1, limit = 20 } = {}, db = prisma) {
+  let targetId = userId;
+  const foundUser = await db.user.findFirst({
+    where: { OR: [{ id: userId }, { username: userId }] },
+    select: { id: true },
+  });
+  if (foundUser) targetId = foundUser.id;
+
   const parsedLimit = Math.max(1, Math.min(100, Number(limit) || 20));
   const parsedPage = Math.max(1, Number(page) || 1);
   const skip = (parsedPage - 1) * parsedLimit;
 
   const where = {
-    followerId: userId,
+    followerId: targetId,
     status: 'ACCEPTED',
   };
 
@@ -370,34 +384,46 @@ export async function findFollowing(userId, { page = 1, limit = 20 } = {}, db = 
 // ============================================================
 
 export async function incrementFollowersCount(userId, db = prisma) {
-  return await db.userProfile.updateMany({
+  const count = await db.follow.count({
+    where: { followingId: userId, status: 'ACCEPTED' },
+  });
+  return await db.userProfile.upsert({
     where: { userId },
-    data: { followersCount: { increment: 1 } },
+    update: { followersCount: count },
+    create: { userId, followersCount: count },
   });
 }
 
 export async function decrementFollowersCount(userId, db = prisma) {
-  const profile = await db.userProfile.findUnique({ where: { userId } });
-  if (!profile || profile.followersCount <= 0) return profile;
-  return await db.userProfile.update({
+  const count = await db.follow.count({
+    where: { followingId: userId, status: 'ACCEPTED' },
+  });
+  return await db.userProfile.upsert({
     where: { userId },
-    data: { followersCount: { decrement: 1 } },
+    update: { followersCount: count },
+    create: { userId, followersCount: count },
   });
 }
 
 export async function incrementFollowingCount(userId, db = prisma) {
-  return await db.userProfile.updateMany({
+  const count = await db.follow.count({
+    where: { followerId: userId, status: 'ACCEPTED' },
+  });
+  return await db.userProfile.upsert({
     where: { userId },
-    data: { followingCount: { increment: 1 } },
+    update: { followingCount: count },
+    create: { userId, followingCount: count },
   });
 }
 
 export async function decrementFollowingCount(userId, db = prisma) {
-  const profile = await db.userProfile.findUnique({ where: { userId } });
-  if (!profile || profile.followingCount <= 0) return profile;
-  return await db.userProfile.update({
+  const count = await db.follow.count({
+    where: { followerId: userId, status: 'ACCEPTED' },
+  });
+  return await db.userProfile.upsert({
     where: { userId },
-    data: { followingCount: { decrement: 1 } },
+    update: { followingCount: count },
+    create: { userId, followingCount: count },
   });
 }
 
@@ -512,13 +538,22 @@ export async function updateUserPrivacy(userId, isPrivate, db = prisma) {
 }
 
 export async function findSocialProfile(userId, db = prisma) {
-  return await db.user.findUnique({
-    where: { id: userId },
+  if (!userId) return null;
+  return await db.user.findFirst({
+    where: {
+      OR: [
+        { id: userId },
+        { username: userId },
+        { email: userId },
+      ],
+    },
     select: {
       id: true,
       username: true,
       avatarUrl: true,
       bio: true,
+      region: true,
+      countryCode: true,
       status: true,
       createdAt: true,
       profile: {

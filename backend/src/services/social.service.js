@@ -596,17 +596,15 @@ export async function followUser(followerId, followingId, db = prisma) {
     return { success: true, alreadyFollowing: true, status: existing.status };
   }
 
-  const status = targetUser.profile?.isPrivate ? 'PENDING' : 'ACCEPTED';
+  const status = 'ACCEPTED';
 
   try {
     const follow = await socialRepository.createFollow({ followerId, followingId, status }, db);
 
-    if (status === 'ACCEPTED') {
-      await Promise.all([
-        socialRepository.incrementFollowingCount(followerId, db),
-        socialRepository.incrementFollowersCount(followingId, db),
-      ]);
-    }
+    await Promise.all([
+      socialRepository.incrementFollowingCount(followerId, db),
+      socialRepository.incrementFollowersCount(followingId, db),
+    ]);
 
     socketEmitter.emitToUser(followingId, SOCKET_EVENTS.FOLLOW_CREATED, {
       followerId,
@@ -750,6 +748,11 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     isBlockedByViewer = blocked;
   }
 
+  const [followersCount, followingCount] = await Promise.all([
+    db.follow.count({ where: { followingId: targetUserId, status: 'ACCEPTED' } }),
+    db.follow.count({ where: { followerId: targetUserId, status: 'ACCEPTED' } }),
+  ]);
+
   const isPrivate = Boolean(user.profile?.isPrivate);
   const canViewPosts = !isPrivate || isFollowing || viewerUserId === targetUserId;
 
@@ -764,8 +767,8 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     svipLevel: user.profile?.svipLevel || 0,
     nobleRank: user.profile?.nobleRank || null,
     isPrivate,
-    followersCount: user.profile?.followersCount || 0,
-    followingCount: user.profile?.followingCount || 0,
+    followersCount,
+    followingCount,
     postsCount: user.profile?.postsCount || 0,
     isFollowing,
     isFollowedBy,
