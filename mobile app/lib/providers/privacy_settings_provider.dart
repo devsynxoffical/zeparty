@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../models/user_model.dart';
+import '../core/repositories/social_repository.dart';
 
 class PrivacySettingItem {
   final String key;
@@ -28,6 +30,7 @@ class PrivacySettingsProvider extends ChangeNotifier {
   bool _hideLevelBadges = false;
   bool _blockStrangersDm = false;
   bool _hideCpRelationship = false;
+  bool _hideFollowList = false;
 
   bool get stealthRoomEntry => _stealthRoomEntry;
   bool get anonymousGifting => _anonymousGifting;
@@ -35,8 +38,16 @@ class PrivacySettingsProvider extends ChangeNotifier {
   bool get hideLevelBadges => _hideLevelBadges;
   bool get blockStrangersDm => _blockStrangersDm;
   bool get hideCpRelationship => _hideCpRelationship;
+  bool get hideFollowList => _hideFollowList;
 
   static const List<PrivacySettingItem> privacyCatalog = [
+    PrivacySettingItem(
+      key: 'hide_follow_list',
+      title: 'Private Followers & Following',
+      description: 'Hide your followers and following lists from other users. Total counts remain visible.',
+      icon: Icons.people_outline_rounded,
+      isGated: false,
+    ),
     PrivacySettingItem(
       key: 'stealth_entry',
       title: 'Stealth Room Entry',
@@ -89,16 +100,36 @@ class PrivacySettingsProvider extends ChangeNotifier {
     ),
   ];
 
+  void initFromUser(UserModel user) {
+    _hideFollowList = user.isPrivate;
+    notifyListeners();
+  }
+
   bool canEnable(String key, int userSvipLevel) {
     final item = privacyCatalog.firstWhere((i) => i.key == key, orElse: () => privacyCatalog.first);
     if (!item.isGated) return true;
     return userSvipLevel >= item.requiredSvipLevel;
   }
 
+  Future<void> updateFollowListPrivacy(bool hide, {VoidCallback? onSynced}) async {
+    _hideFollowList = hide;
+    notifyListeners();
+
+    try {
+      await SocialRepository.instance.updatePrivacySettings(isPrivate: hide);
+      onSynced?.call();
+    } catch (_) {
+      // Keep optimistic state or handle gracefully
+    }
+  }
+
   void toggleSetting(String key, int userSvipLevel) {
     if (!canEnable(key, userSvipLevel)) return;
 
     switch (key) {
+      case 'hide_follow_list':
+        updateFollowListPrivacy(!_hideFollowList);
+        break;
       case 'stealth_entry':
         _stealthRoomEntry = !_stealthRoomEntry;
         break;

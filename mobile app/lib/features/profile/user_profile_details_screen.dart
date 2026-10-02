@@ -914,7 +914,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                               child: Row(
                                 children: [
                                   Text(
-                                    '${AppFormatters.formatNumber(context.read<AuthProvider>().followingUserIds.length)} ',
+                                    '${AppFormatters.formatNumber(_isMe ? context.read<AuthProvider>().followingUserIds.length : (_user?.following ?? 0))} ',
                                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: primaryText),
                                   ),
                                   Text('Following', style: TextStyle(fontSize: 12, color: secondaryText)),

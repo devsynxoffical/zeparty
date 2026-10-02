@@ -55,8 +55,13 @@ export const reportContentSchema = z.object({
 });
 
 export const privacySettingsSchema = z.object({
-  isPrivate: z.boolean(),
-});
+  isPrivate: z.boolean().optional(),
+  hideFollowList: z.boolean().optional(),
+  hideOnline: z.boolean().optional(),
+  hideLevels: z.boolean().optional(),
+  blockStrangersDm: z.boolean().optional(),
+  hideCpRelationship: z.boolean().optional(),
+}).refine(data => Object.keys(data).length > 0, 'At least one privacy setting must be provided');
 
 export default {
   createPostSchema,

@@ -59,6 +59,7 @@ class UserModel {
   final String status;
   final int likesReceived;
   final bool isCountryLocked;
+  final bool isPrivate;
 
 
   static const UserModel empty = UserModel(
@@ -98,6 +99,7 @@ class UserModel {
     profileCompleted: false,
     likesReceived: 0,
     isCountryLocked: false,
+    isPrivate: false,
   );
 
   const UserModel({
@@ -151,6 +153,7 @@ class UserModel {
     this.status = 'ACTIVE',
     this.likesReceived = 0,
     this.isCountryLocked = false,
+    this.isPrivate = false,
   });
 
   /// Automatically calculate exact age from date of birth securely
@@ -303,6 +306,7 @@ class UserModel {
               ? json['likesReceived'] as int
               : (json['likesCount'] is int ? json['likesCount'] as int : 0)),
       isCountryLocked: json['isCountryLocked'] == true || profile['isCountryLocked'] == true,
+      isPrivate: json['isPrivate'] == true || profile['isPrivate'] == true,
     );
   }
 
@@ -388,6 +392,7 @@ class UserModel {
       'accountLevel': accountLevel,
       'likesReceived': likesReceived,
       'isCountryLocked': isCountryLocked,
+      'isPrivate': isPrivate,
     };
   }
 
@@ -442,6 +447,7 @@ class UserModel {
     String? status,
     int? likesReceived,
     bool? isCountryLocked,
+    bool? isPrivate,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -470,7 +476,7 @@ class UserModel {
       agencyName: agencyName ?? this.agencyName,
       sellerBalance: sellerBalance ?? this.sellerBalance,
       isOnline: isOnline ?? this.isOnline,
-      isLive: isLive ?? this.isLive,
+      isLive: liveRoomId != null ? true : (isLive ?? this.isLive),
       liveRoomId: liveRoomId ?? this.liveRoomId,
       avatarFrame: avatarFrame ?? this.avatarFrame,
       badge: badge ?? this.badge,
@@ -494,6 +500,7 @@ class UserModel {
       status: status ?? this.status,
       likesReceived: likesReceived ?? this.likesReceived,
       isCountryLocked: isCountryLocked ?? this.isCountryLocked,
+      isPrivate: isPrivate ?? this.isPrivate,
     );
   }
 }

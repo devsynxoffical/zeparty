@@ -29,12 +29,15 @@ export async function putPrivacySettings(req, res, next) {
   try {
     const userId = req.auth?.userId;
     const validatedData = privacySettingsSchema.parse(req.body);
+    const isPrivate = validatedData.isPrivate !== undefined
+      ? validatedData.isPrivate
+      : (validatedData.hideFollowList !== undefined ? validatedData.hideFollowList : false);
 
-    const result = await socialService.updatePrivacySettings(userId, validatedData.isPrivate);
+    const result = await socialService.updatePrivacySettings(userId, isPrivate);
 
     return res.status(200).json({
       success: true,
-      message: `Account privacy updated to ${validatedData.isPrivate ? 'PRIVATE' : 'PUBLIC'} successfully`,
+      message: `Privacy settings updated successfully (${isPrivate ? 'PRIVATE' : 'PUBLIC'})`,
       data: result,
     });
   } catch (err) {
@@ -87,8 +90,9 @@ export async function getFollowers(req, res, next) {
 
     return res.status(200).json({
       success: true,
-      message: 'Followers retrieved successfully',
+      message: result.message || 'Followers retrieved successfully',
       data: result.followers,
+      isPrivate: result.isPrivate ?? false,
       pagination: result.pagination,
     });
   } catch (err) {
@@ -107,8 +111,9 @@ export async function getFollowing(req, res, next) {
 
     return res.status(200).json({
       success: true,
-      message: 'Following list retrieved successfully',
+      message: result.message || 'Following list retrieved successfully',
       data: result.following,
+      isPrivate: result.isPrivate ?? false,
       pagination: result.pagination,
     });
   } catch (err) {

@@ -278,12 +278,19 @@ export async function findFollowers(userId, { page = 1, limit = 20 } = {}, db = 
             id: true,
             username: true,
             avatarUrl: true,
+            bio: true,
+            gender: true,
+            region: true,
             status: true,
             profile: {
               select: {
                 displayName: true,
                 level: true,
+                vipLevel: true,
+                svipLevel: true,
                 isPrivate: true,
+                followersCount: true,
+                followingCount: true,
               },
             },
           },
@@ -326,12 +333,19 @@ export async function findFollowing(userId, { page = 1, limit = 20 } = {}, db = 
             id: true,
             username: true,
             avatarUrl: true,
+            bio: true,
+            gender: true,
+            region: true,
             status: true,
             profile: {
               select: {
                 displayName: true,
                 level: true,
+                vipLevel: true,
+                svipLevel: true,
                 isPrivate: true,
+                followersCount: true,
+                followingCount: true,
               },
             },
           },
@@ -487,9 +501,13 @@ export async function createReport(data, db = prisma) {
 // ============================================================
 
 export async function updateUserPrivacy(userId, isPrivate, db = prisma) {
-  return await db.userProfile.update({
+  return await db.userProfile.upsert({
     where: { userId },
-    data: { isPrivate: Boolean(isPrivate) },
+    update: { isPrivate: Boolean(isPrivate) },
+    create: {
+      userId,
+      isPrivate: Boolean(isPrivate),
+    },
   });
 }
 

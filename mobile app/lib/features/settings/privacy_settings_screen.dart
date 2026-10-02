@@ -2,12 +2,27 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/privacy_settings_provider.dart';
 import '../../providers/svip_provider.dart';
 import '../svip/svip_center_screen.dart';
 
-class PrivacySettingsScreen extends StatelessWidget {
+class PrivacySettingsScreen extends StatefulWidget {
   const PrivacySettingsScreen({super.key});
+
+  @override
+  State<PrivacySettingsScreen> createState() => _PrivacySettingsScreenState();
+}
+
+class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthProvider>();
+      context.read<PrivacySettingsProvider>().initFromUser(auth.currentUser);
+    });
+  }
 
   void _showUnlockModal(BuildContext context, PrivacySettingItem item, int currentSvipLevel, bool isDark) {
     showDialog(
@@ -84,12 +99,13 @@ class PrivacySettingsScreen extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final privacy = context.watch<PrivacySettingsProvider>();
     final svip = context.watch<SVIPProvider>();
+    final auth = context.watch<AuthProvider>();
     final userSvipLevel = svip.currentLevel;
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
       appBar: AppBar(
-        title: const Text('Privacy & Security Unlocks', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text('Privacy & Security Settings', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: AppColors.getBackground(isDark),
         elevation: 0,
       ),
@@ -113,9 +129,9 @@ class PrivacySettingsScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Privilege Gated Privacy Controls', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                      const Text('Privacy & Visibility Controls', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                       const SizedBox(height: 2),
-                      Text('Active Tier: SVIP $userSvipLevel • Server-Authoritative Flags', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                      Text('Active Tier: SVIP $userSvipLevel • Live Real-Time Privacy', style: const TextStyle(color: Colors.white70, fontSize: 11)),
                     ],
                   ),
                 ),
@@ -124,12 +140,43 @@ class PrivacySettingsScreen extends StatelessWidget {
           ),
 
           const SizedBox(height: 20),
+          Text('FOLLOWERS & SOCIAL VISIBILITY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.getPrimary(isDark), letterSpacing: 1.2)),
+          const SizedBox(height: 8),
+
+          _buildPrivacyTile(
+            context,
+            item: PrivacySettingsProvider.privacyCatalog[0], // hide_follow_list
+            value: privacy.hideFollowList,
+            userSvipLevel: userSvipLevel,
+            isDark: isDark,
+            privacy: privacy,
+            onToggle: (newVal) async {
+              await privacy.updateFollowListPrivacy(newVal);
+              auth.updateCurrentUser(auth.currentUser.copyWith(isPrivate: newVal));
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: newVal ? const Color(0xFF1A237E) : const Color(0xFF004D40),
+                    content: Text(
+                      newVal
+                          ? '🔒 Followers & Following list is now Private. Others will only see the total counts.'
+                          : '🌐 Followers & Following list is now Public to everyone.',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+          ),
+
+          const SizedBox(height: 20),
           Text('ROOM & STREAMING PRIVACY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.getPrimary(isDark), letterSpacing: 1.2)),
           const SizedBox(height: 8),
 
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[0], // stealth_entry
+            item: PrivacySettingsProvider.privacyCatalog[1], // stealth_entry
             value: privacy.stealthRoomEntry,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
@@ -137,7 +184,7 @@ class PrivacySettingsScreen extends StatelessWidget {
           ),
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[1], // anonymous_gifting
+            item: PrivacySettingsProvider.privacyCatalog[2], // anonymous_gifting
             value: privacy.anonymousGifting,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
@@ -150,7 +197,7 @@ class PrivacySettingsScreen extends StatelessWidget {
 
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[2], // hide_online
+            item: PrivacySettingsProvider.privacyCatalog[3], // hide_online
             value: privacy.hideOnlinePresence,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
@@ -158,7 +205,7 @@ class PrivacySettingsScreen extends StatelessWidget {
           ),
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[3], // hide_levels
+            item: PrivacySettingsProvider.privacyCatalog[4], // hide_levels
             value: privacy.hideLevelBadges,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
@@ -166,7 +213,7 @@ class PrivacySettingsScreen extends StatelessWidget {
           ),
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[5], // hide_cp_relationship
+            item: PrivacySettingsProvider.privacyCatalog[6], // hide_cp_relationship
             value: privacy.hideCpRelationship,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
@@ -179,7 +226,7 @@ class PrivacySettingsScreen extends StatelessWidget {
 
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[4], // block_strangers_dm
+            item: PrivacySettingsProvider.privacyCatalog[5], // block_strangers_dm
             value: privacy.blockStrangersDm,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
@@ -197,6 +244,7 @@ class PrivacySettingsScreen extends StatelessWidget {
     required int userSvipLevel,
     required bool isDark,
     required PrivacySettingsProvider privacy,
+    ValueChanged<bool>? onToggle,
   }) {
     final canEnable = privacy.canEnable(item.key, userSvipLevel);
 
@@ -250,6 +298,8 @@ class PrivacySettingsScreen extends StatelessWidget {
           onChanged: (newVal) {
             if (!canEnable) {
               _showUnlockModal(context, item, userSvipLevel, isDark);
+            } else if (onToggle != null) {
+              onToggle(newVal);
             } else {
               privacy.toggleSetting(item.key, userSvipLevel);
             }
