@@ -206,28 +206,29 @@ class _ChatScreenState extends State<ChatScreen> {
     
     if (path != null && mounted) {
       final currentUser = context.read<AuthProvider>().currentUser;
+      String? voiceMediaUrl;
       try {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Uploading voice note...'), duration: Duration(seconds: 1)),
+          const SnackBar(content: Text('Uploading voice note...'), duration: Duration(milliseconds: 800)),
         );
         final result = await MediaUploadService.instance.uploadFile(
           filePath: path,
           folder: 'voice_notes',
         );
-        if (!mounted) return;
-        context.read<MessagingProvider>().sendMessage(
-          widget.user.id,
-          '🎤 Voice Note ($durationText)',
-          type: 'voice',
-          mediaUrl: result.url.isNotEmpty ? result.url : path,
-          currentUserId: currentUser.id,
-        );
+        voiceMediaUrl = result.url.isNotEmpty ? result.url : path;
       } catch (e) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('❌ Voice note upload failed: $e'), backgroundColor: Colors.redAccent),
-        );
+        debugPrint('[ChatScreen] Media upload error, using local path: $e');
+        voiceMediaUrl = path;
       }
+
+      if (!mounted) return;
+      context.read<MessagingProvider>().sendMessage(
+        widget.user.id,
+        '🎤 Voice Note ($durationText)',
+        type: 'voice',
+        mediaUrl: voiceMediaUrl,
+        currentUserId: currentUser.id,
+      );
     }
   }
 

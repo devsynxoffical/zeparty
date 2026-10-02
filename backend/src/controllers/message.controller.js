@@ -50,7 +50,7 @@ export async function sendMessage(req, res, next) {
   try {
     const userId = req.auth?.userId;
     const { targetUserId } = req.params;
-    const { content } = req.body;
+    const { content, type, mediaUrl } = req.body;
 
     if (!userId) {
       return res.status(401).json({
@@ -60,7 +60,7 @@ export async function sendMessage(req, res, next) {
       });
     }
 
-    const message = await messageService.sendDirectMessage(userId, targetUserId, { content });
+    const message = await messageService.sendDirectMessage(userId, targetUserId, { content, type, mediaUrl });
     return res.status(201).json({
       success: true,
       data: message,

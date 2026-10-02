@@ -591,7 +591,12 @@ class MessagingProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _socialRepo.sendMessage(receiverId, content: text);
+      final response = await _socialRepo.sendMessage(
+        receiverId,
+        content: text,
+        type: type,
+        mediaUrl: mediaUrl,
+      );
       final data = response['data'];
       if (data is Map) {
         final serverId = data['id']?.toString();

@@ -12,15 +12,9 @@ export async function getConversationMessages(userId, targetUserId, options = {}
   return await messageRepository.getMessagesBetweenUsers(userId, targetUserId, options);
 }
 
-export async function sendDirectMessage(senderId, targetUserId, { content }) {
+export async function sendDirectMessage(senderId, targetUserId, { content, type = 'text', mediaUrl = null }) {
   if (!content || !content.trim()) {
     const error = new Error('Message content cannot be empty.');
-    error.status = 400;
-    throw error;
-  }
-
-  if (senderId === targetUserId) {
-    const error = new Error('Cannot send a direct message to yourself.');
     error.status = 400;
     throw error;
   }
@@ -34,21 +28,31 @@ export async function sendDirectMessage(senderId, targetUserId, { content }) {
   }
 
   const senderUser = await userRepository.findUserById(senderId);
+  const resolvedSenderId = senderUser?.id || senderId;
+  const resolvedTargetId = targetUser.id;
+
+  if (resolvedSenderId === resolvedTargetId) {
+    const error = new Error('Cannot send a direct message to yourself.');
+    error.status = 400;
+    throw error;
+  }
 
   const message = await messageRepository.createMessage({
-    senderId,
-    recipientId: targetUserId,
+    senderId: resolvedSenderId,
+    recipientId: resolvedTargetId,
     content: content.trim(),
   });
 
   const payload = {
     ...message,
+    type: type || 'text',
+    mediaUrl: mediaUrl || null,
     sender: {
-      id: senderUser.id,
-      username: senderUser.username,
-      name: senderUser.name,
-      displayName: senderUser.name || senderUser.username,
-      avatarUrl: senderUser.avatarUrl || '',
+      id: senderUser?.id || resolvedSenderId,
+      username: senderUser?.username || 'user',
+      name: senderUser?.profile?.displayName || senderUser?.username || 'ZeParty User',
+      displayName: senderUser?.profile?.displayName || senderUser?.username || 'ZeParty User',
+      avatarUrl: senderUser?.avatarUrl || '',
     },
   };
 
@@ -56,8 +60,8 @@ export async function sendDirectMessage(senderId, targetUserId, { content }) {
   try {
     const io = getIO();
     if (io) {
-      io.to(`user:${targetUserId}`).emit('direct_message', payload);
-      io.to(`user:${senderId}`).emit('direct_message_sent', payload);
+      io.to(`user:${resolvedTargetId}`).emit('direct_message', payload);
+      io.to(`user:${resolvedSenderId}`).emit('direct_message_sent', payload);
     }
   } catch (socketErr) {
     // Socket emit failure is non-fatal

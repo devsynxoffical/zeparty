@@ -309,11 +309,15 @@ class SocialRepository {
   Future<Map<String, dynamic>> sendMessage(
     String targetUserId, {
     required String content,
+    String type = 'text',
+    String? mediaUrl,
   }) async {
     final response = await _client.post<Map<String, dynamic>>(
       '/v1/messages/$targetUserId',
       data: {
         'content': content,
+        'type': type,
+        if (mediaUrl != null && mediaUrl.isNotEmpty) 'mediaUrl': mediaUrl,
       },
     );
     return response.data!;

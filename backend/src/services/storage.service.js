@@ -15,7 +15,7 @@ export class StorageService {
 
     // Ensure local upload directories exist
     if (this.storageProvider === 'local') {
-      const subdirs = ['avatars', 'posts', 'rooms', 'banners', 'receipts', 'assets', 'misc'];
+      const subdirs = ['avatars', 'posts', 'rooms', 'banners', 'receipts', 'assets', 'misc', 'voice_notes', 'audios', 'messages'];
       for (const dir of subdirs) {
         const fullPath = path.join(this.uploadDir, dir);
         if (!fs.existsSync(fullPath)) {
@@ -30,15 +30,29 @@ export class StorageService {
    */
   static ALLOWED_MIME_TYPES = {
     // Images
-    'image/jpeg': { ext: 'jpg', maxBytes: 5 * 1024 * 1024 }, // 5 MB
-    'image/png': { ext: 'png', maxBytes: 5 * 1024 * 1024 },
-    'image/webp': { ext: 'webp', maxBytes: 5 * 1024 * 1024 },
-    'image/gif': { ext: 'gif', maxBytes: 8 * 1024 * 1024 },
+    'image/jpeg': { ext: 'jpg', maxBytes: 10 * 1024 * 1024 }, // 10 MB
+    'image/png': { ext: 'png', maxBytes: 10 * 1024 * 1024 },
+    'image/webp': { ext: 'webp', maxBytes: 10 * 1024 * 1024 },
+    'image/gif': { ext: 'gif', maxBytes: 15 * 1024 * 1024 },
+    // Audio / Voice Notes
+    'audio/m4a': { ext: 'm4a', maxBytes: 25 * 1024 * 1024 }, // 25 MB
+    'audio/x-m4a': { ext: 'm4a', maxBytes: 25 * 1024 * 1024 },
+    'audio/mp4': { ext: 'm4a', maxBytes: 25 * 1024 * 1024 },
+    'audio/mpeg': { ext: 'mp3', maxBytes: 25 * 1024 * 1024 },
+    'audio/mp3': { ext: 'mp3', maxBytes: 25 * 1024 * 1024 },
+    'audio/wav': { ext: 'wav', maxBytes: 25 * 1024 * 1024 },
+    'audio/x-wav': { ext: 'wav', maxBytes: 25 * 1024 * 1024 },
+    'audio/aac': { ext: 'aac', maxBytes: 25 * 1024 * 1024 },
+    'audio/ogg': { ext: 'ogg', maxBytes: 25 * 1024 * 1024 },
+    'audio/webm': { ext: 'webm', maxBytes: 25 * 1024 * 1024 },
+    'audio/3gpp': { ext: '3gp', maxBytes: 25 * 1024 * 1024 },
+    'audio/flac': { ext: 'flac', maxBytes: 25 * 1024 * 1024 },
     // Videos
-    'video/mp4': { ext: 'mp4', maxBytes: 50 * 1024 * 1024 }, // 50 MB
-    'video/webm': { ext: 'webm', maxBytes: 50 * 1024 * 1024 },
+    'video/mp4': { ext: 'mp4', maxBytes: 100 * 1024 * 1024 }, // 100 MB
+    'video/webm': { ext: 'webm', maxBytes: 100 * 1024 * 1024 },
+    'video/quicktime': { ext: 'mov', maxBytes: 100 * 1024 * 1024 },
     // Documents / Receipts
-    'application/pdf': { ext: 'pdf', maxBytes: 10 * 1024 * 1024 },
+    'application/pdf': { ext: 'pdf', maxBytes: 15 * 1024 * 1024 },
   };
 
   /**
@@ -47,7 +61,7 @@ export class StorageService {
   validateFile({ buffer, mimeType, size }) {
     const config = StorageService.ALLOWED_MIME_TYPES[mimeType];
     if (!config) {
-      const error = new Error(`Unsupported file type: ${mimeType}. Allowed: JPG, PNG, WEBP, GIF, MP4, WEBM, PDF.`);
+      const error = new Error(`Unsupported file type: ${mimeType}. Allowed: JPG, PNG, WEBP, GIF, M4A, MP3, WAV, AAC, OGG, MP4, WEBM, PDF.`);
       error.status = 400;
       error.code = 'INVALID_MIME_TYPE';
       throw error;
