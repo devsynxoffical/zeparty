@@ -372,7 +372,7 @@ class _InboxScreenState extends State<InboxScreen> {
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 115),
       itemCount: _searchedUsers.length,
       itemBuilder: (ctx, idx) {
         final user = _searchedUsers[idx];
@@ -496,7 +496,7 @@ class _InboxScreenState extends State<InboxScreen> {
     return RefreshIndicator(
       onRefresh: () => messaging.loadConversations(),
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 115),
         itemCount: users.length,
         itemBuilder: (ctx, idx) {
           final user = users[idx];

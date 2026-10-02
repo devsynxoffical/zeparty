@@ -60,7 +60,7 @@ class GamesTab extends StatelessWidget {
         ),
         Expanded(
           child: GridView.builder(
-            padding: const EdgeInsets.only(left: 16, right: 16, top: 4, bottom: 90),
+            padding: const EdgeInsets.only(left: 16, right: 16, top: 4, bottom: 115),
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 1.sw > 900 ? 5 : (1.sw > 600 ? 3 : 2),
               childAspectRatio: 1.1,

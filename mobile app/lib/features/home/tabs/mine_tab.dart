@@ -33,7 +33,7 @@ class _MineTabState extends State<MineTab> {
     final friendUsers = liveRooms.map((r) => r.host).where((u) => u.id != currentUser.id).take(4).toList();
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 90),
+      padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 115),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

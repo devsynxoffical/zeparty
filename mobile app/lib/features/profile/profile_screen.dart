@@ -218,7 +218,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       _buildIdentityAchievements(user, isDark),
                       const SizedBox(height: 24),
                       _buildProfileOptions(context, user, isDark, primary),
-                      const SizedBox(height: 40),
+                      const SizedBox(height: 115),
                     ],
                   ),
                 ),

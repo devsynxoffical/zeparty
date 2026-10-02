@@ -487,7 +487,7 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
       color: AppColors.primary,
       onRefresh: () => social.loadFeed(refresh: true),
       child: ListView.builder(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 115),
         itemCount: posts.length + (social.feedHasMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == posts.length) {
