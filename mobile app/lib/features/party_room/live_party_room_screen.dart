@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
 import '../../core/services/media_upload_service.dart';
+import '../../core/services/room_share_service.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../models/live_room_model.dart';
@@ -685,12 +686,22 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: Colors.amber.withValues(alpha: 0.4), width: 0.8),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.emoji_events_rounded, color: Colors.amber, size: 16),
-                          SizedBox(width: 3),
-                          Text('373M', style: TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                          const Icon(Icons.emoji_events_rounded, color: Colors.amber, size: 16),
+                          const SizedBox(width: 3),
+                          Text(
+                            () {
+                              final pts = provider.totalDiamonds > 0
+                                  ? provider.totalDiamonds
+                                  : (activeRoom.host.diamonds > 0 ? activeRoom.host.diamonds : 0);
+                              if (pts >= 1000000) return '${(pts / 1000000).toStringAsFixed(1)}M';
+                              if (pts >= 1000) return '${(pts / 1000).toStringAsFixed(1)}K';
+                              return '$pts';
+                            }(),
+                            style: const TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                          ),
                         ],
                       ),
                     ),
@@ -702,6 +713,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                     onTap: () => _showRoomTools(context, canManage, isHost, provider, Theme.of(context).brightness == Brightness.dark),
                     child: const Icon(Icons.grid_view_rounded, color: Colors.white, size: 22),
                   ),
+
                   const SizedBox(width: 8),
 
                   // Minimize to Floating Overlay
@@ -1178,6 +1190,19 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       _buildRoomToolBtn(Icons.card_giftcard_rounded, 'Send Gift', Colors.pinkAccent, () {
                         Navigator.pop(ctx);
                         _openGiftDialog();
+                      }),
+                      _buildRoomToolBtn(Icons.share_rounded, 'Share Link', Colors.lightBlueAccent, () {
+                        Navigator.pop(ctx);
+                        RoomShareService.shareRoom(
+                          context,
+                          roomId: widget.room.id,
+                          roomTitle: widget.room.title,
+                          isParty: true,
+                        );
+                      }),
+                      _buildRoomToolBtn(Icons.airline_seat_recline_normal_rounded, 'Assign Seat', Colors.tealAccent, () {
+                        Navigator.pop(ctx);
+                        _showManagementPanel(context, isDark, provider);
                       }),
                       _buildRoomToolBtn(Icons.rocket_launch_rounded, 'Rocket Game', Colors.indigoAccent, () {
                         Navigator.pop(ctx);

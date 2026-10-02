@@ -10,6 +10,7 @@ import '../../core/theme/theme_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/live_room_model.dart';
 import 'live_party_room_screen.dart';
+import '../live/live_room_screen.dart';
 
 class CreatePartyScreen extends StatefulWidget {
   const CreatePartyScreen({super.key});
@@ -264,6 +265,7 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
         ? _nameController.text.trim()
         : '${currentUser.name}\'s Party';
     final coverUrl = _selectedCoverUrl ?? (currentUser.avatarUrl.isNotEmpty ? currentUser.avatarUrl : _dummyCovers[0]);
+    final isVideo = _roomType == 'LIVE_VIDEO';
 
     LiveRoomModel roomToJoin;
 
@@ -275,14 +277,18 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
         coverUrl: coverUrl,
         category: _selectedCategory,
         isPrivate: _privacy != 'Public',
-        roomType: 'AUDIO_PARTY',
+        roomType: _roomType,
       );
       BackendRepository.instance.addLiveRoom(updatedRoom);
       if (mounted) {
         setState(() => _isCreating = false);
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: updatedRoom)),
+          MaterialPageRoute(
+            builder: (_) => isVideo
+                ? LiveRoomScreen(room: updatedRoom)
+                : LivePartyRoomScreen(room: updatedRoom),
+          ),
         );
       }
       return;
@@ -292,14 +298,14 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
       roomToJoin = await RoomRepository.instance.createRoom(
         title: title,
         coverImageUrl: coverUrl,
-        roomType: 'AUDIO_PARTY',
+        roomType: _roomType,
         category: _selectedCategory,
         isPrivate: _privacy != 'Public',
       );
     } catch (e) {
       debugPrint('[CreateParty] Backend createRoom error: $e, using local fallback');
       roomToJoin = LiveRoomModel(
-        id: 'party_${currentUser.id}',
+        id: isVideo ? 'live_${currentUser.id}' : 'party_${currentUser.id}',
         title: title,
         host: currentUser,
         coverUrl: coverUrl,
@@ -307,7 +313,7 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
         category: _selectedCategory,
         isPrivate: _privacy != 'Public',
         startTime: DateTime.now(),
-        roomType: 'AUDIO_PARTY',
+        roomType: _roomType,
         seatCapacity: _capacity,
       );
     } finally {
@@ -319,7 +325,11 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
     if (mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: roomToJoin)),
+        MaterialPageRoute(
+          builder: (_) => isVideo
+              ? LiveRoomScreen(room: roomToJoin)
+              : LivePartyRoomScreen(room: roomToJoin),
+        ),
       );
     }
   }
@@ -449,8 +459,26 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
             DropdownButtonFormField<String>(
               initialValue: _roomType,
               items: const [
-                DropdownMenuItem(value: 'AUDIO_PARTY', child: Text('Voice Room (Party)')),
-                DropdownMenuItem(value: 'LIVE_VIDEO', child: Text('Video Room (Live)')),
+                DropdownMenuItem(
+                  value: 'AUDIO_PARTY',
+                  child: Row(
+                    children: [
+                      Icon(Icons.mic_rounded, color: Colors.amber, size: 20),
+                      SizedBox(width: 10),
+                      Text('🎙️ Voice Room (Multi-Seat Audio Party)'),
+                    ],
+                  ),
+                ),
+                DropdownMenuItem(
+                  value: 'LIVE_VIDEO',
+                  child: Row(
+                    children: [
+                      Icon(Icons.videocam_rounded, color: Colors.pinkAccent, size: 20),
+                      SizedBox(width: 10),
+                      Text('📹 Video Room (Live Camera Broadcast)'),
+                    ],
+                  ),
+                ),
               ],
               onChanged: (val) => setState(() => _roomType = val!),
               decoration: InputDecoration(
@@ -504,7 +532,21 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
                 ),
                 child: _isCreating
                     ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
-                    : const Text('Create Party', style: TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold)),
+                    : Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _roomType == 'LIVE_VIDEO' ? Icons.videocam_rounded : Icons.mic_rounded,
+                            color: Colors.black,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _roomType == 'LIVE_VIDEO' ? 'Start Video Live Room' : 'Start Voice Party Room',
+                            style: const TextStyle(color: Colors.black, fontSize: 16, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
               ),
             ),
           ],

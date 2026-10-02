@@ -667,23 +667,26 @@ export async function getFollowers(userId, { viewerUserId = null, page = 1, limi
     throw error;
   }
 
+  // If user turned on private / hidden follow list and viewer is not the profile owner
   if (profile.profile?.isPrivate && userId !== viewerUserId) {
-    if (!viewerUserId) {
-      const error = new Error('User not found');
-      error.statusCode = 404;
-      error.code = 'USER_NOT_FOUND';
-      throw error;
-    }
-    const follow = await socialRepository.findFollow({ followerId: viewerUserId, followingId: userId }, db);
-    if (!follow || follow.status !== 'ACCEPTED') {
-      const error = new Error('User not found');
-      error.statusCode = 404;
-      error.code = 'USER_NOT_FOUND';
-      throw error;
-    }
+    return {
+      followers: [],
+      isPrivate: true,
+      message: 'This user has set their followers list to private',
+      pagination: {
+        page: Number(page) || 1,
+        limit: Number(limit) || 20,
+        total: profile.profile?.followersCount || 0,
+        totalPages: 0,
+      },
+    };
   }
 
-  return await socialRepository.findFollowers(userId, { page, limit }, db);
+  const result = await socialRepository.findFollowers(userId, { page, limit }, db);
+  return {
+    ...result,
+    isPrivate: false,
+  };
 }
 
 export async function getFollowing(userId, { viewerUserId = null, page = 1, limit = 20 } = {}, db = prisma) {
@@ -695,23 +698,26 @@ export async function getFollowing(userId, { viewerUserId = null, page = 1, limi
     throw error;
   }
 
+  // If user turned on private / hidden follow list and viewer is not the profile owner
   if (profile.profile?.isPrivate && userId !== viewerUserId) {
-    if (!viewerUserId) {
-      const error = new Error('User not found');
-      error.statusCode = 404;
-      error.code = 'USER_NOT_FOUND';
-      throw error;
-    }
-    const follow = await socialRepository.findFollow({ followerId: viewerUserId, followingId: userId }, db);
-    if (!follow || follow.status !== 'ACCEPTED') {
-      const error = new Error('User not found');
-      error.statusCode = 404;
-      error.code = 'USER_NOT_FOUND';
-      throw error;
-    }
+    return {
+      following: [],
+      isPrivate: true,
+      message: 'This user has set their following list to private',
+      pagination: {
+        page: Number(page) || 1,
+        limit: Number(limit) || 20,
+        total: profile.profile?.followingCount || 0,
+        totalPages: 0,
+      },
+    };
   }
 
-  return await socialRepository.findFollowing(userId, { page, limit }, db);
+  const result = await socialRepository.findFollowing(userId, { page, limit }, db);
+  return {
+    ...result,
+    isPrivate: false,
+  };
 }
 
 // ============================================================

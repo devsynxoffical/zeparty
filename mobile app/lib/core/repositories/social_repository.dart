@@ -133,6 +133,15 @@ class SocialRepository {
     return response.data!;
   }
 
+  /// PUT /v1/users/me/privacy
+  Future<Map<String, dynamic>> updatePrivacySettings({required bool isPrivate}) async {
+    final response = await _client.put<Map<String, dynamic>>(
+      '/v1/users/me/privacy',
+      data: {'isPrivate': isPrivate, 'hideFollowList': isPrivate},
+    );
+    return response.data!;
+  }
+
   // ─── Follow / Unfollow ────────────────────────────────────────────────────
 
   /// POST /v1/users/:id/follow

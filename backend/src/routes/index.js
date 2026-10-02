@@ -39,8 +39,15 @@ import { userGameRouter, adminGameRouter } from './game.routes.js';
 import mediaRoutes from './media.routes.js';
 import { userPKRouter, adminPKRouter } from './pk.routes.js';
 import messageRouter from './message.routes.js';
+import leaderboardRouter from './leaderboard.routes.js';
 
 const router = express.Router();
+
+// Leaderboard & Global Rankings routes
+router.use('/v1/rankings', leaderboardRouter);
+router.use('/rankings', leaderboardRouter);
+router.use('/v1/leaderboard', leaderboardRouter);
+router.use('/leaderboard', leaderboardRouter);
 
 // Direct Messaging routes
 router.use('/v1/messages', messageRouter);

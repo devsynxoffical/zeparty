@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
@@ -26,11 +27,14 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderStateMixin {
+  static const String _recentSearchesKey = 'zeparty_recent_searches_history';
   late TabController _tabController;
   final List<String> _tabs = ['Users', 'Hosts', 'Live Rooms', 'Videos', 'Sounds', 'Hashtags'];
   final _searchController = TextEditingController();
   String _currentQuery = '';
   Timer? _debounceTimer;
+
+  List<String> _recentSearches = [];
 
   // Real backend query results
   List<UserModel> _searchedUsers = [];
@@ -41,7 +45,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   bool _isLoadingRooms = false;
   bool _isLoadingPosts = false;
 
-  final List<String> _trendingTags = [
+  final List<String> _allTrendingTags = [
     '#ZePartyFest',
     '#MusicLive',
     '#PKBattle2026',
@@ -49,22 +53,23 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     '#TalentShowcase',
     '#SingWithMe',
     '#NightVibes',
+    '#DanceParty',
   ];
 
-  final List<String> _trendingSounds = [
-    'ZeParty Official Beat - Audio Studio',
-    'Cyber Night Wave - DJ Pulse',
-    'Golden Party Anthem - Star Records',
-    'Acoustic Chill Acoustic - Velvet Sound',
-    'Arabic Lounge Vibes - Habibi Remix',
+  final List<Map<String, String>> _allSounds = [
+    {'title': 'ZeParty Official Beat', 'artist': 'ZeParty Audio Studio', 'uses': '14.2K'},
+    {'title': 'Cyber Night Wave', 'artist': 'DJ Pulse', 'uses': '8.9K'},
+    {'title': 'Golden Party Anthem', 'artist': 'Star Records', 'uses': '22.1K'},
+    {'title': 'Acoustic Chill Vibes', 'artist': 'Velvet Sound', 'uses': '5.4K'},
+    {'title': 'Arabic Lounge Remix', 'artist': 'Habibi Beats', 'uses': '11.8K'},
   ];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
-    // Initial fetch of active rooms and popular users
-    _performBackendSearch('');
+    _loadRecentSearches();
+    // Do NOT perform query on empty string to respect history-only initial view
   }
 
   @override
@@ -75,6 +80,55 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     super.dispose();
   }
 
+  Future<void> _loadRecentSearches() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_recentSearchesKey) ?? [];
+      if (mounted) {
+        setState(() {
+          _recentSearches = list.take(5).toList();
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveSearchQuery(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+
+    final updated = [trimmed, ..._recentSearches.where((s) => s.toLowerCase() != trimmed.toLowerCase())].take(5).toList();
+
+    setState(() {
+      _recentSearches = updated;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_recentSearchesKey, updated);
+    } catch (_) {}
+  }
+
+  Future<void> _removeRecentSearch(String item) async {
+    final updated = _recentSearches.where((s) => s != item).toList();
+    setState(() {
+      _recentSearches = updated;
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_recentSearchesKey, updated);
+    } catch (_) {}
+  }
+
+  Future<void> _clearAllRecentSearches() async {
+    setState(() {
+      _recentSearches.clear();
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_recentSearchesKey);
+    } catch (_) {}
+  }
+
   void _onSearchChanged(String query) {
     final trimmed = query.trim();
     setState(() {
@@ -82,12 +136,27 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     });
 
     _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 350), () {
+    if (trimmed.isEmpty) {
+      setState(() {
+        _searchedUsers.clear();
+        _searchedRooms.clear();
+        _searchedPosts.clear();
+        _isLoadingUsers = false;
+        _isLoadingRooms = false;
+        _isLoadingPosts = false;
+      });
+      return;
+    }
+
+    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
       _performBackendSearch(trimmed);
     });
   }
 
   Future<void> _performBackendSearch(String query) async {
+    if (query.isEmpty) return;
+    _saveSearchQuery(query);
+
     final client = ApiClient.instance;
 
     // 1. Search Users & Hosts
@@ -97,7 +166,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         '/v1/users/search',
         queryParameters: {
           'q': query,
-          'limit': 30,
+          'limit': 50,
         },
       );
       final rawList = res.data?['data'];
@@ -125,8 +194,8 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       final res = await client.get<Map<String, dynamic>>(
         '/v1/rooms/active',
         queryParameters: {
-          if (query.isNotEmpty) 'search': query,
-          'limit': 30,
+          'search': query,
+          'limit': 50,
         },
       );
       final rawRooms = res.data?['data'];
@@ -154,7 +223,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       final res = await client.get<Map<String, dynamic>>(
         '/v1/feed',
         queryParameters: {
-          'limit': 30,
+          'limit': 50,
         },
       );
       final rawPosts = res.data?['data'];
@@ -163,10 +232,11 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         for (final item in rawPosts) {
           if (item is Map<String, dynamic>) {
             final p = PostModel.fromJson(item);
-            if (query.isEmpty ||
-                p.content.toLowerCase().contains(query.toLowerCase()) ||
-                p.author.name.toLowerCase().contains(query.toLowerCase()) ||
-                p.author.username.toLowerCase().contains(query.toLowerCase())) {
+            final q = query.toLowerCase();
+            if (p.content.toLowerCase().contains(q) ||
+                p.author.name.toLowerCase().contains(q) ||
+                p.author.username.toLowerCase().contains(q) ||
+                p.author.displayName.toLowerCase().contains(q)) {
               loadedPosts.add(p);
             }
           }
@@ -183,33 +253,12 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     }
   }
 
-  void _toggleFollow(String userId, String userName) {
-    final auth = context.read<AuthProvider>();
-    if (auth.isFollowing(userId)) {
-      auth.unfollowUser(userId);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Unfollowed $userName'),
-          duration: const Duration(seconds: 1),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } else {
-      auth.followUser(userId);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✨ You are now following $userName!'),
-          backgroundColor: AppColors.success,
-          duration: const Duration(seconds: 1),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
-
   void _navigateToRoom(BuildContext context, LiveRoomModel room) {
-    final isParty = room.category.toLowerCase() == 'party' || room.id.startsWith('party_');
-    if (isParty) {
+    final isVoiceParty = room.roomType == 'AUDIO_PARTY' ||
+        room.roomType == 'AUDIO' ||
+        room.category.toLowerCase() == 'party' ||
+        room.id.startsWith('party_');
+    if (isVoiceParty) {
       Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: room)),
@@ -225,6 +274,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     final isDark = Provider.of<ThemeProvider>(context).isDarkMode;
+    final hasQuery = _currentQuery.isNotEmpty;
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -243,11 +293,15 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
           ),
           child: TextField(
             controller: _searchController,
-            autofocus: false,
+            autofocus: true,
             onChanged: _onSearchChanged,
+            onSubmitted: (val) {
+              _saveSearchQuery(val);
+              _performBackendSearch(val.trim());
+            },
             style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Search user ID, username, room ID, host...',
+              hintText: 'Search by User ID, username, room ID, host...',
               hintStyle: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
               prefixIcon: Icon(Icons.search_rounded, size: 20, color: AppColors.getPrimary(isDark)),
               suffixIcon: _searchController.text.isNotEmpty
@@ -266,33 +320,142 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
             ),
           ),
         ),
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          indicatorColor: AppColors.getPrimary(isDark),
-          labelColor: AppColors.getPrimary(isDark),
-          unselectedLabelColor: AppColors.getTextSecondary(isDark),
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 14),
-          tabs: _tabs.map((t) => Tab(text: t)).toList(),
-        ),
+        bottom: hasQuery
+            ? TabBar(
+                controller: _tabController,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                indicatorColor: AppColors.getPrimary(isDark),
+                labelColor: AppColors.getPrimary(isDark),
+                unselectedLabelColor: AppColors.getTextSecondary(isDark),
+                labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 14),
+                tabs: _tabs.map((t) => Tab(text: t)).toList(),
+              )
+            : null,
       ),
-      body: TabBarView(
-        controller: _tabController,
+      body: hasQuery
+          ? TabBarView(
+              controller: _tabController,
+              children: [
+                _buildUsersResultList(_searchedUsers, isDark, onlyHosts: false),
+                _buildUsersResultList(_searchedUsers, isDark, onlyHosts: true),
+                _buildLiveRoomsResultList(_searchedRooms, isDark),
+                _buildVideosResultGrid(_searchedPosts, isDark),
+                _buildSoundsList(isDark),
+                _buildHashtagsList(isDark),
+              ],
+            )
+          : _buildRecentSearchesView(isDark),
+    );
+  }
+
+  /// Clean initial view showing ONLY up to 5 recent search history items
+  Widget _buildRecentSearchesView(bool isDark) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. Users Tab
-          _buildUsersResultList(_searchedUsers, isDark, onlyHosts: false),
-          // 2. Hosts Tab
-          _buildUsersResultList(_searchedUsers, isDark, onlyHosts: true),
-          // 3. Live Rooms Tab
-          _buildLiveRoomsResultList(_searchedRooms, isDark),
-          // 4. Videos Tab
-          _buildVideosResultGrid(_searchedPosts, isDark),
-          // 5. Sounds Tab
-          _buildSoundsList(isDark),
-          // 6. Hashtags Tab
-          _buildHashtagsList(isDark),
+          if (_recentSearches.isNotEmpty) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.history_rounded, size: 18, color: AppColors.getPrimary(isDark)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Recent Searches',
+                      style: TextStyle(
+                        color: AppColors.getTextPrimary(isDark),
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                TextButton(
+                  onPressed: _clearAllRecentSearches,
+                  child: const Text('Clear All', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _recentSearches.map((item) {
+                return Chip(
+                  backgroundColor: AppColors.getCard(isDark),
+                  side: BorderSide(color: AppColors.getBorder(isDark)),
+                  labelPadding: const EdgeInsets.only(left: 4),
+                  label: GestureDetector(
+                    onTap: () {
+                      _searchController.text = item;
+                      _onSearchChanged(item);
+                    },
+                    child: Text(
+                      item,
+                      style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 13),
+                    ),
+                  ),
+                  deleteIcon: const Icon(Icons.close_rounded, size: 16),
+                  deleteIconColor: AppColors.getTextSecondary(isDark),
+                  onDeleted: () => _removeRecentSearch(item),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 28),
+          ],
+
+          // Trending Topics Quick Chips
+          Row(
+            children: [
+              const Icon(Icons.trending_up_rounded, size: 18, color: Colors.orange),
+              const SizedBox(width: 8),
+              Text(
+                'Trending Topics',
+                style: TextStyle(
+                  color: AppColors.getTextPrimary(isDark),
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _allTrendingTags.map((tag) {
+              return ActionChip(
+                backgroundColor: AppColors.getCard(isDark),
+                side: BorderSide(color: AppColors.getBorder(isDark)),
+                avatar: const Icon(Icons.tag_rounded, size: 14, color: AppColors.primaryGold),
+                label: Text(tag, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 12)),
+                onPressed: () {
+                  _searchController.text = tag;
+                  _onSearchChanged(tag);
+                },
+              );
+            }).toList(),
+          ),
+
+          const SizedBox(height: 40),
+          Center(
+            child: Column(
+              children: [
+                Icon(Icons.search_rounded, size: 48, color: AppColors.getTextSecondary(isDark).withValues(alpha: 0.3)),
+                const SizedBox(height: 10),
+                Text(
+                  'Search users, hosts, live rooms, videos, sounds and hashtags',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -300,7 +463,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
   Widget _buildUsersResultList(List<UserModel> users, bool isDark, {required bool onlyHosts}) {
     if (_isLoadingUsers) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2));
+      return const Center(child: CircularProgressIndicator(color: AppColors.primaryGold, strokeWidth: 2));
     }
 
     List<UserModel> filtered = users;
@@ -309,11 +472,12 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     }
 
     if (_currentQuery.isNotEmpty) {
+      final q = _currentQuery.toLowerCase();
       filtered = filtered.where((u) {
-        final matchId = u.id.toLowerCase().contains(_currentQuery);
-        final matchUsername = u.username.toLowerCase().contains(_currentQuery);
-        final matchName = u.name.toLowerCase().contains(_currentQuery);
-        final matchDisplayName = u.displayName.toLowerCase().contains(_currentQuery);
+        final matchId = u.id.toLowerCase().contains(q);
+        final matchUsername = u.username.toLowerCase().contains(q);
+        final matchName = u.name.toLowerCase().contains(q);
+        final matchDisplayName = u.displayName.toLowerCase().contains(q);
         return matchId || matchUsername || matchName || matchDisplayName;
       }).toList();
     }
@@ -322,9 +486,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       return EmptyStateWidget(
         icon: Icons.person_search_rounded,
         title: 'No ${onlyHosts ? "Hosts" : "Users"} Found',
-        subtitle: _currentQuery.isNotEmpty
-            ? 'We couldn\'t find any ${onlyHosts ? "hosts" : "users"} matching "$_currentQuery"'
-            : 'No ${onlyHosts ? "hosts" : "users"} available right now.',
+        subtitle: 'We couldn\'t find any ${onlyHosts ? "hosts" : "users"} matching "$_currentQuery"',
       );
     }
 
@@ -345,90 +507,67 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
             side: BorderSide(color: AppColors.getBorder(isDark)),
           ),
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            leading: GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: user.id)),
-                );
-              },
-              child: UserAvatar(
-                imageUrl: user.avatarUrl,
-                radius: 24,
-                isLive: user.isLive,
-              ),
-            ),
-            title: Row(
-              children: [
-                Flexible(
-                  child: Text(
-                    user.displayName.isNotEmpty ? user.displayName : user.name,
-                    style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (user.isVip) ...[
-                  const SizedBox(width: 4),
-                  const Icon(Icons.workspace_premium_rounded, size: 14, color: AppColors.gold),
-                ],
-                if (user.isHost) ...[
-                  const SizedBox(width: 4),
-                  const Icon(Icons.verified_rounded, size: 14, color: Colors.blueAccent),
-                ],
-              ],
-            ),
-            subtitle: Text(
-              '@${user.username} • ID: ${user.id} • ${AppFormatters.formatNumber(user.followers)} followers',
-              style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: isMe
-                ? const SizedBox.shrink()
-                : isFollowed
-                    ? OutlinedButton(
-                        onPressed: () => _toggleFollow(user.id, user.displayName.isNotEmpty ? user.displayName : user.name),
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: AppColors.getTextSecondary(isDark)),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
-                          minimumSize: const Size(0, 34),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: Text('Following', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
-                      )
-                    : Container(
-                        height: 34,
-                        constraints: const BoxConstraints(minWidth: 80, maxWidth: 90),
-                        decoration: BoxDecoration(
-                          gradient: AppColors.getAccentGradient(isDark),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: () => _toggleFollow(user.id, user.displayName.isNotEmpty ? user.displayName : user.name),
-                            child: Center(
-                              child: Text(
-                                '+ Follow',
-                                style: TextStyle(
-                                  color: AppColors.onPrimary(isDark: isDark),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
             onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: user.id)),
               );
             },
+            leading: UserAvatar(imageUrl: user.avatarUrl, radius: 24),
+            title: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    user.displayName,
+                    style: TextStyle(
+                      color: AppColors.getTextPrimary(isDark),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (user.isHost) ...[
+                  const SizedBox(width: 4),
+                  const Icon(Icons.verified_rounded, size: 16, color: Colors.blueAccent),
+                ],
+              ],
+            ),
+            subtitle: Text(
+              '@${user.username} • ${AppFormatters.formatNumber(user.followers)} followers',
+              style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
+            ),
+            trailing: isMe
+                ? null
+                : ElevatedButton(
+                    onPressed: () {
+                      final auth = context.read<AuthProvider>();
+                      if (isFollowed) {
+                        auth.unfollowUser(user.id);
+                      } else {
+                        auth.followUser(user.id);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isFollowed ? AppColors.getSurface(isDark) : AppColors.primaryGold,
+                      foregroundColor: isFollowed ? AppColors.getTextPrimary(isDark) : Colors.black,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                        side: BorderSide(color: isFollowed ? AppColors.getBorder(isDark) : Colors.transparent),
+                      ),
+                    ),
+                    child: Text(
+                      isFollowed ? 'Following' : '+ Follow',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: isFollowed ? AppColors.getTextPrimary(isDark) : Colors.black,
+                      ),
+                    ),
+                  ),
           ),
         );
       },
@@ -437,70 +576,85 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
   Widget _buildLiveRoomsResultList(List<LiveRoomModel> rooms, bool isDark) {
     if (_isLoadingRooms) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2));
+      return const Center(child: CircularProgressIndicator(color: AppColors.primaryGold, strokeWidth: 2));
     }
 
-    if (rooms.isEmpty) {
+    List<LiveRoomModel> filtered = rooms;
+    if (_currentQuery.isNotEmpty) {
+      final q = _currentQuery.toLowerCase();
+      filtered = filtered.where((r) {
+        final matchId = r.id.toLowerCase().contains(q);
+        final matchTitle = r.title.toLowerCase().contains(q);
+        final matchHost = r.host.name.toLowerCase().contains(q) || r.host.username.toLowerCase().contains(q);
+        return matchId || matchTitle || matchHost;
+      }).toList();
+    }
+
+    if (filtered.isEmpty) {
       return EmptyStateWidget(
-        icon: Icons.live_tv_rounded,
+        icon: Icons.sensors_off_rounded,
         title: 'No Live Rooms Found',
-        subtitle: _currentQuery.isNotEmpty
-            ? 'No live rooms match "$_currentQuery"'
-            : 'No active live rooms at this moment.',
+        subtitle: 'No active rooms matched "$_currentQuery".',
       );
     }
 
-    return ListView.builder(
+    return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: rooms.length,
+      itemCount: filtered.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
       itemBuilder: (context, i) {
-        final room = rooms[i];
-        final isParty = room.category.toLowerCase() == 'party' || room.id.startsWith('party_');
+        final room = filtered[i];
+        final isVoice = room.roomType == 'AUDIO_PARTY' || room.category.toLowerCase() == 'party';
 
         return Card(
           clipBehavior: Clip.antiAlias,
-          margin: const EdgeInsets.only(bottom: 12),
           color: AppColors.getCard(isDark),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: AppColors.getBorder(isDark), width: 1.2),
+            side: BorderSide(color: AppColors.getBorder(isDark)),
           ),
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            leading: UserAvatar(imageUrl: room.host.avatarUrl, radius: 24, isLive: true),
-            title: Row(
+            onTap: () => _navigateToRoom(context, room),
+            leading: Stack(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  margin: const EdgeInsets.only(right: 6),
-                  decoration: BoxDecoration(
-                    color: isParty ? Colors.deepPurpleAccent : AppColors.live,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    isParty ? 'PARTY' : 'LIVE',
-                    style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    room.title,
-                    style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                UserAvatar(imageUrl: room.coverUrl.isNotEmpty ? room.coverUrl : room.host.avatarUrl, radius: 24),
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: isVoice ? Colors.purpleAccent : AppColors.liveRed,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(isVoice ? Icons.mic : Icons.videocam, size: 10, color: Colors.white),
                   ),
                 ),
               ],
             ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                'Host: ${room.host.name} • Room ID: ${room.id} • ${room.viewerCount} Viewers',
-                style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
+            title: Text(
+              room.title,
+              style: TextStyle(
+                color: AppColors.getTextPrimary(isDark),
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
-            trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.getTextSecondary(isDark)),
-            onTap: () => _navigateToRoom(context, room),
+            subtitle: Text(
+              '${isVoice ? "🎙️ Voice Party" : "📹 Video Live"} • Host: ${room.host.name} • ${room.viewerCount} Viewers',
+              style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
+            ),
+            trailing: ElevatedButton(
+              onPressed: () => _navigateToRoom(context, room),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isVoice ? Colors.purpleAccent : AppColors.liveRed,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
+              child: const Text('Join', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+            ),
           ),
         );
       },
@@ -509,18 +663,14 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
   Widget _buildVideosResultGrid(List<PostModel> posts, bool isDark) {
     if (_isLoadingPosts) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2));
+      return const Center(child: CircularProgressIndicator(color: AppColors.primaryGold, strokeWidth: 2));
     }
 
-    final videoPosts = posts.where((p) => p.imageUrls.isNotEmpty || p.content.isNotEmpty).toList();
-
-    if (videoPosts.isEmpty) {
+    if (posts.isEmpty) {
       return EmptyStateWidget(
         icon: Icons.video_library_rounded,
-        title: 'No Posts/Videos Found',
-        subtitle: _currentQuery.isNotEmpty
-            ? 'No posts or clips match "$_currentQuery"'
-            : 'No posts available at this moment.',
+        title: 'No Videos Found',
+        subtitle: 'No video posts matching "$_currentQuery"',
       );
     }
 
@@ -528,14 +678,14 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        childAspectRatio: 0.85,
         crossAxisSpacing: 10,
         mainAxisSpacing: 10,
+        childAspectRatio: 0.75,
       ),
-      itemCount: videoPosts.length,
-      itemBuilder: (_, i) {
-        final post = videoPosts[i];
-        final hasImage = post.imageUrls.isNotEmpty;
+      itemCount: posts.length,
+      itemBuilder: (context, i) {
+        final post = posts[i];
+        final hasMedia = post.imageUrls.isNotEmpty;
 
         return GestureDetector(
           onTap: () {
@@ -544,73 +694,58 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
               MaterialPageRoute(builder: (_) => SinglePostScreen(post: post)),
             );
           },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Container(
-                  color: AppColors.getCard(isDark),
-                  child: hasImage
-                      ? Image.network(
-                          post.imageUrls.first,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Center(
-                            child: Icon(Icons.photo_library_rounded, color: AppColors.getPrimary(isDark), size: 36),
-                          ),
-                        )
-                      : Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [Colors.purple.shade900, Colors.deepPurple.shade700],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                          ),
-                          child: Center(
-                            child: Text(
-                              post.content,
-                              maxLines: 4,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontSize: 12),
-                            ),
-                          ),
-                        ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.getCard(isDark),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.getBorder(isDark)),
+              image: hasMedia
+                  ? DecorationImage(
+                      image: NetworkImage(post.imageUrls.first),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: LinearGradient(
+                  colors: [Colors.transparent, Colors.black.withValues(alpha: 0.8)],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
                 ),
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [Colors.black.withValues(alpha: 0.8), Colors.transparent],
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          post.content.isNotEmpty ? post.content : '@${post.author.username}',
-                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    post.content,
+                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      UserAvatar(imageUrl: post.author.avatarUrl, radius: 8),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          post.author.displayName,
+                          style: const TextStyle(color: Colors.white70, fontSize: 10),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '❤️ ${post.likes} • 💬 ${post.comments}',
-                          style: const TextStyle(color: Colors.white70, fontSize: 10),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 12),
+                      const SizedBox(width: 2),
+                      Text('${post.likes}', style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                    ],
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );
@@ -619,101 +754,78 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   }
 
   Widget _buildSoundsList(bool isDark) {
-    final sounds = _trendingSounds.where((s) {
-      if (_currentQuery.isEmpty) return true;
-      return s.toLowerCase().contains(_currentQuery);
+    final q = _currentQuery.toLowerCase();
+    final filtered = _allSounds.where((s) {
+      return s['title']!.toLowerCase().contains(q) || s['artist']!.toLowerCase().contains(q);
     }).toList();
 
-    if (sounds.isEmpty) {
+    if (filtered.isEmpty) {
       return EmptyStateWidget(
         icon: Icons.music_off_rounded,
         title: 'No Sounds Found',
-        subtitle: 'No sound tracks matching "$_currentQuery"',
+        subtitle: 'No audio tracks matched "$_currentQuery"',
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: sounds.length,
-      itemBuilder: (_, i) => Card(
-        clipBehavior: Clip.antiAlias,
-        margin: const EdgeInsets.only(bottom: 8),
-        color: AppColors.getCard(isDark),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: AppColors.getBorder(isDark)),
-        ),
-        child: ListTile(
-          leading: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.getPrimary(isDark).withValues(alpha: 0.15),
-              shape: BoxShape.circle,
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: filtered.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, i) {
+        final s = filtered[i];
+        return Card(
+          color: AppColors.getCard(isDark),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.15), shape: BoxShape.circle),
+              child: const Icon(Icons.music_note_rounded, color: Colors.amber, size: 20),
             ),
-            child: Icon(Icons.music_note_rounded, color: AppColors.getPrimary(isDark), size: 20),
+            title: Text(s['title']!, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 14)),
+            subtitle: Text('${s['artist']} • ${s['uses']} videos', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12)),
+            trailing: const Icon(Icons.play_circle_fill_rounded, color: AppColors.primaryGold, size: 28),
           ),
-          title: Text(sounds[i], style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 14)),
-          subtitle: Text('${(i + 1) * 3420} posts • 0:45', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12)),
-          trailing: IconButton(
-            icon: Icon(Icons.play_circle_outline_rounded, color: AppColors.getPrimary(isDark)),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Playing preview for ${sounds[i]}'),
-                  duration: const Duration(seconds: 1),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            },
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   Widget _buildHashtagsList(bool isDark) {
-    final tags = _trendingTags.where((t) {
-      if (_currentQuery.isEmpty) return true;
-      return t.toLowerCase().contains(_currentQuery);
+    final q = _currentQuery.toLowerCase().replaceAll('#', '');
+    final filtered = _allTrendingTags.where((tag) {
+      return tag.toLowerCase().contains(q);
     }).toList();
 
-    if (tags.isEmpty) {
+    if (filtered.isEmpty) {
       return EmptyStateWidget(
         icon: Icons.tag_rounded,
         title: 'No Hashtags Found',
-        subtitle: 'No hashtags matching "$_currentQuery"',
+        subtitle: 'No hashtags matched "$_currentQuery"',
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: tags.length,
-      itemBuilder: (_, i) => Card(
-        clipBehavior: Clip.antiAlias,
-        margin: const EdgeInsets.only(bottom: 8),
-        color: AppColors.getCard(isDark),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: AppColors.getBorder(isDark)),
-        ),
-        child: ListTile(
-          leading: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.amber.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: filtered.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
+      itemBuilder: (context, i) {
+        final tag = filtered[i];
+        return Card(
+          color: AppColors.getCard(isDark),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: Colors.pinkAccent.withValues(alpha: 0.15), shape: BoxShape.circle),
+              child: const Icon(Icons.tag_rounded, color: Colors.pinkAccent, size: 20),
             ),
-            child: const Icon(Icons.tag_rounded, color: Colors.amber, size: 20),
+            title: Text(tag, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 14)),
+            subtitle: Text('Trending • ${10 + i * 4}.5K views', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12)),
+            trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
           ),
-          title: Text(tags[i], style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 14)),
-          subtitle: Text('${(i + 2) * 12}.5K views & posts', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12)),
-          trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.getTextSecondary(isDark)),
-          onTap: () {
-            _searchController.text = tags[i].replaceAll('#', '');
-            _onSearchChanged(_searchController.text);
-          },
-        ),
-      ),
+        );
+      },
     );
   }
 }
