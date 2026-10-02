@@ -954,6 +954,12 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  void updateCurrentUser(UserModel user) {
+    _currentUser = user;
+    _saveUserLocalSession(user);
+    notifyListeners();
+  }
+
   Future<void> updateAvatar(String newAvatarUrl) async {
     await updateProfile(avatarUrl: newAvatarUrl);
   }
@@ -1008,11 +1014,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateCurrentUser(UserModel updatedUser) {
-    _currentUser = updatedUser;
-    _saveUserLocalSession(updatedUser);
-    notifyListeners();
-  }
+
 
   // Follow system — backend authoritative
   // Local cache of following IDs for fast UI without round-trips

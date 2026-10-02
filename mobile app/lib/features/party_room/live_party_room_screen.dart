@@ -660,6 +660,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           const SizedBox(width: 6),
           
           // Right: Controls
+          // Right: Controls
           Flexible(
             flex: 0,
             child: FittedBox(

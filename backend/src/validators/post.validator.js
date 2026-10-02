@@ -22,6 +22,7 @@ export const queryFeedSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().optional(),
   userId: z.string().optional(),
+  authorUserId: z.string().optional(),
   feedType: z.enum(['PUBLIC', 'FOLLOWING']).default('PUBLIC'),
 });
 

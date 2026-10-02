@@ -171,12 +171,14 @@ export async function getFeed(
     viewerUserId = null,
     feedType = 'PUBLIC',
     authorUserId = null,
+    userId = null,
     cursor = null,
     limit = 20,
     page = null,
   } = {},
   db = prisma
 ) {
+  const targetAuthorId = authorUserId || userId || null;
   let followingUserIds = [];
   let blockedUserIds = [];
 
@@ -188,8 +190,8 @@ export async function getFeed(
   }
 
   // If requesting posts of a specific target author, verify privacy
-  if (authorUserId && authorUserId !== viewerUserId) {
-    const authorProfile = await socialRepository.findSocialProfile(authorUserId, db);
+  if (targetAuthorId && targetAuthorId !== viewerUserId) {
+    const authorProfile = await socialRepository.findSocialProfile(targetAuthorId, db);
     if (!authorProfile) {
       const error = new Error('User not found');
       error.statusCode = 404;
@@ -198,7 +200,7 @@ export async function getFeed(
     }
 
     if (authorProfile.profile?.isPrivate) {
-      const isFollowing = followingUserIds.includes(authorUserId);
+      const isFollowing = followingUserIds.includes(targetAuthorId);
       if (!isFollowing) {
         return {
           posts: [],
@@ -213,7 +215,7 @@ export async function getFeed(
     {
       viewerUserId,
       feedType,
-      authorUserId,
+      authorUserId: targetAuthorId,
       followingUserIds,
       blockedUserIds,
       cursor,
@@ -232,7 +234,7 @@ export async function deletePost(
   { isAdmin = false, adminId = null, adminName = null, reason = null, ipAddress = '127.0.0.1' } = {},
   db = prisma
 ) {
-  let post = await postRepository.findPostById(postId, db).catch(() => null);
+  let post = await postRepository.findPostById(postId, userId, db).catch(() => null);
   if (!post) {
     post = await db.post.findUnique({ where: { id: postId } }).catch(() => null);
   }
@@ -333,7 +335,7 @@ export async function likePost(postId, userId, db = prisma) {
     throw error;
   }
 
-  const post = await postRepository.findPostById(postId, db);
+  const post = await postRepository.findPostById(postId, userId, db);
   if (!post) {
     const error = new Error('Post not found');
     error.statusCode = 404;
@@ -377,7 +379,7 @@ export async function unlikePost(postId, userId, db = prisma) {
     throw error;
   }
 
-  const post = await postRepository.findPostById(postId, db);
+  const post = await postRepository.findPostById(postId, userId, db);
   if (!post) {
     const error = new Error('Post not found');
     error.statusCode = 404;
@@ -426,7 +428,7 @@ export async function createComment(
     throw error;
   }
 
-  const post = await postRepository.findPostById(postId, db);
+  const post = await postRepository.findPostById(postId, userId, db);
   if (!post) {
     const error = new Error('Post not found');
     error.statusCode = 404;
@@ -485,7 +487,7 @@ export async function getPostComments(
   { viewerUserId = null, page = 1, limit = 20, parentId = null } = {},
   db = prisma
 ) {
-  const post = await postRepository.findPostById(postId, db);
+  const post = await postRepository.findPostById(postId, viewerUserId, db);
   if (!post) {
     const error = new Error('Post not found');
     error.statusCode = 404;
@@ -862,7 +864,7 @@ export async function reportContent(
     reportedUserId = targetId;
   } else if (targetType === 'POST') {
     reportedPostId = targetId;
-    const post = await postRepository.findPostById(targetId, db);
+    const post = await postRepository.findPostById(targetId, null, db);
     if (!post) {
       const error = new Error('Target post not found');
       error.statusCode = 404;

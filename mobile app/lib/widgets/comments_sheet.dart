@@ -62,10 +62,11 @@ class _CommentsSheetState extends State<CommentsSheet> {
     super.initState();
     if (widget.initialComments != null) {
       _localComments = List.from(widget.initialComments!);
-    } else if (widget.isPost) {
-      // Trigger backend load via provider
+    }
+    if (widget.isPost) {
+      // Trigger fresh backend load via provider
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        context.read<SocialProvider>().loadCommentsForPost(widget.targetId);
+        context.read<SocialProvider>().loadCommentsForPost(widget.targetId, refresh: true);
       });
     } else {
       _localComments = [];
@@ -229,20 +230,27 @@ class _CommentsSheetState extends State<CommentsSheet> {
               child: isLoadingComments
                   ? const Center(child: CircularProgressIndicator(color: Color(0xFF8E24AA), strokeWidth: 2))
                   : comments.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text('💬', style: TextStyle(fontSize: 48)),
-                          const SizedBox(height: 8),
-                          Text(
-                            'No comments yet. Be the first!',
-                            style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('💬', style: TextStyle(fontSize: 48)),
+                              const SizedBox(height: 8),
+                              Text(
+                                'No comments yet. Be the first!',
+                                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    )
-                  : ListView.separated(
+                        )
+                      : RefreshIndicator(
+                          color: const Color(0xFF8E24AA),
+                          onRefresh: () async {
+                            if (widget.isPost) {
+                              await context.read<SocialProvider>().loadCommentsForPost(widget.targetId, refresh: true);
+                            }
+                          },
+                          child: ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       itemCount: comments.length,
                       separatorBuilder: (context, index) => const SizedBox(height: 14),
@@ -335,6 +343,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                           ],
                         );
                       },
+                    ),
                     ),
             ),
 

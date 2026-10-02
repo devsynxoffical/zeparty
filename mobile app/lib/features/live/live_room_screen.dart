@@ -43,8 +43,9 @@ class FloatingHeart {
 
 class LiveRoomScreen extends StatefulWidget {
   final LiveRoomModel room;
+  final bool isHost;
 
-  const LiveRoomScreen({super.key, required this.room});
+  const LiveRoomScreen({super.key, required this.room, this.isHost = false});
 
   @override
   State<LiveRoomScreen> createState() => _LiveRoomScreenState();
@@ -1184,7 +1185,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     final activeRoom = liveProvider.activeRoom ?? widget.room;
     final activeGift = liveProvider.activeGiftAnimation;
     final currentUser = context.read<AuthProvider>().currentUser;
-    final isHost = (activeRoom.host.id == currentUser.id) ||
+    final isHost = widget.isHost ||
+        (activeRoom.host.id == currentUser.id) ||
         (activeRoom.creatorUserId == currentUser.id) ||
         (currentUser.name.trim().isNotEmpty && currentUser.name.trim().toLowerCase() == activeRoom.host.name.trim().toLowerCase());
 

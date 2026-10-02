@@ -122,6 +122,10 @@ export async function findFeedPosts(
     }
   }
 
+  const cleanViewerId = (typeof viewerUserId === 'string' && viewerUserId.trim().length > 0)
+    ? viewerUserId.trim()
+    : null;
+
   const queryArgs = {
     where,
     take: parsedLimit + 1, // Fetch one extra to determine nextCursor
@@ -144,7 +148,7 @@ export async function findFeedPosts(
           },
         },
       },
-      ...(viewerUserId ? { likes: { where: { userId: viewerUserId }, select: { id: true } } } : {}),
+      ...(cleanViewerId ? { likes: { where: { userId: cleanViewerId }, select: { id: true } } } : {}),
       _count: {
         select: {
           comments: { where: { deletedAt: null } },
@@ -156,9 +160,9 @@ export async function findFeedPosts(
 
   const formatPostItem = (p) => ({
     ...p,
-    isLiked: viewerUserId ? Boolean(p.likes && p.likes.length > 0) : false,
-    likesCount: typeof p._count?.likes === 'number' ? Math.max(p._count.likes, p.likesCount ?? 0) : (p.likesCount ?? 0),
-    commentsCount: typeof p._count?.comments === 'number' ? Math.max(p._count.comments, p.commentsCount ?? 0) : (p.commentsCount ?? 0),
+    isLiked: cleanViewerId ? Boolean(p.likes && p.likes.length > 0) : false,
+    likesCount: typeof p._count?.likes === 'number' ? p._count.likes : (p.likesCount ?? 0),
+    commentsCount: typeof p._count?.comments === 'number' ? p._count.comments : (p.commentsCount ?? 0),
     shares: p.sharesCount ?? p.shares ?? 0,
     sharesCount: p.sharesCount ?? p.shares ?? 0,
   });
@@ -210,6 +214,17 @@ export async function findFeedPosts(
 
 export async function findPostById(id, viewerUserId = null, db = prisma) {
   if (!id) return null;
+
+  // Protect against callers passing (id, db) instead of (id, viewerUserId, db)
+  if (viewerUserId && typeof viewerUserId === 'object') {
+    db = viewerUserId;
+    viewerUserId = null;
+  }
+
+  const cleanViewerId = (typeof viewerUserId === 'string' && viewerUserId.trim().length > 0)
+    ? viewerUserId.trim()
+    : null;
+
   const post = await db.post.findFirst({
     where: {
       id,
@@ -234,7 +249,7 @@ export async function findPostById(id, viewerUserId = null, db = prisma) {
           },
         },
       },
-      ...(viewerUserId ? { likes: { where: { userId: viewerUserId }, select: { id: true } } } : {}),
+      ...(cleanViewerId ? { likes: { where: { userId: cleanViewerId }, select: { id: true } } } : {}),
       _count: {
         select: {
           comments: { where: { deletedAt: null } },
@@ -248,9 +263,9 @@ export async function findPostById(id, viewerUserId = null, db = prisma) {
 
   return {
     ...post,
-    isLiked: viewerUserId ? Boolean(post.likes && post.likes.length > 0) : false,
-    likesCount: typeof post._count?.likes === 'number' ? Math.max(post._count.likes, post.likesCount ?? 0) : (post.likesCount ?? 0),
-    commentsCount: typeof post._count?.comments === 'number' ? Math.max(post._count.comments, post.commentsCount ?? 0) : (post.commentsCount ?? 0),
+    isLiked: cleanViewerId ? Boolean(post.likes && post.likes.length > 0) : false,
+    likesCount: typeof post._count?.likes === 'number' ? post._count.likes : (post.likesCount ?? 0),
+    commentsCount: typeof post._count?.comments === 'number' ? post._count.comments : (post.commentsCount ?? 0),
     shares: post.sharesCount ?? post.shares ?? 0,
     sharesCount: post.sharesCount ?? post.shares ?? 0,
   };
@@ -274,39 +289,34 @@ export async function softDeletePost(id, db = prisma) {
 }
 
 export async function incrementLikesCount(postId, db = prisma) {
+  const actualCount = await db.like.count({ where: { postId } });
   return await db.post.update({
     where: { id: postId },
-    data: { likesCount: { increment: 1 } },
+    data: { likesCount: actualCount },
   });
 }
 
 export async function decrementLikesCount(postId, db = prisma) {
-  // Use raw or guarded update to prevent negative likesCount
-  const post = await db.post.findUnique({ where: { id: postId } });
-  if (!post || post.likesCount <= 0) {
-    return post;
-  }
+  const actualCount = await db.like.count({ where: { postId } });
   return await db.post.update({
     where: { id: postId },
-    data: { likesCount: { decrement: 1 } },
+    data: { likesCount: actualCount },
   });
 }
 
 export async function incrementCommentsCount(postId, db = prisma) {
+  const actualCount = await db.comment.count({ where: { postId, deletedAt: null } });
   return await db.post.update({
     where: { id: postId },
-    data: { commentsCount: { increment: 1 } },
+    data: { commentsCount: actualCount },
   });
 }
 
 export async function decrementCommentsCount(postId, db = prisma) {
-  const post = await db.post.findUnique({ where: { id: postId } });
-  if (!post || post.commentsCount <= 0) {
-    return post;
-  }
+  const actualCount = await db.comment.count({ where: { postId, deletedAt: null } });
   return await db.post.update({
     where: { id: postId },
-    data: { commentsCount: { decrement: 1 } },
+    data: { commentsCount: actualCount },
   });
 }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../core/repositories/social_repository.dart';
 import '../core/theme/app_colors.dart';
 import '../features/profile/user_profile_details_screen.dart';

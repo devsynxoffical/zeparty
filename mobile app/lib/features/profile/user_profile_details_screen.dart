@@ -19,6 +19,7 @@ import '../../widgets/user_avatar.dart';
 import '../../widgets/user_list_sheet.dart';
 import '../../widgets/full_screen_image_viewer.dart';
 import '../../widgets/gift_dialog.dart';
+
 import '../../core/repositories/social_repository.dart';
 
 import '../svip/svip_center_screen.dart';
@@ -32,8 +33,10 @@ import '../../widgets/report_sheet.dart';
 
 class UserProfileDetailsScreen extends StatefulWidget {
   final String userId;
+  final UserModel? user;
 
-  const UserProfileDetailsScreen({super.key, required this.userId});
+  UserProfileDetailsScreen({super.key, String? userId, this.user})
+      : userId = userId ?? user?.id ?? '';
 
   @override
   State<UserProfileDetailsScreen> createState() => _UserProfileDetailsScreenState();
@@ -106,10 +109,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   bool _isLoading = true;
   UserModel? _user;
 
+  bool get _isMe {
+    final currentId = context.read<AuthProvider>().currentUser.id;
+    final targetId = _user?.id ?? widget.userId;
+    return currentId.isNotEmpty && currentId == targetId;
+  }
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    if (widget.user != null) {
+      _user = widget.user;
+    }
     _loadUser();
   }
 

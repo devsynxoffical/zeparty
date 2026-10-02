@@ -269,18 +269,17 @@ class SocialProvider extends ChangeNotifier {
 
   // ─── Like / Unlike (optimistic + backend reconcile) ───────────────────────
 
-  // ─── Like / Unlike (optimistic + backend reconcile) ───────────────────────
-
   Future<void> toggleLikePost(String postId) async {
     final idx = _posts.indexWhere((p) => p.id == postId);
     if (idx == -1) return;
 
     final post = _posts[idx];
     final wasLiked = post.isLiked;
+    final targetLiked = !wasLiked;
 
     // Optimistic update
     _posts[idx] = post.copyWith(
-      isLiked: !wasLiked,
+      isLiked: targetLiked,
       likes: wasLiked
           ? (post.likes > 0 ? post.likes - 1 : 0)
           : post.likes + 1,
@@ -292,14 +291,22 @@ class SocialProvider extends ChangeNotifier {
           ? await _repo.unlikePost(postId)
           : await _repo.likePost(postId);
       final serverCount = result['data']?['likesCount'];
-      if (serverCount != null && idx < _posts.length) {
+      if (idx < _posts.length && _posts[idx].id == postId) {
+        final confirmedCount = serverCount is int
+            ? serverCount
+            : (serverCount != null ? int.tryParse(serverCount.toString()) : null);
         _posts[idx] = _posts[idx].copyWith(
-          likes: serverCount is int ? serverCount : int.tryParse(serverCount.toString()) ?? _posts[idx].likes,
+          isLiked: targetLiked,
+          likes: confirmedCount ?? _posts[idx].likes,
         );
         notifyListeners();
       }
     } catch (_) {
-      // Retain optimistic like status even if network/unauth error occurs
+      // Revert optimistic change if server request fails
+      if (idx < _posts.length && _posts[idx].id == postId) {
+        _posts[idx] = post;
+        notifyListeners();
+      }
     }
   }
 
@@ -384,17 +391,30 @@ class SocialProvider extends ChangeNotifier {
           .map(SocialComment.fromJson)
           .toList();
 
-      final existing = _postComments[postId] ?? [];
-      final set = <String>{};
-      final combined = <SocialComment>[];
+      if (refresh || !_postComments.containsKey(postId)) {
+        _postComments[postId] = fetched;
+      } else {
+        // Merge fetched and any unconfirmed local comments
+        final Map<String, SocialComment> map = {};
+        for (final c in fetched) {
+          map[c.id] = c;
+        }
+        for (final c in _postComments[postId] ?? []) {
+          if (c.id.startsWith('c_') && !map.values.any((m) => m.text == c.text && m.authorId == c.authorId)) {
+            map[c.id] = c;
+          }
+        }
+        _postComments[postId] = map.values.toList();
+      }
 
-      for (final c in existing) {
-        if (set.add(c.id)) combined.add(c);
+      // Update comments count on the post if present in feed
+      final idx = _posts.indexWhere((p) => p.id == postId);
+      if (idx != -1 && result['pagination']?['total'] != null) {
+        final total = int.tryParse(result['pagination']['total'].toString());
+        if (total != null) {
+          _posts[idx] = _posts[idx].copyWith(comments: total);
+        }
       }
-      for (final c in fetched) {
-        if (set.add(c.id)) combined.add(c);
-      }
-      _postComments[postId] = combined;
     } catch (_) {
       _postComments.putIfAbsent(postId, () => []);
     } finally {
@@ -435,11 +455,13 @@ class SocialProvider extends ChangeNotifier {
         final serverComment = SocialComment.fromJson(raw);
         final list = _postComments[postId];
         if (list != null) {
-          final cIdx = list.indexWhere((c) => c.id == localComment.id);
+          final cIdx = list.indexWhere((c) => c.id == localComment.id || (c.text == text && c.authorId == author.id));
           if (cIdx != -1) {
             list[cIdx] = serverComment;
-            notifyListeners();
+          } else {
+            list.insert(0, serverComment);
           }
+          notifyListeners();
         }
       }
     } catch (_) {
