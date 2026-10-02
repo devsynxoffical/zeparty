@@ -9,6 +9,7 @@ import '../../providers/region_provider.dart';
 import '../search/search_screen.dart';
 import '../leaderboard/leaderboard_screen.dart';
 import '../notifications/notifications_screen.dart';
+import '../../providers/notification_provider.dart';
 import '../../widgets/country_picker_widget.dart';
 import '../../widgets/banner_carousel_widget.dart';
 import 'tabs/live_discovery_grid.dart';
@@ -107,15 +108,47 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       );
                     },
                   ),
-                  IconButton(
-                    icon: Icon(Icons.notifications_rounded, color: Colors.orange, size: 22.w),
-                    constraints: const BoxConstraints(),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    onPressed: () {
-                      // Re-using notifications screen for the calendar/task icon to keep controls functional
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                  Builder(
+                    builder: (ctx) {
+                      final notifProv = ctx.watch<NotificationProvider>();
+                      final unread = notifProv.unreadCount;
+                      return Stack(
+                        alignment: Alignment.topRight,
+                        children: [
+                          IconButton(
+                            icon: Icon(Icons.notifications_rounded, color: Colors.orange, size: 22.w),
+                            constraints: const BoxConstraints(),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                              );
+                            },
+                          ),
+                          if (unread > 0)
+                            Positioned(
+                              top: 6,
+                              right: 6,
+                              child: Container(
+                                padding: const EdgeInsets.all(3.5),
+                                decoration: const BoxDecoration(
+                                  color: AppColors.liveRed,
+                                  shape: BoxShape.circle,
+                                ),
+                                constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                                child: Text(
+                                  unread > 99 ? '99+' : '$unread',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       );
                     },
                   ),

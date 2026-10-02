@@ -676,12 +676,22 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: Colors.amber.withValues(alpha: 0.4), width: 0.8),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.emoji_events_rounded, color: Colors.amber, size: 18),
-                      SizedBox(width: 4),
-                      Text('373M', style: TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                      const Icon(Icons.emoji_events_rounded, color: Colors.amber, size: 18),
+                      const SizedBox(width: 4),
+                      Text(
+                        () {
+                          final pts = provider.totalDiamonds > 0
+                              ? provider.totalDiamonds
+                              : (activeRoom.host.diamonds > 0 ? activeRoom.host.diamonds : 0);
+                          if (pts >= 1000000) return '${(pts / 1000000).toStringAsFixed(1)}M';
+                          if (pts >= 1000) return '${(pts / 1000).toStringAsFixed(1)}K';
+                          return '$pts';
+                        }(),
+                        style: const TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
                     ],
                   ),
                 ),
@@ -1151,6 +1161,19 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       _buildRoomToolBtn(Icons.card_giftcard_rounded, 'Send Gift', Colors.pinkAccent, () {
                         Navigator.pop(ctx);
                         _openGiftDialog();
+                      }),
+                      _buildRoomToolBtn(Icons.share_rounded, 'Share Link', Colors.lightBlueAccent, () {
+                        Navigator.pop(ctx);
+                        RoomShareService.shareRoom(
+                          context,
+                          roomId: widget.room.id,
+                          roomTitle: widget.room.title,
+                          isParty: true,
+                        );
+                      }),
+                      _buildRoomToolBtn(Icons.airline_seat_recline_normal_rounded, 'Assign Seat', Colors.tealAccent, () {
+                        Navigator.pop(ctx);
+                        _showManagementPanel(context, isDark, provider);
                       }),
                       _buildRoomToolBtn(Icons.rocket_launch_rounded, 'Rocket Game', Colors.indigoAccent, () {
                         Navigator.pop(ctx);

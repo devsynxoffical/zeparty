@@ -17,6 +17,7 @@ import 'short_videos_screen.dart';
 import 'camera_recorder_screen.dart';
 import '../../core/services/room_share_service.dart';
 import '../../providers/messaging_provider.dart';
+import '../search/search_screen.dart';
 
 class SocialFeedScreen extends StatefulWidget {
   final bool isScreenActive;
@@ -139,9 +140,9 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
               IconButton(
                 icon: const Icon(Icons.search_rounded, color: AppColors.primary),
                 onPressed: () {
-                  showSearch(
-                    context: context,
-                    delegate: _PostSearchDelegate(social.posts),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SearchScreen()),
                   );
                 },
               ),

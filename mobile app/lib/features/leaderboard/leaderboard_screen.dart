@@ -2,9 +2,64 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
-import '../../core/repositories/backend_repository.dart';
+import '../../core/services/api_client.dart';
+import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/user_avatar.dart';
+import '../profile/user_profile_details_screen.dart';
+
+class RankingEntry {
+  final int rank;
+  final UserModel user;
+  final UserModel? partnerUser;
+  final num points;
+  final String formattedPoints;
+  final String? roomId;
+  final String? roomTitle;
+  final String? coverImageUrl;
+  final int? currentViewersCount;
+
+  RankingEntry({
+    required this.rank,
+    required this.user,
+    this.partnerUser,
+    required this.points,
+    required this.formattedPoints,
+    this.roomId,
+    this.roomTitle,
+    this.coverImageUrl,
+    this.currentViewersCount,
+  });
+
+  factory RankingEntry.fromJson(Map<String, dynamic> json) {
+    final rawUser = json['user'] is Map<String, dynamic> ? json['user'] as Map<String, dynamic> : json;
+    final rawPartner = json['partnerUser'] is Map<String, dynamic> ? json['partnerUser'] as Map<String, dynamic> : null;
+
+    final pts = (json['points'] as num?) ?? (json['score'] as num?) ?? 0;
+    String formatted = json['formattedPoints']?.toString() ?? '';
+    if (formatted.isEmpty) {
+      if (pts >= 1000000) {
+        formatted = '${(pts / 1000000).toStringAsFixed(1)}M';
+      } else if (pts >= 1000) {
+        formatted = '${(pts / 1000).toStringAsFixed(1)}K';
+      } else {
+        formatted = pts.toString();
+      }
+    }
+
+    return RankingEntry(
+      rank: json['rank'] is int ? json['rank'] as int : 1,
+      user: UserModel.fromJson(rawUser),
+      partnerUser: rawPartner != null ? UserModel.fromJson(rawPartner) : null,
+      points: pts,
+      formattedPoints: formatted,
+      roomId: json['roomId']?.toString(),
+      roomTitle: json['roomTitle']?.toString(),
+      coverImageUrl: json['coverImageUrl']?.toString(),
+      currentViewersCount: json['currentViewersCount'] is int ? json['currentViewersCount'] as int : null,
+    );
+  }
+}
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -13,16 +68,26 @@ class LeaderboardScreen extends StatefulWidget {
   State<LeaderboardScreen> createState() => _LeaderboardScreenState();
 }
 
-class _LeaderboardScreenState extends State<LeaderboardScreen>
-    with SingleTickerProviderStateMixin {
+class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   int _periodIndex = 0;
   final List<String> _periods = ['Daily', 'Weekly', 'Monthly'];
+  final List<String> _categories = ['Room', 'Wealth', 'Charm', 'CP', 'SVIP'];
+
+  final Map<String, List<RankingEntry>> _cache = {};
+  final Map<String, bool> _loadingMap = {};
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: _categories.length, vsync: this, initialIndex: 1);
+    _tabController.addListener(() {
+      if (mounted) {
+        setState(() {});
+        _fetchCurrentRankings();
+      }
+    });
+    _fetchCurrentRankings();
   }
 
   @override
@@ -31,10 +96,67 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     super.dispose();
   }
 
+  String get _currentCategoryKey {
+    final cat = _categories[_tabController.index].toLowerCase();
+    final period = _periods[_periodIndex].toLowerCase();
+    return '${cat}_$period';
+  }
+
+  Future<void> _fetchCurrentRankings({bool refresh = false}) async {
+    final cat = _categories[_tabController.index].toLowerCase();
+    final period = _periods[_periodIndex].toLowerCase();
+    final key = '${cat}_$period';
+
+    if (!refresh && _cache.containsKey(key) && _cache[key]!.isNotEmpty) {
+      return;
+    }
+
+    setState(() => _loadingMap[key] = true);
+
+    try {
+      final client = ApiClient.instance;
+      final res = await client.get<Map<String, dynamic>>(
+        '/v1/rankings',
+        queryParameters: {
+          'category': cat,
+          'period': period,
+          'limit': 50,
+        },
+      );
+
+      final rawData = res.data?['data'];
+      final List<RankingEntry> loaded = [];
+      if (rawData is List) {
+        for (int i = 0; i < rawData.length; i++) {
+          final item = rawData[i];
+          if (item is Map<String, dynamic>) {
+            item['rank'] = item['rank'] ?? (i + 1);
+            loaded.add(RankingEntry.fromJson(item));
+          }
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _cache[key] = loaded;
+          _loadingMap[key] = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[LeaderboardScreen] Fetch error: $e');
+      if (mounted) {
+        setState(() => _loadingMap[key] = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Provider.of<ThemeProvider>(context).isDarkMode;
     final primary = AppColors.getPrimary(isDark);
+    final key = _currentCategoryKey;
+    final isLoading = _loadingMap[key] == true;
+    final entries = _cache[key] ?? [];
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -62,19 +184,13 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
               labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               isScrollable: true,
               tabAlignment: TabAlignment.start,
-              tabs: const [
-                Tab(text: 'Room'),
-                Tab(text: 'Wealth'),
-                Tab(text: 'Charm'),
-                Tab(text: 'CP'),
-                Tab(text: 'SVIP'),
-              ],
+              tabs: _categories.map((c) => Tab(text: c)).toList(),
             ),
           ),
         ],
         body: Column(
           children: [
-            // Period Filter
+            // Period Filter (Daily, Weekly, Monthly)
             Container(
               color: AppColors.getBackground(isDark),
               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -83,7 +199,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                 children: List.generate(_periods.length, (i) {
                   final sel = _periodIndex == i;
                   return GestureDetector(
-                    onTap: () => setState(() => _periodIndex = i),
+                    onTap: () {
+                      setState(() => _periodIndex = i);
+                      _fetchCurrentRankings();
+                    },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       margin: const EdgeInsets.symmetric(horizontal: 5),
@@ -121,17 +240,27 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
               ),
             ),
 
-            // Tab views
+            // Ranking Body
             Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _LeaderList(isDark: isDark, isGifter: true, periodIndex: _periodIndex), // Room
-                  _LeaderList(isDark: isDark, isGifter: true, periodIndex: _periodIndex), // Wealth
-                  _LeaderList(isDark: isDark, isGifter: false, periodIndex: _periodIndex), // Charm
-                  _LeaderList(isDark: isDark, isGifter: true, periodIndex: _periodIndex, isCP: true), // CP
-                  _LeaderList(isDark: isDark, isGifter: false, periodIndex: _periodIndex), // SVIP
-                ],
+              child: RefreshIndicator(
+                onRefresh: () => _fetchCurrentRankings(refresh: true),
+                color: AppColors.primaryGold,
+                child: isLoading && entries.isEmpty
+                    ? const Center(child: CircularProgressIndicator(color: AppColors.primaryGold, strokeWidth: 2))
+                    : entries.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: [
+                              SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+                              Center(
+                                child: Text(
+                                  'No rankings recorded for this period yet.',
+                                  style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
+                                ),
+                              ),
+                            ],
+                          )
+                        : _buildRankingList(entries, isDark),
               ),
             ),
           ],
@@ -139,365 +268,294 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
       ),
     );
   }
-}
 
-class _LeaderList extends StatelessWidget {
-  final bool isDark;
-  final bool isGifter;
-  final int periodIndex;
-  final bool isCP;
+  Widget _buildRankingList(List<RankingEntry> entries, bool isDark) {
+    final top1 = entries.isNotEmpty ? entries[0] : null;
+    final top2 = entries.length > 1 ? entries[1] : null;
+    final top3 = entries.length > 2 ? entries[2] : null;
+    final rest = entries.length > 3 ? entries.sublist(3) : <RankingEntry>[];
+    final isCP = _categories[_tabController.index] == 'CP';
 
-  const _LeaderList({
-    required this.isDark,
-    required this.isGifter,
-    required this.periodIndex,
-    this.isCP = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final authUser = context.watch<AuthProvider>().currentUser;
-    final popUsers = BackendRepository.instance.popularUsers;
-    
-    // Ensure current logged-in user is included dynamically in rankings
-    final List<dynamic> users = [
-      if (!popUsers.any((u) => u.id == authUser.id)) authUser,
-      ...popUsers,
-    ];
-
-    if (users.isEmpty) return const Center(child: Text('No rankings available yet'));
-
-    final top1 = users.isNotEmpty ? users[0] : null;
-    final top2 = users.length > 1 ? users[1] : null;
-    final top3 = users.length > 2 ? users[2] : null;
-
-    final multiplier = [1.0, 0.7, 0.5][periodIndex];
-    final primary = AppColors.getPrimary(isDark);
-
-    String formatUserPoints(dynamic u, double baseMult) {
-      if (u == null) return '0';
-      final val = (u.diamonds > 0 ? u.diamonds : (u.coins > 0 ? u.coins : (u.wealthLevel * 1250))) * baseMult;
-      if (val >= 1000) {
-        return '${(val / 1000).toStringAsFixed(1)}K';
-      }
-      return val.toStringAsFixed(0);
-    }
-
-    return SingleChildScrollView(
+    return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Column(
-        children: [
-          // ─── PODIUM ───
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
+      children: [
+        // ─── PODIUM (Top 1, 2, 3) ───
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: isDark
+                  ? [AppColors.darkCard, AppColors.darkSecondarySurface]
+                  : [AppColors.lightBlue, AppColors.white],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: AppColors.getBorderStrong(isDark).withValues(alpha: 0.55),
+              width: 1.2,
+            ),
+            boxShadow: AppColors.primaryGlow(isDark, alpha: 0.12, blur: 24),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // 2nd Place
+              _buildPodiumColumn(
+                entry: top2,
+                rank: 2,
+                podiumHeight: 100,
+                avatarRadius: 28,
+                color: isDark ? AppColors.metallicGold : AppColors.metallicBlue,
+                isDark: isDark,
+              ),
+              const SizedBox(width: 6),
+
+              // 1st Place
+              _buildPodiumColumn(
+                entry: top1,
+                rank: 1,
+                podiumHeight: 135,
+                avatarRadius: 36,
+                color: isDark ? AppColors.lightGold : AppColors.royalBlue,
+                isDark: isDark,
+                crown: '👑',
+              ),
+              const SizedBox(width: 6),
+
+              // 3rd Place
+              _buildPodiumColumn(
+                entry: top3,
+                rank: 3,
+                podiumHeight: 80,
+                avatarRadius: 24,
+                color: isDark ? AppColors.deepBronze : AppColors.lightBlue,
+                isDark: isDark,
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // ─── RANKINGS LIST (Rank 4+) ───
+        ...rest.map((entry) {
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: isDark
-                    ? [AppColors.darkCard, AppColors.darkSecondarySurface]
-                    : [AppColors.lightBlue, AppColors.white],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                color: AppColors.getBorderStrong(isDark).withValues(alpha: 0.55),
-                width: 1.2,
-              ),
-              boxShadow: AppColors.primaryGlow(isDark, alpha: 0.12, blur: 24),
+              color: AppColors.getCard(isDark),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.getBorder(isDark)),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                // 2nd
-                _PodiumColumn(
-                  isDark: isDark,
-                  user: top2,
-                  rank: 2,
-                  podiumHeight: 100,
-                  avatarRadius: 28,
-                  color: isDark ? AppColors.metallicGold : AppColors.metallicBlue,
-                  diamonds: '${formatUserPoints(top2, multiplier * 0.8)} 💎',
-                ),
-                const SizedBox(width: 6),
-                // 1st
-                _PodiumColumn(
-                  isDark: isDark,
-                  user: top1,
-                  rank: 1,
-                  podiumHeight: 140,
-                  avatarRadius: 38,
-                  color: isDark ? AppColors.lightGold : AppColors.royalBlue,
-                  diamonds: '${formatUserPoints(top1, multiplier * 1.2)} 💎',
-                  crown: '👑',
-                ),
-                const SizedBox(width: 6),
-                // 3rd
-                _PodiumColumn(
-                  isDark: isDark,
-                  user: top3,
-                  rank: 3,
-                  podiumHeight: 80,
-                  avatarRadius: 24,
-                  color: isDark ? AppColors.deepBronze : AppColors.lightBlue,
-                  diamonds: '${formatUserPoints(top3, multiplier * 0.6)} 💎',
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          // ─── RANK LIST 4+ ───
-          ...List.generate(users.length > 10 ? 10 : users.length, (index) {
-            final user = users[index];
-            final user2 = isCP && index + 1 < users.length ? users[index + 1] : null;
-
-            final rankColors = isDark
-                ? [
-                    AppColors.warmGold,
-                    AppColors.metallicGold,
-                    AppColors.deepBronze,
-                  ]
-                : [
-                    AppColors.royalBlue,
-                    AppColors.metallicBlue,
-                    AppColors.lightBlue,
-                  ];
-            final isTop3 = index < 3;
-            final rankColor = isTop3 ? rankColors[index] : AppColors.getTextSecondary(isDark);
-            final scoreText = formatUserPoints(user, multiplier);
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: AppColors.getCard(isDark),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: isTop3
-                      ? rankColor.withValues(alpha: 0.3)
-                      : AppColors.getBorder(isDark),
-                ),
-                boxShadow: isTop3
-                    ? [
-                        BoxShadow(
-                          color: rankColor.withValues(alpha: 0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        )
-                      ]
-                    : null,
-              ),
-              child: Row(
-                children: [
-                  // Rank badge
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      gradient: isTop3 ? AppColors.getPremiumGradient(isDark) : null,
-                      color: isTop3 ? null : AppColors.getSurface(isDark),
-                      shape: BoxShape.circle,
-                      border: isTop3
-                          ? null
-                          : Border.all(color: AppColors.getBorder(isDark)),
-                    ),
-                    child: Center(
-                      child: Text(
-                        '#${index + 1}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 11,
-                          color: isTop3 ? AppColors.onPrimary(isDark: isDark) : rankColor,
-                        ),
-                      ),
+                // Rank Number Pill
+                Container(
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: AppColors.getSurface(isDark),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.getBorder(isDark)),
+                  ),
+                  child: Text(
+                    '#${entry.rank}',
+                    style: TextStyle(
+                      color: AppColors.getTextSecondary(isDark),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  if (isCP && user2 != null) ...[
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        UserAvatar(imageUrl: user.avatarUrl, radius: 22, showVipFrame: index < 3),
-                        Positioned(
-                          left: 20,
-                          child: UserAvatar(imageUrl: user2.avatarUrl, radius: 22, showVipFrame: false),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 32),
-                  ] else ...[
-                    UserAvatar(imageUrl: user.avatarUrl, radius: 22, showVipFrame: index < 3),
-                    const SizedBox(width: 12),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isCP && user2 != null ? '${user.name} & ${user2.name}' : user.name,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: AppColors.getTextPrimary(isDark),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        Text(
-                          isCP ? 'Top Couple' : '@${user.username}',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.getTextSecondary(isDark),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                ),
+                const SizedBox(width: 12),
+
+                // Avatar
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(user: entry.user)),
+                    );
+                  },
+                  child: UserAvatar(imageUrl: entry.user.avatarUrl, radius: 20),
+                ),
+                if (isCP && entry.partnerUser != null) ...[
+                  const SizedBox(width: 4),
+                  const Text('❤️', style: TextStyle(fontSize: 10)),
+                  const SizedBox(width: 4),
+                  UserAvatar(imageUrl: entry.partnerUser!.avatarUrl, radius: 16),
+                ],
+                const SizedBox(width: 12),
+
+                // User Display Name & Handle
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        scoreText,
+                        entry.user.displayName,
                         style: TextStyle(
+                          color: AppColors.getTextPrimary(isDark),
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
-                          color: primary,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Text(
+                            '@${entry.user.username}',
+                            style: TextStyle(
+                              color: AppColors.getTextSecondary(isDark),
+                              fontSize: 11,
+                            ),
+                          ),
+                          if (entry.user.vipLevel.isNotEmpty && entry.user.vipLevel != 'None') ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                entry.user.vipLevel,
+                                style: const TextStyle(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Score Badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.diamond_rounded, color: Colors.amber, size: 14),
+                      const SizedBox(width: 4),
                       Text(
-                        isGifter ? 'gifted 💎' : 'received 💎',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: AppColors.getTextSecondary(isDark),
+                        entry.formattedPoints,
+                        style: const TextStyle(
+                          color: Colors.amber,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
-            );
-          }),
-          const SizedBox(height: 100),
-        ],
-      ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
     );
   }
-}
 
-class _PodiumColumn extends StatelessWidget {
-  final bool isDark;
-  final dynamic user;
-  final int rank;
-  final double podiumHeight;
-  final double avatarRadius;
-  final Color color;
-  final String diamonds;
-  final String? crown;
-
-  const _PodiumColumn({
-    required this.isDark,
-    required this.user,
-    required this.rank,
-    required this.podiumHeight,
-    required this.avatarRadius,
-    required this.color,
-    required this.diamonds,
-    this.crown,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (user == null) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 34),
-          CircleAvatar(
-            radius: avatarRadius,
-            backgroundColor: AppColors.getSurface(isDark),
-            child: Icon(Icons.person_outline_rounded, color: AppColors.getMuted(isDark), size: avatarRadius * 0.9),
-          ),
-          const SizedBox(height: 6),
-          Text('-', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12)),
-          const SizedBox(height: 2),
-          Text('-', style: TextStyle(color: AppColors.getMuted(isDark), fontSize: 10)),
-          const SizedBox(height: 8),
-          Container(
-            width: 86,
-            height: podiumHeight,
-            decoration: BoxDecoration(
-              color: AppColors.getSurface(isDark).withValues(alpha: 0.3),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              border: Border.all(color: AppColors.getBorder(isDark), width: 1.5),
-            ),
-            child: Center(
-              child: Text(
-                '#$rank',
-                style: TextStyle(
-                  color: AppColors.getMuted(isDark),
-                  fontSize: rank == 1 ? 26 : 20,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ),
-        ],
+  Widget _buildPodiumColumn({
+    required RankingEntry? entry,
+    required int rank,
+    required double podiumHeight,
+    required double avatarRadius,
+    required Color color,
+    required bool isDark,
+    String? crown,
+  }) {
+    if (entry == null) {
+      return SizedBox(
+        width: 85,
+        child: Column(
+          children: [
+            CircleAvatar(radius: avatarRadius, backgroundColor: Colors.white10),
+            const SizedBox(height: 8),
+            Text('#$rank', style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+          ],
+        ),
       );
     }
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (crown != null)
-          Text(crown!, style: const TextStyle(fontSize: 26))
-        else
-          const SizedBox(height: 34),
-        UserAvatar(imageUrl: user.avatarUrl, radius: avatarRadius, showVipFrame: true),
-        const SizedBox(height: 6),
-        Text(
-          user.name.toString().split(' ').first,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-            color: AppColors.getTextPrimary(isDark),
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          diamonds,
-          style: TextStyle(
-            color: color,
-            fontWeight: FontWeight.bold,
-            fontSize: 10,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          width: 86,
-          height: podiumHeight,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [color.withValues(alpha: 0.3), color.withValues(alpha: 0.1)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-            border: Border.all(color: color, width: 2),
-          ),
-          child: Center(
-            child: Text(
-              '#$rank',
-              style: TextStyle(
-                color: color,
-                fontSize: rank == 1 ? 26 : 20,
-                fontWeight: FontWeight.w900,
-              ),
+    return SizedBox(
+      width: 96,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (crown != null) Text(crown, style: const TextStyle(fontSize: 20)),
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(user: entry.user)),
+              );
+            },
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(2.5),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: color, width: 2),
+                    boxShadow: [
+                      BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 10),
+                    ],
+                  ),
+                  child: UserAvatar(imageUrl: entry.user.avatarUrl, radius: avatarRadius),
+                ),
+                Positioned(
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '#$rank',
+                      style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 10),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-      ],
+          const SizedBox(height: 6),
+          Text(
+            entry.user.displayName,
+            style: TextStyle(
+              color: AppColors.getTextPrimary(isDark),
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 2),
+          Text(
+            '💎 ${entry.formattedPoints}',
+            style: TextStyle(
+              color: Colors.amber,
+              fontWeight: FontWeight.bold,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

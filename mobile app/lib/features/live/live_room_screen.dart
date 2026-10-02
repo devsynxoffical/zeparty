@@ -1927,6 +1927,23 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 runSpacing: 20,
                 alignment: WrapAlignment.center,
                 children: [
+                  // ── Share Room Invite Link ──────────────────────
+                  _buildToolItem(
+                    icon: Icons.share_rounded,
+                    label: 'Share Link',
+                    color: Colors.lightBlueAccent,
+                    isDark: isDark,
+                    onTap: () {
+                      Navigator.pop(c);
+                      RoomShareService.shareRoom(
+                        context,
+                        roomId: widget.room.id,
+                        roomTitle: widget.room.title,
+                        isParty: false,
+                      );
+                    },
+                  ),
+
                   // ── YouTube ──────────────────────────────────────
                   _buildToolItem(
                     icon: Icons.play_circle_fill_rounded,
