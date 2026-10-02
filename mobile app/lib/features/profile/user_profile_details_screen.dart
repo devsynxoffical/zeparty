@@ -130,10 +130,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     _tabController.dispose();
     super.dispose();
   }
-  bool get _isMe {
-    final currentUserId = context.read<AuthProvider>().currentUser.id;
-    return currentUserId.isNotEmpty && currentUserId == widget.userId;
-  }
+
 
   Future<void> _loadUser() async {
     setState(() => _isLoading = true);
