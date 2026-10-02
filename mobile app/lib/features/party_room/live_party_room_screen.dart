@@ -693,9 +693,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           const SizedBox(width: 3),
                           Text(
                             () {
-                              final pts = provider.totalDiamonds > 0
-                                  ? provider.totalDiamonds
-                                  : (activeRoom.host.diamonds > 0 ? activeRoom.host.diamonds : 0);
+                              final activeRoom = provider.activeRoom ?? widget.room;
+                              final pts = activeRoom.host.diamonds;
                               if (pts >= 1000000) return '${(pts / 1000000).toStringAsFixed(1)}M';
                               if (pts >= 1000) return '${(pts / 1000).toStringAsFixed(1)}K';
                               return '$pts';
