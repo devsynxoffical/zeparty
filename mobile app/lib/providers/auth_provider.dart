@@ -112,6 +112,25 @@ class AuthProvider extends ChangeNotifier {
   Future<void> _restoreSession() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+
+      // Check first-run flag across app uninstalls/reinstalls
+      final bool hasRunBefore = prefs.getBool('app_has_run_before') ?? false;
+      if (!hasRunBefore) {
+        // App was freshly installed or re-installed!
+        // Clear all persistent iOS Keychain tokens & local stored sessions
+        await ApiClient.instance.clearTokens();
+        await prefs.remove(_userSessionKey);
+        await prefs.remove(_followingIdsKey);
+        await prefs.remove(_blockedIdsKey);
+        await prefs.setBool('app_has_run_before', true);
+        _currentUser = null;
+        _isAuthenticated = false;
+        _isGuest = false;
+        _isInitialized = true;
+        notifyListeners();
+        return;
+      }
+
       final userJsonStr = prefs.getString(_userSessionKey);
 
       if (userJsonStr != null && userJsonStr.isNotEmpty) {
