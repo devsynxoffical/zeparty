@@ -6,7 +6,7 @@ export const createRoomSchema = z.object({
   roomType: z.preprocess((val) => {
     if (typeof val === 'string') {
       const u = val.toUpperCase().trim();
-      if (u.includes('AUDIO') || u.includes('PARTY')) return 'AUDIO_PARTY';
+      if (u.includes('AUDIO') || u.includes('PARTY') || u.includes('VOICE')) return 'AUDIO_PARTY';
       if (u.includes('VIDEO') || u.includes('LIVE')) return 'LIVE_VIDEO';
     }
     return val;
@@ -15,7 +15,7 @@ export const createRoomSchema = z.object({
     if (typeof val === 'string') {
       const u = val.toUpperCase().trim();
       if (u.includes('MUSIC')) return 'MUSIC';
-      if (u.includes('GAME') || u.includes('GAMING')) return 'GAMING';
+      if (u.includes('GAME') || u.includes('GAMING') || u.includes('PK')) return 'GAMING';
       return 'CHAT';
     }
     return val;
@@ -25,17 +25,45 @@ export const createRoomSchema = z.object({
 });
 
 export const queryActiveRoomsSchema = z.object({
-  roomType: z.enum(['LIVE_VIDEO', 'AUDIO_PARTY']).optional(),
-  category: z.enum(['MUSIC', 'CHAT', 'GAMING']).optional(),
+  roomType: z.preprocess((val) => {
+    if (!val || val === '' || val === 'all' || val === 'ALL') return undefined;
+    if (typeof val === 'string') {
+      const u = val.toUpperCase().trim();
+      if (u.includes('AUDIO') || u.includes('PARTY') || u.includes('VOICE')) return 'AUDIO_PARTY';
+      if (u.includes('VIDEO') || u.includes('LIVE')) return 'LIVE_VIDEO';
+    }
+    return undefined;
+  }, z.enum(['LIVE_VIDEO', 'AUDIO_PARTY']).optional()),
+  category: z.preprocess((val) => {
+    if (!val || val === '' || val === 'all' || val === 'ALL') return undefined;
+    if (typeof val === 'string') {
+      const u = val.toUpperCase().trim();
+      if (u.includes('MUSIC')) return 'MUSIC';
+      if (u.includes('GAME') || u.includes('GAMING') || u.includes('PK')) return 'GAMING';
+      if (u.includes('CHAT') || u.includes('ENTERTAINMENT') || u.includes('FRIENDS') || u.includes('OTHER') || u.includes('PARTY') || u.includes('LIVE')) return 'CHAT';
+    }
+    return undefined;
+  }, z.enum(['MUSIC', 'CHAT', 'GAMING']).optional()),
   search: z.string().trim().optional(),
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
 export const queryAdminRoomsSchema = z.object({
   search: z.string().trim().optional(),
-  status: z.enum(['LIVE', 'ENDED', 'CLOSED_BY_ADMIN']).optional(),
-  roomType: z.enum(['LIVE_VIDEO', 'AUDIO_PARTY']).optional(),
+  status: z.preprocess((val) => {
+    if (!val || val === 'all' || val === 'ALL') return undefined;
+    return val;
+  }, z.enum(['LIVE', 'ENDED', 'CLOSED_BY_ADMIN']).optional()),
+  roomType: z.preprocess((val) => {
+    if (!val || val === 'all' || val === 'ALL') return undefined;
+    if (typeof val === 'string') {
+      const u = val.toUpperCase().trim();
+      if (u.includes('AUDIO') || u.includes('PARTY') || u.includes('VOICE')) return 'AUDIO_PARTY';
+      if (u.includes('VIDEO') || u.includes('LIVE')) return 'LIVE_VIDEO';
+    }
+    return undefined;
+  }, z.enum(['LIVE_VIDEO', 'AUDIO_PARTY']).optional()),
   isPinnedTop: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),

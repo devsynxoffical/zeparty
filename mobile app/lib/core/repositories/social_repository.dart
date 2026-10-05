@@ -311,6 +311,7 @@ class SocialRepository {
     required String content,
     String type = 'text',
     String? mediaUrl,
+    int? durationSeconds,
   }) async {
     final response = await _client.post<Map<String, dynamic>>(
       '/v1/messages/$targetUserId',
@@ -318,6 +319,7 @@ class SocialRepository {
         'content': content,
         'type': type,
         if (mediaUrl != null && mediaUrl.isNotEmpty) 'mediaUrl': mediaUrl,
+        if (durationSeconds != null) 'durationSeconds': durationSeconds,
       },
     );
     return response.data!;

@@ -31,6 +31,17 @@ class _ChatBubbleState extends State<ChatBubble> {
   }
 
   Future<void> _toggleVoicePlayback() async {
+    if (widget.message.isExpired) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⏳ Media not available. Voice note expired after 1 month to conserve storage.'),
+          backgroundColor: Colors.orangeAccent,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     if (_isPlayingVoice) {
       _playbackTimer?.cancel();
       await _audioController?.pause();
@@ -40,26 +51,33 @@ class _ChatBubbleState extends State<ChatBubble> {
         });
       }
     } else {
+      final mediaUrl = widget.message.mediaUrl;
+      if (mediaUrl == null || mediaUrl.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('⚠️ Media not available or has expired.'),
+            backgroundColor: Colors.orangeAccent,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
       setState(() {
         _isPlayingVoice = true;
         _playbackProgress = 0.0;
       });
 
       try {
-        final mediaUrl = widget.message.mediaUrl;
-        if (mediaUrl != null && mediaUrl.isNotEmpty) {
-          _audioController?.dispose();
-          if (mediaUrl.startsWith('http') || mediaUrl.startsWith('https')) {
-            _audioController = VideoPlayerController.networkUrl(Uri.parse(mediaUrl));
-          } else {
-            _audioController = VideoPlayerController.file(File(mediaUrl));
-          }
-          await _audioController?.initialize();
-          await _audioController?.setVolume(1.0);
-          await _audioController?.play();
+        _audioController?.dispose();
+        if (mediaUrl.startsWith('http') || mediaUrl.startsWith('https')) {
+          _audioController = VideoPlayerController.networkUrl(Uri.parse(mediaUrl));
         } else {
-          throw Exception('Media URL is empty');
+          _audioController = VideoPlayerController.file(File(mediaUrl));
         }
+        await _audioController?.initialize();
+        await _audioController?.setVolume(1.0);
+        await _audioController?.play();
       } catch (e) {
         debugPrint('Voice note playback error: $e');
         _playbackTimer?.cancel();
@@ -69,10 +87,10 @@ class _ChatBubbleState extends State<ChatBubble> {
             _playbackProgress = 0.0;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('⚠️ Cannot play voice note: $e'),
+            const SnackBar(
+              content: Text('⚠️ Media not available'),
               backgroundColor: Colors.redAccent,
-              duration: const Duration(seconds: 2),
+              duration: Duration(seconds: 2),
             ),
           );
           return;
@@ -116,6 +134,16 @@ class _ChatBubbleState extends State<ChatBubble> {
   }
 
   void _showFullscreenImage(BuildContext context, String imagePath) {
+    if (widget.message.isExpired) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⏳ Media not available. Image expired after 1 month to conserve storage.'),
+          backgroundColor: Colors.orangeAccent,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
     showDialog(
       context: context,
       builder: (_) => Dialog(
@@ -153,6 +181,7 @@ class _ChatBubbleState extends State<ChatBubble> {
     final onPrimary = AppColors.onPrimary(isDark: isDark);
 
     final mediaPath = widget.message.mediaUrl;
+    final isExpired = widget.message.isExpired;
     final isVoice = widget.message.type == 'voice' ||
         widget.message.text.contains('🎤') ||
         (mediaPath != null && (mediaPath.endsWith('.m4a') || mediaPath.endsWith('.mp3')));
@@ -204,7 +233,34 @@ class _ChatBubbleState extends State<ChatBubble> {
         child: Column(
           crossAxisAlignment: widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
-            if (isImage && mediaPath != null) ...[
+            if (isImage && isExpired) ...[
+              // ─── Expired Image Placeholder ───
+              Container(
+                width: 220,
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.image_not_supported_outlined, color: Colors.white60, size: 36),
+                    SizedBox(height: 6),
+                    Text(
+                      'Media not available',
+                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Expired after 1 month to manage storage',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white54, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (isImage && mediaPath != null) ...[
               // ─── Sent Image Thumbnail ───
               GestureDetector(
                 onTap: () => _showFullscreenImage(context, mediaPath),
@@ -304,12 +360,16 @@ class _ChatBubbleState extends State<ChatBubble> {
                     child: Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: widget.isMe ? Colors.white.withValues(alpha: 0.25) : primaryColor.withValues(alpha: 0.2),
+                        color: isExpired
+                            ? Colors.grey.withValues(alpha: 0.3)
+                            : (widget.isMe ? Colors.white.withValues(alpha: 0.25) : primaryColor.withValues(alpha: 0.2)),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(
-                        _isPlayingVoice ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                        color: textColor,
+                        isExpired
+                            ? Icons.timer_off_outlined
+                            : (_isPlayingVoice ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                        color: isExpired ? Colors.white60 : textColor,
                         size: 22,
                       ),
                     ),
@@ -318,32 +378,44 @@ class _ChatBubbleState extends State<ChatBubble> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: List.generate(14, (index) {
-                          final barHeight = (index % 3 == 0 ? 16 : (index % 2 == 0 ? 10 : 22)).toDouble();
-                          final isActive = (index / 14) <= _playbackProgress;
-                          return Container(
-                            width: 3,
-                            height: barHeight,
-                            margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                            decoration: BoxDecoration(
-                              color: isActive
-                                  ? (widget.isMe ? Colors.white : primaryColor)
-                                  : (widget.isMe ? Colors.white38 : Colors.grey.shade400),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                          );
-                        }),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _isPlayingVoice
-                            ? 'Playing voice note (${(_playbackProgress * 100).toInt()}%)'
-                            : widget.message.text.contains('Voice Note')
-                                ? widget.message.text
-                                : 'Voice Note • Play',
-                        style: TextStyle(color: textColor?.withValues(alpha: 0.8), fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
+                      if (!isExpired) ...[
+                        Row(
+                          children: List.generate(14, (index) {
+                            final barHeight = (index % 3 == 0 ? 16 : (index % 2 == 0 ? 10 : 22)).toDouble();
+                            final isActive = (index / 14) <= _playbackProgress;
+                            return Container(
+                              width: 3,
+                              height: barHeight,
+                              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                              decoration: BoxDecoration(
+                                color: isActive
+                                    ? (widget.isMe ? Colors.white : primaryColor)
+                                    : (widget.isMe ? Colors.white38 : Colors.grey.shade400),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            );
+                          }),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _isPlayingVoice
+                              ? 'Playing voice note (${(_playbackProgress * 100).toInt()}%)'
+                              : widget.message.text.contains('Voice Note')
+                                  ? widget.message.text
+                                  : 'Voice Note • Play',
+                          style: TextStyle(color: textColor?.withValues(alpha: 0.8), fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ] else ...[
+                        Text(
+                          'Media not available',
+                          style: TextStyle(color: textColor ?? Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Expired after 1 month to reduce storage',
+                          style: TextStyle(color: textColor?.withValues(alpha: 0.65) ?? Colors.white60, fontSize: 10),
+                        ),
+                      ],
                     ],
                   ),
                 ],

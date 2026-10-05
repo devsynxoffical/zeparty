@@ -82,7 +82,7 @@ class LiveRoomModel {
     final title = json['title']?.toString() ?? 'ZeParty Live';
     final coverUrl = json['coverImageUrl']?.toString() ??
         json['coverUrl']?.toString() ??
-        'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=600&q=80';
+        'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=600&q=80';
     final viewerCount = int.tryParse(json['viewerCount']?.toString() ?? '') ??
         int.tryParse(json['currentViewersCount']?.toString() ?? '') ?? 0;
     final category = json['category']?.toString() ?? 'Live';

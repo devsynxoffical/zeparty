@@ -1259,16 +1259,22 @@ model UserBlock {
 }
 
 model Message {
-  id          String   @id @default(uuid())
-  senderId    String
-  sender      User     @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
-  recipientId String
-  content     String
-  isRead      Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  id              String    @id @default(uuid())
+  senderId        String
+  sender          User      @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId     String
+  content         String
+  type            String    @default("text") // "text", "voice", "image", "gift", "system"
+  mediaUrl        String?
+  durationSeconds Int?
+  mediaExpiresAt  DateTime?
+  isMediaDeleted  Boolean   @default(false)
+  isRead          Boolean   @default(false)
+  createdAt       DateTime  @default(now())
 
   @@index([senderId])
   @@index([recipientId])
+  @@index([mediaExpiresAt, isMediaDeleted])
 }
 
 model NotificationPreference {

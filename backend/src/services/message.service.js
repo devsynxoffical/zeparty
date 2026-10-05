@@ -12,7 +12,7 @@ export async function getConversationMessages(userId, targetUserId, options = {}
   return await messageRepository.getMessagesBetweenUsers(userId, targetUserId, options);
 }
 
-export async function sendDirectMessage(senderId, targetUserId, { content, type = 'text', mediaUrl = null }) {
+export async function sendDirectMessage(senderId, targetUserId, { content, type = 'text', mediaUrl = null, durationSeconds = null }) {
   if (!content || !content.trim()) {
     const error = new Error('Message content cannot be empty.');
     error.status = 400;
@@ -41,12 +41,18 @@ export async function sendDirectMessage(senderId, targetUserId, { content, type 
     senderId: resolvedSenderId,
     recipientId: resolvedTargetId,
     content: content.trim(),
+    type: type || 'text',
+    mediaUrl: mediaUrl || null,
+    durationSeconds: durationSeconds ? parseInt(durationSeconds, 10) : null,
   });
 
   const payload = {
     ...message,
-    type: type || 'text',
-    mediaUrl: mediaUrl || null,
+    type: type || message.type || 'text',
+    mediaUrl: message.mediaUrl || mediaUrl || null,
+    durationSeconds: message.durationSeconds || durationSeconds || null,
+    isMediaDeleted: false,
+    isMediaExpired: false,
     sender: {
       id: senderUser?.id || resolvedSenderId,
       username: senderUser?.username || 'user',

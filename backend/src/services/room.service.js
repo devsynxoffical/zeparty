@@ -50,6 +50,9 @@ export async function createRoom(
   // Broadcast new room creation to global realtime discovery subscribers
   try {
     socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CREATED, room);
+    socketEmitter.broadcastGlobal('room:created', room);
+    socketEmitter.broadcastGlobal('room_created', room);
+    socketEmitter.broadcastGlobal('room:started', room);
   } catch (err) {
     console.error('Failed to broadcast ROOM_CREATED socket event:', err);
   }

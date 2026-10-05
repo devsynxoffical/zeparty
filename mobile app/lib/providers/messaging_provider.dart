@@ -322,40 +322,19 @@ class MessagingProvider extends ChangeNotifier {
 
   void _handleIncomingSocketMessage(Map<String, dynamic> data) {
     try {
-      final id = data['id']?.toString() ?? 'm_${DateTime.now().millisecondsSinceEpoch}';
       final senderId = data['senderId']?.toString() ?? '';
-      final recipientId = data['recipientId']?.toString() ?? '';
-      final content = data['content']?.toString() ?? '';
-      final createdAtRaw = data['createdAt']?.toString();
-      final timestamp = createdAtRaw != null ? DateTime.tryParse(createdAtRaw) ?? DateTime.now() : DateTime.now();
-      final statusStr = data['status']?.toString().toUpperCase();
-      final isRead = data['isRead'] == true || statusStr == 'READ';
-      final isDelivered = data['isDelivered'] == true || statusStr == 'DELIVERED' || isRead;
-      final status = isRead
-          ? MessageStatus.read
-          : (isDelivered ? MessageStatus.delivered : MessageStatus.sent);
-
       final otherUserId = senderId;
       if (otherUserId.isEmpty) return;
 
-      final newMsg = MessageModel(
-        id: id,
-        senderId: senderId,
-        receiverId: recipientId,
-        text: content,
-        timestamp: timestamp,
-        isRead: isRead,
-        isDelivered: isDelivered,
-        status: status,
-      );
+      final newMsg = MessageModel.fromJson(data);
 
       final thread = _chatThreads.putIfAbsent(otherUserId, () => []);
-      if (!thread.any((m) => m.id == id)) {
+      if (!thread.any((m) => m.id == newMsg.id)) {
         thread.add(newMsg);
       }
 
       final meta = getMetaForUser(otherUserId);
-      if (!isRead) {
+      if (!newMsg.isRead) {
         meta.unreadCount += 1;
       }
 
@@ -454,25 +433,10 @@ class MessagingProvider extends ChangeNotifier {
 
         if (map['lastMessage'] is Map) {
           final lastMsgMap = Map<String, dynamic>.from(map['lastMessage'] as Map);
-          final msgId = lastMsgMap['id']?.toString() ?? '';
-          final text = lastMsgMap['content']?.toString() ?? '';
-          final senderId = lastMsgMap['senderId']?.toString() ?? '';
-          final recipientId = lastMsgMap['recipientId']?.toString() ?? '';
-          final createdAtRaw = lastMsgMap['createdAt']?.toString();
-          final timestamp = createdAtRaw != null ? DateTime.tryParse(createdAtRaw) ?? DateTime.now() : DateTime.now();
-          final isRead = lastMsgMap['isRead'] == true;
-
-          final msg = MessageModel(
-            id: msgId,
-            senderId: senderId,
-            receiverId: recipientId,
-            text: text,
-            timestamp: timestamp,
-            isRead: isRead,
-          );
+          final msg = MessageModel.fromJson(lastMsgMap);
 
           final thread = _chatThreads.putIfAbsent(otherUserId, () => []);
-          if (!thread.any((m) => m.id == msgId)) {
+          if (!thread.any((m) => m.id == msg.id)) {
             thread.clear();
             thread.add(msg);
           }
@@ -501,31 +465,7 @@ class MessagingProvider extends ChangeNotifier {
       for (final item in rawList) {
         if (item is! Map) continue;
         final map = Map<String, dynamic>.from(item);
-        final id = map['id']?.toString() ?? '';
-        final senderId = map['senderId']?.toString() ?? '';
-        final recipientId = map['recipientId']?.toString() ?? '';
-        final text = map['content']?.toString() ?? '';
-        final createdAtRaw = map['createdAt']?.toString();
-        final timestamp = createdAtRaw != null ? DateTime.tryParse(createdAtRaw) ?? DateTime.now() : DateTime.now();
-        final statusStr = map['status']?.toString().toUpperCase();
-        final isRead = map['isRead'] == true || statusStr == 'READ';
-        final isDelivered = map['isDelivered'] == true || statusStr == 'DELIVERED' || isRead;
-        final status = isRead
-            ? MessageStatus.read
-            : (isDelivered ? MessageStatus.delivered : MessageStatus.sent);
-
-        loaded.add(
-          MessageModel(
-            id: id,
-            senderId: senderId,
-            receiverId: recipientId,
-            text: text,
-            timestamp: timestamp,
-            isRead: isRead,
-            isDelivered: isDelivered,
-            status: status,
-          ),
-        );
+        loaded.add(MessageModel.fromJson(map));
       }
 
       _chatThreads[targetUserId] = loaded;
@@ -544,6 +484,7 @@ class MessagingProvider extends ChangeNotifier {
     String text, {
     String type = 'text',
     String? mediaUrl,
+    int? durationSeconds,
     String? currentUserId,
   }) async {
     if (text.trim().isEmpty && (mediaUrl == null || mediaUrl.isEmpty)) return;
@@ -560,6 +501,7 @@ class MessagingProvider extends ChangeNotifier {
       text: text,
       type: type,
       mediaUrl: mediaUrl,
+      durationSeconds: durationSeconds,
       timestamp: DateTime.now(),
       isRead: false,
       isDelivered: isRecipientOnline,
@@ -596,29 +538,23 @@ class MessagingProvider extends ChangeNotifier {
         content: text,
         type: type,
         mediaUrl: mediaUrl,
+        durationSeconds: durationSeconds,
       );
       final data = response['data'];
       if (data is Map) {
-        final serverId = data['id']?.toString();
-        if (serverId != null) {
-          final index = _chatThreads[receiverId]!.indexWhere((m) => m.id == tempId);
-          if (index != -1) {
-            _chatThreads[receiverId]![index] = MessageModel(
-              id: serverId,
-              senderId: senderId,
-              receiverId: receiverId,
-              text: text,
-              type: type,
-              mediaUrl: mediaUrl,
-              timestamp: DateTime.now(),
-              isRead: false,
-              isDelivered: isRecipientOnline,
-              status: initialStatus,
-            );
-            notifyListeners();
-          }
+        final serverMsg = MessageModel.fromJson(Map<String, dynamic>.from(data));
+        final index = _chatThreads[receiverId]!.indexWhere((m) => m.id == tempId);
+        if (index != -1) {
+          _chatThreads[receiverId]![index] = serverMsg.copyWith(
+            status: isRecipientOnline ? MessageStatus.delivered : MessageStatus.sent,
+          );
+          notifyListeners();
         }
       }
+    } catch (e) {
+      debugPrint('[MessagingProvider] Error sending message to $receiverId: $e');
+    }
+  }
     } catch (e) {
       debugPrint('[MessagingProvider] Error sending message to $receiverId: $e');
     }
