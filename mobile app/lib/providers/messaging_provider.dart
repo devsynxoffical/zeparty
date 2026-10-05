@@ -555,10 +555,6 @@ class MessagingProvider extends ChangeNotifier {
       debugPrint('[MessagingProvider] Error sending message to $receiverId: $e');
     }
   }
-    } catch (e) {
-      debugPrint('[MessagingProvider] Error sending message to $receiverId: $e');
-    }
-  }
 
   /// Search real users from backend
   Future<List<UserModel>> searchUsers(String query) async {

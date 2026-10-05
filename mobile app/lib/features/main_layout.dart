@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/theme_provider.dart';
 import '../core/utils/auth_guard.dart';
-import '../providers/auth_provider.dart';
 import '../widgets/glass_nav_bar.dart';
 import 'home/home_screen.dart';
 import 'social/social_feed_screen.dart';
@@ -15,6 +15,7 @@ import 'pk_battle/pk_battle_screen.dart';
 import 'messages/inbox_screen.dart';
 import 'profile/profile_screen.dart';
 import 'auth/under_age_screen.dart';
+import '../providers/auth_provider.dart';
 
 class MainLayout extends StatefulWidget {
   const MainLayout({super.key});
@@ -25,6 +26,8 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   int _currentIndex = 0;
+  DateTime? _lastBackPressTime;
+  static const Duration _exitTimeout = Duration(seconds: 2);
 
   void _onTabSelected(int index) {
     if (index == 2) return; // centre button handled separately
@@ -39,6 +42,36 @@ class _MainLayoutState extends State<MainLayout> {
     setState(() {
       _currentIndex = index;
     });
+  }
+
+  void _handlePopInvoked(bool didPop) {
+    if (didPop) return;
+
+    // 1. If user is on an inner bottom navigation tab (Social, Inbox, Profile), return to Home Page (Index 0)
+    if (_currentIndex != 0) {
+      setState(() {
+        _currentIndex = 0;
+      });
+      return;
+    }
+
+    // 2. User is on Home Page (Index 0) - Manage Double-Back Exit Logic
+    final now = DateTime.now();
+    if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > _exitTimeout) {
+      _lastBackPressTime = now;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tap back again to exit'),
+          duration: _exitTimeout,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      _lastBackPressTime = null;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      SystemNavigator.pop();
+    }
   }
 
   void _showCreateActionSheet() {
@@ -218,25 +251,31 @@ class _MainLayoutState extends State<MainLayout> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBody: true,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: [
-          const HomeScreen(),
-          SocialFeedScreen(isScreenActive: _currentIndex == 1),
-          const SizedBox.shrink(), // Create Gap — never actually shown
-          const InboxScreen(),
-          const ProfileScreen(),
-        ],
-      ),
-      bottomNavigationBar: GlassNavBar(
-        selectedIndex: _currentIndex,
-        onTabSelected: _onTabSelected,
-        onCreatePressed: () => AuthGuard.require(
-          context,
-          _showCreateActionSheet,
-          reason: 'Sign in to create & broadcast content',
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        _handlePopInvoked(didPop);
+      },
+      child: Scaffold(
+        extendBody: true,
+        body: IndexedStack(
+          index: _currentIndex,
+          children: [
+            const HomeScreen(),
+            SocialFeedScreen(isScreenActive: _currentIndex == 1),
+            const SizedBox.shrink(), // Create Gap — never actually shown
+            const InboxScreen(),
+            const ProfileScreen(),
+          ],
+        ),
+        bottomNavigationBar: GlassNavBar(
+          selectedIndex: _currentIndex,
+          onTabSelected: _onTabSelected,
+          onCreatePressed: () => AuthGuard.require(
+            context,
+            _showCreateActionSheet,
+            reason: 'Sign in to create & broadcast content',
+          ),
         ),
       ),
     );

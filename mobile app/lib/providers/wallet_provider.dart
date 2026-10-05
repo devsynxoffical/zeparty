@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../models/wallet_model.dart';
 import '../models/transaction_model.dart';
@@ -176,27 +177,24 @@ class WalletProvider extends ChangeNotifier {
 
   // --- Interaction helper methods ---
   bool spendCoins(int amount, [String? customIdempotencyKey, String? referenceId]) {
+    _wallet ??= const WalletModel(id: 'local', userId: 'local', coinBalance: 10000, diamondBalance: 5000);
     if (amount > 0 && coins < amount) {
       return false;
     }
-    final key = customIdempotencyKey ?? referenceId ?? PerformanceUtils.generateIdempotencyKey('spend');
-    if (_processedIdempotencyKeys.contains(key)) return false;
-    _processedIdempotencyKeys.add(key);
-
-    // Refresh wallet after expenditure
+    
+    _wallet = _wallet!.copyWith(coinBalance: max(0, _wallet!.coinBalance - amount));
+    notifyListeners();
     fetchWallet();
     return true;
   }
 
   bool spendDiamonds(int amount, String giftName) {
+    _wallet ??= const WalletModel(id: 'local', userId: 'local', coinBalance: 10000, diamondBalance: 5000);
     if (amount > 0 && diamonds < amount) {
       return false;
     }
-    final key = PerformanceUtils.generateIdempotencyKey('spend_diamond');
-    if (_processedIdempotencyKeys.contains(key)) return false;
-    _processedIdempotencyKeys.add(key);
-
-    // Refresh wallet after diamond spend
+    _wallet = _wallet!.copyWith(diamondBalance: max(0, _wallet!.diamondBalance - amount));
+    notifyListeners();
     fetchWallet();
     return true;
   }
@@ -209,11 +207,21 @@ class WalletProvider extends ChangeNotifier {
 
   bool exchangeDiamondsToCoins(int diamondsAmount, int coinsAmount) {
     if (diamondsAmount <= 0 || diamonds < diamondsAmount) return false;
+    if (_wallet != null) {
+      _wallet = _wallet!.copyWith(
+        diamondBalance: max(0, _wallet!.diamondBalance - diamondsAmount),
+        coinBalance: _wallet!.coinBalance + coinsAmount,
+      );
+      notifyListeners();
+    }
     fetchWallet();
     return true;
   }
 
   void earnCoins(int amount, String title, {String? referenceId}) {
+    _wallet ??= const WalletModel(id: 'local', userId: 'local', coinBalance: 10000, diamondBalance: 5000);
+    _wallet = _wallet!.copyWith(coinBalance: _wallet!.coinBalance + amount);
+    notifyListeners();
     fetchWallet();
   }
 

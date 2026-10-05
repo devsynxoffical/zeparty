@@ -7,6 +7,7 @@ import '../../../core/animations/app_animations.dart';
 import '../../live/live_room_screen.dart';
 import '../../party_room/live_party_room_screen.dart';
 import '../../../models/live_room_model.dart';
+import '../../../core/repositories/backend_repository.dart';
 
 class LiveDiscoveryGrid extends StatelessWidget {
   final List<LiveRoomModel> liveRooms;
