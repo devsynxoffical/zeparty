@@ -15,7 +15,7 @@ import '../../widgets/banner_carousel_widget.dart';
 import 'tabs/live_discovery_grid.dart';
 import 'tabs/shorts_tab.dart';
 import 'tabs/games_tab.dart';
-import 'tabs/mine_tab.dart';
+import '../../providers/auth_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -33,6 +33,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this, initialIndex: 1);
     _tabController.addListener(_onTabChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      BackendRepository.instance.fetchLiveRooms();
+    });
   }
 
   @override
@@ -52,6 +55,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     final regionProvider = Provider.of<RegionProvider>(context);
     final backend = Provider.of<BackendRepository>(context);
+    final currentUserId = Provider.of<AuthProvider>(context, listen: false).currentUser.id;
     
     // Base live rooms from reactive repository
     var liveRooms = backend.liveRooms;
@@ -179,7 +183,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Module 09: Party Top Banner Carousel (Full width promotional/event carousel)
+                    // Module 09: Party Top Banner Carousel
                     Padding(
                       padding: const EdgeInsets.only(top: 8, bottom: 8),
                       child: BannerCarouselWidget(
@@ -223,10 +227,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           body: TabBarView(
             controller: _tabController,
             children: [
+              // 1. Mine Tab: User's owned / hosted rooms
               MineTab(isDark: isDark),
-              // Party Tab: Audio Voice Party Rooms
+
+              // 2. Party Tab: Audio Voice Party Rooms (shown to others, not host himself)
               LiveDiscoveryGrid(
                 liveRooms: liveRooms.where((r) {
+                  final isMyOwn = currentUserId.isNotEmpty &&
+                      (r.host.id == currentUserId || r.creatorUserId == currentUserId);
+                  if (isMyOwn) return false;
+
                   final t = r.roomType.toUpperCase();
                   final isAudio = t.contains('AUDIO') || t.contains('VOICE') || (t.contains('PARTY') && !t.contains('VIDEO'));
                   return isAudio || (t != 'LIVE_VIDEO' && !t.contains('VIDEO') && r.category.toUpperCase() == 'PARTY');
@@ -234,9 +244,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 isDark: isDark,
                 isPartyTab: true,
               ),
-              // Live Tab: Video Streams & Live Broadcasts
+
+              // 3. Live Tab: Video Streams (shown to others, not host himself, excludes PK)
               LiveDiscoveryGrid(
                 liveRooms: liveRooms.where((r) {
+                  final isMyOwn = currentUserId.isNotEmpty &&
+                      (r.host.id == currentUserId || r.creatorUserId == currentUserId);
+                  if (isMyOwn) return false;
+
+                  final isPk = r.category.toUpperCase() == 'PK' ||
+                      r.title.toUpperCase().contains('PK') ||
+                      r.roomType.toUpperCase().contains('PK');
+                  if (isPk) return false;
+
                   final t = r.roomType.toUpperCase();
                   final isVideo = t.contains('VIDEO') || t == 'LIVE_VIDEO' || t == 'VIDEO ROOM';
                   return isVideo || (!t.contains('AUDIO') && !t.contains('VOICE') && !t.contains('PARTY'));
@@ -244,22 +264,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 isDark: isDark,
                 isPartyTab: false,
               ),
+
+              // 4. Games Tab
               GamesTab(isDark: isDark),
-              // PK Tab: Live PK Battles & Gaming Streams
+
+              // 5. PK Tab: Live PK Battles ONLY (broadcasts shifted to PK appear here exclusively)
               LiveDiscoveryGrid(
-                liveRooms: liveRooms.where((r) =>
-                  r.category.toUpperCase() == 'PK' ||
-                  r.category.toUpperCase() == 'GAMING' ||
-                  r.title.toUpperCase().contains('PK') ||
-                  r.roomType.toUpperCase().contains('PK')
-                ).toList().isNotEmpty
-                    ? liveRooms.where((r) =>
-                        r.category.toUpperCase() == 'PK' ||
-                        r.category.toUpperCase() == 'GAMING' ||
-                        r.title.toUpperCase().contains('PK') ||
-                        r.roomType.toUpperCase().contains('PK')
-                      ).toList()
-                    : liveRooms,
+                liveRooms: liveRooms.where((r) {
+                  final isPk = r.category.toUpperCase() == 'PK' ||
+                      r.title.toUpperCase().contains('PK') ||
+                      r.roomType.toUpperCase().contains('PK');
+                  return isPk;
+                }).toList(),
                 isDark: isDark,
               ),
             ],

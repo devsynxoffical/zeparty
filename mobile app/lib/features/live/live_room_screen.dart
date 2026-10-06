@@ -57,6 +57,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   final TextEditingController _chatController = TextEditingController();
   final GlobalKey _hostAvatarKey = GlobalKey();
   int? _remoteHostUid;
+  UserModel? _coHostUser;
 
   Timer? _durationTimer;
   int _streamDurationSeconds = 0;
@@ -76,6 +77,38 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
   late AnimationController _vsPulseController;
   late Animation<double> _vsScale;
+
+  Future<void> _shiftCoHostToPK(LiveRoomModel activeRoom) async {
+    if (_coHostUser == null) return;
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚔️ Starting PK Battle with Co-Host...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // 1. Shift Room Category to PK on Backend
+      await ApiClient.instance.post('/v1/pk/create', data: {
+        'hostRoomId': activeRoom.id,
+        'opponentUserId': _coHostUser!.id,
+        'durationMinutes': 5,
+      }).catchError((e) {
+        debugPrint('[LiveRoom] PK create error: $e');
+      });
+
+      // 2. Emit socket direct PK start
+      SocketService.instance.emit('pk:start_direct', {
+        'roomId': activeRoom.id,
+        'hostAId': activeRoom.host.id,
+        'hostBId': _coHostUser!.id,
+        'hostBName': _coHostUser!.name,
+        'hostBAvatar': _coHostUser!.avatarUrl,
+      });
+    } catch (e) {
+      debugPrint('[LiveRoom] Shift to PK error: $e');
+    }
+  }
 
   void _handleStreamEnded([String? reason]) {
     if (_isEndedDialogShown || !mounted) return;
@@ -505,6 +538,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       return _buildPkSplitVideoStream(isDark, isHost, activeRoom, pk);
     }
 
+    if (_coHostUser != null) {
+      return _buildCoHostSplitVideoStream(isDark, isHost, activeRoom);
+    }
+
     final agora = AgoraRtcService.instance;
 
     if (isHost) {
@@ -533,6 +570,229 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
     // Fallback if video is connecting or audio-only
     return _buildLiveHostBackground(isDark);
+  }
+
+  /// Co-Host Split Video Screen (Host on Left, Co-Host on Right) + Switch to PK button
+  Widget _buildCoHostSplitVideoStream(
+    bool isDark,
+    bool isHost,
+    LiveRoomModel activeRoom,
+  ) {
+    final agora = AgoraRtcService.instance;
+    final remoteUids = agora.remoteUids.toList();
+    final firstRemoteUid = _remoteHostUid ?? (remoteUids.isNotEmpty ? remoteUids.first : null);
+
+    Widget? videoWidgetLeft;
+    Widget? videoWidgetRight;
+
+    if (isHost) {
+      videoWidgetLeft = agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController(
+                rtcEngine: agora.engine!,
+                canvas: const VideoCanvas(uid: 0),
+              ),
+            )
+          : null;
+      videoWidgetRight = firstRemoteUid != null && agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController.remote(
+                rtcEngine: agora.engine!,
+                canvas: VideoCanvas(uid: firstRemoteUid),
+                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+              ),
+            )
+          : null;
+    } else {
+      videoWidgetLeft = firstRemoteUid != null && agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController.remote(
+                rtcEngine: agora.engine!,
+                canvas: VideoCanvas(uid: firstRemoteUid),
+                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+              ),
+            )
+          : null;
+    }
+
+    return Container(
+      color: const Color(0xFF0A071B),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            const SizedBox(height: 120),
+            // Header: Co-Host Banner & Switch to PK Action
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFF00E5FF), Color(0xFF00B0FF)]),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.people_rounded, color: Colors.black, size: 13),
+                        SizedBox(width: 4),
+                        Text(
+                          'CO-HOSTING',
+                          style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Spacer(),
+                  // Switch to PK button
+                  GestureDetector(
+                    onTap: () => _shiftCoHostToPK(activeRoom),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(colors: [Color(0xFFFF0055), Color(0xFF7928CA)]),
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFFF0055).withValues(alpha: 0.4),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('⚔️', style: TextStyle(fontSize: 12)),
+                          SizedBox(width: 4),
+                          Text(
+                            'Switch to PK',
+                            style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Split Video Area
+            Expanded(
+              flex: 5,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    // Host Video Card
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: videoWidgetLeft ??
+                                  Container(
+                                    color: Colors.black45,
+                                    child: Center(
+                                      child: UserAvatar(imageUrl: activeRoom.host.avatarUrl, name: activeRoom.host.name, radius: 28),
+                                    ),
+                                  ),
+                            ),
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Host: ${activeRoom.host.name}',
+                                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Co-Host Video Card
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: videoWidgetRight ??
+                                  Container(
+                                    color: Colors.black45,
+                                    child: Center(
+                                      child: UserAvatar(
+                                        imageUrl: _coHostUser?.avatarUrl ?? '',
+                                        name: _coHostUser?.name ?? 'Co-Host',
+                                        radius: 28,
+                                      ),
+                                    ),
+                                  ),
+                            ),
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  'Co-Host: ${_coHostUser?.name ?? "Guest"}',
+                                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                            if (widget.isHost)
+                              Positioned(
+                                top: 6,
+                                right: 6,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    setState(() => _coHostUser = null);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Co-host removed.')),
+                                    );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: const BoxDecoration(
+                                      color: Colors.black54,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.close_rounded, color: Colors.white, size: 14),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Spacer(flex: 5),
+          ],
+        ),
+      ),
+    );
   }
 
   /// TikTok-Style Side-by-Side Split Video Screen inside Live Room
@@ -1562,6 +1822,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                         roomId: widget.room.id,
                                         roomTitle: widget.room.title,
                                         isDark: isDark,
+                                        isHost: widget.isHost,
+                                        onMakeCoHost: (viewer) {
+                                          setState(() => _coHostUser = viewer);
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('Joined screen with ${viewer.name} as Co-Host!'),
+                                              backgroundColor: const Color(0xFF00E5FF),
+                                            ),
+                                          );
+                                        },
                                       );
                                     },
                                     child: Container(
@@ -1740,6 +2010,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       roomId: widget.room.id,
                       roomTitle: widget.room.title,
                       isDark: isDark,
+                      isHost: widget.isHost,
+                      onMakeCoHost: (viewer) {
+                        setState(() => _coHostUser = viewer);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Joined screen with ${viewer.name} as Co-Host!'),
+                            backgroundColor: const Color(0xFF00E5FF),
+                          ),
+                        );
+                      },
                     );
                   },
                 ),
@@ -2111,6 +2391,22 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                         roomId: widget.room.id,
                         roomTitle: widget.room.title,
                         isParty: false,
+                      );
+                    },
+                  ),
+
+                  // ── Invite Co-Host Link ──────────────────────────
+                  _buildToolItem(
+                    icon: Icons.person_add_alt_1_rounded,
+                    label: 'Invite Co-Host',
+                    color: const Color(0xFF00E5FF),
+                    isDark: isDark,
+                    onTap: () {
+                      Navigator.pop(c);
+                      RoomShareService.shareCoHostInvite(
+                        context,
+                        roomId: widget.room.id,
+                        roomTitle: widget.room.title,
                       );
                     },
                   ),
@@ -2736,6 +3032,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     roomId: widget.room.id,
                     roomTitle: widget.room.title,
                     isDark: isDark,
+                    isHost: widget.isHost,
+                    onMakeCoHost: (viewer) {
+                      setState(() => _coHostUser = viewer);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Joined screen with ${viewer.name} as Co-Host!'),
+                          backgroundColor: const Color(0xFF00E5FF),
+                        ),
+                      );
+                    },
                   );
                 },
               ),

@@ -11,6 +11,8 @@ class LiveViewersSheet extends StatefulWidget {
   final String roomId;
   final String roomTitle;
   final bool isDark;
+  final bool isHost;
+  final Function(UserModel viewer)? onMakeCoHost;
 
   const LiveViewersSheet({
     super.key,
@@ -18,6 +20,8 @@ class LiveViewersSheet extends StatefulWidget {
     required this.roomId,
     required this.roomTitle,
     required this.isDark,
+    this.isHost = false,
+    this.onMakeCoHost,
   });
 
   static Future<void> show(
@@ -26,6 +30,8 @@ class LiveViewersSheet extends StatefulWidget {
     required String roomId,
     required String roomTitle,
     required bool isDark,
+    bool isHost = false,
+    Function(UserModel viewer)? onMakeCoHost,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -36,6 +42,8 @@ class LiveViewersSheet extends StatefulWidget {
         roomId: roomId,
         roomTitle: roomTitle,
         isDark: isDark,
+        isHost: isHost,
+        onMakeCoHost: onMakeCoHost,
       ),
     );
   }
@@ -292,56 +300,100 @@ class _LiveViewersSheetState extends State<LiveViewersSheet> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        trailing: Consumer<AuthProvider>(
-                          builder: (ctx, auth, _) {
-                            final isFollowing = auth.isFollowing(viewer.id);
-                            final isMe = auth.currentUser.id == viewer.id;
-                            if (isMe) return const SizedBox.shrink();
-
-                            return GestureDetector(
-                              onTap: () {
-                                auth.toggleFollow(viewer.id);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      isFollowing
-                                          ? 'Unfollowed ${viewer.name}'
-                                          : '✔ Following ${viewer.name}!',
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (widget.isHost && widget.onMakeCoHost != null) ...[
+                              GestureDetector(
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  widget.onMakeCoHost!(viewer);
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                  margin: const EdgeInsets.only(right: 6),
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Color(0xFF00E5FF), Color(0xFF00B0FF)],
                                     ),
-                                    duration: const Duration(seconds: 1),
+                                    borderRadius: BorderRadius.circular(14),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFF00E5FF).withValues(alpha: 0.3),
+                                        blurRadius: 6,
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.video_call_rounded, color: Colors.black, size: 14),
+                                      SizedBox(width: 3),
+                                      Text(
+                                        'Co-Host',
+                                        style: TextStyle(
+                                          color: Colors.black,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                            Consumer<AuthProvider>(
+                              builder: (ctx, auth, _) {
+                                final isFollowing = auth.isFollowing(viewer.id);
+                                final isMe = auth.currentUser.id == viewer.id;
+                                if (isMe) return const SizedBox.shrink();
+
+                                return GestureDetector(
+                                  onTap: () {
+                                    auth.toggleFollow(viewer.id);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          isFollowing
+                                              ? 'Unfollowed ${viewer.name}'
+                                              : '✔ Following ${viewer.name}!',
+                                        ),
+                                        duration: const Duration(seconds: 1),
+                                      ),
+                                    );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: isFollowing
+                                          ? (isDark ? Colors.white12 : Colors.black12)
+                                          : primary,
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          isFollowing ? Icons.check_rounded : Icons.add_rounded,
+                                          color: isFollowing ? textColor : Colors.black,
+                                          size: 14,
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          isFollowing ? 'Following' : 'Follow',
+                                          style: TextStyle(
+                                            color: isFollowing ? textColor : Colors.black,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 );
                               },
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: isFollowing
-                                      ? (isDark ? Colors.white12 : Colors.black12)
-                                      : primary,
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      isFollowing ? Icons.check_rounded : Icons.add_rounded,
-                                      color: isFollowing ? textColor : Colors.black,
-                                      size: 14,
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      isFollowing ? 'Following' : 'Follow',
-                                      style: TextStyle(
-                                        color: isFollowing ? textColor : Colors.black,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
+                            ),
+                          ],
                         ),
                       );
                     },

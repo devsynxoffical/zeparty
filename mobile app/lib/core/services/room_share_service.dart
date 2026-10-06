@@ -25,6 +25,151 @@ class RoomShareService {
     return 'https://zeparty.app/post/$postId';
   }
 
+  static String generateCoHostLink(String roomId) {
+    return 'https://zeparty.app/live/cohost/$roomId';
+  }
+
+  /// Share Co-Host Invitation Link to split screen and co-host live stream
+  static Future<void> shareCoHostInvite(
+    BuildContext context, {
+    required String roomId,
+    String? roomTitle,
+  }) async {
+    final link = generateCoHostLink(roomId);
+    await Clipboard.setData(ClipboardData(text: link));
+
+    if (!context.mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppColors.getCard(isDark),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(colors: [Color(0xFF00E5FF), Color(0xFF00B0FF)]),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.person_add_alt_1_rounded, color: Colors.black, size: 20),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Invite Co-Host to Screen',
+                      style: TextStyle(
+                        color: AppColors.getTextPrimary(isDark),
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Share this link with a friend or creator to join your live video broadcast as a Co-Host. Once on screen, you can battle in PK anytime!',
+                style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+
+              // Generated Link Box
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.4)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.link_rounded, color: Color(0xFF00E5FF), size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        link,
+                        style: TextStyle(
+                          color: AppColors.getTextPrimary(isDark),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy_rounded, color: Color(0xFF00E5FF), size: 20),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: link));
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          const SnackBar(
+                            content: Text('✅ Co-Host invite link copied to clipboard!'),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildShareOption(
+                    ctx,
+                    icon: Icons.chat_bubble_rounded,
+                    label: 'WhatsApp',
+                    color: const Color(0xFF25D366),
+                    onTap: () => _copyAndNotify(ctx, link, 'Co-Host invite link copied! Send via WhatsApp.'),
+                  ),
+                  _buildShareOption(
+                    ctx,
+                    icon: Icons.send_rounded,
+                    label: 'Telegram',
+                    color: const Color(0xFF0088CC),
+                    onTap: () => _copyAndNotify(ctx, link, 'Co-Host invite link copied! Send via Telegram.'),
+                  ),
+                  _buildShareOption(
+                    ctx,
+                    icon: Icons.link_rounded,
+                    label: 'Copy Link',
+                    color: const Color(0xFF00E5FF),
+                    onTap: () => _copyAndNotify(ctx, link, 'Link copied! Send to anyone to Co-Host.'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   /// Show unified Share Sheet with Deep Link & Join capability
   static Future<void> shareRoom(
     BuildContext context, {

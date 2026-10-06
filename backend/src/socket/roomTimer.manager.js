@@ -13,23 +13,60 @@ const hostAbsentTimers = new Map();
  * @param {string} hostUserId
  * @param {import('socket.io').Server} [io]
  */
-export function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
+export async function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
   if (!roomId) return;
 
   // Clear any existing timer for this room
   clearHostAbsentTimer(roomId);
 
-  const isAudioParty = (roomType || '').toUpperCase().includes('AUDIO') || (roomType || '').toUpperCase().includes('PARTY');
-  // Party room: 2 minutes (120,000 ms)
-  // Video live: 10 minutes (600,000 ms)
-  const durationMs = isAudioParty ? 2 * 60 * 1000 : 10 * 60 * 1000;
+  let viewerCount = 0;
+  try {
+    const room = await roomRepository.findRoomById(roomId);
+    viewerCount = Number(room?.currentViewersCount || 0);
+  } catch {}
+
+  // If no viewers in the room, end immediately
+  if (viewerCount <= 0) {
+    try {
+      console.log(`[RoomTimerManager] 0 viewers in room ${roomId}. Closing immediately.`);
+      await roomRepository.closeRoomTx({
+        roomId,
+        status: 'ENDED',
+        endedAt: new Date(),
+      }).catch(() => null);
+
+      const closePayload = {
+        roomId,
+        status: 'ENDED',
+        reason: 'HOST_LEFT_NO_VIEWERS',
+        message: 'The broadcast has ended.',
+      };
+
+      if (io) {
+        io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_CLOSED, closePayload);
+        io.to(`room:${roomId}`).emit('room:closed', closePayload);
+        io.to(`room:${roomId}`).emit('stream:ended', closePayload);
+        io.emit('room:deleted', { roomId });
+      } else {
+        socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, closePayload);
+        socketEmitter.emitToRoom(roomId, 'room:closed', closePayload);
+        socketEmitter.broadcastGlobal('room:deleted', { roomId });
+      }
+    } catch (err) {
+      console.error(`[RoomTimerManager] Error closing empty room ${roomId}:`, err);
+    }
+    return;
+  }
+
+  // Viewers exist: keep active for 15 minutes, then auto-close
+  const durationMs = 15 * 60 * 1000; // 15 minutes
   const autoEndSeconds = Math.round(durationMs / 1000);
 
-  console.log(`[RoomTimerManager] Starting host absent timer for room ${roomId} (${isAudioParty ? 'PARTY: 2 mins' : 'VIDEO: 10 mins'})`);
+  console.log(`[RoomTimerManager] Starting 15-min host absent timer for room ${roomId} (${viewerCount} viewers remaining)`);
 
   const timer = setTimeout(async () => {
     try {
-      console.log(`[RoomTimerManager] Host absent timer expired for room ${roomId}. Auto-closing room in DB.`);
+      console.log(`[RoomTimerManager] 15-min host absent timer expired for room ${roomId}. Auto-closing room in DB.`);
       hostAbsentTimers.delete(roomId);
 
       // Close room in database
@@ -43,10 +80,8 @@ export function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
       const closePayload = {
         roomId,
         status: 'ENDED',
-        reason: isAudioParty ? 'HOST_ABSENT_TIMEOUT' : 'HOST_LEFT_TIMEOUT',
-        message: isAudioParty
-          ? 'Live party has ended because the host was away for 2 minutes.'
-          : 'Live stream has ended (host away timeout).',
+        reason: 'HOST_ABSENT_TIMEOUT',
+        message: 'Broadcast has ended (15-minute host absence timeout).',
       };
 
       if (io) {
@@ -67,7 +102,7 @@ export function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
 
   hostAbsentTimers.set(roomId, {
     timer,
-    type: isAudioParty ? 'PARTY' : 'VIDEO',
+    type: 'ROOM',
     hostUserId,
     startedAt: Date.now(),
     durationMs,

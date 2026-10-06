@@ -161,21 +161,19 @@ export async function sendGift(
     throw error;
   }
 
-  // 2. Load Recipient Host Profile
-  const hostProfile = await hostRepository.findHostProfileByUserId(recipientUserId, db);
-  if (!hostProfile) {
-    const error = new Error('Recipient is not registered as an active creator host');
-    error.statusCode = 400;
-    error.code = 'RECIPIENT_NOT_A_HOST';
+  // 2. Load Recipient User & optional Host Profile
+  const recipientUser = await db.user.findUnique({
+    where: { id: recipientUserId },
+    select: { id: true, username: true },
+  });
+  if (!recipientUser) {
+    const error = new Error('Recipient user not found');
+    error.statusCode = 404;
+    error.code = 'RECIPIENT_NOT_FOUND';
     throw error;
   }
 
-  if (hostProfile.hostStatus !== 'ACTIVE') {
-    const error = new Error('Recipient host account is currently not active');
-    error.statusCode = 400;
-    error.code = 'HOST_NOT_ACTIVE';
-    throw error;
-  }
+  const hostProfile = await hostRepository.findHostProfileByUserId(recipientUserId, db).catch(() => null);
 
   // 3. Ensure sender and recipient wallets exist
   let senderWallet = await walletRepository.findByUserId(senderUserId, db);
@@ -201,10 +199,10 @@ export async function sendGift(
   // Host Diamonds Calculation
   const hostDiamonds = (totalCoins * hostBps) / 10000n;
 
-  // Check Agency linkage
+  // Check Agency linkage if recipient has an active agency
   let agencyOwnerWallet = null;
   let agencyCoins = 0n;
-  if (hostProfile.agencyId) {
+  if (hostProfile && hostProfile.agencyId) {
     const agency = await agencyRepository.findAgencyById(hostProfile.agencyId, db);
     if (agency && agency.status === 'ACTIVE' && agency.ownerUserId) {
       agencyCoins = (totalCoins * agencyBps) / 10000n;

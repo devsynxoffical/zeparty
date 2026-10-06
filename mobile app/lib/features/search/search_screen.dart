@@ -40,10 +40,12 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   List<UserModel> _searchedUsers = [];
   List<LiveRoomModel> _searchedRooms = [];
   List<PostModel> _searchedPosts = [];
+  List<UserModel> _suggestedCreators = [];
 
   bool _isLoadingUsers = false;
   bool _isLoadingRooms = false;
   bool _isLoadingPosts = false;
+  bool _isLoadingSuggestedCreators = false;
 
   final List<String> _allTrendingTags = [
     '#ZePartyFest',
@@ -69,7 +71,34 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     super.initState();
     _tabController = TabController(length: _tabs.length, vsync: this);
     _loadRecentSearches();
-    // Do NOT perform query on empty string to respect history-only initial view
+    _loadDiscoverCreators();
+  }
+
+  Future<void> _loadDiscoverCreators() async {
+    setState(() => _isLoadingSuggestedCreators = true);
+    try {
+      final res = await ApiClient.instance.get<Map<String, dynamic>>(
+        '/v1/users/search',
+        queryParameters: {'q': '', 'limit': 30},
+      );
+      final rawList = res.data?['data'];
+      final List<UserModel> loaded = [];
+      if (rawList is List) {
+        for (final item in rawList) {
+          if (item is Map<String, dynamic>) {
+            loaded.add(UserModel.fromJson(item));
+          }
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _suggestedCreators = loaded;
+          _isLoadingSuggestedCreators = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingSuggestedCreators = false);
+    }
   }
 
   @override
@@ -442,21 +471,116 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
             }).toList(),
           ),
 
-          const SizedBox(height: 40),
-          Center(
-            child: Column(
+          // Discover Creators Section
+          if (_isLoadingSuggestedCreators) ...[
+            const SizedBox(height: 24),
+            const Center(child: CircularProgressIndicator(color: AppColors.primaryGold, strokeWidth: 2)),
+          ] else if (_suggestedCreators.isNotEmpty) ...[
+            const SizedBox(height: 28),
+            Row(
               children: [
-                Icon(Icons.search_rounded, size: 48, color: AppColors.getTextSecondary(isDark).withValues(alpha: 0.3)),
-                const SizedBox(height: 10),
+                const Icon(Icons.stars_rounded, size: 20, color: AppColors.primaryGold),
+                const SizedBox(width: 8),
                 Text(
-                  'Search users, hosts, live rooms, videos, sounds and hashtags',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
+                  'Discover Creators',
+                  style: TextStyle(
+                    color: AppColors.getTextPrimary(isDark),
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _suggestedCreators.length > 8 ? 8 : _suggestedCreators.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, idx) {
+                final creator = _suggestedCreators[idx];
+                final isFollowed = context.watch<AuthProvider>().isFollowing(creator.id);
+                final isMe = context.watch<AuthProvider>().currentUser.id == creator.id;
+
+                return Card(
+                  clipBehavior: Clip.antiAlias,
+                  color: AppColors.getCard(isDark),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: AppColors.getBorder(isDark)),
+                  ),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: creator.id)),
+                      );
+                    },
+                    leading: UserAvatar(imageUrl: creator.avatarUrl, radius: 22),
+                    title: Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            creator.displayName.isNotEmpty ? creator.displayName : creator.username,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: AppColors.getTextPrimary(isDark),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                        if (creator.isHost) ...[
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.amber, width: 0.6),
+                            ),
+                            child: const Text('HOST', style: TextStyle(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ],
+                    ),
+                    subtitle: Text(
+                      '@${creator.username}',
+                      style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
+                    ),
+                    trailing: isMe
+                        ? null
+                        : SizedBox(
+                            height: 32,
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: isFollowed ? Colors.transparent : AppColors.primaryGold,
+                                side: BorderSide(color: isFollowed ? AppColors.getBorder(isDark) : AppColors.primaryGold),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                              ),
+                              onPressed: () {
+                                context.read<AuthProvider>().toggleFollow(creator.id);
+                              },
+                              child: Text(
+                                isFollowed ? 'Following' : '+ Follow',
+                                style: TextStyle(
+                                  color: isFollowed ? AppColors.getTextSecondary(isDark) : Colors.black,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                );
+              },
+            ),
+          ],
+
+          const SizedBox(height: 30),
       ),
     );
   }

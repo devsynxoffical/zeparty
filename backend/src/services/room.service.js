@@ -32,6 +32,30 @@ export async function createRoom(
   { userId, title, coverImageUrl, roomType, category, isPrivate, roomPin },
   db = prisma
 ) {
+  // Automatically close any previous active LIVE rooms created by this user
+  try {
+    const existingRooms = await db.room.findMany({
+      where: { creatorUserId: userId, status: 'LIVE' },
+      select: { id: true },
+    });
+    for (const er of existingRooms) {
+      clearHostAbsentTimer(er.id);
+      await db.room.update({
+        where: { id: er.id },
+        data: { status: 'ENDED', endedAt: new Date(), currentViewersCount: 0 },
+      });
+      socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CLOSED, {
+        roomId: er.id,
+        status: 'ENDED',
+        reason: 'NEW_BROADCAST_CREATED',
+      });
+      socketEmitter.broadcastGlobal('room:closed', { roomId: er.id, status: 'ENDED' });
+      socketEmitter.broadcastGlobal('room:deleted', { roomId: er.id });
+    }
+  } catch (err) {
+    console.warn('[RoomService] Error auto-closing previous rooms:', err?.message);
+  }
+
   const agoraChannelName = `room_${crypto.randomUUID().replace(/-/g, '')}`;
 
   const room = await roomRepository.createRoomWithSeats(

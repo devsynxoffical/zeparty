@@ -468,14 +468,17 @@ class _SocialFeedScreenState extends State<SocialFeedScreen> with SingleTickerPr
                   : 'No posts yet',
               style: const TextStyle(color: AppColors.textSecondary, fontSize: 16),
             ),
-            const SizedBox(height: 8),
             ElevatedButton.icon(
               onPressed: () {
-                AuthGuard.require(context, () {
-                  Navigator.push(context, MaterialPageRoute(builder: (c) => const CreatePostScreen()));
-                }, reason: 'Sign in to create posts');
+                if (feedMode == 'following') {
+                  Navigator.push(context, MaterialPageRoute(builder: (c) => const SearchScreen()));
+                } else {
+                  AuthGuard.require(context, () {
+                    Navigator.push(context, MaterialPageRoute(builder: (c) => const CreatePostScreen()));
+                  }, reason: 'Sign in to create posts');
+                }
               },
-              icon: const Icon(Icons.add),
+              icon: Icon(feedMode == 'following' ? Icons.person_search_rounded : Icons.add),
               label: Text(feedMode == 'following' ? 'Discover Creators' : 'Create First Post'),
             ),
           ],
