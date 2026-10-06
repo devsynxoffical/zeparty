@@ -88,6 +88,63 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
   late final String _roomEntrySessionId;
   RoomEntryBannerItem? _currentMountBanner;
+  StreamSubscription? _partyRoomClosedSub;
+  bool _isPartyEndedDialogShown = false;
+
+  void _handlePartyRoomEnded([String? reason]) {
+    if (_isPartyEndedDialogShown || !mounted) return;
+    _isPartyEndedDialogShown = true;
+
+    try {
+      Provider.of<LivePartyProvider>(context, listen: false).leaveParty();
+    } catch (_) {}
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B2E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.nightlife_rounded, color: Color(0xFFB524E4), size: 26),
+            SizedBox(width: 10),
+            Text('Party Ended', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: Text(
+          reason != null && reason.isNotEmpty
+              ? reason
+              : 'This party room has ended.',
+          style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFB524E4),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                if (mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Back to Discover', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -102,6 +159,19 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       }
       Provider.of<EmojiReactionProvider>(context, listen: false).setActiveRoom(widget.room.id);
       Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id);
+
+      _partyRoomClosedSub?.cancel();
+      _partyRoomClosedSub = partyProv.onRoomClosed.listen((data) {
+        final isHost = widget.room.host.id == user.id || widget.room.creatorUserId == user.id;
+        if (!isHost && mounted) {
+          final reason = data['reason']?.toString();
+          _handlePartyRoomEnded(
+            reason == 'HOST_ABSENT_TIMEOUT'
+                ? 'Party ended because the host was absent for 2 minutes.'
+                : reason,
+          );
+        }
+      });
       
       // Mock SVIP entry for demonstration
       if (user.isVip) {
@@ -122,6 +192,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
   @override
   void dispose() {
+    _partyRoomClosedSub?.cancel();
     _chatController.dispose();
     _chatScrollController.dispose();
     super.dispose();

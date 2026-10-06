@@ -1,6 +1,7 @@
 import roomRepository from '../repositories/room.repository.js';
 import roomService from '../services/room.service.js';
 import presenceService from './presence.service.js';
+import { startHostAbsentTimer, clearHostAbsentTimer } from './roomTimer.manager.js';
 import { deriveAgoraUid } from '../utils/agoraToken.util.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
 import { withRateLimit } from './rateLimiter.socket.js';
@@ -96,6 +97,12 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
 
     // 2. Persistent RoomMember registration via authoritative Room Service
     const joinResult = await roomService.joinRoom(roomId, userId, db);
+
+    // Cancel any active host absence timer if host returned
+    const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
+    if (isHostUser) {
+      clearHostAbsentTimer(roomId, io);
+    }
 
     // 3. Socket subscription to Room
     if (typeof socket.join === 'function') {
@@ -198,6 +205,9 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
 
     // 3. If this was the user's last remaining connection, execute persistent leave
     if (isLastSocket) {
+      const room = await roomRepository.findRoomById(roomId, db);
+      const isHostUser = room && (room.creatorUserId === userId || room.creator?.id === userId);
+
       let leaveResult = null;
       try {
         leaveResult = await roomService.leaveRoom(roomId, userId, db);
@@ -218,6 +228,26 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
         if (io) {
           io.emit('room:closed', { roomId, status: 'ENDED' });
           io.emit('room:deleted', { roomId });
+        }
+      } else if (isHostUser && room) {
+        const isAudioParty = (room.roomType || '').toUpperCase().includes('AUDIO') || (room.roomType || '').toUpperCase().includes('PARTY');
+        if (isAudioParty) {
+          // Party Room: do not end immediately. Start 2-minute timer
+          startHostAbsentTimer(roomId, 'AUDIO_PARTY', userId, io);
+        } else {
+          // Live Video: broadcast stream ended immediately to viewers and start 10-minute cleanup timer
+          const hostLeftPayload = {
+            roomId,
+            status: 'ENDED',
+            reason: 'HOST_LEFT',
+            message: 'The live stream has ended by the host.',
+          };
+          broadcastTarget.emit(SOCKET_EVENTS.ROOM_CLOSED, hostLeftPayload);
+          broadcastTarget.emit('room:closed', hostLeftPayload);
+          broadcastTarget.emit('room_closed', hostLeftPayload);
+          broadcastTarget.emit('stream:ended', hostLeftPayload);
+          broadcastTarget.emit('room:host_left', hostLeftPayload);
+          startHostAbsentTimer(roomId, 'LIVE_VIDEO', userId, io);
         }
       } else {
         const leftPayload = { roomId, userId };
@@ -252,6 +282,76 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
     };
     if (typeof callback === 'function') return callback(errorResponse);
     socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onSocketDisconnect(io, socket, db) {
+  try {
+    const userId = socket.userId;
+    if (!userId) return;
+
+    const joinedRooms = Array.from(socket.rooms || [])
+      .filter((r) => typeof r === 'string' && r.startsWith('room:'))
+      .map((r) => r.replace(/^room:/, ''));
+
+    for (const roomId of joinedRooms) {
+      try {
+        let isLastSocket = true;
+        try {
+          const pres = await presenceService.removeSocketFromRoom(roomId, userId, socket.id);
+          isLastSocket = pres?.isLastSocket ?? true;
+        } catch {}
+
+        if (isLastSocket) {
+          const room = await roomRepository.findRoomById(roomId, db);
+          if (!room || room.status !== 'LIVE') continue;
+
+          const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
+          const leaveResult = await roomService.leaveRoom(roomId, userId, db).catch(() => null);
+          const updatedViewerCount = leaveResult?.currentViewersCount || 0;
+          const broadcastTarget = io ? io.to(`room:${roomId}`) : socket;
+
+          if (isHostUser) {
+            const isAudioParty = (room.roomType || '').toUpperCase().includes('AUDIO') || (room.roomType || '').toUpperCase().includes('PARTY');
+            if (isAudioParty) {
+              startHostAbsentTimer(roomId, 'AUDIO_PARTY', userId, io);
+            } else {
+              const hostLeftPayload = {
+                roomId,
+                status: 'ENDED',
+                reason: 'HOST_LEFT',
+                message: 'The live stream has ended by the host.',
+              };
+              broadcastTarget.emit(SOCKET_EVENTS.ROOM_CLOSED, hostLeftPayload);
+              broadcastTarget.emit('room:closed', hostLeftPayload);
+              broadcastTarget.emit('room_closed', hostLeftPayload);
+              broadcastTarget.emit('stream:ended', hostLeftPayload);
+              broadcastTarget.emit('room:host_left', hostLeftPayload);
+              startHostAbsentTimer(roomId, 'LIVE_VIDEO', userId, io);
+            }
+          } else {
+            const leftPayload = { roomId, userId };
+            broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, leftPayload);
+            broadcastTarget.emit('room:user_left', leftPayload);
+            broadcastTarget.emit('user_left', leftPayload);
+            broadcastTarget.emit('user:left', leftPayload);
+
+            const countPayload = {
+              roomId,
+              viewerCount: updatedViewerCount,
+              count: updatedViewerCount,
+              currentViewersCount: updatedViewerCount,
+            };
+            broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, countPayload);
+            broadcastTarget.emit('room:viewer_count_changed', countPayload);
+          }
+        }
+      } catch (innerErr) {
+        console.warn(`[RoomSocket] Error handling disconnect for room ${roomId}:`, innerErr?.message);
+      }
+    }
+  } catch (err) {
+    console.error('[RoomSocket] onSocketDisconnect root error:', err);
   }
 }
 

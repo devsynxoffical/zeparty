@@ -244,6 +244,27 @@ class AgoraRtcService {
     } catch (_) {}
   }
 
+  Widget buildLocalVideoView() {
+    if (_engine == null) return const SizedBox.shrink();
+    return AgoraVideoView(
+      controller: VideoViewController(
+        rtcEngine: _engine!,
+        canvas: const VideoCanvas(uid: 0),
+      ),
+    );
+  }
+
+  Widget buildRemoteVideoView(int remoteUid) {
+    if (_engine == null || _currentChannel == null) return const SizedBox.shrink();
+    return AgoraVideoView(
+      controller: VideoViewController.remote(
+        rtcEngine: _engine!,
+        canvas: VideoCanvas(uid: remoteUid),
+        connection: RtcConnection(channelId: _currentChannel!),
+      ),
+    );
+  }
+
   Future<void> dispose() async {
     try {
       _remoteUids.clear();

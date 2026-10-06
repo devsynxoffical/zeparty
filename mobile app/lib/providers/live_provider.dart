@@ -86,6 +86,17 @@ class LiveProvider extends ChangeNotifier {
   final _pkInvitationReceivedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onPkInvitationReceived => _pkInvitationReceivedController.stream;
 
+  final _roomClosedController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onRoomClosed => _roomClosedController.stream;
+
+  final List<UserModel> _viewers = [];
+  List<UserModel> get viewers => List.unmodifiable(_viewers);
+
+  bool _isLiveEnded = false;
+  bool get isLiveEnded => _isLiveEnded;
+  String? _liveEndedReason;
+  String? get liveEndedReason => _liveEndedReason;
+
   // ── Moderation State ─────────────────────────────────────
   bool _isRoomMuted = false;
   bool _isLocalMicMuted = false;
@@ -152,6 +163,9 @@ class LiveProvider extends ChangeNotifier {
 
     _activeRoom = room.copyWith(viewerCount: isHost ? room.viewerCount : room.viewerCount + 1);
     _currentUser = currentUser;
+    _viewers.clear();
+    _isLiveEnded = false;
+    _liveEndedReason = null;
     _isRoomLocked = false;
     _isRoomMuted = room.isMuted;
     _activeWarningMessage = null;
@@ -232,10 +246,24 @@ class LiveProvider extends ChangeNotifier {
       }
       final userObj = data['user'] is Map ? Map<String, dynamic>.from(data['user']) : data;
       final userName = userObj['name'] ?? userObj['displayName'] ?? userObj['username'] ?? data['name'] ?? data['username'] ?? 'A user';
-      final joinedId = data['userId'] ?? data['id'] ?? userObj['id'];
+      final joinedId = data['userId']?.toString() ?? data['id']?.toString() ?? userObj['id']?.toString();
 
       final isHostUser = (_activeRoom != null) &&
           (joinedId == _activeRoom!.host.id || joinedId == _activeRoom!.creatorUserId);
+
+      // Track viewers list (all non-host users)
+      if (!isHostUser && joinedId != null && joinedId.isNotEmpty) {
+        final viewerModel = UserModel(
+          id: joinedId,
+          name: userName.toString(),
+          username: userObj['username']?.toString() ?? 'user_$joinedId',
+          avatarUrl: userObj['avatarUrl']?.toString() ?? '',
+          region: userObj['region']?.toString() ?? 'Global',
+          countryCode: userObj['countryCode']?.toString() ?? 'US',
+        );
+        _viewers.removeWhere((v) => v.id == joinedId);
+        _viewers.insert(0, viewerModel);
+      }
 
       if (joinedId != currentUser?.id) {
         _messages.add(LiveMessage(
@@ -260,6 +288,11 @@ class LiveProvider extends ChangeNotifier {
       if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
         return;
       }
+      final leftId = data['userId']?.toString() ?? data['id']?.toString();
+      if (leftId != null) {
+        _viewers.removeWhere((v) => v.id == leftId);
+      }
+
       final rawCount = data['viewerCount'] ?? data['count'];
       if (_activeRoom != null) {
         final newCount = rawCount is int ? rawCount : (_activeRoom!.viewerCount > 0 ? _activeRoom!.viewerCount - 1 : 0);
@@ -464,8 +497,14 @@ class LiveProvider extends ChangeNotifier {
 
     _socketRoomClosedSub?.cancel();
     _socketRoomClosedSub = _socketService.roomClosedStream.listen((data) {
-      sendMessage('🛑 Stream was closed', 'System');
-      leaveRoom();
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      _isLiveEnded = true;
+      _liveEndedReason = data['message']?.toString() ?? data['reason']?.toString() ?? 'Live stream has ended.';
+      _messages.add(LiveMessage(sender: 'System', text: '🛑 ${_liveEndedReason!}'));
+      _roomClosedController.add(Map<String, dynamic>.from(data));
+      notifyListeners();
     });
 
     // ── PK Battle Real-time Subscriptions ───────────────────

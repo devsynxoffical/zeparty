@@ -3,6 +3,7 @@ import prisma from '../config/database.js';
 import roomRepository from '../repositories/room.repository.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
+import { clearHostAbsentTimer } from '../socket/roomTimer.manager.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -124,6 +125,7 @@ export async function closeMyRoom(roomId, userId, db = prisma) {
     throw error;
   }
 
+  clearHostAbsentTimer(roomId);
   const closedRoom = await roomRepository.closeRoomTx({ roomId, status: 'ENDED' }, db);
 
   socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, {

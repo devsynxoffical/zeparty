@@ -280,6 +280,16 @@ class SocketService {
     _socket!.on('room_closed', handleRoomClosed);
     _socket!.on('room:deleted', handleRoomClosed);
     _socket!.on('room_deleted', handleRoomClosed);
+    _socket!.on('stream:ended', handleRoomClosed);
+    _socket!.on('stream_ended', handleRoomClosed);
+    _socket!.on('room:host_left', (data) {
+      if (data != null) {
+        final map = safeMap(data);
+        if (map['roomType'] == 'LIVE_VIDEO' || map['roomType'] == 'LIVE') {
+          _roomClosedController.add(map);
+        }
+      }
+    });
     void handleChatMessage(dynamic data) {
       if (data != null) _roomChatMessageController.add(safeMap(data));
     }

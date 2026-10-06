@@ -48,6 +48,9 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketRoomUserMutedSub;
   StreamSubscription? _socketRoleUpdatedSub;
 
+  final _roomClosedController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onRoomClosed => _roomClosedController.stream;
+
   // Admin Moderation State
   bool _isRoomMuted = false;
   bool get isRoomMuted => _isRoomMuted;
@@ -531,7 +534,13 @@ class LivePartyProvider extends ChangeNotifier {
     // 7. Room Closed Stream
     _socketRoomClosedSub?.cancel();
     _socketRoomClosedSub = _socketService.roomClosedStream.listen((data) {
-      sendSystemMessage('🛑 Room has been closed by host.');
+      final reason = data['reason']?.toString() ?? 'Room has been closed.';
+      if (reason.contains('absent') || reason.contains('ABSENT')) {
+        sendSystemMessage('⏰ Party ended: Host was absent for more than 2 minutes.');
+      } else {
+        sendSystemMessage('🛑 Room has been closed by host.');
+      }
+      _roomClosedController.add(Map<String, dynamic>.from(data));
       leaveParty();
     });
 

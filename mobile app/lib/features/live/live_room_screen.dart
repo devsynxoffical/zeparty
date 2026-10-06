@@ -32,6 +32,8 @@ import '../../providers/live_gift_provider.dart';
 import '../../core/services/room_share_service.dart';
 import '../../core/services/agora_rtc_service.dart';
 import '../../widgets/user_avatar.dart';
+import '../../models/party_participant_model.dart';
+import 'widgets/live_viewers_sheet.dart';
 
 class FloatingHeart {
   final Key id;
@@ -68,9 +70,94 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   StreamSubscription? _kickedSub;
   StreamSubscription? _pkInviteSub;
   StreamSubscription? _pkStartedSub;
+  StreamSubscription? _roomClosedSub;
+  StreamSubscription? _liveProvClosedSub;
+  bool _isEndedDialogShown = false;
 
   late AnimationController _vsPulseController;
   late Animation<double> _vsScale;
+
+  void _handleStreamEnded([String? reason]) {
+    if (_isEndedDialogShown || !mounted) return;
+    _isEndedDialogShown = true;
+
+    try {
+      context.read<LiveProvider>().leaveRoom();
+    } catch (_) {}
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF161129),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.videocam_off_rounded, color: Colors.redAccent, size: 24),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              'Live Ended',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            UserAvatar(
+              imageUrl: widget.room.host.avatarUrl,
+              name: widget.room.host.name,
+              radius: 36,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              widget.room.host.name,
+              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              reason != null && reason.isNotEmpty
+                  ? reason
+                  : 'The host has ended this live broadcast.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        actions: [
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.live,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              onPressed: () {
+                Navigator.pop(ctx);
+                if (mounted) {
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Back to Discover', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   void _toggleMic() {
     final liveProv = context.read<LiveProvider>();
@@ -115,10 +202,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
     // Listen to remote host video stream arrival for audience viewers
     _remoteUsersSub = AgoraRtcService().remoteUsersStream.listen((uids) {
-      if (mounted && uids.isNotEmpty) {
+      if (!mounted) return;
+      if (uids.isNotEmpty) {
         setState(() {
           _remoteHostUid = uids.first;
         });
+      } else if (!widget.isHost && _remoteHostUid != null) {
+        _handleStreamEnded('The host has disconnected from the live broadcast.');
       }
     });
 
@@ -144,6 +234,18 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       
       // Mock SVIP entry for demonstration
       emojiProv.registerAnchor('user_${currentUser.id}', _hostAvatarKey);
+
+      _liveProvClosedSub = liveProv.onRoomClosed.listen((data) {
+        if (!widget.isHost && mounted) {
+          _handleStreamEnded(data['reason']?.toString());
+        }
+      });
+
+      _roomClosedSub = SocketService.instance.roomClosedStream.listen((data) {
+        if (!widget.isHost && mounted) {
+          _handleStreamEnded(data['reason']?.toString());
+        }
+      });
 
       _socketLikeSub = liveProv.onLikeReceived.listen((data) {
         final rand = Random();
@@ -1014,6 +1116,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     _kickedSub?.cancel();
     _pkInviteSub?.cancel();
     _pkStartedSub?.cancel();
+    _roomClosedSub?.cancel();
+    _liveProvClosedSub?.cancel();
     _vsPulseController.dispose();
     _durationTimer?.cancel();
     _chatController.dispose();
@@ -1334,7 +1438,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                 room: widget.room,
                                 canManage: widget.room.host.id == context.read<AuthProvider>().currentUser.id,
                                 isDark: isDark,
-                                participants: null, // liveProvider doesn't have participants yet
+                                participants: liveProvider.viewers.map((u) => PartyParticipantModel(
+                                  user: u,
+                                  role: ParticipantRole.listener,
+                                  joinedAt: DateTime.now(),
+                                )).toList(),
                               ),
                             );
                           },
@@ -1436,14 +1544,38 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.remove_red_eye_rounded, color: Colors.white, size: 13),
-                                  const SizedBox(width: 2.5),
-                                  Text(
-                                    '${activeRoom.viewerCount}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () {
+                                      LiveViewersSheet.show(
+                                        context,
+                                        viewers: liveProvider.viewers,
+                                        roomId: widget.room.id,
+                                        roomTitle: widget.room.title,
+                                        isDark: isDark,
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.3),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.remove_red_eye_rounded, color: Colors.white, size: 13),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            '${liveProvider.viewers.isNotEmpty ? liveProvider.viewers.length : (activeRoom.viewerCount > 0 ? activeRoom.viewerCount : 0)}',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 6),
@@ -1589,10 +1721,18 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 const SizedBox(height: 12),
                 _buildQuickActionBtn(
                   isDark,
-                  Icons.home_rounded,
-                  'Room',
-                  AppColors.getPrimary(isDark),
-                  onTap: () => _showRoomDetailsSheet(context, isDark),
+                  Icons.people_alt_rounded,
+                  'Viewers',
+                  AppColors.cyan,
+                  onTap: () {
+                    LiveViewersSheet.show(
+                      context,
+                      viewers: liveProvider.viewers,
+                      roomId: widget.room.id,
+                      roomTitle: widget.room.title,
+                      isDark: isDark,
+                    );
+                  },
                 ),
                 const SizedBox(height: 12),
                 _buildQuickActionBtn(
@@ -2539,6 +2679,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   }
 
   void _showRoomDetailsSheet(BuildContext context, bool isDark) {
+    final liveProv = context.read<LiveProvider>();
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.getCard(isDark),
@@ -2575,8 +2716,19 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.people_rounded, color: Colors.blue),
-                title: Text('Viewer Occupancy', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                subtitle: Text('${widget.room.viewerCount} concurrent viewers online', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
+                title: Text('Viewers List (${liveProv.viewers.length})', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold)),
+                subtitle: Text('${liveProv.viewers.isNotEmpty ? liveProv.viewers.length : widget.room.viewerCount} active viewers • Tap to view all profiles', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
+                trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white70),
+                onTap: () {
+                  Navigator.pop(c);
+                  LiveViewersSheet.show(
+                    context,
+                    viewers: liveProv.viewers,
+                    roomId: widget.room.id,
+                    roomTitle: widget.room.title,
+                    isDark: isDark,
+                  );
+                },
               ),
               const SizedBox(height: 12),
               SizedBox(
