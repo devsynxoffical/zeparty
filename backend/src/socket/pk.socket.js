@@ -1,20 +1,18 @@
 import pkService from '../services/pk.service.js';
 
 export function registerPKHandlers(io, socket) {
-  // Start PK Battle via WebSocket
+  // Start PK Battle via WebSocket (Authoritative Timer Start)
   socket.on('pk:start', async (data, callback) => {
     try {
-      const { roomAId, roomBId, hostAUserId, hostBUserId, durationSeconds } = data || {};
-      const pkEvent = await pkService.startPK({
-        roomAId,
-        roomBId,
-        hostAUserId,
-        hostBUserId,
-        durationSeconds,
+      const { pkId } = data || {};
+      const hostUserId = socket.auth?.userId || socket.userId;
+      const session = await pkService.startPKBattle({
+        pkId,
+        hostUserId,
       });
 
       if (typeof callback === 'function') {
-        callback({ success: true, data: pkEvent });
+        callback({ success: true, data: session });
       }
     } catch (err) {
       if (typeof callback === 'function') {
@@ -23,17 +21,25 @@ export function registerPKHandlers(io, socket) {
     }
   });
 
-  // Activate PK Battle after countdown
-  socket.on('pk:activate', async (data, callback) => {
+  // Respond to PK invitation via WebSocket
+  socket.on('pk:respond_invite', async (data, callback) => {
     try {
-      const { pkId } = data || {};
-      const pkEvent = await pkService.activatePK(pkId);
+      const { invitationId, action, roomId, userInfo } = data || {};
+      const responderUserId = socket.auth?.userId || socket.userId;
+      const result = await pkService.respondPKInvite({
+        invitationId,
+        responderUserId,
+        responderRoomId: roomId,
+        responderInfo: userInfo || {},
+        action: action || 'ACCEPT',
+      });
+
       if (typeof callback === 'function') {
-        callback({ success: true, data: pkEvent });
+        callback({ success: true, data: result });
       }
     } catch (err) {
       if (typeof callback === 'function') {
-        callback({ success: false, error: err.message });
+        callback({ success: false, error: err.message, code: err.code || 'PK_RESPOND_FAILED' });
       }
     }
   });
@@ -42,9 +48,9 @@ export function registerPKHandlers(io, socket) {
   socket.on('pk:end', async (data, callback) => {
     try {
       const { pkId } = data || {};
-      const pkEvent = await pkService.endPK(pkId);
+      const session = await pkService.endPKBattle(pkId);
       if (typeof callback === 'function') {
-        callback({ success: true, data: pkEvent });
+        callback({ success: true, data: session });
       }
     } catch (err) {
       if (typeof callback === 'function') {

@@ -227,9 +227,15 @@ enum GameRoundStatus {
 }
 
 enum PKStatus {
+  CREATED
+  INVITING
+  READY
   COUNTDOWN
   ACTIVE
+  STARTED
   ENDED
+  CANCELLED
+  EXPIRED
 }
 
 enum ReportStatus {
@@ -1161,25 +1167,31 @@ model GameTransaction {
 }
 
 model PKEvent {
-  id               String      @id @default(uuid())
+  id               String       @id @default(uuid())
+  initiatorUserId  String?
   roomAId          String
-  roomA            Room        @relation("PKRoomA", fields: [roomAId], references: [id])
-  roomBId          String
-  roomB            Room        @relation("PKRoomB", fields: [roomBId], references: [id])
+  roomA            Room         @relation("PKRoomA", fields: [roomAId], references: [id])
+  roomBId          String?
+  roomB            Room?        @relation("PKRoomB", fields: [roomBId], references: [id])
   hostAUserId      String
-  hostA            HostProfile @relation("PKHostA", fields: [hostAUserId], references: [id])
-  hostBUserId      String
-  hostB            HostProfile @relation("PKHostB", fields: [hostBUserId], references: [id])
-  durationSeconds  Int         @default(300)
-  hostAScore       BigInt      @default(0)
-  hostBScore       BigInt      @default(0)
+  hostA            HostProfile  @relation("PKHostA", fields: [hostAUserId], references: [id])
+  hostBUserId      String?
+  hostB            HostProfile? @relation("PKHostB", fields: [hostBUserId], references: [id])
+  durationSeconds  Int          @default(300)
+  hostAScore       BigInt       @default(0)
+  hostBScore       BigInt       @default(0)
+  participantsJson Json?
+  inviteCode       String?
   winnerHostUserId String?
-  status           PKStatus    @default(COUNTDOWN)
-  createdAt        DateTime    @default(now())
+  status           PKStatus     @default(CREATED)
+  startedAt        DateTime?
+  createdAt        DateTime     @default(now())
   endedAt          DateTime?
 
   @@index([roomAId])
   @@index([roomBId])
+  @@index([initiatorUserId])
+  @@index([status])
 }
 
 // ==========================================

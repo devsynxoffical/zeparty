@@ -870,6 +870,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
     final minutes = (seconds / 60).floor();
     final remSecs = (seconds % 60).toString().padLeft(2, '0');
+    final isStarted = pk.isStarted;
 
     return Padding(
       padding: const EdgeInsets.only(top: 4, left: 6, right: 6),
@@ -902,26 +903,34 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 ),
               ),
 
-              // Timer Pill ("⚔️ PK 04:59")
+              // Timer Pill ("⚔️ PK 04:59" or "PK READY")
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  gradient: seconds < 30
-                      ? const LinearGradient(colors: [Color(0xFFFF1744), Color(0xFFD50000)])
-                      : LinearGradient(colors: [Colors.black.withValues(alpha: 0.8), const Color(0xFF1E1035)]),
+                  gradient: !isStarted
+                      ? const LinearGradient(colors: [Color(0xFF4A148C), Color(0xFF1E1035)])
+                      : (seconds < 30
+                          ? const LinearGradient(colors: [Color(0xFFFF1744), Color(0xFFD50000)])
+                          : LinearGradient(colors: [Colors.black.withValues(alpha: 0.8), const Color(0xFF1E1035)])),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
-                    color: seconds < 30 ? const Color(0xFFFF5252) : const Color(0xFFFFD700),
+                    color: !isStarted
+                        ? Colors.purpleAccent
+                        : (seconds < 30 ? const Color(0xFFFF5252) : const Color(0xFFFFD700)),
                     width: 1.2,
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.flash_on_rounded, color: Color(0xFFFFD700), size: 12),
+                    Icon(
+                      !isStarted ? Icons.hourglass_top_rounded : Icons.flash_on_rounded,
+                      color: !isStarted ? Colors.purpleAccent : const Color(0xFFFFD700),
+                      size: 12,
+                    ),
                     const SizedBox(width: 3),
                     Text(
-                      'PK $minutes:$remSecs',
+                      !isStarted ? 'PK READY' : 'PK $minutes:$remSecs',
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,

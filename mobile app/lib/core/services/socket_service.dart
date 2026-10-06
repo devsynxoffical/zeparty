@@ -65,6 +65,9 @@ class SocketService {
   final _typingController = StreamController<Map<String, dynamic>>.broadcast();
 
   // PK Battle Real-time event streams
+  final _pkCreatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkParticipantJoinedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkReadyController = StreamController<Map<String, dynamic>>.broadcast();
   final _pkStartedController = StreamController<Map<String, dynamic>>.broadcast();
   final _pkActiveController = StreamController<Map<String, dynamic>>.broadcast();
   final _pkScoreUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -74,6 +77,9 @@ class SocketService {
   final _pkInvitationDeclinedController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Getters - PK Battle
+  Stream<Map<String, dynamic>> get onPkCreated => _pkCreatedController.stream;
+  Stream<Map<String, dynamic>> get onPkParticipantJoined => _pkParticipantJoinedController.stream;
+  Stream<Map<String, dynamic>> get onPkReady => _pkReadyController.stream;
   Stream<Map<String, dynamic>> get onPkStarted => _pkStartedController.stream;
   Stream<Map<String, dynamic>> get onPkActive => _pkActiveController.stream;
   Stream<Map<String, dynamic>> get onPkScoreUpdated => _pkScoreUpdatedController.stream;
@@ -413,6 +419,15 @@ class SocketService {
       if (data is Map) _directMessageReadController.add(Map<String, dynamic>.from(data));
     });
     // PK Battle Real-time Events
+    _socket!.on('pk:created', (data) {
+      if (data is Map) _pkCreatedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:participant_joined', (data) {
+      if (data is Map) _pkParticipantJoinedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:ready', (data) {
+      if (data is Map) _pkReadyController.add(Map<String, dynamic>.from(data));
+    });
     _socket!.on('pk:started', (data) {
       if (data is Map) _pkStartedController.add(Map<String, dynamic>.from(data));
     });

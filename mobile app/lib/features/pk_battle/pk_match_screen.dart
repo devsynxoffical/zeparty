@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../core/services/api_client.dart';
-import '../../core/services/socket_service.dart';
+import '../../core/repositories/pk_repository.dart';
 import '../../models/user_model.dart';
 import '../../models/pk_battle_model.dart';
 import '../../providers/auth_provider.dart';
@@ -20,173 +20,71 @@ class PkMatchScreen extends StatefulWidget {
   State<PkMatchScreen> createState() => _PkMatchScreenState();
 }
 
-class _PkMatchScreenState extends State<PkMatchScreen> with TickerProviderStateMixin {
+class _PkMatchScreenState extends State<PkMatchScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  late AnimationController _radarController;
-  late AnimationController _vsPulseController;
-  late Animation<double> _radarAnimation;
-  late Animation<double> _vsScale;
+  final TextEditingController _userIdController = TextEditingController();
 
-  StreamSubscription? _pkStartedSub;
-  StreamSubscription? _pkAcceptedSub;
-  StreamSubscription? _pkDeclinedSub;
-
-  bool _isSearching = false;
-  bool _isMatched = false;
-  String _statusText = 'Finding live opponent...';
-  UserModel? _matchedOpponent;
-
-  List<Map<String, dynamic>> _availableHosts = [];
+  List<UserModel> _availableHosts = [];
   bool _isLoadingHosts = false;
-  String? _invitingHostId;
+  String? _invitingUserId;
+  bool _isCreatingSession = false;
+  bool _isStartingPk = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-
-    _radarController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat();
-
-    _radarAnimation = Tween<double>(begin: 0.8, end: 1.8).animate(
-      CurvedAnimation(parent: _radarController, curve: Curves.easeInOut),
-    );
-
-    _vsPulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    )..repeat(reverse: true);
-
-    _vsScale = Tween<double>(begin: 0.9, end: 1.15).animate(
-      CurvedAnimation(parent: _vsPulseController, curve: Curves.easeInOut),
-    );
-
-    _setupSocketListeners();
-    _loadAvailableHosts();
-    _startQuickMatch();
+    _ensurePKSessionAndLoadHosts();
   }
 
-  void _setupSocketListeners() {
-    final socket = SocketService.instance;
+  Future<void> _ensurePKSessionAndLoadHosts() async {
+    final liveProv = context.read<LiveProvider>();
+    final authProv = context.read<AuthProvider>();
+    final currentUser = authProv.currentUser;
 
-    _pkStartedSub = socket.onPkStarted.listen((data) {
-      if (!mounted) return;
-      try {
-        final pk = PKBattleModel.fromJson(data);
-        _handleMatchSuccess(pk);
-      } catch (e) {
-        debugPrint('[PkMatchScreen] pk:started parse error: $e');
-      }
-    });
+    // Verify host authority
+    final isHost = liveProv.activeRoom != null &&
+        (liveProv.activeRoom!.host.id == currentUser.id ||
+            liveProv.activeRoom!.creatorUserId == currentUser.id);
 
-    _pkAcceptedSub = socket.onPkInvitationAccepted.listen((data) {
-      if (!mounted) return;
+    if (!isHost) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('🎉 Host accepted your PK invitation! Starting battle...'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    });
-
-    _pkDeclinedSub = socket.onPkInvitationDeclined.listen((data) {
-      if (!mounted) return;
-      setState(() {
-        _invitingHostId = null;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Host declined your PK invitation.'),
+          content: Text('⚠️ Only active live hosts can initiate a PK Battle.'),
           backgroundColor: Colors.redAccent,
         ),
       );
-    });
-  }
-
-  Future<void> _startQuickMatch() async {
-    final live = context.read<LiveProvider>();
-    final currentUser = context.read<AuthProvider>().currentUser;
-    final roomId = widget.currentRoomId ?? live.activeRoom?.id;
-
-    if (roomId == null || roomId.isEmpty) {
-      setState(() {
-        _statusText = 'Start a live stream first to initiate PK battle.';
-        _isSearching = false;
-      });
+      Navigator.pop(context);
       return;
     }
 
-    setState(() {
-      _isSearching = true;
-      _isMatched = false;
-      _statusText = 'Scanning for live hosts in region...';
-    });
-
-    try {
-      final res = await ApiClient.instance.post<Map<String, dynamic>>(
-        '/v1/pk/matchmaking/join',
-        data: {
-          'roomId': roomId,
-          'region': currentUser.region.isNotEmpty ? currentUser.region : 'GLOBAL',
-          'hostInfo': {
-            'id': currentUser.id,
-            'name': currentUser.displayName.isNotEmpty ? currentUser.displayName : currentUser.name,
-            'username': currentUser.username,
-            'avatarUrl': currentUser.avatarUrl,
-          },
-        },
-      );
-
-      final data = res.data?['data'];
-      if (data != null && data['matched'] == true) {
-        final rawPk = data['pkEvent'];
-        if (rawPk != null) {
-          final pk = PKBattleModel.fromJson(Map<String, dynamic>.from(rawPk));
-          _handleMatchSuccess(pk);
-          return;
+    // If no active PK session exists yet for this room, create one (State: CREATED)
+    if (liveProv.activePkBattle == null) {
+      setState(() => _isCreatingSession = true);
+      try {
+        await liveProv.createHostPKBattle(durationSeconds: 300);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to initialize PK session: $e')),
+          );
         }
-      }
-
-      if (mounted) {
-        setState(() {
-          _statusText = 'Waiting for an available live opponent to connect...';
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _statusText = 'Searching live queue...';
-        });
+      } finally {
+        if (mounted) setState(() => _isCreatingSession = false);
       }
     }
+
+    _loadAvailableHosts();
   }
 
   Future<void> _loadAvailableHosts() async {
     setState(() => _isLoadingHosts = true);
-    final live = context.read<LiveProvider>();
-    final roomId = widget.currentRoomId ?? live.activeRoom?.id;
-
     try {
-      final res = await ApiClient.instance.get<Map<String, dynamic>>(
-        '/v1/pk/available-hosts',
-        queryParameters: {
-          if (roomId != null) 'excludeRoomId': roomId,
-        },
-      );
-      final rawList = res.data?['data'];
-      final List<Map<String, dynamic>> hosts = [];
-      if (rawList is List) {
-        for (final item in rawList) {
-          if (item is Map) {
-            hosts.add(Map<String, dynamic>.from(item));
-          }
-        }
-      }
+      final hosts = await PKRepository.instance.getAvailableLiveHosts();
+      final authUserId = context.read<AuthProvider>().currentUser.id;
       if (mounted) {
         setState(() {
-          _availableHosts = hosts;
+          _availableHosts = hosts.where((h) => h.id != authUserId).toList();
           _isLoadingHosts = false;
         });
       }
@@ -195,98 +93,89 @@ class _PkMatchScreenState extends State<PkMatchScreen> with TickerProviderStateM
     }
   }
 
-  Future<void> _sendDirectInvite(Map<String, dynamic> hostItem) async {
-    final live = context.read<LiveProvider>();
-    final currentUser = context.read<AuthProvider>().currentUser;
-    final myRoomId = widget.currentRoomId ?? live.activeRoom?.id;
-    final targetRoomId = hostItem['roomId']?.toString();
-    final targetUserId = hostItem['host']?['id']?.toString();
-
-    if (myRoomId == null) {
+  Future<void> _sendDirectInvite(String targetUserId, String targetName) async {
+    final liveProv = context.read<LiveProvider>();
+    if (liveProv.activePkBattle == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please start your live stream first.')),
+        const SnackBar(content: Text('PK session is initializing, please wait...')),
       );
       return;
     }
 
-    setState(() => _invitingHostId = targetUserId);
-
+    setState(() => _invitingUserId = targetUserId);
     try {
-      await ApiClient.instance.post<Map<String, dynamic>>(
-        '/v1/pk/invite',
-        data: {
-          'fromRoomId': myRoomId,
-          'targetRoomId': targetRoomId,
-          'targetUserId': targetUserId,
-          'durationSeconds': 300,
-          'fromHostInfo': {
-            'id': currentUser.id,
-            'name': currentUser.displayName.isNotEmpty ? currentUser.displayName : currentUser.name,
-            'username': currentUser.username,
-            'avatarUrl': currentUser.avatarUrl,
-            'roomTitle': live.activeRoom?.title ?? 'Live Stream',
-          },
-        },
-      );
-
+      await liveProv.sendPKInvite(targetUserId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('✉️ PK invitation sent to ${hostItem['host']?['name'] ?? 'Host'}!'),
+            content: Text('✉️ PK invitation sent to $targetName!'),
             backgroundColor: AppColors.primary,
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _invitingHostId = null);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send invitation: $e')),
+          SnackBar(
+            content: Text('Failed to send invitation: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
+    } finally {
+      if (mounted) setState(() => _invitingUserId = null);
     }
   }
 
-  void _handleMatchSuccess(PKBattleModel pk) {
-    if (!mounted) return;
-    _radarController.stop();
+  Future<void> _startPKBattle() async {
+    final liveProv = context.read<LiveProvider>();
+    final pk = liveProv.activePkBattle;
 
-    setState(() {
-      _isMatched = true;
-      _statusText = 'Opponent Found! Starting 1v1 Battle...';
-      _matchedOpponent = pk.hostB;
-    });
+    if (pk == null || pk.totalParticipants < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Need at least 2 participants to start PK Battle.')),
+      );
+      return;
+    }
 
-    context.read<LiveProvider>().setPkBattle(pk);
-
-    Future.delayed(const Duration(milliseconds: 700), () {
-      if (mounted) {
-        Navigator.pop(context);
+    setState(() => _isStartingPk = true);
+    try {
+      final startedPk = await liveProv.startHostPKBattle();
+      if (mounted && startedPk != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PKBattleScreen(pkBattle: startedPk),
+          ),
+        );
       }
-    });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to start PK: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isStartingPk = false);
+    }
   }
 
   @override
   void dispose() {
-    _pkStartedSub?.cancel();
-    _pkAcceptedSub?.cancel();
-    _pkDeclinedSub?.cancel();
-    _radarController.dispose();
-    _vsPulseController.dispose();
-
-    // Leave matchmaking queue if still searching
-    final live = context.read<LiveProvider>();
-    final roomId = widget.currentRoomId ?? live.activeRoom?.id;
-    if (roomId != null) {
-      ApiClient.instance.post('/v1/pk/matchmaking/leave', data: {'roomId': roomId}).catchError((_) {});
-    }
-
+    _tabController.dispose();
+    _userIdController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = context.watch<AuthProvider>().currentUser;
+    final liveProv = context.watch<LiveProvider>();
+    final pk = liveProv.activePkBattle;
+    final participantCount = pk?.totalParticipants ?? 1;
+    final canStart = participantCount >= 2;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A071B),
@@ -320,23 +209,38 @@ class _PkMatchScreenState extends State<PkMatchScreen> with TickerProviderStateM
                         icon: const Icon(Icons.close_rounded, color: Colors.white, size: 26),
                         onPressed: () => Navigator.pop(context),
                       ),
-                      const Text(
-                        '1v1 PK Battle Arena',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 17,
-                          letterSpacing: 0.5,
-                        ),
+                      const Column(
+                        children: [
+                          Text(
+                            'PK Battle Host Center',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 17,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          Text(
+                            '2 to 4 Participants • Server Authoritative',
+                            style: TextStyle(
+                              color: Color(0xFF00E5FF),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(width: 44),
                     ],
                   ),
                 ),
 
-                // Tabs: Quick Match vs Direct Invite
+                // Participant Slots Banner (1 to 4)
+                _buildParticipantSlotsBanner(pk),
+
+                // Navigation Tabs (Path A vs Path B)
                 Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(16),
@@ -349,24 +253,29 @@ class _PkMatchScreenState extends State<PkMatchScreen> with TickerProviderStateM
                     unselectedLabelColor: Colors.white54,
                     labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                     tabs: const [
-                      Tab(text: '⚡ Quick Match', icon: Icon(Icons.radar_rounded, size: 18)),
-                      Tab(text: '👥 Invite Live Hosts', icon: Icon(Icons.people_alt_rounded, size: 18)),
+                      Tab(text: '⚔️ Path A: Live Hosts', icon: Icon(Icons.tv_rounded, size: 18)),
+                      Tab(text: '🔗 Path B: Invite User', icon: Icon(Icons.link_rounded, size: 18)),
                     ],
                   ),
                 ),
 
+                // Tabs Body
                 Expanded(
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      // Tab 1: Real Matchmaking Radar
-                      _buildQuickMatchTab(user),
-
-                      // Tab 2: Available Real Live Hosts
-                      _buildInviteHostsTab(),
-                    ],
-                  ),
+                  child: _isCreatingSession
+                      ? const Center(
+                          child: CircularProgressIndicator(color: Color(0xFF00E5FF)),
+                        )
+                      : TabBarView(
+                          controller: _tabController,
+                          children: [
+                            _buildHostVsHostTab(),
+                            _buildHostInviteUserTab(pk),
+                          ],
+                        ),
                 ),
+
+                // Bottom Action Bar: "Start PK Battle"
+                _buildBottomActionBar(canStart, participantCount),
               ],
             ),
           ),
@@ -375,202 +284,171 @@ class _PkMatchScreenState extends State<PkMatchScreen> with TickerProviderStateM
     );
   }
 
-  Widget _buildQuickMatchTab(UserModel user) {
-    return Column(
-      children: [
-        const Spacer(),
+  Widget _buildParticipantSlotsBanner(PKBattleModel? pk) {
+    final participants = pk?.participantList ?? [];
+    final totalSlots = 4;
 
-        // Center Arena Scanner
-        Center(
-          child: Column(
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Radar Pulse Rings
-                  if (!_isMatched)
-                    AnimatedBuilder(
-                      animation: _radarAnimation,
-                      builder: (context, child) {
-                        return Container(
-                          width: 170 * _radarAnimation.value,
-                          height: 170 * _radarAnimation.value,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFF00E5FF).withValues(
-                                alpha: (2.0 - _radarAnimation.value).clamp(0.0, 1.0),
-                              ),
-                              width: 2.0,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-
-                  // Host Avatars Side-by-Side Arena Preview
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Current Host (Team Blue)
-                      Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF00E5FF),
-                          shape: BoxShape.circle,
-                        ),
-                        child: UserAvatar(
-                          imageUrl: user.avatarUrl,
-                          radius: 46,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-
-                      // Central Pulsating VS Badge
-                      ScaleTransition(
-                        scale: _vsScale,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFFD700), Color(0xFFFFAB00)],
-                            ),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white, width: 2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFFFFD700).withValues(alpha: 0.8),
-                                blurRadius: 16,
-                              ),
-                            ],
-                          ),
-                          child: const Text(
-                            'VS',
-                            style: TextStyle(
-                              color: Color(0xFF0A071B),
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-
-                      // Opponent Host (Team Red)
-                      Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: BoxDecoration(
-                          color: _isMatched ? const Color(0xFFFF4081) : Colors.white24,
-                          shape: BoxShape.circle,
-                        ),
-                        child: UserAvatar(
-                          imageUrl: _matchedOpponent?.avatarUrl ?? '',
-                          radius: 46,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 36),
-
-              // Status Indicator Text
-              Text(
-                _statusText,
-                textAlign: TextAlign.center,
+              const Text(
+                'PARTICIPANTS (2 - 4)',
                 style: TextStyle(
-                  color: _isMatched ? const Color(0xFF00E5FF) : Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.5,
+                  color: Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.8,
                 ),
               ),
-              const SizedBox(height: 8),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 32),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: participants.length >= 2
+                      ? AppColors.success.withValues(alpha: 0.2)
+                      : Colors.orangeAccent.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: participants.length >= 2 ? AppColors.success : Colors.orangeAccent,
+                    width: 1,
+                  ),
+                ),
                 child: Text(
-                  'Matching with active live hosts in your region in real-time.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                  '${participants.length}/4 Active',
+                  style: TextStyle(
+                    color: participants.length >= 2 ? AppColors.success : Colors.orangeAccent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(totalSlots, (index) {
+              final slotNumber = index + 1;
+              final participant = index < participants.length ? participants[index] : null;
 
-        const Spacer(),
-
-        // Cancel / Retry Button
-        if (!_isMatched)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 28),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.white70,
-                    side: const BorderSide(color: Colors.white30, width: 1.2),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+              return Column(
+                children: [
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: 58,
+                        height: 58,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: participant != null
+                                ? (participant.isHost ? const Color(0xFF00E5FF) : Colors.purpleAccent)
+                                : Colors.white24,
+                            width: 2,
+                          ),
+                        ),
+                        child: participant != null
+                            ? UserAvatar(
+                                imageUrl: participant.avatarUrl,
+                                radius: 26,
+                              )
+                            : const Icon(
+                                Icons.person_add_alt_1_rounded,
+                                color: Colors.white30,
+                                size: 24,
+                              ),
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0A071B),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white24),
+                          ),
+                          child: Text(
+                            '$slotNumber',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(width: 16),
-                ElevatedButton.icon(
-                  onPressed: _startQuickMatch,
-                  icon: const Icon(Icons.refresh_rounded, size: 18),
-                  label: const Text('Search Again'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00E5FF),
-                    foregroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: 64,
+                    child: Text(
+                      participant != null
+                          ? (participant.isHost ? '${participant.name} (Host)' : participant.name)
+                          : 'Empty',
+                      style: TextStyle(
+                        color: participant != null ? Colors.white : Colors.white38,
+                        fontSize: 10,
+                        fontWeight: participant != null ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              );
+            }),
           ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildInviteHostsTab() {
+  Widget _buildHostVsHostTab() {
     if (_isLoadingHosts) {
-      return const Center(
-        child: CircularProgressIndicator(color: Color(0xFF00E5FF), strokeWidth: 2),
-      );
+      return const Center(child: CircularProgressIndicator(color: Color(0xFF00E5FF)));
     }
 
     if (_availableHosts.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(32),
+          padding: const EdgeInsets.all(32.0),
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.live_tv_rounded, size: 52, color: Colors.white38),
+              const Icon(Icons.live_tv_rounded, color: Colors.white24, size: 56),
               const SizedBox(height: 12),
               const Text(
                 'No other live hosts online right now',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
               ),
               const SizedBox(height: 6),
               const Text(
-                'When other creators start streaming, they will appear here for 1v1 PK invites.',
+                'Use Path B to invite any user via direct PK Invite Link or Code!',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.white54, fontSize: 12),
+                style: TextStyle(color: Colors.white54, fontSize: 13),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               ElevatedButton.icon(
                 onPressed: _loadAvailableHosts,
-                icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: const Text('Refresh List'),
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('Refresh Hosts'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white12,
-                  foregroundColor: Colors.white,
+                  backgroundColor: const Color(0xFF00E5FF),
+                  foregroundColor: Colors.black,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 ),
               ),
@@ -580,71 +458,275 @@ class _PkMatchScreenState extends State<PkMatchScreen> with TickerProviderStateM
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _loadAvailableHosts,
-      color: const Color(0xFF00E5FF),
-      child: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: _availableHosts.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, i) {
-          final item = _availableHosts[i];
-          final host = item['host'] ?? {};
-          final hostId = host['id']?.toString() ?? '';
-          final hostName = host['name']?.toString() ?? host['username']?.toString() ?? 'Host';
-          final avatarUrl = host['avatarUrl']?.toString() ?? '';
-          final roomTitle = item['roomTitle']?.toString() ?? 'Live Stream';
-          final viewerCount = item['viewerCount'] ?? 0;
-          final isInvitingThis = _invitingHostId == hostId;
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      itemCount: _availableHosts.length,
+      itemBuilder: (context, index) {
+        final host = _availableHosts[index];
+        final isInviting = _invitingUserId == host.id;
 
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Row(
+            children: [
+              UserAvatar(imageUrl: host.avatarUrl, radius: 24),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      host.name.isNotEmpty ? host.name : host.username,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.greenAccent,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'Live Host',
+                          style: TextStyle(color: Colors.white54, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton(
+                onPressed: isInviting ? null : () => _sendDirectInvite(host.id, host.name),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00E5FF),
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+                child: isInviting
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                      )
+                    : const Text(
+                        'Invite to PK',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHostInviteUserTab(PKBattleModel? pk) {
+    final inviteCode = pk?.inviteCode ?? 'PK-${pk?.id.substring(0, 6).toUpperCase()}';
+    final shareUrl = 'zeparty://pk/invite/$inviteCode';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'PK Invite Link & Code',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Share this invite code or link with any user. When they accept, they will join your PK Battle screen as an authorized participant (max 4).',
+            style: TextStyle(color: Colors.white60, fontSize: 12, height: 1.4),
+          ),
+          const SizedBox(height: 16),
+
+          // Code Box
+          Container(
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF00E5FF).withValues(alpha: 0.15),
+                  Colors.purpleAccent.withValues(alpha: 0.15),
+                ],
+              ),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.4)),
             ),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                UserAvatar(imageUrl: avatarUrl, radius: 24, isLive: true),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        hostName,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'INVITE CODE',
+                      style: TextStyle(color: Colors.white54, fontSize: 11, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      inviteCode,
+                      style: const TextStyle(
+                        color: Color(0xFF00E5FF),
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 2.0,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '$roomTitle • 👥 $viewerCount viewers',
-                        style: const TextStyle(color: Colors.white60, fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                ElevatedButton(
-                  onPressed: isInvitingThis ? null : () => _sendDirectInvite(item),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isInvitingThis ? Colors.grey : const Color(0xFFFF4081),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  ),
-                  child: Text(
-                    isInvitingThis ? 'Inviting...' : 'Invite to PK',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                  ),
+                IconButton(
+                  icon: const Icon(Icons.copy_rounded, color: Colors.white, size: 24),
+                  onPressed: () {
+                    Clipboard.setData(ClipboardData(text: inviteCode));
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('📋 PK Invite Code copied to clipboard!'),
+                        backgroundColor: AppColors.primary,
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
-          );
-        },
+          ),
+
+          const SizedBox(height: 24),
+          const Text(
+            'Direct User Invite',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _userIdController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: InputDecoration(
+                    hintText: 'Enter User ID or Username...',
+                    hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.06),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: Color(0xFF00E5FF)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton(
+                onPressed: () {
+                  final target = _userIdController.text.trim();
+                  if (target.isNotEmpty) {
+                    _sendDirectInvite(target, target);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00E5FF),
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: const Text('Send', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomActionBar(bool canStart, int participantCount) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF140D2B),
+        border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!canStart)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.info_outline_rounded, color: Colors.orangeAccent, size: 16),
+                  SizedBox(width: 6),
+                  Text(
+                    'At least 2 participants required before PK can start',
+                    style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: canStart && !_isStartingPk ? _startPKBattle : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00E5FF),
+                disabledBackgroundColor: Colors.white.withValues(alpha: 0.12),
+                foregroundColor: Colors.black,
+                disabledForegroundColor: Colors.white38,
+                elevation: canStart ? 8 : 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
+              child: _isStartingPk
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.black),
+                    )
+                  : Text(
+                      canStart ? '🔥 START PK BATTLE ($participantCount/4 READY)' : 'WAITING FOR PARTICIPANTS...',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 15,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }

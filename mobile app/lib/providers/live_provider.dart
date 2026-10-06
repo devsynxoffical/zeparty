@@ -7,6 +7,7 @@ import '../models/user_model.dart';
 import '../core/services/agora_rtc_service.dart';
 import '../core/services/socket_service.dart';
 import '../core/repositories/room_repository.dart';
+import '../core/repositories/pk_repository.dart';
 
 class LiveMessage {
   final String id;
@@ -69,6 +70,9 @@ class LiveProvider extends ChangeNotifier {
   StreamSubscription? _socketRoomMutedSub;
   StreamSubscription? _socketRoomUserMutedSub;
   StreamSubscription? _socketRoomSnapshotSub;
+  StreamSubscription? _socketPkCreatedSub;
+  StreamSubscription? _socketPkParticipantJoinedSub;
+  StreamSubscription? _socketPkReadySub;
   StreamSubscription? _socketPkStartedSub;
   StreamSubscription? _socketPkScoreSub;
   StreamSubscription? _socketPkEndedSub;
@@ -508,6 +512,36 @@ class LiveProvider extends ChangeNotifier {
     });
 
     // ── PK Battle Real-time Subscriptions ───────────────────
+    _socketPkCreatedSub?.cancel();
+    _socketPkCreatedSub = _socketService.onPkCreated.listen((data) {
+      try {
+        final pk = PKBattleModel.fromJson(data);
+        setPkBattle(pk);
+      } catch (e) {
+        debugPrint('[LiveProvider] PK created parse error: $e');
+      }
+    });
+
+    _socketPkParticipantJoinedSub?.cancel();
+    _socketPkParticipantJoinedSub = _socketService.onPkParticipantJoined.listen((data) {
+      try {
+        final pk = PKBattleModel.fromJson(data);
+        setPkBattle(pk);
+      } catch (e) {
+        debugPrint('[LiveProvider] PK participant joined parse error: $e');
+      }
+    });
+
+    _socketPkReadySub?.cancel();
+    _socketPkReadySub = _socketService.onPkReady.listen((data) {
+      try {
+        final pk = PKBattleModel.fromJson(data);
+        setPkBattle(pk);
+      } catch (e) {
+        debugPrint('[LiveProvider] PK ready parse error: $e');
+      }
+    });
+
     _socketPkStartedSub?.cancel();
     _socketPkStartedSub = _socketService.onPkStarted.listen((data) {
       try {
@@ -521,6 +555,14 @@ class LiveProvider extends ChangeNotifier {
     _socketPkScoreSub?.cancel();
     _socketPkScoreSub = _socketService.onPkScoreUpdated.listen((data) {
       if (_activePkBattle != null) {
+        if (data['participants'] is List) {
+          try {
+            final pk = PKBattleModel.fromJson(data);
+            _activePkBattle = pk;
+            notifyListeners();
+            return;
+          } catch (_) {}
+        }
         final scoreA = int.tryParse(data['hostAScore']?.toString() ?? '') ?? _activePkBattle!.scoreA;
         final scoreB = int.tryParse(data['hostBScore']?.toString() ?? '') ?? _activePkBattle!.scoreB;
         _activePkBattle = _activePkBattle!.copyWith(scoreA: scoreA, scoreB: scoreB);
@@ -578,6 +620,9 @@ class LiveProvider extends ChangeNotifier {
     _socketRoomMutedSub?.cancel();
     _socketRoomUserMutedSub?.cancel();
     _socketRoomSnapshotSub?.cancel();
+    _socketPkCreatedSub?.cancel();
+    _socketPkParticipantJoinedSub?.cancel();
+    _socketPkReadySub?.cancel();
     _socketPkStartedSub?.cancel();
     _socketPkScoreSub?.cancel();
     _socketPkEndedSub?.cancel();
@@ -690,44 +735,106 @@ class LiveProvider extends ChangeNotifier {
 
   void setPkBattle(PKBattleModel pk) {
     _activePkBattle = pk;
-    _pkTimeRemainingSeconds = pk.durationSeconds > 0 ? pk.durationSeconds : 300;
     _pkTimer?.cancel();
-    _pkTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    if (pk.isStarted && !pk.isEnded) {
+      _pkTimeRemainingSeconds = pk.calculateRemainingSeconds();
       if (_pkTimeRemainingSeconds > 0) {
-        _pkTimeRemainingSeconds--;
-        notifyListeners();
-      } else {
-        _pkTimer?.cancel();
+        _pkTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+          if (_pkTimeRemainingSeconds > 0) {
+            _pkTimeRemainingSeconds--;
+            notifyListeners();
+          } else {
+            _pkTimer?.cancel();
+          }
+        });
       }
-    });
+    } else {
+      _pkTimeRemainingSeconds = pk.durationSeconds > 0 ? pk.durationSeconds : 300;
+    }
     notifyListeners();
   }
 
-  void startPkBattle({UserModel? currentHost, UserModel? opponentHost, String? pkId, int durationSeconds = 300}) {
-    final hostA = currentHost ?? _currentUser ?? (_activeRoom != null ? _activeRoom!.host : const UserModel(
-      id: 'host_me',
-      username: 'host_me',
-      name: 'Host Me',
-      avatarUrl: '',
-    ));
-    final hostB = opponentHost ?? const UserModel(
-      id: 'host_opponent',
-      username: 'host_opponent',
-      name: 'Opponent Host',
-      avatarUrl: '',
-    );
+  /// Host initiates/creates a server-authoritative PK Battle session
+  Future<PKBattleModel?> createHostPKBattle({int durationSeconds = 300}) async {
+    if (_activeRoom == null) return null;
+    try {
+      final pk = await PKRepository.instance.createPKSession(
+        roomId: _activeRoom!.id,
+        durationSeconds: durationSeconds,
+      );
+      setPkBattle(pk);
+      return pk;
+    } catch (e) {
+      debugPrint('[LiveProvider] createHostPKBattle error: $e');
+      rethrow;
+    }
+  }
 
-    setPkBattle(PKBattleModel(
-      id: pkId ?? 'pk_${DateTime.now().millisecondsSinceEpoch}',
-      roomAId: _activeRoom?.id ?? '',
-      roomBId: '',
-      hostA: hostA,
-      hostB: hostB,
-      scoreA: 0,
-      scoreB: 0,
-      durationSeconds: durationSeconds,
-      remainingTime: Duration(seconds: durationSeconds),
-    ));
+  /// Host invites a specific user or host
+  Future<bool> sendPKInvite(String targetUserId) async {
+    if (_activePkBattle == null) return false;
+    try {
+      await PKRepository.instance.sendPKInvite(
+        pkId: _activePkBattle!.id,
+        targetUserId: targetUserId,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[LiveProvider] sendPKInvite error: $e');
+      rethrow;
+    }
+  }
+
+  /// Host explicitly starts the PK Battle
+  Future<PKBattleModel?> startHostPKBattle() async {
+    if (_activePkBattle == null) return null;
+    try {
+      final pk = await PKRepository.instance.startPKBattle(_activePkBattle!.id);
+      setPkBattle(pk);
+      return pk;
+    } catch (e) {
+      debugPrint('[LiveProvider] startHostPKBattle error: $e');
+      rethrow;
+    }
+  }
+
+  /// Host ends the PK Battle
+  Future<PKBattleModel?> endHostPKBattle() async {
+    if (_activePkBattle == null) return null;
+    try {
+      final pk = await PKRepository.instance.endPKBattle(_activePkBattle!.id);
+      setPkBattle(pk);
+      return pk;
+    } catch (e) {
+      debugPrint('[LiveProvider] endHostPKBattle error: $e');
+      rethrow;
+    }
+  }
+
+  /// Join PK by invite code
+  Future<PKBattleModel?> joinPKByCode(String code) async {
+    try {
+      final pk = await PKRepository.instance.joinByInviteCode(code);
+      setPkBattle(pk);
+      return pk;
+    } catch (e) {
+      debugPrint('[LiveProvider] joinPKByCode error: $e');
+      rethrow;
+    }
+  }
+
+  /// Respond to PK invitation
+  Future<PKBattleModel?> respondToPKInvite(String inviteId, bool accept) async {
+    try {
+      final pk = await PKRepository.instance.respondToInvite(inviteId: inviteId, accept: accept);
+      if (accept) {
+        setPkBattle(pk);
+      }
+      return pk;
+    } catch (e) {
+      debugPrint('[LiveProvider] respondToPKInvite error: $e');
+      rethrow;
+    }
   }
 
   void endPkBattle() {

@@ -179,17 +179,21 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
     _winnerController.forward(from: 0.0);
   }
 
-  void _openGiftSheet(BuildContext context, bool forHostA, PKBattleModel pk) {
-    final targetHost = forHostA ? pk.hostA : pk.hostB;
+  void _openGiftSheetForParticipant(BuildContext context, PKParticipantModel participant) {
+    final targetUser = UserModel(
+      id: participant.userId,
+      username: participant.username,
+      name: participant.name,
+      avatarUrl: participant.avatarUrl,
+    );
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.transparent,
       builder: (c) => GiftDialog(
-        streamerName: targetHost.name,
-        targetReceiver: targetHost,
+        streamerName: participant.name,
+        targetReceiver: targetUser,
         onGiftSent: (gift) {
           final currentUser = context.read<AuthProvider>().currentUser;
-          context.read<LiveProvider>().addPkScore(forHostA, gift.diamondPrice);
           context.read<LiveProvider>().sendGift(gift, currentUser.name);
         },
       ),
@@ -281,47 +285,13 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                 const SizedBox(height: 4),
 
                 // ─── 2. TIKTOK SCORE BAR & VS BADGE ───
-                _buildTikTokScoreBar(scoreA, scoreB, ratioA),
+                _buildTikTokScoreBar(pk),
                 const SizedBox(height: 8),
 
-                // ─── 3. PK ARENA STAGE (Side-by-Side Host Video Cards with Live Camera Support) ───
+                // ─── 3. PK ARENA STAGE (Dynamic 2, 3, or 4 Video Feeds) ───
                 Expanded(
                   flex: 5,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      children: [
-                        // Host A Box (Left / Blue Team - Real Camera Enabled)
-                        Expanded(
-                          child: _buildHostVideoCard(
-                            host: pk.hostA,
-                            score: scoreA,
-                            isLeading: isLeadingA,
-                            sideColor: const Color(0xFF00E5FF),
-                            teamLabel: 'Team Blue',
-                            isLeft: true,
-                            useRealCamera: true,
-                            onSupportTap: () => _openGiftSheet(context, true, pk),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-
-                        // Host B Box (Right / Red Team)
-                        Expanded(
-                          child: _buildHostVideoCard(
-                            host: pk.hostB,
-                            score: scoreB,
-                            isLeading: !isLeadingA,
-                            sideColor: const Color(0xFFFF4081),
-                            teamLabel: 'Team Red',
-                            isLeft: false,
-                            useRealCamera: false,
-                            onSupportTap: () => _openGiftSheet(context, false, pk),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  child: _buildArenaStage(pk),
                 ),
                 const SizedBox(height: 6),
 
@@ -363,7 +333,21 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
     );
   }
 
-  /// Top Navigation Bar with Exit Icon, Pulsating Timer, and End Battle Action
+  static const List<Color> _participantColors = [
+    Color(0xFF00E5FF), // Slot 1: Cyan / Blue
+    Color(0xFFFF4081), // Slot 2: Hot Pink / Red
+    Color(0xFFFFD700), // Slot 3: Gold
+    Color(0xFFB388FF), // Slot 4: Purple
+  ];
+
+  static const List<String> _participantTeamLabels = [
+    'Team Cyan',
+    'Team Pink',
+    'Team Gold',
+    'Team Violet',
+  ];
+
+  /// Top Navigation Bar with Exit Icon, Authoritative Timer, and End Battle Action
   Widget _buildTopNavigationHeader(
     BuildContext context,
     int minutes,
@@ -372,6 +356,8 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
     bool isLeadingA,
     PKBattleModel pk,
   ) {
+    final isStarted = pk.isStarted;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
@@ -391,22 +377,29 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
             ),
           ),
 
-          // Pulsating Timer Badge ("PK 02:50")
+          // Timer / Status Badge
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
-              gradient: seconds < 30
-                  ? const LinearGradient(colors: [Color(0xFFFF1744), Color(0xFFD50000)])
-                  : LinearGradient(colors: [Colors.black.withValues(alpha: 0.75), const Color(0xFF1E1035)]),
+              gradient: !isStarted
+                  ? const LinearGradient(colors: [Color(0xFF4A148C), Color(0xFF1E1035)])
+                  : (seconds < 30
+                      ? const LinearGradient(colors: [Color(0xFFFF1744), Color(0xFFD50000)])
+                      : LinearGradient(colors: [Colors.black.withValues(alpha: 0.75), const Color(0xFF1E1035)])),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: seconds < 30 ? const Color(0xFFFF5252) : const Color(0xFFFFD700),
+                color: !isStarted
+                    ? Colors.purpleAccent
+                    : (seconds < 30 ? const Color(0xFFFF5252) : const Color(0xFFFFD700)),
                 width: 1.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: (seconds < 30 ? const Color(0xFFFF1744) : const Color(0xFFFFD700)).withValues(alpha: 0.5),
+                  color: (!isStarted
+                          ? Colors.purpleAccent
+                          : (seconds < 30 ? const Color(0xFFFF1744) : const Color(0xFFFFD700)))
+                      .withValues(alpha: 0.5),
                   blurRadius: 10,
                 ),
               ],
@@ -414,10 +407,14 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.timer_outlined, color: Color(0xFFFFD700), size: 14),
+                Icon(
+                  !isStarted ? Icons.hourglass_top_rounded : Icons.timer_outlined,
+                  color: !isStarted ? Colors.purpleAccent : const Color(0xFFFFD700),
+                  size: 14,
+                ),
                 const SizedBox(width: 5),
                 Text(
-                  'PK $minutes:$remSecs',
+                  !isStarted ? 'PK READY' : 'PK $minutes:$remSecs',
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,
@@ -429,7 +426,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
             ),
           ),
 
-          // Camera & Mic Hardware Controls Group (Relocated to Top Header for a clean bottom dock)
+          // Camera & Mic Hardware Controls Group
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -493,10 +490,15 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
 
           // End PK Action
           GestureDetector(
-            onTap: () => _declareWinner(
-              isLeadingA ? pk.hostA.name : pk.hostB.name,
-              isLeadingA ? pk.scoreA : pk.scoreB,
-            ),
+            onTap: () {
+              final highestScoreParticipant = pk.participantList.isNotEmpty
+                  ? (pk.participantList..sort((a, b) => b.score.compareTo(a.score))).first
+                  : null;
+              _declareWinner(
+                highestScoreParticipant?.name ?? pk.hostA.name,
+                highestScoreParticipant?.score ?? pk.scoreA,
+              );
+            },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
@@ -515,8 +517,12 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
     );
   }
 
-  /// TikTok-Style Score Header Bar (Clean score indicators and animated progress bar)
-  Widget _buildTikTokScoreBar(int scoreA, int scoreB, double ratioA) {
+  /// Dynamic Multi-Participant Score Header Bar
+  Widget _buildTikTokScoreBar(PKBattleModel pk) {
+    final participants = pk.participantList;
+    final totalScore = participants.fold<int>(0, (sum, p) => sum + p.score);
+    final effectiveTotal = totalScore == 0 ? 1 : totalScore;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Column(
@@ -524,80 +530,56 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
           // Score Pill Text Displays
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Blue Side Points
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF00E5FF), width: 1.2),
-                ),
-                child: Row(
-                  children: [
-                    const Text('💎 ', style: TextStyle(fontSize: 11)),
-                    Text(
-                      '$scoreA pts',
-                      style: const TextStyle(
-                        color: Color(0xFF00E5FF),
-                        fontWeight: FontWeight.w900,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            children: List.generate(participants.length, (idx) {
+              final p = participants[idx];
+              final color = _participantColors[idx % _participantColors.length];
 
-              // Red Side Points
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF4081).withValues(alpha: 0.2),
+                  color: color.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFFF4081), width: 1.2),
+                  border: Border.all(color: color, width: 1.2),
                 ),
                 child: Row(
                   children: [
+                    const Text('💎 ', style: TextStyle(fontSize: 10)),
                     Text(
-                      '$scoreB pts',
-                      style: const TextStyle(
-                        color: Color(0xFFFF4081),
+                      '${p.score} pts',
+                      style: TextStyle(
+                        color: color,
                         fontWeight: FontWeight.w900,
-                        fontSize: 12,
+                        fontSize: 11,
                       ),
                     ),
-                    const Text(' 💎', style: TextStyle(fontSize: 11)),
                   ],
                 ),
-              ),
-            ],
+              );
+            }),
           ),
           const SizedBox(height: 5),
 
-          // Integrated Split Score Bar with 3D VS Emblem
+          // Integrated Multi-Segment Split Score Bar
           SizedBox(
-            height: 22,
+            height: 20,
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // Animated Split Bar
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: Row(
-                    children: [
-                      // Blue Team Fraction
-                      AnimatedExpandedBar(
-                        widthRatio: ratioA,
-                        color: const Color(0xFF00E5FF),
-                        gradientColors: const [Color(0xFF00B0FF), Color(0xFF00E5FF)],
-                      ),
-                      // Red Team Fraction
-                      AnimatedExpandedBar(
-                        widthRatio: 1 - ratioA,
-                        color: const Color(0xFFFF4081),
-                        gradientColors: const [Color(0xFFFF4081), Color(0xFFD81B60)],
-                      ),
-                    ],
+                    children: List.generate(participants.length, (idx) {
+                      final p = participants[idx];
+                      final ratio = (p.score / effectiveTotal).clamp(0.05, 0.95);
+                      final color = _participantColors[idx % _participantColors.length];
+
+                      return Expanded(
+                        flex: ((ratio * 100).round()).clamp(1, 100),
+                        child: Container(
+                          color: color,
+                        ),
+                      );
+                    }),
                   ),
                 ),
 
@@ -639,49 +621,218 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
     );
   }
 
-  /// Clean Host Video Card with Real Camera Preview for Host A & Mic Toggle Controls
-  Widget _buildHostVideoCard({
-    required dynamic host,
-    required int score,
-    required bool isLeading,
+  /// Dynamic 2, 3, or 4 Participant Arena Stage
+  Widget _buildArenaStage(PKBattleModel pk) {
+    final participants = pk.participantList;
+    final count = participants.length;
+
+    if (count <= 2) {
+      final p1 = participants.isNotEmpty ? participants[0] : null;
+      final p2 = participants.length > 1 ? participants[1] : null;
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Row(
+          children: [
+            if (p1 != null)
+              Expanded(
+                child: _buildParticipantVideoCard(
+                  participant: p1,
+                  slotIndex: 0,
+                  sideColor: _participantColors[0],
+                  teamLabel: _participantTeamLabels[0],
+                  useRealCamera: true,
+                  onSupportTap: () => _openGiftSheetForParticipant(context, p1),
+                ),
+              ),
+            const SizedBox(width: 8),
+            if (p2 != null)
+              Expanded(
+                child: _buildParticipantVideoCard(
+                  participant: p2,
+                  slotIndex: 1,
+                  sideColor: _participantColors[1],
+                  teamLabel: _participantTeamLabels[1],
+                  useRealCamera: false,
+                  onSupportTap: () => _openGiftSheetForParticipant(context, p2),
+                ),
+              ),
+          ],
+        ),
+      );
+    } else if (count == 3) {
+      final p1 = participants[0];
+      final p2 = participants[1];
+      final p3 = participants[2];
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Column(
+          children: [
+            Expanded(
+              flex: 1,
+              child: _buildParticipantVideoCard(
+                participant: p1,
+                slotIndex: 0,
+                sideColor: _participantColors[0],
+                teamLabel: _participantTeamLabels[0],
+                useRealCamera: true,
+                onSupportTap: () => _openGiftSheetForParticipant(context, p1),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              flex: 1,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildParticipantVideoCard(
+                      participant: p2,
+                      slotIndex: 1,
+                      sideColor: _participantColors[1],
+                      teamLabel: _participantTeamLabels[1],
+                      useRealCamera: false,
+                      onSupportTap: () => _openGiftSheetForParticipant(context, p2),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _buildParticipantVideoCard(
+                      participant: p3,
+                      slotIndex: 2,
+                      sideColor: _participantColors[2],
+                      teamLabel: _participantTeamLabels[2],
+                      useRealCamera: false,
+                      onSupportTap: () => _openGiftSheetForParticipant(context, p3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // 4 Participants (2x2 Grid)
+      final p1 = participants[0];
+      final p2 = participants[1];
+      final p3 = participants[2];
+      final p4 = participants[3];
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Column(
+          children: [
+            Expanded(
+              flex: 1,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildParticipantVideoCard(
+                      participant: p1,
+                      slotIndex: 0,
+                      sideColor: _participantColors[0],
+                      teamLabel: _participantTeamLabels[0],
+                      useRealCamera: true,
+                      onSupportTap: () => _openGiftSheetForParticipant(context, p1),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _buildParticipantVideoCard(
+                      participant: p2,
+                      slotIndex: 1,
+                      sideColor: _participantColors[1],
+                      teamLabel: _participantTeamLabels[1],
+                      useRealCamera: false,
+                      onSupportTap: () => _openGiftSheetForParticipant(context, p2),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              flex: 1,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildParticipantVideoCard(
+                      participant: p3,
+                      slotIndex: 2,
+                      sideColor: _participantColors[2],
+                      teamLabel: _participantTeamLabels[2],
+                      useRealCamera: false,
+                      onSupportTap: () => _openGiftSheetForParticipant(context, p3),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _buildParticipantVideoCard(
+                      participant: p4,
+                      slotIndex: 3,
+                      sideColor: _participantColors[3],
+                      teamLabel: _participantTeamLabels[3],
+                      useRealCamera: false,
+                      onSupportTap: () => _openGiftSheetForParticipant(context, p4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  /// Video Card with Avatar / Camera preview, Host Tag, Leading Badge, and Support Button
+  Widget _buildParticipantVideoCard({
+    required PKParticipantModel participant,
+    required int slotIndex,
     required Color sideColor,
     required String teamLabel,
-    required bool isLeft,
     required bool useRealCamera,
     required VoidCallback onSupportTap,
   }) {
+    final isLeft = slotIndex % 2 == 0;
+
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: sideColor, width: 2.0),
         boxShadow: [
           BoxShadow(
             color: sideColor.withValues(alpha: 0.35),
-            blurRadius: 12,
+            blurRadius: 10,
             spreadRadius: 1,
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Video Feed: Real Camera Preview if available & enabled, else Network Image
-            if (useRealCamera && _isCameraInitialized && _cameraController != null && _cameraController!.value.isInitialized && !_isCameraOff)
+            // Camera Preview or Avatar Image
+            if (useRealCamera &&
+                _isCameraInitialized &&
+                _cameraController != null &&
+                _cameraController!.value.isInitialized &&
+                !_isCameraOff)
               CameraPreview(_cameraController!)
             else
               Image.network(
-                host.avatarUrl,
+                participant.avatarUrl,
                 fit: BoxFit.cover,
                 alignment: Alignment.center,
                 errorBuilder: (context, error, stackTrace) => Container(
                   color: const Color(0xFF1E1035),
-                  child: const Icon(Icons.person, color: Colors.white54, size: 48),
+                  child: const Icon(Icons.person, color: Colors.white54, size: 36),
                 ),
               ),
 
-            // Subtle Gradient Vignette
+            // Gradient Vignette
             Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -700,157 +851,95 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
             // Muted Mic / Camera Off Overlay Indicator
             if (useRealCamera && (_isMuted || _isCameraOff))
               Positioned(
-                top: 40, left: 10,
+                top: 36,
+                left: 8,
                 child: Row(
                   children: [
                     if (_isMuted)
                       Container(
-                        padding: const EdgeInsets.all(4),
+                        padding: const EdgeInsets.all(3),
                         margin: const EdgeInsets.only(right: 4),
                         decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                        child: const Icon(Icons.mic_off, color: Colors.white, size: 12),
+                        child: const Icon(Icons.mic_off, color: Colors.white, size: 10),
                       ),
                     if (_isCameraOff)
                       Container(
-                        padding: const EdgeInsets.all(4),
+                        padding: const EdgeInsets.all(3),
                         decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                        child: const Icon(Icons.videocam_off, color: Colors.white, size: 12),
+                        child: const Icon(Icons.videocam_off, color: Colors.white, size: 10),
                       ),
                   ],
                 ),
               ),
 
-            // TOP-LEFT / TOP-RIGHT: Host Name & Avatar Tag
+            // Top Participant Tag & Avatar
             Positioned(
-              top: 10,
-              left: isLeft ? 10 : null,
-              right: !isLeft ? 10 : null,
+              top: 6,
+              left: isLeft ? 6 : null,
+              right: !isLeft ? 6 : null,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.65),
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: sideColor.withValues(alpha: 0.8), width: 1.0),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    UserAvatar(imageUrl: host.avatarUrl, radius: 11),
-                    const SizedBox(width: 5),
+                    UserAvatar(imageUrl: participant.avatarUrl, radius: 9),
+                    const SizedBox(width: 4),
                     Flexible(
                       child: Text(
-                        host.name,
+                        participant.isHost ? '${participant.name} (Host)' : participant.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
-                          fontSize: 10,
+                          fontSize: 9,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 4),
-                    Consumer<AuthProvider>(
-                      builder: (context, auth, _) {
-                        final isFollowing = auth.isFollowing(host.id);
-                        final isMe = auth.currentUser.id == host.id;
-                        if (isMe) return const SizedBox.shrink();
-
-                        return GestureDetector(
-                          onTap: () {
-                            auth.toggleFollow(host.id);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(isFollowing ? 'Unfollowed ${host.name}' : 'Followed ${host.name} ❤️'),
-                                duration: const Duration(seconds: 1),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: BoxDecoration(
-                              color: isFollowing ? Colors.grey : const Color(0xFF00E5FF),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              isFollowing ? Icons.check : Icons.add,
-                              color: Colors.black,
-                              size: 10,
-                            ),
-                          ),
-                        );
-                      },
                     ),
                   ],
                 ),
               ),
             ),
 
-            // TOP-RIGHT / TOP-LEFT: LEADING 🔥 Badge
-            if (isLeading)
-              Positioned(
-                top: 10,
-                right: isLeft ? 10 : null,
-                left: !isLeft ? 10 : null,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFAB00)]),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(color: const Color(0xFFFFD700).withValues(alpha: 0.6), blurRadius: 6),
-                    ],
-                  ),
-                  child: const Text(
-                    '🔥 LEADING',
-                    style: TextStyle(
-                      color: Color(0xFF0A071B),
-                      fontWeight: FontWeight.w900,
-                      fontSize: 9,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ),
-
-            // BOTTOM: Dedicated Support Button for this Host
+            // Bottom Support Button
             Positioned(
-              bottom: 8,
-              left: 8,
-              right: 8,
+              bottom: 6,
+              left: 6,
+              right: 6,
               child: GestureDetector(
                 onTap: onSupportTap,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 7),
+                  padding: const EdgeInsets.symmetric(vertical: 5),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: isLeft
-                          ? const [Color(0xFF00B0FF), Color(0xFF00E5FF)]
-                          : const [Color(0xFFD81B60), Color(0xFFFF4081)],
-                    ),
-                    borderRadius: BorderRadius.circular(14),
+                    color: sideColor,
+                    borderRadius: BorderRadius.circular(10),
                     boxShadow: [
                       BoxShadow(
-                        color: sideColor.withValues(alpha: 0.6),
-                        blurRadius: 8,
+                        color: sideColor.withValues(alpha: 0.5),
+                        blurRadius: 6,
                       ),
                     ],
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(isLeft ? '💙' : '❤️', style: const TextStyle(fontSize: 11)),
-                      const SizedBox(width: 4),
+                      const Text('💎', style: TextStyle(fontSize: 9)),
+                      const SizedBox(width: 3),
                       Flexible(
                         child: Text(
-                          'Support ${host.name.split(' ').first}',
+                          'Support ${participant.name.split(' ').first}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: Colors.black,
                             fontWeight: FontWeight.w900,
-                            fontSize: 10,
-                            letterSpacing: 0.5,
+                            fontSize: 9,
+                            letterSpacing: 0.3,
                           ),
                         ),
                       ),

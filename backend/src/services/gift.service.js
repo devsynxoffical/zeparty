@@ -359,7 +359,7 @@ export async function sendGift(
     });
 
     try {
-      await pkService.addPKScore({ roomId, giftCoinValue: Number(totalCoins) });
+      await pkService.addPKScore({ roomId, targetUserId: recipientUserId, giftCoinValue: Number(totalCoins) });
     } catch (_) {}
   }
 
