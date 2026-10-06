@@ -147,7 +147,10 @@ class LiveProvider extends ChangeNotifier {
   // ── Core Methods ─────────────────────────────────────────
 
   Future<void> joinRoom(LiveRoomModel room, {UserModel? currentUser}) async {
-    _activeRoom = room.copyWith(viewerCount: room.viewerCount + 1);
+    final isHost = (currentUser != null) &&
+        (room.host.id == currentUser.id || room.creatorUserId == currentUser.id);
+
+    _activeRoom = room.copyWith(viewerCount: isHost ? room.viewerCount : room.viewerCount + 1);
     _currentUser = currentUser;
     _isRoomLocked = false;
     _isRoomMuted = room.isMuted;
@@ -168,9 +171,6 @@ class LiveProvider extends ChangeNotifier {
       LiveMessage(sender: 'System', text: '👋 $displayName joined the room! 🔥'),
     ];
     notifyListeners();
-
-    final isHost = (currentUser != null) &&
-        (room.host.id == currentUser.id || room.creatorUserId == currentUser.id);
 
     try {
       // 1. Connect Socket.IO
@@ -234,6 +234,9 @@ class LiveProvider extends ChangeNotifier {
       final userName = userObj['name'] ?? userObj['displayName'] ?? userObj['username'] ?? data['name'] ?? data['username'] ?? 'A user';
       final joinedId = data['userId'] ?? data['id'] ?? userObj['id'];
 
+      final isHostUser = (_activeRoom != null) &&
+          (joinedId == _activeRoom!.host.id || joinedId == _activeRoom!.creatorUserId);
+
       if (joinedId != currentUser?.id) {
         _messages.add(LiveMessage(
           sender: 'System',
@@ -242,7 +245,9 @@ class LiveProvider extends ChangeNotifier {
         if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
 
         final rawCount = data['viewerCount'] ?? data['count'];
-        final newCount = rawCount is int ? rawCount : (_activeRoom != null ? _activeRoom!.viewerCount + 1 : 1);
+        final newCount = rawCount is int
+            ? rawCount
+            : (isHostUser ? (_activeRoom?.viewerCount ?? 0) : (_activeRoom != null ? _activeRoom!.viewerCount + 1 : 0));
         if (_activeRoom != null) {
           _activeRoom = _activeRoom!.copyWith(viewerCount: newCount);
         }
@@ -257,7 +262,7 @@ class LiveProvider extends ChangeNotifier {
       }
       final rawCount = data['viewerCount'] ?? data['count'];
       if (_activeRoom != null) {
-        final newCount = rawCount is int ? rawCount : (_activeRoom!.viewerCount > 1 ? _activeRoom!.viewerCount - 1 : 1);
+        final newCount = rawCount is int ? rawCount : (_activeRoom!.viewerCount > 0 ? _activeRoom!.viewerCount - 1 : 0);
         _activeRoom = _activeRoom!.copyWith(viewerCount: newCount);
         notifyListeners();
       }

@@ -49,7 +49,7 @@ export async function createRoomWithSeats(
       roomPin,
       agoraChannelName,
       status: 'LIVE',
-      currentViewersCount: 1, // Creator starts in room
+      currentViewersCount: 0, // Audience viewer count starts at 0 (host is not an audience viewer)
       members: {
         create: {
           userId: creatorUserId,
@@ -65,7 +65,21 @@ export async function createRoomWithSeats(
           id: true,
           username: true,
           avatarUrl: true,
-          profile: true,
+          countryCode: true,
+          region: true,
+          userType: true,
+          profile: {
+            select: {
+              displayName: true,
+              level: true,
+              vipLevel: true,
+              svipLevel: true,
+              nobleRank: true,
+              followersCount: true,
+              followingCount: true,
+              isPrivate: true,
+            },
+          },
         },
       },
       seats: {
@@ -398,14 +412,17 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
     }).catch(() => {});
   }
 
-  const memberCount = await db.roomMember.count({
-    where: { roomId },
+  const audienceMemberCount = await db.roomMember.count({
+    where: {
+      roomId,
+      userId: { not: room.creatorUserId },
+    },
   });
 
   return await db.room.update({
     where: { id: roomId },
     data: {
-      currentViewersCount: memberCount,
+      currentViewersCount: audienceMemberCount,
     },
     include: {
       creator: {
@@ -413,6 +430,9 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
           id: true,
           username: true,
           avatarUrl: true,
+          countryCode: true,
+          region: true,
+          profile: true,
         },
       },
     },
@@ -451,12 +471,12 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
     },
   });
 
-  const memberCount = await db.roomMember.count({
+  const totalMemberCount = await db.roomMember.count({
     where: { roomId },
   });
 
   // Do NOT terminate room when host leaves; keep room active so other users and speakers stay inside
-  const shouldDeleteRoom = memberCount === 0;
+  const shouldDeleteRoom = totalMemberCount === 0;
 
   if (shouldDeleteRoom) {
     try {
@@ -472,10 +492,29 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
     return { id: roomId, currentViewersCount: 0, status: 'ENDED' };
   }
 
+  const audienceMemberCount = await db.roomMember.count({
+    where: {
+      roomId,
+      userId: { not: room.creatorUserId },
+    },
+  });
+
   return await db.room.update({
     where: { id: roomId },
     data: {
-      currentViewersCount: memberCount,
+      currentViewersCount: audienceMemberCount,
+    },
+    include: {
+      creator: {
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          countryCode: true,
+          region: true,
+          profile: true,
+        },
+      },
     },
   });
 }

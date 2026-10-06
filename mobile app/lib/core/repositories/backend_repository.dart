@@ -21,6 +21,7 @@ class BackendRepository extends ChangeNotifier {
   StreamSubscription? _socketRoomClosedSub;
 
   BackendRepository._internal() {
+    SocketService.instance.connect();
     fetchLiveRooms();
     _startAutoRefresh();
     _initSocketSubscriptions();
@@ -28,18 +29,22 @@ class BackendRepository extends ChangeNotifier {
 
   void _startAutoRefresh() {
     _autoRefreshTimer?.cancel();
-    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
       fetchLiveRooms();
     });
   }
 
   void _initSocketSubscriptions() {
     final socket = SocketService.instance;
+    socket.connect();
     _socketRoomCreatedSub?.cancel();
     _socketRoomCreatedSub = socket.roomCreatedStream.listen((data) {
       try {
         final room = LiveRoomModel.fromJson(data);
-        addLiveRoom(room);
+        if (room.id.isNotEmpty) {
+          addLiveRoom(room);
+        }
+        fetchLiveRooms();
       } catch (_) {
         fetchLiveRooms();
       }

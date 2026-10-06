@@ -430,11 +430,11 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                             title: title,
                             host: currentUser,
                             coverUrl: coverUrl,
-                            viewerCount: 1,
+                            viewerCount: 0,
                             category: _selectedCategory,
                             isPrivate: _isPrivate,
                             startTime: DateTime.now(),
-                            roomType: 'VIDEO_PARTY',
+                            roomType: 'LIVE_VIDEO',
                           );
                         }
 

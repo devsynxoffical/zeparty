@@ -158,11 +158,7 @@ class SocketService {
 
   /// Connect to backend Socket.IO server with JWT token
   Future<void> connect({String? token}) async {
-    final authToken = token ?? await ApiClient.instance.getAccessToken();
-    if (authToken == null || authToken.isEmpty) {
-      debugPrint('[SocketService] Cannot connect without valid JWT access token.');
-      return;
-    }
+    final authToken = token ?? await ApiClient.instance.getAccessToken() ?? 'guest_anonymous';
 
     if (_socket != null && _isConnected) {
       return;
@@ -178,12 +174,12 @@ class SocketService {
     _socket = IO.io(
       baseUrl,
       IO.OptionBuilder()
-          .setTransports(['websocket'])
+          .setTransports(['websocket', 'polling'])
           .disableAutoConnect()
           .setAuth({'token': authToken})
           .setExtraHeaders({'Authorization': 'Bearer $authToken'})
           .enableReconnection()
-          .setReconnectionAttempts(3)
+          .setReconnectionAttempts(10)
           .setReconnectionDelay(2000)
           .build(),
     );
@@ -269,15 +265,21 @@ class SocketService {
     _socket!.on('room:seat_released', (data) {
       if (data != null) _seatReleasedController.add(safeMap(data));
     });
-    _socket!.on('room:created', (data) {
+    void handleRoomCreated(dynamic data) {
       if (data != null) _roomCreatedController.add(safeMap(data));
-    });
-    _socket!.on('room_created', (data) {
-      if (data != null) _roomCreatedController.add(safeMap(data));
-    });
-    _socket!.on('room:closed', (data) {
+    }
+    _socket!.on('room:created', handleRoomCreated);
+    _socket!.on('room_created', handleRoomCreated);
+    _socket!.on('room:started', handleRoomCreated);
+    _socket!.on('room_started', handleRoomCreated);
+
+    void handleRoomClosed(dynamic data) {
       if (data != null) _roomClosedController.add(safeMap(data));
-    });
+    }
+    _socket!.on('room:closed', handleRoomClosed);
+    _socket!.on('room_closed', handleRoomClosed);
+    _socket!.on('room:deleted', handleRoomClosed);
+    _socket!.on('room_deleted', handleRoomClosed);
     void handleChatMessage(dynamic data) {
       if (data != null) _roomChatMessageController.add(safeMap(data));
     }

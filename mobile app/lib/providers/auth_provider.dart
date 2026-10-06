@@ -82,6 +82,8 @@ class AuthProvider extends ChangeNotifier {
           refreshToken: 'refresh_token_${user.id}',
         );
       }
+      SocketService.instance.connect();
+      BackendRepository.instance.fetchLiveRooms();
     } catch (e) {
       debugPrint('Failed to save user session locally: $e');
     }

@@ -30,17 +30,20 @@ export function buildRoomSnapshot(room, viewerCount) {
       displayName: room.creator.profile?.displayName || room.creator.username,
       avatarUrl: room.creator.profile?.avatarUrl || null,
     } : null,
-    seats: (room.seats || []).map((s) => ({
-      seatIndex: s.seatIndex,
-      isLocked: s.isLocked,
-      isMuted: s.isMuted,
-      user: s.user ? {
-        id: s.user.id,
-        username: s.user.username,
-        displayName: s.user.profile?.displayName || s.user.username,
-        avatarUrl: s.user.profile?.avatarUrl || null,
-      } : null,
-    })),
+    seats: (room.seats || []).map((s) => {
+      const u = s.occupiedUser || s.user;
+      return {
+        seatIndex: s.seatIndex,
+        isLocked: s.isLocked,
+        isMuted: s.isMuted,
+        user: u ? {
+          id: u.id,
+          username: u.username,
+          displayName: u.profile?.displayName || u.displayName || u.username,
+          avatarUrl: u.profile?.avatarUrl || u.avatarUrl || null,
+        } : null,
+      };
+    }),
     createdAt: room.createdAt,
   };
 }
@@ -103,7 +106,9 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     const { isFirstSocket } = await presenceService.addSocketToRoom(roomId, userId, socket.id);
 
     // 5. Generate and Send Authoritative Room Snapshot
-    const currentCount = joinResult?.currentViewersCount || (room.currentViewersCount || room.viewerCount || 0) + 1;
+    const currentCount = typeof joinResult?.currentViewersCount === 'number'
+      ? joinResult.currentViewersCount
+      : (typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 0);
     const snapshot = buildRoomSnapshot(room, currentCount);
     socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, { room, seats: room.seats || [] });
 

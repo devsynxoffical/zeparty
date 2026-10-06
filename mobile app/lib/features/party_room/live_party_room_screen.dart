@@ -612,7 +612,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                       const SizedBox(width: 6),
                                       Expanded(
                                         child: Text(
-                                          'ID:${activeRoom.id.length > 6 ? activeRoom.id.substring(0, 6) : activeRoom.id} • 👥 ${provider.participants.length}',
+                                          'ID:${activeRoom.id.length > 6 ? activeRoom.id.substring(0, 6) : activeRoom.id} • 👥 ${activeRoom.viewerCount}',
                                           style: TextStyle(
                                             color: Colors.white.withValues(alpha: 0.6),
                                             fontSize: 10,
@@ -744,8 +744,12 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   }
 
   Widget _buildAudienceRow(LivePartyProvider provider, bool canManage, bool isDark) {
-    final audience = provider.participants;
-    if (audience.isEmpty) return const SizedBox.shrink();
+    final audience = provider.participants.where((p) =>
+      p.role != ParticipantRole.host &&
+      p.user.id != (provider.activeRoom?.host.id ?? widget.room.host.id) &&
+      p.user.id != (provider.activeRoom?.creatorUserId ?? widget.room.creatorUserId)
+    ).toList();
+    final viewerCount = provider.activeRoom != null ? provider.activeRoom!.viewerCount : audience.length;
 
     return Container(
       height: 38,
@@ -765,7 +769,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 const Icon(Icons.people_alt_rounded, color: Colors.cyanAccent, size: 13),
                 const SizedBox(width: 4),
                 Text(
-                  '${audience.length}',
+                  '$viewerCount',
                   style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                 ),
               ],
@@ -773,63 +777,71 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: audience.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 6),
-              itemBuilder: (ctx, i) {
-                final p = audience[i];
-                final onSeat = p.seatNumber != null;
-                return GestureDetector(
-                  onTap: () {
-                    InRoomProfileCardSheet.show(
-                      context,
-                      participant: p,
-                      canManage: canManage,
-                      isDark: isDark,
-                    );
-                  },
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: onSeat ? Colors.amberAccent : Colors.purpleAccent.withValues(alpha: 0.7),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: ClipOval(
-                          child: (p.user.avatarUrl.isNotEmpty)
-                              ? Image.network(
-                                  p.user.avatarUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => _buildDefaultAvatar(p.user.name),
-                                )
-                              : _buildDefaultAvatar(p.user.name),
-                        ),
-                      ),
-                      if (onSeat)
-                        Positioned(
-                          bottom: -2,
-                          right: -2,
-                          child: Container(
-                            padding: const EdgeInsets.all(2),
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFB524E4),
-                              shape: BoxShape.circle,
+            child: audience.isEmpty
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Waiting for viewers...',
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 11),
+                    ),
+                  )
+                : ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: audience.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 6),
+                    itemBuilder: (ctx, i) {
+                      final p = audience[i];
+                      final onSeat = p.seatNumber != null;
+                      return GestureDetector(
+                        onTap: () {
+                          InRoomProfileCardSheet.show(
+                            context,
+                            participant: p,
+                            canManage: canManage,
+                            isDark: isDark,
+                          );
+                        },
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: onSeat ? Colors.amberAccent : Colors.purpleAccent.withValues(alpha: 0.7),
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: ClipOval(
+                                child: (p.user.avatarUrl.isNotEmpty)
+                                    ? Image.network(
+                                        p.user.avatarUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => _buildDefaultAvatar(p.user.name),
+                                      )
+                                    : _buildDefaultAvatar(p.user.name),
+                              ),
                             ),
-                            child: const Icon(Icons.mic, color: Colors.white, size: 8),
-                          ),
+                            if (onSeat)
+                              Positioned(
+                                bottom: -2,
+                                right: -2,
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFB524E4),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.mic, color: Colors.white, size: 8),
+                                ),
+                              ),
+                          ],
                         ),
-                    ],
+                      );
+                    },
                   ),
-                );
-              },
-            ),
           ),
         ],
       ),

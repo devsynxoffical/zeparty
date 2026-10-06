@@ -284,7 +284,7 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
         title: title,
         host: currentUser,
         coverUrl: coverUrl,
-        viewerCount: 1,
+        viewerCount: 0,
         category: _selectedCategory,
         isPrivate: _privacy != 'Public',
         startTime: DateTime.now(),

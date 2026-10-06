@@ -226,25 +226,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               MineTab(isDark: isDark),
               // Party Tab: Audio Voice Party Rooms
               LiveDiscoveryGrid(
-                liveRooms: liveRooms.where((r) =>
-                  r.roomType == 'AUDIO_PARTY' ||
-                  r.roomType.toUpperCase().contains('VOICE') ||
-                  r.roomType.toUpperCase().contains('PARTY') ||
-                  r.category.toUpperCase() == 'PARTY' ||
-                  r.category.toUpperCase() == 'CHAT' ||
-                  r.category.toUpperCase() == 'MUSIC'
-                ).toList(),
+                liveRooms: liveRooms.where((r) {
+                  final t = r.roomType.toUpperCase();
+                  final isAudio = t.contains('AUDIO') || t.contains('VOICE') || (t.contains('PARTY') && !t.contains('VIDEO'));
+                  return isAudio || (t != 'LIVE_VIDEO' && !t.contains('VIDEO') && r.category.toUpperCase() == 'PARTY');
+                }).toList(),
                 isDark: isDark,
                 isPartyTab: true,
               ),
               // Live Tab: Video Streams & Live Broadcasts
               LiveDiscoveryGrid(
-                liveRooms: liveRooms.where((r) =>
-                  r.roomType == 'LIVE_VIDEO' ||
-                  r.roomType == 'Video Room' ||
-                  r.roomType.toUpperCase().contains('VIDEO') ||
-                  (r.roomType != 'AUDIO_PARTY' && !r.roomType.toUpperCase().contains('VOICE') && r.category.toUpperCase() != 'PARTY')
-                ).toList(),
+                liveRooms: liveRooms.where((r) {
+                  final t = r.roomType.toUpperCase();
+                  final isVideo = t.contains('VIDEO') || t == 'LIVE_VIDEO' || t == 'VIDEO ROOM';
+                  return isVideo || (!t.contains('AUDIO') && !t.contains('VOICE') && !t.contains('PARTY'));
+                }).toList(),
                 isDark: isDark,
                 isPartyTab: false,
               ),
@@ -253,11 +249,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               LiveDiscoveryGrid(
                 liveRooms: liveRooms.where((r) =>
                   r.category.toUpperCase() == 'PK' ||
+                  r.category.toUpperCase() == 'GAMING' ||
                   r.title.toUpperCase().contains('PK') ||
                   r.roomType.toUpperCase().contains('PK')
                 ).toList().isNotEmpty
                     ? liveRooms.where((r) =>
                         r.category.toUpperCase() == 'PK' ||
+                        r.category.toUpperCase() == 'GAMING' ||
                         r.title.toUpperCase().contains('PK') ||
                         r.roomType.toUpperCase().contains('PK')
                       ).toList()

@@ -12,6 +12,7 @@ import 'social/upload_video_screen.dart';
 import 'live/create_live_room_screen.dart';
 import 'party_room/create_party_screen.dart';
 import 'pk_battle/pk_battle_screen.dart';
+import 'pk_battle/pk_match_screen.dart';
 import 'messages/inbox_screen.dart';
 import 'profile/profile_screen.dart';
 import 'auth/under_age_screen.dart';
