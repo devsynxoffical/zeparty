@@ -396,60 +396,6 @@ export async function onRequestSnapshot(socket, data, callback, db) {
   }
 }
 
-export async function onSocketDisconnect(io, socket) {
-  const userId = socket.userId;
-  if (!userId) return;
-
-  // Inspect all rooms the socket was part of
-  const rooms = Array.from(socket.rooms || []).filter((r) => r.startsWith('room:'));
-
-  for (const r of rooms) {
-    const roomId = r.replace('room:', '');
-    try {
-      const { isLastSocket } = await presenceService.removeSocketFromRoom(roomId, userId, socket.id);
-      if (isLastSocket) {
-        let updatedViewerCount = 0;
-        let roomEnded = false;
-        try {
-          const leaveResult = await roomService.leaveRoom(roomId, userId);
-          updatedViewerCount = leaveResult.currentViewersCount || 0;
-          if (leaveResult.status === 'ENDED') {
-            roomEnded = true;
-          }
-        } catch {}
-
-        if (roomEnded) {
-          if (io) {
-            io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_CLOSED, {
-              roomId,
-              status: 'ENDED',
-              reason: 'NO_MEMBERS_REMAINING',
-            });
-            io.emit('room:closed', { roomId, status: 'ENDED' });
-            io.emit('room:deleted', { roomId });
-          } else if (socket.to) {
-            socket.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_CLOSED, {
-              roomId,
-              status: 'ENDED',
-              reason: 'NO_MEMBERS_REMAINING',
-            });
-          }
-        } else {
-          const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
-          broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, {
-            roomId,
-            userId,
-          });
-
-          broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, {
-            roomId,
-            viewerCount: updatedViewerCount,
-          });
-        }
-      }
-    } catch {}
-  }
-}
 
 export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
   const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
