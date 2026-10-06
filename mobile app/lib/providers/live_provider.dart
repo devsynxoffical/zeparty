@@ -263,7 +263,6 @@ class LiveProvider extends ChangeNotifier {
           username: userObj['username']?.toString() ?? 'user_$joinedId',
           avatarUrl: userObj['avatarUrl']?.toString() ?? '',
           region: userObj['region']?.toString() ?? 'Global',
-          countryCode: userObj['countryCode']?.toString() ?? 'US',
         );
         _viewers.removeWhere((v) => v.id == joinedId);
         _viewers.insert(0, viewerModel);
@@ -752,6 +751,25 @@ class LiveProvider extends ChangeNotifier {
       _pkTimeRemainingSeconds = pk.durationSeconds > 0 ? pk.durationSeconds : 300;
     }
     notifyListeners();
+  }
+
+  void startPkBattle({UserModel? currentHost}) {
+    final host = currentHost ?? _currentUser;
+    final fallbackPk = PKBattleModel(
+      id: 'pk_${DateTime.now().millisecondsSinceEpoch}',
+      roomAId: _activeRoom?.id ?? '',
+      hostA: host,
+      hostB: const UserModel(
+        id: 'host_opponent',
+        username: 'opponent',
+        name: 'Challenger',
+        avatarUrl: '',
+      ),
+      durationSeconds: 180,
+      status: 'STARTED',
+      startedAt: DateTime.now(),
+    );
+    setPkBattle(fallbackPk);
   }
 
   /// Host initiates/creates a server-authoritative PK Battle session

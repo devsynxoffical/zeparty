@@ -244,7 +244,7 @@ class _LiveViewersSheetState extends State<LiveViewersSheet> {
                             MaterialPageRoute(
                               builder: (_) => UserProfileDetailsScreen(
                                 userId: viewer.id,
-                                initialUser: viewer,
+                                user: viewer,
                               ),
                             ),
                           );

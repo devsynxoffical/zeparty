@@ -13,6 +13,7 @@ import '../../providers/notification_provider.dart';
 import '../../widgets/country_picker_widget.dart';
 import '../../widgets/banner_carousel_widget.dart';
 import 'tabs/live_discovery_grid.dart';
+import 'tabs/mine_tab.dart';
 import 'tabs/shorts_tab.dart';
 import 'tabs/games_tab.dart';
 import '../../providers/auth_provider.dart';

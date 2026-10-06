@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/animations/app_animations.dart';
 import '../../core/utils/auth_guard.dart';
 import '../../models/pk_battle_model.dart';
+import '../../models/user_model.dart';
 import '../../providers/live_provider.dart';
 import '../../providers/live_gift_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -177,6 +178,14 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
       _showWinner = true;
     });
     _winnerController.forward(from: 0.0);
+  }
+
+  void _openGiftSheet(BuildContext context, bool isForHostA, PKBattleModel pk) {
+    if (pk.participants.isEmpty) return;
+    final participant = isForHostA
+        ? pk.participants[0]
+        : (pk.participants.length > 1 ? pk.participants[1] : pk.participants[0]);
+    _openGiftSheetForParticipant(context, participant);
   }
 
   void _openGiftSheetForParticipant(BuildContext context, PKParticipantModel participant) {

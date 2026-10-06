@@ -105,20 +105,52 @@ class PKBattleModel {
   final String? winnerId;
   final String? winnerName;
 
-  const PKBattleModel({
+  PKBattleModel({
     required this.id,
     this.initiatorUserId = '',
     this.roomAId = '',
     this.roomBId = '',
-    this.participants = const [],
-    this.durationSeconds = 300,
+    List<PKParticipantModel>? participants,
+    int? durationSeconds,
     this.status = 'READY',
     this.startedAt,
     this.endedAt,
     this.inviteCode,
     this.winnerId,
     this.winnerName,
-  });
+    UserModel? hostA,
+    UserModel? hostB,
+    int? scoreA,
+    int? scoreB,
+    Duration? remainingTime,
+  })  : durationSeconds = durationSeconds ?? (remainingTime != null ? remainingTime.inSeconds : 300),
+        participants = participants ??
+            [
+              if (hostA != null)
+                PKParticipantModel(
+                  userId: hostA.id,
+                  name: hostA.name,
+                  username: hostA.username,
+                  avatarUrl: hostA.avatarUrl,
+                  slot: 1,
+                  isHost: true,
+                  isInitiator: true,
+                  score: scoreA ?? 0,
+                  status: 'READY',
+                ),
+              if (hostB != null)
+                PKParticipantModel(
+                  userId: hostB.id,
+                  name: hostB.name,
+                  username: hostB.username,
+                  avatarUrl: hostB.avatarUrl,
+                  slot: 2,
+                  isHost: true,
+                  isInitiator: false,
+                  score: scoreB ?? 0,
+                  status: 'READY',
+                ),
+            ];
 
   factory PKBattleModel.fromJson(Map<String, dynamic> json) {
     final pkId = json['pkId']?.toString() ?? json['id']?.toString() ?? '';
@@ -206,6 +238,8 @@ class PKBattleModel {
   int get scoreB => participants.length > 1 ? participants[1].score : 0;
 
   int get participantCount => participants.length;
+  int get totalParticipants => participants.length;
+  List<PKParticipantModel> get participantList => participants;
   bool get isReady => status == 'READY' || status == 'STARTED' || status == 'ACTIVE';
   bool get isStarted => status == 'STARTED' || status == 'ACTIVE';
   bool get isEnded => status == 'ENDED' || status == 'CANCELLED';
@@ -240,6 +274,7 @@ class PKBattleModel {
     String? winnerName,
     int? scoreA,
     int? scoreB,
+    bool? isEnded,
   }) {
     List<PKParticipantModel> updatedParticipants = participants ?? this.participants;
 
@@ -259,7 +294,7 @@ class PKBattleModel {
       roomBId: roomBId ?? this.roomBId,
       participants: updatedParticipants,
       durationSeconds: durationSeconds ?? this.durationSeconds,
-      status: status ?? this.status,
+      status: (isEnded == true) ? 'ENDED' : (status ?? this.status),
       startedAt: startedAt ?? this.startedAt,
       endedAt: endedAt ?? this.endedAt,
       inviteCode: inviteCode ?? this.inviteCode,

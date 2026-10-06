@@ -581,6 +581,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
           ],
 
           const SizedBox(height: 30),
+        ],
       ),
     );
   }

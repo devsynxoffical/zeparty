@@ -646,7 +646,7 @@ class _PkMatchScreenState extends State<PkMatchScreen> with SingleTickerProvider
                       borderRadius: BorderRadius.circular(14),
                       borderSide: const BorderSide(color: Color(0xFF00E5FF)),
                     ),
-                  ],
+                  ),
                 ),
               ),
               const SizedBox(width: 10),

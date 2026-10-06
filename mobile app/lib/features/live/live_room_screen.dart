@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
 import '../../models/live_room_model.dart';
+import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/live_provider.dart';
 import '../../providers/room_overlay_provider.dart';
