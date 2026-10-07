@@ -924,6 +924,10 @@ export function HostsPage() {
                 Issue Violation warning
               </Button>
             </div>
+          </div>
+        </Modal>
+      )}
+
       {/* Host Application Review & Inspection Modal */}
       {selectedApp && (
         <Modal
