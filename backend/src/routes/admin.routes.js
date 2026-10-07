@@ -37,6 +37,11 @@ router.delete('/teams/:id/members/:adminId', requirePermission('manage_admins'),
 router.get('/audit-logs', requirePermission('view_audit_logs'), adminController.getAuditLogs);
 router.get('/audit-logs/:id', requirePermission('view_audit_logs'), adminController.getAuditLogById);
 
+// Dashboard & Real-Time Analytics
+router.get('/dashboard/stats', adminController.getDashboardStats);
+router.get('/dashboard/charts', adminController.getDashboardCharts);
+router.get('/dashboard/content', adminController.getDashboardContent);
+
 export default router;
 
 

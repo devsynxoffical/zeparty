@@ -118,9 +118,10 @@ function PolicyOverviewCard() {
 export function HostsPage() {
   const { logAdminAction } = useAuditLog();
   const [searchParams, setSearchParams] = useSearchParams();
-  const typeParam = searchParams.get('type') || 'live';
+  const typeParam = searchParams.get('type') || 'all';
+  const tabParam = searchParams.get('tab') || 'management';
 
-  const [activeTab, setActiveTab] = useState('management'); // 'management' | 'applications'
+  const [activeTab, setActiveTab] = useState(tabParam); // 'management' | 'applications'
   const [activeHosts, setActiveHosts] = useState([]);
   const [applications, setApplications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -129,6 +130,7 @@ export function HostsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [bdCenterFilter, setBdCenterFilter] = useState('all');
   const [selectedHost, setSelectedHost] = useState(null);
+  const [selectedApp, setSelectedApp] = useState(null);
   
   // BD Center Modal State
   const [isBDCenterModalOpen, setIsBDCenterModalOpen] = useState(false);
@@ -141,6 +143,12 @@ export function HostsPage() {
   const [newPayoutTier, setNewPayoutTier] = useState('');
   const [agencyModal, setAgencyModal] = useState({ open: false, host: null, newAgencyName: '', bdCenterId: '', action: 'bind' });
   const [feedback, setFeedback] = useState(null);
+
+  useEffect(() => {
+    if (tabParam && tabParam !== activeTab) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   const fetchHostsData = () => {
     setIsLoading(true);
@@ -339,30 +347,44 @@ export function HostsPage() {
   const filteredHosts = useMemo(() => {
     const q = search.toLowerCase();
     return activeHosts.filter((h) => {
-      const matchType = h.hostType === activeHostCategory;
+      let matchType = true;
+      if (typeParam === 'live') {
+        matchType = h.hostType === 'LIVE_HOST' || h.hostType === 'BOTH' || !h.hostType;
+      } else if (typeParam === 'audio') {
+        matchType = h.hostType === 'AUDIO_HOST' || h.hostType === 'BOTH' || !h.hostType;
+      }
       const matchSearch =
         !q ||
         h.id.toLowerCase().includes(q) ||
-        h.hostName.toLowerCase().includes(q) ||
-        h.username.toLowerCase().includes(q) ||
-        h.agencyName.toLowerCase().includes(q);
+        (h.hostName && h.hostName.toLowerCase().includes(q)) ||
+        (h.username && h.username.toLowerCase().includes(q)) ||
+        (h.agencyName && h.agencyName.toLowerCase().includes(q));
       return matchType && matchSearch;
     });
-  }, [activeHosts, activeHostCategory, search]);
+  }, [activeHosts, typeParam, search]);
 
   const filteredApps = useMemo(() => {
     const q = search.toLowerCase();
     return applications.filter((a) => {
-      const matchType = a.hostType === activeHostCategory;
-      const matchStatus = statusFilter === 'all' || a.status === statusFilter;
+      let matchType = true;
+      if (typeParam === 'live') {
+        matchType = a.hostType === 'LIVE_HOST' || a.hostType === 'BOTH' || !a.hostType;
+      } else if (typeParam === 'audio') {
+        matchType = a.hostType === 'AUDIO_HOST' || a.hostType === 'BOTH' || !a.hostType;
+      }
+      const isPending = a.status === 'pending' || a.status === 'applied';
+      const matchStatus =
+        statusFilter === 'all' ||
+        a.status === statusFilter ||
+        (statusFilter === 'pending' && isPending);
       const matchSearch =
         !q ||
         a.id.toLowerCase().includes(q) ||
-        a.applicantName.toLowerCase().includes(q) ||
-        a.applicantUsername.toLowerCase().includes(q);
+        (a.applicantName && a.applicantName.toLowerCase().includes(q)) ||
+        (a.applicantUsername && a.applicantUsername.toLowerCase().includes(q));
       return matchType && matchStatus && matchSearch;
     });
-  }, [applications, activeHostCategory, statusFilter, search]);
+  }, [applications, typeParam, statusFilter, search]);
 
   const hostColumns = [
     {
@@ -492,31 +514,56 @@ export function HostsPage() {
     },
   ];
 
+  const pendingAppsCount = applications.filter((a) => a.status === 'pending' || a.status === 'applied').length;
+
   const appColumns = [
     {
       key: 'applicant',
       header: 'Applicant',
       render: (row) => (
         <div>
-          <p className="text-sm font-semibold text-white">{row.applicantName}</p>
-          <p className="text-xs text-slate-400">@{row.applicantUsername}</p>
+          <p className="text-sm font-semibold text-white">{row.applicantName || 'Applicant'}</p>
+          <p className="text-xs text-slate-400">@{row.applicantUsername} • ID: {row.id?.slice(0, 8)}</p>
         </div>
       ),
+    },
+    {
+      key: 'mode',
+      header: 'Requested Mode',
+      render: (row) => {
+        if (row.hostType === 'BOTH') {
+          return (
+            <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-500/20 to-indigo-500/20 text-purple-300 text-[11px] font-semibold border border-purple-500/40 inline-flex items-center gap-1">
+              <Crown className="w-3 h-3 text-gold-400" /> Live Video & Audio (Hybrid)
+            </span>
+          );
+        }
+        if (row.hostType === 'AUDIO_HOST') {
+          return (
+            <span className="px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold border border-indigo-500/40 inline-flex items-center gap-1">
+              <Mic className="w-3 h-3" /> Social Audio Host
+            </span>
+          );
+        }
+        return (
+          <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-semibold border border-purple-500/40 inline-flex items-center gap-1">
+            <Video className="w-3 h-3" /> Live Video Host
+          </span>
+        );
+      },
     },
     {
       key: 'country',
       header: 'Location',
-      render: (row) => (
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-          <CountryFlag code={row.country} className="w-3.5 h-2.5 object-cover rounded-sm shrink-0" />
-          <span>{getCountryShortName(row.country)}</span>
-        </div>
-      ),
-    },
-    {
-      key: 'followers',
-      header: 'Followers / Audience',
-      render: (row) => <span className="text-xs font-semibold text-sky-400">{formatNumber(row.followers)}</span>,
+      render: (row) => {
+        const countryCode = row.userProfile?.country || row.country || 'US';
+        return (
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+            <CountryFlag code={countryCode} className="w-3.5 h-2.5 object-cover rounded-sm shrink-0" />
+            <span>{getCountryShortName(countryCode)}</span>
+          </div>
+        );
+      },
     },
     {
       key: 'submittedAt',
@@ -531,19 +578,37 @@ export function HostsPage() {
     {
       key: 'actions',
       header: 'Actions',
-      render: (row) =>
-        row.status === 'pending' ? (
-          <div className="flex gap-1.5">
+      render: (row) => {
+        const isPending = row.status === 'pending' || row.status === 'applied';
+        return isPending ? (
+          <div className="flex items-center gap-1.5">
             <Button variant="primary" size="xs" onClick={() => handleApproveApplication(row.id)}>
-              Approve
+              <CheckCircle className="w-3.5 h-3.5 mr-1" /> Approve
             </Button>
             <Button variant="danger" size="xs" onClick={() => handleRejectApplication(row.id)}>
               Reject
             </Button>
+            <button
+              title="Inspect Application Details"
+              onClick={() => setSelectedApp(row)}
+              className="p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
           </div>
         ) : (
-          <span className="text-xs text-slate-500 capitalize">{row.status}</span>
-        ),
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500 capitalize">{row.status}</span>
+            <button
+              title="Inspect Application Details"
+              onClick={() => setSelectedApp(row)}
+              className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800"
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        );
+      },
     },
   ];
 
@@ -557,23 +622,31 @@ export function HostsPage() {
             Host & Creator Registry
           </h1>
           <p className="text-sm text-slate-400 mt-0.5 font-sans">
-            Manage hosts, audit historical agency transfers, verify session compliance, and set targets.
+            Manage hosts, approve creator verification requests, audit agency bindings, and set targets.
           </p>
         </div>
 
         {/* Live vs Audio toggle */}
         <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-800">
           <button
-            onClick={() => setSearchParams({ type: 'live' })}
-            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+            onClick={() => setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('type', 'all'); return n; })}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+              typeParam === 'all' ? 'bg-gold-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            All Creators
+          </button>
+          <button
+            onClick={() => setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('type', 'live'); return n; })}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
               typeParam === 'live' ? 'bg-purple-600 text-white shadow shadow-purple-600/20' : 'text-slate-400 hover:text-white'
             }`}
           >
             Live Video Hosts
           </button>
           <button
-            onClick={() => setSearchParams({ type: 'audio' })}
-            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+            onClick={() => setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('type', 'audio'); return n; })}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
               typeParam === 'audio' ? 'bg-indigo-600 text-white shadow shadow-indigo-600/20' : 'text-slate-400 hover:text-white'
             }`}
           >
@@ -595,7 +668,15 @@ export function HostsPage() {
       {/* Tab Sections */}
       <div className="flex gap-6 border-b border-slate-800">
         <button
-          onClick={() => { setActiveTab('management'); setSearch(''); }}
+          onClick={() => {
+            setActiveTab('management');
+            setSearch('');
+            setSearchParams((prev) => {
+              const n = new URLSearchParams(prev);
+              n.set('tab', 'management');
+              return n;
+            });
+          }}
           className={`pb-3 text-sm font-semibold transition-colors border-b-2 ${
             activeTab === 'management' ? 'text-gold-400 border-gold-500' : 'text-slate-400 border-transparent hover:text-white'
           }`}
@@ -603,12 +684,25 @@ export function HostsPage() {
           Active Members ({filteredHosts.length})
         </button>
         <button
-          onClick={() => { setActiveTab('applications'); setSearch(''); }}
-          className={`pb-3 text-sm font-semibold transition-colors border-b-2 ${
+          onClick={() => {
+            setActiveTab('applications');
+            setSearch('');
+            setSearchParams((prev) => {
+              const n = new URLSearchParams(prev);
+              n.set('tab', 'applications');
+              return n;
+            });
+          }}
+          className={`pb-3 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
             activeTab === 'applications' ? 'text-gold-400 border-gold-500' : 'text-slate-400 border-transparent hover:text-white'
           }`}
         >
-          Applications ({filteredApps.length})
+          <span>Applications ({filteredApps.length})</span>
+          {pendingAppsCount > 0 && (
+            <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 text-[11px] font-bold border border-amber-500/40 animate-pulse">
+              {pendingAppsCount} Pending Approval
+            </span>
+          )}
         </button>
       </div>
 
@@ -829,6 +923,128 @@ export function HostsPage() {
               <Button variant="danger" size="sm" onClick={handleWarnHost}>
                 Issue Violation warning
               </Button>
+            </div>
+      {/* Host Application Review & Inspection Modal */}
+      {selectedApp && (
+        <Modal
+          isOpen={true}
+          onClose={() => setSelectedApp(null)}
+          title={`Review Host Application: ${selectedApp.applicantName}`}
+          size="md"
+        >
+          <div className="space-y-4 text-xs text-slate-300">
+            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex justify-between items-center">
+              <div>
+                <p className="text-sm font-bold text-white">{selectedApp.applicantName}</p>
+                <p className="text-slate-400">@{selectedApp.applicantUsername} · User ID: {selectedApp.userId}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">Submitted: {formatDate(selectedApp.submittedAt)}</p>
+              </div>
+              <div>
+                <StatusBadge status={selectedApp.status} />
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-purple-950/20 border border-purple-500/30">
+              <span className="text-[11px] text-slate-400 font-semibold uppercase">Requested Host Capability</span>
+              <p className="text-sm font-bold text-gold-400 mt-1 flex items-center gap-1.5">
+                <Crown className="w-4 h-4 text-gold-400" />
+                {selectedApp.hostType === 'BOTH'
+                  ? 'Live Video & Audio Party Host (Recommended - Full Access)'
+                  : selectedApp.hostType === 'AUDIO_HOST'
+                  ? 'Social Audio & Party Lounge Host'
+                  : 'Live Video Host (1080p Streamer)'}
+              </p>
+            </div>
+
+            {selectedApp.idCardFrontUrl && (
+              <div>
+                <p className="text-slate-400 mb-1.5 font-semibold">Government / National ID (Front)</p>
+                <div className="rounded-lg overflow-hidden border border-slate-800 bg-slate-900 p-2">
+                  <img
+                    src={selectedApp.idCardFrontUrl}
+                    alt="ID Front"
+                    className="max-h-48 w-auto mx-auto object-contain rounded"
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                  <a
+                    href={selectedApp.idCardFrontUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-indigo-400 hover:underline block text-center mt-1"
+                  >
+                    Open Full Image in New Tab ↗
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {selectedApp.idCardBackUrl && (
+              <div>
+                <p className="text-slate-400 mb-1.5 font-semibold">Government / National ID (Back)</p>
+                <div className="rounded-lg overflow-hidden border border-slate-800 bg-slate-900 p-2">
+                  <img
+                    src={selectedApp.idCardBackUrl}
+                    alt="ID Back"
+                    className="max-h-48 w-auto mx-auto object-contain rounded"
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                  <a
+                    href={selectedApp.idCardBackUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-indigo-400 hover:underline block text-center mt-1"
+                  >
+                    Open Full Image in New Tab ↗
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {selectedApp.videoSampleUrl && (
+              <div className="p-2.5 rounded-lg bg-slate-800/40 border border-slate-700/60 flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-white">Video Introduction Sample</p>
+                  <p className="text-[11px] text-slate-400 truncate max-w-xs">{selectedApp.videoSampleUrl}</p>
+                </div>
+                <a
+                  href={selectedApp.videoSampleUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-2.5 py-1 text-xs rounded bg-indigo-600 text-white font-bold hover:bg-indigo-500"
+                >
+                  View Sample ↗
+                </a>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <Button variant="ghost" size="sm" onClick={() => setSelectedApp(null)}>
+                Close
+              </Button>
+              {(selectedApp.status === 'pending' || selectedApp.status === 'applied') && (
+                <>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={async () => {
+                      await handleRejectApplication(selectedApp.id);
+                      setSelectedApp(null);
+                    }}
+                  >
+                    Reject Application
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={async () => {
+                      await handleApproveApplication(selectedApp.id);
+                      setSelectedApp(null);
+                    }}
+                  >
+                    <CheckCircle className="w-3.5 h-3.5 mr-1" /> Approve Creator
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </Modal>

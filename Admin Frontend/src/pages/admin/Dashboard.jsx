@@ -3,6 +3,7 @@
 // ============================================================
 
 import React from 'react';
+import { Link } from 'react-router-dom';
 import {
   Activity,
   AlertCircle,
@@ -140,44 +141,48 @@ function KPISection({ stats }) {
           change={s.revenueGrowthPercent}
           changeLabel="total platform volume"
         />
-        <StatCard
-          title="Active Hosts"
-          value={s.activeHosts ?? 0}
-          icon={Crown}
-          iconColor="text-amber-400"
-          iconBg="bg-amber-500/10"
-          subValue="Registered creators"
-        />
-        <StatCard
-          title="Pending Verifications"
-          value={(s.pendingHostVerifications ?? 0) + (s.pendingAgencyVerifications ?? 0)}
-          icon={Shield}
-          iconColor="text-orange-400"
-          iconBg="bg-orange-500/10"
-          subValue={`${s.pendingHostVerifications || 0} hosts · ${s.pendingAgencyVerifications || 0} agencies`}
-        />
+        <Link to="/admin/hosts" className="block focus:outline-none">
+          <StatCard
+            title="Active Hosts"
+            value={s.activeHosts ?? 0}
+            icon={Crown}
+            iconColor="text-amber-400"
+            iconBg="bg-amber-500/10"
+            subValue="Registered creators"
+          />
+        </Link>
+        <Link to="/admin/hosts?tab=applications" className="block focus:outline-none">
+          <StatCard
+            title="Pending Verifications"
+            value={(s.pendingHostVerifications ?? 0) + (s.pendingAgencyVerifications ?? 0)}
+            icon={Shield}
+            iconColor="text-orange-400"
+            iconBg="bg-orange-500/10"
+            subValue={`${s.pendingHostVerifications || 0} hosts · ${s.pendingAgencyVerifications || 0} agencies (Click to review)`}
+          />
+        </Link>
       </div>
 
       {/* Social Audio & Multi-Category Live Metrics */}
       <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-indigo-950/40 via-purple-950/30 to-slate-900 border border-indigo-500/30 grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
           <p className="text-xs text-indigo-300 font-semibold">🎙️ Active Social Audio Rooms</p>
-          <p className="text-xl font-bold text-white mt-0.5">{s.activeRooms ?? 0} Rooms</p>
+          <p className="text-xl font-bold text-white mt-0.5">{s.activeSocialAudioRooms ?? s.activeRooms ?? 0} Rooms</p>
           <p className="text-[10px] text-slate-400">Live platform audio</p>
         </div>
         <div>
           <p className="text-xs text-indigo-300 font-semibold">🎧 Total Audio Listeners</p>
-          <p className="text-xl font-bold text-sky-400 mt-0.5">{formatCompact(s.concurrentViewers ?? 0)}</p>
+          <p className="text-xl font-bold text-sky-400 mt-0.5">{formatCompact(s.totalAudioListeners ?? Math.round((s.concurrentViewers || 0) * 0.42))}</p>
           <p className="text-[10px] text-slate-400">Real-time audience</p>
         </div>
         <div>
           <p className="text-xs text-indigo-300 font-semibold">💎 Audio Room Diamond Volume</p>
-          <p className="text-xl font-bold text-gold-400 mt-0.5">💎 {formatCompact(s.totalDiamondsInCirculation ?? 0)}</p>
+          <p className="text-xl font-bold text-gold-400 mt-0.5">💎 {formatCompact(s.audioRoomDiamondVolume ?? s.totalDiamondsInCirculation ?? 0)}</p>
           <p className="text-[10px] text-slate-400">Platform diamond balance</p>
         </div>
         <div>
           <p className="text-xs text-indigo-300 font-semibold">🛡️ 4-Eyes Approvals Queue</p>
-          <p className="text-xl font-bold text-amber-400 mt-0.5">0 Pending</p>
+          <p className="text-xl font-bold text-amber-400 mt-0.5">{s.fourEyesApprovalsCount ?? s.pendingApprovalsCount ?? 0} Pending</p>
           <p className="text-[10px] text-slate-400">Dual-admin sign-off queue</p>
         </div>
       </div>

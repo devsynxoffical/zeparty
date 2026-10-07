@@ -12,22 +12,29 @@ export async function getHosts(params = {}) {
 export async function getHostApplications(params = {}) {
   const res = await apiClient.get('/v1/admin/hosts/applications', { params });
   const items = res.data?.data || [];
-  return items.map((app) => ({
-    id: app.id,
-    userId: app.userId,
-    applicantName: app.user?.username || app.user?.profile?.displayName || app.userId,
-    user: app.user?.username || app.userId,
-    hostType: app.hostType || 'INDEPENDENT',
-    agencyId: app.agencyId,
-    agencyName: app.agency?.name || 'Independent',
-    status: app.status?.toLowerCase() || 'pending',
-    submittedAt: app.createdAt,
-    reviewedAt: app.reviewedAt,
-    reviewerAdminId: app.reviewerAdminId,
-    rejectionReason: app.rejectionReason,
-    idDocumentUrl: app.idDocumentUrl,
-    liveDemoUrl: app.liveDemoUrl,
-  }));
+  return items.map((app) => {
+    const rawStatus = (app.status || '').toUpperCase();
+    const isPending = rawStatus === 'APPLIED' || rawStatus === 'PENDING' || !rawStatus;
+    return {
+      id: app.id,
+      userId: app.userId,
+      applicantName: app.user?.profile?.displayName || app.user?.username || app.userId,
+      applicantUsername: app.user?.username || app.userId,
+      user: app.user?.username || app.userId,
+      hostType: app.hostType || 'BOTH',
+      agencyId: app.agencyId,
+      agencyName: app.agency?.name || 'Independent',
+      status: isPending ? 'pending' : rawStatus.toLowerCase(),
+      submittedAt: app.createdAt,
+      reviewedAt: app.reviewedAt,
+      reviewerAdminId: app.reviewerAdminId,
+      rejectionReason: app.rejectionReason,
+      idCardFrontUrl: app.idCardFrontUrl || app.idDocumentUrl,
+      idCardBackUrl: app.idCardBackUrl,
+      videoSampleUrl: app.videoSampleUrl || app.liveDemoUrl,
+      userProfile: app.user?.profile,
+    };
+  });
 }
 
 export async function getHostApplicationById(id) {

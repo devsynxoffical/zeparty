@@ -91,6 +91,9 @@ router.use('/auth', authRoutes);
 router.use('/v1/owner', ownerRoutes);
 router.use('/owner', ownerRoutes);
 
+router.use('/v1/admin', adminRoutes);
+router.use('/admin', adminRoutes);
+
 router.use('/v1/admin/approvals', approvalRoutes);
 router.use('/admin/approvals', approvalRoutes);
 

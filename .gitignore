@@ -12,6 +12,8 @@ build/
 *.tar
 *.tar.gz
 *.zip
+.gradle_cache/
+.idea/
 
 # Environment
 .env

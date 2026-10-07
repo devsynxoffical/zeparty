@@ -19,7 +19,7 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.zeparty.app"
     compileSdk = 36
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "30.0.16248370"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
