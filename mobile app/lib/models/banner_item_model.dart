@@ -1,61 +1,47 @@
 class BannerItemModel {
   final String id;
   final String title;
-  final String subtitle;
   final String imageUrl;
-  final String contentType; // 'Promotional' or 'Event'
-  final String destination; // 'event_101', 'room_202', 'profile', 'store', 'https://...'
-  final DateTime startDate;
-  final DateTime endDate;
+  final String? destinationUrl;
+  final int position;
   final bool isActive;
-  final int priority;
-  final String regionCode; // 'GLOBAL' or country code
+  final DateTime? startsAt;
+  final DateTime? endsAt;
 
   const BannerItemModel({
     required this.id,
     required this.title,
-    required this.subtitle,
     required this.imageUrl,
-    required this.contentType,
-    required this.destination,
-    required this.startDate,
-    required this.endDate,
+    this.destinationUrl,
+    this.position = 0,
     this.isActive = true,
-    this.priority = 1,
-    this.regionCode = 'GLOBAL',
+    this.startsAt,
+    this.endsAt,
   });
 
-  bool get isCurrentlyActive {
-    if (!isActive) return false;
-    final now = DateTime.now();
-    return now.isAfter(startDate) && now.isBefore(endDate);
+  factory BannerItemModel.fromJson(Map<String, dynamic> json) {
+    return BannerItemModel(
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? '',
+      imageUrl: json['imageUrl']?.toString() ?? json['image']?.toString() ?? '',
+      destinationUrl: json['destinationUrl']?.toString() ?? json['linkUrl']?.toString() ?? json['action']?.toString(),
+      position: json['position'] is int ? json['position'] : (int.tryParse(json['priority']?.toString() ?? '0') ?? 0),
+      isActive: json['isActive'] is bool ? json['isActive'] : (json['status']?.toString().toUpperCase() != 'INACTIVE'),
+      startsAt: json['startsAt'] != null ? DateTime.tryParse(json['startsAt'].toString()) : null,
+      endsAt: json['endsAt'] != null ? DateTime.tryParse(json['endsAt'].toString()) : null,
+    );
   }
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'subtitle': subtitle,
-        'imageUrl': imageUrl,
-        'contentType': contentType,
-        'destination': destination,
-        'startDate': startDate.toIso8601String(),
-        'endDate': endDate.toIso8601String(),
-        'isActive': isActive,
-        'priority': priority,
-        'regionCode': regionCode,
-      };
-
-  factory BannerItemModel.fromJson(Map<String, dynamic> json) => BannerItemModel(
-        id: json['id'] ?? '',
-        title: json['title'] ?? '',
-        subtitle: json['subtitle'] ?? '',
-        imageUrl: json['imageUrl'] ?? '',
-        contentType: json['contentType'] ?? 'Promotional',
-        destination: json['destination'] ?? '',
-        startDate: json['startDate'] != null ? DateTime.parse(json['startDate']) : DateTime.now().subtract(const Duration(days: 1)),
-        endDate: json['endDate'] != null ? DateTime.parse(json['endDate']) : DateTime.now().add(const Duration(days: 30)),
-        isActive: json['isActive'] ?? true,
-        priority: json['priority'] ?? 1,
-        regionCode: json['regionCode'] ?? 'GLOBAL',
-      );
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'imageUrl': imageUrl,
+      'destinationUrl': destinationUrl,
+      'position': position,
+      'isActive': isActive,
+      'startsAt': startsAt?.toIso8601String(),
+      'endsAt': endsAt?.toIso8601String(),
+    };
+  }
 }

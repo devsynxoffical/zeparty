@@ -1,5 +1,37 @@
 import prisma from '../config/database.js';
 import bannerRepository from '../repositories/banner.repository.js';
+import socketEmitter from '../socket/socket.emitter.js';
+
+export const DEFAULT_BANNER_TEMPLATES = [
+  {
+    title: '🎉 Welcome to ZeParty!',
+    imageUrl: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&h=400&q=80',
+    destinationUrl: 'zeparty://party',
+    position: 1,
+    isActive: true,
+  },
+  {
+    title: '🚀 Big Updates Coming Soon!',
+    imageUrl: 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1200&h=400&q=80',
+    destinationUrl: 'zeparty://updates',
+    position: 2,
+    isActive: true,
+  },
+  {
+    title: '⚔️ Epic PK Battles & Live Streaming',
+    imageUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&h=400&q=80',
+    destinationUrl: 'zeparty://live',
+    position: 3,
+    isActive: true,
+  },
+  {
+    title: '🎁 Send Luxury Gifts & Win Big',
+    imageUrl: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=1200&h=400&q=80',
+    destinationUrl: 'zeparty://store',
+    position: 4,
+    isActive: true,
+  },
+];
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -44,11 +76,33 @@ export async function createBanner(
     db
   );
 
+  try {
+    socketEmitter.broadcastGlobal('banner:created', banner);
+    socketEmitter.broadcastGlobal('banner:updated', banner);
+  } catch (_) {}
+
   return banner;
 }
 
 export async function getActiveBanners(db = prisma) {
-  return await bannerRepository.findActiveBanners(new Date(), db);
+  let banners = await bannerRepository.findActiveBanners(new Date(), db);
+  
+  // Auto-seed default rich templates if table is completely empty
+  if (!banners || banners.length === 0) {
+    try {
+      const count = await db.banner.count();
+      if (count === 0) {
+        for (const tpl of DEFAULT_BANNER_TEMPLATES) {
+          await bannerRepository.createBanner(tpl, db);
+        }
+        banners = await bannerRepository.findActiveBanners(new Date(), db);
+      }
+    } catch (seedErr) {
+      console.warn('[BannerService] Auto-seed notice:', seedErr.message);
+    }
+  }
+
+  return banners;
 }
 
 export async function getBannerById(id, db = prisma) {
@@ -96,6 +150,10 @@ export async function updateBanner(
     db
   );
 
+  try {
+    socketEmitter.broadcastGlobal('banner:updated', updated);
+  } catch (_) {}
+
   return updated;
 }
 
@@ -126,6 +184,11 @@ export async function deleteBanner(
     },
     db
   );
+
+  try {
+    socketEmitter.broadcastGlobal('banner:deleted', { id });
+    socketEmitter.broadcastGlobal('banner:updated', { id, isDeleted: true });
+  } catch (_) {}
 
   return { success: true, id };
 }
