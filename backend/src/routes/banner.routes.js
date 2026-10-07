@@ -15,6 +15,7 @@ adminBannerRouter.put('/:id', requirePermission('manage_banners'), bannerControl
 adminBannerRouter.delete('/:id', requirePermission('manage_banners'), bannerController.deleteAdminBanner);
 
 // Public / Mobile Banner Routes
+userBannerRouter.get('/', bannerController.getActiveBanners);
 userBannerRouter.get('/active', bannerController.getActiveBanners);
 
 export default {

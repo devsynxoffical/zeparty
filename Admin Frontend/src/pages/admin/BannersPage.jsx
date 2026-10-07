@@ -1,10 +1,29 @@
 // ============================================================
-// ZeParty Admin Portal — Banners & Home Page (JSX)
-// 2026 Developer Specification Alignment
+// ZeParty Admin Portal — Banners & Home Page Management (JSX)
+// Enhanced Banner Templates & Real-time Synchronization
 // ============================================================
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Image as ImageIcon, Search, Plus, Calendar, Megaphone, Clock, AlertCircle, Globe, CheckCircle } from 'lucide-react';
+import {
+  Image as ImageIcon,
+  Search,
+  Plus,
+  Calendar,
+  Megaphone,
+  Clock,
+  AlertCircle,
+  Globe,
+  CheckCircle,
+  Sparkles,
+  Rocket,
+  Swords,
+  Gift,
+  Trash2,
+  Edit2,
+  ExternalLink,
+  Eye,
+  RefreshCw
+} from 'lucide-react';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { DataTable } from '../../components/tables/DataTable';
@@ -16,40 +35,127 @@ import {
   getBannerStats,
   getBanners,
   createBanner,
-  updateBanner
+  updateBanner,
+  deleteBanner
 } from '../../services/modules/banners.service';
 import { GeographicInheritancePanel } from '../../components/ui/GeographicInheritancePanel';
 import { Button } from '../../components/ui/Button';
 
-function CreateBannerModal({ isOpen, onClose, onCreated }) {
+// 4 Standard Rich Banner Templates required by ZeParty
+export const PRESET_BANNER_TEMPLATES = [
+  {
+    id: 'template_welcome',
+    title: '🎉 Welcome to ZeParty! Voice, Party & Live',
+    subtitle: 'Experience next-gen social streaming and HD voice rooms',
+    tag: 'WELCOME',
+    tagColor: 'from-amber-400 to-yellow-500',
+    bgGradient: 'from-violet-900 via-purple-900 to-indigo-950',
+    borderGradient: 'border-yellow-500/40',
+    icon: Sparkles,
+    imageUrl: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&h=400&q=80',
+    destinationUrl: 'zeparty://party',
+    placement: 'Home Carousel',
+    priority: 10,
+    isGlobal: true,
+  },
+  {
+    id: 'template_updates',
+    title: '🚀 Big Updates Coming Soon!',
+    subtitle: 'New AI Avatars, 3D Soundstage & Season 4 Tournaments',
+    tag: 'SNEAK PEEK',
+    tagColor: 'from-cyan-400 to-blue-500',
+    bgGradient: 'from-sky-950 via-cyan-950 to-blue-950',
+    borderGradient: 'border-cyan-500/40',
+    icon: Rocket,
+    imageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&h=400&q=80',
+    destinationUrl: 'zeparty://updates',
+    placement: 'Home Carousel',
+    priority: 9,
+    isGlobal: true,
+  },
+  {
+    id: 'template_pk_live',
+    title: '⚔️ Epic PK Battles & Live Streaming',
+    subtitle: 'Challenge top creators, vote live, and trigger room combos',
+    tag: 'HOT BATTLE',
+    tagColor: 'from-rose-500 to-red-600',
+    bgGradient: 'from-red-950 via-rose-950 to-slate-950',
+    borderGradient: 'border-rose-500/40',
+    icon: Swords,
+    imageUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&h=400&q=80',
+    destinationUrl: 'zeparty://live',
+    placement: 'Home Carousel',
+    priority: 8,
+    isGlobal: true,
+  },
+  {
+    id: 'template_giftings',
+    title: '🎁 Send Luxury Gifts & Win Big Rewards',
+    subtitle: 'Send Super Cars, Dragon Ships & unlock VIP wealth badges',
+    tag: 'EXCLUSIVE REWARDS',
+    tagColor: 'from-emerald-400 to-teal-500',
+    bgGradient: 'from-emerald-950 via-teal-950 to-slate-950',
+    borderGradient: 'border-emerald-500/40',
+    icon: Gift,
+    imageUrl: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=1200&h=400&q=80',
+    destinationUrl: 'zeparty://store',
+    placement: 'Home Carousel',
+    priority: 7,
+    isGlobal: true,
+  },
+];
+
+function CreateBannerModal({ isOpen, onClose, onCreated, initialTemplate = null }) {
   const [formData, setFormData] = useState({
     title: '',
     placement: 'Home Carousel',
     isGlobal: true,
-    selectedCountries: ['PK', 'SA'],
+    selectedCountries: ['PK', 'SA', 'US'],
     startDate: '',
     endDate: '',
-    imageUrl: ''
+    imageUrl: '',
+    destinationUrl: 'zeparty://party',
+    priority: 5,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [dimensionError, setDimensionError] = useState(null);
   const [countryInput, setCountryInput] = useState('');
 
-  const handleImageDimensionValidation = (file) => {
-    setDimensionError(null);
-    if (!file) return;
-    const img = new Image();
-    img.src = URL.createObjectURL(file);
-    img.onload = () => {
-      // Allow exact 700x200 or 700:200 aspect ratio upload test
-      if (img.width !== 700 || img.height !== 200) {
-        setDimensionError("Image size must be exactly 700 × 200 px.");
-        setFormData((prev) => ({ ...prev, imageUrl: '' }));
-      } else {
-        setDimensionError(null);
-        setFormData((prev) => ({ ...prev, imageUrl: img.src }));
-      }
-    };
+  useEffect(() => {
+    if (initialTemplate) {
+      setFormData({
+        title: initialTemplate.title,
+        placement: initialTemplate.placement || 'Home Carousel',
+        isGlobal: initialTemplate.isGlobal ?? true,
+        selectedCountries: ['PK', 'SA', 'US'],
+        startDate: '',
+        endDate: '',
+        imageUrl: initialTemplate.imageUrl,
+        destinationUrl: initialTemplate.destinationUrl || 'zeparty://party',
+        priority: initialTemplate.priority || 5,
+      });
+    } else {
+      setFormData({
+        title: '',
+        placement: 'Home Carousel',
+        isGlobal: true,
+        selectedCountries: ['PK', 'SA', 'US'],
+        startDate: '',
+        endDate: '',
+        imageUrl: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&h=400&q=80',
+        destinationUrl: 'zeparty://party',
+        priority: 5,
+      });
+    }
+  }, [initialTemplate, isOpen]);
+
+  const handleApplyTemplate = (tmpl) => {
+    setFormData((prev) => ({
+      ...prev,
+      title: tmpl.title,
+      imageUrl: tmpl.imageUrl,
+      destinationUrl: tmpl.destinationUrl,
+      priority: tmpl.priority,
+    }));
   };
 
   const handleAddCountry = () => {
@@ -72,48 +178,163 @@ function CreateBannerModal({ isOpen, onClose, onCreated }) {
     });
   };
 
+  const handleImageFileChange = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setFormData((prev) => ({ ...prev, imageUrl: e.target.result }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (dimensionError) return;
     setIsSubmitting(true);
     try {
       const banner = await createBanner({
         ...formData,
+        linkUrl: formData.destinationUrl,
+        destinationUrl: formData.destinationUrl,
         target: formData.isGlobal ? 'Global' : formData.selectedCountries.join(', '),
-        image: formData.imageUrl || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=700&h=200&q=80',
-        status: 'SCHEDULED'
+        image: formData.imageUrl || 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1200&h=400&q=80',
+        status: 'ACTIVE'
       });
       onCreated(banner);
       onClose();
+    } catch (err) {
+      console.error('Failed to create banner:', err);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Create New Banner Campaign" size="md">
-      <form onSubmit={handleSubmit} className="space-y-4 text-xs text-slate-300">
+    <Modal isOpen={isOpen} onClose={onClose} title="Create New Banner Campaign" size="lg">
+      <form onSubmit={handleSubmit} className="space-y-4 text-xs text-slate-300 max-h-[80vh] overflow-y-auto pr-1">
+        {/* Quick Template Picker */}
         <div>
-          <label className="block text-xs font-medium text-slate-400 mb-1">Banner Title *</label>
-          <Input required placeholder="E.g., Pakistan Independence Day Special Campaign" value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} />
+          <label className="block text-xs font-bold text-gold-400 mb-2 flex items-center gap-1.5">
+            <Sparkles className="h-4 w-4" /> Quick Select Preset Template:
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {PRESET_BANNER_TEMPLATES.map((tmpl) => {
+              const IconComp = tmpl.icon;
+              return (
+                <button
+                  type="button"
+                  key={tmpl.id}
+                  onClick={() => handleApplyTemplate(tmpl)}
+                  className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                    formData.title === tmpl.title
+                      ? 'bg-gold-500/20 border-gold-500 text-white shadow-lg shadow-gold-500/10'
+                      : 'bg-slate-900/90 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full mb-1">
+                    <IconComp className="h-4 w-4 text-gold-400" />
+                    <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">{tmpl.tag}</span>
+                  </div>
+                  <span className="text-[11px] font-bold line-clamp-2 leading-tight">{tmpl.title.replace(/^[^\s]+\s*/, '')}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* 700x200 Image Upload & Validation */}
         <div>
-          <label className="block text-xs font-medium text-slate-400 mb-1">Banner Creative (Required Size: Exactly 700 × 200 px) *</label>
-          <input
-            type="file"
-            accept="image/png, image/jpeg, image/webp"
-            onChange={(e) => handleImageDimensionValidation(e.target.files[0])}
-            className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-gold-400 hover:file:bg-slate-700 cursor-pointer"
+          <label className="block text-xs font-medium text-slate-400 mb-1">Banner Title *</label>
+          <Input
+            required
+            placeholder="E.g., 🎉 Welcome to ZeParty! Voice & Live"
+            value={formData.title}
+            onChange={(e) => setFormData({ ...formData, title: e.target.value })}
           />
-          {dimensionError && (
-            <div className="mt-1.5 p-2 rounded bg-rose-500/20 border border-rose-500/40 text-rose-400 text-[11px] font-bold flex items-center gap-1.5">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{dimensionError}</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Destination Action / Link URL</label>
+            <select
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-gold-500 focus:ring-1 focus:ring-gold-500 outline-none transition-all mb-2"
+              value={formData.destinationUrl}
+              onChange={(e) => setFormData({ ...formData, destinationUrl: e.target.value })}
+            >
+              <option value="zeparty://party">🎉 Voice Party Rooms (zeparty://party)</option>
+              <option value="zeparty://live">⚔️ Live Stream & PK (zeparty://live)</option>
+              <option value="zeparty://updates">🚀 Upcoming Updates Roadmap (zeparty://updates)</option>
+              <option value="zeparty://store">🎁 Luxury Gift Store (zeparty://store)</option>
+              <option value="zeparty://games">🎮 Game Center Lobby (zeparty://games)</option>
+              <option value="zeparty://shorts">🎬 Trending Shorts (zeparty://shorts)</option>
+              <option value="custom">🌐 Custom External URL...</option>
+            </select>
+            {formData.destinationUrl === 'custom' && (
+              <Input
+                placeholder="https://example.com/event"
+                onChange={(e) => setFormData({ ...formData, destinationUrl: e.target.value })}
+              />
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Priority / Order (Higher is first)</label>
+            <Input
+              type="number"
+              min="0"
+              max="100"
+              value={formData.priority}
+              onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value, 10) || 0 })}
+            />
+          </div>
+        </div>
+
+        {/* Banner Creative URL and File Upload */}
+        <div className="space-y-2">
+          <label className="block text-xs font-medium text-slate-400">Banner Creative Artwork</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <Input
+                placeholder="https://images.unsplash.com/..."
+                value={formData.imageUrl}
+                onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+              />
             </div>
-          )}
-          <p className="text-[10px] text-slate-500 mt-1">Creative resolution must strictly be 700px width by 200px height.</p>
+            <div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleImageFileChange(e.target.files[0])}
+                className="w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-gold-400 hover:file:bg-slate-700 cursor-pointer"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Live Mobile Card Preview */}
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-400 mb-1 flex items-center gap-1">
+            <Eye className="h-3.5 w-3.5 text-indigo-400" /> Live App Display Preview (How it looks on mobile home screen):
+          </label>
+          <div className="relative h-32 w-full rounded-2xl overflow-hidden border border-slate-700/80 shadow-2xl bg-gradient-to-r from-slate-900 via-indigo-950 to-purple-950 flex items-center p-5">
+            {formData.imageUrl && (
+              <img
+                src={formData.imageUrl}
+                alt="Banner preview"
+                className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-overlay"
+              />
+            )}
+            <div className="absolute inset-0 bg-gradient-to-r from-slate-950/90 via-slate-950/60 to-transparent" />
+            <div className="relative z-10 max-w-md">
+              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gold-500 text-slate-950 mb-1.5 inline-block">
+                FEATURED EVENT
+              </span>
+              <h4 className="text-white font-black text-base sm:text-lg leading-tight line-clamp-2 drop-shadow-md">
+                {formData.title || 'Enter a banner title...'}
+              </h4>
+              <p className="text-slate-300 text-[11px] mt-1 line-clamp-1">
+                Tap to open: <span className="text-gold-400 font-mono">{formData.destinationUrl}</span>
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -122,12 +343,12 @@ function CreateBannerModal({ isOpen, onClose, onCreated }) {
             <select
               className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:border-gold-500 focus:ring-1 focus:ring-gold-500 outline-none transition-all"
               value={formData.placement}
-              onChange={(e) => setFormData({...formData, placement: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, placement: e.target.value })}
             >
               <option value="Home Carousel">Home Carousel</option>
               <option value="Party Top">Party Section Top</option>
               <option value="Live Top">Live Section Top</option>
-              <option value="Room Placement">Room Placement</option>
+              <option value="Store Top">Store Top Banner</option>
             </select>
           </div>
 
@@ -145,7 +366,6 @@ function CreateBannerModal({ isOpen, onClose, onCreated }) {
           </div>
         </div>
 
-        {/* Searchable Multi-Select Country Control */}
         {!formData.isGlobal && (
           <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
             <label className="block text-[11px] font-medium text-slate-400">Target Countries (Multi-Select ISO Codes)</label>
@@ -174,19 +394,20 @@ function CreateBannerModal({ isOpen, onClose, onCreated }) {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">Start Date</label>
-            <Input required type="date" value={formData.startDate} onChange={(e) => setFormData({...formData, startDate: e.target.value})} />
+            <label className="block text-xs font-medium text-slate-400 mb-1">Start Date (Optional)</label>
+            <Input type="date" value={formData.startDate} onChange={(e) => setFormData({ ...formData, startDate: e.target.value })} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">End Date</label>
-            <Input required type="date" value={formData.endDate} onChange={(e) => setFormData({...formData, endDate: e.target.value})} />
+            <label className="block text-xs font-medium text-slate-400 mb-1">End Date (Optional)</label>
+            <Input type="date" value={formData.endDate} onChange={(e) => setFormData({ ...formData, endDate: e.target.value })} />
           </div>
         </div>
 
         <div className="flex justify-end gap-3 mt-6 border-t border-slate-800 pt-3">
           <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white transition-colors">Cancel</button>
-          <button type="submit" disabled={isSubmitting} className="bg-gold-500 hover:bg-gold-400 text-slate-900 px-4 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-50">
-            Publish Campaign Banner
+          <button type="submit" disabled={isSubmitting} className="bg-gold-500 hover:bg-gold-400 text-slate-900 px-4 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 flex items-center gap-1.5">
+            {isSubmitting ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+            Publish Banner to Mobile App
           </button>
         </div>
       </form>
@@ -195,14 +416,26 @@ function CreateBannerModal({ isOpen, onClose, onCreated }) {
 }
 
 function EditBannerModal({ isOpen, onClose, banner, onSave }) {
-  const [title, setTitle] = useState(banner?.title || '');
-  const [placement, setPlacement] = useState(banner?.placement || 'Home Carousel');
+  const [formData, setFormData] = useState({
+    title: '',
+    placement: 'Home Carousel',
+    imageUrl: '',
+    destinationUrl: '',
+    priority: 0,
+    status: 'ACTIVE',
+  });
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (banner) {
-      setTitle(banner.title);
-      setPlacement(banner.placement);
+      setFormData({
+        title: banner.title || '',
+        placement: banner.placement || 'Home Carousel',
+        imageUrl: banner.imageUrl || banner.image || '',
+        destinationUrl: banner.linkUrl || banner.destinationUrl || '',
+        priority: banner.priority !== undefined ? banner.priority : (banner.position || 0),
+        status: banner.status || 'ACTIVE',
+      });
     }
   }, [banner]);
 
@@ -212,8 +445,15 @@ function EditBannerModal({ isOpen, onClose, banner, onSave }) {
     e.preventDefault();
     setIsSaving(true);
     try {
-      await updateBanner(banner.id, { title, placement });
-      onSave({ ...banner, title, placement });
+      const updated = await updateBanner(banner.id, {
+        title: formData.title,
+        placement: formData.placement,
+        imageUrl: formData.imageUrl,
+        linkUrl: formData.destinationUrl,
+        priority: formData.priority,
+        status: formData.status,
+      });
+      onSave(updated || { ...banner, ...formData });
       onClose();
     } catch (err) {
       console.error('Failed to update banner:', err);
@@ -223,25 +463,72 @@ function EditBannerModal({ isOpen, onClose, banner, onSave }) {
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Edit Banner: ${banner.id}`}>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <Input label="Banner Title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+    <Modal isOpen={isOpen} onClose={onClose} title={`Edit Banner: ${banner.title}`} size="md">
+      <form onSubmit={handleSubmit} className="space-y-4 text-xs">
         <div>
-          <label className="block text-xs font-medium text-slate-400 mb-1">Placement</label>
-          <select
-            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
-            value={placement}
-            onChange={(e) => setPlacement(e.target.value)}
-          >
-            <option value="Home Carousel">Home Carousel</option>
-            <option value="Discover Page">Discover Page</option>
-            <option value="Events Page">Events Page</option>
-          </select>
+          <label className="block text-xs font-medium text-slate-400 mb-1">Banner Title</label>
+          <Input value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} required />
         </div>
-        <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-slate-400">Cancel</button>
-          <button type="submit" disabled={isSaving} className="bg-gold-500 text-slate-900 px-4 py-2 rounded-lg text-sm font-bold disabled:opacity-50">
-            {isSaving ? 'Saving...' : 'Save Changes'}
+
+        <div>
+          <label className="block text-xs font-medium text-slate-400 mb-1">Image URL</label>
+          <Input value={formData.imageUrl} onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })} required />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Action / Deep Link</label>
+            <Input value={formData.destinationUrl} onChange={(e) => setFormData({ ...formData, destinationUrl: e.target.value })} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Priority / Sort Order</label>
+            <Input type="number" value={formData.priority} onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value, 10) || 0 })} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Placement</label>
+            <select
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+              value={formData.placement}
+              onChange={(e) => setFormData({ ...formData, placement: e.target.value })}
+            >
+              <option value="Home Carousel">Home Carousel</option>
+              <option value="Party Top">Party Top</option>
+              <option value="Live Top">Live Top</option>
+              <option value="Store Top">Store Top</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-400 mb-1">Status</label>
+            <select
+              className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none"
+              value={formData.status}
+              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+            >
+              <option value="ACTIVE">ACTIVE</option>
+              <option value="INACTIVE">DISABLED / INACTIVE</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Live Preview */}
+        <div className="relative h-24 w-full rounded-xl overflow-hidden border border-slate-700 bg-slate-900 flex items-center p-3">
+          {formData.imageUrl && (
+            <img src={formData.imageUrl} alt="Banner preview" className="absolute inset-0 w-full h-full object-cover opacity-50" />
+          )}
+          <div className="relative z-10">
+            <h4 className="text-white font-bold text-sm line-clamp-1">{formData.title}</h4>
+            <p className="text-slate-300 text-[10px]">{formData.destinationUrl}</p>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 pt-2 border-t border-slate-800">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-xs text-slate-400 hover:text-white">Cancel</button>
+          <button type="submit" disabled={isSaving} className="bg-gold-500 hover:bg-gold-400 text-slate-900 px-4 py-2 rounded-lg text-xs font-bold disabled:opacity-50 flex items-center gap-1.5">
+            {isSaving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
+            Save & Update Mobile App
           </button>
         </div>
       </form>
@@ -251,14 +538,15 @@ function EditBannerModal({ isOpen, onClose, banner, onSave }) {
 
 export function BannersPage() {
   const { addLog } = useAuditLog();
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState({ activeBanners: 0, scheduledCampaigns: 0, globalReach: 0, regionalOverrides: 0 });
   const [banners, setBanners] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedTemplateForCreate, setSelectedTemplateForCreate] = useState(null);
   const [editingBanner, setEditingBanner] = useState(null);
 
-  // Inheritance UI State
+  // Inheritance & Test UI State
   const [selectedBannerInherit, setSelectedBannerInherit] = useState(null);
   const [simulatedTargetEvent, setSimulatedTargetEvent] = useState(null);
   const [isJoined, setIsJoined] = useState(false);
@@ -276,14 +564,17 @@ export function BannersPage() {
     setIsLoading(true);
     Promise.all([getBannerStats(), getBanners()])
       .then(([s, b]) => {
-        setStats(s);
-        const formatted = b.map(item => ({
+        if (s) setStats(s);
+        const formatted = (b || []).map((item) => ({
           ...item,
           scope: item.scope || 'GLOBAL',
           overrideValue: item.overrideValue || '',
           inheritedValue: item.inheritedValue || 'Campaign Standard'
         }));
         setBanners(formatted);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch banners:', err);
       })
       .finally(() => setIsLoading(false));
   };
@@ -293,11 +584,11 @@ export function BannersPage() {
   }, []);
 
   const filteredBanners = useMemo(() => {
-    return banners.filter(b => b.title.toLowerCase().includes(search.toLowerCase()));
+    return banners.filter((b) => (b.title || '').toLowerCase().includes(search.toLowerCase()));
   }, [banners, search]);
 
   const handleToggleStatus = async (banner) => {
-    const newStatus = banner.status === 'ACTIVE' ? 'DISABLED' : (banner.status === 'DISABLED' || banner.status === 'DRAFT') ? 'ACTIVE' : banner.status;
+    const newStatus = banner.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     try {
       await updateBanner(banner.id, { status: newStatus });
       fetchBannersData();
@@ -305,6 +596,38 @@ export function BannersPage() {
       showFeedback(`Banner status updated to ${newStatus}.`);
     } catch (err) {
       showFeedback(err?.response?.data?.message || 'Failed to update banner status');
+    }
+  };
+
+  const handleDeleteBanner = async (banner) => {
+    if (!window.confirm(`Are you sure you want to delete banner "${banner.title}"?`)) return;
+    try {
+      await deleteBanner(banner.id);
+      setBanners(banners.filter((b) => b.id !== banner.id));
+      addLog('BANNER_DELETED', banner.id, 'Banners', `Deleted banner "${banner.title}"`);
+      showFeedback(`Banner "${banner.title}" removed successfully.`);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to delete banner');
+    }
+  };
+
+  const handleQuickDeployTemplate = async (tmpl) => {
+    try {
+      const banner = await createBanner({
+        title: tmpl.title,
+        imageUrl: tmpl.imageUrl,
+        destinationUrl: tmpl.destinationUrl,
+        linkUrl: tmpl.destinationUrl,
+        placement: tmpl.placement,
+        priority: tmpl.priority,
+        isGlobal: true,
+        status: 'ACTIVE',
+      });
+      setBanners([banner, ...banners]);
+      addLog('BANNER_CREATED', banner.id, 'Banners', `Deployed preset template "${tmpl.title}"`);
+      showFeedback(`Template "${tmpl.title}" deployed live to mobile app!`);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to deploy template');
     }
   };
 
@@ -317,7 +640,6 @@ export function BannersPage() {
 
   const handleSaveInheritance = async () => {
     if (!selectedBannerInherit) return;
-
     try {
       await updateBanner(selectedBannerInherit.id, {
         title: selectedBannerInherit.title,
@@ -331,121 +653,263 @@ export function BannersPage() {
     }
   };
 
-  const handleResetScope = (resetScope) => {
-    setOverrideValue('');
-    if (resetScope === 'COUNTRY') {
-      setScope('REGION');
-    } else if (resetScope === 'REGION') {
-      setScope('GLOBAL');
-    }
-    showFeedback('Reset scope configuration.');
-  };
-
   const columns = [
-    { key: 'preview', header: 'Preview', render: (row) => (
-      <div className="h-12 w-24 rounded overflow-hidden border border-slate-700 bg-slate-900 flex items-center justify-center">
-        <img src={row.image} alt="Preview" className="h-full w-full object-cover" />
-      </div>
-    )},
-    { key: 'details', header: 'Banner Details', render: (row) => (
-      <div>
-        <p className="font-bold text-white text-sm">{row.title}</p>
-        <div className="flex items-center gap-1.5 mt-0.5 text-xs text-slate-400">
-          <span>{row.id}</span>
-          <span>•</span>
-          <span className="flex items-center gap-1"><Badge variant="muted" className="text-[10px] py-0">{row.target}</Badge></span>
-          <Badge variant="purple" className="text-[9px] font-mono"><Globe className="h-2.5 w-2.5 mr-0.5 inline" /> {row.scope}</Badge>
+    {
+      key: 'preview',
+      header: 'Creative Preview',
+      render: (row) => (
+        <div className="h-14 w-28 rounded-lg overflow-hidden border border-slate-700 bg-slate-900 flex items-center justify-center relative shadow-sm group">
+          <img src={row.imageUrl || row.image} alt="Preview" className="h-full w-full object-cover group-hover:scale-105 transition-transform" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-1">
+            <span className="text-[9px] text-white font-mono font-bold truncate">{row.priority !== undefined ? `P${row.priority}` : ''}</span>
+          </div>
         </div>
-      </div>
-    )},
-    { key: 'placement', header: 'Placement', render: (row) => <Badge variant="default">{row.placement}</Badge> },
-    { key: 'dates', header: 'Schedule', render: (row) => (
-      <div className="text-xs text-slate-300">
-        <p>{row.startDate} to</p>
-        <p>{row.endDate}</p>
-      </div>
-    )},
-    { key: 'status', header: 'Status', render: (row) => <StatusBadge status={row.status.toLowerCase()} /> },
-    { key: 'actions', header: 'Actions', render: (row) => (
-      <div className="flex gap-2">
-        <button onClick={() => setEditingBanner(row)} className="text-xs text-indigo-400 hover:underline">Edit</button>
-        <button onClick={() => setSimulatedTargetEvent({ name: row.title })} className="text-xs text-purple-400 hover:underline font-bold">Test Target Link</button>
-        <button onClick={() => handleOpenInheritance(row)} className="text-xs text-gold-400 hover:underline">Scope</button>
-        {row.status !== 'EXPIRED' && (
+      )
+    },
+    {
+      key: 'details',
+      header: 'Banner Campaign Details',
+      render: (row) => (
+        <div className="max-w-xs">
+          <p className="font-bold text-white text-sm line-clamp-1">{row.title}</p>
+          <div className="flex items-center gap-1.5 mt-1 text-xs text-slate-400">
+            <span className="text-[10px] text-gold-400 font-mono">{row.linkUrl || row.destinationUrl || 'No action link'}</span>
+            <span>•</span>
+            <Badge variant="muted" className="text-[10px] py-0">{row.target || 'Global'}</Badge>
+          </div>
+        </div>
+      )
+    },
+    {
+      key: 'placement',
+      header: 'Placement',
+      render: (row) => <Badge variant="default">{row.placement || 'Home Carousel'}</Badge>
+    },
+    {
+      key: 'priority',
+      header: 'Priority',
+      render: (row) => (
+        <span className="px-2 py-1 rounded bg-slate-800 font-mono text-xs font-bold text-gold-400 border border-slate-700">
+          {row.priority ?? 0}
+        </span>
+      )
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (row) => <StatusBadge status={(row.status || 'ACTIVE').toLowerCase()} />
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (row) => (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setEditingBanner(row)}
+            className="p-1.5 rounded hover:bg-slate-800 text-indigo-400 hover:text-indigo-300 transition-colors"
+            title="Edit Banner"
+          >
+            <Edit2 className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setSimulatedTargetEvent({ name: row.title, url: row.linkUrl || row.destinationUrl })}
+            className="p-1.5 rounded hover:bg-slate-800 text-purple-400 hover:text-purple-300 transition-colors"
+            title="Simulate Mobile Tap"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => handleOpenInheritance(row)}
+            className="text-xs text-gold-400 hover:underline px-1"
+          >
+            Scope
+          </button>
           <button
             onClick={() => handleToggleStatus(row)}
-            className={`text-xs hover:underline ${row.status === 'ACTIVE' || row.status === 'SCHEDULED' ? 'text-red-400' : 'text-emerald-400'}`}
+            className={`text-xs px-2 py-1 rounded font-bold transition-colors ${
+              row.status === 'ACTIVE'
+                ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20'
+                : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+            }`}
           >
-            {row.status === 'ACTIVE' || row.status === 'SCHEDULED' ? 'Disable' : 'Activate'}
+            {row.status === 'ACTIVE' ? 'Disable' : 'Enable'}
           </button>
-        )}
-      </div>
-    )}
+          <button
+            onClick={() => handleDeleteBanner(row)}
+            className="p-1.5 rounded hover:bg-rose-500/10 text-slate-500 hover:text-rose-400 transition-colors"
+            title="Delete Banner"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+      )
+    }
   ];
 
-  if (isLoading) return <div className="p-6 text-slate-400">Loading Banners...</div>;
-
   return (
-    <div className="space-y-6 max-w-screen-2xl mx-auto" aria-label="Banners & Content">
+    <div className="space-y-6 max-w-screen-2xl mx-auto pb-12" aria-label="Banners & Content">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <ImageIcon className="h-6 w-6 text-gold-400" aria-hidden="true" />
-            Banners & App Content
+            Banners & Home Carousel Management
           </h1>
-          <p className="text-sm text-slate-400 mt-0.5">Manage promotional banners, announcements, and featured app content with country overrides.</p>
+          <p className="text-sm text-slate-400 mt-0.5">
+            Manage live mobile app homepage banners, preset templates, and interactive action redirects.
+          </p>
         </div>
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-slate-900 px-4 py-2 rounded-lg text-sm font-bold transition-colors"
-        >
-          <Plus className="h-4 w-4" /> Create Banner
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchBannersData}
+            className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-2 rounded-lg text-sm font-semibold transition-colors border border-slate-700"
+          >
+            <RefreshCw className="h-4 w-4" /> Refresh
+          </button>
+          <button
+            onClick={() => {
+              setSelectedTemplateForCreate(null);
+              setIsCreateModalOpen(true);
+            }}
+            className="flex items-center gap-2 bg-gold-500 hover:bg-gold-400 text-slate-900 px-4 py-2 rounded-lg text-sm font-bold transition-colors shadow-lg shadow-gold-500/20"
+          >
+            <Plus className="h-4 w-4" /> Create Custom Banner
+          </button>
+        </div>
       </div>
 
       {feedback && (
-        <div className="p-3 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center gap-2">
+        <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center gap-2 shadow-lg">
           <CheckCircle className="h-4 w-4 shrink-0" />
           <span>{feedback}</span>
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Active Banners" value={stats.activeBanners} icon={Megaphone} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
-        <StatCard title="Scheduled" value={stats.scheduledBanners} icon={Calendar} iconColor="text-indigo-400" iconBg="bg-indigo-500/10" />
-        <StatCard title="Drafts" value={stats.drafts} icon={ImageIcon} iconColor="text-amber-400" iconBg="bg-amber-500/10" />
-        <StatCard title="Expired" value={stats.expired} icon={Clock} iconColor="text-slate-400" iconBg="bg-slate-700" />
+      {/* Preset Banner Templates Showcase Card */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-gold-400" />
+            <h2 className="text-base font-bold text-white">Preset Mobile Banner Templates</h2>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-gold-500/20 text-gold-300 font-bold border border-gold-500/30">
+              4 Official Templates
+            </span>
+          </div>
+          <span className="text-xs text-slate-400">1-Click instant deploy or customize for mobile app</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          {PRESET_BANNER_TEMPLATES.map((tmpl) => {
+            const IconComp = tmpl.icon;
+            const isAlreadyActive = banners.some((b) => b.title === tmpl.title && b.status === 'ACTIVE');
+
+            return (
+              <div
+                key={tmpl.id}
+                className={`relative rounded-2xl p-4 overflow-hidden border ${tmpl.borderGradient} bg-gradient-to-br ${tmpl.bgGradient} flex flex-col justify-between shadow-xl group transition-all hover:scale-[1.01]`}
+              >
+                {/* Background Artwork */}
+                <img
+                  src={tmpl.imageUrl}
+                  alt={tmpl.title}
+                  className="absolute inset-0 w-full h-full object-cover opacity-25 mix-blend-overlay group-hover:scale-105 transition-transform duration-500"
+                />
+                <div className="absolute inset-0 bg-black/40" />
+
+                {/* Content */}
+                <div className="relative z-10 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-gradient-to-r ${tmpl.tagColor} text-slate-950 shadow-sm`}>
+                      {tmpl.tag}
+                    </span>
+                    <IconComp className="h-5 w-5 text-white/80" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white leading-tight drop-shadow-md">{tmpl.title}</h3>
+                    <p className="text-[11px] text-slate-300 mt-1 leading-normal line-clamp-2">{tmpl.subtitle}</p>
+                  </div>
+                </div>
+
+                {/* Footer Actions */}
+                <div className="relative z-10 pt-4 mt-2 border-t border-white/10 flex items-center justify-between gap-2">
+                  <span className="text-[10px] font-mono text-gold-300 truncate max-w-[110px]">
+                    {tmpl.destinationUrl}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        setSelectedTemplateForCreate(tmpl);
+                        setIsCreateModalOpen(true);
+                      }}
+                      className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold transition-colors"
+                    >
+                      Customize
+                    </button>
+                    <button
+                      onClick={() => handleQuickDeployTemplate(tmpl)}
+                      disabled={isAlreadyActive}
+                      className={`px-2.5 py-1 rounded text-[10px] font-black transition-colors ${
+                        isAlreadyActive
+                          ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 cursor-default'
+                          : 'bg-gold-500 hover:bg-gold-400 text-slate-950 shadow-md'
+                      }`}
+                    >
+                      {isAlreadyActive ? '✓ Active' : 'Deploy Live'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard title="Active Banners" value={stats.activeBanners || banners.filter((b) => b.status === 'ACTIVE').length} icon={Megaphone} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
+        <StatCard title="Scheduled" value={stats.scheduledCampaigns || 0} icon={Calendar} iconColor="text-indigo-400" iconBg="bg-indigo-500/10" />
+        <StatCard title="Global Reach" value={stats.globalReach || banners.length} icon={Globe} iconColor="text-amber-400" iconBg="bg-amber-500/10" />
+        <StatCard title="Total Campaigns" value={banners.length} icon={Clock} iconColor="text-purple-400" iconBg="bg-purple-500/10" />
+      </div>
+
+      {/* Banners Table */}
       <Card>
-        <CardHeader title="Banner Management" description="Control promotional content across the ZeParty platform">
+        <CardHeader title="All Banner Campaigns" description="Control promotional and live content streamed to mobile app users">
           <Input
-            placeholder="Search banners..."
+            placeholder="Search campaigns..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             leftIcon={Search}
             containerClassName="w-64"
           />
         </CardHeader>
-        <DataTable columns={columns} data={filteredBanners} isLoading={false} />
+        <DataTable columns={columns} data={filteredBanners} isLoading={isLoading} />
       </Card>
 
+      {/* Create Modal */}
       <CreateBannerModal
         isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          setSelectedTemplateForCreate(null);
+        }}
+        initialTemplate={selectedTemplateForCreate}
         onCreated={(banner) => {
           setBanners([banner, ...banners]);
           addLog('BANNER_CREATED', banner.id, 'Banners', `Scheduled new banner "${banner.title}"`);
+          showFeedback(`Banner "${banner.title}" published live to mobile app.`);
         }}
       />
 
+      {/* Edit Modal */}
       <EditBannerModal
         isOpen={!!editingBanner}
         onClose={() => setEditingBanner(null)}
         banner={editingBanner}
         onSave={(updated) => {
-          setBanners(banners.map(b => b.id === updated.id ? updated : b));
+          setBanners(banners.map((b) => (b.id === updated.id ? updated : b)));
           addLog('BANNER_EDITED', updated.id, 'Banners', `Edited banner "${updated.title}"`);
+          showFeedback(`Banner "${updated.title}" updated successfully.`);
         }}
       />
 
@@ -454,7 +918,7 @@ export function BannersPage() {
         <Modal
           isOpen={true}
           onClose={() => setSelectedBannerInherit(null)}
-          title={`Banner Geographic Scope overrides: ${selectedBannerInherit.title}`}
+          title={`Geographic Scope Overrides: ${selectedBannerInherit.title}`}
           size="lg"
         >
           <div className="space-y-4">
@@ -465,7 +929,10 @@ export function BannersPage() {
               overrideValue={overrideValue}
               onChangeOverride={setOverrideValue}
               effectiveValue={overrideValue ? overrideValue : inheritedValue}
-              onResetScope={handleResetScope}
+              onResetScope={() => {
+                setOverrideValue('');
+                setScope('GLOBAL');
+              }}
             />
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-700">
@@ -473,78 +940,41 @@ export function BannersPage() {
                 Cancel
               </Button>
               <Button variant="primary" size="sm" onClick={handleSaveInheritance}>
-                Save banner override
+                Save Banner Override
               </Button>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* Simulated Client App Click-Through Redirect Modal */}
+      {/* Simulated Client App Deep-Link Redirect Modal */}
       {simulatedTargetEvent && (
         <Modal
           isOpen={true}
-          onClose={() => { setSimulatedTargetEvent(null); setIsJoined(false); }}
-          title={`Simulated Client Event View: ${simulatedTargetEvent.name}`}
+          onClose={() => {
+            setSimulatedTargetEvent(null);
+            setIsJoined(false);
+          }}
+          title={`Simulated Mobile Deep-Link View: ${simulatedTargetEvent.name}`}
           size="lg"
         >
           <div className="space-y-4 text-xs text-slate-300">
             <div className="p-3 bg-indigo-950/40 border border-indigo-500/20 rounded-xl text-indigo-300">
-              <span className="font-bold block">App Redirect Verification Success</span>
-              <p className="text-[10px]">Admins can test how the mobile app processes this clickable banner redirect target.</p>
+              <span className="font-bold block text-sm">Mobile Navigation Target Verified</span>
+              <p className="text-[11px] mt-0.5">
+                Target URI: <code className="bg-slate-900 px-1.5 py-0.5 rounded text-gold-400 font-mono">{simulatedTargetEvent.url || 'zeparty://party'}</code>
+              </p>
             </div>
 
-            {/* Banner details target card */}
-            <div className="h-32 rounded-xl bg-gradient-to-br from-indigo-800 to-purple-950 p-4 flex flex-col justify-end border border-purple-500/30">
-              <span className="text-[10px] text-purple-300 uppercase tracking-widest font-black">ZeParty App Event Banner Click</span>
+            <div className="h-28 rounded-xl bg-gradient-to-br from-indigo-800 to-purple-950 p-4 flex flex-col justify-end border border-purple-500/30">
+              <span className="text-[10px] text-purple-300 uppercase tracking-widest font-black">ZeParty Mobile Routing</span>
               <h4 className="text-lg font-black text-white leading-tight mt-0.5">{simulatedTargetEvent.name}</h4>
-              <p className="text-[10px] text-slate-400">Interactive live streaming event configuration details & rules.</p>
-            </div>
-
-            <div className="space-y-3 bg-slate-900 p-4 border border-slate-800 rounded-xl">
-              <div>
-                <h5 className="font-bold text-white mb-1 uppercase tracking-wider text-[11px] text-yellow-400">1. Event Info & Details</h5>
-                <p className="text-slate-300 leading-relaxed">This event is active on the homepage carousel. Engage with users, receive virtual items, and accumulate points to climb the real-time leaderboard.</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 border-t border-slate-700 pt-3">
-                <div>
-                  <h5 className="font-bold text-white mb-1 uppercase tracking-wider text-[10px] text-purple-400">2. Requirements Details</h5>
-                  <p className="text-slate-400">Must stream in PK battles or entertainment categories. Requires minimum level L3 host status to register.</p>
-                </div>
-                <div>
-                  <h5 className="font-bold text-white mb-1 uppercase tracking-wider text-[10px] text-purple-400">3. Eligibility Criteria</h5>
-                  <p className="text-slate-400">Direct register and official agency hosts matching country code scopes are eligible for rewards.</p>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-700 pt-3">
-                <h5 className="font-bold text-white mb-1 uppercase tracking-wider text-[11px] text-rose-400">4. Terms and Conditions</h5>
-                <p className="text-slate-400">All rewards are finalized after 15 days SLA holding audits. Accounts engaging in system abuse or coordinates trading are subject to disqualification.</p>
-              </div>
-            </div>
-
-            {/* Participation Simulator */}
-            <div className="p-3 bg-slate-950 border border-slate-900 rounded-xl flex items-center justify-between">
-              <div>
-                <p className="font-bold text-slate-200">Simulate Host Sign-Up Option</p>
-                <p className="text-[10px] text-slate-500">Admins can test host registration options.</p>
-              </div>
-              <Button
-                variant={isJoined ? 'success' : 'primary'}
-                size="sm"
-                onClick={() => {
-                  setIsJoined(!isJoined);
-                  showFeedback(isJoined ? "Unsubscribed from event." : "Successfully signed up! Active participation simulated.");
-                }}
-              >
-                {isJoined ? 'Signed Up (Leave Event)' : 'Participate / Join Event'}
-              </Button>
+              <p className="text-[10px] text-slate-400">Deep link router directs the user directly to the destination screen.</p>
             </div>
 
             <div className="flex justify-end pt-2">
-              <Button variant="ghost" size="sm" onClick={() => { setSimulatedTargetEvent(null); setIsJoined(false); }}>
-                Close Previews
+              <Button variant="ghost" size="sm" onClick={() => setSimulatedTargetEvent(null)}>
+                Close Preview
               </Button>
             </div>
           </div>

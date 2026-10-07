@@ -59,6 +59,10 @@ class SocketService {
   final _notificationReadAllController = StreamController<Map<String, dynamic>>.broadcast();
   final _notificationBroadcastController = StreamController<Map<String, dynamic>>.broadcast();
 
+  // Banner Real-time event streams
+  final _bannerUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onBannerUpdated => _bannerUpdatedController.stream;
+
   // Direct Messaging Real-time event streams
   final _directMessageController = StreamController<Map<String, dynamic>>.broadcast();
   final _directMessageReadController = StreamController<Map<String, dynamic>>.broadcast();
@@ -404,6 +408,14 @@ class SocketService {
     _socket!.on('notification:broadcast', (data) {
       if (data is Map) _notificationBroadcastController.add(Map<String, dynamic>.from(data));
     });
+
+    // Banner Live Events
+    void handleBannerLiveEvent(dynamic data) {
+      if (data != null) _bannerUpdatedController.add(safeMap(data));
+    }
+    _socket!.on('banner:created', handleBannerLiveEvent);
+    _socket!.on('banner:updated', handleBannerLiveEvent);
+    _socket!.on('banner:deleted', handleBannerLiveEvent);
 
     // Direct Messaging Events
     _socket!.on('direct_message', (data) {
