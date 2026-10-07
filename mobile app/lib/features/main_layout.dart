@@ -14,6 +14,7 @@ import 'party_room/create_party_screen.dart';
 import 'pk_battle/pk_battle_screen.dart';
 import 'pk_battle/pk_match_screen.dart';
 import 'profile/profile_screen.dart';
+import 'messages/inbox_screen.dart';
 import 'auth/under_age_screen.dart';
 import 'live_host/apply_live_host_screen.dart';
 import '../providers/live_host_provider.dart';

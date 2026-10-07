@@ -187,6 +187,9 @@ class UserModel {
   /// 18+ requirement for restricted live streaming features
   bool get isAgeEligible => age >= 18;
 
+  /// Live Host access check
+  bool get hasLiveHostAccess => isHost || hostApplicationStatus == 'approved' || role == UserRole.admin || role == UserRole.host;
+
   /// Effective display name
   String get displayName {
     if (name.isNotEmpty && name != 'null' && name != 'undefined') {

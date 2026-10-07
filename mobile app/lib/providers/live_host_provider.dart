@@ -36,7 +36,9 @@ class LiveHostProvider extends ChangeNotifier {
             avatarUrl: data['user']?['avatarUrl'] ?? '',
             countryCode: data['user']?['countryCode'] ?? 'GLOBAL',
             status: 'Active',
-            approvalDate: data['createdAt'] != null ? DateTime.tryParse(data['createdAt']) : DateTime.now(),
+            approvalDate: data['createdAt'] != null
+                ? (DateTime.tryParse(data['createdAt'].toString()) ?? DateTime.now())
+                : DateTime.now(),
             currentLevel: data['hostLevel'] ?? 1,
           );
           notifyListeners();
