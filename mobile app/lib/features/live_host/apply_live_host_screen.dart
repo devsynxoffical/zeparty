@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../models/live_host_application_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/live_host_provider.dart';
+import 'live_host_center_screen.dart';
 
 class ApplyLiveHostScreen extends StatefulWidget {
   final String? initialHostType;
@@ -45,6 +46,14 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
     _phoneController = TextEditingController(text: authUser.phone ?? '');
     _idNumberController = TextEditingController(text: '');
     _introController = TextEditingController(text: '');
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (authUser.id.isNotEmpty) {
+        final prov = context.read<LiveHostProvider>();
+        prov.fetchHostProfile(authUser.id);
+        prov.fetchHostApplication(authUser.id);
+      }
+    });
   }
 
   @override
@@ -194,7 +203,12 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
     final liveHostProv = context.watch<LiveHostProvider>();
     final existingApp = liveHostProv.getApplicationByUserId(authUser.id);
 
-    final isLocked = existingApp != null && (existingApp.status == 'Submitted' || existingApp.status == 'Under Review' || existingApp.status == 'Approved');
+    final isApprovedHost = authUser.isHost ||
+        authUser.hasLiveHostAccess ||
+        authUser.role == UserRole.host ||
+        existingApp?.status == 'Approved' ||
+        liveHostProv.activeLiveHost != null;
+    final isLocked = isApprovedHost || (existingApp != null && (existingApp.status == 'Submitted' || existingApp.status == 'Under Review' || existingApp.status == 'Approved'));
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -210,6 +224,58 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (isApprovedHost) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.greenAccent.withValues(alpha: 0.5)),
+                  ),
+                  child: Column(
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.verified_user_rounded, color: Colors.greenAccent, size: 28),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Host Application Approved! 🎉',
+                              style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Congratulations! You are officially an active ZeParty Host. You have full access to broadcast Live streams, host Audio Party rooms, and compete in PK battles without any further verification required.',
+                        style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 13, height: 1.4),
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          icon: const Icon(Icons.workspace_premium_rounded),
+                          label: const Text('Open Live Host Center', style: TextStyle(fontWeight: FontWeight.bold)),
+                          onPressed: () {
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(builder: (_) => const LiveHostCenterScreen()),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
               // ─── 1. Policy & Eligibility Header Card ───
               Container(
                 padding: const EdgeInsets.all(16),
@@ -466,11 +532,20 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: Colors.amber.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
-                  child: const Text(
-                    '🔒 Application Submitted & Locked for Review. Verified identity fields cannot be modified while under review.',
+                  decoration: BoxDecoration(
+                    color: isApprovedHost ? Colors.green.withValues(alpha: 0.15) : Colors.amber.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    isApprovedHost
+                        ? '✅ Host Verification Active & Approved. You are fully eligible to start broadcasting.'
+                        : '🔒 Application Submitted & Locked for Review. Verified identity fields cannot be modified while under review.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 13),
+                    style: TextStyle(
+                      color: isApprovedHost ? Colors.greenAccent : Colors.amberAccent,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                   ),
                 )
               else

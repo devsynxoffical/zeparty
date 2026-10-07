@@ -128,7 +128,20 @@ export async function getSelfProfile(userId, db = prisma) {
     };
   }
 
-  return user;
+  const isHost = user.userType === 'HOST' || (user.hostProfile && user.hostProfile.hostStatus === 'ACTIVE');
+  const hostAppStatus = (user.hostProfile && user.hostProfile.hostStatus === 'ACTIVE')
+    ? 'approved'
+    : (user.hostProfile?.hostStatus?.toLowerCase() || 'none');
+
+  if (user.hostProfile) {
+    user.hostProfile.status = user.hostProfile.hostStatus;
+  }
+
+  return {
+    ...user,
+    isHost,
+    hostApplicationStatus: hostAppStatus,
+  };
 }
 
 export async function updateSelfProfile(userId, profileData, db = prisma) {

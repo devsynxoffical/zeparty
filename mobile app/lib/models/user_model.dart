@@ -188,7 +188,14 @@ class UserModel {
   bool get isAgeEligible => age >= 18;
 
   /// Live Host access check
-  bool get hasLiveHostAccess => isHost || hostApplicationStatus == 'approved' || role == UserRole.admin || role == UserRole.host;
+  bool get hasLiveHostAccess {
+    final status = hostApplicationStatus.toLowerCase().trim();
+    return isHost ||
+        status == 'approved' ||
+        status == 'active' ||
+        role == UserRole.admin ||
+        role == UserRole.host;
+  }
 
   /// Effective display name
   String get displayName {
@@ -256,13 +263,28 @@ class UserModel {
     final followers = profile['followersCount'] is int ? profile['followersCount'] as int : (json['followers'] is int ? json['followers'] as int : 0);
     final following = profile['followingCount'] is int ? profile['followingCount'] as int : (json['following'] is int ? json['following'] as int : 0);
 
+    final rawRole = json['role']?.toString().toLowerCase();
     final userType = json['userType']?.toString().toUpperCase();
+    final hostRawStatus = (hostProfile?['hostStatus'] ?? hostProfile?['status'] ?? json['hostStatus'] ?? json['hostApplicationStatus'])?.toString().toUpperCase();
+    final bool isHostStatusActive = hostRawStatus == 'ACTIVE' || hostRawStatus == 'APPROVED';
+    final bool isUserTypeHost = userType == 'HOST' || json['isHost'] == true || rawRole == 'host';
+
     UserRole role = UserRole.user;
-    if (userType == 'HOST' || hostProfile != null) role = UserRole.host;
-    if (userType == 'SELLER') role = UserRole.seller;
-    if (userType == 'AGENCY') role = UserRole.agency;
-    if (userType == 'BD') role = UserRole.bd;
-    if (userType == 'ADMIN') role = UserRole.admin;
+    if (isUserTypeHost || isHostStatusActive || (hostProfile != null && hostRawStatus != 'REJECTED')) role = UserRole.host;
+    if (userType == 'SELLER' || rawRole == 'seller') role = UserRole.seller;
+    if (userType == 'AGENCY' || rawRole == 'agency') role = UserRole.agency;
+    if (userType == 'BD' || rawRole == 'bd') role = UserRole.bd;
+    if (userType == 'ADMIN' || rawRole == 'admin') role = UserRole.admin;
+
+    final bool effectiveIsHost = isHostStatusActive || isUserTypeHost || role == UserRole.host;
+    String hostAppStatus = 'none';
+    if (hostRawStatus != null && hostRawStatus.isNotEmpty) {
+      hostAppStatus = hostRawStatus.toLowerCase();
+    } else if (json['hostApplicationStatus'] != null) {
+      hostAppStatus = json['hostApplicationStatus'].toString().toLowerCase();
+    } else if (effectiveIsHost) {
+      hostAppStatus = 'approved';
+    }
 
     final int wealthLevel = profile['wealthLevel'] is int ? profile['wealthLevel'] as int : (json['wealthLevel'] is int ? json['wealthLevel'] as int : 1);
     final int charmLevel = profile['charmLevel'] is int ? profile['charmLevel'] as int : (json['charmLevel'] is int ? json['charmLevel'] as int : 1);
@@ -292,7 +314,7 @@ class UserModel {
       rCoins: (json['rCoins'] as num?)?.toDouble() ?? 0.0,
       isVip: isVipUser,
       vipLevel: isVipUser ? (json['vipLevel']?.toString() ?? 'VIP 1') : 'None',
-      isHost: role == UserRole.host || hostProfile != null,
+      isHost: effectiveIsHost,
       isAgency: role == UserRole.agency,
       isSeller: role == UserRole.seller || sellerBalance > 0,
       isBd: role == UserRole.bd,
@@ -306,7 +328,7 @@ class UserModel {
       referralCode: json['referralCode']?.toString() ?? 'ZEP$id',
       referralCount: json['referralCount'] is int ? json['referralCount'] as int : 0,
       role: role,
-      hostApplicationStatus: hostProfile?['status']?.toString().toLowerCase() ?? json['hostApplicationStatus']?.toString() ?? 'none',
+      hostApplicationStatus: hostAppStatus,
       hostRejectionReason: hostProfile?['rejectionReason']?.toString() ?? json['hostRejectionReason']?.toString(),
       wealthLevel: wealthLevel,
       wealthXp: profile['experience'] is int ? profile['experience'] as int : (json['wealthXp'] is int ? json['wealthXp'] as int : 0),
@@ -406,6 +428,9 @@ class UserModel {
       'referralCode': referralCode,
       'referralCount': referralCount,
       'role': role.name,
+      'userType': role.name.toUpperCase(),
+      'hostApplicationStatus': hostApplicationStatus,
+      'hostRejectionReason': hostRejectionReason,
       'wealthLevel': wealthLevel,
       'charmLevel': charmLevel,
       'accountLevel': accountLevel,

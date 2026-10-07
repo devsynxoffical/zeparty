@@ -339,11 +339,16 @@ export async function recordHostPerformance(
   );
 }
 
+export async function getMyHostApplication(userId, db = prisma) {
+  return await hostRepository.findLatestApplicationByUserId(userId, db);
+}
+
 export default {
   applyForHost,
   reviewHostApplication,
   updateHostProfileStatus,
   getHostDetails,
   getHostProfileByUserId,
+  getMyHostApplication,
   recordHostPerformance,
 };

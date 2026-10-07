@@ -32,6 +32,43 @@ class _MainLayoutState extends State<MainLayout> {
   DateTime? _lastBackPressTime;
   static const Duration _exitTimeout = Duration(seconds: 2);
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProv = Provider.of<AuthProvider>(context, listen: false);
+      authProv.refreshCurrentUser();
+      if (authProv.currentUser.id.isNotEmpty) {
+        Provider.of<LiveHostProvider>(context, listen: false).fetchHostProfile(authProv.currentUser.id);
+      }
+    });
+  }
+
+  Future<bool> _verifyHostEligibility(BuildContext context) async {
+    final authProv = Provider.of<AuthProvider>(context, listen: false);
+    final liveHostProv = Provider.of<LiveHostProvider>(context, listen: false);
+    final user = authProv.currentUser;
+
+    if (user.isHost || user.hasLiveHostAccess || (liveHostProv.activeLiveHost?.status == 'Active')) {
+      return true;
+    }
+
+    try {
+      final refreshed = await authProv.refreshCurrentUser();
+      if (refreshed != null && (refreshed.isHost || refreshed.hasLiveHostAccess)) {
+        return true;
+      }
+      if (user.id.isNotEmpty) {
+        await liveHostProv.fetchHostProfile(user.id);
+        if (liveHostProv.activeLiveHost?.status == 'Active') {
+          return true;
+        }
+      }
+    } catch (_) {}
+
+    return false;
+  }
+
   void _onTabSelected(int index) {
     if (index == 2) return; // centre button handled separately
     if (index == 3) {
@@ -147,7 +184,7 @@ class _MainLayoutState extends State<MainLayout> {
                     icon: Icons.sensors_rounded,
                     label: 'Go Live',
                     color: AppColors.liveRed,
-                    onTap: () {
+                    onTap: () async {
                       Navigator.pop(ctx);
                       if (!currentUser.isAgeEligible) {
                         Navigator.push(
@@ -157,8 +194,8 @@ class _MainLayoutState extends State<MainLayout> {
                         return;
                       }
                       
-                      final liveHostProv = Provider.of<LiveHostProvider>(context, listen: false);
-                      final isHost = currentUser.isHost || currentUser.hasLiveHostAccess || (liveHostProv.activeLiveHost?.status == 'Active');
+                      final isHost = await _verifyHostEligibility(context);
+                      if (!context.mounted) return;
                       if (!isHost) {
                         _showHostRequiredSheet(context, hostType: 'LIVE_HOST', featureName: 'Live Video Broadcasting');
                         return;
@@ -175,7 +212,7 @@ class _MainLayoutState extends State<MainLayout> {
                     icon: Icons.groups_rounded,
                     label: 'Party',
                     color: AppColors.getPrimary(isDark),
-                    onTap: () {
+                    onTap: () async {
                       Navigator.pop(ctx);
                       if (!currentUser.isAgeEligible) {
                         Navigator.push(
@@ -185,8 +222,8 @@ class _MainLayoutState extends State<MainLayout> {
                         return;
                       }
 
-                      final liveHostProv = Provider.of<LiveHostProvider>(context, listen: false);
-                      final isHost = currentUser.isHost || currentUser.hasLiveHostAccess || (liveHostProv.activeLiveHost?.status == 'Active');
+                      final isHost = await _verifyHostEligibility(context);
+                      if (!context.mounted) return;
                       if (!isHost) {
                         _showHostRequiredSheet(context, hostType: 'AUDIO_HOST', featureName: 'Audio Party Rooms');
                         return;
@@ -205,7 +242,7 @@ class _MainLayoutState extends State<MainLayout> {
                     icon: Icons.flash_on_rounded,
                     label: 'Start PK',
                     color: AppColors.getPrimary(isDark),
-                    onTap: () {
+                    onTap: () async {
                       Navigator.pop(ctx);
                       if (!currentUser.isAgeEligible) {
                         Navigator.push(
@@ -215,8 +252,8 @@ class _MainLayoutState extends State<MainLayout> {
                         return;
                       }
 
-                      final liveHostProv = Provider.of<LiveHostProvider>(context, listen: false);
-                      final isHost = currentUser.isHost || currentUser.hasLiveHostAccess || (liveHostProv.activeLiveHost?.status == 'Active');
+                      final isHost = await _verifyHostEligibility(context);
+                      if (!context.mounted) return;
                       if (!isHost) {
                         _showHostRequiredSheet(context, hostType: 'LIVE_HOST', featureName: 'PK Battles');
                         return;

@@ -27,6 +27,7 @@ class AuthProvider extends ChangeNotifier {
   StreamSubscription<User?>? _authStateSubscription;
   StreamSubscription<Map<String, dynamic>>? _banSubscription;
   StreamSubscription<Map<String, dynamic>>? _restrictionSubscription;
+  StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
 
   late final Future<void> _initFuture;
 
@@ -57,6 +58,15 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('[AuthProvider] Moderation restriction received: $data');
       notifyListeners();
     });
+
+    _notificationSubscription = SocketService.instance.onNotificationNew.listen((data) {
+      final action = data['action']?.toString() ?? data['data']?['action']?.toString();
+      final type = data['type']?.toString();
+      final title = data['title']?.toString() ?? '';
+      if (action == 'HOST_APPROVED' || action == 'HOST_STATUS_UPDATED' || type == 'HOST_APPLICATION' || title.contains('Host')) {
+        refreshCurrentUser();
+      }
+    });
   }
 
   @override
@@ -64,6 +74,7 @@ class AuthProvider extends ChangeNotifier {
     _authStateSubscription?.cancel();
     _banSubscription?.cancel();
     _restrictionSubscription?.cancel();
+    _notificationSubscription?.cancel();
     super.dispose();
   }
 
@@ -172,6 +183,45 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Publicly accessible profile and host permission refresh
+  Future<UserModel?> refreshCurrentUser() async {
+    try {
+      final remoteUser = await _authRepository
+          .getCurrentUser()
+          .timeout(const Duration(seconds: 4));
+      final local = _currentUser;
+      final mergedName = (remoteUser.name.isNotEmpty && remoteUser.name != 'ZeParty Creator' && remoteUser.name != 'Guest')
+          ? remoteUser.name
+          : (local?.name.isNotEmpty == true && local?.name != 'ZeParty Creator' ? local!.name : remoteUser.name);
+      final mergedUsername = (remoteUser.username.isNotEmpty && !remoteUser.username.startsWith('user_'))
+          ? remoteUser.username
+          : (local?.username.isNotEmpty == true && !local!.username.startsWith('user_') ? local.username : remoteUser.username);
+      final rawAvatar = remoteUser.avatarUrl.isNotEmpty
+          ? remoteUser.avatarUrl
+          : (local?.avatarUrl ?? remoteUser.avatarUrl);
+      final mergedAvatar = rawAvatar;
+      final mergedCover = (remoteUser.coverUrl != null && remoteUser.coverUrl!.isNotEmpty)
+          ? remoteUser.coverUrl
+          : (local?.coverUrl ?? remoteUser.coverUrl);
+
+      _currentUser = remoteUser.copyWith(
+        name: mergedName,
+        username: mergedUsername,
+        avatarUrl: mergedAvatar,
+        coverUrl: mergedCover,
+        bio: remoteUser.bio.isNotEmpty ? remoteUser.bio : (local?.bio ?? remoteUser.bio),
+      );
+      _isAuthenticated = true;
+      _isGuest = false;
+      await _saveUserLocalSession(_currentUser!);
+      notifyListeners();
+      return _currentUser;
+    } catch (e) {
+      debugPrint('[AuthProvider] refreshCurrentUser error: $e');
+      return _currentUser;
+    }
+  }
+
   Future<void> _syncRemoteUser() async {
     try {
       final hasToken = await _authRepository
@@ -179,37 +229,8 @@ class AuthProvider extends ChangeNotifier {
           .timeout(const Duration(seconds: 4), onTimeout: () => false);
       if (hasToken) {
         try {
-          final remoteUser = await _authRepository
-              .getCurrentUser()
-              .timeout(const Duration(seconds: 4));
-          final local = _currentUser;
-          // Protect against generic/empty server overrides
-          final mergedName = (remoteUser.name.isNotEmpty && remoteUser.name != 'ZeParty Creator' && remoteUser.name != 'Guest')
-              ? remoteUser.name
-              : (local?.name.isNotEmpty == true && local?.name != 'ZeParty Creator' ? local!.name : remoteUser.name);
-          final mergedUsername = (remoteUser.username.isNotEmpty && !remoteUser.username.startsWith('user_'))
-              ? remoteUser.username
-              : (local?.username.isNotEmpty == true && !local!.username.startsWith('user_') ? local.username : remoteUser.username);
-          final rawAvatar = remoteUser.avatarUrl.isNotEmpty
-              ? remoteUser.avatarUrl
-              : (local?.avatarUrl ?? remoteUser.avatarUrl);
-          final mergedAvatar = rawAvatar;
-          final mergedCover = (remoteUser.coverUrl != null && remoteUser.coverUrl!.isNotEmpty)
-              ? remoteUser.coverUrl
-              : (local?.coverUrl ?? remoteUser.coverUrl);
-
-          _currentUser = remoteUser.copyWith(
-            name: mergedName,
-            username: mergedUsername,
-            avatarUrl: mergedAvatar,
-            coverUrl: mergedCover,
-            bio: remoteUser.bio.isNotEmpty ? remoteUser.bio : (local?.bio ?? remoteUser.bio),
-          );
-          _isAuthenticated = true;
-          _isGuest = false;
-          await _saveUserLocalSession(_currentUser!);
+          await refreshCurrentUser();
           FcmService.instance.registerWithBackend();
-          notifyListeners();
           syncFollowingList();
         } on ApiException catch (e) {
           if (e.statusCode == 401) {

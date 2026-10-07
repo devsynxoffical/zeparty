@@ -43,8 +43,38 @@ export async function findHostProfileByUserId(userId, db = prisma) {
   return await db.hostProfile.findUnique({
     where: { userId },
     include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true,
+          userType: true,
+          status: true,
+          profile: true,
+        },
+      },
       agency: true,
       bdCenter: true,
+    },
+  });
+}
+
+export async function findLatestApplicationByUserId(userId, db = prisma) {
+  if (!userId) return null;
+  return await db.hostApplication.findFirst({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true,
+          profile: true,
+        },
+      },
     },
   });
 }
@@ -265,6 +295,7 @@ export default {
   updateHostPerformance,
   findApplicationById,
   findPendingApplicationByUserId,
+  findLatestApplicationByUserId,
   findApplications,
   createApplication,
   updateApplication,

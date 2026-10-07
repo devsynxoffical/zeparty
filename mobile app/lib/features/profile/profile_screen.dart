@@ -726,7 +726,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final hasAgencyAccess = agencyProv.isAgencyOwner(user.id);
     final hasAudioHostAccess = agencyProv.getAudioHostByUserId(user.id) != null;
     final liveHostApp = liveHostProv.getApplicationByUserId(user.id);
-    final hasLiveHostAccess = liveHostProv.activeLiveHost != null || liveHostApp?.status == 'Approved';
+    final hasLiveHostAccess = user.hasLiveHostAccess || user.isHost || user.role == UserRole.host || liveHostProv.activeLiveHost != null || liveHostApp?.status == 'Approved';
 
     final isBdAuthorized = user.role == UserRole.bd || user.role == UserRole.admin;
     final isSellerAuthorized = user.role == UserRole.seller || user.role == UserRole.admin;

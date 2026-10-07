@@ -15,6 +15,7 @@ adminHostRouter.put('/:id/status', requirePermission('approve_reject_hosts'), ho
 export const userHostRouter = express.Router();
 userHostRouter.post('/apply', authenticate, hostController.applyHost);
 userHostRouter.get('/profile', authenticate, hostController.getMyHostProfile);
+userHostRouter.get('/application', authenticate, hostController.getMyHostApplication);
 
 export default {
   adminHostRouter,

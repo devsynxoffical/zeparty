@@ -44,6 +44,21 @@ export async function getMyHostProfile(req, res, next) {
   }
 }
 
+export async function getMyHostApplication(req, res, next) {
+  try {
+    const userId = req.auth.userId;
+    const application = await hostService.getMyHostApplication(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Host application retrieved successfully',
+      data: application,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getHosts(req, res, next) {
   try {
     const validatedQuery = queryHostsSchema.parse(req.query);
@@ -157,6 +172,7 @@ export async function updateHostStatus(req, res, next) {
 export default {
   applyHost,
   getMyHostProfile,
+  getMyHostApplication,
   getHosts,
   getHostById,
   getHostApplications,

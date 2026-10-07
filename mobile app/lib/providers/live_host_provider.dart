@@ -28,7 +28,8 @@ class LiveHostProvider extends ChangeNotifier {
       final res = await ApiClient.instance.get('/v1/hosts/profile');
       if (res.statusCode == 200 && res.data['data'] != null) {
         final data = res.data['data'];
-        if (data['hostStatus'] == 'ACTIVE') {
+        final rawStatus = (data['hostStatus'] ?? data['status'])?.toString().toUpperCase();
+        if (rawStatus == 'ACTIVE' || rawStatus == 'APPROVED') {
           _activeLiveHost = LiveHostModel(
             liveHostId: data['id'] ?? 'lh_$userId',
             userId: userId,
@@ -43,6 +44,47 @@ class LiveHostProvider extends ChangeNotifier {
           );
           notifyListeners();
         }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> fetchHostApplication(String userId) async {
+    try {
+      final res = await ApiClient.instance.get('/v1/hosts/application');
+      if (res.statusCode == 200 && res.data['data'] != null) {
+        final data = res.data['data'];
+        final appStatus = data['status']?.toString().toUpperCase();
+        final mappedStatus = (appStatus == 'ACTIVE' || appStatus == 'APPROVED')
+            ? 'Approved'
+            : (appStatus == 'REJECTED' ? 'Rejected' : 'Under Review');
+
+        final app = LiveHostApplicationModel(
+          id: data['id']?.toString() ?? 'app_$userId',
+          userId: userId,
+          legalName: data['user']?['profile']?['displayName'] ?? data['user']?['username'] ?? 'Host',
+          displayName: data['user']?['username'] ?? 'Host',
+          dateOfBirth: '',
+          gender: 'Not Specified',
+          country: 'GLOBAL',
+          city: '',
+          languages: 'Global',
+          category: data['hostType'] ?? 'Streaming',
+          schedule: 'Daily',
+          phoneOrEmail: data['user']?['phone'] ?? data['user']?['email'] ?? '',
+          govIdType: 'VERIFIED',
+          govIdNumber: 'VERIFIED',
+          frontIdUrl: data['idCardFrontUrl'] ?? '',
+          backIdUrl: data['idCardBackUrl'] ?? '',
+          selfieUrl: data['videoSampleUrl'],
+          status: mappedStatus,
+          submittedAt: data['createdAt'] != null
+              ? (DateTime.tryParse(data['createdAt'].toString()) ?? DateTime.now())
+              : DateTime.now(),
+        );
+
+        _applications.removeWhere((a) => a.userId == userId);
+        _applications.add(app);
+        notifyListeners();
       }
     } catch (_) {}
   }
@@ -62,7 +104,7 @@ class LiveHostProvider extends ChangeNotifier {
           'hostType': hostType,
           'idCardFrontUrl': app.frontIdUrl.isNotEmpty ? app.frontIdUrl : 'https://example.com/id_front.jpg',
           'idCardBackUrl': app.backIdUrl.isNotEmpty ? app.backIdUrl : 'https://example.com/id_back.jpg',
-          'videoSampleUrl': app.selfieUrl ?? 'https://example.com/video_sample.mp4',
+          'videoSampleUrl': app.selfieUrl.isNotEmpty ? app.selfieUrl : 'https://example.com/video_sample.mp4',
         },
       );
     } catch (e) {
