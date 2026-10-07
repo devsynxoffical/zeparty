@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/noble_badge_helper.dart';
 import '../../models/svip_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/svip_provider.dart';
@@ -273,22 +274,16 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
                 ),
               ),
               const SizedBox(width: 14),
-              // Luxury Crown / SVIP Badge Emblem
-              Container(
-                width: 100,
+              // Luxury Crown / SVIP Badge Emblem (Transparent without gray/white background)
+              SizedBox(
+                width: 105,
                 height: 110,
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-                ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Expanded(
                       child: Image.asset(
-                        'assets/svip/svip${svip.selectedViewLevel}_badge.png',
+                        NobleBadgeHelper.getBadgeAsset('SVIP ${svip.selectedViewLevel}') ?? 'assets/svip/svip10_badge.png',
                         fit: BoxFit.contain,
                         errorBuilder: (context, error, stackTrace) => const Text('👑', style: TextStyle(fontSize: 34)),
                       ),
@@ -300,6 +295,9 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
                         fontSize: 13,
+                        shadows: [
+                          Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1)),
+                        ],
                       ),
                     ),
                   ],

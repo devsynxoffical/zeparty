@@ -37,19 +37,31 @@ class NobleBadgeHelper {
 
     // Noble Badges
     if (lower.contains('emperor')) return 'assets/nobles/emperor_badge.png';
-    if (lower.contains('king')) return 'assets/nobles/king_badge.png';
+    if (lower.contains('king') || lower.contains('prince')) return 'assets/nobles/king_badge.png';
     if (lower.contains('duke')) return 'assets/nobles/duke_badge.png';
     if (lower.contains('marquis')) return 'assets/nobles/marquis_badge.png';
     if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_badge.png';
-    if (lower.contains('baron')) return 'assets/nobles/baron_badge.png';
+    if (lower.contains('viscount')) return 'assets/nobles/viscount_card.png';
+    if (lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/baron_badge.png';
 
-    // SVIP Badges
+    // SVIP Badges (Accurate existing asset mapping for all 1-16 tiers)
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 1; i--) {
-        if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          return 'assets/svip/svip${i}_badge.png';
-        }
-      }
+      if (lower.contains('15') || lower.contains('16')) return 'assets/svip/svip15_badge.png';
+      if (lower.contains('14')) return 'assets/svip/svip14_badge.png';
+      if (lower.contains('13')) return 'assets/svip/svip13_badge.png';
+      if (lower.contains('12')) return 'assets/svip/svip12_badge.png';
+      if (lower.contains('11')) return 'assets/svip/svip11_badge.png';
+      if (lower.contains('10')) return 'assets/svip/svip10_badge.png';
+      if (lower.contains('9')) return 'assets/svip/svip9_badge.png';
+      if (lower.contains('8')) return 'assets/svip/svip8_badge.png';
+      if (lower.contains('7')) return 'assets/svip/svip7_badge.png';
+      if (lower.contains('6')) return 'assets/svip/svip6_badge.png';
+      if (lower.contains('5')) return 'assets/svip/svip5_tag.png';
+      if (lower.contains('4')) return 'assets/svip/svip4_badge.png';
+      if (lower.contains('3')) return 'assets/svip/svip3_badge.png';
+      if (lower.contains('2')) return 'assets/svip/svip1_badge.png';
+      if (lower.contains('1')) return 'assets/svip/svip1_badge.png';
+      return 'assets/svip/svip10_badge.png';
     }
 
     // Role Badges
