@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/party_participant_model.dart';
+import '../models/user_model.dart';
 import '../providers/live_party_provider.dart';
 import '../providers/emoji_reaction_provider.dart';
 import '../core/utils/noble_badge_helper.dart';
@@ -232,6 +233,9 @@ class MultiRoleSeatGrid extends StatelessWidget {
                         name: participant.user.name,
                         radius: radius + 1,
                         glowColor: isHostUser ? Colors.amber : Colors.greenAccent,
+                        frameAsset: NobleBadgeHelper.getFrameAsset(
+                          participant.user.nobleTitle ?? (participant.user.svipLevel > 0 ? 'SVIP ${participant.user.svipLevel}' : (participant.user.role != UserRole.user ? participant.user.role.name : null)),
+                        ),
                       )
                     : Container(
                         decoration: BoxDecoration(
@@ -253,6 +257,9 @@ class MultiRoleSeatGrid extends StatelessWidget {
                           imageUrl: participant.user.avatarUrl,
                           name: participant.user.name,
                           radius: radius,
+                          frameAsset: NobleBadgeHelper.getFrameAsset(
+                            participant.user.nobleTitle ?? (participant.user.svipLevel > 0 ? 'SVIP ${participant.user.svipLevel}' : (participant.user.role != UserRole.user ? participant.user.role.name : null)),
+                          ),
                         ),
                       ),
                 if (activeReaction != null)
@@ -319,7 +326,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
               ],
             ),
             SizedBox(
-              width: radius * 3.2,
+              width: radius * 3.4,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
@@ -340,6 +347,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                     ),
                   ),
                   NobleBadgeChip(user: participant.user, fontSize: 7),
+                  NobleTagChip(user: participant.user, height: 11),
                 ],
               ),
             ),

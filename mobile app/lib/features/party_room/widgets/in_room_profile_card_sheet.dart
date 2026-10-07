@@ -164,6 +164,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                                   ),
                                   const SizedBox(width: 4),
                                   NobleBadgeChip(user: user, fontSize: 9),
+                                  NobleTagChip(user: user, height: 16),
                                   const SizedBox(width: 6),
                                   if (user.isVip)
                                     Container(

@@ -132,11 +132,22 @@ class NobleBadgeHelper {
 
     // SVIP Tags
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 1; i--) {
-        if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          return 'assets/svip/svip${i}_tag.png';
-        }
-      }
+      if (lower.contains('15') || lower.contains('16')) return 'assets/svip/svip15_tag.png';
+      if (lower.contains('14')) return 'assets/svip/svip14_tag.png';
+      if (lower.contains('13')) return 'assets/svip/svip13_tag.png';
+      if (lower.contains('12')) return 'assets/svip/svip12_tag.png';
+      if (lower.contains('11')) return 'assets/svip/svip11_tag.png';
+      if (lower.contains('10')) return 'assets/svip/svip10_tag.png';
+      if (lower.contains('9')) return 'assets/svip/svip9_tag.png';
+      if (lower.contains('8')) return 'assets/svip/svip8_tag.png';
+      if (lower.contains('7')) return 'assets/svip/svip7_tag.png';
+      if (lower.contains('6')) return 'assets/svip/svip6_tag.png';
+      if (lower.contains('5')) return 'assets/svip/svip5_tag.png';
+      if (lower.contains('4')) return 'assets/svip/svip4_tag.png';
+      if (lower.contains('3')) return 'assets/svip/svip3_tag.png';
+      if (lower.contains('2')) return 'assets/svip/svip1_tag.png';
+      if (lower.contains('1')) return 'assets/svip/svip1_tag.png';
+      return 'assets/svip/svip10_tag.png';
     }
 
     // Role Tags
@@ -157,7 +168,8 @@ class NobleBadgeHelper {
     if (lower.contains('official')) return 'assets/roles/official_tag.png';
     if (lower.contains('top fan')) return 'assets/roles/top_fan_tag.png';
 
-    return null;
+    // Nobles tag fallback using badge
+    return getBadgeAsset(title);
   }
 
   static String? getChatBubbleAsset(String? title) {
@@ -177,6 +189,7 @@ class NobleBadgeHelper {
           return 'assets/svip/svip${i}_chat_bubble.png';
         }
       }
+      return 'assets/svip/svip10_chat_bubble.png';
     }
 
     return null;
@@ -187,8 +200,8 @@ class NobleBadgeHelper {
     final lower = title.toLowerCase().trim();
 
     // Noble Cards
-    if (lower.contains('king')) return 'assets/nobles/king_card.png';
-    if (lower.contains('viscount')) return 'assets/nobles/viscount_card.png';
+    if (lower.contains('king') || lower.contains('emperor')) return 'assets/nobles/king_card.png';
+    if (lower.contains('viscount') || lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/viscount_card.png';
 
     // SVIP Cards
     if (lower.contains('svip')) {
@@ -197,6 +210,7 @@ class NobleBadgeHelper {
           return 'assets/svip/svip${i}_card.png';
         }
       }
+      return 'assets/svip/svip10_card.png';
     }
 
     return null;
@@ -207,8 +221,8 @@ class NobleBadgeHelper {
     final lower = title.toLowerCase().trim();
 
     // Noble Entrances
-    if (lower.contains('emperor')) return 'assets/nobles/emperor_entrance.png';
-    if (lower.contains('marquis')) return 'assets/nobles/marquis_entrance.png';
+    if (lower.contains('emperor') || lower.contains('king')) return 'assets/nobles/emperor_entrance.png';
+    if (lower.contains('marquis') || lower.contains('duke') || lower.contains('count')) return 'assets/nobles/marquis_entrance.png';
 
     // SVIP Entrances
     if (lower.contains('svip')) {
@@ -217,6 +231,7 @@ class NobleBadgeHelper {
           return 'assets/svip/svip${i}_entry.png';
         }
       }
+      return 'assets/svip/svip10_entry.png';
     }
 
     return null;
@@ -291,7 +306,7 @@ class NobleBadgeChip extends StatelessWidget {
       } else if (user.role != UserRole.user) {
         title = user.role.name;
       } else if (user.isVip) {
-        title = 'Noble Knight';
+        title = 'Baron';
       }
     }
 
@@ -302,7 +317,7 @@ class NobleBadgeChip extends StatelessWidget {
         margin: const EdgeInsets.only(left: 4),
         child: Image.asset(
           assetPath,
-          height: fontSize * 2.2,
+          height: fontSize * 2.4,
           fit: BoxFit.contain,
           errorBuilder: (_, __, ___) => _buildFallbackChip(context, title),
         ),
@@ -345,3 +360,71 @@ class NobleBadgeChip extends StatelessWidget {
     );
   }
 }
+
+class NobleTagChip extends StatelessWidget {
+  final UserModel user;
+  final String? tagTitleOverride;
+  final double height;
+
+  const NobleTagChip({
+    super.key,
+    required this.user,
+    this.tagTitleOverride,
+    this.height = 18,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    String? title = tagTitleOverride ?? user.nobleTitle;
+    if (title == null || title.isEmpty) {
+      if (user.svipLevel > 0) {
+        title = 'SVIP ${user.svipLevel}';
+      } else if (user.role != UserRole.user) {
+        title = user.role.name;
+      } else if (user.isVip) {
+        title = 'SVIP 1';
+      }
+    }
+
+    final tagAsset = NobleBadgeHelper.getTagAsset(title);
+    if (tagAsset != null) {
+      return Container(
+        margin: const EdgeInsets.only(left: 4),
+        child: Image.asset(
+          tagAsset,
+          height: height,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+}
+
+class NobleBadgeAndTagRow extends StatelessWidget {
+  final UserModel user;
+  final double badgeSize;
+  final double tagHeight;
+
+  const NobleBadgeAndTagRow({
+    super.key,
+    required this.user,
+    this.badgeSize = 11,
+    this.tagHeight = 18,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        NobleBadgeChip(user: user, fontSize: badgeSize),
+        NobleTagChip(user: user, height: tagHeight),
+      ],
+    );
+  }
+}
+

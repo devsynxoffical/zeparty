@@ -6,6 +6,7 @@ class PulseGlowAvatar extends StatefulWidget {
   final String? name;
   final double radius;
   final Color glowColor;
+  final String? frameAsset;
 
   const PulseGlowAvatar({
     super.key,
@@ -13,6 +14,7 @@ class PulseGlowAvatar extends StatefulWidget {
     this.name,
     this.radius = 36,
     this.glowColor = Colors.pinkAccent,
+    this.frameAsset,
   });
 
   @override
@@ -64,6 +66,7 @@ class _PulseGlowAvatarState extends State<PulseGlowAvatar> with SingleTickerProv
             imageUrl: widget.imageUrl,
             name: widget.name,
             radius: widget.radius,
+            frameAsset: widget.frameAsset,
           ),
         );
       },

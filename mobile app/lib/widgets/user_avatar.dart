@@ -157,12 +157,16 @@ class UserAvatar extends StatelessWidget {
         children: [
           avatar,
           if (effectiveFrameAsset != null)
-            Positioned.fill(
+            Positioned(
+              top: -radius * 0.36,
+              bottom: -radius * 0.36,
+              left: -radius * 0.36,
+              right: -radius * 0.36,
               child: IgnorePointer(
                 child: Image.asset(
                   effectiveFrameAsset,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => const Text(''),
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
                 ),
               ),
             ),
@@ -194,21 +198,25 @@ class UserAvatar extends StatelessWidget {
 /// A widget showing a user avatar with an online/offline badge + optional last-seen text.
 class UserAvatarWithStatus extends StatelessWidget {
   final String? imageUrl;
+  final String? name;
   final double radius;
   final bool isOnline;
   final String? lastSeen; // e.g. "Online 3 hours ago"
   final bool showLastSeenText;
   final bool isVip;
+  final String? frameAsset;
   final VoidCallback? onTap;
 
   const UserAvatarWithStatus({
     super.key,
     this.imageUrl,
+    this.name,
     this.radius = 24,
     this.isOnline = false,
     this.lastSeen,
     this.showLastSeenText = false,
     this.isVip = false,
+    this.frameAsset,
     this.onTap,
   });
 
@@ -222,11 +230,14 @@ class UserAvatarWithStatus extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Stack(
+            clipBehavior: Clip.none,
             children: [
               UserAvatar(
                 imageUrl: imageUrl,
+                name: name,
                 radius: radius,
                 showVipFrame: isVip,
+                frameAsset: frameAsset,
               ),
               // Online / Offline status dot
               Positioned(

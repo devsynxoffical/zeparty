@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/noble_badge_helper.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../auth/auth_screen.dart';
@@ -336,7 +337,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   imageUrl: effectiveAvatar,
                   name: user.displayName,
                   radius: 40,
-                  showVipFrame: false,
+                  showVipFrame: user.isVip,
+                  frameAsset: NobleBadgeHelper.getFrameAsset(
+                    user.nobleTitle ?? (user.svipLevel > 0 ? 'SVIP ${user.svipLevel}' : (user.role != UserRole.user ? user.role.name : 'baron')),
+                  ),
                 ),
               ),
               Positioned(
@@ -395,9 +399,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.getTextPrimary(isDark),
+                        color: NobleBadgeHelper.getColoredNicknameColor(
+                          NobleBadgeHelper.getTierFromTitle(user.nobleTitle),
+                        ),
                       ),
                     ),
+                    NobleBadgeChip(user: user, fontSize: 9.5),
+                    NobleTagChip(user: user, height: 16),
                     if (context.watch<LivePartyProvider>().activeRoom != null) ...[
                       GestureDetector(
                         onTap: () {

@@ -842,20 +842,13 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 );
                               }
                             },
-                            child: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.amberAccent, width: 2.5),
-                                boxShadow: [
-                                  BoxShadow(color: Colors.amber.withValues(alpha: 0.4), blurRadius: 10),
-                                ],
-                              ),
-                              child: UserAvatar(
-                                imageUrl: effAvatar,
-                                name: _user!.displayName,
-                                radius: 38,
-                                showVipFrame: _user!.isVip,
-                                frameAsset: NobleBadgeHelper.getFrameAsset(_user?.nobleTitle ?? (_user?.svipLevel != null && _user!.svipLevel > 0 ? 'SVIP ${_user!.svipLevel}' : _user?.role.name)),
+                            child: UserAvatar(
+                              imageUrl: effAvatar,
+                              name: _user!.displayName,
+                              radius: 38,
+                              showVipFrame: _user!.isVip,
+                              frameAsset: NobleBadgeHelper.getFrameAsset(
+                                _user?.nobleTitle ?? (_user?.svipLevel != null && _user!.svipLevel > 0 ? 'SVIP ${_user!.svipLevel}' : (_user?.role != UserRole.user ? _user?.role.name : 'baron')),
                               ),
                             ),
                           );
@@ -1072,6 +1065,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   ),
                   const SizedBox(width: 6),
                   NobleBadgeChip(user: _user!, fontSize: 10),
+                  NobleTagChip(user: _user!, height: 18),
                   const SizedBox(width: 6),
 
                   // Gender & Age Pill (♂ 21 / ♀ 22)

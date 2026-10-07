@@ -183,7 +183,9 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                     name: widget.senderName,
                     radius: 14,
                     showVipFrame: widget.isVip,
-                    frameAsset: NobleBadgeHelper.getFrameAsset(widget.nobleTitle),
+                    frameAsset: NobleBadgeHelper.getFrameAsset(
+                      widget.nobleTitle ?? (widget.isVip ? 'Baron' : (widget.isHost ? 'Host' : (widget.isMod ? 'Admin' : null))),
+                    ),
                   ),
                 ),
                 Flexible(
@@ -267,13 +269,13 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                             ),
 
                           // Real Noble/SVIP/Role PNG Badge Asset
-                          if (NobleBadgeHelper.getBadgeAsset(widget.nobleTitle) != null)
+                          if (NobleBadgeHelper.getBadgeAsset(widget.nobleTitle ?? (widget.isVip ? 'Baron' : (widget.isHost ? 'Host' : (widget.isMod ? 'Admin' : null)))) != null)
                             WidgetSpan(
                               alignment: PlaceholderAlignment.middle,
                               child: Padding(
                                 padding: const EdgeInsets.only(right: 4),
                                 child: Image.asset(
-                                  NobleBadgeHelper.getBadgeAsset(widget.nobleTitle)!,
+                                  NobleBadgeHelper.getBadgeAsset(widget.nobleTitle ?? (widget.isVip ? 'Baron' : (widget.isHost ? 'Host' : (widget.isMod ? 'Admin' : null))))!,
                                   height: 16,
                                   fit: BoxFit.contain,
                                   errorBuilder: (_, _, _) => const SizedBox.shrink(),
