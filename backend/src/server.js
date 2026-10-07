@@ -11,6 +11,11 @@ import {
   stopAutoRestoreScheduler,
 } from './jobs/autoRestore.job.js';
 
+// Ensure BigInt values serialize cleanly to JSON across all API endpoints
+BigInt.prototype.toJSON = function () {
+  return Number(this);
+};
+
 let server;
 let io;
 
