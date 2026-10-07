@@ -19,11 +19,11 @@ export async function getApprovals(params = {}) {
       category: item.module?.toUpperCase() || 'WALLET',
       type: item.actionType || 'APPROVAL_REQUEST',
       title: `${item.actionType || 'Action'} for ${payload.targetUserId || payload.targetName || item.module || 'Entity'}`,
-      targetName: payload.targetUserId || payload.targetName || item.module,
+      targetName: payload.targetUserId || payload.targetName || item.module || 'Entity',
       targetId: payload.targetUserId || item.id,
       amount: amountVal ? Number(amountVal) : null,
       currency: payload.asset || (payload.coins ? 'Coins' : payload.diamonds ? 'Diamonds' : 'USD'),
-      status: item.status || 'PENDING',
+      status: item.status ? String(item.status).toUpperCase() : 'PENDING',
       completedSteps: item.status === 'APPROVED' ? 1 : 0,
       requiredSteps: 1,
       approvalModel: 'SINGLE',
@@ -85,7 +85,8 @@ export async function createApprovalRequest(requestData) {
 }
 
 export async function processApprovalStep(id, actionType, operatorName, operatorRole, note = '') {
-  if (actionType === 'APPROVE') {
+  const action = String(actionType || '').toUpperCase();
+  if (action === 'APPROVE') {
     const res = await apiClient.post(`/v1/admin/approvals/${id}/approve`);
     await logEvent(
       'APPROVAL_APPROVE',
@@ -93,8 +94,8 @@ export async function processApprovalStep(id, actionType, operatorName, operator
       id,
       `${operatorName} (${operatorRole}) approved request ${id}`
     );
-    return res.data;
-  } else if (actionType === 'REJECT') {
+    return res.data?.data || res.data;
+  } else if (action === 'REJECT') {
     const res = await apiClient.post(`/v1/admin/approvals/${id}/reject`, {
       reason: note || 'Rejected by administrator',
     });
@@ -102,9 +103,9 @@ export async function processApprovalStep(id, actionType, operatorName, operator
       'APPROVAL_REJECT',
       'approval',
       id,
-      `${operatorName} (${operatorRole}) rejected request ${id}: ${note}`
+      `${operatorName} (${operatorRole}) rejected request ${id}: ${note || 'Rejected'}`
     );
-    return res.data;
+    return res.data?.data || res.data;
   }
 
   return { success: true };

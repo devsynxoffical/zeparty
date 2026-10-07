@@ -2,6 +2,7 @@ import http from 'http';
 import app from './app.js';
 import env from './config/env.js';
 import prisma from './config/database.js';
+import { ensureDatabaseSchema } from './config/schemaMigrator.js';
 import redisClient from './config/redis.js';
 import { initSocketServer } from './socket/index.js';
 import {
@@ -23,24 +24,7 @@ async function connectDatabaseWithRetry(maxRetries = 20, delayMs = 3000) {
       }
       await prisma.$connect();
       // Ensure required schema columns and enum values are present idempotently
-      await prisma.$executeRawUnsafe(`
-        DO $$
-        BEGIN
-          IF NOT EXISTS (
-            SELECT 1 FROM pg_type t 
-            JOIN pg_enum e ON t.oid = e.enumtypid 
-            WHERE t.typname = 'UserStatus' AND e.enumlabel = 'DELETED'
-          ) THEN
-            ALTER TYPE "UserStatus" ADD VALUE 'DELETED';
-          END IF;
-        END$$;
-      `).catch(() => {});
-      await prisma.$executeRawUnsafe(`
-        ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "scheduledPermanentDeletionAt" TIMESTAMP(3);
-      `).catch(() => {});
-      await prisma.$executeRawUnsafe(`
-        ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "deletionReason" TEXT;
-      `).catch(() => {});
+      await ensureDatabaseSchema(prisma);
       console.log('✅ Database connected and verified successfully');
       return;
     } catch (err) {

@@ -114,14 +114,14 @@ export function ApprovalsPage() {
   const filteredApprovals = useMemo(() => {
     return approvals.filter((item) => {
       const matchCat = categoryFilter === 'ALL' || item.category === categoryFilter;
-      const matchStatus = statusFilter === 'ALL' || item.status === statusFilter;
-      const q = search.toLowerCase();
+      const matchStatus = statusFilter === 'ALL' || (item.status || '').toUpperCase() === statusFilter;
+      const q = (search || '').toLowerCase().trim();
       const matchSearch =
         !q ||
-        item.id.toLowerCase().includes(q) ||
-        item.title.toLowerCase().includes(q) ||
-        item.requesterName.toLowerCase().includes(q) ||
-        item.targetName.toLowerCase().includes(q);
+        (item.id ? String(item.id).toLowerCase().includes(q) : false) ||
+        (item.title ? String(item.title).toLowerCase().includes(q) : false) ||
+        (item.requesterName ? String(item.requesterName).toLowerCase().includes(q) : false) ||
+        (item.targetName ? String(item.targetName).toLowerCase().includes(q) : false);
       return matchCat && matchStatus && matchSearch;
     });
   }, [approvals, categoryFilter, statusFilter, search]);
@@ -131,11 +131,14 @@ export function ApprovalsPage() {
     setIsProcessing(true);
     setErrorMessage('');
 
+    const req = actionModal.request;
+    const actionUpper = String(actionType || '').toUpperCase();
+    const note = decisionNote.trim();
+
     try {
-      const req = actionModal.request;
       // 4-Eyes Check: Ensure same operator doesn't sign off both steps
       if (
-        actionType === 'APPROVE' &&
+        actionUpper === 'APPROVE' &&
         req.approvalModel === 'FOUR_EYES' &&
         req.completedSteps === 1 &&
         req.reviewer1 === currentAdminName
@@ -143,33 +146,85 @@ export function ApprovalsPage() {
         throw new Error('Four-Eyes Enforcement: The second reviewer must be a different administrator.');
       }
 
-      const updated = await processApprovalStep(
+      await processApprovalStep(
         req.id,
-        actionType,
+        actionUpper,
         currentAdminName,
         currentAdminRole,
-        decisionNote.trim()
+        note
       );
 
-      setApprovals((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+      const newStatus = actionUpper === 'APPROVE' ? 'APPROVED' : actionUpper === 'REJECT' ? 'REJECTED' : actionUpper;
 
-      if (selectedRequest?.id === updated.id) {
-        setSelectedRequest(updated);
+      // Optimistically update approvals state while preserving complete item structure
+      setApprovals((prev) =>
+        prev.map((a) => {
+          if (a.id === req.id) {
+            return {
+              ...a,
+              status: newStatus,
+              completedSteps: actionUpper === 'APPROVE' ? a.requiredSteps : a.completedSteps,
+              rejectionReason: actionUpper === 'REJECT' ? (note || 'Rejected by administrator') : a.rejectionReason,
+              approver: currentAdminName,
+              updatedAt: new Date().toISOString(),
+              history: [
+                ...(a.history || []),
+                {
+                  step: (a.history?.length || 0) + 1,
+                  action: newStatus,
+                  operator: currentAdminName,
+                  role: currentAdminRole,
+                  timestamp: new Date().toISOString(),
+                  note: note || (actionUpper === 'APPROVE' ? 'Request approved.' : 'Request rejected.'),
+                },
+              ],
+            };
+          }
+          return a;
+        })
+      );
+
+      if (selectedRequest?.id === req.id) {
+        setSelectedRequest((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: newStatus,
+                rejectionReason: actionUpper === 'REJECT' ? (note || 'Rejected by administrator') : prev.rejectionReason,
+                approver: currentAdminName,
+                updatedAt: new Date().toISOString(),
+                history: [
+                  ...(prev.history || []),
+                  {
+                    step: (prev.history?.length || 0) + 1,
+                    action: newStatus,
+                    operator: currentAdminName,
+                    role: currentAdminRole,
+                    timestamp: new Date().toISOString(),
+                    note: note || (actionUpper === 'APPROVE' ? 'Request approved.' : 'Request rejected.'),
+                  },
+                ],
+              }
+            : null
+        );
       }
 
       await logAdminAction({
-        action: `APPROVAL_${actionType}`,
+        action: `APPROVAL_${actionUpper}`,
         module: 'Approvals',
         targetType: 'approval_request',
         targetId: req.id,
-        targetName: req.title,
-        reason: decisionNote || `Performed ${actionType} on ${req.id}`,
-        riskLevel: req.riskLevel,
+        targetName: req.title || req.id,
+        reason: note || `Performed ${actionUpper} on ${req.id}`,
+        riskLevel: req.riskLevel || 'LOW',
       });
 
-      showNotification(`Action "${actionType}" successfully executed for ${req.id}.`);
+      showNotification(`Action "${actionUpper}" successfully executed for ${req.id}.`);
       setActionModal({ open: false, type: null, request: null });
       setDecisionNote('');
+
+      // Refresh in background from backend
+      loadApprovals().catch((loadErr) => console.warn('Background reload failed:', loadErr));
     } catch (err) {
       showNotification(err.message || 'Operation failed.', true);
     } finally {
@@ -263,8 +318,8 @@ export function ApprovalsPage() {
           </div>
           <div className="w-24 bg-slate-800 rounded-full h-1.5 mt-1 overflow-hidden">
             <div
-              className={`h-full ${row.status === 'REJECTED' ? 'bg-red-500' : 'bg-gold-500'}`}
-              style={{ width: `${(row.completedSteps / row.requiredSteps) * 100}%` }}
+              className={`h-full ${(row.status || '').toUpperCase() === 'REJECTED' ? 'bg-red-500' : 'bg-gold-500'}`}
+              style={{ width: `${((row.completedSteps || 0) / (row.requiredSteps || 1)) * 100}%` }}
             />
           </div>
         </div>
@@ -273,7 +328,7 @@ export function ApprovalsPage() {
     {
       key: 'status',
       header: 'Status',
-      render: (row) => <StatusBadge status={row.status.toLowerCase()} />,
+      render: (row) => <StatusBadge status={row?.status} />,
     },
     {
       key: 'actions',
@@ -288,7 +343,7 @@ export function ApprovalsPage() {
           >
             Review
           </Button>
-          {(row.status === 'PENDING' || row.status === 'UNDER_REVIEW') && (
+          {((row?.status || '').toUpperCase() === 'PENDING' || (row?.status || '').toUpperCase() === 'UNDER_REVIEW') && (
             <>
               <button
                 title="Quick Approve"
@@ -354,25 +409,25 @@ export function ApprovalsPage() {
         <Card className="p-4 bg-slate-900/60 border-slate-800">
           <p className="text-xs text-slate-400">Total Pending Review</p>
           <p className="text-2xl font-bold text-gold-400 mt-1">
-            {approvals.filter((a) => a.status === 'PENDING' || a.status === 'UNDER_REVIEW').length}
+            {approvals.filter((a) => (a.status || '').toUpperCase() === 'PENDING' || (a.status || '').toUpperCase() === 'UNDER_REVIEW').length}
           </p>
         </Card>
         <Card className="p-4 bg-slate-900/60 border-slate-800">
           <p className="text-xs text-slate-400">Four-Eyes (2-Admin) Queue</p>
           <p className="text-2xl font-bold text-indigo-400 mt-1">
-            {approvals.filter((a) => a.approvalModel === 'FOUR_EYES' && a.status !== 'APPROVED').length}
+            {approvals.filter((a) => a.approvalModel === 'FOUR_EYES' && (a.status || '').toUpperCase() !== 'APPROVED').length}
           </p>
         </Card>
         <Card className="p-4 bg-slate-900/60 border-slate-800">
           <p className="text-xs text-slate-400">Approved This Week</p>
           <p className="text-2xl font-bold text-emerald-400 mt-1">
-            {approvals.filter((a) => a.status === 'APPROVED' || a.status === 'COMPLETED').length}
+            {approvals.filter((a) => (a.status || '').toUpperCase() === 'APPROVED' || (a.status || '').toUpperCase() === 'COMPLETED').length}
           </p>
         </Card>
         <Card className="p-4 bg-slate-900/60 border-slate-800">
           <p className="text-xs text-slate-400">Rejected / Escalated</p>
           <p className="text-2xl font-bold text-red-400 mt-1">
-            {approvals.filter((a) => a.status === 'REJECTED' || a.status === 'ESCALATED').length}
+            {approvals.filter((a) => (a.status || '').toUpperCase() === 'REJECTED' || (a.status || '').toUpperCase() === 'ESCALATED').length}
           </p>
         </Card>
       </div>
@@ -450,7 +505,7 @@ export function ApprovalsPage() {
               </div>
               <div className="flex items-center gap-2">
                 {getRiskBadge(selectedRequest.riskLevel)}
-                <StatusBadge status={selectedRequest.status.toLowerCase()} />
+                <StatusBadge status={selectedRequest?.status} />
               </div>
             </div>
 
@@ -555,7 +610,7 @@ export function ApprovalsPage() {
                 Close
               </Button>
 
-              {(selectedRequest.status === 'PENDING' || selectedRequest.status === 'UNDER_REVIEW') && (
+              {((selectedRequest?.status || '').toUpperCase() === 'PENDING' || (selectedRequest?.status || '').toUpperCase() === 'UNDER_REVIEW') && (
                 <div className="flex items-center gap-2">
                   <Button
                     variant="outline"

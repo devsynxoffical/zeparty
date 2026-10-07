@@ -22,7 +22,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "npx prisma migrate dev",
     "prisma:seed": "npx prisma db seed",
-    "prisma:studio": "npx prisma studio"
+    "prisma:studio": "npx prisma studio",
+    "db:migrate:pk": "node scripts/migrate-pk-schema.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

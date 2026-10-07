@@ -32,8 +32,11 @@ const statusConfig = {
   active: { label: 'Active', variant: 'success' },
   inactive: { label: 'Inactive', variant: 'muted' },
   pending: { label: 'Pending', variant: 'warning' },
+  under_review: { label: 'Under Review', variant: 'warning' },
   approved: { label: 'Approved', variant: 'success' },
   rejected: { label: 'Rejected', variant: 'danger' },
+  held: { label: 'Held', variant: 'warning' },
+  escalated: { label: 'Escalated', variant: 'danger' },
   suspended: { label: 'Suspended', variant: 'warning' },
   banned: { label: 'Banned', variant: 'danger' },
   completed: { label: 'Completed', variant: 'info' },
@@ -41,7 +44,12 @@ const statusConfig = {
 };
 
 export function StatusBadge({ status, className = '' }) {
-  const config = statusConfig[status] || { label: status, variant: 'default' };
+  const rawStatus = typeof status === 'string' ? status : String(status || '');
+  const normalized = rawStatus.toLowerCase().trim();
+  const config = statusConfig[normalized] || {
+    label: rawStatus ? rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1).toLowerCase().replace(/_/g, ' ') : 'Unknown',
+    variant: 'default',
+  };
   return (
     <Badge variant={config.variant} className={className}>
       <span className="mr-1 h-1.5 w-1.5 rounded-full bg-current inline-block" aria-hidden="true" />
@@ -49,3 +57,4 @@ export function StatusBadge({ status, className = '' }) {
     </Badge>
   );
 }
+
