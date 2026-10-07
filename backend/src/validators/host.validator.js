@@ -1,28 +1,35 @@
 import { z } from 'zod';
 
 export const applyHostSchema = z.object({
-  hostType: z.enum(['LIVE_HOST', 'AUDIO_HOST', 'BOTH'], {
+  hostType: z.enum(['LIVE_HOST', 'AUDIO_HOST', 'BOTH', 'live_host', 'audio_host', 'both'], {
     required_error: 'Host type is required (LIVE_HOST, AUDIO_HOST, BOTH)',
-  }),
-  idCardFrontUrl: z.string().url('idCardFrontUrl must be a valid URL'),
-  idCardBackUrl: z.string().url('idCardBackUrl must be a valid URL'),
-  videoSampleUrl: z.string().url('videoSampleUrl must be a valid URL').optional().nullable(),
+  }).transform((val) => val.toUpperCase()),
+  idCardFrontUrl: z.string().min(1, 'idCardFrontUrl is required'),
+  idCardBackUrl: z.string().min(1, 'idCardBackUrl is required'),
+  videoSampleUrl: z.string().optional().nullable(),
 });
 
 export const reviewHostApplicationSchema = z.object({
-  status: z.enum(['ACTIVE', 'REJECTED'], {
-    required_error: 'Status must be ACTIVE or REJECTED',
+  status: z.enum(['ACTIVE', 'APPROVED', 'REJECTED', 'active', 'approved', 'rejected'], {
+    required_error: 'Status must be ACTIVE/APPROVED or REJECTED',
+  }).transform((val) => {
+    const upper = val.toUpperCase();
+    return upper === 'APPROVED' ? 'ACTIVE' : upper;
   }),
   rejectionReason: z.string().max(500).optional().nullable(),
-}).refine(
+  reason: z.string().max(500).optional().nullable(),
+}).transform((data) => ({
+  status: data.status,
+  rejectionReason: data.rejectionReason || data.reason || null,
+})).refine(
   (data) => {
-    if (data.status === 'REJECTED' && (!data.rejectionReason || data.rejectionReason.trim().length < 3)) {
+    if (data.status === 'REJECTED' && (!data.rejectionReason || data.rejectionReason.trim().length < 2)) {
       return false;
     }
     return true;
   },
   {
-    message: 'rejectionReason is required with at least 3 characters when status is REJECTED',
+    message: 'rejectionReason is required when status is REJECTED',
     path: ['rejectionReason'],
   }
 );

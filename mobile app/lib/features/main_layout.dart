@@ -13,9 +13,10 @@ import 'live/create_live_room_screen.dart';
 import 'party_room/create_party_screen.dart';
 import 'pk_battle/pk_battle_screen.dart';
 import 'pk_battle/pk_match_screen.dart';
-import 'messages/inbox_screen.dart';
 import 'profile/profile_screen.dart';
 import 'auth/under_age_screen.dart';
+import 'live_host/apply_live_host_screen.dart';
+import '../providers/live_host_provider.dart';
 import '../providers/auth_provider.dart';
 
 class MainLayout extends StatefulWidget {
@@ -152,12 +153,20 @@ class _MainLayoutState extends State<MainLayout> {
                           context,
                           MaterialPageRoute(builder: (_) => const UnderAgeScreen()),
                         );
-                      } else {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const CreateLiveRoomScreen()),
-                        );
+                        return;
                       }
+                      
+                      final liveHostProv = Provider.of<LiveHostProvider>(context, listen: false);
+                      final isHost = currentUser.isHost || currentUser.hasLiveHostAccess || (liveHostProv.activeLiveHost?.status == 'Active');
+                      if (!isHost) {
+                        _showHostRequiredSheet(context, hostType: 'LIVE_HOST', featureName: 'Live Video Broadcasting');
+                        return;
+                      }
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const CreateLiveRoomScreen()),
+                      );
                     },
                   ),
                   _buildCreateOption(
@@ -172,14 +181,22 @@ class _MainLayoutState extends State<MainLayout> {
                           context,
                           MaterialPageRoute(builder: (_) => const UnderAgeScreen()),
                         );
-                      } else {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const CreatePartyScreen(),
-                          ),
-                        );
+                        return;
                       }
+
+                      final liveHostProv = Provider.of<LiveHostProvider>(context, listen: false);
+                      final isHost = currentUser.isHost || currentUser.hasLiveHostAccess || (liveHostProv.activeLiveHost?.status == 'Active');
+                      if (!isHost) {
+                        _showHostRequiredSheet(context, hostType: 'AUDIO_HOST', featureName: 'Audio Party Rooms');
+                        return;
+                      }
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const CreatePartyScreen(),
+                        ),
+                      );
                     },
                   ),
                   _buildCreateOption(
@@ -194,14 +211,22 @@ class _MainLayoutState extends State<MainLayout> {
                           context,
                           MaterialPageRoute(builder: (_) => const UnderAgeScreen()),
                         );
-                      } else {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const PKBattleScreen(),
-                          ),
-                        );
+                        return;
                       }
+
+                      final liveHostProv = Provider.of<LiveHostProvider>(context, listen: false);
+                      final isHost = currentUser.isHost || currentUser.hasLiveHostAccess || (liveHostProv.activeLiveHost?.status == 'Active');
+                      if (!isHost) {
+                        _showHostRequiredSheet(context, hostType: 'LIVE_HOST', featureName: 'PK Battles');
+                        return;
+                      }
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const PKBattleScreen(),
+                        ),
+                      );
                     },
                   ),
                 ],
@@ -211,6 +236,94 @@ class _MainLayoutState extends State<MainLayout> {
           ),
         );
       },
+    );
+  }
+
+  void _showHostRequiredSheet(BuildContext context, {required String hostType, required String featureName}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF181528) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetCtx) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)]),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.verified_user_rounded, color: Colors.white, size: 36),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Host Verification Required',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.getTextPrimary(isDark),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'To access $featureName, you must be a registered & verified ZeParty Host. Apply once to unlock streaming, audio lounges, and PK battles.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.getTextSecondary(isDark),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.getPrimary(isDark),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                onPressed: () {
+                  Navigator.pop(sheetCtx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ApplyLiveHostScreen(initialHostType: hostType),
+                    ),
+                  );
+                },
+                child: const Text(
+                  'Apply to Become a Host',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(sheetCtx),
+              child: Text(
+                'Cancel',
+                style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

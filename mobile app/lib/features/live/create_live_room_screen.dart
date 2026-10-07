@@ -424,6 +424,18 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                             isPrivate: _isPrivate,
                           );
                         } catch (e) {
+                          final errStr = e.toString();
+                          if (errStr.contains('HOST_APPROVAL_REQUIRED') || errStr.contains('approved active hosts')) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('⚠️ Host approval required. Please submit a Host Application in your profile to broadcast live.'),
+                                  backgroundColor: Colors.redAccent,
+                                ),
+                              );
+                            }
+                            return;
+                          }
                           debugPrint('[CreateLiveRoom] Backend createRoom error: $e, using local fallback');
                           roomToJoin = LiveRoomModel(
                             id: 'live_${DateTime.now().millisecondsSinceEpoch}',

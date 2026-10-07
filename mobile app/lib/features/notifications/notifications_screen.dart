@@ -218,8 +218,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final t = type.toUpperCase();
     final c = (category ?? '').toLowerCase();
 
-    if (c == 'gift') return Icons.card_giftcard_rounded;
     if (c == 'follower') return Icons.person_add_rounded;
+    if (c == 'post' || c == 'like') return Icons.favorite_rounded;
+    if (c == 'comment') return Icons.chat_bubble_rounded;
+    if (c == 'gift' || t == 'GIFT') return Icons.card_giftcard_rounded;
     if (c == 'recharge' || t == 'FINANCE') return Icons.account_balance_wallet_rounded;
     if (c == 'invitation' || t == 'LIVE') return Icons.live_tv_rounded;
     if (t == 'MODERATION') return Icons.shield_outlined;
@@ -227,16 +229,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (t == 'PK') return Icons.sports_kabaddi_rounded;
     if (t == 'GAMES') return Icons.videogame_asset_rounded;
     if (t == 'EVENTS') return Icons.celebration_rounded;
+    if (t == 'SYSTEM') return Icons.verified_user_rounded;
 
     return Icons.notifications_rounded;
   }
 
   Color _getCategoryColor(String type, String? category) {
     final t = type.toUpperCase();
+    final c = (category ?? '').toLowerCase();
+
+    if (c == 'follower') return const Color(0xFF8B5CF6);
+    if (c == 'post' || c == 'like') return const Color(0xFFF43F5E);
+    if (c == 'comment') return const Color(0xFF0EA5E9);
     if (t == 'MODERATION') return Colors.redAccent;
     if (t == 'FINANCE') return Colors.amber;
     if (t == 'LIVE') return Colors.pinkAccent;
     if (t == 'SUPPORT') return Colors.blueAccent;
+    if (t == 'SYSTEM') return const Color(0xFF10B981);
     return AppColors.primary;
   }
 }

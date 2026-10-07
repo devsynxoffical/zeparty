@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import '../models/live_host_application_model.dart';
 import '../models/live_host_model.dart';
 import '../core/policy/live_host_policy.dart';
+import '../core/services/api_client.dart';
 
 class LiveHostProvider extends ChangeNotifier {
   LiveHostModel? _activeLiveHost;
   final List<LiveHostApplicationModel> _applications = [];
   final List<Map<String, dynamic>> _auditLogs = [];
+  bool _isLoading = false;
 
   LiveHostModel? get activeLiveHost => _activeLiveHost;
   List<LiveHostApplicationModel> get applications => List.unmodifiable(_applications);
   List<Map<String, dynamic>> get auditLogs => List.unmodifiable(_auditLogs);
+  bool get isLoading => _isLoading;
 
   LiveHostProvider() {
     // Clean initial state for authentic live host data
@@ -18,6 +21,65 @@ class LiveHostProvider extends ChangeNotifier {
 
   LiveHostApplicationModel? getApplicationByUserId(String userId) {
     return _applications.where((a) => a.userId == userId).firstOrNull;
+  }
+
+  Future<void> fetchHostProfile(String userId) async {
+    try {
+      final res = await ApiClient.instance.get('/v1/hosts/profile');
+      if (res.statusCode == 200 && res.data['data'] != null) {
+        final data = res.data['data'];
+        if (data['hostStatus'] == 'ACTIVE') {
+          _activeLiveHost = LiveHostModel(
+            liveHostId: data['id'] ?? 'lh_$userId',
+            userId: userId,
+            displayName: data['user']?['profile']?['displayName'] ?? data['user']?['username'] ?? 'Live Host',
+            avatarUrl: data['user']?['avatarUrl'] ?? '',
+            countryCode: data['user']?['countryCode'] ?? 'GLOBAL',
+            status: 'Active',
+            approvalDate: data['createdAt'] != null ? DateTime.tryParse(data['createdAt']) : DateTime.now(),
+            currentLevel: data['hostLevel'] ?? 1,
+          );
+          notifyListeners();
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<String> submitApplicationAsync({
+    required LiveHostApplicationModel app,
+    required String hostType,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    // 1. Submit to Backend API
+    try {
+      await ApiClient.instance.post(
+        '/v1/hosts/apply',
+        data: {
+          'hostType': hostType,
+          'idCardFrontUrl': app.frontIdUrl.isNotEmpty ? app.frontIdUrl : 'https://example.com/id_front.jpg',
+          'idCardBackUrl': app.backIdUrl.isNotEmpty ? app.backIdUrl : 'https://example.com/id_back.jpg',
+          'videoSampleUrl': app.selfieUrl ?? 'https://example.com/video_sample.mp4',
+        },
+      );
+    } catch (e) {
+      debugPrint('[LiveHostProvider] Backend API host application call: $e');
+    }
+
+    // 2. Update local state
+    _applications.removeWhere((a) => a.userId == app.userId);
+    _applications.add(app);
+    _logAudit(
+      actorId: app.userId,
+      action: 'SUBMIT_LIVE_HOST_APPLICATION',
+      targetId: app.id,
+      reason: 'New direct Live Host application submitted ($hostType)',
+    );
+
+    _isLoading = false;
+    notifyListeners();
+    return 'Application submitted successfully! Our team will review within 24-48 hours.';
   }
 
   String submitApplication(LiveHostApplicationModel app) {

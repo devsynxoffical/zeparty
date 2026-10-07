@@ -1,6 +1,8 @@
 import prisma from '../config/database.js';
 import hostRepository from '../repositories/host.repository.js';
 import policyService from './policy.service.js';
+import * as notificationService from './notification.service.js';
+import emailService from './email.service.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
@@ -85,7 +87,16 @@ export async function reviewHostApplication(
     throw error;
   }
 
-  if (status === 'ACTIVE') {
+  // Fetch target user for notifications
+  const targetUser = await db.user.findUnique({
+    where: { id: application.userId },
+    include: { profile: true },
+  });
+
+  const username = targetUser?.username || 'Host';
+  const userEmail = targetUser?.email;
+
+  if (status === 'ACTIVE' || status === 'APPROVED') {
     // Atomic approval & host profile provisioning
     const result = await db.$transaction(async (tx) => {
       const updatedApp = await hostRepository.updateApplication(
@@ -133,6 +144,47 @@ export async function reviewHostApplication(
       ipAddress,
     }, db);
 
+    // 1. Dispatch In-App Notification
+    try {
+      const readableType =
+        application.hostType === 'BOTH'
+          ? 'Live Video & Social Audio'
+          : application.hostType === 'AUDIO_HOST'
+          ? 'Social Audio Party'
+          : 'Live Video';
+
+      await notificationService.sendNotification({
+        recipientId: application.userId,
+        title: 'Host Application Approved! 🎉',
+        body: `Congratulations @${username}! Your application for ${readableType} Host has been approved. You can now start broadcasting, hosting parties, and competing in PK battles.`,
+        type: 'SYSTEM',
+        category: 'System',
+        data: {
+          hostType: application.hostType,
+          hostProfileId: result.hostProfile.id,
+          status: 'ACTIVE',
+          action: 'HOST_APPROVED',
+        },
+        sourceType: 'HOST_APPLICATION',
+        sourceId: applicationId,
+      }, db);
+    } catch (notifErr) {
+      console.warn('[HostService] In-app notification delivery error:', notifErr.message);
+    }
+
+    // 2. Dispatch Gmail / Email Notification
+    try {
+      if (userEmail) {
+        await emailService.sendHostApprovalEmail({
+          userEmail,
+          username,
+          hostType: application.hostType,
+        });
+      }
+    } catch (emailErr) {
+      console.warn('[HostService] Email dispatch error:', emailErr.message);
+    }
+
     return result;
   } else if (status === 'REJECTED') {
     const updatedApp = await hostRepository.updateApplication(
@@ -157,6 +209,41 @@ export async function reviewHostApplication(
       reason: rejectionReason,
       ipAddress,
     }, db);
+
+    // 1. Dispatch In-App Notification
+    try {
+      await notificationService.sendNotification({
+        recipientId: application.userId,
+        title: 'Host Application Update',
+        body: `Your host verification application was not approved. Reason: ${rejectionReason || 'Did not meet compliance criteria.'}`,
+        type: 'SYSTEM',
+        category: 'System',
+        data: {
+          hostType: application.hostType,
+          status: 'REJECTED',
+          rejectionReason,
+          action: 'HOST_REJECTED',
+        },
+        sourceType: 'HOST_APPLICATION',
+        sourceId: applicationId,
+      }, db);
+    } catch (notifErr) {
+      console.warn('[HostService] In-app notification delivery error:', notifErr.message);
+    }
+
+    // 2. Dispatch Gmail / Email Notification
+    try {
+      if (userEmail) {
+        await emailService.sendHostRejectionEmail({
+          userEmail,
+          username,
+          hostType: application.hostType,
+          reason: rejectionReason,
+        });
+      }
+    } catch (emailErr) {
+      console.warn('[HostService] Email dispatch error:', emailErr.message);
+    }
 
     return { application: updatedApp };
   } else {

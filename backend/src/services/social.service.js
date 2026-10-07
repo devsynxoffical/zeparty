@@ -5,6 +5,7 @@ import userRepository from '../repositories/user.repository.js';
 import storageService from './storage.service.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
+import * as notificationService from './notification.service.js';
 
 /**
  * Social & Engagement Service
@@ -361,6 +362,30 @@ export async function likePost(postId, userId, db = prisma) {
     socketEmitter.broadcastGlobal(SOCKET_EVENTS.POST_LIKED, payload);
     socketEmitter.emitToUser(post.userId, SOCKET_EVENTS.POST_LIKED, payload);
 
+    // Dispatch In-App Notification to Post Author (if not self-like)
+    if (post.userId && post.userId !== userId) {
+      try {
+        const liker = await userRepository.findUserById(userId, db);
+        const likerName = liker?.profile?.displayName || liker?.username || 'Someone';
+        await notificationService.sendNotification({
+          recipientId: post.userId,
+          title: 'New Like',
+          body: `@${liker?.username || likerName} liked your post.`,
+          type: 'SOCIAL',
+          category: 'Post',
+          data: {
+            postId,
+            likedByUserId: userId,
+            action: 'POST_LIKED',
+          },
+          sourceType: 'POST',
+          sourceId: postId,
+        }, db);
+      } catch (notifErr) {
+        console.warn('[SocialService] Like notification dispatch error:', notifErr.message);
+      }
+    }
+
     return { success: true, alreadyLiked: false, likesCount: updatedPost.likesCount };
   } catch (err) {
     if (err.code === 'P2002') {
@@ -478,6 +503,31 @@ export async function createComment(
 
   socketEmitter.broadcastGlobal(SOCKET_EVENTS.COMMENT_CREATED, commentPayload);
   socketEmitter.emitToUser(post.userId, SOCKET_EVENTS.COMMENT_CREATED, commentPayload);
+
+  // Dispatch In-App Notification to Post Author (if not self-comment)
+  if (post.userId && post.userId !== userId) {
+    try {
+      const commenterName = comment.user?.profile?.displayName || comment.user?.username || 'Someone';
+      const snippet = content.length > 50 ? `${content.substring(0, 47)}...` : content;
+      await notificationService.sendNotification({
+        recipientId: post.userId,
+        title: 'New Comment',
+        body: `@${comment.user?.username || commenterName} commented on your post: "${snippet}"`,
+        type: 'SOCIAL',
+        category: 'Post',
+        data: {
+          postId,
+          commentId: comment.id,
+          commenterId: userId,
+          action: 'POST_COMMENTED',
+        },
+        sourceType: 'POST',
+        sourceId: postId,
+      }, db);
+    } catch (notifErr) {
+      console.warn('[SocialService] Comment notification dispatch error:', notifErr.message);
+    }
+  }
 
   return comment;
 }
@@ -611,6 +661,27 @@ export async function followUser(followerId, followingId, db = prisma) {
       status,
       timestamp: new Date().toISOString(),
     });
+
+    // Dispatch In-App Notification to Followed User
+    try {
+      const follower = await userRepository.findUserById(followerId, db);
+      const followerName = follower?.profile?.displayName || follower?.username || 'Someone';
+      await notificationService.sendNotification({
+        recipientId: followingId,
+        title: 'New Follower',
+        body: `@${follower?.username || followerName} started following you.`,
+        type: 'SOCIAL',
+        category: 'Follower',
+        data: {
+          followerId,
+          action: 'FOLLOW',
+        },
+        sourceType: 'USER',
+        sourceId: followerId,
+      }, db);
+    } catch (notifErr) {
+      console.warn('[SocialService] Follow notification dispatch error:', notifErr.message);
+    }
 
     return { success: true, alreadyFollowing: false, status: follow.status };
   } catch (err) {

@@ -278,6 +278,19 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
         isPrivate: _privacy != 'Public',
       );
     } catch (e) {
+      final errStr = e.toString();
+      if (errStr.contains('HOST_APPROVAL_REQUIRED') || errStr.contains('approved active hosts')) {
+        if (mounted) {
+          setState(() => _isCreating = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('⚠️ Host approval required. Please submit a Host Application in your profile to host audio party rooms.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return;
+      }
       debugPrint('[CreateParty] Backend createRoom error: $e, using local fallback');
       roomToJoin = LiveRoomModel(
         id: isVideo ? 'live_${currentUser.id}' : 'party_${currentUser.id}',

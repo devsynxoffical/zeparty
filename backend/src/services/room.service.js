@@ -32,6 +32,38 @@ export async function createRoom(
   { userId, title, coverImageUrl, roomType, category, isPrivate, roomPin },
   db = prisma
 ) {
+  // 1. Enforce Host Verification Check
+  const hostProfile = await db.hostProfile.findUnique({
+    where: { userId },
+  });
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: { userType: true, status: true },
+  });
+
+  const isHostActive = hostProfile && hostProfile.hostStatus === 'ACTIVE';
+  const isUserHost = user && (user.userType === 'HOST' || user.userType === 'AGENCY_OWNER');
+
+  if (!isHostActive && !isUserHost) {
+    const error = new Error(
+      'Unauthorized: Only approved active hosts can start a live broadcast or party room. Please submit a host application.'
+    );
+    error.statusCode = 403;
+    error.code = 'HOST_APPROVAL_REQUIRED';
+    throw error;
+  }
+
+  // Check specific category permissions if hostProfile is present
+  if (hostProfile) {
+    if (roomType === 'LIVE_VIDEO' && hostProfile.hostType === 'AUDIO_HOST') {
+      const error = new Error('Your host account is approved for Social Audio only. Apply for Live Video Host permissions.');
+      error.statusCode = 403;
+      error.code = 'INVALID_HOST_TYPE_FOR_VIDEO';
+      throw error;
+    }
+  }
+
   // Automatically close any previous active LIVE rooms created by this user
   try {
     const existingRooms = await db.room.findMany({
