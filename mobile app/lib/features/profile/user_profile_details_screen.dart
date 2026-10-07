@@ -23,6 +23,8 @@ import '../../widgets/gift_dialog.dart';
 import '../../core/repositories/social_repository.dart';
 
 import '../svip/svip_center_screen.dart';
+import '../aristocracy/aristocracy_center_screen.dart';
+import '../store/store_screen.dart';
 import '../messages/chat_screen.dart';
 import '../settings/edit_profile_screen.dart';
 import 'level_center_screen.dart';
@@ -1646,6 +1648,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   // 5. DIAGRAM B: BADGE GALLERY
   Widget _buildBadgeGallery(bool isDark, SVIPProvider svip) {
     final primaryText = AppColors.getTextPrimary(isDark);
+    final nobleTitle = _user?.nobleTitle ?? 'Emperor Royalty';
+    final effectiveSvipLevel = svip.currentLevel > 0 ? svip.currentLevel : 10;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1655,46 +1659,12 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Badge Gallery', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: primaryText)),
+              Text('Badge & Role Gallery', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: primaryText)),
               GestureDetector(
-                onTap: () {
-                  showModalBottomSheet(
-                    context: context,
-                    backgroundColor: AppColors.getCard(isDark),
-                    shape: const RoundedRectangleBorder(
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                    ),
-                    builder: (ctx) => SafeArea(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('All Assigned Badges', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryText)),
-                            const SizedBox(height: 16),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                _buildBadgeChip('Admin 🛡️', Colors.redAccent),
-                                _buildBadgeChip('SVIP ${svip.currentLevel}', Colors.amber),
-                                _buildBadgeChip(_user!.nobleTitle ?? 'Aristocracy 👑', Colors.purpleAccent),
-                                _buildBadgeChip('Top Host 🔥', Colors.orangeAccent),
-                                _buildBadgeChip('Merchant 💎', Colors.lightBlueAccent),
-                                _buildBadgeChip('BD Manager 💼', Colors.tealAccent),
-                                _buildBadgeChip('Event Winner 🏆', AppColors.goldHighlight),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
+                onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
                 child: const Row(
                   children: [
-                    Text('12 Badges', style: TextStyle(fontSize: 13, color: Color(0xFF8C38FF), fontWeight: FontWeight.bold)),
+                    Text('View All (28)', style: TextStyle(fontSize: 13, color: Color(0xFF8C38FF), fontWeight: FontWeight.bold)),
                     SizedBox(width: 2),
                     Icon(Icons.chevron_right_rounded, size: 16, color: Color(0xFF8C38FF)),
                   ],
@@ -1704,34 +1674,107 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           ),
           const SizedBox(height: 10),
 
-          // Priority Sorted Badges Row: Official/Admin -> SVIP/Noble -> Role -> Achievement
+          // Priority Sorted Graphical Badges Row
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
             child: Row(
               children: [
-                if (_user!.role == UserRole.admin) _buildBadgeChip('Official Admin 🛡️', Colors.redAccent),
-                if (_user!.role == UserRole.admin) const SizedBox(width: 6),
+                // 1. Role Badges (Admin / Super Admin / Agency / CS)
+                if (_user!.role == UserRole.admin)
+                  _buildGraphicBadge(
+                    assetPath: 'assets/roles/super_admin_tag.png',
+                    fallbackLabel: 'Super Admin',
+                    fallbackColor: Colors.redAccent,
+                    onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
+                  )
+                else if (_user!.isAgency)
+                  _buildGraphicBadge(
+                    assetPath: 'assets/roles/agency_tag.png',
+                    fallbackLabel: 'Agency',
+                    fallbackColor: Colors.cyan,
+                    onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
+                  )
+                else if (_user!.isBd)
+                  _buildGraphicBadge(
+                    assetPath: 'assets/roles/bd_tag.png',
+                    fallbackLabel: 'BD Manager',
+                    fallbackColor: Colors.teal,
+                    onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
+                  ),
+                const SizedBox(width: 8),
 
-                _buildBadgeChip('SVIP ${svip.currentLevel}', Colors.amber),
-                const SizedBox(width: 6),
+                // 2. Noble Badge (Emperor / King / Duke / Marquis / Count / Viscount / Baron)
+                _buildGraphicBadge(
+                  assetPath: NobleBadgeHelper.getBadgeAsset(nobleTitle) ?? 'assets/nobles/emperor_badge.png',
+                  fallbackLabel: nobleTitle,
+                  fallbackColor: const Color(0xFFFFD700),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AristocracyCenterScreen())),
+                ),
+                const SizedBox(width: 8),
 
-                if (_user!.nobleTitle != null) ...[
-                  _buildBadgeChip(_user!.nobleTitle!, Colors.purpleAccent),
-                  const SizedBox(width: 6),
-                ],
+                // 3. SVIP Level Badge
+                _buildGraphicBadge(
+                  assetPath: 'assets/svip/svip${effectiveSvipLevel}_badge.png',
+                  fallbackLabel: 'SVIP $effectiveSvipLevel',
+                  fallbackColor: Colors.amber,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen())),
+                ),
+                const SizedBox(width: 8),
 
+                // 4. Host Tag
                 if (_user!.isHost) ...[
-                  _buildBadgeChip('Top Host 🔥', Colors.orangeAccent),
-                  const SizedBox(width: 6),
+                  _buildGraphicBadge(
+                    assetPath: 'assets/roles/host_tag.png',
+                    fallbackLabel: 'Official Host',
+                    fallbackColor: Colors.orangeAccent,
+                    onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
+                  ),
+                  const SizedBox(width: 8),
                 ],
 
+                // 5. Merchant / Coin Seller Tag
                 if (_user!.isSeller) ...[
-                  _buildBadgeChip('Coin Merchant 💎', Colors.cyanAccent),
-                  const SizedBox(width: 6),
+                  _buildGraphicBadge(
+                    assetPath: 'assets/roles/coins_saller_tag.png',
+                    fallbackLabel: 'Coin Seller',
+                    fallbackColor: Colors.lightGreenAccent,
+                    onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
+                  ),
+                  const SizedBox(width: 8),
                 ],
 
-                _buildBadgeChip('Veteran Collector', Colors.pinkAccent),
+                // 6. Top Fan Badge
+                _buildGraphicBadge(
+                  assetPath: 'assets/roles/top_fan_tag.png',
+                  fallbackLabel: 'Top Fan',
+                  fallbackColor: Colors.purpleAccent,
+                  onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
+                ),
+                const SizedBox(width: 8),
+
+                // 7. Store Link Pill
+                GestureDetector(
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StoreScreen())),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Color(0xFF8C38FF), Color(0xFF6C20DF)]),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(color: const Color(0xFF8C38FF).withValues(alpha: 0.4), blurRadius: 6),
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.storefront_rounded, color: Colors.white, size: 14),
+                        SizedBox(width: 4),
+                        Text('Get More', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1740,17 +1783,211 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     );
   }
 
-  Widget _buildBadgeChip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.5), width: 1),
+  Widget _buildGraphicBadge({
+    required String assetPath,
+    required String fallbackLabel,
+    required Color fallbackColor,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Image.asset(
+          assetPath,
+          height: 28,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: fallbackColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: fallbackColor.withValues(alpha: 0.5)),
+            ),
+            child: Text(
+              fallbackLabel,
+              style: TextStyle(color: fallbackColor, fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
       ),
-      child: Text(
-        label,
-        style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold),
+    );
+  }
+
+  void _showAllBadgesAndRolesSheet(BuildContext context, bool isDark, SVIPProvider svip) {
+    final primaryText = AppColors.getTextPrimary(isDark);
+    final secondaryText = AppColors.getTextSecondary(isDark);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.getCard(isDark),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.75,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (_, scrollController) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                child: ListView(
+                  controller: scrollController,
+                  physics: const BouncingScrollPhysics(),
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[600],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Nobles, Roles & SVIP Badges', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryText)),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // SECTION 1: NOBLE ARISTOCRACY
+                    _buildSectionHeader('Aristocracy Nobles 👑', () {
+                      Navigator.pop(ctx);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const AristocracyCenterScreen()));
+                    }),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        _buildBadgeModalItem('Emperor', 'assets/nobles/emperor_badge.png', 'assets/nobles/emperor_frame.png', const Color(0xFFFFD700)),
+                        _buildBadgeModalItem('King', 'assets/nobles/king_badge.png', 'assets/nobles/king_frame.png', const Color(0xFFD4AF37)),
+                        _buildBadgeModalItem('Duke', 'assets/nobles/duke_badge.png', 'assets/nobles/duke_frame.png', const Color(0xFF8E24AA)),
+                        _buildBadgeModalItem('Marquis', 'assets/nobles/marquis_badge.png', 'assets/nobles/marquis_frame.png', const Color(0xFFC2185B)),
+                        _buildBadgeModalItem('Count', 'assets/nobles/count_badge.png', 'assets/nobles/count_frame.png', const Color(0xFF1E88E5)),
+                        _buildBadgeModalItem('Viscount', 'assets/nobles/viscount_card.png', 'assets/nobles/viscount_frame.png', const Color(0xFFFB8C00)),
+                        _buildBadgeModalItem('Baron', 'assets/nobles/baron_badge.png', 'assets/nobles/baron_frame.png', const Color(0xFF78909C)),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // SECTION 2: OFFICIAL ROLES & HONORS
+                    _buildSectionHeader('Official Roles & Privileges 🛡️', null),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        _buildBadgeModalItem('Super Admin', 'assets/roles/super_admin_tag.png', 'assets/roles/super_admin_frame.png', Colors.redAccent),
+                        _buildBadgeModalItem('Admin', 'assets/roles/admin_badge.png', 'assets/roles/admin_frame.png', Colors.deepOrangeAccent),
+                        _buildBadgeModalItem('Agency Boss', 'assets/roles/agency_badge.png', 'assets/roles/agency_frame.png', Colors.cyan),
+                        _buildBadgeModalItem('BD Manager', 'assets/roles/bd_badge.png', 'assets/roles/bd_frame.png', Colors.teal),
+                        _buildBadgeModalItem('Game Master', 'assets/roles/game_master_badge.png', 'assets/roles/game_master_frame.png', Colors.amber),
+                        _buildBadgeModalItem('Official Host', 'assets/roles/host_badge.png', 'assets/roles/host_frame.png', Colors.orange),
+                        _buildBadgeModalItem('Coin Merchant', 'assets/roles/marchent_badge.png', 'assets/roles/marchent_frame.png', Colors.blue),
+                        _buildBadgeModalItem('Customer Service', 'assets/roles/cs_badge.png', 'assets/roles/cs_frame.png', Colors.lightGreen),
+                        _buildBadgeModalItem('CP Lover', 'assets/roles/lover_tag.png', 'assets/roles/lover_frame.png', Colors.pinkAccent),
+                        _buildBadgeModalItem('Top Fan', 'assets/roles/top_fan_badge.png', 'assets/roles/top_fan_frame.png', Colors.purpleAccent),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // SECTION 3: SVIP TIERS
+                    _buildSectionHeader('SVIP Royalty Tiers ⭐', () {
+                      Navigator.pop(ctx);
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen()));
+                    }),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        _buildBadgeModalItem('SVIP 15', 'assets/svip/svip15_badge.png', 'assets/svip/svip15_frame.png', const Color(0xFFFFD700)),
+                        _buildBadgeModalItem('SVIP 14', 'assets/svip/svip14_badge.png', 'assets/svip/svip14_frame.png', const Color(0xFF26C6DA)),
+                        _buildBadgeModalItem('SVIP 12', 'assets/svip/svip12_badge.png', 'assets/svip/svip12_frame.png', const Color(0xFF7E57C2)),
+                        _buildBadgeModalItem('SVIP 10', 'assets/svip/svip10_badge.png', 'assets/svip/svip10_frame.png', const Color(0xFFE91E63)),
+                        _buildBadgeModalItem('SVIP 8', 'assets/svip/svip8_badge.png', 'assets/svip/svip8_frame.png', const Color(0xFFFFA726)),
+                        _buildBadgeModalItem('SVIP 6', 'assets/svip/svip6_badge.png', 'assets/svip/svip6_frame.png', const Color(0xFFAB47BC)),
+                        _buildBadgeModalItem('SVIP 3', 'assets/svip/svip3_badge.png', null, const Color(0xFF42A5F5)),
+                        _buildBadgeModalItem('SVIP 1', 'assets/svip/svip1_badge.png', null, const Color(0xFF9E9E9E)),
+                      ],
+                    ),
+                    const SizedBox(height: 30),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSectionHeader(String title, VoidCallback? onMore) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFFEDEDF2)),
+        ),
+        if (onMore != null)
+          GestureDetector(
+            onTap: onMore,
+            child: const Row(
+              children: [
+                Text('Open Center', style: TextStyle(color: Color(0xFF8C38FF), fontSize: 12, fontWeight: FontWeight.bold)),
+                Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF8C38FF), size: 10),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildBadgeModalItem(String name, String badgeAsset, String? frameAsset, Color accentColor) {
+    return Container(
+      width: 100,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accentColor.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        children: [
+          Image.asset(
+            badgeAsset,
+            height: 36,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => Icon(Icons.shield_rounded, color: accentColor, size: 32),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            name,
+            style: TextStyle(color: accentColor, fontSize: 10.5, fontWeight: FontWeight.bold),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     );
   }

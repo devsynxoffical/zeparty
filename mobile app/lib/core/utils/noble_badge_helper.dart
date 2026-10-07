@@ -114,6 +114,102 @@ class NobleBadgeHelper {
     return null;
   }
 
+  static String? getTagAsset(String? title) {
+    if (title == null || title.isEmpty) return null;
+    final lower = title.toLowerCase().trim();
+
+    // SVIP Tags
+    if (lower.contains('svip')) {
+      for (int i = 15; i >= 1; i--) {
+        if (lower.contains('svip $i') || lower.contains('svip$i')) {
+          return 'assets/svip/svip${i}_tag.png';
+        }
+      }
+    }
+
+    // Role Tags
+    if (lower.contains('super') && lower.contains('admin')) return 'assets/roles/super_admin_tag.png';
+    if (lower.contains('admin')) return 'assets/roles/admin_tag.png';
+    if (lower.contains('agency')) return 'assets/roles/agency_tag.png';
+    if (lower.contains('assistant')) return 'assets/roles/assistant_tag.png';
+    if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/bd_tag.png';
+    if (lower.contains('boss')) return 'assets/roles/boss_tag.png';
+    if (lower.contains('ceo')) return 'assets/roles/ceo_tag.png';
+    if (lower.contains('coin') || lower.contains('seller')) return 'assets/roles/coins_saller_tag.png';
+    if (lower.contains('cs') || lower.contains('support')) return 'assets/roles/cs_tag.png';
+    if (lower.contains('game master') || lower.contains('master')) return 'assets/roles/game_master_tag.png';
+    if (lower.contains('host')) return 'assets/roles/host_tag.png';
+    if (lower.contains('lover')) return 'assets/roles/lover_tag.png';
+    if (lower.contains('manager')) return 'assets/roles/manager_tag.png';
+    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_tag.png';
+    if (lower.contains('official')) return 'assets/roles/official_tag.png';
+    if (lower.contains('top fan')) return 'assets/roles/top_fan_tag.png';
+
+    return null;
+  }
+
+  static String? getChatBubbleAsset(String? title) {
+    if (title == null || title.isEmpty) return null;
+    final lower = title.toLowerCase().trim();
+
+    // Noble Chat Bubbles
+    if (lower.contains('emperor')) return 'assets/nobles/emperor_chat_bubble.png';
+    if (lower.contains('duke')) return 'assets/nobles/duke_chat_bubble.png';
+    if (lower.contains('marquis')) return 'assets/nobles/marquis_chat_bubble.png';
+    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_chat_bubble.png';
+
+    // SVIP Chat Bubbles
+    if (lower.contains('svip')) {
+      for (int i = 15; i >= 6; i--) {
+        if (lower.contains('svip $i') || lower.contains('svip$i')) {
+          return 'assets/svip/svip${i}_chat_bubble.png';
+        }
+      }
+    }
+
+    return null;
+  }
+
+  static String? getCardAsset(String? title) {
+    if (title == null || title.isEmpty) return null;
+    final lower = title.toLowerCase().trim();
+
+    // Noble Cards
+    if (lower.contains('king')) return 'assets/nobles/king_card.png';
+    if (lower.contains('viscount')) return 'assets/nobles/viscount_card.png';
+
+    // SVIP Cards
+    if (lower.contains('svip')) {
+      for (int i = 15; i >= 3; i--) {
+        if (lower.contains('svip $i') || lower.contains('svip$i')) {
+          return 'assets/svip/svip${i}_card.png';
+        }
+      }
+    }
+
+    return null;
+  }
+
+  static String? getEntranceAsset(String? title) {
+    if (title == null || title.isEmpty) return null;
+    final lower = title.toLowerCase().trim();
+
+    // Noble Entrances
+    if (lower.contains('emperor')) return 'assets/nobles/emperor_entrance.png';
+    if (lower.contains('marquis')) return 'assets/nobles/marquis_entrance.png';
+
+    // SVIP Entrances
+    if (lower.contains('svip')) {
+      for (int i = 15; i >= 6; i--) {
+        if (lower.contains('svip $i') || lower.contains('svip$i')) {
+          return 'assets/svip/svip${i}_entry.png';
+        }
+      }
+    }
+
+    return null;
+  }
+
   static Color getColoredNicknameColor(NobleTier tier) {
     switch (tier) {
       case NobleTier.emperor:

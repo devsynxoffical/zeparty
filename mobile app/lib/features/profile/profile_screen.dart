@@ -961,15 +961,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
           physics: const BouncingScrollPhysics(),
           child: Row(
             children: [
-              _buildAchievementCard('SVIP 11', 'assets/images/card_vip.jpg', Colors.orangeAccent, isDark, onTap: () {
+              _buildAchievementCard('SVIP Center', 'assets/svip/svip10_badge.png', Colors.orangeAccent, isDark, onTap: () {
                 AuthGuard.require(context, () {
                   Navigator.push(context, MaterialPageRoute(builder: (c) => const SVIPCenterScreen()));
                 });
               }),
               const SizedBox(width: 12),
-              _buildAchievementCard('Aristocracy', 'assets/images/card_aristocracy.jpg', Colors.amber, isDark, onTap: () {
+              _buildAchievementCard('Aristocracy', 'assets/nobles/emperor_badge.png', Colors.amber, isDark, onTap: () {
                 AuthGuard.require(context, () {
                   Navigator.push(context, MaterialPageRoute(builder: (c) => const AristocracyCenterScreen()));
+                });
+              }),
+              const SizedBox(width: 12),
+              _buildAchievementCard('Store & Items', 'assets/roles/official_tag.png', Colors.purpleAccent, isDark, onTap: () {
+                AuthGuard.require(context, () {
+                  Navigator.push(context, MaterialPageRoute(builder: (c) => const StoreScreen()));
                 });
               }),
             ],
