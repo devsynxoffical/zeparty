@@ -57,7 +57,7 @@ class NobleProvider extends ChangeNotifier {
       returnPercentage: 30,
       durationDays: 30,
       colors: const [Color(0xFF78909C), Color(0xFF37474F)],
-      badgeAsset: 'assets/images/rank_baron.png',
+      badgeAsset: 'assets/nobles/baron_badge.png',
       privileges: [
         ..._basePrivileges.take(6),
         _functionalPrivileges[0], // Privilege seat
@@ -73,7 +73,7 @@ class NobleProvider extends ChangeNotifier {
       returnPercentage: 10,
       durationDays: 30,
       colors: const [Color(0xFFFB8C00), Color(0xFFE65100)],
-      badgeAsset: 'assets/images/rank_viscount.png',
+      badgeAsset: 'assets/nobles/viscount_card.png',
       privileges: [
         ..._basePrivileges.take(6),
         _functionalPrivileges[0],
@@ -90,7 +90,7 @@ class NobleProvider extends ChangeNotifier {
       returnPercentage: 50,
       durationDays: 30,
       colors: const [Color(0xFF1E88E5), Color(0xFF0D47A1)],
-      badgeAsset: 'assets/images/rank_count.png',
+      badgeAsset: 'assets/nobles/count_badge.png',
       privileges: [
         ..._basePrivileges.take(7), // Adds Bubble
         ..._functionalPrivileges.take(6), // Seat, Return, Gift, Speed, Fly, Emoji
@@ -105,7 +105,7 @@ class NobleProvider extends ChangeNotifier {
       returnPercentage: 60,
       durationDays: 30,
       colors: const [Color(0xFFC2185B), Color(0xFF880E4F)],
-      badgeAsset: 'assets/images/rank_marquis.png',
+      badgeAsset: 'assets/nobles/marquis_badge.png',
       privileges: [
         ..._basePrivileges, // All display perks including World Notif
         ..._functionalPrivileges.take(7), // Adds Send Picture
@@ -120,7 +120,7 @@ class NobleProvider extends ChangeNotifier {
       returnPercentage: 80, // 640k return
       durationDays: 30,
       colors: const [Color(0xFF8E24AA), Color(0xFF4A148C)],
-      badgeAsset: 'assets/images/rank_duke.png',
+      badgeAsset: 'assets/nobles/duke_badge.png',
       privileges: [
         ..._basePrivileges,
         ..._micPrivileges, // Adds Mic Wave, Mic Effect
@@ -136,7 +136,7 @@ class NobleProvider extends ChangeNotifier {
       returnPercentage: 80, // 1.2M return
       durationDays: 30,
       colors: const [Color(0xFFD4AF37), Color(0xFF5D4037)],
-      badgeAsset: 'assets/images/rank_king.png',
+      badgeAsset: 'assets/nobles/king_badge.png',
       privileges: [
         ..._basePrivileges,
         ..._micPrivileges,
@@ -152,7 +152,7 @@ class NobleProvider extends ChangeNotifier {
       returnPercentage: 80, // 2.4M return
       durationDays: 30,
       colors: const [Color(0xFFFFD700), Color(0xFFBF360C)],
-      badgeAsset: 'assets/images/rank_emperor.png',
+      badgeAsset: 'assets/nobles/emperor_badge.png',
       privileges: [
         ..._basePrivileges,
         ..._micPrivileges,
@@ -168,7 +168,7 @@ class NobleProvider extends ChangeNotifier {
       returnPercentage: 80,
       durationDays: 30,
       colors: const [Color(0xFFFF6F00), Color(0xFF3E2723)],
-      badgeAsset: 'assets/images/rank_sovereign.png',
+      badgeAsset: 'assets/nobles/emperor_badge.png',
       privileges: [
         ..._basePrivileges,
         ..._micPrivileges,

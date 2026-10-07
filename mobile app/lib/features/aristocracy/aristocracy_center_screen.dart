@@ -256,12 +256,18 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
             ),
           ),
           Container(
-            padding: EdgeInsets.all(14.w),
+            padding: EdgeInsets.all(8.w),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.15),
               shape: BoxShape.circle,
             ),
-            child: const Text('👑', style: TextStyle(fontSize: 34)),
+            child: Image.asset(
+              rank.badgeAsset,
+              width: 56.w,
+              height: 56.h,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => const Text('👑', style: TextStyle(fontSize: 34)),
+            ),
           ),
         ],
       ),
@@ -270,7 +276,7 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
 
   Widget _buildRankSelector(NobleProvider noble, bool isDark) {
     return SizedBox(
-      height: 70.h,
+      height: 72.h,
       child: PageView.builder(
         controller: _pageController,
         itemCount: noble.ranks.length,
@@ -284,7 +290,8 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 250),
-              margin: EdgeInsets.symmetric(horizontal: 6.w, vertical: isSelected ? 4.h : 10.h),
+              margin: EdgeInsets.symmetric(horizontal: 5.w, vertical: isSelected ? 2.h : 8.h),
+              padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 4.h),
               decoration: BoxDecoration(
                 gradient: isSelected
                     ? LinearGradient(colors: rank.colors)
@@ -296,15 +303,25 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
                   width: isSelected ? 2 : 1,
                 ),
               ),
-              child: Center(
-                child: Text(
-                  rank.name,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : AppColors.getTextPrimary(isDark),
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    fontSize: isSelected ? 14.sp : 12.sp,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Image.asset(
+                    rank.badgeAsset,
+                    height: isSelected ? 26.h : 20.h,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
                   ),
-                ),
+                  SizedBox(height: 2.h),
+                  Text(
+                    rank.name,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : AppColors.getTextPrimary(isDark),
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontSize: isSelected ? 12.sp : 10.sp,
+                    ),
+                  ),
+                ],
               ),
             ),
           );

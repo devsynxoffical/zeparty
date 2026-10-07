@@ -574,7 +574,6 @@ class LiveProvider extends ChangeNotifier {
       if (_activePkBattle != null) {
         final winner = data['winnerHostUserId']?.toString();
         _activePkBattle = _activePkBattle!.copyWith(
-          isEnded: true,
           winnerId: winner,
           status: 'ENDED',
         );

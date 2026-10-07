@@ -86,10 +86,51 @@ class GameProvider extends ChangeNotifier {
   Map<String, String> get moderatedRoomDps => Map.unmodifiable(_moderatedRoomDps);
   List<Map<String, dynamic>> get roomDpModerationLogs => List.unmodifiable(_roomDpModerationLogs);
 
+  // ── Game Center Real State ──
+  int _rpBalance = 350;
+  int _dailyRpEarned = 0;
+  String _lastRpDate = '';
+  final int _dailyRpCap = 500;
+  int _energy = 5;
+  final int _maxEnergy = 5;
+  DateTime _lastEnergyRechargeTime = DateTime.now();
+  final Map<String, int> _personalBests = {
+    'fishing': 0,
+    'football': 0,
+    'fruit_match': 0,
+    'rocket_challenge': 0,
+    'lion_adventure': 0,
+    'seven_puzzle': 0,
+  };
+  final Map<String, int> _personalLevels = {
+    'fishing': 1,
+    'football': 1,
+    'fruit_match': 1,
+    'rocket_challenge': 1,
+    'lion_adventure': 1,
+    'seven_puzzle': 1,
+  };
+  List<Map<String, dynamic>> _rpTransactions = [];
+  List<String> _unlockedBoosters = [];
+  List<String> _unlockedShopItems = [];
+
+  int get rpBalance => _rpBalance;
+  int get dailyRpEarned => _dailyRpEarned;
+  int get dailyRpCap => _dailyRpCap;
+  int get energy => _energy;
+  int get maxEnergy => _maxEnergy;
+  DateTime get lastEnergyRechargeTime => _lastEnergyRechargeTime;
+  Map<String, int> get personalBests => Map.unmodifiable(_personalBests);
+  Map<String, int> get personalLevels => Map.unmodifiable(_personalLevels);
+  List<Map<String, dynamic>> get rpTransactions => List.unmodifiable(_rpTransactions);
+  List<String> get unlockedBoosters => List.unmodifiable(_unlockedBoosters);
+  List<String> get unlockedShopItems => List.unmodifiable(_unlockedShopItems);
+
   GameProvider() {
     _loadRocketTargets();
     _loadRoomThemeUploadConfig();
     _loadModule03And04Config();
+    _loadGameCenterState();
   }
 
   Future<void> _loadRocketTargets() async {
@@ -843,6 +884,230 @@ class GameProvider extends ChangeNotifier {
     _dailyRewardClaimed = true;
     _dailyStreak += 1;
     notifyListeners();
+  }
+
+  // ── Game Center Persistence & Action Handlers ──
+  Future<void> _loadGameCenterState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _rpBalance = prefs.getInt('game_center_rp_balance') ?? 350;
+      _dailyRpEarned = prefs.getInt('game_center_daily_rp_earned') ?? 0;
+      _lastRpDate = prefs.getString('game_center_last_rp_date') ?? '';
+
+      final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+      if (_lastRpDate != todayStr) {
+        _dailyRpEarned = 0;
+        _lastRpDate = todayStr;
+        await prefs.setInt('game_center_daily_rp_earned', 0);
+        await prefs.setString('game_center_last_rp_date', todayStr);
+      }
+
+      final savedEnergy = prefs.getInt('game_center_energy');
+      final lastRechargeMillis = prefs.getInt('game_center_last_recharge_time');
+      if (lastRechargeMillis != null) {
+        _lastEnergyRechargeTime = DateTime.fromMillisecondsSinceEpoch(lastRechargeMillis);
+        final elapsedMinutes = DateTime.now().difference(_lastEnergyRechargeTime).inMinutes;
+        final recovered = elapsedMinutes ~/ 20; // 1 energy per 20 minutes
+        if (recovered > 0) {
+          _energy = min(_maxEnergy, (savedEnergy ?? _maxEnergy) + recovered);
+          _lastEnergyRechargeTime = DateTime.now().subtract(Duration(minutes: elapsedMinutes % 20));
+        } else {
+          _energy = savedEnergy ?? _maxEnergy;
+        }
+      } else {
+        _energy = savedEnergy ?? _maxEnergy;
+        _lastEnergyRechargeTime = DateTime.now();
+      }
+
+      final pbJson = prefs.getString('game_center_personal_bests');
+      if (pbJson != null) {
+        final Map<String, dynamic> map = jsonDecode(pbJson);
+        map.forEach((k, v) {
+          _personalBests[k] = (v as num).toInt();
+        });
+      }
+
+      final plJson = prefs.getString('game_center_personal_levels');
+      if (plJson != null) {
+        final Map<String, dynamic> map = jsonDecode(plJson);
+        map.forEach((k, v) {
+          _personalLevels[k] = (v as num).toInt();
+        });
+      }
+
+      final txJson = prefs.getString('game_center_rp_transactions');
+      if (txJson != null) {
+        final List<dynamic> list = jsonDecode(txJson);
+        _rpTransactions = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+
+      final boostersJson = prefs.getStringList('game_center_unlocked_boosters');
+      if (boostersJson != null) {
+        _unlockedBoosters = boostersJson;
+      }
+
+      final shopJson = prefs.getStringList('game_center_unlocked_shop_items');
+      if (shopJson != null) {
+        _unlockedShopItems = shopJson;
+      }
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> _saveGameCenterState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('game_center_rp_balance', _rpBalance);
+      await prefs.setInt('game_center_daily_rp_earned', _dailyRpEarned);
+      await prefs.setString('game_center_last_rp_date', _lastRpDate);
+      await prefs.setInt('game_center_energy', _energy);
+      await prefs.setInt('game_center_last_recharge_time', _lastEnergyRechargeTime.millisecondsSinceEpoch);
+      await prefs.setString('game_center_personal_bests', jsonEncode(_personalBests));
+      await prefs.setString('game_center_personal_levels', jsonEncode(_personalLevels));
+      await prefs.setString('game_center_rp_transactions', jsonEncode(_rpTransactions));
+      await prefs.setStringList('game_center_unlocked_boosters', _unlockedBoosters);
+      await prefs.setStringList('game_center_unlocked_shop_items', _unlockedShopItems);
+    } catch (_) {}
+  }
+
+  bool consumeEnergy(int amount) {
+    if (_energy < amount) return false;
+    _energy -= amount;
+    if (_energy < _maxEnergy && _lastEnergyRechargeTime.difference(DateTime.now()).inSeconds.abs() > 1200) {
+      _lastEnergyRechargeTime = DateTime.now();
+    }
+    _saveGameCenterState();
+    notifyListeners();
+    return true;
+  }
+
+  void refillEnergy(int amount) {
+    _energy = min(_maxEnergy, _energy + amount);
+    _lastEnergyRechargeTime = DateTime.now();
+    _saveGameCenterState();
+    notifyListeners();
+  }
+
+  bool buyEnergyWithDiamonds(WalletProvider wallet, int diamondsCost, int energyAmount) {
+    if (wallet.diamonds < diamondsCost) return false;
+    wallet.spendDiamonds(diamondsCost, 'Refill $energyAmount Arcade Energy');
+    refillEnergy(energyAmount);
+    return true;
+  }
+
+  bool buyEnergyWithCoins(WalletProvider wallet, int coinsCost, int energyAmount) {
+    if (wallet.coins < coinsCost) return false;
+    wallet.spendCoins(coinsCost, 'Refill $energyAmount Arcade Energy');
+    refillEnergy(energyAmount);
+    return true;
+  }
+
+  int addRp(int amount, String reason) {
+    final todayStr = DateTime.now().toIso8601String().substring(0, 10);
+    if (_lastRpDate != todayStr) {
+      _dailyRpEarned = 0;
+      _lastRpDate = todayStr;
+    }
+    final remainingCap = max(0, _dailyRpCap - _dailyRpEarned);
+    final grantAmount = min(amount, remainingCap);
+    if (grantAmount <= 0) return 0;
+
+    _rpBalance += grantAmount;
+    _dailyRpEarned += grantAmount;
+    _rpTransactions.insert(0, {
+      'id': 'rp_${DateTime.now().millisecondsSinceEpoch}',
+      'title': reason,
+      'amount': grantAmount,
+      'type': 'earn',
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+    if (_rpTransactions.length > 50) _rpTransactions.removeLast();
+    _saveGameCenterState();
+    notifyListeners();
+    return grantAmount;
+  }
+
+  bool spendRp(int amount, String itemName, {String? itemId}) {
+    if (_rpBalance < amount) return false;
+    _rpBalance -= amount;
+    if (itemId != null && !_unlockedShopItems.contains(itemId)) {
+      _unlockedShopItems.add(itemId);
+    }
+    _rpTransactions.insert(0, {
+      'id': 'rp_${DateTime.now().millisecondsSinceEpoch}',
+      'title': 'Purchased: $itemName',
+      'amount': -amount,
+      'type': 'spend',
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+    if (_rpTransactions.length > 50) _rpTransactions.removeLast();
+    _saveGameCenterState();
+    notifyListeners();
+    return true;
+  }
+
+  bool purchaseBooster({
+    required WalletProvider wallet,
+    required String boosterId,
+    required String boosterName,
+    int? rpCost,
+    int? coinsCost,
+  }) {
+    if (rpCost != null && rpCost > 0) {
+      if (!spendRp(rpCost, boosterName, itemId: boosterId)) return false;
+    } else if (coinsCost != null && coinsCost > 0) {
+      if (wallet.coins < coinsCost) return false;
+      wallet.spendCoins(coinsCost, 'Purchased Booster: $boosterName');
+      if (!_unlockedBoosters.contains(boosterId)) {
+        _unlockedBoosters.add(boosterId);
+      }
+    }
+    _saveGameCenterState();
+    notifyListeners();
+    return true;
+  }
+
+  Map<String, dynamic> recordGameScore(String gameId, int score, {int earnedRp = 0, int level = 1, Map<String, dynamic>? stats}) {
+    final currentBest = _personalBests[gameId] ?? 0;
+    final isNewBest = score > currentBest;
+    if (isNewBest) {
+      _personalBests[gameId] = score;
+    }
+    final currentLevel = _personalLevels[gameId] ?? 1;
+    if (level > currentLevel) {
+      _personalLevels[gameId] = level;
+    }
+    final grantedRp = addRp(earnedRp, 'Played ${_getGameTitle(gameId)}');
+    _saveGameCenterState();
+    notifyListeners();
+
+    return {
+      'isNewBest': isNewBest,
+      'previousBest': currentBest,
+      'newBest': _personalBests[gameId],
+      'level': _personalLevels[gameId],
+      'grantedRp': grantedRp,
+      'totalRp': _rpBalance,
+    };
+  }
+
+  String _getGameTitle(String gameId) {
+    switch (gameId) {
+      case 'fishing': return 'Fishing';
+      case 'football': return 'Football';
+      case 'fruit_match': return 'Fruit Match';
+      case 'rocket_challenge': return 'Rocket Challenge';
+      case 'lion_adventure': return 'Lion Adventure';
+      case 'seven_puzzle': return 'Seven Puzzle';
+      default: return 'Arcade Game';
+    }
+  }
+
+  Duration get timeUntilNextEnergy {
+    if (_energy >= _maxEnergy) return Duration.zero;
+    final elapsedSeconds = DateTime.now().difference(_lastEnergyRechargeTime).inSeconds;
+    final remainingSeconds = 1200 - (elapsedSeconds % 1200);
+    return Duration(seconds: max(0, remainingSeconds));
   }
 
   @override

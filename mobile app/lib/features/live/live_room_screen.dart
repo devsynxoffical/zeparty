@@ -2359,16 +2359,22 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     final liveProvider = context.read<LiveProvider>();
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: AppColors.getCard(isDark),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (c) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 36, height: 4,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.75,
+          ),
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36, height: 4,
                 decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(2)),
               ),
               const SizedBox(height: 12),
@@ -2897,8 +2903,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _showLuckyBagQuickActionDialog(BuildContext context, bool isDark, LiveProvider liveProvider) {
     if (liveProvider.luckyBagActive) {

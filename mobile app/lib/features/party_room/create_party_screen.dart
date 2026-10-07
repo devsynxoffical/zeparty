@@ -4,10 +4,14 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/repositories/backend_repository.dart';
 import '../../core/repositories/room_repository.dart';
+import '../../core/services/api_client.dart';
 import '../../core/services/media_upload_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/live_party_provider.dart';
+import '../../providers/live_provider.dart';
+import '../../providers/room_overlay_provider.dart';
 import '../../models/live_room_model.dart';
 import 'live_party_room_screen.dart';
 import '../live/live_room_screen.dart';
@@ -35,7 +39,6 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
     'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=600&q=80',
     'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=600&q=80',
   ];
-  int _coverIndex = 0;
 
   // CR 31 Upload Party DP Modal & Picker Logic
   Future<void> _showDPPickerOptions() async {
@@ -261,6 +264,32 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
     setState(() => _isCreating = true);
 
     final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+
+    // Check if user already has an active room locally or in backend repository
+    final overlayProvider = Provider.of<RoomOverlayProvider>(context, listen: false);
+    final partyProvider = Provider.of<LivePartyProvider>(context, listen: false);
+    final liveProvider = Provider.of<LiveProvider>(context, listen: false);
+
+    final currentUserId = currentUser.id;
+    final bool hasActiveLocalRoom = (overlayProvider.activeRoom != null) ||
+        (partyProvider.activeRoom != null) ||
+        (liveProvider.activeRoom != null) ||
+        BackendRepository.instance.liveRooms.any((r) => r.host.id == currentUserId || r.creatorUserId == currentUserId);
+
+    if (hasActiveLocalRoom) {
+      if (mounted) {
+        setState(() => _isCreating = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Aapki pehle se ek party/room active hai. Nayi party banane se pehle purani party end karen.'),
+            backgroundColor: Colors.redAccent,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+      return;
+    }
+
     final title = _nameController.text.trim().isNotEmpty
         ? _nameController.text.trim()
         : '${currentUser.name}\'s Party';
@@ -278,7 +307,12 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
         isPrivate: _privacy != 'Public',
       );
     } catch (e) {
+      debugPrint('[CreateParty] Backend createRoom error: $e');
+
       final errStr = e.toString();
+      final errLower = errStr.toLowerCase();
+      final isApiErr = e is ApiException;
+
       if (errStr.contains('HOST_APPROVAL_REQUIRED') || errStr.contains('approved active hosts')) {
         if (mounted) {
           setState(() => _isCreating = false);
@@ -286,12 +320,28 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
             const SnackBar(
               content: Text('⚠️ Host approval required. Please submit a Host Application in your profile to host audio party rooms.'),
               backgroundColor: Colors.redAccent,
+              duration: Duration(seconds: 4),
             ),
           );
         }
         return;
       }
-      debugPrint('[CreateParty] Backend createRoom error: $e, using local fallback');
+
+      final isAlreadyActive = isApiErr || errLower.contains('active') || errLower.contains('chal rahi hai') || errLower.contains('exists');
+      if (isAlreadyActive) {
+        if (mounted) {
+          setState(() => _isCreating = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e is ApiException ? e.message : 'Aapki pehle se ek party chal rahi hai. Nayi party banane se pehle purani party end karen.'),
+              backgroundColor: Colors.redAccent,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+
       roomToJoin = LiveRoomModel(
         id: isVideo ? 'live_${currentUser.id}' : 'party_${currentUser.id}',
         title: title,

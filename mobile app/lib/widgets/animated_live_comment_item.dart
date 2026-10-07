@@ -1,11 +1,8 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import '../models/user_model.dart';
-import '../models/party_participant_model.dart';
 import '../core/utils/noble_badge_helper.dart';
+import 'user_avatar.dart';
 
 class AnimatedLiveCommentItem extends StatefulWidget {
-  final Key? key;
   final String senderId;
   final String senderName;
   final String? avatarUrl;
@@ -20,7 +17,7 @@ class AnimatedLiveCommentItem extends StatefulWidget {
   final VoidCallback? onTap;
 
   const AnimatedLiveCommentItem({
-    this.key,
+    super.key,
     required this.senderId,
     required this.senderName,
     this.avatarUrl,
@@ -33,7 +30,7 @@ class AnimatedLiveCommentItem extends StatefulWidget {
     this.nobleTitle,
     this.wealthLevel = 1,
     this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   State<AnimatedLiveCommentItem> createState() => _AnimatedLiveCommentItemState();
@@ -178,23 +175,15 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Sender Profile Avatar (CR 39)
-                Container(
-                  width: 28,
-                  height: 28,
-                  margin: const EdgeInsets.only(right: 7, top: 2),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: widget.isHost
-                          ? Colors.amber
-                          : (widget.isVip ? Colors.purpleAccent : nameColor.withValues(alpha: 0.6)),
-                      width: 1.2,
-                    ),
-                    image: DecorationImage(
-                      image: NetworkImage(avatarToUse),
-                      fit: BoxFit.cover,
-                    ),
+                // Sender Profile Avatar with Frame Overlay
+                Padding(
+                  padding: const EdgeInsets.only(right: 6, top: 2),
+                  child: UserAvatar(
+                    imageUrl: avatarToUse,
+                    name: widget.senderName,
+                    radius: 14,
+                    showVipFrame: widget.isVip,
+                    frameAsset: NobleBadgeHelper.getFrameAsset(widget.nobleTitle),
                   ),
                 ),
                 Flexible(
@@ -240,7 +229,7 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                             WidgetSpan(
                               alignment: PlaceholderAlignment.middle,
                               child: Container(
-                                margin: const EdgeInsets.only(right: 5),
+                                margin: const EdgeInsets.only(right: 4),
                                 padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1),
                                 decoration: BoxDecoration(
                                   color: Colors.amber,
@@ -260,7 +249,7 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                             WidgetSpan(
                               alignment: PlaceholderAlignment.middle,
                               child: Container(
-                                margin: const EdgeInsets.only(right: 5),
+                                margin: const EdgeInsets.only(right: 4),
                                 padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1),
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF2979FF),
@@ -275,29 +264,23 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                                   ),
                                 ),
                               ),
-                            )
-                          else if (widget.isVip)
+                            ),
+
+                          // Real Noble/SVIP/Role PNG Badge Asset
+                          if (NobleBadgeHelper.getBadgeAsset(widget.nobleTitle) != null)
                             WidgetSpan(
                               alignment: PlaceholderAlignment.middle,
-                              child: Container(
-                                margin: const EdgeInsets.only(right: 5),
-                                padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1),
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [Colors.purpleAccent, Colors.pinkAccent],
-                                  ),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: const Text(
-                                  'VIP',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 8.5,
-                                    fontWeight: FontWeight.w900,
-                                  ),
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 4),
+                                child: Image.asset(
+                                  NobleBadgeHelper.getBadgeAsset(widget.nobleTitle)!,
+                                  height: 16,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
                                 ),
                               ),
                             ),
+
                           TextSpan(
                             text: '${widget.senderName}: ',
                             style: TextStyle(

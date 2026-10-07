@@ -251,7 +251,7 @@ class _PkMatchScreenState extends State<PkMatchScreen> with SingleTickerProvider
                     indicatorSize: TabBarIndicatorSize.tab,
                     labelColor: Colors.white,
                     unselectedLabelColor: Colors.white54,
-                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                     tabs: const [
                       Tab(text: '⚔️ Path A: Live Hosts', icon: Icon(Icons.tv_rounded, size: 18)),
                       Tab(text: '🔗 Path B: Invite User', icon: Icon(Icons.link_rounded, size: 18)),
@@ -690,9 +690,12 @@ class _PkMatchScreenState extends State<PkMatchScreen> with SingleTickerProvider
                 children: [
                   Icon(Icons.info_outline_rounded, color: Colors.orangeAccent, size: 16),
                   SizedBox(width: 6),
-                  Text(
-                    'At least 2 participants required before PK can start',
-                    style: TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.w600),
+                  Flexible(
+                    child: Text(
+                      'At least 2 participants required before PK can start',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.orangeAccent, fontSize: 11.5, fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ],
               ),

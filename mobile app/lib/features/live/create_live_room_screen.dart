@@ -7,9 +7,13 @@ import 'package:provider/provider.dart';
 import '../../core/animations/app_animations.dart';
 import '../../core/repositories/backend_repository.dart';
 import '../../core/repositories/room_repository.dart';
+import '../../core/services/api_client.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/live_room_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/live_party_provider.dart';
+import '../../providers/live_provider.dart';
+import '../../providers/room_overlay_provider.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/design/gold_button.dart';
 import 'live_room_screen.dart';
@@ -406,6 +410,32 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                       setState(() => _isCreating = true);
                       try {
                         final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+
+                        // Check if user already has an active room locally or in backend repository
+                        final overlayProvider = Provider.of<RoomOverlayProvider>(context, listen: false);
+                        final partyProvider = Provider.of<LivePartyProvider>(context, listen: false);
+                        final liveProvider = Provider.of<LiveProvider>(context, listen: false);
+
+                        final currentUserId = currentUser.id;
+                        final bool hasActiveLocalRoom = (overlayProvider.activeRoom != null) ||
+                            (partyProvider.activeRoom != null) ||
+                            (liveProvider.activeRoom != null) ||
+                            BackendRepository.instance.liveRooms.any((r) => r.host.id == currentUserId || r.creatorUserId == currentUserId);
+
+                        if (hasActiveLocalRoom) {
+                          if (mounted) {
+                            setState(() => _isCreating = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Aapki pehle se ek party/live stream active hai. Nayi live stream chalane se pehle purani end karen.'),
+                                backgroundColor: Colors.redAccent,
+                                duration: Duration(seconds: 4),
+                              ),
+                            );
+                          }
+                          return;
+                        }
+
                         final title = _titleController.text.trim().isNotEmpty
                             ? _titleController.text.trim()
                             : '${currentUser.name}\'s Live Stream';
@@ -424,19 +454,41 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                             isPrivate: _isPrivate,
                           );
                         } catch (e) {
+                          debugPrint('[CreateLiveRoom] Backend createRoom error: $e');
+
                           final errStr = e.toString();
+                          final errLower = errStr.toLowerCase();
+                          final isApiErr = e is ApiException;
+
                           if (errStr.contains('HOST_APPROVAL_REQUIRED') || errStr.contains('approved active hosts')) {
                             if (mounted) {
+                              setState(() => _isCreating = false);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
                                   content: Text('⚠️ Host approval required. Please submit a Host Application in your profile to broadcast live.'),
                                   backgroundColor: Colors.redAccent,
+                                  duration: Duration(seconds: 4),
                                 ),
                               );
                             }
                             return;
                           }
-                          debugPrint('[CreateLiveRoom] Backend createRoom error: $e, using local fallback');
+
+                          final isAlreadyActive = isApiErr || errLower.contains('active') || errLower.contains('chal rahi hai') || errLower.contains('exists');
+                          if (isAlreadyActive) {
+                            if (mounted) {
+                              setState(() => _isCreating = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(e is ApiException ? e.message : 'Aapki pehle se ek live stream chal rahi hai. Purani live stream end karen.'),
+                                  backgroundColor: Colors.redAccent,
+                                  duration: const Duration(seconds: 4),
+                                ),
+                              );
+                            }
+                            return;
+                          }
+
                           roomToJoin = LiveRoomModel(
                             id: 'live_${DateTime.now().millisecondsSinceEpoch}',
                             title: title,

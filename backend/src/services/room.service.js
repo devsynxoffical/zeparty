@@ -87,6 +87,7 @@ export async function createRoom(
   } catch (err) {
     console.warn('[RoomService] Error auto-closing previous rooms:', err?.message);
   }
+  }
 
   const agoraChannelName = `room_${crypto.randomUUID().replace(/-/g, '')}`;
 

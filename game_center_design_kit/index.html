@@ -1,0 +1,38 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>ZeParty Game Center · Design Kit and Flow</title>
+<link rel="stylesheet" href="tokens.css"><style>
+body{background:#0C0A12;padding:40px;min-height:100vh}
+h1{font-family:Sora,sans-serif;font-size:30px;margin:0 0 6px}h2{font-family:Sora,sans-serif;font-size:20px;margin:40px 0 14px}p{color:#A69FC0;max-width:900px;line-height:1.6;margin:0}
+.th{display:flex;flex-direction:column;gap:6px;width:200px}.th img{width:200px;border-radius:22px;border:1px solid rgba(255,255,255,.12);box-shadow:0 20px 40px rgba(0,0,0,.5)}.th b{font-size:14px}.th span{font-size:11.5px;color:#A69FC0}
+.wrap{display:flex;flex-wrap:wrap;gap:22px}
+.flow{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;max-width:1300px}.node{background:linear-gradient(160deg,#1C1730,#120F1D);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px;font-size:13px;font-weight:700;position:relative}.node small{display:block;color:#A69FC0;font-weight:600;margin-top:4px;font-size:11px}.node.game{border-color:rgba(232,38,92,.5)}.node.srv{border-color:rgba(159,232,200,.5)}.node.fl{border-color:rgba(46,124,246,.5)}
+.legend{display:flex;gap:16px;margin:10px 0 0;font-size:12px;color:#A69FC0}.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:middle}
+table{border-collapse:collapse;font-size:13px;max-width:1100px}td,th{border:1px solid rgba(255,255,255,.12);padding:8px 10px;text-align:left}th{background:#1C1730}
+</style></head><body>
+<h1>ZeParty Game Center · Design Kit</h1><p>Ten screens at 390 x 844 (iPhone 14 / Android reference). Every screen is a standalone HTML file in <code>screens/</code>, exported as 2x PNG in <code>png/</code>. Buttons are linked so the kit works as a clickable prototype: open any screen and tap through.</p>
+<h2>Screens</h2><div class="wrap"><a class="th" href="screens/01_home.html" target="_blank"><img src="png/01_home.png"><b>Game Center Home</b><span>Games tab</span></a><a class="th" href="screens/02_detail.html" target="_blank"><img src="png/02_detail.png"><b>Game Detail</b><span>Tap a game card</span></a><a class="th" href="screens/03_result.html" target="_blank"><img src="png/03_result.png"><b>Result</b><span>After a session, values from server</span></a><a class="th" href="screens/04_wallet_shop.html" target="_blank"><img src="png/04_wallet_shop.png"><b>RP Wallet and Shop</b><span>Tap the RP pill</span></a><a class="th" href="screens/05_fishing.html" target="_blank"><img src="png/05_fishing.png"><b>Fishing</b><span>Play</span></a><a class="th" href="screens/06_football.html" target="_blank"><img src="png/06_football.png"><b>Football</b><span>Play</span></a><a class="th" href="screens/07_fruit_match.html" target="_blank"><img src="png/07_fruit_match.png"><b>Fruit Match</b><span>Play</span></a><a class="th" href="screens/08_rocket.html" target="_blank"><img src="png/08_rocket.png"><b>Rocket Challenge</b><span>Play</span></a><a class="th" href="screens/09_lion.html" target="_blank"><img src="png/09_lion.png"><b>Lion Adventure</b><span>Play</span></a><a class="th" href="screens/10_seven_puzzle.html" target="_blank"><img src="png/10_seven_puzzle.png"><b>Seven Puzzle</b><span>Play</span></a></div>
+<h2>Complete flow</h2>
+<div class="legend"><span><i style="background:#2E7CF6"></i>Flutter screen</span><span><i style="background:#E8265C"></i>HTML5 game (WebView)</span><span><i style="background:#9FE8C8"></i>Server step</span></div>
+<div class="flow" style="margin-top:14px">
+<div class="node fl">Games tab<small>Bottom navigation</small></div><div class="node fl">Game Center Home<small>Grid, missions, banner, RP pill</small></div><div class="node fl">Game Detail<small>Stats, boosters, leaderboard</small></div><div class="node srv">POST /sessions<small>Session token, config</small></div><div class="node fl">Loading<small>WebView loads CDN build</small></div><div class="node game">Tutorial<small>First time only</small></div>
+<div class="node game">Gameplay<small>Events stream to server</small></div><div class="node srv">Events + HMAC chain<small>rp_so_far acks</small></div><div class="node game">Pause<small>Resume, restart, quit</small></div><div class="node game">finish()<small>Score, duration, stats</small></div><div class="node srv">Validate + settle<small>Recompute score, apply caps, ledger</small></div><div class="node game">Result<small>Official RP, missions, share</small></div>
+<div class="node fl">Play again<small>New session</small></div><div class="node fl">Back to Games<small>Wallet refresh</small></div><div class="node fl">RP Wallet<small>Balance, history, cap</small></div><div class="node fl">RP Shop<small>Boosters, cosmetics, effects</small></div><div class="node fl">Missions<small>Claim rewards</small></div><div class="node fl">Leaderboards and Tournaments<small>Weekly prizes</small></div>
+</div>
+<h2>Side flows</h2>
+<table><tr><th>Entry</th><th>Path</th></tr>
+<tr><td>Party room</td><td>Game button → game sheet → Gameplay inside the room with voice on → Result posted in room chat</td></tr>
+<tr><td>Live stream host challenge</td><td>Host opens Football or Rocket Challenge → viewer queue → Gameplay with host video in a small window → Result</td></tr>
+<tr><td>Energy empty (Fishing, Lion Adventure)</td><td>Play → Energy sheet → wait, rewarded ad (+1, max 5 a day), coins refill, RP refill → Play</td></tr>
+<tr><td>Session rejected by anti-cheat</td><td>Result shows "Score could not be verified", no RP, session flagged for review</td></tr>
+<tr><td>Connection lost mid-session</td><td>Events buffered 2 minutes → reconnect and settle, else session closes with no reward</td></tr>
+<tr><td>Game disabled by admin</td><td>Card greyed "Coming back soon"; app update required shows "Update app"</td></tr>
+</table>
+<h2>Prototype links</h2>
+<table><tr><th>Screen</th><th>Tap target</th><th>Goes to</th></tr>
+<tr><td>Home</td><td>Game card</td><td>Fishing card opens Game Detail, other cards open their gameplay</td></tr>
+<tr><td>Home</td><td>RP pill</td><td>RP Wallet and Shop</td></tr>
+<tr><td>Game Detail</td><td>Play, Shop, back</td><td>Fishing gameplay, RP Shop, Home</td></tr>
+<tr><td>Gameplay (all)</td><td>Pause, STOP</td><td>Result (demo)</td></tr>
+<tr><td>Result</td><td>Play again, Back to Games</td><td>Fishing gameplay, Home</td></tr>
+<tr><td>Wallet</td><td>Back, bottom nav</td><td>Home</td></tr>
+</table>
+</body></html>

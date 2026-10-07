@@ -2,7 +2,7 @@ import gameService from '../services/game.service.js';
 
 class GameController {
   /**
-   * GET /v1/games
+   * GET /v1/games/catalog or /v1/games
    */
   async getCatalog(req, res, next) {
     try {
@@ -10,7 +10,7 @@ class GameController {
       const games = await gameService.getCatalog({ activeOnly: activeOnly === 'true' });
       return res.status(200).json({
         success: true,
-        message: 'Game catalog retrieved successfully',
+        message: 'Official 6-Game skill catalog retrieved successfully',
         data: games,
       });
     } catch (err) {
@@ -35,34 +35,21 @@ class GameController {
   }
 
   /**
-   * POST /v1/games/:id/play
+   * POST /v1/games/sessions
    */
-  async playRound(req, res, next) {
+  async createSession(req, res, next) {
     try {
-      const { id } = req.params;
-      const userId = req.auth?.userId || req.user?.id;
-      const { betCoins, actionPayload } = req.body;
-      const idempotencyKey = req.headers['idempotency-key'] || req.body.idempotencyKey;
-
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          message: 'Authentication required to play games.',
-          error: { code: 'UNAUTHORIZED' },
-        });
-      }
-
-      const result = await gameService.playRound({
+      const userId = req.auth?.userId || req.user?.id || 'guest_user';
+      const { game_id, gameId, mode, room_id, roomId } = req.body;
+      const result = await gameService.createSession({
         userId,
-        gameId: id,
-        betCoins,
-        actionPayload: actionPayload || {},
-        idempotencyKey,
+        gameId: game_id || gameId,
+        mode,
+        roomId: room_id || roomId,
       });
-
-      return res.status(200).json({
+      return res.status(201).json({
         success: true,
-        message: 'Round settled successfully',
+        message: 'Game session created',
         data: result,
       });
     } catch (err) {
@@ -71,33 +58,20 @@ class GameController {
   }
 
   /**
-   * Admin: GET /v1/admin/games
+   * POST /v1/games/sessions/:id/events
    */
-  async adminGetCatalog(req, res, next) {
+  async recordEvents(req, res, next) {
     try {
-      const games = await gameService.getCatalog({ activeOnly: false });
-      return res.status(200).json({
-        success: true,
-        data: games,
-      });
-    } catch (err) {
-      next(err);
-    }
-  }
-
-  /**
-   * Admin: PUT /v1/admin/games/:id/config
-   */
-  async adminUpdateConfig(req, res, next) {
-    try {
+      const userId = req.auth?.userId || req.user?.id || 'guest_user';
       const { id } = req.params;
-      const configData = req.body;
-      const adminUser = req.auth || {};
-
-      const result = await gameService.adminUpdateGameConfig(id, configData, adminUser);
+      const { events } = req.body;
+      const result = await gameService.recordSessionEvents({
+        userId,
+        sessionId: id,
+        events: Array.isArray(events) ? events : [req.body],
+      });
       return res.status(200).json({
         success: true,
-        message: 'Game configuration updated successfully',
         data: result,
       });
     } catch (err) {
@@ -106,18 +80,164 @@ class GameController {
   }
 
   /**
-   * Admin: PATCH /v1/admin/games/:id/status
+   * POST /v1/games/sessions/:id/finish
    */
-  async adminToggleStatus(req, res, next) {
+  async finishSession(req, res, next) {
     try {
+      const userId = req.auth?.userId || req.user?.id || 'guest_user';
       const { id } = req.params;
-      const { isActive } = req.body;
-      const adminUser = req.auth || {};
-
-      const result = await gameService.adminToggleGameStatus(id, Boolean(isActive), adminUser);
+      const { score, duration_ms, durationMs, stats, final_hmac } = req.body;
+      const result = await gameService.finishSession({
+        userId,
+        sessionId: id,
+        score,
+        durationMs: duration_ms || durationMs,
+        stats: stats || {},
+        finalHmac: final_hmac,
+      });
       return res.status(200).json({
         success: true,
-        message: `Game status changed to ${isActive ? 'active' : 'inactive'}`,
+        message: 'Session finished and validated',
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * GET /v1/games/rp/wallet
+   */
+  async getRpWallet(req, res, next) {
+    try {
+      const userId = req.auth?.userId || req.user?.id || 'guest_user';
+      const wallet = await gameService.getRpWallet(userId);
+      return res.status(200).json({
+        success: true,
+        data: wallet,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * GET /v1/games/shop
+   */
+  async getShop(req, res, next) {
+    try {
+      const userId = req.auth?.userId || req.user?.id || 'guest_user';
+      const { game_id, gameId } = req.query;
+      const shop = await gameService.getShopCatalog(userId, game_id || gameId);
+      return res.status(200).json({
+        success: true,
+        data: shop,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /v1/games/shop/buy
+   */
+  async buyShopItem(req, res, next) {
+    try {
+      const userId = req.auth?.userId || req.user?.id || 'guest_user';
+      const { item_id, itemId, currency } = req.body;
+      const result = await gameService.buyShopItem({
+        userId,
+        itemId: item_id || itemId,
+        currency,
+      });
+      return res.status(200).json({
+        success: true,
+        message: 'Item purchased successfully',
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * GET /v1/games/energy
+   */
+  async getEnergy(req, res, next) {
+    try {
+      const userId = req.auth?.userId || req.user?.id || 'guest_user';
+      const energy = await gameService.getEnergy(userId);
+      return res.status(200).json({
+        success: true,
+        data: energy,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /v1/games/energy/refill
+   */
+  async refillEnergy(req, res, next) {
+    try {
+      const userId = req.auth?.userId || req.user?.id || 'guest_user';
+      const { method } = req.body;
+      const result = await gameService.refillEnergy({ userId, method });
+      return res.status(200).json({
+        success: true,
+        message: 'Energy refilled',
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * GET /v1/games/leaderboards/:id
+   */
+  async getLeaderboard(req, res, next) {
+    try {
+      const { id } = req.params;
+      const { period } = req.query;
+      const board = await gameService.getLeaderboard(id, period);
+      return res.status(200).json({
+        success: true,
+        data: board,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * GET /v1/games/missions
+   */
+  async getMissions(req, res, next) {
+    try {
+      const userId = req.auth?.userId || req.user?.id || 'guest_user';
+      const missions = await gameService.getMissions(userId);
+      return res.status(200).json({
+        success: true,
+        data: missions,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /v1/games/missions/:id/claim
+   */
+  async claimMission(req, res, next) {
+    try {
+      const userId = req.auth?.userId || req.user?.id || 'guest_user';
+      const { id } = req.params;
+      const result = await gameService.claimMission(userId, id);
+      return res.status(200).json({
+        success: true,
+        message: 'Mission reward claimed',
         data: result,
       });
     } catch (err) {

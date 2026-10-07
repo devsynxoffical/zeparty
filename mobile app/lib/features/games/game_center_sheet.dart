@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../providers/wallet_provider.dart';
-import 'rocket_game_sheet.dart';
+import 'package:flutter/services.dart';
 import 'game_screen.dart';
 
 class GameCenterSheet extends StatelessWidget {
@@ -16,254 +14,165 @@ class GameCenterSheet extends StatelessWidget {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final wallet = context.watch<WalletProvider>();
-
-    final games = [
-      {
-        'id': 'rocket',
-        'title': 'Rocket',
-        'subtitle': 'Crash Multiplier',
-        'icon': '🚀',
-        'color': Colors.purpleAccent,
-        'onTap': () {
-          Navigator.pop(context);
-          showModalBottomSheet(
-            context: context,
-            isScrollControlled: true,
-            backgroundColor: Colors.transparent,
-            builder: (_) => const RocketGameSheet(),
-          );
-        },
-      },
-      {
-        'id': 'fishing_star',
-        'title': 'Fishing Star',
-        'subtitle': 'Arcade Fishing',
-        'icon': '🎣',
-        'color': Colors.cyanAccent,
-        'onTap': () {
-          Navigator.pop(context);
-          _openGameScreen(context, 'fishing_star', 'Fishing Star');
-        },
-      },
-      {
-        'id': 'teen_patti',
-        'title': 'Teen Patti',
-        'subtitle': '3-Card Poker',
-        'icon': '🃏',
-        'color': Colors.amber,
-        'onTap': () {
-          Navigator.pop(context);
-          _openGameScreen(context, 'teen_patti', 'Teen Patti');
-        },
-      },
-      {
-        'id': 'dragon_tiger',
-        'title': 'Dragon & Tiger',
-        'subtitle': '2-Card Table',
-        'icon': '🐉',
-        'color': Colors.redAccent,
-        'onTap': () {
-          Navigator.pop(context);
-          _openGameScreen(context, 'dragon_tiger', 'Dragon & Tiger');
-        },
-      },
-      {
-        'id': 'roulette',
-        'title': 'Roulette',
-        'subtitle': 'European Wheel',
-        'icon': '🎡',
-        'color': Colors.greenAccent,
-        'onTap': () {
-          Navigator.pop(context);
-          _openGameScreen(context, 'roulette', 'Roulette');
-        },
-      },
-      {
-        'id': 'fruit_party_jackpot',
-        'title': 'Fruit Party Jackpot',
-        'subtitle': 'Hit 50x 777',
-        'icon': '🎰',
-        'color': Colors.pinkAccent,
-        'onTap': () {
-          Navigator.pop(context);
-          _openGameScreen(context, 'fruit_party_jackpot', 'Fruit Party Jackpot');
-        },
-      },
-      {
-        'id': 'delicious',
-        'title': 'Delicious',
-        'subtitle': 'Culinary Arcade',
-        'icon': '🍰',
-        'color': Colors.orangeAccent,
-        'onTap': () {
-          Navigator.pop(context);
-          _openGameScreen(context, 'delicious', 'Delicious');
-        },
-      },
-      {
-        'id': 'bounty_football',
-        'title': 'Bounty Football',
-        'subtitle': 'Penalty Challenge',
-        'icon': '⚽',
-        'color': Colors.blueAccent,
-        'onTap': () {
-          Navigator.pop(context);
-          _openGameScreen(context, 'bounty_football', 'Bounty Football');
-        },
-      },
-      {
-        'id': 'greedy_lion',
-        'title': 'Greedy Lion',
-        'subtitle': 'Animal Multiplier',
-        'icon': '🦁',
-        'color': Colors.amberAccent,
-        'onTap': () {
-          Navigator.pop(context);
-          _openGameScreen(context, 'greedy_lion', 'Greedy Lion');
-        },
-      },
-      {
-        'id': 'double_seven_77',
-        'title': 'Double Seven (77)',
-        'subtitle': 'Lucky 77 Match',
-        'icon': '7️⃣',
-        'color': Colors.tealAccent,
-        'onTap': () {
-          Navigator.pop(context);
-          _openGameScreen(context, 'double_seven_77', 'Double Seven (77)');
-        },
-      },
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1B1929),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border.all(color: Colors.purpleAccent.withValues(alpha: 0.3), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.purpleAccent.withValues(alpha: 0.2),
-            blurRadius: 20,
-            spreadRadius: 2,
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Handle
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 14),
-
-              // Header Row with Balance
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('🎮 Official Live Games', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black45,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.monetization_on_rounded, color: Colors.amber, size: 16),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${wallet.coins} 🪙',
-                          style: const TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Playable Games Grid
-              SizedBox(
-                height: 320,
-                child: GridView.builder(
-                  shrinkWrap: true,
-                  itemCount: games.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 10,
-                    mainAxisSpacing: 10,
-                    childAspectRatio: 2.2,
-                  ),
-                  itemBuilder: (context, index) {
-                    final game = games[index];
-                    final color = game['color'] as Color;
-                    return GestureDetector(
-                      onTap: game['onTap'] as VoidCallback,
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              color.withValues(alpha: 0.25),
-                              const Color(0xFF28243D),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: color.withValues(alpha: 0.5), width: 1.2),
-                        ),
-                        child: Row(
-                          children: [
-                            Text(game['icon'] as String, style: const TextStyle(fontSize: 22)),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    game['title'] as String,
-                                    style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 1),
-                                  Text(
-                                    game['subtitle'] as String,
-                                    style: TextStyle(color: color, fontSize: 9.5, fontWeight: FontWeight.w600),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 6),
-            ],
-          ),
+  void _openGame(BuildContext context, String gameId, String gameName) {
+    HapticFeedback.selectionClick();
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GameScreen(
+          gameId: gameId,
+          gameName: gameName,
+          inRoom: true,
         ),
       ),
     );
   }
 
-  static void _openGameScreen(BuildContext context, String gameId, String gameName) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => GameScreen(gameId: gameId, gameName: gameName),
+  @override
+  Widget build(BuildContext context) {
+    final games = [
+      {
+        'id': 'fishing',
+        'name': 'Fishing',
+        'subtitle': 'Arcade Shooter',
+        'icon': '🎣',
+        'color': const Color(0xFF00E5FF),
+        'gradient': [const Color(0xFF0D253F), const Color(0xFF0072FF)],
+      },
+      {
+        'id': 'football',
+        'name': 'Football',
+        'subtitle': 'Penalty Shootout',
+        'icon': '⚽',
+        'color': const Color(0xFF38EF7D),
+        'gradient': [const Color(0xFF0F3820), const Color(0xFF11998E)],
+      },
+      {
+        'id': 'fruit_match',
+        'name': 'Fruit Match',
+        'subtitle': 'Match-3 Puzzle',
+        'icon': '🍓',
+        'color': const Color(0xFFFF512F),
+        'gradient': [const Color(0xFF2C1038), const Color(0xFFDD2476)],
+      },
+      {
+        'id': 'rocket_challenge',
+        'name': 'Rocket Challenge',
+        'subtitle': 'Precision & Reflex',
+        'icon': '🚀',
+        'color': const Color(0xFF8E2DE2),
+        'gradient': [const Color(0xFF1B0A33), const Color(0xFF4A00E0)],
+      },
+      {
+        'id': 'lion_adventure',
+        'name': 'Lion Adventure',
+        'subtitle': '3-Lane Runner',
+        'icon': '🦁',
+        'color': const Color(0xFFFFB300),
+        'gradient': [const Color(0xFF1E3C1B), const Color(0xFFF7971E)],
+      },
+      {
+        'id': 'seven_puzzle',
+        'name': 'Seven Puzzle',
+        'subtitle': 'Number Merge',
+        'icon': '🧩',
+        'color': const Color(0xFFEAAFC8),
+        'gradient': [const Color(0xFF200B3B), const Color(0xFF654EA3)],
+      },
+    ];
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF140824),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border(top: BorderSide(color: Color(0xFFFF2A6D), width: 1.5)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.sports_esports, color: Color(0xFFFF2A6D), size: 26),
+                  SizedBox(width: 8),
+                  Text(
+                    'Play Games in Room',
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
+                  ),
+                ],
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close, color: Colors.white60),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // 3x2 Grid
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: games.length,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              childAspectRatio: 0.88,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemBuilder: (context, index) {
+              final game = games[index];
+              final gradient = game['gradient'] as List<Color>;
+              final color = game['color'] as Color;
+
+              return GestureDetector(
+                onTap: () => _openGame(context, game['id'] as String, game['name'] as String),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: gradient,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: color.withOpacity(0.4)),
+                  ),
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(game['icon'] as String, style: const TextStyle(fontSize: 28)),
+                      const SizedBox(height: 6),
+                      Text(
+                        game['name'] as String,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                      Text(
+                        game['subtitle'] as String,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: color, fontSize: 9),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }

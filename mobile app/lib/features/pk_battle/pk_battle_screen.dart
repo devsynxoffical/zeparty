@@ -79,7 +79,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
       if (widget.pkBattle != null) {
         liveProv.setPkBattle(widget.pkBattle!);
       } else {
-        liveProv.startPkBattle(currentHost: currentUser);
+        liveProv.startHostPKBattle();
       }
       final activeBattleRoom = widget.pkBattle?.roomAId.isNotEmpty == true
           ? widget.pkBattle!.roomAId
@@ -1115,7 +1115,14 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
 
           // Main Gift Modal Button
           GestureDetector(
-            onTap: () => _openGiftSheet(context, true, pk),
+            onTap: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (_) => const GiftDialog(),
+              );
+            },
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(

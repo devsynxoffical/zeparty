@@ -61,6 +61,22 @@ class UserModel {
   final bool isCountryLocked;
   final bool isPrivate;
 
+  int get svipLevel {
+    final search = '$vipLevel ${nobleTitle ?? ''} $badge'.toLowerCase();
+    if (search.contains('svip')) {
+      final numMatch = RegExp(r'svip\s*(\d+)').firstMatch(search);
+      if (numMatch != null) {
+        return int.tryParse(numMatch.group(1)!) ?? 1;
+      }
+      final numStr = vipLevel.replaceAll(RegExp(r'[^0-9]'), '');
+      if (numStr.isNotEmpty) {
+        return int.tryParse(numStr) ?? 1;
+      }
+      return 1;
+    }
+    return 0;
+  }
+
 
   static const UserModel empty = UserModel(
     id: '',

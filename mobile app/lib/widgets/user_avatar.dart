@@ -10,6 +10,7 @@ class UserAvatar extends StatelessWidget {
   final bool isLive;
   final bool showVipFrame;
   final bool isPremium;
+  final String? frameAsset;
   final VoidCallback? onTap;
 
   const UserAvatar({
@@ -20,6 +21,7 @@ class UserAvatar extends StatelessWidget {
     this.isLive = false,
     this.showVipFrame = false,
     this.isPremium = false,
+    this.frameAsset,
     this.onTap,
   });
 
@@ -145,12 +147,25 @@ class UserAvatar extends StatelessWidget {
       );
     }
 
+    final effectiveFrameAsset = frameAsset ?? (showVipFrame ? 'assets/nobles/baron_frame.png' : null);
+
     return GestureDetector(
       onTap: onTap,
       child: Stack(
         alignment: Alignment.center,
+        clipBehavior: Clip.none,
         children: [
           avatar,
+          if (effectiveFrameAsset != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Image.asset(
+                  effectiveFrameAsset,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => const Text(''),
+                ),
+              ),
+            ),
           if (isLive)
             Positioned(
               bottom: 0,

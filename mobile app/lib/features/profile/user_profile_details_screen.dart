@@ -852,6 +852,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 imageUrl: effAvatar,
                                 name: _user!.displayName,
                                 radius: 38,
+                                showVipFrame: _user!.isVip,
+                                frameAsset: NobleBadgeHelper.getFrameAsset(_user?.nobleTitle ?? (_user?.svipLevel != null && _user!.svipLevel > 0 ? 'SVIP ${_user!.svipLevel}' : _user?.role.name)),
                               ),
                             ),
                           );

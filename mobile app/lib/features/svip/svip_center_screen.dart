@@ -277,6 +277,7 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
               Container(
                 width: 100,
                 height: 110,
+                padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
@@ -285,7 +286,13 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text('👑', style: TextStyle(fontSize: 34)),
+                    Expanded(
+                      child: Image.asset(
+                        'assets/svip/svip${svip.selectedViewLevel}_badge.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => const Text('👑', style: TextStyle(fontSize: 34)),
+                      ),
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       'SVIP ${svip.selectedViewLevel}',

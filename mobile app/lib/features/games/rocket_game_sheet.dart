@@ -29,12 +29,8 @@ class _RocketGameSheetState extends State<RocketGameSheet> with TickerProviderSt
     _rocketController = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat(reverse: true);
     _rocketAnimation = Tween<double>(begin: -10, end: 10).animate(CurvedAnimation(parent: _rocketController, curve: Curves.easeInOut));
     
-    // Mock initial contributors
-    contributors = [
-      {'name': 'Sophia', 'amount': 0},
-      {'name': 'Alex', 'amount': 0},
-      {'name': 'Danial', 'amount': 0},
-    ];
+    // Real contributors list (starts empty and populates upon real contributions)
+    contributors = [];
   }
 
   @override

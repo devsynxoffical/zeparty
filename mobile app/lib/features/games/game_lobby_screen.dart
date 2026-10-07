@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/theme_provider.dart';
+
+import '../../providers/game_provider.dart';
 import '../../providers/wallet_provider.dart';
-import '../../widgets/design/premium_card.dart';
+import '../../providers/auth_provider.dart';
 import 'game_screen.dart';
-import 'rocket_game_sheet.dart';
+import 'game_detail_sheet.dart';
+import 'rp_wallet_sheet.dart';
+import 'rp_shop_sheet.dart';
+import 'energy_sheet.dart';
 
 class GameLobbyScreen extends StatefulWidget {
   const GameLobbyScreen({super.key});
@@ -15,514 +19,664 @@ class GameLobbyScreen extends StatefulWidget {
 }
 
 class _GameLobbyScreenState extends State<GameLobbyScreen> {
-  String _selectedCategory = 'All Games';
-  String _searchQuery = '';
-  final TextEditingController _searchController = TextEditingController();
-
-  final List<_GameInfo> _allGames = const [
-    _GameInfo(
-      id: 'fishing_star',
-      title: 'Fishing Star',
-      description: 'Dynamic deep-sea arcade fishing where players target virtual fish for coin multipliers.',
-      icon: '🎣',
-      entryFee: 10,
-      maxWin: '2,000 🪙',
-      gameName: 'Fishing Star',
-      category: 'Arcade',
-      badge: 'POPULAR',
-    ),
-    _GameInfo(
-      id: 'teen_patti',
-      title: 'Teen Patti',
-      description: 'Classic 3-card poker with authoritative hand rankings: Trail, Pure Sequence, Sequence, Pair.',
-      icon: '🃏',
-      entryFee: 20,
-      maxWin: '10,000 🪙',
-      gameName: 'Teen Patti',
-      category: 'Cards & Table',
-      badge: 'TOP',
-    ),
-    _GameInfo(
-      id: 'dragon_tiger',
-      title: 'Dragon & Tiger',
-      description: 'Fast-paced two-card comparison game. Back Dragon, Tiger, or Tie with live deck reveals.',
-      icon: '🐉',
-      entryFee: 10,
-      maxWin: '9,000 🪙',
-      gameName: 'Dragon & Tiger',
-      category: 'Cards & Table',
-      badge: 'LIVE',
-    ),
-    _GameInfo(
-      id: 'roulette',
-      title: 'Roulette',
-      description: 'Single-zero European wheel roulette table with straight, color, and dozen wagers.',
-      icon: '🎡',
-      entryFee: 10,
-      maxWin: '36,000 🪙',
-      gameName: 'Roulette',
-      category: 'Cards & Table',
-      badge: 'TABLE',
-    ),
-    _GameInfo(
-      id: 'delicious',
-      title: 'Delicious',
-      description: 'Culinary gourmet matching arcade game with high-tier multiplier combos.',
-      icon: '🍰',
-      entryFee: 10,
-      maxWin: '2,500 🪙',
-      gameName: 'Delicious',
-      category: 'Arcade',
-      badge: 'NEW',
-    ),
-    _GameInfo(
-      id: 'rocket',
-      title: 'Rocket',
-      description: 'Crash multiplier game where the rocket climbs in real-time. Cash out before the sudden crash!',
-      icon: '🚀',
-      entryFee: 10,
-      maxWin: '50,000 🪙',
-      gameName: 'Rocket',
-      category: 'Multiplier',
-      badge: 'HOT',
-    ),
-    _GameInfo(
-      id: 'fruit_party_jackpot',
-      title: 'Fruit Party Jackpot',
-      description: 'Vibrant fruit slot engine featuring symbol combinations and community jackpot pools.',
-      icon: '🎰',
-      entryFee: 10,
-      maxWin: '50,000 🪙',
-      gameName: 'Fruit Party Jackpot',
-      category: 'Slots & Jackpot',
-      badge: 'JACKPOT',
-    ),
-    _GameInfo(
-      id: 'bounty_football',
-      title: 'Bounty Football',
-      description: 'Football and penalty challenge arcade with target score multipliers.',
-      icon: '⚽',
-      entryFee: 10,
-      maxWin: '5,000 🪙',
-      gameName: 'Bounty Football',
-      category: 'Arcade',
-      badge: 'SPORTS',
-    ),
-    _GameInfo(
-      id: 'greedy_lion',
-      title: 'Greedy Lion',
-      description: 'Safari animal multiplier journey. Follow the lion to uncover multiplier rewards.',
-      icon: '🦁',
-      entryFee: 10,
-      maxWin: '5,000 🪙',
-      gameName: 'Greedy Lion',
-      category: 'Multiplier',
-      badge: 'POPULAR',
-    ),
-    _GameInfo(
-      id: 'double_seven_77',
-      title: 'Double Seven (77)',
-      description: 'Lucky 77 matching experience featuring double seven triggers and coin surprises.',
-      icon: '7️⃣',
-      entryFee: 10,
-      maxWin: '5,000 🪙',
-      gameName: 'Double Seven (77)',
-      category: 'Slots & Jackpot',
-      badge: 'CLASSIC',
-    ),
+  final List<Map<String, dynamic>> _games = [
+    {
+      'id': 'fishing',
+      'name': 'Fishing',
+      'category': 'Arcade',
+      'tagline': 'Catch, combo, beat the boss',
+      'description': 'Aim and shoot nets to catch swimming fish, build combo multipliers up to 3x, survive 10 waves and defeat the giant Boss Shark.',
+      'icon': '🎣',
+      'badge': 'ARCADE',
+      'artGradient': [Color(0xFF2FD3E6), Color(0xFF0C6A8C), Color(0xFF041E2E)],
+      'accentColor': Color(0xFF1FB6C8),
+      'usesEnergy': true,
+      'energyCost': 1,
+      'duration': '3 to 4 min',
+      'rpCap': 'Up to 50 RP',
+      'modes': ['Classic (10 Waves)', 'Boss Rush', 'Endless Challenge'],
+    },
+    {
+      'id': 'football',
+      'name': 'Football',
+      'category': 'Sports & Skill',
+      'tagline': 'Penalty shootout',
+      'description': 'Aim with curve swipe, time the power bar golden sweet spot, score top-corner golazos, and dive as goalkeeper in best of 5.',
+      'icon': '⚽',
+      'badge': 'SPORTS',
+      'artGradient': [Color(0xFF0B2A1C), Color(0xFF1E8A52), Color(0xFF36C97A)],
+      'accentColor': Color(0xFF2FBF71),
+      'usesEnergy': false,
+      'energyCost': 0,
+      'duration': '2 min',
+      'rpCap': 'Up to 45 RP',
+      'modes': ['Quick Shootout vs AI', '1 vs 1 Realtime', 'Host Challenge', 'Daily Ladder'],
+    },
+    {
+      'id': 'fruit_match',
+      'name': 'Fruit Match',
+      'category': 'Match-3 Puzzle',
+      'tagline': 'Match-3 levels',
+      'description': 'Swap adjacent fruits to clear targets within move limits. Create striped, bomb, and rainbow special fruit combos.',
+      'icon': '🍓',
+      'badge': 'PUZZLE',
+      'artGradient': [Color(0xFFFFB45C), Color(0xFFE8641C), Color(0xFF9E1F5C)],
+      'accentColor': Color(0xFFFF8A3D),
+      'usesEnergy': false,
+      'energyCost': 0,
+      'duration': '2 to 3 min',
+      'rpCap': 'Up to 50 RP',
+      'modes': ['Level Journey (60 Levels)', 'Star Challenge', 'Endless Match'],
+    },
+    {
+      'id': 'rocket_challenge',
+      'name': 'Rocket Challenge',
+      'category': 'Reflex & Timing',
+      'tagline': 'Stop at the target',
+      'description': 'Launch the rocket and tap STOP at the exact target altitude. Precision timing scores Perfects and streak multipliers.',
+      'icon': '🚀',
+      'badge': 'TIMING',
+      'artGradient': [Color(0xFF03041A), Color(0xFF1A2566), Color(0xFF6DB4F0)],
+      'accentColor': Color(0xFF2E7CF6),
+      'usesEnergy': false,
+      'energyCost': 0,
+      'duration': '90 sec',
+      'rpCap': 'Up to 50 RP',
+      'modes': ['Classic (10 Rounds)', 'Endurance', 'Duel Mode'],
+    },
+    {
+      'id': 'lion_adventure',
+      'name': 'Lion Adventure',
+      'category': 'Endless Runner',
+      'tagline': 'Run and collect',
+      'description': 'Swipe left/right to change lanes, jump over logs and slide under branches. Collect gems, shields, and speed boosts.',
+      'icon': '🦁',
+      'badge': 'RUNNER',
+      'artGradient': [Color(0xFF0E2B14), Color(0xFF2E7A36), Color(0xFF8A5A24)],
+      'accentColor': Color(0xFFF5A623),
+      'usesEnergy': true,
+      'energyCost': 1,
+      'duration': '3 to 5 min',
+      'rpCap': 'Up to 50 RP',
+      'modes': ['Jungle Run', 'Ruins Sprint', 'Night Hunt'],
+    },
+    {
+      'id': 'seven_puzzle',
+      'name': 'Seven Puzzle',
+      'category': 'Number Merge',
+      'tagline': 'Merge numbers to 7',
+      'description': 'Drop numbered tiles into columns. Merge equal numbers to reach 7, clear neighbors, and trigger chain reactions.',
+      'icon': '🧩',
+      'badge': 'PUZZLE',
+      'artGradient': [Color(0xFF200B3B), Color(0xFF654EA3), Color(0xFFEAAFC8)],
+      'accentColor': Color(0xFF8B5CF6),
+      'usesEnergy': false,
+      'energyCost': 0,
+      'duration': '3 min',
+      'rpCap': 'Up to 50 RP',
+      'modes': ['Classic Strategy', 'Timed Rush (2 Mins)', 'Daily Board'],
+    },
   ];
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  void _openGame(BuildContext context, Map<String, dynamic> game) {
+    final gameProvider = context.read<GameProvider>();
+    final usesEnergy = game['usesEnergy'] == true;
+    final cost = (game['energyCost'] as int? ?? 1);
+
+    if (usesEnergy && gameProvider.energy < cost) {
+      EnergySheet.show(context);
+      return;
+    }
+
+    if (usesEnergy) {
+      gameProvider.consumeEnergy(cost);
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GameScreen(
+          gameId: game['id'],
+          gameName: game['name'],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Provider.of<ThemeProvider>(context).isDarkMode;
-    final primary = AppColors.getPrimary(isDark);
+    final gameProvider = context.watch<GameProvider>();
+    final walletProvider = context.watch<WalletProvider>();
+    final authProvider = context.watch<AuthProvider>();
 
-    final filteredGames = _allGames.where((g) {
-      final matchesCategory = _selectedCategory == 'All Games' || g.category == _selectedCategory;
-      final matchesSearch = _searchQuery.isEmpty ||
-          g.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          g.description.toLowerCase().contains(_searchQuery.toLowerCase());
-      return matchesCategory && matchesSearch;
-    }).toList();
+    final rpBalance = gameProvider.rpBalance;
+    final energy = gameProvider.energy;
+    final maxEnergy = gameProvider.maxEnergy;
+    final user = authProvider.currentUser;
 
     return Scaffold(
-      backgroundColor: AppColors.getBackground(isDark),
-      appBar: AppBar(
-        backgroundColor: AppColors.getBackground(isDark),
-        elevation: 0,
-        title: Text(
-          '🎮 Official Games Lobby (10)',
-          style: TextStyle(
-            color: AppColors.getTextPrimary(isDark),
-            fontWeight: FontWeight.bold,
+      backgroundColor: const Color(0xFF0C0A12),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.6),
+            radius: 1.2,
+            colors: [
+              Color(0xFF2E2152),
+              Color(0xFF17122A),
+              Color(0xFF0C0A12),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              // Top Header Bar
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 8),
+                  child: Row(
+                    children: [
+                      const Text(
+                        'Games',
+                        style: TextStyle(
+                          fontFamily: 'Sora',
+                          color: Color(0xFFEDEDF2),
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const Spacer(),
+
+                      // RP Balance Pill
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          RpWalletSheet.show(
+                            context,
+                            onShop: () => RpShopSheet.show(context),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5B942).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: const Color(0xFFF5B942).withOpacity(0.55)),
+                            boxShadow: [
+                              BoxShadow(color: const Color(0xFFF5B942).withOpacity(0.15), blurRadius: 10),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.star, color: Color(0xFFF5B942), size: 14),
+                              const SizedBox(width: 5),
+                              Text(
+                                '$rpBalance RP',
+                                style: const TextStyle(
+                                  fontFamily: 'Manrope',
+                                  color: Color(0xFFF5B942),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Energy 5-Bolts Indicator Pill
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          EnergySheet.show(context);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: Colors.white.withOpacity(0.15)),
+                          ),
+                          child: Row(
+                            children: List.generate(maxEnergy, (index) {
+                              final isFilled = index < energy;
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                                child: Icon(
+                                  Icons.flash_on,
+                                  color: isFilled ? const Color(0xFFF5B942) : Colors.white24,
+                                  size: 13,
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // User Avatar Pill
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFE8265C), Color(0xFF7C4DFF)],
+                          ),
+                          border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+                          boxShadow: [
+                            BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 8),
+                          ],
+                        ),
+                        child: Center(
+                          child: Text(
+                            user?.name.isNotEmpty == true ? user!.name.substring(0, 1).toUpperCase() : 'Z',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Tournament Banner
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 6),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          const Color(0xFFE8265C).withOpacity(0.28),
+                          const Color(0xFF7C4DFF).withOpacity(0.18),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: const Color(0xFFE8265C).withOpacity(0.45)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFE8265C).withOpacity(0.2),
+                          blurRadius: 20,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF5B942).withOpacity(0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.emoji_events, color: Color(0xFFF5B942), size: 30),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'WEEKEND TOURNAMENT',
+                                style: TextStyle(
+                                  color: Color(0xFFFFB3C8),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.6,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              const Text(
+                                'Fruit Match Cup',
+                                style: TextStyle(
+                                  fontFamily: 'Sora',
+                                  color: Color(0xFFEDEDF2),
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              const Text(
+                                'Cosmetic prizes · ends Sunday',
+                                style: TextStyle(color: Color(0xFFC9C9D6), fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.mediumImpact();
+                            final fruitGame = _games.firstWhere((g) => g['id'] == 'fruit_match');
+                            _openGame(context, fruitGame);
+                          },
+                          child: Container(
+                            height: 38,
+                            padding: const EdgeInsets.symmetric(horizontal: 18),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFF4D7E), Color(0xFFE8265C), Color(0xFFC81A4C)],
+                              ),
+                              borderRadius: BorderRadius.circular(999),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFE8265C).withOpacity(0.45),
+                                  blurRadius: 14,
+                                ),
+                              ],
+                            ),
+                            child: const Center(
+                              child: Text(
+                                'Join',
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Daily Missions Section
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 4),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Daily missions',
+                            style: TextStyle(
+                              color: Color(0xFFEDEDF2),
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          Text(
+                            'Reset 00:00',
+                            style: TextStyle(
+                              color: const Color(0xFFA69FC0).withOpacity(0.8),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildMissionCard(context, 'Catch 50 fish', 0.64, '32/50', false, 30),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildMissionCard(context, 'Score 3 penalties', 0.33, '1/3', false, 30),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildMissionCard(context, 'Clear 5 levels', 1.0, 'Claim +60', true, 60),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 2-Column Game Grid
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    childAspectRatio: 0.86,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final game = _games[index];
+                      return _buildGameGridCard(context, game);
+                    },
+                    childCount: _games.length,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+    );
+  }
+
+  Widget _buildMissionCard(BuildContext context, String title, double progress, String sub, bool isClaimable, int rewardRp) {
+    return GestureDetector(
+      onTap: isClaimable
+          ? () {
+              HapticFeedback.heavyImpact();
+              final granted = context.read<GameProvider>().addRp(rewardRp, 'Daily Mission: $title');
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: const Color(0xFF2FBF71),
+                  content: Text('+$granted RP Claimed successfully!'),
+                ),
+              );
+            }
+          : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: const Color(0xFF16121F),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isClaimable ? const Color(0xFF9FE8C8).withOpacity(0.4) : Colors.white.withOpacity(0.10),
+          ),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Search Bar
-            TextField(
-              controller: _searchController,
-              onChanged: (val) => setState(() => _searchQuery = val.trim()),
-              style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-              decoration: InputDecoration(
-                hintText: 'Search games by name or category...',
-                hintStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
-                prefixIcon: const Icon(Icons.search_rounded, color: AppColors.warmGold),
-                suffixIcon: _searchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear_rounded),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() => _searchQuery = '');
-                        },
-                      )
-                    : null,
-                filled: true,
-                fillColor: AppColors.getCard(isDark),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  borderSide: BorderSide(color: AppColors.getBorder(isDark)),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Category Chips Row
-            SizedBox(
-              height: 38,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: ['All Games', 'Arcade', 'Cards & Table', 'Slots & Jackpot', 'Multiplier'].map((cat) {
-                  final isSelected = _selectedCategory == cat;
-                  return Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(cat),
-                      selected: isSelected,
-                      selectedColor: AppColors.warmGold,
-                      labelStyle: TextStyle(
-                        color: isSelected ? AppColors.black : AppColors.getTextSecondary(isDark),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                      onSelected: (_) => setState(() => _selectedCategory = cat),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // Banner Info
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: primary.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: primary.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.stars_rounded, color: primary, size: 28),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Official ZeParty Games! All rounds and payouts are settled authoritatively on the server.',
-                      style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
             Text(
-              'Official Games (${filteredGames.length})',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Color(0xFFEDEDF2), fontSize: 11, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 14),
-
-            if (filteredGames.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 40),
-                child: Center(
-                  child: Text('No games matched your search criteria.'),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 6,
+                backgroundColor: Colors.white.withOpacity(0.1),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  isClaimable ? const Color(0xFF9FE8C8) : const Color(0xFFF5B942),
                 ),
-              )
-            else
-              ...filteredGames.map((game) => _GameCard(game: game, isDark: isDark)),
-
-            const SizedBox(height: 80),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              sub,
+              style: TextStyle(
+                color: isClaimable ? const Color(0xFF9FE8C8) : const Color(0xFFA69FC0),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
-}
 
-class _GameInfo {
-  final String id;
-  final String title;
-  final String description;
-  final String icon;
-  final int entryFee;
-  final String maxWin;
-  final String gameName;
-  final String category;
-  final String badge;
+  Widget _buildGameGridCard(BuildContext context, Map<String, dynamic> game) {
+    final artGradient = game['artGradient'] as List<Color>;
+    final gameProvider = context.watch<GameProvider>();
+    final bestScore = gameProvider.personalBests[game['id']] ?? 0;
+    final personalLevel = gameProvider.personalLevels[game['id']] ?? 1;
+    final bestStr = bestScore > 0 ? _formatScore(bestScore) : 'Play';
 
-  const _GameInfo({
-    required this.id,
-    required this.title,
-    required this.description,
-    required this.icon,
-    required this.entryFee,
-    required this.maxWin,
-    required this.gameName,
-    required this.category,
-    required this.badge,
-  });
-}
-
-class _GameCard extends StatelessWidget {
-  final _GameInfo game;
-  final bool isDark;
-  const _GameCard({required this.game, required this.isDark});
-
-  void _showWagerSheet(BuildContext context) {
-    if (game.id == 'rocket' || game.gameName == 'Rocket') {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => const RocketGameSheet(),
-      );
-      return;
-    }
-
-    final wallet = Provider.of<WalletProvider>(context, listen: false);
-    int wager = game.entryFee;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.getCard(isDark),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(color: AppColors.getBorder(isDark), borderRadius: BorderRadius.circular(2)),
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        GameDetailSheet.show(
+          context,
+          game: game,
+          onPlay: () => _openGame(context, game),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1C1730), Color(0xFF120F1D)],
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withOpacity(0.10)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.35),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Game Art Area
+            Container(
+              height: 92,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: artGradient,
+                ),
               ),
-              const SizedBox(height: 20),
-              Text(game.icon, style: const TextStyle(fontSize: 52)),
-              const SizedBox(height: 12),
-              Text(game.title, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
-              const SizedBox(height: 6),
-              Text('Max Win: ${game.maxWin}', style: TextStyle(color: AppColors.getPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 14)),
-              const SizedBox(height: 20),
-              Text('Set Your Wager', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.getTextPrimary(isDark))),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  IconButton(
-                    onPressed: () => setS(() { if (wager > game.entryFee) wager -= 10; }),
-                    icon: Icon(Icons.remove_circle_outline_rounded, color: AppColors.getPrimary(isDark), size: 32),
-                  ),
-                  Container(
-                    width: 120,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: AppColors.getSurface(isDark),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.getBorder(isDark)),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('🪙', style: TextStyle(fontSize: 20)),
-                        const SizedBox(width: 6),
-                        Text('$wager', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
-                      ],
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Colors.white.withOpacity(0.22), Colors.transparent],
+                        ),
+                      ),
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => setS(() => wager += 10),
-                    icon: Icon(Icons.add_circle_outline_rounded, color: AppColors.getPrimary(isDark), size: 32),
+                  Text(game['icon'], style: const TextStyle(fontSize: 42)),
+                  // Level Badge on Art
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.white.withOpacity(0.2)),
+                      ),
+                      child: Text(
+                        'Lv. $personalLevel',
+                        style: const TextStyle(
+                          color: Color(0xFF9FE8C8),
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              Text('Your balance: 🪙 ${wallet.coins}', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12)),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.transparent,
-                    shadowColor: Colors.transparent,
-                    padding: EdgeInsets.zero,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  onPressed: wallet.coins >= wager
-                      ? () {
-                          Navigator.pop(ctx);
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => GameScreen(gameId: game.id, gameName: game.gameName, wager: wager),
-                          ));
-                        }
-                      : null,
-                  child: Ink(
-                    decoration: BoxDecoration(
-                      gradient: wallet.coins >= wager ? AppColors.getAccentGradient(isDark) : null,
-                      color: wallet.coins < wager ? AppColors.getBorder(isDark) : null,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: wallet.coins >= wager ? AppColors.primaryGlow(isDark, alpha: 0.3, blur: 16) : null,
+            ),
+
+            // Game Info
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    game['name'],
+                    style: const TextStyle(
+                      fontFamily: 'Sora',
+                      color: Color(0xFFEDEDF2),
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
                     ),
-                    child: Center(
-                      child: Text(
-                        wallet.coins >= wager ? 'Enter Game — 🪙 $wager' : 'Insufficient Coins',
-                        style: TextStyle(
-                          color: wallet.coins >= wager ? AppColors.onPrimary(isDark: isDark) : AppColors.getTextSecondary(isDark),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    game['tagline'],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFFA69FC0),
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+
+                  // Bottom modes and best score
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        game['category'] ?? 'Arcade',
+                        style: const TextStyle(
+                          color: Color(0xFF9FE8C8),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final primary = AppColors.getPrimary(isDark);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: InkWell(
-        onTap: () => _showWagerSheet(context),
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.getCard(isDark),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.getBorder(isDark)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: AppColors.getSurface(isDark),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.getBorder(isDark)),
-                ),
-                child: Center(
-                  child: Text(game.icon, style: const TextStyle(fontSize: 28)),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            game.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.getTextPrimary(isDark),
+                      Row(
+                        children: [
+                          const Icon(Icons.emoji_events, color: Color(0xFFF5B942), size: 11),
+                          const SizedBox(width: 3),
+                          Text(
+                            bestStr,
+                            style: const TextStyle(
+                              color: Color(0xFFF5B942),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        _pill(game.badge.isNotEmpty ? game.badge : 'Max ${game.maxWin}', isDark),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      game.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        height: 1.3,
-                        color: AppColors.getTextSecondary(isDark),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        _pill('Min 🪙 ${game.entryFee}', isDark),
-                        _pill('Win ${game.maxWin}', isDark),
-                      ],
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: primary.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(Icons.play_arrow_rounded, color: primary, size: 24),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _pill(String text, bool isDark) {
-    final primary = AppColors.getPrimary(isDark);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-      decoration: BoxDecoration(
-        color: primary.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.getBorderStrong(isDark).withValues(alpha: 0.5), width: 0.9),
-      ),
-      child: Text(
-        text,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: primary, fontSize: 9.5, fontWeight: FontWeight.bold),
-      ),
-    );
+  String _formatScore(int val) {
+    final s = val.toString();
+    final reg = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
+    return s.replaceAllMapped(reg, (Match m) => '${m[1]},');
   }
 }

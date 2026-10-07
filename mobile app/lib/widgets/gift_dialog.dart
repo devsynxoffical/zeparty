@@ -536,6 +536,27 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
     );
   }
 
+  Widget _buildGiftIconWidget(String icon) {
+    if (icon.startsWith('assets/')) {
+      return Image.asset(
+        icon,
+        width: 38,
+        height: 38,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => Text(icon.length < 4 ? icon : '🎁', style: const TextStyle(fontSize: 26)),
+      );
+    } else if (icon.startsWith('http')) {
+      return Image.network(
+        icon,
+        width: 38,
+        height: 38,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => const Text('🎁', style: TextStyle(fontSize: 26)),
+      );
+    }
+    return Text(icon, style: const TextStyle(fontSize: 26));
+  }
+
   Widget _buildGiftGrid(bool isDark, Color primaryColor, String category, List<GiftModel> catalog) {
     List<GiftModel> displayGifts;
     if (category == 'Lucky Gift') {
@@ -598,7 +619,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(gift.icon, style: const TextStyle(fontSize: 26)),
+                    _buildGiftIconWidget(gift.icon),
                     const SizedBox(height: 2),
                     Text(
                       gift.name,

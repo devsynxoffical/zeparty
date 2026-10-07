@@ -31,6 +31,89 @@ class NobleBadgeHelper {
     return NobleTier.none;
   }
 
+  static String? getBadgeAsset(String? title) {
+    if (title == null || title.isEmpty) return null;
+    final lower = title.toLowerCase().trim();
+
+    // Noble Badges
+    if (lower.contains('emperor')) return 'assets/nobles/emperor_badge.png';
+    if (lower.contains('king')) return 'assets/nobles/king_badge.png';
+    if (lower.contains('duke')) return 'assets/nobles/duke_badge.png';
+    if (lower.contains('marquis')) return 'assets/nobles/marquis_badge.png';
+    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_badge.png';
+    if (lower.contains('baron')) return 'assets/nobles/baron_badge.png';
+
+    // SVIP Badges
+    if (lower.contains('svip')) {
+      for (int i = 15; i >= 1; i--) {
+        if (lower.contains('svip $i') || lower.contains('svip$i')) {
+          return 'assets/svip/svip${i}_badge.png';
+        }
+      }
+    }
+
+    // Role Badges
+    if (lower.contains('admin') && lower.contains('super')) return 'assets/roles/super_admin_tag.png';
+    if (lower.contains('admin')) return 'assets/roles/admin_badge.png';
+    if (lower.contains('agency')) return 'assets/roles/agency_badge.png';
+    if (lower.contains('assistant')) return 'assets/roles/assistant_badge.png';
+    if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/bd_badge.png';
+    if (lower.contains('boss')) return 'assets/roles/boss_badge.png';
+    if (lower.contains('ceo')) return 'assets/roles/ceo_badge.png';
+    if (lower.contains('cs') || lower.contains('support')) return 'assets/roles/cs_badge.png';
+    if (lower.contains('master') || lower.contains('game master')) return 'assets/roles/game_master_badge.png';
+    if (lower.contains('live host')) return 'assets/roles/host_badge.png';
+    if (lower.contains('host')) return 'assets/roles/host_badge.png';
+    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_badge.png';
+    if (lower.contains('top fan')) return 'assets/roles/top_fan_badge.png';
+    if (lower.contains('mystery')) return 'assets/animations/mystery_badge.png';
+
+    return null;
+  }
+
+  static String? getFrameAsset(String? title) {
+    if (title == null || title.isEmpty) return null;
+    final lower = title.toLowerCase().trim();
+
+    // Noble Frames
+    if (lower.contains('emperor')) return 'assets/nobles/emperor_frame.png';
+    if (lower.contains('king')) return 'assets/nobles/king_frame.png';
+    if (lower.contains('duke')) return 'assets/nobles/duke_frame.png';
+    if (lower.contains('marquis')) return 'assets/nobles/marquis_frame.png';
+    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_frame.png';
+    if (lower.contains('viscount')) return 'assets/nobles/viscount_frame.png';
+    if (lower.contains('baron')) return 'assets/nobles/baron_frame.png';
+
+    // SVIP Frames
+    if (lower.contains('svip')) {
+      for (int i = 15; i >= 6; i--) {
+        if (lower.contains('svip $i') || lower.contains('svip$i')) {
+          return 'assets/svip/svip${i}_frame.png';
+        }
+      }
+    }
+
+    // Role Frames
+    if (lower.contains('admin')) return 'assets/roles/admin_frame.png';
+    if (lower.contains('agency')) return 'assets/roles/agency_frame.png';
+    if (lower.contains('assistant')) return 'assets/roles/assistant_frame.png';
+    if (lower.contains('bd')) return 'assets/roles/bd_frame.png';
+    if (lower.contains('boss')) return 'assets/roles/boss_frame.png';
+    if (lower.contains('ceo')) return 'assets/roles/ceo_frame.png';
+    if (lower.contains('cs')) return 'assets/roles/cs_frame.png';
+    if (lower.contains('game master')) return 'assets/roles/game_master_frame.png';
+    if (lower.contains('live host')) return 'assets/roles/live_host_frame.png';
+    if (lower.contains('host')) return 'assets/roles/host_frame.png';
+    if (lower.contains('lover')) return 'assets/roles/lover_frame.png';
+    if (lower.contains('manager')) return 'assets/roles/manager_frame.png';
+    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_frame.png';
+    if (lower.contains('official')) return 'assets/roles/official_frame.png';
+    if (lower.contains('top fan')) return 'assets/roles/top_fan_frame.png';
+    if (lower.contains('mystery')) return 'assets/animations/mystery_frame.png';
+
+    return null;
+  }
+
   static Color getColoredNicknameColor(NobleTier tier) {
     switch (tier) {
       case NobleTier.emperor:
@@ -93,7 +176,35 @@ class NobleBadgeChip extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final title = nobleTitleOverride ?? user.nobleTitle ?? (user.isVip ? 'Noble Knight' : null);
+    String? title = nobleTitleOverride ?? user.nobleTitle;
+    if (title == null || title.isEmpty) {
+      if (user.svipLevel > 0) {
+        title = 'SVIP ${user.svipLevel}';
+      } else if (user.role != UserRole.user) {
+        title = user.role.name;
+      } else if (user.isVip) {
+        title = 'Noble Knight';
+      }
+    }
+
+    final assetPath = NobleBadgeHelper.getBadgeAsset(title);
+
+    if (assetPath != null) {
+      return Container(
+        margin: const EdgeInsets.only(left: 4),
+        child: Image.asset(
+          assetPath,
+          height: fontSize * 2.2,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => _buildFallbackChip(context, title),
+        ),
+      );
+    }
+
+    return _buildFallbackChip(context, title);
+  }
+
+  Widget _buildFallbackChip(BuildContext context, String? title) {
     final tier = NobleBadgeHelper.getTierFromTitle(title);
 
     if (tier == NobleTier.none && title == null) {
