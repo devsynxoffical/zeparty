@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../../models/user_model.dart';
 import '../../providers/messaging_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/agency_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/report_sheet.dart';
 import '../profile/user_profile_details_screen.dart';
@@ -799,15 +800,44 @@ class _InboxScreenState extends State<InboxScreen> {
                                         padding: const EdgeInsets.symmetric(vertical: 8),
                                       ),
                                       onPressed: () {
-                                        messaging.respondToSystemInvitation(m.id, true);
                                         final auth = context.read<AuthProvider>();
+                                        final agency = context.read<AgencyProvider>();
+                                        final currentUser = auth.currentUser;
+
+                                        messaging.respondToSystemInvitation(
+                                          m.id,
+                                          true,
+                                          onHostStatusUpdate: (isHost) {
+                                            auth.updateProfile(isHost: true);
+                                          },
+                                          onAgencyUpdate: (invId, targetId, inviterName) {
+                                            agency.acceptAgencyInvitation(
+                                              invitationId: invId,
+                                              targetUserId: currentUser.id,
+                                              targetName: currentUser.name,
+                                              targetAvatar: currentUser.avatarUrl,
+                                            );
+                                          },
+                                        );
+
                                         if (m.invitationType == 'Agency Owner') {
                                           auth.updateProfile(isAgency: true, agencyName: '${m.inviterName} Agency');
                                         } else if (m.invitationType == 'Host') {
                                           auth.updateProfile(isHost: true);
+                                          agency.acceptAgencyInvitation(
+                                            invitationId: m.invitationId ?? m.id,
+                                            targetUserId: currentUser.id,
+                                            targetName: currentUser.name,
+                                            targetAvatar: currentUser.avatarUrl,
+                                          );
                                         }
+
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('🎉 You accepted the invitation to become a ${m.invitationType}!'), backgroundColor: Colors.green),
+                                          SnackBar(
+                                            content: Text('🎉 You accepted the invitation from ${m.inviterName}! Host status & Host Center activated.'),
+                                            backgroundColor: Colors.green,
+                                            duration: const Duration(seconds: 4),
+                                          ),
                                         );
                                       },
                                     ),
@@ -823,9 +853,31 @@ class _InboxScreenState extends State<InboxScreen> {
                                         padding: const EdgeInsets.symmetric(vertical: 8),
                                       ),
                                       onPressed: () {
-                                        messaging.respondToSystemInvitation(m.id, false);
+                                        final agency = context.read<AgencyProvider>();
+                                        final currentUser = context.read<AuthProvider>().currentUser;
+
+                                        messaging.respondToSystemInvitation(
+                                          m.id,
+                                          false,
+                                          onAgencyUpdate: (invId, targetId, inviterName) {
+                                            agency.declineAgencyInvitation(
+                                              invitationId: invId,
+                                              targetUserId: currentUser.id,
+                                            );
+                                          },
+                                        );
+
+                                        agency.declineAgencyInvitation(
+                                          invitationId: m.invitationId ?? m.id,
+                                          targetUserId: currentUser.id,
+                                        );
+
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Invitation declined.'), backgroundColor: Colors.orangeAccent),
+                                          const SnackBar(
+                                            content: Text('Invitation declined.'),
+                                            backgroundColor: Colors.orangeAccent,
+                                            duration: Duration(seconds: 3),
+                                          ),
                                         );
                                       },
                                     ),

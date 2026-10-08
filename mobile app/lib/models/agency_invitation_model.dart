@@ -25,6 +25,32 @@ class AgencyInvitationModel {
 
   bool get isExpired => DateTime.now().isAfter(expiresAt);
 
+  AgencyInvitationModel copyWith({
+    String? id,
+    String? agencyId,
+    String? agencyName,
+    String? inviterUserId,
+    String? inviterName,
+    String? targetUserId,
+    String? targetName,
+    String? status,
+    DateTime? createdAt,
+    DateTime? expiresAt,
+  }) {
+    return AgencyInvitationModel(
+      id: id ?? this.id,
+      agencyId: agencyId ?? this.agencyId,
+      agencyName: agencyName ?? this.agencyName,
+      inviterUserId: inviterUserId ?? this.inviterUserId,
+      inviterName: inviterName ?? this.inviterName,
+      targetUserId: targetUserId ?? this.targetUserId,
+      targetName: targetName ?? this.targetName,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      expiresAt: expiresAt ?? this.expiresAt,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'agencyId': agencyId,

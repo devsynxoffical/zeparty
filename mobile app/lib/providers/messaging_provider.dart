@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/message_model.dart';
@@ -32,6 +33,36 @@ class SystemMessageItem {
     this.targetId,
     this.status = 'Pending',
   });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'content': content,
+    'category': category,
+    'timestamp': timestamp.toIso8601String(),
+    'isRead': isRead,
+    'invitationType': invitationType,
+    'invitationId': invitationId,
+    'inviterName': inviterName,
+    'targetId': targetId,
+    'status': status,
+  };
+
+  factory SystemMessageItem.fromJson(Map<String, dynamic> json) => SystemMessageItem(
+    id: json['id']?.toString() ?? 'sys_${DateTime.now().millisecondsSinceEpoch}',
+    title: json['title']?.toString() ?? 'Official Notice',
+    content: json['content']?.toString() ?? json['body']?.toString() ?? '',
+    category: json['category']?.toString() ?? 'Official',
+    timestamp: json['timestamp'] != null
+        ? (DateTime.tryParse(json['timestamp'].toString()) ?? DateTime.now())
+        : DateTime.now(),
+    isRead: json['isRead'] == true,
+    invitationType: json['invitationType']?.toString() ?? json['data']?['invitationType']?.toString(),
+    invitationId: json['invitationId']?.toString() ?? json['data']?['invitationId']?.toString(),
+    inviterName: json['inviterName']?.toString() ?? json['data']?['inviterName']?.toString(),
+    targetId: json['targetId']?.toString() ?? json['data']?['targetId']?.toString(),
+    status: json['status']?.toString() ?? json['data']?['status']?.toString() ?? 'Pending',
+  );
 }
 
 class ActivityRewardItem {
@@ -119,6 +150,7 @@ class AdminBroadcastItem {
 }
 
 class MessagingProvider extends ChangeNotifier {
+  static const String _prefsSystemMessages = 'zeparty_persisted_system_messages';
   static const String _prefsReadSystemIds = 'zeparty_read_system_ids';
   static const String _prefsReadRewardIds = 'zeparty_read_reward_ids';
   static const String _prefsClaimedRewardIds = 'zeparty_claimed_reward_ids';
@@ -131,6 +163,7 @@ class MessagingProvider extends ChangeNotifier {
   final SocialRepository _socialRepo = SocialRepository.instance;
   StreamSubscription<Map<String, dynamic>>? _socketSub;
   StreamSubscription<Map<String, dynamic>>? _readSub;
+  StreamSubscription<Map<String, dynamic>>? _notifSub;
 
   final Set<String> _readSystemIds = {};
   final Set<String> _readRewardIds = {};
@@ -211,8 +244,27 @@ class MessagingProvider extends ChangeNotifier {
       _archivedUserIds.addAll(prefs.getStringList(_prefsArchivedUserIds) ?? []);
       _blockedUserIds.addAll(prefs.getStringList(_prefsBlockedUserIds) ?? []);
 
+      final savedMsgs = prefs.getStringList(_prefsSystemMessages);
+      if (savedMsgs != null && savedMsgs.isNotEmpty) {
+        _systemMessages.clear();
+        for (var str in savedMsgs) {
+          try {
+            final json = jsonDecode(str) as Map<String, dynamic>;
+            _systemMessages.add(SystemMessageItem.fromJson(json));
+          } catch (_) {}
+        }
+      }
+
       _applyPersistentStates();
       notifyListeners();
+    } catch (_) {}
+  }
+
+  void _saveSystemMessages() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = _systemMessages.map((m) => jsonEncode(m.toJson())).toList();
+      await prefs.setStringList(_prefsSystemMessages, list);
     } catch (_) {}
   }
 
@@ -251,12 +303,15 @@ class MessagingProvider extends ChangeNotifier {
   }
 
   void _initSocketListener() {
+    _socketSub?.cancel();
     _socketSub = SocketService.instance.onDirectMessage.listen((data) {
       _handleIncomingSocketMessage(data);
     });
+    _readSub?.cancel();
     _readSub = SocketService.instance.onDirectMessageRead.listen((data) {
       _handleReadReceiptSocketMessage(data);
     });
+    _typingSub?.cancel();
     _typingSub = SocketService.instance.onChatTyping.listen((data) {
       final senderId = data['senderId']?.toString();
       final isTyping = data['isTyping'] == true;
@@ -265,6 +320,27 @@ class MessagingProvider extends ChangeNotifier {
         notifyListeners();
       }
     });
+
+    _notifSub?.cancel();
+    _notifSub = SocketService.instance.onNotificationNew.listen((data) {
+      _handleIncomingSystemNotification(data);
+    });
+  }
+
+  void _handleIncomingSystemNotification(Map<String, dynamic> data) {
+    try {
+      final item = SystemMessageItem.fromJson(data);
+      final existingIndex = _systemMessages.indexWhere((m) => m.id == item.id || (item.invitationId != null && m.invitationId == item.invitationId));
+      if (existingIndex != -1) {
+        _systemMessages[existingIndex] = item;
+      } else {
+        _systemMessages.insert(0, item);
+      }
+      _saveSystemMessages();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[MessagingProvider] Error handling incoming system notification: $e');
+    }
   }
 
   void _handleReadReceiptSocketMessage(Map<String, dynamic> data) {
@@ -685,16 +761,55 @@ class MessagingProvider extends ChangeNotifier {
       status: 'Pending',
     );
 
+    _systemMessages.removeWhere((m) => m.invitationId == invitationId);
     _systemMessages.insert(0, msg);
+    _saveSystemMessages();
+
+    // Dispatch real-time socket emission to server & recipient
+    SocketService.instance.emit('agency:invite_member', {
+      'title': title,
+      'content': content,
+      'invitationType': invitationType,
+      'invitationId': invitationId,
+      'inviterName': inviterName,
+      'targetUserId': targetId,
+      'status': 'Pending',
+    });
+
     notifyListeners();
   }
 
-  void respondToSystemInvitation(String messageId, bool accept) {
-    final idx = _systemMessages.indexWhere((m) => m.id == messageId);
+  void respondToSystemInvitation(
+    String messageId,
+    bool accept, {
+    void Function(bool isHost)? onHostStatusUpdate,
+    void Function(String invitationId, String targetUserId, String targetName)? onAgencyUpdate,
+  }) {
+    final idx = _systemMessages.indexWhere((m) => m.id == messageId || m.invitationId == messageId);
     if (idx != -1) {
       final msg = _systemMessages[idx];
       msg.status = accept ? 'Accepted' : 'Declined';
       msg.isRead = true;
+      _saveSystemMessages();
+
+      // Emit response via realtime socket
+      SocketService.instance.emit('agency:respond_invite', {
+        'invitationId': msg.invitationId ?? msg.id,
+        'inviterName': msg.inviterName,
+        'status': msg.status,
+        'accepted': accept,
+        'targetId': msg.targetId,
+      });
+
+      if (accept) {
+        if (msg.invitationType == 'Host') {
+          onHostStatusUpdate?.call(true);
+        }
+        if (onAgencyUpdate != null && msg.invitationId != null) {
+          onAgencyUpdate(msg.invitationId!, msg.targetId ?? '', msg.inviterName ?? 'Host');
+        }
+      }
+
       notifyListeners();
     }
   }

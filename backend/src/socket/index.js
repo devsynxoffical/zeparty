@@ -78,6 +78,40 @@ export async function initSocketServer(httpServer) {
       }
     });
 
+    // Real-time Agency & Host Invitation Delivery (Bug 05 Fix)
+    socket.on('agency:invite_member', (data) => {
+      if (data && data.targetUserId) {
+        const payload = {
+          id: data.invitationId || `sys_inv_${Date.now()}`,
+          title: data.title || 'Host Invitation (ZeParty Official)',
+          content: data.content || `${data.inviterName || 'Agency'} invited you to join as a Host.`,
+          body: data.content || `${data.inviterName || 'Agency'} invited you to join as a Host.`,
+          category: 'Official',
+          timestamp: new Date().toISOString(),
+          invitationType: data.invitationType || 'Host',
+          invitationId: data.invitationId || `inv_ag_${Date.now()}`,
+          inviterName: data.inviterName || 'ZeParty Agency',
+          inviterUserId: socket.userId,
+          targetId: data.targetUserId,
+          status: 'Pending',
+        };
+
+        io.to(`user:${data.targetUserId}`).emit('notification:new', payload);
+        io.to(`user:${data.targetUserId}`).emit('agency:invitation_received', payload);
+      }
+    });
+
+    // Real-time Agency & Host Invitation Response Handler
+    socket.on('agency:respond_invite', (data) => {
+      if (data && data.inviterUserId) {
+        io.to(`user:${data.inviterUserId}`).emit('agency:invitation_responded', {
+          ...data,
+          responderUserId: socket.userId,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    });
+
     socket.on('disconnect', (reason) => {
       // Handled in room.socket.js onSocketDisconnect
     });

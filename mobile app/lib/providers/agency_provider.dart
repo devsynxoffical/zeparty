@@ -236,6 +236,75 @@ class AgencyProvider extends ChangeNotifier {
     return 'Invitation sent to $targetName!';
   }
 
+  void acceptAgencyInvitation({
+    required String invitationId,
+    required String targetUserId,
+    required String targetName,
+    String? targetAvatar,
+  }) {
+    final idx = _invitations.indexWhere((inv) => inv.id == invitationId || inv.targetUserId == targetUserId);
+    if (idx != -1) {
+      _invitations[idx] = _invitations[idx].copyWith(status: 'Accepted');
+    }
+
+    // Add applicant as host
+    if (!_audioHosts.any((h) => h.userId == targetUserId)) {
+      _audioHosts.add(
+        AudioHostModel(
+          hostId: 'host_${DateTime.now().millisecondsSinceEpoch}',
+          userId: targetUserId,
+          userName: targetName,
+          avatarUrl: targetAvatar ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
+          agencyId: _userAgency?.id ?? 'agency_777',
+          agencyName: _userAgency?.name ?? 'ZeParty Agency',
+          achievedDiamonds: 10000,
+          completedValidDays: 5,
+          dailyOnlineMinutes: 90,
+          status: 'Active',
+          joinDate: DateTime.now(),
+        ),
+      );
+    }
+
+    // Add to members list
+    if (!_members.any((m) => m.userId == targetUserId)) {
+      _members.add(
+        AgencyMemberModel(
+          id: 'mem_${DateTime.now().millisecondsSinceEpoch}',
+          agencyId: _userAgency?.id ?? 'agency_777',
+          userId: targetUserId,
+          name: targetName,
+          avatarUrl: targetAvatar ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
+          countryCode: _userAgency?.countryCode ?? 'GLOBAL',
+          role: 'Host',
+          status: 'Active',
+          targetStatus: 'In Progress',
+          joinedAt: DateTime.now(),
+        ),
+      );
+    }
+
+    if (_userAgency != null) {
+      _userAgency = _userAgency!.copyWith(
+        totalHosts: _audioHosts.length,
+        totalMembers: _members.length,
+      );
+    }
+
+    notifyListeners();
+  }
+
+  void declineAgencyInvitation({
+    required String invitationId,
+    required String targetUserId,
+  }) {
+    final idx = _invitations.indexWhere((inv) => inv.id == invitationId || inv.targetUserId == targetUserId);
+    if (idx != -1) {
+      _invitations[idx] = _invitations[idx].copyWith(status: 'Declined');
+    }
+    notifyListeners();
+  }
+
   bool removeMember({
     required String memberUserId,
     required String reason,
