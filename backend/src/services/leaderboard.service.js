@@ -136,7 +136,7 @@ export async function getWealthRankings({ period = 'daily', limit = 30 } = {}, d
 }
 
 /**
- * Get Charm Rankings (Top diamond earners / hosts)
+ * Get Charm Rankings (Top gift coin recipients / hosts)
  */
 export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db = prisma) {
   const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
@@ -149,11 +149,11 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
         createdAt: { gte: since },
       },
       _sum: {
-        hostDiamonds: true,
+        totalCoins: true,
       },
       orderBy: {
         _sum: {
-          hostDiamonds: 'desc',
+          totalCoins: 'desc',
         },
       },
       take,
@@ -185,7 +185,7 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
         .filter((a) => userMap.has(a.recipientUserId))
         .map((a, idx) => {
           const u = userMap.get(a.recipientUserId);
-          const points = Number(a._sum.hostDiamonds || 0);
+          const points = Number(a._sum.totalCoins || 0);
           return {
             rank: idx + 1,
             user: {
@@ -203,6 +203,64 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
           };
         });
     }
+  }
+
+  // Fallback / all-time query using gift transactions or profile diamonds as base points
+  const allTimeAggs = await db.giftTransaction.groupBy({
+    by: ['recipientUserId'],
+    _sum: {
+      totalCoins: true,
+    },
+    orderBy: {
+      _sum: {
+        totalCoins: 'desc',
+      },
+    },
+    take,
+  });
+
+  if (allTimeAggs.length > 0) {
+    const userIds = allTimeAggs.map((a) => a.recipientUserId);
+    const users = await db.user.findMany({
+      where: { id: { in: userIds }, status: 'ACTIVE' },
+      select: {
+        id: true,
+        username: true,
+        avatarUrl: true,
+        profile: {
+          select: {
+            displayName: true,
+            level: true,
+            vipLevel: true,
+            svipLevel: true,
+          },
+        },
+      },
+    });
+
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    return allTimeAggs
+      .filter((a) => userMap.has(a.recipientUserId))
+      .map((a, idx) => {
+        const u = userMap.get(a.recipientUserId);
+        const points = Number(a._sum.totalCoins || 0);
+        return {
+          rank: idx + 1,
+          user: {
+            id: u.id,
+            username: u.username,
+            name: u.profile?.displayName || u.username,
+            displayName: u.profile?.displayName || u.username,
+            avatarUrl: u.avatarUrl || '',
+            level: u.profile?.level || 1,
+            vipLevel: u.profile?.vipLevel || 0,
+            svipLevel: u.profile?.svipLevel || 0,
+          },
+          points,
+          formattedPoints: points >= 1000000 ? `${(points / 1000000).toFixed(1)}M` : points >= 1000 ? `${(points / 1000).toFixed(1)}K` : `${points}`,
+        };
+      });
   }
 
   const profiles = await db.userProfile.findMany({

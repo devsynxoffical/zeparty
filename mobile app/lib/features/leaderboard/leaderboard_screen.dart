@@ -4,7 +4,6 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../core/services/api_client.dart';
 import '../../models/user_model.dart';
-import '../../providers/auth_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../profile/user_profile_details_screen.dart';
 
@@ -269,12 +268,63 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
     );
   }
 
+  IconData _getCategoryIcon(String category) {
+    switch (category.toLowerCase()) {
+      case 'charm':
+      case 'wealth':
+        return Icons.monetization_on_rounded;
+      case 'cp':
+        return Icons.favorite_rounded;
+      case 'room':
+        return Icons.local_fire_department_rounded;
+      case 'svip':
+        return Icons.workspace_premium_rounded;
+      default:
+        return Icons.monetization_on_rounded;
+    }
+  }
+
+  String _getCategorySymbol(String category) {
+    switch (category.toLowerCase()) {
+      case 'charm':
+      case 'wealth':
+        return '🪙';
+      case 'cp':
+        return '❤️';
+      case 'room':
+        return '🔥';
+      case 'svip':
+        return '👑';
+      default:
+        return '🪙';
+    }
+  }
+
+  Color _getCategoryColor(String category) {
+    switch (category.toLowerCase()) {
+      case 'charm':
+      case 'wealth':
+        return Colors.amber;
+      case 'cp':
+        return Colors.pinkAccent;
+      case 'room':
+        return Colors.deepOrangeAccent;
+      case 'svip':
+        return Colors.purpleAccent;
+      default:
+        return Colors.amber;
+    }
+  }
+
   Widget _buildRankingList(List<RankingEntry> entries, bool isDark) {
     final top1 = entries.isNotEmpty ? entries[0] : null;
     final top2 = entries.length > 1 ? entries[1] : null;
     final top3 = entries.length > 2 ? entries[2] : null;
     final rest = entries.length > 3 ? entries.sublist(3) : <RankingEntry>[];
-    final isCP = _categories[_tabController.index] == 'CP';
+    final currentCategory = _categories[_tabController.index];
+    final isCP = currentCategory.toUpperCase() == 'CP';
+    final categoryColor = _getCategoryColor(currentCategory);
+    final categoryIcon = _getCategoryIcon(currentCategory);
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -309,6 +359,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                 avatarRadius: 28,
                 color: isDark ? AppColors.metallicGold : AppColors.metallicBlue,
                 isDark: isDark,
+                category: currentCategory,
               ),
               const SizedBox(width: 6),
 
@@ -320,6 +371,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                 avatarRadius: 36,
                 color: isDark ? AppColors.lightGold : AppColors.royalBlue,
                 isDark: isDark,
+                category: currentCategory,
                 crown: '👑',
               ),
               const SizedBox(width: 6),
@@ -332,6 +384,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                 avatarRadius: 24,
                 color: isDark ? AppColors.deepBronze : AppColors.lightBlue,
                 isDark: isDark,
+                category: currentCategory,
               ),
             ],
           ),
@@ -439,19 +492,19 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.amber.withValues(alpha: 0.12),
+                    color: categoryColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                    border: Border.all(color: categoryColor.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.diamond_rounded, color: Colors.amber, size: 14),
+                      Icon(categoryIcon, color: categoryColor, size: 14),
                       const SizedBox(width: 4),
                       Text(
                         entry.formattedPoints,
-                        style: const TextStyle(
-                          color: Colors.amber,
+                        style: TextStyle(
+                          color: categoryColor,
                           fontWeight: FontWeight.bold,
                           fontSize: 12,
                         ),
@@ -474,6 +527,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
     required double avatarRadius,
     required Color color,
     required bool isDark,
+    required String category,
     String? crown,
   }) {
     if (entry == null) {
@@ -488,6 +542,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
         ),
       );
     }
+
+    final categorySymbol = _getCategorySymbol(category);
+    final categoryColor = _getCategoryColor(category);
 
     return SizedBox(
       width: 96,
@@ -547,9 +604,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
           ),
           const SizedBox(height: 2),
           Text(
-            '💎 ${entry.formattedPoints}',
+            '$categorySymbol ${entry.formattedPoints}',
             style: TextStyle(
-              color: Colors.amber,
+              color: categoryColor,
               fontWeight: FontWeight.bold,
               fontSize: 11,
             ),
