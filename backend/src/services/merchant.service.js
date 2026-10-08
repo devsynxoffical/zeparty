@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import prisma from '../config/database.js';
 import merchantRepository from '../repositories/merchant.repository.js';
+import { generate7DigitUserId } from '../utils/idGenerator.util.js';
 
 function hashSecret(secret) {
   return crypto.createHash('sha256').update(secret).digest('hex');
@@ -69,8 +70,10 @@ export async function createMerchant(data, { adminId, adminName, ipAddress } = {
   if (!targetUser) {
     const rawUsername = (data.username || userIdentifier || `merchant_${Date.now()}`).replace('@', '').trim();
     const cleanPhone = `+1888${Math.floor(1000000 + Math.random() * 9000000)}`;
+    const finalId = await generate7DigitUserId(db);
     targetUser = await db.user.create({
       data: {
+        id: finalId,
         username: rawUsername,
         phone: cleanPhone,
         email: data.email || `${rawUsername}@zeparty.merchant`,

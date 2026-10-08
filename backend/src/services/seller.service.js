@@ -5,6 +5,7 @@ import ledgerService from './ledger.service.js';
 import approvalService from './approval.service.js';
 import policyService from './policy.service.js';
 import { generateReference } from '../utils/reference.util.js';
+import { generate7DigitUserId } from '../utils/idGenerator.util.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
@@ -41,8 +42,10 @@ export async function createSeller(data, { adminId, adminName, ipAddress } = {},
   if (!user) {
     const rawUsername = (data.username || data.userId || `seller_${Date.now()}`).replace('@', '').trim();
     const cleanPhone = `+1999${Math.floor(1000000 + Math.random() * 9000000)}`;
+    const finalId = await generate7DigitUserId(db);
     user = await db.user.create({
       data: {
+        id: finalId,
         username: rawUsername,
         phone: cleanPhone,
         email: data.email || `${rawUsername}@zeparty.seller`,

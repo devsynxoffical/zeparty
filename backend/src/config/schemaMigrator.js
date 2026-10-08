@@ -151,6 +151,30 @@ export async function ensureDatabaseSchema(db = prisma) {
     console.warn('Metrics sync note (hosts):', err.message);
   }
 
+  // 8. Ensure all users in User table have strictly unique 7-digit IDs (1000000 - 9999999)
+  try {
+    const non7DigitUsers = await db.$queryRawUnsafe(`
+      SELECT "id", "username" FROM "User"
+      WHERE "id" !~ '^[1-9][0-9]{6}$'
+    `);
+    if (non7DigitUsers && non7DigitUsers.length > 0) {
+      console.log(`🔄 Found ${non7DigitUsers.length} user(s) with non-7-digit IDs. Auto-migrating to 7-digit IDs...`);
+      for (const u of non7DigitUsers) {
+        let newId;
+        while (true) {
+          newId = Math.floor(1000000 + Math.random() * 9000000).toString();
+          const existing = await db.user.findUnique({ where: { id: newId }, select: { id: true } });
+          if (!existing) break;
+        }
+        console.log(` -> Migrating user @${u.username} from '${u.id}' to '${newId}'`);
+        await db.$executeRawUnsafe(`UPDATE "User" SET "id" = $1 WHERE "id" = $2`, newId, u.id);
+      }
+      console.log('✅ All non-7-digit user IDs migrated successfully to 7 digits');
+    }
+  } catch (err) {
+    console.warn('User ID auto-migration note:', err.message);
+  }
+
   console.log('✅ Database schema and platform analytics verified and synchronized successfully');
 }
 

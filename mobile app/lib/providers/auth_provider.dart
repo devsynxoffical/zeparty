@@ -84,15 +84,18 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _saveUserLocalSession(UserModel user) async {
     try {
+      // Validate that user has a genuine 7-digit ID before persisting
+      if (!RegExp(r'^[1-9]\d{6}$').hasMatch(user.id)) {
+        debugPrint('[AuthProvider] Refusing to persist invalid non-7-digit user session: ${user.id}');
+        return;
+      }
+      final token = await ApiClient.instance.getAccessToken();
+      if (token == null || token.isEmpty || token.startsWith('session_token_')) {
+        debugPrint('[AuthProvider] Refusing to persist session without genuine backend JWT token');
+        return;
+      }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_userSessionKey, jsonEncode(user.toJson()));
-      final token = await ApiClient.instance.getAccessToken();
-      if (token == null || token.isEmpty) {
-        await ApiClient.instance.saveTokens(
-          accessToken: 'session_token_${user.id}',
-          refreshToken: 'refresh_token_${user.id}',
-        );
-      }
       SocketService.instance.connect();
       BackendRepository.instance.fetchLiveRooms();
     } catch (e) {
@@ -117,6 +120,10 @@ class AuthProvider extends ChangeNotifier {
       _followingUserIds.clear();
       _followerUserIds.clear();
       _blockedUserIds.clear();
+      _currentUser = null;
+      _isAuthenticated = false;
+      _isGuest = false;
+      await ApiClient.instance.clearTokens();
       await _authRepository.logout();
     } catch (_) {}
   }
@@ -149,10 +156,24 @@ class AuthProvider extends ChangeNotifier {
       if (userJsonStr != null && userJsonStr.isNotEmpty) {
         try {
           final Map<String, dynamic> map = jsonDecode(userJsonStr);
-          _currentUser = UserModel.fromJson(map);
-          _isAuthenticated = true;
-          _isGuest = false;
-        } catch (_) {}
+          final restored = UserModel.fromJson(map);
+          final hasToken = await _authRepository
+              .hasSavedToken()
+              .timeout(const Duration(seconds: 2), onTimeout: () => false);
+          // Strictly validate that restored session has a genuine 7-digit ID and valid backend token
+          if (RegExp(r'^[1-9]\d{6}$').hasMatch(restored.id) && hasToken) {
+            _currentUser = restored;
+            _isAuthenticated = true;
+            _isGuest = false;
+          } else {
+            debugPrint('[AuthProvider] Stored session has invalid ID (${restored.id}) or missing token. Purging.');
+            await _clearUserLocalSession();
+            _currentUser = null;
+            _isAuthenticated = false;
+          }
+        } catch (_) {
+          await _clearUserLocalSession();
+        }
       }
 
       final savedFollowing = prefs.getStringList(_followingIdsKey);
@@ -189,28 +210,9 @@ class AuthProvider extends ChangeNotifier {
       final remoteUser = await _authRepository
           .getCurrentUser()
           .timeout(const Duration(seconds: 4));
-      final local = _currentUser;
-      final mergedName = (remoteUser.name.isNotEmpty && remoteUser.name != 'ZeParty Creator' && remoteUser.name != 'Guest')
-          ? remoteUser.name
-          : (local?.name.isNotEmpty == true && local?.name != 'ZeParty Creator' ? local!.name : remoteUser.name);
-      final mergedUsername = (remoteUser.username.isNotEmpty && !remoteUser.username.startsWith('user_'))
-          ? remoteUser.username
-          : (local?.username.isNotEmpty == true && !local!.username.startsWith('user_') ? local.username : remoteUser.username);
-      final rawAvatar = remoteUser.avatarUrl.isNotEmpty
-          ? remoteUser.avatarUrl
-          : (local?.avatarUrl ?? remoteUser.avatarUrl);
-      final mergedAvatar = rawAvatar;
-      final mergedCover = (remoteUser.coverUrl != null && remoteUser.coverUrl!.isNotEmpty)
-          ? remoteUser.coverUrl
-          : (local?.coverUrl ?? remoteUser.coverUrl);
 
-      _currentUser = remoteUser.copyWith(
-        name: mergedName,
-        username: mergedUsername,
-        avatarUrl: mergedAvatar,
-        coverUrl: mergedCover,
-        bio: remoteUser.bio.isNotEmpty ? remoteUser.bio : (local?.bio ?? remoteUser.bio),
-      );
+      // Remote user from backend database is the single authoritative source of truth
+      _currentUser = remoteUser;
       _isAuthenticated = true;
       _isGuest = false;
       await _saveUserLocalSession(_currentUser!);
@@ -227,57 +229,18 @@ class AuthProvider extends ChangeNotifier {
       final hasToken = await _authRepository
           .hasSavedToken()
           .timeout(const Duration(seconds: 4), onTimeout: () => false);
-      if (hasToken) {
+      if (hasToken && _currentUser != null && !_isGuest) {
         try {
           await refreshCurrentUser();
           FcmService.instance.registerWithBackend();
           syncFollowingList();
         } on ApiException catch (e) {
           if (e.statusCode == 401) {
-            if (_currentUser != null && !_isGuest) {
-              // Try auto re-syncing with backend
-              try {
-                final authRes = await _authRepository.syncUser(
-                  uid: _currentUser!.id,
-                  email: _currentUser!.email,
-                  phone: _currentUser!.phone,
-                  username: _currentUser!.username,
-                  displayName: _currentUser!.name,
-                  avatarUrl: _currentUser!.avatarUrl,
-                );
-                _currentUser = authRes.user;
-                await _saveUserLocalSession(_currentUser!);
-                FcmService.instance.registerWithBackend();
-                notifyListeners();
-                syncFollowingList();
-              } catch (_) {}
-            } else if (_currentUser == null) {
-              await _clearUserLocalSession();
-              _isAuthenticated = false;
-              notifyListeners();
-            }
+            await _clearUserLocalSession();
+            notifyListeners();
           }
         } catch (e) {
           debugPrint('Backend sync during restore session fallback: $e');
-        }
-      } else if (_currentUser != null && !_isGuest) {
-        // Auto-register/sync active local user with backend
-        try {
-          final authRes = await _authRepository.syncUser(
-            uid: _currentUser!.id,
-            email: _currentUser!.email,
-            phone: _currentUser!.phone,
-            username: _currentUser!.username,
-            displayName: _currentUser!.name,
-            avatarUrl: _currentUser!.avatarUrl,
-          );
-          _currentUser = authRes.user;
-          _isAuthenticated = true;
-          await _saveUserLocalSession(_currentUser!);
-          FcmService.instance.registerWithBackend();
-          notifyListeners();
-        } catch (e) {
-          debugPrint('Failed to auto-sync local user with backend: $e');
         }
       } else if (_currentUser == null) {
         _isAuthenticated = false;
@@ -396,26 +359,19 @@ class AuthProvider extends ChangeNotifier {
         );
         _currentUser = authRes.user;
       } catch (syncErr) {
-        debugPrint('Backend sync fallback in email login: $syncErr');
-        if (syncErr is ApiException && syncErr.statusCode == 409) {
+        debugPrint('[AuthProvider] Backend sync failed during email login: $syncErr');
+        await FirebaseAuth.instance.signOut().catchError((_) {});
+        await _clearUserLocalSession();
+        _currentUser = null;
+        _isAuthenticated = false;
+        if (syncErr is ApiException) {
           _errorMessage = syncErr.message;
-          _isLoading = false;
-          notifyListeners();
-          return false;
+        } else {
+          _errorMessage = 'Unable to connect to the server. Please check your internet connection and try again.';
         }
-        final existingLocal = _currentUser;
-        _currentUser = UserModel(
-          id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
-          username: (existingLocal != null && existingLocal.username.isNotEmpty && !existingLocal.username.startsWith('user_'))
-              ? existingLocal.username
-              : (cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail),
-          name: (existingLocal != null && existingLocal.name.isNotEmpty && existingLocal.name != 'ZeParty Member')
-              ? existingLocal.name
-              : (firebaseUser?.displayName ?? (cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail)),
-          email: cleanEmail.contains('@') ? cleanEmail : (existingLocal?.email ?? ''),
-          avatarUrl: firebaseUser?.photoURL ?? (existingLocal?.avatarUrl ?? ''),
-          profileCompleted: true,
-        );
+        _isLoading = false;
+        notifyListeners();
+        return false;
       }
 
       _isAuthenticated = true;
@@ -493,26 +449,19 @@ class AuthProvider extends ChangeNotifier {
         );
         _currentUser = authRes.user;
       } catch (syncErr) {
-        debugPrint('Backend sync error in email signup: $syncErr');
+        debugPrint('[AuthProvider] Backend sync error in email signup: $syncErr');
+        await FirebaseAuth.instance.signOut().catchError((_) {});
+        await _clearUserLocalSession();
+        _currentUser = null;
+        _isAuthenticated = false;
         if (syncErr is ApiException) {
           _errorMessage = syncErr.message;
-          _isLoading = false;
-          notifyListeners();
-          return false;
+        } else {
+          _errorMessage = 'Unable to connect to the server. Please check your internet connection and try again.';
         }
-        _currentUser = UserModel(
-          id: firebaseUser?.uid ?? 'user_${DateTime.now().millisecondsSinceEpoch}',
-          username: finalUsername,
-          name: cleanName,
-          email: cleanEmail,
-          phone: phone,
-          avatarUrl: '',
-          bio: '',
-          coins: 1000,
-          diamonds: 100,
-          role: UserRole.user,
-          profileCompleted: false,
-        );
+        _isLoading = false;
+        notifyListeners();
+        return false;
       }
 
       _isAuthenticated = true;
@@ -638,19 +587,20 @@ class AuthProvider extends ChangeNotifier {
           profileCompleted: !authRes.isNewUser || authRes.user.profileCompleted,
         );
       } catch (syncErr) {
-        debugPrint('Backend sync fallback in Google login: $syncErr');
-        _isNewUser = false;
-        _currentUser = UserModel(
-          id: firebaseUser?.uid ?? 'google_${DateTime.now().millisecondsSinceEpoch}',
-          username: baseUsername,
-          name: cleanName,
-          email: cleanEmail,
-          avatarUrl: photoUrl,
-          coins: 1000,
-          diamonds: 100,
-          role: UserRole.user,
-          profileCompleted: true,
-        );
+        debugPrint('[AuthProvider] Backend sync failed during Google login: $syncErr');
+        await FirebaseAuth.instance.signOut().catchError((_) {});
+        await googleSignIn.signOut().catchError((_) => null);
+        await _clearUserLocalSession();
+        _currentUser = null;
+        _isAuthenticated = false;
+        if (syncErr is ApiException) {
+          _errorMessage = syncErr.message;
+        } else {
+          _errorMessage = 'Unable to connect to the server. Please check your internet connection and try again.';
+        }
+        _isLoading = false;
+        notifyListeners();
+        return false;
       }
 
       _isAuthenticated = true;

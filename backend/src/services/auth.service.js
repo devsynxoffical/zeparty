@@ -9,6 +9,8 @@ import { comparePassword, hashToken } from '../utils/crypto.util.js';
 import sessionRepository from '../repositories/session.repository.js';
 import effectivePermissionsService from './effectivePermissions.service.js';
 import { resolveEffectiveCountryCode } from '../utils/geo.util.js';
+import prisma from '../config/database.js';
+import { generate7DigitUserId } from '../utils/idGenerator.util.js';
 
 export async function requestOtp({ phone, purpose = 'LOGIN', ipAddress, logger }) {
   return await otpService.requestOtp({ phone, purpose, ipAddress, logger });
@@ -442,6 +444,14 @@ export async function syncUserFromApp({
 
     if (existingUser) {
       user = existingUser;
+
+      // Auto-migrate: Ensure user ID is strictly a 7-digit numeric string
+      if (!/^[1-9]\d{6}$/.test(user.id)) {
+        const new7DigitId = await generate7DigitUserId(prisma);
+        console.log(`[AutoMigrate] Converting user @${user.username} ID from ${user.id} -> ${new7DigitId}`);
+        await prisma.$executeRawUnsafe(`UPDATE "User" SET "id" = $1 WHERE "id" = $2`, new7DigitId, user.id);
+        user = await userRepository.findById(new7DigitId);
+      }
 
       // Check account status
       if (user.status === 'BANNED') {

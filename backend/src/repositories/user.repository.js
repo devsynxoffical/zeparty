@@ -78,7 +78,19 @@ export async function createUserWithProfile(
   },
   db = prisma
 ) {
-  const finalId = (id && /^[1-9]\d{6}$/.test(String(id))) ? String(id) : await generate7DigitUserId(db);
+  let finalId = null;
+  if (id && /^[1-9]\d{6}$/.test(String(id))) {
+    const existing = await db.user.findUnique({
+      where: { id: String(id) },
+      select: { id: true },
+    });
+    if (!existing) {
+      finalId = String(id);
+    }
+  }
+  if (!finalId) {
+    finalId = await generate7DigitUserId(db);
+  }
   const data = {
     id: finalId,
     firebaseUid: firebaseUid || (id && !/^[1-9]\d{6}$/.test(String(id)) ? String(id) : null),
@@ -154,6 +166,7 @@ export async function findUsersPaginated(
   if (search && search.trim() !== '') {
     const s = search.trim();
     where.OR = [
+      { id: { contains: s, mode: 'insensitive' } },
       { username: { contains: s, mode: 'insensitive' } },
       { phone: { contains: s, mode: 'insensitive' } },
       { email: { contains: s, mode: 'insensitive' } },
