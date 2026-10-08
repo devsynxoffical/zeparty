@@ -389,6 +389,7 @@ export function HostsPage() {
       const matchSearch =
         !q ||
         a.id.toLowerCase().includes(q) ||
+        (a.userId && String(a.userId).toLowerCase().includes(q)) ||
         (a.applicantName && a.applicantName.toLowerCase().includes(q)) ||
         (a.applicantUsername && a.applicantUsername.toLowerCase().includes(q));
       return matchType && matchStatus && matchSearch;
@@ -527,8 +528,6 @@ export function HostsPage() {
     },
   ];
 
-  const pendingAppsCount = applications.filter((a) => a.status === 'pending' || a.status === 'applied').length;
-
   const appColumns = [
     {
       key: 'applicant',
@@ -536,7 +535,7 @@ export function HostsPage() {
       render: (row) => (
         <div>
           <p className="text-sm font-semibold text-white">{row.applicantName || 'Applicant'}</p>
-          <p className="text-xs text-slate-400">@{row.applicantUsername} • ID: {row.id?.slice(0, 8)}</p>
+          <p className="text-xs text-slate-400">@{row.applicantUsername} • User ID: {row.userId || row.id?.slice(0, 8)}</p>
         </div>
       ),
     },
