@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../core/theme/app_colors.dart';
 import '../core/animations/app_animations.dart';
+import '../core/utils/noble_badge_helper.dart';
 
 class UserAvatar extends StatelessWidget {
   final String? imageUrl;
@@ -86,58 +87,65 @@ class UserAvatar extends StatelessWidget {
     if (hasValidImage) {
       final clean = imageUrl!.trim().replaceFirst('file://', '');
       if (clean.startsWith('http://') || clean.startsWith('https://')) {
-        avatarContent = ClipOval(
-          child: Image.network(
-            clean,
-            width: radius * 2,
-            height: radius * 2,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => _buildPlaceholder(isDark),
-          ),
+        avatarContent = Image.network(
+          clean,
+          width: radius * 2,
+          height: radius * 2,
+          fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
+          errorBuilder: (_, _, _) => _buildPlaceholder(isDark),
         );
       } else if (clean.startsWith('assets/')) {
-        avatarContent = ClipOval(
-          child: Image.asset(
-            clean,
-            width: radius * 2,
-            height: radius * 2,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => _buildPlaceholder(isDark),
-          ),
+        avatarContent = Image.asset(
+          clean,
+          width: radius * 2,
+          height: radius * 2,
+          fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
+          errorBuilder: (_, _, _) => _buildPlaceholder(isDark),
         );
       } else {
-        avatarContent = ClipOval(
-          child: Image.file(
-            File(clean),
-            width: radius * 2,
-            height: radius * 2,
-            fit: BoxFit.cover,
-            errorBuilder: (_, _, _) => _buildPlaceholder(isDark),
-          ),
+        avatarContent = Image.file(
+          File(clean),
+          width: radius * 2,
+          height: radius * 2,
+          fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
+          errorBuilder: (_, _, _) => _buildPlaceholder(isDark),
         );
       }
     } else {
       avatarContent = _buildPlaceholder(isDark);
     }
 
+    String? effectiveFrameAsset = frameAsset;
+    if (effectiveFrameAsset == null || effectiveFrameAsset.isEmpty || effectiveFrameAsset == 'none') {
+      effectiveFrameAsset = showVipFrame ? 'assets/nobles/baron_frame.webp' : null;
+    } else if (!effectiveFrameAsset.startsWith('assets/') && !effectiveFrameAsset.startsWith('http')) {
+      effectiveFrameAsset = NobleBadgeHelper.getFrameAsset(effectiveFrameAsset) ?? effectiveFrameAsset;
+    }
+
     Widget avatar = Container(
-      padding: EdgeInsets.all(isLive || showVipFrame || isPremium ? 2.5 : 0),
+      width: radius * 2,
+      height: radius * 2,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: isLive
             ? LinearGradient(colors: [AppColors.live, AppColors.getPrimary(isDark)])
-            : (showVipFrame || isPremium ? AppColors.getPremiumGradient(isDark) : null),
-        border: !isLive && !showVipFrame && !isPremium
+            : ((showVipFrame && effectiveFrameAsset == null) || isPremium
+                ? AppColors.getPremiumGradient(isDark)
+                : null),
+        border: !isLive && !showVipFrame && !isPremium && effectiveFrameAsset == null
             ? Border.all(
                 color: isDark ? AppColors.borderGold : AppColors.lightBorder,
                 width: 1.2,
               )
             : null,
       ),
-      child: avatarContent,
+      child: ClipOval(child: avatarContent),
     );
 
-    if (showVipFrame && !isLive) {
+    if (showVipFrame && !isLive && effectiveFrameAsset == null) {
       avatar = GoldGlowBorder(
         borderRadius: radius + 4,
         color: AppColors.getPrimary(isDark),
@@ -147,7 +155,11 @@ class UserAvatar extends StatelessWidget {
       );
     }
 
-    final effectiveFrameAsset = frameAsset ?? (showVipFrame ? 'assets/nobles/baron_frame.png' : null);
+    // The 512x512 frame asset contains outer crown, side wings, and bottom banner.
+    // The inner circular opening is ~330px (64% of canvas).
+    // Scaling the frame to 1.55x (frameOffset = 0.55 * radius) ensures the inner opening
+    // fits seamlessly over the circular DP without any gaps or shrinking the frame.
+    final frameOffset = radius * 0.55;
 
     return GestureDetector(
       onTap: onTap,
@@ -158,10 +170,10 @@ class UserAvatar extends StatelessWidget {
           avatar,
           if (effectiveFrameAsset != null)
             Positioned(
-              top: -radius * 0.36,
-              bottom: -radius * 0.36,
-              left: -radius * 0.36,
-              right: -radius * 0.36,
+              top: -frameOffset,
+              bottom: -frameOffset,
+              left: -frameOffset,
+              right: -frameOffset,
               child: IgnorePointer(
                 child: Image.asset(
                   effectiveFrameAsset,

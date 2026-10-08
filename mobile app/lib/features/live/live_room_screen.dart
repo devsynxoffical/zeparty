@@ -90,13 +90,15 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       );
 
       // 1. Shift Room Category to PK on Backend
-      await ApiClient.instance.post('/v1/pk/create', data: {
-        'hostRoomId': activeRoom.id,
-        'opponentUserId': _coHostUser!.id,
-        'durationMinutes': 5,
-      }).catchError((e) {
+      try {
+        await ApiClient.instance.post('/v1/pk/create', data: {
+          'hostRoomId': activeRoom.id,
+          'opponentUserId': _coHostUser!.id,
+          'durationMinutes': 5,
+        });
+      } catch (e) {
         debugPrint('[LiveRoom] PK create error: $e');
-      });
+      }
 
       // 2. Emit socket direct PK start
       SocketService.instance.emit('pk:start_direct', {
@@ -2041,6 +2043,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       liveProvider.luckyBagActive ? 'Claim!' : 'Lucky',
                       liveProvider.luckyBagActive ? Colors.orangeAccent : AppColors.liveRed,
                       onTap: () => _showLuckyBagQuickActionDialog(context, isDark, liveProvider),
+                      imageAsset: 'assets/images/party_tool_luckybag.png',
                     ),
                     if (liveProvider.luckyBagActive)
                       Positioned(
@@ -2060,27 +2063,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 const SizedBox(height: 12),
                 _buildQuickActionBtn(
                   isDark,
-                  Icons.rocket_launch_rounded,
-                  'Rocket',
-                  Colors.purpleAccent,
-                  onTap: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => const RocketGameSheet(),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildQuickActionBtn(
-                  isDark,
-                  Icons.videogame_asset_rounded,
+                  Icons.sports_esports_rounded,
                   'Games',
                   AppColors.cyan,
                   onTap: () {
                     GameCenterSheet.show(context);
                   },
+                  imageAsset: 'assets/images/party_tool_game_center.png',
                 ),
                 const SizedBox(height: 12),
                 _buildQuickActionBtn(
@@ -2107,6 +2096,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       },
                     );
                   },
+                  imageAsset: 'assets/images/party_tool_members.png',
                 ),
                 const SizedBox(height: 12),
                 _buildQuickActionBtn(
@@ -2122,12 +2112,20 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       isParty: false,
                     );
                   },
+                  imageAsset: 'assets/images/party_tool_share.png',
                 ),
                 const SizedBox(height: 12),
-                _buildQuickActionBtn(isDark, Icons.more_horiz_rounded, 'More', Colors.white, onTap: () {
-                  // Phase 6: Room Tools panel
-                  _showRoomTools(context, isDark);
-                }),
+                _buildQuickActionBtn(
+                  isDark,
+                  Icons.more_horiz_rounded,
+                  'More',
+                  Colors.white,
+                  onTap: () {
+                    // Phase 6: Room Tools panel
+                    _showRoomTools(context, isDark);
+                  },
+                  imageAsset: 'assets/images/party_tool_settings.png',
+                ),
               ],
             ),
           ),
@@ -2338,10 +2336,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                         ),
                         const SizedBox(width: 10),
 
-                        // Far Right Action Icons (Gift & Like Heart)
-                        IconButton(
-                          icon: const Icon(Icons.card_giftcard_rounded, color: Colors.white, size: 25),
-                          onPressed: () {
+                        // Far Right Action Icons (3D Gift Box & Like Heart)
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
                             AuthGuard.require(context, () {
                               showModalBottomSheet(
                                 context: context,
@@ -2363,8 +2361,66 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               );
                             }, reason: 'Sign in to send gifts');
                           },
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                          child: SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFFFF4081).withValues(alpha: 0.4),
+                                        blurRadius: 8,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                  child: ClipOval(
+                                    child: Image.asset(
+                                      'assets/images/party_gift_box.jpg',
+                                      width: 38,
+                                      height: 38,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) => Container(
+                                        color: const Color(0xFFFF4081),
+                                        child: const Icon(Icons.card_giftcard_rounded, color: Colors.white, size: 20),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: -2,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [Color(0xFFFFB300), Color(0xFFFF8F00)],
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
+                                      boxShadow: [
+                                        BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 2),
+                                      ],
+                                    ),
+                                    child: const Text(
+                                      'GIFT',
+                                      style: TextStyle(
+                                        color: Colors.black,
+                                        fontSize: 6.5,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 12),
 
@@ -2418,20 +2474,49 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     ));
   }
 
-  Widget _buildQuickActionBtn(bool isDark, IconData icon, String label, Color color, {VoidCallback? onTap}) {
+  Widget _buildQuickActionBtn(
+    bool isDark,
+    IconData icon,
+    String label,
+    Color color, {
+    VoidCallback? onTap,
+    String? imageAsset,
+  }) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.black.withValues(alpha: 0.5),
-              shape: BoxShape.circle,
+          if (imageAsset != null)
+            SizedBox(
+              width: 44,
+              height: 44,
+              child: ClipOval(
+                child: Image.asset(
+                  imageAsset,
+                  width: 44,
+                  height: 44,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.black.withValues(alpha: 0.5),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: color, size: 22),
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.black.withValues(alpha: 0.5),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 24),
             ),
-            child: Icon(icon, color: color, size: 24),
-          ),
           const SizedBox(height: 4),
           Text(label, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
         ],
@@ -2475,6 +2560,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Share Link',
                     color: Colors.lightBlueAccent,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_share.png',
                     onTap: () {
                       Navigator.pop(c);
                       RoomShareService.shareRoom(
@@ -2492,6 +2578,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Invite Co-Host',
                     color: const Color(0xFF00E5FF),
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_seat.png',
                     onTap: () {
                       Navigator.pop(c);
                       RoomShareService.shareCoHostInvite(
@@ -2508,6 +2595,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'YouTube',
                     color: Colors.red,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_youtube.png',
                     onTap: () {
                       Navigator.pop(c);
                       showDialog(
@@ -2556,6 +2644,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Super Wheel',
                     color: Colors.purple,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_superwheel.png',
                     onTap: () {
                       Navigator.pop(c);
                       final participants = ['Sophia', 'Alex', 'Elena', 'Marcus', 'Zayn', 'Aisha'];
@@ -2605,6 +2694,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Lucky Bag',
                     color: Colors.orange,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_luckybag.png',
                     onTap: () {
                       Navigator.pop(c);
                       final amounts = [50, 100, 200, 500, 1000];
@@ -2679,6 +2769,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Music',
                     color: Colors.blue,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_music_player.png',
                     onTap: () {
                       Navigator.pop(c);
                       final tracks = [
@@ -2741,6 +2832,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'PK',
                     color: Colors.cyan,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_pk_match.png',
                     onTap: () {
                       Navigator.pop(c);
                       Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
@@ -2753,6 +2845,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Settings',
                     color: Colors.grey,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_settings.png',
                     onTap: () {
                       Navigator.pop(c);
                       showDialog(
@@ -2815,6 +2908,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Clear Chat',
                     color: Colors.amber,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_mute_room.png',
                     onTap: () {
                       Navigator.pop(c);
                       showDialog(
@@ -2848,6 +2942,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: liveProvider.isRoomLocked ? 'Unlock Room' : 'Lock Room',
                     color: Colors.redAccent,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_lockroom.png',
                     onTap: () {
                       Navigator.pop(c);
                       liveProvider.toggleRoomLock();
@@ -2868,6 +2963,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Mic Stats',
                     color: Colors.green,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_mic.png',
                     onTap: () {
                       Navigator.pop(c);
                       final lp = context.read<LiveProvider>();
@@ -2929,6 +3025,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Effects',
                     color: Colors.pink,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_effects_settings.png',
                     onTap: () {
                       Navigator.pop(c);
                       final effects = ['None', 'Beauty', 'Blur BG', 'Vintage', 'Neon Glow', 'Black & White'];
@@ -3163,22 +3260,46 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     required Color color, 
     required bool isDark,
     required VoidCallback onTap,
+    String? imageAsset,
   }) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(16),
+          if (imageAsset != null)
+            SizedBox(
+              width: 52,
+              height: 52,
+              child: ClipOval(
+                child: Image.asset(
+                  imageAsset,
+                  width: 52,
+                  height: 52,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: color, size: 28),
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 28),
             ),
-            child: Icon(icon, color: color, size: 28),
-          ),
-          const SizedBox(height: 8),
-          Text(label, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 11)),
+          const SizedBox(height: 6),
+          Text(label, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 11, fontWeight: FontWeight.w600)),
         ],
       ),
     );

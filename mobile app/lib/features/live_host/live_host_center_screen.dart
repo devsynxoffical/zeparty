@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../core/policy/live_host_policy.dart';
 import '../live/create_live_room_screen.dart';
 import '../settings/support_center_screen.dart';
+import '../wallet/diamond_transfer_screen.dart';
 
 class LiveHostCenterScreen extends StatelessWidget {
   const LiveHostCenterScreen({super.key});
@@ -299,6 +300,17 @@ class LiveHostCenterScreen extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white54),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const DiamondTransferScreen())),
+                          child: const Text('Transfer'),
+                        ),
+                        const SizedBox(width: 8),
                         ElevatedButton(
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
                           onPressed: () => _showLiveHostWithdrawDialog(context, liveHostProv, authUser.id),
@@ -323,8 +335,8 @@ class LiveHostCenterScreen extends StatelessWidget {
                 _buildGridOption(context, 'Go Live', Icons.videocam_rounded, Colors.redAccent, () {
                   Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateLiveRoomScreen()));
                 }),
-                _buildGridOption(context, 'Schedule', Icons.calendar_month_rounded, Colors.blueAccent, () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📅 Live Stream Schedule Manager opened.')));
+                _buildGridOption(context, 'Transfer', Icons.swap_horiz_rounded, Colors.blueAccent, () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const DiamondTransferScreen()));
                 }),
                 _buildGridOption(context, 'Target Details', Icons.bar_chart_rounded, Colors.amberAccent, () {
                   _showPolicyTableDialog(context, isDark);

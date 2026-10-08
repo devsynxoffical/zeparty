@@ -393,6 +393,14 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
     throw error;
   }
 
+  // Clean up any stale membership for this user in other rooms
+  await db.roomMember.deleteMany({
+    where: {
+      userId,
+      roomId: { not: roomId },
+    },
+  }).catch(() => {});
+
   // Ensure RoomMember record exists
   const existingMember = await db.roomMember.findUnique({
     where: {

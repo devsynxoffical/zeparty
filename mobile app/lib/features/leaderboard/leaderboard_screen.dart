@@ -268,38 +268,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
     );
   }
 
-  IconData _getCategoryIcon(String category) {
-    switch (category.toLowerCase()) {
-      case 'charm':
-      case 'wealth':
-        return Icons.monetization_on_rounded;
-      case 'cp':
-        return Icons.favorite_rounded;
-      case 'room':
-        return Icons.local_fire_department_rounded;
-      case 'svip':
-        return Icons.workspace_premium_rounded;
-      default:
-        return Icons.monetization_on_rounded;
-    }
-  }
-
-  String _getCategorySymbol(String category) {
-    switch (category.toLowerCase()) {
-      case 'charm':
-      case 'wealth':
-        return '🪙';
-      case 'cp':
-        return '❤️';
-      case 'room':
-        return '🔥';
-      case 'svip':
-        return '👑';
-      default:
-        return '🪙';
-    }
-  }
-
   Color _getCategoryColor(String category) {
     switch (category.toLowerCase()) {
       case 'charm':
@@ -324,7 +292,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
     final currentCategory = _categories[_tabController.index];
     final isCP = currentCategory.toUpperCase() == 'CP';
     final categoryColor = _getCategoryColor(currentCategory);
-    final categoryIcon = _getCategoryIcon(currentCategory);
 
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -352,6 +319,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               // 2nd Place
+              // 2nd Place
               _buildPodiumColumn(
                 entry: top2,
                 rank: 2,
@@ -360,6 +328,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                 color: isDark ? AppColors.metallicGold : AppColors.metallicBlue,
                 isDark: isDark,
                 category: currentCategory,
+                isCP: isCP,
               ),
               const SizedBox(width: 6),
 
@@ -373,6 +342,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                 isDark: isDark,
                 category: currentCategory,
                 crown: '👑',
+                isCP: isCP,
               ),
               const SizedBox(width: 6),
 
@@ -385,6 +355,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                 color: isDark ? AppColors.deepBronze : AppColors.lightBlue,
                 isDark: isDark,
                 category: currentCategory,
+                isCP: isCP,
               ),
             ],
           ),
@@ -499,7 +470,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(categoryIcon, color: categoryColor, size: 14),
+                      _buildRankingUnitIcon(isCP: isCP, size: 14),
                       const SizedBox(width: 4),
                       Text(
                         entry.formattedPoints,
@@ -520,6 +491,23 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
     );
   }
 
+  Widget _buildRankingUnitIcon({required bool isCP, double size = 14}) {
+    if (isCP) {
+      return Text('❤️', style: TextStyle(fontSize: size - 2));
+    }
+    return Image.asset(
+      'assets/images/coin_ze.png',
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stackTrace) => Icon(
+        Icons.monetization_on_rounded,
+        color: Colors.amber,
+        size: size,
+      ),
+    );
+  }
+
   Widget _buildPodiumColumn({
     required RankingEntry? entry,
     required int rank,
@@ -528,6 +516,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
     required Color color,
     required bool isDark,
     required String category,
+    required bool isCP,
     String? crown,
   }) {
     if (entry == null) {
@@ -543,7 +532,6 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
       );
     }
 
-    final categorySymbol = _getCategorySymbol(category);
     final categoryColor = _getCategoryColor(category);
 
     return SizedBox(
@@ -603,13 +591,21 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 2),
-          Text(
-            '$categorySymbol ${entry.formattedPoints}',
-            style: TextStyle(
-              color: categoryColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 11,
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildRankingUnitIcon(isCP: isCP, size: 12),
+              const SizedBox(width: 3),
+              Text(
+                entry.formattedPoints,
+                style: TextStyle(
+                  color: categoryColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 11,
+                ),
+              ),
+            ],
           ),
         ],
       ),

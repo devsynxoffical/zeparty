@@ -6,6 +6,7 @@ import '../../providers/agency_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/messaging_provider.dart';
 import '../../widgets/user_avatar.dart';
+import '../wallet/diamond_transfer_screen.dart';
 
 class AgencyCenterScreen extends StatefulWidget {
   const AgencyCenterScreen({super.key});
@@ -589,6 +590,29 @@ class _AgencyCenterScreenState extends State<AgencyCenterScreen> with SingleTick
                       Text('\$${agency.pendingBalanceUsd.toStringAsFixed(2)}', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 20, fontWeight: FontWeight.w900)),
                     ],
                   ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Agency Transfer & Settlement Quick Action
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                  label: const Text('Agency Transfer & Settlement', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.amber.shade800,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const DiamondTransferScreen()));
+                  },
                 ),
               ),
             ],

@@ -12,7 +12,6 @@ import '../../models/user_model.dart';
 import '../../models/post_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/svip_provider.dart';
-import '../../providers/live_party_provider.dart';
 import '../../providers/social_provider.dart';
 import '../party_room/live_party_room_screen.dart';
 import '../../widgets/user_avatar.dart';
@@ -21,6 +20,9 @@ import '../../widgets/full_screen_image_viewer.dart';
 import '../../widgets/gift_dialog.dart';
 
 import '../../core/repositories/social_repository.dart';
+import '../../core/services/api_client.dart';
+import '../../models/live_room_model.dart';
+import '../live/live_room_screen.dart';
 
 import '../svip/svip_center_screen.dart';
 import '../aristocracy/aristocracy_center_screen.dart';
@@ -161,6 +163,78 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         _user = user;
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _openUserActiveRoom(BuildContext context, String? roomId) async {
+    final effectiveRoomId = roomId ?? _user?.liveRoomId;
+    if (effectiveRoomId == null || effectiveRoomId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active room found for this user.')),
+      );
+      return;
+    }
+
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.purpleAccent)),
+      );
+
+      LiveRoomModel? targetRoom;
+      try {
+        final res = await ApiClient.instance.get<Map<String, dynamic>>('/v1/rooms/$effectiveRoomId');
+        final data = res.data?['data'];
+        if (data is Map<String, dynamic>) {
+          targetRoom = LiveRoomModel.fromJson(data);
+        }
+      } catch (e) {
+        debugPrint('[UserProfile] Error fetching room details: $e');
+      }
+
+      if (context.mounted) Navigator.pop(context); // pop loading
+
+      targetRoom ??= LiveRoomModel(
+        id: effectiveRoomId,
+        title: '${_user?.displayName ?? 'User'}\'s Room',
+        host: _user ?? UserModel.empty,
+        coverUrl: _user?.avatarUrl ?? '',
+        viewerCount: 1,
+        startTime: DateTime.now(),
+        roomType: 'AUDIO_PARTY',
+        category: 'party',
+        status: 'LIVE',
+      );
+
+      final isVoiceParty = targetRoom.roomType == 'AUDIO_PARTY' ||
+          targetRoom.roomType == 'AUDIO' ||
+          targetRoom.category.toLowerCase() == 'party' ||
+          targetRoom.id.startsWith('party_');
+
+      if (!context.mounted) return;
+
+      if (isVoiceParty) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: targetRoom!)),
+        ).then((_) {
+          if (mounted) _loadUser();
+        });
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => LiveRoomScreen(room: targetRoom!)),
+        ).then((_) {
+          if (mounted) _loadUser();
+        });
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to open room: $e')),
+        );
+      }
     }
   }
 
@@ -731,43 +805,34 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               ),
             ),
 
-            // Online / Last Seen & LIVE Badge Top Right (Diagram 8.1 & Reference Screenshot)
+            // Online / Last Seen & LIVE / In Room Badge Top Right
             Positioned(
               top: 54,
               right: 16,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // LIVE Room Status Badge (Diagram 8.1 & Reference Screenshot)
-                  if (_user!.isLive || context.watch<LivePartyProvider>().activeRoom != null) ...[
+                  // LIVE / IN ROOM Status Badge
+                  if (_user != null && (_user!.isLive || (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty))) ...[
                     GestureDetector(
-                      onTap: () {
-                        final partyProv = context.read<LivePartyProvider>();
-                        final room = partyProv.activeRoom;
-                        if (room != null) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: room)),
-                          );
-                        }
-                      },
+                      onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(colors: [Color(0xFFAB47BC), Color(0xFF7B1FA2)]),
+                          gradient: const LinearGradient(colors: [Color(0xFFE91E63), Color(0xFF9C27B0)]),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: Colors.white, width: 1.2),
                           boxShadow: [
-                            BoxShadow(color: const Color(0xFFAB47BC).withValues(alpha: 0.6), blurRadius: 10, spreadRadius: 1),
+                            BoxShadow(color: const Color(0xFFE91E63).withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 1),
                           ],
                         ),
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 14),
+                            Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 13),
                             SizedBox(width: 4),
                             Text(
-                              'LIVE',
+                              'In Room',
                               style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.5),
                             ),
                           ],
@@ -832,6 +897,44 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                             } catch (_) {}
                           }
 
+                          final bool isInActiveRoom = _user != null && (_user!.isLive || (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty));
+
+                          Widget avatarWidget = UserAvatar(
+                            imageUrl: effAvatar,
+                            name: _user!.displayName,
+                            radius: 38,
+                            showVipFrame: _user!.isVip,
+                            frameAsset: NobleBadgeHelper.getFrameAsset(
+                              _user?.nobleTitle ?? (_user?.svipLevel != null && _user!.svipLevel > 0 ? 'SVIP ${_user!.svipLevel}' : (_user?.role != UserRole.user ? _user?.role.name : 'baron')),
+                            ),
+                          );
+
+                          // Active room glowing ring on DP
+                          if (isInActiveRoom) {
+                            avatarWidget = Container(
+                              padding: const EdgeInsets.all(2.5),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: const SweepGradient(
+                                  colors: [
+                                    Color(0xFFFF007F),
+                                    Color(0xFF7B1FA2),
+                                    Color(0xFF00E5FF),
+                                    Color(0xFFFF007F),
+                                  ],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFFE91E63).withValues(alpha: 0.6),
+                                    blurRadius: 10,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              child: avatarWidget,
+                            );
+                          }
+
                           return GestureDetector(
                             onTap: () {
                               if (effAvatar != null && effAvatar.isNotEmpty) {
@@ -842,15 +945,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 );
                               }
                             },
-                            child: UserAvatar(
-                              imageUrl: effAvatar,
-                              name: _user!.displayName,
-                              radius: 38,
-                              showVipFrame: _user!.isVip,
-                              frameAsset: NobleBadgeHelper.getFrameAsset(
-                                _user?.nobleTitle ?? (_user?.svipLevel != null && _user!.svipLevel > 0 ? 'SVIP ${_user!.svipLevel}' : (_user?.role != UserRole.user ? _user?.role.name : 'baron')),
-                              ),
-                            ),
+                            child: avatarWidget,
                           );
                         },
                       ),
@@ -1028,6 +1123,47 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                               ),
                             ),
                           ),
+
+                          // In Room Action Button in the Circled Area
+                          if (_user != null && (_user!.isLive || (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty))) ...[
+                            const SizedBox(width: 10),
+                            GestureDetector(
+                              onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 2),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFFE91E63), Color(0xFF9C27B0)],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFFE91E63).withValues(alpha: 0.5),
+                                      blurRadius: 8,
+                                      spreadRadius: 1,
+                                    ),
+                                  ],
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 13),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'In Room',
+                                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                    ),
+                                    SizedBox(width: 2),
+                                    Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 9),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -1064,9 +1200,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     ),
                   ),
                   const SizedBox(width: 6),
-                  NobleBadgeChip(user: _user!, fontSize: 10),
-                  NobleTagChip(user: _user!, height: 18),
-                  const SizedBox(width: 6),
 
                   // Gender & Age Pill (♂ 21 / ♀ 22)
                   Container(
@@ -1091,6 +1224,52 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       ],
                     ),
                   ),
+
+                  // Live or In Room Tag Badge
+                  if (_user != null && (_user!.isLive || (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty))) ...[
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: _user!.isLive
+                                ? [const Color(0xFFFF1744), const Color(0xFFFF5252)]
+                                : [const Color(0xFF9C27B0), const Color(0xFFE040FB)],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_user!.isLive ? Colors.redAccent : Colors.purpleAccent).withValues(alpha: 0.5),
+                              blurRadius: 6,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _user!.isLive ? Icons.videocam_rounded : Icons.graphic_eq_rounded,
+                              color: Colors.white,
+                              size: 12,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              _user!.isLive ? 'LIVE' : 'In Room',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ),
 
@@ -1677,21 +1856,21 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 // 1. Role Badges (Admin / Super Admin / Agency / CS)
                 if (_user!.role == UserRole.admin)
                   _buildGraphicBadge(
-                    assetPath: 'assets/roles/super_admin_tag.png',
+                    assetPath: 'assets/roles/super_admin_tag.webp',
                     fallbackLabel: 'Super Admin',
                     fallbackColor: Colors.redAccent,
                     onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
                   )
                 else if (_user!.isAgency)
                   _buildGraphicBadge(
-                    assetPath: 'assets/roles/agency_tag.png',
+                    assetPath: 'assets/roles/agency_tag.webp',
                     fallbackLabel: 'Agency',
                     fallbackColor: Colors.cyan,
                     onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
                   )
                 else if (_user!.isBd)
                   _buildGraphicBadge(
-                    assetPath: 'assets/roles/bd_tag.png',
+                    assetPath: 'assets/roles/bd_tag.webp',
                     fallbackLabel: 'BD Manager',
                     fallbackColor: Colors.teal,
                     onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
@@ -1700,7 +1879,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
                 // 2. Noble Badge (Emperor / King / Duke / Marquis / Count / Viscount / Baron)
                 _buildGraphicBadge(
-                  assetPath: NobleBadgeHelper.getBadgeAsset(nobleTitle) ?? 'assets/nobles/emperor_badge.png',
+                  assetPath: NobleBadgeHelper.getBadgeAsset(nobleTitle) ?? 'assets/nobles/emperor_badge.webp',
                   fallbackLabel: nobleTitle,
                   fallbackColor: const Color(0xFFFFD700),
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AristocracyCenterScreen())),
@@ -1709,7 +1888,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
                 // 3. SVIP Level Badge
                 _buildGraphicBadge(
-                  assetPath: 'assets/svip/svip${effectiveSvipLevel}_badge.png',
+                  assetPath: NobleBadgeHelper.getBadgeAsset('SVIP $effectiveSvipLevel') ?? 'assets/svip/svip${effectiveSvipLevel}_badge.webp',
                   fallbackLabel: 'SVIP $effectiveSvipLevel',
                   fallbackColor: Colors.amber,
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen())),
@@ -1719,7 +1898,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 // 4. Host Tag
                 if (_user!.isHost) ...[
                   _buildGraphicBadge(
-                    assetPath: 'assets/roles/host_tag.png',
+                    assetPath: 'assets/roles/host_tag.webp',
                     fallbackLabel: 'Official Host',
                     fallbackColor: Colors.orangeAccent,
                     onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
@@ -1730,7 +1909,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 // 5. Merchant / Coin Seller Tag
                 if (_user!.isSeller) ...[
                   _buildGraphicBadge(
-                    assetPath: 'assets/roles/coins_saller_tag.png',
+                    assetPath: 'assets/roles/coins_saller_tag.webp',
                     fallbackLabel: 'Coin Seller',
                     fallbackColor: Colors.lightGreenAccent,
                     onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
@@ -1740,7 +1919,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
                 // 6. Top Fan Badge
                 _buildGraphicBadge(
-                  assetPath: 'assets/roles/top_fan_tag.png',
+                  assetPath: 'assets/roles/top_fan_tag.webp',
                   fallbackLabel: 'Top Fan',
                   fallbackColor: Colors.purpleAccent,
                   onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
@@ -1813,7 +1992,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
   void _showAllBadgesAndRolesSheet(BuildContext context, bool isDark, SVIPProvider svip) {
     final primaryText = AppColors.getTextPrimary(isDark);
-    final secondaryText = AppColors.getTextSecondary(isDark);
 
     showModalBottomSheet(
       context: context,
@@ -1869,13 +2047,13 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _buildBadgeModalItem('Emperor', 'assets/nobles/emperor_badge.png', 'assets/nobles/emperor_frame.png', const Color(0xFFFFD700)),
-                        _buildBadgeModalItem('King', 'assets/nobles/king_badge.png', 'assets/nobles/king_frame.png', const Color(0xFFD4AF37)),
-                        _buildBadgeModalItem('Duke', 'assets/nobles/duke_badge.png', 'assets/nobles/duke_frame.png', const Color(0xFF8E24AA)),
-                        _buildBadgeModalItem('Marquis', 'assets/nobles/marquis_badge.png', 'assets/nobles/marquis_frame.png', const Color(0xFFC2185B)),
-                        _buildBadgeModalItem('Count', 'assets/nobles/count_badge.png', 'assets/nobles/count_frame.png', const Color(0xFF1E88E5)),
-                        _buildBadgeModalItem('Viscount', 'assets/nobles/viscount_card.png', 'assets/nobles/viscount_frame.png', const Color(0xFFFB8C00)),
-                        _buildBadgeModalItem('Baron', 'assets/nobles/baron_badge.png', 'assets/nobles/baron_frame.png', const Color(0xFF78909C)),
+                        _buildBadgeModalItem('Emperor', 'assets/nobles/emperor_badge.webp', 'assets/nobles/emperor_frame.webp', const Color(0xFFFFD700)),
+                        _buildBadgeModalItem('King', 'assets/nobles/king_badge.webp', 'assets/nobles/king_frame.webp', const Color(0xFFD4AF37)),
+                        _buildBadgeModalItem('Duke', 'assets/nobles/duke_badge.webp', 'assets/nobles/duke_frame.webp', const Color(0xFF8E24AA)),
+                        _buildBadgeModalItem('Marquis', 'assets/nobles/marquis_badge.webp', 'assets/nobles/marquis_frame.webp', const Color(0xFFC2185B)),
+                        _buildBadgeModalItem('Count', 'assets/nobles/count_badge.webp', 'assets/nobles/count_frame.webp', const Color(0xFF1E88E5)),
+                        _buildBadgeModalItem('Viscount', 'assets/nobles/viscount_card.webp', 'assets/nobles/viscount_frame.webp', const Color(0xFFFB8C00)),
+                        _buildBadgeModalItem('Baron', 'assets/nobles/baron_badge.webp', 'assets/nobles/baron_frame.webp', const Color(0xFF78909C)),
                       ],
                     ),
 
@@ -1888,16 +2066,16 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _buildBadgeModalItem('Super Admin', 'assets/roles/super_admin_tag.png', 'assets/roles/super_admin_frame.png', Colors.redAccent),
-                        _buildBadgeModalItem('Admin', 'assets/roles/admin_badge.png', 'assets/roles/admin_frame.png', Colors.deepOrangeAccent),
-                        _buildBadgeModalItem('Agency Boss', 'assets/roles/agency_badge.png', 'assets/roles/agency_frame.png', Colors.cyan),
-                        _buildBadgeModalItem('BD Manager', 'assets/roles/bd_badge.png', 'assets/roles/bd_frame.png', Colors.teal),
-                        _buildBadgeModalItem('Game Master', 'assets/roles/game_master_badge.png', 'assets/roles/game_master_frame.png', Colors.amber),
-                        _buildBadgeModalItem('Official Host', 'assets/roles/host_badge.png', 'assets/roles/host_frame.png', Colors.orange),
-                        _buildBadgeModalItem('Coin Merchant', 'assets/roles/marchent_badge.png', 'assets/roles/marchent_frame.png', Colors.blue),
-                        _buildBadgeModalItem('Customer Service', 'assets/roles/cs_badge.png', 'assets/roles/cs_frame.png', Colors.lightGreen),
-                        _buildBadgeModalItem('CP Lover', 'assets/roles/lover_tag.png', 'assets/roles/lover_frame.png', Colors.pinkAccent),
-                        _buildBadgeModalItem('Top Fan', 'assets/roles/top_fan_badge.png', 'assets/roles/top_fan_frame.png', Colors.purpleAccent),
+                        _buildBadgeModalItem('Super Admin', 'assets/roles/super_admin_tag.webp', 'assets/roles/super_admin_frame.webp', Colors.redAccent),
+                        _buildBadgeModalItem('Admin', 'assets/roles/admin_badge.webp', 'assets/roles/admin_frame.webp', Colors.deepOrangeAccent),
+                        _buildBadgeModalItem('Agency Boss', 'assets/roles/agency_badge.webp', 'assets/roles/agency_frame.webp', Colors.cyan),
+                        _buildBadgeModalItem('BD Manager', 'assets/roles/bd_badge.webp', 'assets/roles/bd_frame.webp', Colors.teal),
+                        _buildBadgeModalItem('Game Master', 'assets/roles/game_master_badge.webp', 'assets/roles/game_master_frame.webp', Colors.amber),
+                        _buildBadgeModalItem('Official Host', 'assets/roles/host_badge.webp', 'assets/roles/host_frame.webp', Colors.orange),
+                        _buildBadgeModalItem('Coin Merchant', 'assets/roles/marchent_badge.webp', 'assets/roles/marchent_frame.webp', Colors.blue),
+                        _buildBadgeModalItem('Customer Service', 'assets/roles/cs_badge.webp', 'assets/roles/cs_frame.webp', Colors.lightGreen),
+                        _buildBadgeModalItem('CP Lover', 'assets/roles/lover_tag.webp', 'assets/roles/lover_frame.webp', Colors.pinkAccent),
+                        _buildBadgeModalItem('Top Fan', 'assets/roles/top_fan_badge.webp', 'assets/roles/top_fan_frame.webp', Colors.purpleAccent),
                       ],
                     ),
 
@@ -1913,14 +2091,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _buildBadgeModalItem('SVIP 15', 'assets/svip/svip15_badge.png', 'assets/svip/svip15_frame.png', const Color(0xFFFFD700)),
-                        _buildBadgeModalItem('SVIP 14', 'assets/svip/svip14_badge.png', 'assets/svip/svip14_frame.png', const Color(0xFF26C6DA)),
-                        _buildBadgeModalItem('SVIP 12', 'assets/svip/svip12_badge.png', 'assets/svip/svip12_frame.png', const Color(0xFF7E57C2)),
-                        _buildBadgeModalItem('SVIP 10', 'assets/svip/svip10_badge.png', 'assets/svip/svip10_frame.png', const Color(0xFFE91E63)),
-                        _buildBadgeModalItem('SVIP 8', 'assets/svip/svip8_badge.png', 'assets/svip/svip8_frame.png', const Color(0xFFFFA726)),
-                        _buildBadgeModalItem('SVIP 6', 'assets/svip/svip6_badge.png', 'assets/svip/svip6_frame.png', const Color(0xFFAB47BC)),
-                        _buildBadgeModalItem('SVIP 3', 'assets/svip/svip3_badge.png', null, const Color(0xFF42A5F5)),
-                        _buildBadgeModalItem('SVIP 1', 'assets/svip/svip1_badge.png', null, const Color(0xFF9E9E9E)),
+                        _buildBadgeModalItem('SVIP 15', 'assets/svip/svip15_badge.webp', 'assets/svip/svip15_frame.webp', const Color(0xFFFFD700)),
+                        _buildBadgeModalItem('SVIP 14', 'assets/svip/svip14_badge.webp', 'assets/svip/svip14_frame.webp', const Color(0xFF26C6DA)),
+                        _buildBadgeModalItem('SVIP 12', 'assets/svip/svip12_badge.webp', 'assets/svip/svip12_frame.webp', const Color(0xFF7E57C2)),
+                        _buildBadgeModalItem('SVIP 10', 'assets/svip/svip10_badge.webp', 'assets/svip/svip10_frame.webp', const Color(0xFFE91E63)),
+                        _buildBadgeModalItem('SVIP 8', 'assets/svip/svip8_badge.webp', 'assets/svip/svip8_frame.webp', const Color(0xFFFFA726)),
+                        _buildBadgeModalItem('SVIP 6', 'assets/svip/svip6_badge.webp', 'assets/svip/svip6_frame.webp', const Color(0xFFAB47BC)),
+                        _buildBadgeModalItem('SVIP 3', 'assets/svip/svip3_badge.webp', null, const Color(0xFF42A5F5)),
+                        _buildBadgeModalItem('SVIP 1', 'assets/svip/svip1_badge.webp', null, const Color(0xFF9E9E9E)),
                       ],
                     ),
                     const SizedBox(height: 30),
@@ -2617,20 +2795,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             child: const Text('Delete Permanently', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildTagPill(String label, Color bg, Color text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(color: text, fontSize: 11, fontWeight: FontWeight.bold),
       ),
     );
   }

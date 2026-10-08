@@ -101,6 +101,79 @@ export async function updateUserStatusByAdmin(
   return updatedUser;
 }
 
+export async function getActiveRoomForUser(userId, db = prisma) {
+  if (!userId) return null;
+  try {
+    // 1. Check if user is creator/host of an active LIVE room
+    const hostRoom = await db.room.findFirst({
+      where: {
+        creatorUserId: userId,
+        status: 'LIVE',
+      },
+      select: {
+        id: true,
+        title: true,
+        roomType: true,
+        coverImageUrl: true,
+        currentViewersCount: true,
+        status: true,
+        creatorUserId: true,
+      },
+    });
+
+    if (hostRoom) {
+      return {
+        id: hostRoom.id,
+        title: hostRoom.title,
+        roomType: hostRoom.roomType,
+        coverImageUrl: hostRoom.coverImageUrl,
+        currentViewersCount: hostRoom.currentViewersCount || 1,
+        status: hostRoom.status,
+        isHost: true,
+      };
+    }
+
+    // 2. Check if user is an active member/participant in a LIVE room
+    const membership = await db.roomMember.findFirst({
+      where: {
+        userId,
+        room: { status: 'LIVE' },
+      },
+      select: {
+        roomId: true,
+        room: {
+          select: {
+            id: true,
+            title: true,
+            roomType: true,
+            coverImageUrl: true,
+            currentViewersCount: true,
+            status: true,
+            creatorUserId: true,
+          },
+        },
+      },
+      orderBy: { joinedAt: 'desc' },
+    });
+
+    if (membership && membership.room) {
+      return {
+        id: membership.room.id,
+        title: membership.room.title,
+        roomType: membership.room.roomType,
+        coverImageUrl: membership.room.coverImageUrl,
+        currentViewersCount: membership.room.currentViewersCount || 1,
+        status: membership.room.status,
+        isHost: false,
+      };
+    }
+  } catch (e) {
+    console.error('Error fetching active room for user:', e.message);
+  }
+
+  return null;
+}
+
 export async function getSelfProfile(userId, db = prisma) {
   const user = await userRepository.findById(userId, db);
   if (!user) {
@@ -110,9 +183,10 @@ export async function getSelfProfile(userId, db = prisma) {
     throw error;
   }
 
-  const [followersCount, followingCount] = await Promise.all([
+  const [followersCount, followingCount, activeRoom] = await Promise.all([
     db.follow.count({ where: { followingId: userId, status: 'ACCEPTED' } }),
     db.follow.count({ where: { followerId: userId, status: 'ACCEPTED' } }),
+    getActiveRoomForUser(userId, db),
   ]);
 
   if (user.profile) {
@@ -141,6 +215,9 @@ export async function getSelfProfile(userId, db = prisma) {
     ...user,
     isHost,
     hostApplicationStatus: hostAppStatus,
+    isLive: Boolean(activeRoom),
+    liveRoomId: activeRoom ? activeRoom.id : null,
+    currentRoom: activeRoom,
   };
 }
 
@@ -165,9 +242,10 @@ export async function getPublicProfile(userId, db = prisma) {
     throw error;
   }
 
-  const [followersCount, followingCount] = await Promise.all([
+  const [followersCount, followingCount, activeRoom] = await Promise.all([
     db.follow.count({ where: { followingId: userId, status: 'ACCEPTED' } }),
     db.follow.count({ where: { followerId: userId, status: 'ACCEPTED' } }),
+    getActiveRoomForUser(userId, db),
   ]);
 
   if (publicUser.profile) {
@@ -183,7 +261,12 @@ export async function getPublicProfile(userId, db = prisma) {
     };
   }
 
-  return publicUser;
+  return {
+    ...publicUser,
+    isLive: Boolean(activeRoom),
+    liveRoomId: activeRoom ? activeRoom.id : null,
+    currentRoom: activeRoom,
+  };
 }
 
 export async function createUserByAdmin(

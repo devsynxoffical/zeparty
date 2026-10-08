@@ -9,9 +9,7 @@ import '../../../../models/user_model.dart';
 import '../../../../models/party_participant_model.dart';
 import '../../../../providers/live_party_provider.dart';
 import '../../../../providers/auth_provider.dart';
-import '../../../../providers/game_provider.dart';
 import '../../../../providers/wallet_provider.dart';
-import '../../../../core/utils/formatters.dart';
 import '../../../../core/services/room_share_service.dart';
 import '../../../../core/services/media_upload_service.dart';
 import '../../recharge/recharge_screen.dart';
@@ -93,217 +91,61 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
               const SizedBox(height: 16),
               const Text('Change Room Cover', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
-              Builder(
-                builder: (cCtx) {
-                  final gameP = cCtx.watch<GameProvider>();
-                  final authP = cCtx.read<AuthProvider>();
-                  final userCountry = authP.currentUser.region.isNotEmpty ? authP.currentUser.region : 'Global';
-                  final price = gameP.getCustomRoomThemeUploadPrice(userCountry);
-                  final isPaid = price > 0;
-                  final labelText = isPaid
-                      ? 'Choose from Gallery • ${AppFormatters.formatNumber(price)} Coins'
-                      : 'Choose from Gallery';
+              ListTile(
+                leading: const Icon(Icons.photo_library_rounded, color: Colors.pinkAccent),
+                title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final authUser = context.read<AuthProvider>().currentUser;
+                  final isHost = widget.room.host.id == authUser.id;
+                  final isAdmin = authUser.role == UserRole.admin || authUser.id == 'admin';
+                  final isAuthorized = widget.canManage || isHost || isAdmin;
 
-                  return ListTile(
-                    leading: const Icon(Icons.photo_library_rounded, color: Colors.pinkAccent),
-                    title: Text(labelText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                    onTap: () async {
-                      Navigator.pop(ctx);
-                      final authUser = context.read<AuthProvider>().currentUser;
-                      final isHost = widget.room.host.id == authUser.id;
-                      final isAdmin = authUser.role == UserRole.admin || authUser.id == 'admin';
-                      final isAuthorized = widget.canManage || isHost || isAdmin;
+                  if (!isAuthorized) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("You don't have permission to change this room.")),
+                    );
+                    return;
+                  }
 
-                      if (!isAuthorized) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("You don't have permission to change this room.")),
+                  try {
+                    final picker = ImagePicker();
+                    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+                    if (picked != null) {
+                      String publicUrl = picked.path;
+                      try {
+                        final uploadRes = await MediaUploadService.instance.uploadFile(
+                          filePath: picked.path,
+                          folder: 'banners',
                         );
-                        return;
+                        if (uploadRes.url.isNotEmpty) {
+                          publicUrl = uploadRes.url;
+                        }
+                      } catch (uploadErr) {
+                        debugPrint('[RoomInfoSheet] Upload error: $uploadErr');
                       }
-                      final gameProv = context.read<GameProvider>();
-                      final walletProv = context.read<WalletProvider>();
-                      final authProv = context.read<AuthProvider>();
-                      final currentCountry = authProv.currentUser.region.isNotEmpty ? authProv.currentUser.region : 'Global';
-                      final currentPrice = gameProv.getCustomRoomThemeUploadPrice(currentCountry);
 
-                      if (currentPrice > 0) {
-                        // 1. Confirmation Popup
-                        final bool? confirmed = await showDialog<bool>(
-                          context: context,
-                          builder: (c) => AlertDialog(
-                            backgroundColor: const Color(0xFF1E1B2E),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                            title: const Text(
-                              'Custom Room DP Upload',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
-                            ),
-                            content: Text(
-                              'Cost: ${AppFormatters.formatNumber(currentPrice)} Coins\n\nDo you want to proceed with uploading a custom Room DP?',
-                              style: const TextStyle(color: Colors.white70, fontSize: 14),
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(c, false),
-                                child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-                              ),
-                              ElevatedButton(
-                                onPressed: () => Navigator.pop(c, true),
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent),
-                                child: const Text('Confirm', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                              ),
-                            ],
+                      setState(() {
+                        _currentCoverUrl = publicUrl;
+                      });
+                      if (mounted) {
+                        Provider.of<LivePartyProvider>(context, listen: false).updateRoomDetails(coverUrl: publicUrl);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('✨ Room cover updated successfully!'),
+                            backgroundColor: Colors.pinkAccent,
+                            behavior: SnackBarBehavior.floating,
                           ),
                         );
-
-                        if (confirmed != true) return;
-
-                        // 2. Wallet Balance Check
-                        if (walletProv.coins < currentPrice) {
-                          if (mounted) {
-                            showDialog(
-                              context: context,
-                              builder: (c) => AlertDialog(
-                                backgroundColor: const Color(0xFF1E1B2E),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                title: const Text(
-                                  'Insufficient Coins',
-                                  style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 18),
-                                ),
-                                content: Text(
-                                  'Required: ${AppFormatters.formatNumber(currentPrice)} Coins\nYour Balance: ${AppFormatters.formatNumber(walletProv.coins)} Coins',
-                                  style: const TextStyle(color: Colors.white70, fontSize: 14),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(c),
-                                    child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-                                  ),
-                                  ElevatedButton(
-                                    onPressed: () {
-                                      Navigator.pop(c);
-                                      Navigator.push(context, MaterialPageRoute(builder: (_) => const RechargeScreen()));
-                                    },
-                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-                                    child: const Text('Recharge', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }
-                          return;
-                        }
-
-                        // 3. Process Payment safely
-                        final payment = await gameProv.processRoomThemePayment(
-                          walletProvider: walletProv,
-                          userId: authProv.currentUser.id,
-                          roomId: widget.room.id,
-                          uploadType: 'Room DP',
-                          userCountry: currentCountry,
-                        );
-
-                        if (payment['success'] != true) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Payment could not be completed. No coins were deducted.')),
-                            );
-                          }
-                          return;
-                        }
-
-                        final String txId = payment['transactionId'] as String;
-
-                        // 4. Open Image Picker
-                        try {
-                          final picker = ImagePicker();
-                          final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-                          if (picked != null) {
-                            String publicUrl = picked.path;
-                            try {
-                              final uploadRes = await MediaUploadService.instance.uploadFile(
-                                filePath: picked.path,
-                                folder: 'banners',
-                              );
-                              if (uploadRes.url.isNotEmpty) {
-                                publicUrl = uploadRes.url;
-                              }
-                            } catch (uploadErr) {
-                              debugPrint('[RoomInfoSheet] Upload error: $uploadErr');
-                            }
-
-                            setState(() {
-                              _currentCoverUrl = publicUrl;
-                            });
-                            gameProv.completeRoomThemeUpload(txId);
-                            if (mounted) {
-                              Provider.of<LivePartyProvider>(context, listen: false).updateRoomDetails(coverUrl: publicUrl);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('✨ Room cover updated successfully!'),
-                                  backgroundColor: Colors.pinkAccent,
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                            }
-                          } else {
-                            // User cancelled image selection -> Automatic refund!
-                            await gameProv.refundRoomThemePayment(
-                              walletProvider: walletProv,
-                              transactionId: txId,
-                              reason: 'Room DP gallery picker cancelled',
-                            );
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Upload cancelled. Your ${AppFormatters.formatNumber(currentPrice)} Coins have been refunded.'),
-                                  backgroundColor: Colors.orange,
-                                ),
-                              );
-                            }
-                          }
-                        } catch (e) {
-                          // Upload failure -> Automatic refund!
-                          await gameProv.refundRoomThemePayment(
-                            walletProvider: walletProv,
-                            transactionId: txId,
-                            reason: 'Room DP upload error: $e',
-                          );
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Upload failed. Your ${AppFormatters.formatNumber(currentPrice)} Coins have been refunded.')),
-                            );
-                          }
-                        }
-                      } else {
-                        // Free upload
-                        try {
-                          final picker = ImagePicker();
-                          final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-                          if (picked != null) {
-                            setState(() {
-                              _currentCoverUrl = picked.path;
-                            });
-                            if (mounted) {
-                              Provider.of<LivePartyProvider>(context, listen: false).updateRoomDetails(coverUrl: picked.path);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('✨ Room cover updated successfully!'),
-                                  backgroundColor: Colors.pinkAccent,
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                            }
-                          }
-                        } catch (e) {
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error selecting cover image: $e')),
-                            );
-                          }
-                        }
                       }
-                    },
-                  );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error selecting cover image: $e')),
+                      );
+                    }
+                  }
                 },
               ),
               ListTile(

@@ -5,6 +5,7 @@ import '../../providers/agency_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/usd_balance_provider.dart';
 import '../../core/policy/agency_host_policy.dart';
+import '../wallet/diamond_transfer_screen.dart';
 
 class HostCenterScreen extends StatefulWidget {
   const HostCenterScreen({super.key});
@@ -467,17 +468,36 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                                   Text('\$${usdProv.audioHostAvailableBalance.toStringAsFixed(2)} USD', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22)),
                                 ],
                               ),
-                              ElevatedButton.icon(
-                                icon: const Icon(Icons.account_balance_wallet_rounded, size: 18),
-                                label: const Text('Withdraw', style: TextStyle(fontWeight: FontWeight.bold)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.amber,
-                                  foregroundColor: Colors.black,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                ),
-                                onPressed: () {
-                                  _showHostWithdrawalDialog(context, usdProv, audioHost.userName, authUser.id, audioHost.agencyName);
-                                },
+                              Row(
+                                children: [
+                                  OutlinedButton.icon(
+                                    icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                                    label: const Text('Transfer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                      side: const BorderSide(color: Colors.white54),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    ),
+                                    onPressed: () {
+                                      Navigator.push(context, MaterialPageRoute(builder: (_) => const DiamondTransferScreen()));
+                                    },
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ElevatedButton.icon(
+                                    icon: const Icon(Icons.account_balance_wallet_rounded, size: 16),
+                                    label: const Text('Withdraw', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.amber,
+                                      foregroundColor: Colors.black,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    ),
+                                    onPressed: () {
+                                      _showHostWithdrawalDialog(context, usdProv, audioHost.userName, authUser.id, audioHost.agencyName);
+                                    },
+                                  ),
+                                ],
                               ),
                             ],
                           ),

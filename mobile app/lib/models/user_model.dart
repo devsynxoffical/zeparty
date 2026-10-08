@@ -321,8 +321,15 @@ class UserModel {
       agencyName: json['agencyName']?.toString(),
       sellerBalance: sellerBalance,
       isOnline: json['isOnline'] ?? true,
-      isLive: json['isLive'] ?? false,
-      liveRoomId: json['liveRoomId']?.toString(),
+      isLive: json['isLive'] == true ||
+          json['isInRoom'] == true ||
+          (json['liveRoomId'] != null && json['liveRoomId'].toString().isNotEmpty) ||
+          (json['currentRoomId'] != null && json['currentRoomId'].toString().isNotEmpty) ||
+          (json['currentRoom'] != null && json['currentRoom'] is Map && (json['currentRoom']['id'] != null || json['currentRoom']['roomId'] != null)),
+      liveRoomId: json['liveRoomId']?.toString() ??
+          json['currentRoomId']?.toString() ??
+          json['roomId']?.toString() ??
+          (json['currentRoom'] is Map ? (json['currentRoom']['id']?.toString() ?? json['currentRoom']['roomId']?.toString()) : null),
       avatarFrame: json['avatarFrame']?.toString() ?? '',
       badge: json['badge']?.toString() ?? '',
       referralCode: json['referralCode']?.toString() ?? 'ZEP$id',

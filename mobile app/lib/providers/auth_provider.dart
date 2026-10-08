@@ -69,6 +69,14 @@ class AuthProvider extends ChangeNotifier {
     });
   }
 
+  void updateAvatarFrame(String frame) {
+    if (_currentUser != null) {
+      _currentUser = _currentUser!.copyWith(avatarFrame: frame);
+      _saveUserLocalSession(_currentUser!);
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
     _authStateSubscription?.cancel();

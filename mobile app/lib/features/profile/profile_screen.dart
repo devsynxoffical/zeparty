@@ -344,10 +344,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               Positioned(
-                bottom: 0,
-                right: 0,
+                bottom: -2,
+                right: -2,
                 child: Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
                     color: primary,
                     shape: BoxShape.circle,
@@ -357,7 +357,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.25),
+                        color: Colors.black.withValues(alpha: 0.35),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -365,7 +365,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   child: const Icon(
                     Icons.camera_alt_rounded,
-                    size: 14,
+                    size: 12,
                     color: Colors.white,
                   ),
                 ),
@@ -404,8 +404,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ),
-                    NobleBadgeChip(user: user, fontSize: 9.5),
-                    NobleTagChip(user: user, height: 16),
                     if (context.watch<LivePartyProvider>().activeRoom != null) ...[
                       GestureDetector(
                         onTap: () {
@@ -801,15 +799,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       },
       {
         'title': 'Host Center',
-        'iconData': Icons.mic_external_on_rounded,
-        'iconColor': const Color(0xFFFFC107),
+        'imagePath': 'assets/images/profile_host_center.jpg',
         'badge': hasAudioHostAccess ? 'AUDIO' : null,
         'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => HostCenterScreen())),
       },
       if (isBdAuthorized)
         {
           'title': 'BD Center',
-          'iconData': Icons.business_center_rounded,
+          'imagePath': 'assets/images/profile_admin.jpg',
           'badge': 'BD',
           'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const BDCenterDashboardScreen())),
         },
@@ -835,8 +832,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (isMerchantAuthorized)
         {
           'title': 'Merchant Center',
-          'iconData': Icons.workspace_premium_rounded,
-          'iconColor': const Color(0xFFFFD700),
+          'imagePath': 'assets/images/profile_merchant.jpg',
           'badge': 'MERCHANT',
           'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const MerchantCenterScreen())),
         },
@@ -978,12 +974,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _buildAchievementCard('Aristocracy', 'assets/nobles/emperor_badge.png', Colors.amber, isDark, onTap: () {
                 AuthGuard.require(context, () {
                   Navigator.push(context, MaterialPageRoute(builder: (c) => const AristocracyCenterScreen()));
-                });
-              }),
-              const SizedBox(width: 12),
-              _buildAchievementCard('Store & Items', 'assets/roles/official_tag.png', Colors.purpleAccent, isDark, onTap: () {
-                AuthGuard.require(context, () {
-                  Navigator.push(context, MaterialPageRoute(builder: (c) => const StoreScreen()));
                 });
               }),
             ],
