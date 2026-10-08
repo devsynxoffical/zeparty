@@ -11,12 +11,19 @@ export async function getAgencies(params = {}) {
     return items.map((a) => ({
       id: a.id,
       name: a.agencyName || a.name || 'Agency',
+      agencyName: a.agencyName || a.name || 'Agency',
       code: a.agencyCode || a.code || '-',
       ownerUserId: a.ownerUserId,
+      contactName: a.owner?.profile?.displayName || a.owner?.username || a.ownerUserId || 'Owner',
       ownerUsername: a.owner?.username || a.ownerUserId || 'Owner',
       status: a.status?.toLowerCase() || 'active',
+      agencyType: a.agencyType || 'LIVE_AGENCY',
+      country: a.owner?.profile?.country || 'US',
       activeHostsCount: a.hosts?.length || a._count?.hosts || 0,
+      hostsCount: a.hosts?.length || a._count?.hosts || 0,
       commissionPct: Number(a.commissionRate || a.commissionPercent || 15),
+      commissionPercent: Number(a.commissionRate || a.commissionPercent || 15),
+      monthlyGrossUSD: 0,
       bdCenterId: a.bdCenterId,
       bdCenterName: a.bdCenter?.centerName || a.bdCenter?.name || 'General BD',
       createdAt: a.createdAt,
@@ -29,8 +36,34 @@ export async function getAgencies(params = {}) {
 }
 
 export async function getActiveAgencies() {
-  const res = await apiClient.get('/v1/admin/agencies', { params: { status: 'ACTIVE' } });
-  return res.data?.data || [];
+  try {
+    const res = await apiClient.get('/v1/admin/agencies', { params: { status: 'ACTIVE' } });
+    const items = res.data?.data || [];
+    return items.map((a) => ({
+      id: a.id,
+      name: a.agencyName || a.name || 'Agency',
+      agencyName: a.agencyName || a.name || 'Agency',
+      code: a.agencyCode || a.code || '-',
+      ownerUserId: a.ownerUserId,
+      contactName: a.owner?.profile?.displayName || a.owner?.username || a.ownerUserId || 'Owner',
+      ownerUsername: a.owner?.username || a.ownerUserId || 'Owner',
+      status: a.status?.toLowerCase() || 'active',
+      agencyType: a.agencyType || 'LIVE_AGENCY',
+      country: a.owner?.profile?.country || 'US',
+      activeHostsCount: a.hosts?.length || a._count?.hosts || 0,
+      hostsCount: a.hosts?.length || a._count?.hosts || 0,
+      commissionPct: Number(a.commissionRate || a.commissionPercent || 15),
+      commissionPercent: Number(a.commissionRate || a.commissionPercent || 15),
+      monthlyGrossUSD: 0,
+      bdCenterId: a.bdCenterId,
+      bdCenterName: a.bdCenter?.centerName || a.bdCenter?.name || 'General BD',
+      createdAt: a.createdAt,
+      updatedAt: a.updatedAt,
+    }));
+  } catch (err) {
+    console.warn('Failed to fetch active agencies:', err.message);
+    return [];
+  }
 }
 
 export async function getAgencyById(id) {

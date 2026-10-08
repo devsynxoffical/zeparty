@@ -33,11 +33,18 @@ export function AgenciesPage() {
   const { logAdminAction } = useAuditLog();
   const [searchParams, setSearchParams] = useSearchParams();
   const typeParam = searchParams.get('type') || 'live';
+  const tabParam = searchParams.get('tab') || 'activeAgencies';
 
-  const [activeTab, setActiveTab] = useState('activeAgencies'); // 'activeAgencies' | 'applications'
+  const [activeTab, setActiveTab] = useState(tabParam); // 'activeAgencies' | 'applications'
   const [agencies, setAgencies] = useState([]);
   const [applications, setApplications] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    if (tabParam && tabParam !== activeTab) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
   
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -460,7 +467,15 @@ export function AgenciesPage() {
       {/* Tabs */}
       <div className="flex gap-6 border-b border-slate-800">
         <button
-          onClick={() => { setActiveTab('activeAgencies'); setSearch(''); }}
+          onClick={() => {
+            setActiveTab('activeAgencies');
+            setSearch('');
+            setSearchParams((prev) => {
+              const n = new URLSearchParams(prev);
+              n.set('tab', 'activeAgencies');
+              return n;
+            });
+          }}
           className={`pb-3 text-sm font-semibold transition-colors border-b-2 ${
             activeTab === 'activeAgencies' ? 'text-gold-400 border-gold-500' : 'text-slate-400 border-transparent hover:text-white'
           }`}
@@ -468,7 +483,15 @@ export function AgenciesPage() {
           Licensed Agencies ({filteredActive.length})
         </button>
         <button
-          onClick={() => { setActiveTab('applications'); setSearch(''); }}
+          onClick={() => {
+            setActiveTab('applications');
+            setSearch('');
+            setSearchParams((prev) => {
+              const n = new URLSearchParams(prev);
+              n.set('tab', 'applications');
+              return n;
+            });
+          }}
           className={`pb-3 text-sm font-semibold transition-colors border-b-2 ${
             activeTab === 'applications' ? 'text-gold-400 border-gold-500' : 'text-slate-400 border-transparent hover:text-white'
           }`}

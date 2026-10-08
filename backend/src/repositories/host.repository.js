@@ -212,8 +212,30 @@ export async function findApplications(
   db = prisma
 ) {
   const where = {};
-  if (status) where.status = status;
-  if (hostType) where.hostType = hostType;
+  if (status && status !== 'all' && status !== 'ALL') {
+    const s = String(status).toUpperCase();
+    if (s === 'PENDING' || s === 'APPLIED') {
+      where.status = 'APPLIED';
+    } else if (s === 'APPROVED' || s === 'ACTIVE') {
+      where.status = 'ACTIVE';
+    } else if (s === 'REJECTED') {
+      where.status = 'REJECTED';
+    } else if (s === 'SUSPENDED') {
+      where.status = 'SUSPENDED';
+    } else {
+      where.status = s;
+    }
+  }
+  if (hostType && hostType !== 'all' && hostType !== 'ALL') {
+    const ht = String(hostType).toUpperCase();
+    if (ht === 'LIVE') {
+      where.hostType = { in: ['LIVE_HOST', 'BOTH'] };
+    } else if (ht === 'AUDIO') {
+      where.hostType = { in: ['AUDIO_HOST', 'BOTH'] };
+    } else {
+      where.hostType = ht;
+    }
+  }
 
   const skip = (page - 1) * limit;
   const [applications, totalCount] = await Promise.all([

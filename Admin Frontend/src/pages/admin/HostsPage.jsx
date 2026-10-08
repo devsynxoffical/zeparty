@@ -386,6 +386,10 @@ export function HostsPage() {
     });
   }, [applications, typeParam, statusFilter, search]);
 
+  const pendingAppsCount = useMemo(() => {
+    return applications.filter((a) => a.status === 'pending' || a.status === 'applied').length;
+  }, [applications]);
+
   const hostColumns = [
     {
       key: 'host',

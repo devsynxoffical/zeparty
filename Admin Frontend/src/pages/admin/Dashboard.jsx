@@ -151,14 +151,21 @@ function KPISection({ stats }) {
             subValue="Registered creators"
           />
         </Link>
-        <Link to="/admin/hosts?tab=applications" className="block focus:outline-none">
+        <Link
+          to={(s.pendingAgencyVerifications ?? 0) > 0 && (s.pendingHostVerifications ?? 0) === 0 ? '/admin/agencies?tab=applications' : '/admin/hosts?tab=applications'}
+          className="block focus:outline-none"
+        >
           <StatCard
             title="Pending Verifications"
             value={(s.pendingHostVerifications ?? 0) + (s.pendingAgencyVerifications ?? 0)}
             icon={Shield}
             iconColor="text-orange-400"
             iconBg="bg-orange-500/10"
-            subValue={`${s.pendingHostVerifications || 0} hosts · ${s.pendingAgencyVerifications || 0} agencies (Click to review)`}
+            subValue={
+              ((s.pendingHostVerifications ?? 0) + (s.pendingAgencyVerifications ?? 0)) > 0
+                ? `${s.pendingHostVerifications || 0} hosts · ${s.pendingAgencyVerifications || 0} agencies (Click to review)`
+                : 'No pending verification requests'
+            }
           />
         </Link>
       </div>

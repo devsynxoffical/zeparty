@@ -1030,9 +1030,9 @@ export async function getDashboardStats(req, res, next) {
       }),
       prisma.hostProfile.count({ where: { hostStatus: 'ACTIVE' } }),
       prisma.hostApplication ? prisma.hostApplication.count({ where: { status: 'APPLIED' } }).catch(() => 0) : 0,
-      prisma.agency ? prisma.agency.count({ where: { agencyType: 'LIVE_AGENCY' } }).catch(() => 0) : 0,
+      prisma.adminApproval ? prisma.adminApproval.count({ where: { status: 'PENDING', module: { in: ['agency', 'agencies'] } } }).catch(() => 0) : 0,
       prisma.adminApproval ? prisma.adminApproval.count({ where: { status: 'PENDING' } }).catch(() => 0) : 0,
-      prisma.adminApproval ? prisma.adminApproval.count({ where: { status: 'PENDING', fourEyesRequired: true } }).catch(() => 0) : 0,
+      prisma.adminApproval ? prisma.adminApproval.count({ where: { status: 'PENDING' } }).catch(() => 0) : 0,
       prisma.wallet.aggregate({ _sum: { coins: true } }).catch(() => ({ _sum: { coins: 0n } })),
       prisma.wallet.aggregate({ _sum: { diamonds: true } }).catch(() => ({ _sum: { diamonds: 0n } })),
       prisma.giftTransaction.count({ where: { createdAt: { gte: today } } }).catch(() => 0),
@@ -1051,29 +1051,29 @@ export async function getDashboardStats(req, res, next) {
     ]);
 
     const activeViewersSum = Number(viewersAgg._sum?.currentViewersCount || 0);
-    const concurrentViewers = activeViewersSum > 0 ? activeViewersSum : Math.max(activeRooms * 24, 185);
+    const concurrentViewers = activeViewersSum;
     const totalAudioListeners = Math.round(concurrentViewers * 0.42);
-    const totalCoinsInCirculation = Number(walletCoinsAgg._sum?.coins || 0n) || 108500;
-    const totalDiamondsInCirculation = Number(walletDiamondsAgg._sum?.diamonds || 0n) || 8400;
-    const totalRevenueUSD = Number(totalRechargeAgg._sum?.amountUSD || 0) || 5400;
-    const coinSalesTodayUSD = Number(todayRechargeAgg._sum?.amountUSD || 0) || 720;
-    const coinsSoldToday = Number(todayRechargeAgg._sum?.coinsCredited || 0n) || 28000;
-    const giftsSentToday = todayGiftsCount > 0 ? todayGiftsCount : Math.max(Math.round(activeRooms * 2.8), 64);
-    const giftCoinsVolumeToday = Number(todayGiftsVolume._sum?.hostDiamonds || 0n) || 3200;
+    const totalCoinsInCirculation = Number(walletCoinsAgg._sum?.coins || 0n);
+    const totalDiamondsInCirculation = Number(walletDiamondsAgg._sum?.diamonds || 0n);
+    const totalRevenueUSD = Number(totalRechargeAgg._sum?.amountUSD || 0);
+    const coinSalesTodayUSD = Number(todayRechargeAgg._sum?.amountUSD || 0);
+    const coinsSoldToday = Number(todayRechargeAgg._sum?.coinsCredited || 0n);
+    const giftsSentToday = todayGiftsCount || 0;
+    const giftCoinsVolumeToday = Number(todayGiftsVolume._sum?.hostDiamonds || 0n);
 
     return res.status(200).json({
       success: true,
       data: {
-        totalUsers: Math.max(totalUsers, 48),
+        totalUsers,
         activeRooms,
-        activeSocialAudioRooms: audioRooms || Math.round(activeRooms * 0.65),
+        activeSocialAudioRooms: audioRooms,
         concurrentViewers,
         totalAudioListeners,
-        activeHosts: Math.max(totalHosts, Math.min(activeRooms, 32)),
-        pendingHostVerifications: pendingHosts || 2,
-        pendingAgencyVerifications: pendingAgencies || 1,
-        pendingApprovalsCount: pendingApprovals || 3,
-        fourEyesApprovalsCount: fourEyesApprovals || 2,
+        activeHosts: totalHosts,
+        pendingHostVerifications: pendingHosts ?? 0,
+        pendingAgencyVerifications: pendingAgencies ?? 0,
+        pendingApprovalsCount: pendingApprovals ?? 0,
+        fourEyesApprovalsCount: fourEyesApprovals ?? 0,
         totalRevenue: totalRevenueUSD,
         coinSalesToday: coinSalesTodayUSD,
         coinsSoldToday,
@@ -1082,9 +1082,9 @@ export async function getDashboardStats(req, res, next) {
         giftsSentToday,
         giftCoinsVolumeToday,
         audioRoomDiamondVolume: totalDiamondsInCirculation,
-        revenueGrowthPercent: 12.5,
-        roomsGrowthPercent: 8.2,
-        viewersGrowthPercent: 15.4,
+        revenueGrowthPercent: 0,
+        roomsGrowthPercent: 0,
+        viewersGrowthPercent: 0,
       },
     });
   } catch (err) {
