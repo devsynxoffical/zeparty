@@ -156,6 +156,7 @@ export async function ensureDatabaseSchema(db = prisma) {
     const non7DigitUsers = await db.$queryRawUnsafe(`
       SELECT "id", "username" FROM "User"
       WHERE "id" !~ '^[1-9][0-9]{6}$'
+        AND "username" NOT LIKE 'admin_shadow_%'
     `);
     if (non7DigitUsers && non7DigitUsers.length > 0) {
       console.log(`🔄 Found ${non7DigitUsers.length} user(s) with non-7-digit IDs. Auto-migrating to 7-digit IDs...`);

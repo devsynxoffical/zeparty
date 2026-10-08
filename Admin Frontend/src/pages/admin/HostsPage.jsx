@@ -150,8 +150,11 @@ export function HostsPage() {
     }
   }, [tabParam]);
 
+  const [fetchError, setFetchError] = useState(null);
+
   const fetchHostsData = () => {
     setIsLoading(true);
+    setFetchError(null);
     Promise.allSettled([
       getHosts(),
       getHostApplications(),
@@ -180,9 +183,15 @@ export function HostsPage() {
           joinedAt: h.createdAt,
           warnings: [],
         })));
+      } else {
+        console.error('Failed to load active hosts:', hostsRes.reason);
       }
       if (appsRes.status === 'fulfilled') {
         setApplications(appsRes.value || []);
+      } else {
+        console.error('Failed to load host applications:', appsRes.reason);
+        const errMsg = appsRes.reason?.response?.data?.message || appsRes.reason?.message || 'Failed to load host applications';
+        setFetchError(errMsg);
       }
       setIsLoading(false);
     });
@@ -630,34 +639,50 @@ export function HostsPage() {
           </p>
         </div>
 
-        {/* Live vs Audio toggle */}
-        <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-800">
-          <button
-            onClick={() => setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('type', 'all'); return n; })}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-              typeParam === 'all' ? 'bg-gold-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            All Creators
-          </button>
-          <button
-            onClick={() => setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('type', 'live'); return n; })}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-              typeParam === 'live' ? 'bg-purple-600 text-white shadow shadow-purple-600/20' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Live Video Hosts
-          </button>
-          <button
-            onClick={() => setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('type', 'audio'); return n; })}
-            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-              typeParam === 'audio' ? 'bg-indigo-600 text-white shadow shadow-indigo-600/20' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Social Audio Hosts
-          </button>
+        {/* Live vs Audio toggle & Refresh */}
+        <div className="flex items-center gap-2">
+          <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-800">
+            <button
+              onClick={() => setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('type', 'all'); return n; })}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                typeParam === 'all' ? 'bg-gold-500 text-slate-950 shadow' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              All Creators
+            </button>
+            <button
+              onClick={() => setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('type', 'live'); return n; })}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                typeParam === 'live' ? 'bg-purple-600 text-white shadow shadow-purple-600/20' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Live Video Hosts
+            </button>
+            <button
+              onClick={() => setSearchParams((prev) => { const n = new URLSearchParams(prev); n.set('type', 'audio'); return n; })}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                typeParam === 'audio' ? 'bg-indigo-600 text-white shadow shadow-indigo-600/20' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Social Audio Hosts
+            </button>
+          </div>
+          <Button variant="outline" size="sm" onClick={fetchHostsData} disabled={isLoading} title="Reload hosts and applications from database">
+            <RefreshCw className={`w-3.5 h-3.5 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
         </div>
       </div>
+
+      {fetchError && (
+        <div className="p-3 rounded bg-red-500/20 border border-red-500/40 text-red-400 text-xs font-bold flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" />
+            <span>Connection / Authorization warning: {fetchError}</span>
+          </div>
+          <Button variant="secondary" size="xs" onClick={fetchHostsData}>Retry</Button>
+        </div>
+      )}
 
       {feedback && (
         <div className="p-3 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center gap-2">

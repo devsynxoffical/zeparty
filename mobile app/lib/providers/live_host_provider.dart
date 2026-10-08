@@ -109,6 +109,12 @@ class LiveHostProvider extends ChangeNotifier {
       );
     } catch (e) {
       debugPrint('[LiveHostProvider] Backend API host application call: $e');
+      final errStr = e.toString().toLowerCase();
+      if (!errStr.contains('already exists') && !errStr.contains('409') && !errStr.contains('pending_application_exists')) {
+        _isLoading = false;
+        notifyListeners();
+        rethrow;
+      }
     }
 
     // 2. Update local state

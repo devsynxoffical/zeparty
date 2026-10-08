@@ -593,15 +593,27 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
                               submittedAt: DateTime.now(),
                             );
 
-                            await liveHostProv.submitApplicationAsync(
-                              app: app,
-                              hostType: _selectedHostType,
-                            );
+                            try {
+                              await liveHostProv.submitApplicationAsync(
+                                app: app,
+                                hostType: _selectedHostType,
+                              );
 
-                            setState(() => _isSubmitting = false);
+                              setState(() => _isSubmitting = false);
 
-                            if (context.mounted) {
-                              _showSubmissionSuccessDialog(context, _readableHostType);
+                              if (context.mounted) {
+                                _showSubmissionSuccessDialog(context, _readableHostType);
+                              }
+                            } catch (e) {
+                              setState(() => _isSubmitting = false);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Host Application error: ${e.toString()}'),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                              }
                             }
                           },
                     child: _isSubmitting

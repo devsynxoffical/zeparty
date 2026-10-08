@@ -5,36 +5,46 @@
 import apiClient from '../api';
 
 export async function getHosts(params = {}) {
-  const res = await apiClient.get('/v1/admin/hosts', { params });
-  return res.data?.data || [];
+  try {
+    const res = await apiClient.get('/v1/admin/hosts', { params });
+    return res.data?.data || [];
+  } catch (err) {
+    console.error('[hosts.service] getHosts failed:', err.response?.data || err.message);
+    throw err;
+  }
 }
 
 export async function getHostApplications(params = {}) {
-  const res = await apiClient.get('/v1/admin/hosts/applications', { params });
-  const items = res.data?.data || [];
-  return items.map((app) => {
-    const rawStatus = (app.status || '').toUpperCase();
-    const isPending = rawStatus === 'APPLIED' || rawStatus === 'PENDING' || !rawStatus;
-    return {
-      id: app.id,
-      userId: app.userId,
-      applicantName: app.user?.profile?.displayName || app.user?.username || app.userId,
-      applicantUsername: app.user?.username || app.userId,
-      user: app.user?.username || app.userId,
-      hostType: app.hostType || 'BOTH',
-      agencyId: app.agencyId,
-      agencyName: app.agency?.name || 'Independent',
-      status: isPending ? 'pending' : rawStatus.toLowerCase(),
-      submittedAt: app.createdAt,
-      reviewedAt: app.reviewedAt,
-      reviewerAdminId: app.reviewerAdminId,
-      rejectionReason: app.rejectionReason,
-      idCardFrontUrl: app.idCardFrontUrl || app.idDocumentUrl,
-      idCardBackUrl: app.idCardBackUrl,
-      videoSampleUrl: app.videoSampleUrl || app.liveDemoUrl,
-      userProfile: app.user?.profile,
-    };
-  });
+  try {
+    const res = await apiClient.get('/v1/admin/hosts/applications', { params });
+    const items = res.data?.data || [];
+    return items.map((app) => {
+      const rawStatus = (app.status || '').toUpperCase();
+      const isPending = rawStatus === 'APPLIED' || rawStatus === 'PENDING' || !rawStatus;
+      return {
+        id: app.id,
+        userId: app.userId,
+        applicantName: app.user?.profile?.displayName || app.user?.username || app.userId,
+        applicantUsername: app.user?.username || app.userId,
+        user: app.user?.username || app.userId,
+        hostType: app.hostType || 'BOTH',
+        agencyId: app.agencyId,
+        agencyName: app.agency?.name || 'Independent',
+        status: isPending ? 'pending' : rawStatus.toLowerCase(),
+        submittedAt: app.createdAt,
+        reviewedAt: app.reviewedAt,
+        reviewerAdminId: app.reviewerAdminId,
+        rejectionReason: app.rejectionReason,
+        idCardFrontUrl: app.idCardFrontUrl || app.idDocumentUrl,
+        idCardBackUrl: app.idCardBackUrl,
+        videoSampleUrl: app.videoSampleUrl || app.liveDemoUrl,
+        userProfile: app.user?.profile,
+      };
+    });
+  } catch (err) {
+    console.error('[hosts.service] getHostApplications failed:', err.response?.data || err.message);
+    throw err;
+  }
 }
 
 export async function getHostApplicationById(id) {
