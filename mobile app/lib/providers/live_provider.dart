@@ -588,19 +588,23 @@ class LiveProvider extends ChangeNotifier {
     });
   }
 
+  Future<void> closeRoom() async {
+    final roomId = _activeRoom?.id;
+    if (roomId != null) {
+      try {
+        await _roomRepository.closeRoom(roomId);
+      } catch (_) {}
+    }
+    await leaveRoom();
+  }
+
   Future<void> leaveRoom() async {
     final roomId = _activeRoom?.id;
-    final isHost = _currentUser != null &&
-        (_activeRoom?.host.id == _currentUser?.id || _activeRoom?.creatorUserId == _currentUser?.id);
 
     if (roomId != null) {
       try {
         _socketService.leaveRoom(roomId);
-        if (isHost) {
-          await _roomRepository.closeRoom(roomId);
-        } else {
-          await _roomRepository.leaveRoom(roomId);
-        }
+        await _roomRepository.leaveRoom(roomId);
       } catch (_) {}
     }
 

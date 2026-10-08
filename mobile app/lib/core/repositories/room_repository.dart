@@ -102,7 +102,11 @@ class RoomRepository {
 
   /// Terminate and close a live room (Host only)
   Future<void> closeRoom(String roomId) async {
-    await _apiClient.post('/v1/rooms/$roomId/close');
+    try {
+      await _apiClient.post('/v1/rooms/$roomId/close');
+    } catch (e) {
+      // Best-effort closure if network interrupted or already closed
+    }
   }
 
   /// Occupy a specific mic seat index (0..7)

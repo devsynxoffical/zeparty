@@ -230,25 +230,17 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
           io.emit('room:deleted', { roomId });
         }
       } else if (isHostUser && room) {
-        const isAudioParty = (room.roomType || '').toUpperCase().includes('AUDIO') || (room.roomType || '').toUpperCase().includes('PARTY');
-        if (isAudioParty) {
-          // Party Room: do not end immediately. Start 2-minute timer
-          startHostAbsentTimer(roomId, 'AUDIO_PARTY', userId, io);
-        } else {
-          // Live Video: broadcast stream ended immediately to viewers and start 10-minute cleanup timer
-          const hostLeftPayload = {
-            roomId,
-            status: 'ENDED',
-            reason: 'HOST_LEFT',
-            message: 'The live stream has ended by the host.',
-          };
-          broadcastTarget.emit(SOCKET_EVENTS.ROOM_CLOSED, hostLeftPayload);
-          broadcastTarget.emit('room:closed', hostLeftPayload);
-          broadcastTarget.emit('room_closed', hostLeftPayload);
-          broadcastTarget.emit('stream:ended', hostLeftPayload);
-          broadcastTarget.emit('room:host_left', hostLeftPayload);
-          startHostAbsentTimer(roomId, 'LIVE_VIDEO', userId, io);
-        }
+        // Host has left/disconnected: Room stays alive as long as viewers/speakers remain.
+        const hostAwayPayload = {
+          roomId,
+          userId,
+          status: 'LIVE',
+          reason: 'HOST_AWAY',
+          message: 'Host has temporarily stepped away.',
+        };
+        broadcastTarget.emit('room:host_away', hostAwayPayload);
+        broadcastTarget.emit('room:host_left', hostAwayPayload);
+        startHostAbsentTimer(roomId, room.roomType || 'LIVE_VIDEO', userId, io);
       } else {
         const leftPayload = { roomId, userId };
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, leftPayload);

@@ -241,8 +241,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
         setState(() {
           _remoteHostUid = uids.first;
         });
-      } else if (!widget.isHost && _remoteHostUid != null) {
-        _handleStreamEnded('The host has disconnected from the live broadcast.');
+      } else {
+        setState(() {
+          _remoteHostUid = null;
+        });
       }
     });
 
@@ -1486,7 +1488,74 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   }
 
   Future<void> _handleExitConfirmation(BuildContext context, bool isHost, LiveProvider liveProvider) async {
-    final shouldLeave = await showDialog<bool>(
+    if (!isHost) {
+      final shouldLeave = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF161129),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.live.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.logout_rounded,
+                  color: AppColors.live,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Leave Live Stream?',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          content: const Text(
+            'Are you sure you want to leave this live stream?',
+            style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+          ),
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: Colors.white60, fontSize: 15)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.live,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Leave', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldLeave == true && mounted) {
+        try {
+          await liveProvider.leaveRoom();
+        } catch (_) {}
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      }
+      return;
+    }
+
+    // Host Exit Options: Leave vs End for all
+    final action = await showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
@@ -1500,51 +1569,66 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: (isHost ? Colors.redAccent : AppColors.live).withValues(alpha: 0.2),
+                color: Colors.redAccent.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                isHost ? Icons.power_settings_new_rounded : Icons.logout_rounded,
-                color: isHost ? Colors.redAccent : AppColors.live,
+              child: const Icon(
+                Icons.power_settings_new_rounded,
+                color: Colors.redAccent,
                 size: 24,
               ),
             ),
             const SizedBox(width: 12),
-            Text(
-              isHost ? 'End Live Stream?' : 'Leave Live Stream?',
-              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+            const Text(
+              'Host Stream Actions',
+              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ],
         ),
-        content: Text(
-          isHost
-              ? 'Are you sure you want to end your live stream? All viewers will be disconnected.'
-              : 'Are you sure you want to leave this live stream?',
-          style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+        content: const Text(
+          'Choose whether to leave temporarily while keeping the room open for viewers, or end the stream for everyone.',
+          style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
         ),
         actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white60, fontSize: 15)),
+            onPressed: () => Navigator.pop(ctx, 'cancel'),
+            child: const Text('Cancel', style: TextStyle(color: Colors.white60, fontSize: 14)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: isHost ? Colors.redAccent : AppColors.live,
+              backgroundColor: const Color(0xFF3B82F6),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(isHost ? 'End Stream' : 'Leave', style: const TextStyle(fontWeight: FontWeight.bold)),
+            onPressed: () => Navigator.pop(ctx, 'leave'),
+            child: const Text('Leave (Keep Open)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            ),
+            onPressed: () => Navigator.pop(ctx, 'close'),
+            child: const Text('End Stream for All', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           ),
         ],
       ),
     );
 
-    if (shouldLeave == true && mounted) {
+    if (action == 'leave' && mounted) {
       try {
         await liveProvider.leaveRoom();
+      } catch (_) {}
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } else if (action == 'close' && mounted) {
+      try {
+        await liveProvider.closeRoom();
       } catch (_) {}
       if (mounted) {
         Navigator.pop(context);

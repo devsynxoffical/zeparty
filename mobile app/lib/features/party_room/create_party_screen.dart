@@ -265,29 +265,92 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
 
     final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
 
-    // Check if user already has an active room locally or in backend repository
+    // Check if user already has an active room
     final overlayProvider = Provider.of<RoomOverlayProvider>(context, listen: false);
     final partyProvider = Provider.of<LivePartyProvider>(context, listen: false);
     final liveProvider = Provider.of<LiveProvider>(context, listen: false);
 
     final currentUserId = currentUser.id;
-    final bool hasActiveLocalRoom = (overlayProvider.activeRoom != null) ||
-        (partyProvider.activeRoom != null) ||
-        (liveProvider.activeRoom != null) ||
-        BackendRepository.instance.liveRooms.any((r) => r.host.id == currentUserId || r.creatorUserId == currentUserId);
+    await BackendRepository.instance.fetchLiveRooms();
 
-    if (hasActiveLocalRoom) {
+    final existingRoom = BackendRepository.instance.liveRooms.where((r) => r.host.id == currentUserId || r.creatorUserId == currentUserId).firstOrNull ??
+        overlayProvider.activeRoom ??
+        partyProvider.activeRoom ??
+        liveProvider.activeRoom;
+
+    if (existingRoom != null) {
       if (mounted) {
         setState(() => _isCreating = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Aapki pehle se ek party/room active hai. Nayi party banane se pehle purani party end karen.'),
-            backgroundColor: Colors.redAccent,
-            duration: Duration(seconds: 4),
+        final isExistingVideo = (existingRoom.roomType == 'LIVE_VIDEO');
+        final choice = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF161129),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+              side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.mic_external_on_rounded, color: Colors.amber, size: 24),
+                SizedBox(width: 10),
+                Text('Active Room Found', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            content: Text(
+              'Aapki pehle se ek live/party stream chal rahi hai:\n"${existingRoom.title}"\n\nKya aap purani room mein wapas jaana chahte hain ya use khatam karke nayi party room shuru karna chahte hain?',
+              style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+            ),
+            actionsPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, 'cancel'),
+                child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF3B82F6),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () => Navigator.pop(ctx, 'rejoin'),
+                child: const Text('Rejoin Host Room', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.redAccent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () => Navigator.pop(ctx, 'close_old'),
+                child: const Text('End Old & Start New', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+            ],
           ),
         );
+
+        if (choice == 'rejoin') {
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (_) => isExistingVideo
+                    ? LiveRoomScreen(room: existingRoom, isHost: true)
+                    : LivePartyRoomScreen(room: existingRoom),
+              ),
+            );
+          }
+          return;
+        } else if (choice == 'close_old') {
+          setState(() => _isCreating = true);
+          try {
+            await RoomRepository.instance.closeRoom(existingRoom.id);
+            BackendRepository.instance.removeLiveRoom(existingRoom.id);
+          } catch (_) {}
+        } else {
+          return;
+        }
       }
-      return;
     }
 
     final title = _nameController.text.trim().isNotEmpty

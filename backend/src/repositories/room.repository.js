@@ -412,6 +412,21 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
     }).catch(() => {});
   }
 
+  // If returning user is the creator/host, ensure seat 0 is reserved and assigned to them
+  if (room.creatorUserId === userId) {
+    try {
+      const seat0 = await db.roomSeat.findUnique({
+        where: { roomId_seatIndex: { roomId, seatIndex: 0 } },
+      });
+      if (seat0 && (!seat0.occupiedUserId || seat0.occupiedUserId === userId)) {
+        await db.roomSeat.update({
+          where: { roomId_seatIndex: { roomId, seatIndex: 0 } },
+          data: { occupiedUserId: userId },
+        });
+      }
+    } catch (_) {}
+  }
+
   const audienceMemberCount = await db.roomMember.count({
     where: {
       roomId,
@@ -572,6 +587,13 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
       const error = new Error(`Seat index ${seatIndex} does not exist`);
       error.statusCode = 404;
       error.code = 'SEAT_NOT_FOUND';
+      throw error;
+    }
+
+    if (seatIndex === 0 && room.creatorUserId !== userId) {
+      const error = new Error('Seat 0 is reserved exclusively for the host');
+      error.statusCode = 403;
+      error.code = 'SEAT_RESERVED_FOR_HOST';
       throw error;
     }
 
