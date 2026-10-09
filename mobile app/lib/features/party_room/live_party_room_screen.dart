@@ -998,15 +998,25 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       capacity: activeRoom.seatCapacity,
       lockedSeats: provider.lockedSeatIndices,
       micSizePreset: gameProvider.roomMicSizePreset,
-      onSeatTap: (index) {
+      onSeatTap: (index) async {
         final occupant = provider.participants.where((p) => p.seatNumber == index).firstOrNull;
-        MicSeatManagementSheet.show(
-          context,
-          micIndex: index,
-          occupant: occupant,
-          isLocked: provider.isSeatLocked(index),
-          isMuted: provider.isSeatMuted(index),
-        );
+        final authUser = context.read<AuthProvider>().currentUser;
+        if (occupant == null && !provider.isSeatLocked(index)) {
+          final err = await provider.takeMicSeat(index, authUser);
+          if (context.mounted && err != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('❌ $err'), backgroundColor: Colors.redAccent),
+            );
+          }
+        } else {
+          MicSeatManagementSheet.show(
+            context,
+            micIndex: index,
+            occupant: occupant,
+            isLocked: provider.isSeatLocked(index),
+            isMuted: provider.isSeatMuted(index),
+          );
+        }
       },
       onParticipantTap: (participant) {
         InRoomProfileCardSheet.show(

@@ -10,6 +10,7 @@ import '../../core/utils/formatters.dart';
 import '../../core/utils/noble_badge_helper.dart';
 import '../../models/user_model.dart';
 import '../../models/post_model.dart';
+import '../../models/medal_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/svip_provider.dart';
 import '../../providers/social_provider.dart';
@@ -26,7 +27,7 @@ import '../live/live_room_screen.dart';
 
 import '../svip/svip_center_screen.dart';
 import '../aristocracy/aristocracy_center_screen.dart';
-import '../store/store_screen.dart';
+// store_screen import removed (unused)
 import '../messages/chat_screen.dart';
 import '../settings/edit_profile_screen.dart';
 import 'level_center_screen.dart';
@@ -238,7 +239,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     }
   }
 
-  // Diagram C & Section 12: Three-Dot Safety Menu (REPORT → BLOCK → CANCEL)
+  // Diagram C & Section 12: Three-Dot Safety Menu (REPORT â†’ BLOCK â†’ CANCEL)
   void _showOverflowMenu(BuildContext context, bool isOtherUser, bool isDark, AuthProvider auth) {
     if (!isOtherUser) {
       Navigator.push(
@@ -401,7 +402,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 if (mounted) setState(() {});
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('🚫 ${_user!.name} has been blocked successfully.'),
+                    content: Text('${_user!.name} has been blocked successfully.'),
                     backgroundColor: Colors.redAccent,
                     behavior: SnackBarBehavior.floating,
                   ),
@@ -537,6 +538,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             IconButton(
                               icon: Container(
@@ -549,16 +551,79 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                               ),
                               onPressed: () => Navigator.pop(context),
                             ),
-                            IconButton(
-                              icon: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.4),
-                                  shape: BoxShape.circle,
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(alpha: 0.4),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.more_horiz_rounded, size: 20, color: Colors.white),
+                                  ),
+                                  onPressed: () => _showOverflowMenu(context, isOtherUser, isDark, auth),
                                 ),
-                                child: const Icon(Icons.more_horiz_rounded, size: 20, color: Colors.white),
-                              ),
-                              onPressed: () => _showOverflowMenu(context, isOtherUser, isDark, auth),
+                                const SizedBox(height: 2),
+                                if (_user != null) ...[
+                                  // 1. LIVE / IN ROOM Status Badge
+                                  if (_user!.isLive || (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty)) ...[
+                                    GestureDetector(
+                                      onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
+                                      child: Container(
+                                        margin: const EdgeInsets.only(bottom: 6, right: 6),
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          gradient: const LinearGradient(colors: [Color(0xFFE91E63), Color(0xFF9C27B0)]),
+                                          borderRadius: BorderRadius.circular(16),
+                                          border: Border.all(color: Colors.white, width: 1.2),
+                                          boxShadow: [
+                                            BoxShadow(color: const Color(0xFFE91E63).withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 1),
+                                          ],
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 13),
+                                            SizedBox(width: 4),
+                                            Text(
+                                              '🔴 LIVE',
+                                              style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.5),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+
+                                  // 2. Online / Last Active Status Badge cleanly below 3-dot overflow menu
+                                  Container(
+                                    margin: const EdgeInsets.only(right: 6),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(alpha: 0.55),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.white24, width: 0.8),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        CircleAvatar(
+                                          radius: 4,
+                                          backgroundColor: _user!.isOnline ? const Color(0xFF00FF88) : Colors.grey,
+                                        ),
+                                        const SizedBox(width: 5),
+                                        Text(
+                                          _user!.isOnline ? 'Online' : _user!.lastActiveText,
+                                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ],
                         ),
@@ -805,65 +870,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               ),
             ),
 
-            // Online / Last Seen & LIVE / In Room Badge Top Right
-            Positioned(
-              top: 54,
-              right: 16,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // LIVE / IN ROOM Status Badge
-                  if (_user != null && (_user!.isLive || (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty))) ...[
-                    GestureDetector(
-                      onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(colors: [Color(0xFFE91E63), Color(0xFF9C27B0)]),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white, width: 1.2),
-                          boxShadow: [
-                            BoxShadow(color: const Color(0xFFE91E63).withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 1),
-                          ],
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 13),
-                            SizedBox(width: 4),
-                            Text(
-                              'In Room',
-                              style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.5),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
 
-                  // Online / Last Seen Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.45),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircleAvatar(radius: 4, backgroundColor: _user!.isOnline ? Colors.greenAccent : Colors.grey),
-                        const SizedBox(width: 5),
-                        Text(
-                          _user!.isOnline ? 'Online' : 'Last seen 16m ago',
-                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
 
             // Avatar with Crown Frame + CP Mini-Avatar Decoration & Followers Count
             Positioned(
@@ -904,9 +911,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                             name: _user!.displayName,
                             radius: 38,
                             showVipFrame: _user!.isVip,
-                            frameAsset: NobleBadgeHelper.getFrameAsset(
-                              _user?.nobleTitle ?? (_user?.svipLevel != null && _user!.svipLevel > 0 ? 'SVIP ${_user!.svipLevel}' : (_user?.role != UserRole.user ? _user?.role.name : 'baron')),
-                            ),
+                            frameAsset: _user?.avatarFrame != null && _user!.avatarFrame.isNotEmpty && _user!.avatarFrame != 'none'
+                                ? _user!.avatarFrame
+                                : (_user?.nobleTitle != null
+                                    ? NobleBadgeHelper.getFrameAsset(_user!.nobleTitle)
+                                    : (_user != null && _user!.svipLevel > 0 ? NobleBadgeHelper.getFrameAsset('SVIP ${_user!.svipLevel}') : null)),
                           );
 
                           // Active room glowing ring on DP
@@ -990,7 +999,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                               ),
                               child: const Icon(Icons.directions_walk_rounded, size: 16, color: Colors.purpleAccent),
                             ),
-                            tooltip: 'Profile Visitors 🐾',
+                            tooltip: 'Profile Visitors',
                             onPressed: () {
                               Navigator.push(
                                 context,
@@ -1201,7 +1210,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   ),
                   const SizedBox(width: 6),
 
-                  // Gender & Age Pill (♂ 21 / ♀ 22)
+                  // Gender & Age Pill (â™‚ 21 / â™€ 22)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
@@ -1297,36 +1306,22 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     child: Icon(Icons.copy_rounded, color: secondaryText, size: 14),
                   ),
                   const SizedBox(width: 8),
-                  Text('•', style: TextStyle(color: secondaryText)),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      '@${_user!.username}',
-                      style: TextStyle(color: secondaryText, fontSize: 13, fontWeight: FontWeight.w600),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
                   Text(_user!.countryFlag, style: const TextStyle(fontSize: 15)), // Country Flag
 
                   const SizedBox(width: 8),
 
                   // Room / Agency Role Tag
                   if (_user!.isHost)
-                    _buildRoleTag('Owner / Host 👑', const Color(0xFFFF9800))
+                    _buildRoleTag('Owner / Host', const Color(0xFFFF9800))
                   else if (_user!.isAgency)
-                    _buildRoleTag('Agency 🏢', const Color(0xFF00ACC1))
+                    _buildRoleTag('Agency', const Color(0xFF00ACC1))
                   else if (_user!.isBd)
-                    _buildRoleTag('BD Admin 🛡️', const Color(0xFF8C38FF)),
+                    _buildRoleTag('BD Admin', const Color(0xFF8C38FF)),
                 ],
               ),
 
               const SizedBox(height: 12),
               _buildProfileTags(isDark, svip),
-
-              const SizedBox(height: 14),
-              _buildFourStatusCards(isDark, svip),
             ],
           ),
         ),
@@ -1349,130 +1344,104 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     );
   }
 
-  // Tag Badges Section — shows only real earned levels
+  Color _getLevelColor(int level) {
+    if (level <= 1) return const Color(0xFF607D8B); // Grey for 0 and 1
+    if (level < 10) return const Color(0xFF29B6F6);
+    if (level < 20) return const Color(0xFF66BB6A);
+    if (level < 30) return const Color(0xFFFFA726);
+    if (level < 40) return const Color(0xFFAB47BC);
+    if (level < 50) return const Color(0xFFEF5350);
+    if (level < 60) return const Color(0xFF26A69A);
+    if (level < 70) return const Color(0xFFEC407A);
+    if (level < 80) return const Color(0xFF5C6BC0);
+    if (level < 90) return const Color(0xFFFF7043);
+    return const Color(0xFFFFCA28);
+  }
+
+  Color _getBgColor(int level) {
+    return _getLevelColor(level).withValues(alpha: 0.15);
+  }
+
+  // Tag Badges Section -- shows only real earned level indicators & assigned custom titles
   Widget _buildProfileTags(bool isDark, SVIPProvider svip) {
-    final svipLvl = svip.currentLevel;
-    final wealthLvl = _user?.wealthLevel ?? 1;
-    final charmLvl = _user?.charmLevel ?? 1;
-    final gameLvl = _user?.gameLevel ?? 1;
-    final accountLvl = _user?.accountLevel ?? 1;
+    final svipLvl = svip.currentLevel > 0 ? svip.currentLevel : (_user?.svipLevel ?? 0);
+    final wealthLvl = _user?.computedWealthLevel ?? 0;
+    final charmLvl = _user?.computedCharmLevel ?? 0;
+    final gameLvl = _user?.computedGameLevel ?? 0;
+    final accountLvl = _user?.computedAccountLevel ?? 0;
+    final hasNobleTitle = _user?.nobleTitle != null && _user!.nobleTitle!.isNotEmpty;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          child: Row(
-            children: [
-              if (svipLvl > 0) ...[
-                _buildTagChip(
-                  icon: Icons.workspace_premium_rounded,
-                  text: 'SVIP $svipLvl',
-                  color: const Color(0xFFFFD700),
-                  bgColor: const Color(0xFF2E2715),
-                  borderColor: const Color(0xFFFFD700),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen())),
-                ),
-                const SizedBox(width: 6),
-              ],
-              _buildTagChip(
-                icon: Icons.diamond_rounded,
-                text: 'Lv.$wealthLvl',
-                color: const Color(0xFF00E5FF),
-                bgColor: const Color(0xFF321A4C),
-                borderColor: const Color(0xFF9042F5),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 0))),
-              ),
-              const SizedBox(width: 6),
-              _buildTagChip(
-                icon: Icons.favorite_rounded,
-                text: '$charmLvl',
-                color: const Color(0xFFFF4081),
-                bgColor: const Color(0xFF42152E),
-                borderColor: const Color(0xFFFF4081),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 1))),
-              ),
-              const SizedBox(width: 6),
-              _buildTagChip(
-                icon: Icons.sports_esports_rounded,
-                text: '$gameLvl',
-                color: const Color(0xFFB388FF),
-                bgColor: const Color(0xFF261842),
-                borderColor: const Color(0xFF7C4DFF),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 2))),
-              ),
-              const SizedBox(width: 6),
-              _buildTagChip(
-                icon: Icons.stars_rounded,
-                text: '$accountLvl',
-                color: const Color(0xFF00E676),
-                bgColor: const Color(0xFF0E3D1E),
-                borderColor: const Color(0xFF00E676),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 3))),
-              ),
-              const SizedBox(width: 6),
-              _buildTagChip(
-                icon: Icons.emoji_events_rounded,
-                text: 'Seeker',
-                color: const Color(0xFF1DE9B6),
-                bgColor: const Color(0xFF0C3B36),
-                borderColor: const Color(0xFF1DE9B6),
-              ),
-              const SizedBox(width: 6),
-              _buildTagChip(
-                icon: Icons.emoji_events_rounded,
-                text: 'III',
-                color: const Color(0xFFFF9100),
-                bgColor: const Color(0xFF3B1E05),
-                borderColor: const Color(0xFFFF9100),
-              ),
-              const SizedBox(width: 6),
-              _buildTagChip(
-                text: 'Eligible...',
-                color: Colors.white70,
-                bgColor: Colors.white.withValues(alpha: 0.1),
-                borderColor: Colors.white24,
-              ),
-            ],
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: [
+          if (svipLvl > 0) ...[
+            _buildTagChip(
+              icon: Icons.workspace_premium_rounded,
+              text: 'SVIP $svipLvl',
+              color: const Color(0xFFFFD700),
+              bgColor: const Color(0xFF2E2715),
+              borderColor: const Color(0xFFFFD700),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen())),
+            ),
+            const SizedBox(width: 6),
+          ],
+          _buildTagChip(
+            imagePath: 'assets/images/level_logo_wealth.png',
+            text: 'Lv.$wealthLvl',
+            color: const Color(0xFF00E5FF),
+            bgColor: const Color(0xFF321A4C),
+            borderColor: const Color(0xFF9042F5),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 0))),
           ),
-        ),
-
-        const SizedBox(height: 8),
-
-        // Row 2: Collector Tags
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          child: Row(
-            children: [
-              _buildOutlineTagChip(
-                icon: Icons.shield_rounded,
-                text: 'Trainee Collector',
-                color: const Color(0xFF00BFA5),
-              ),
-              const SizedBox(width: 6),
-              _buildOutlineTagChip(
-                icon: Icons.shield_rounded,
-                text: 'Emerging Collector',
-                color: const Color(0xFF29B6F6),
-              ),
-              const SizedBox(width: 6),
-              _buildOutlineTagChip(
-                icon: Icons.shield_rounded,
-                text: 'Veteran Collector',
-                color: const Color(0xFFFF5252),
-              ),
-            ],
+          const SizedBox(width: 6),
+          _buildTagChip(
+            imagePath: 'assets/images/level_logo_charm.png',
+            text: 'Lv.$charmLvl',
+            color: const Color(0xFFFF4081),
+            bgColor: const Color(0xFF42152E),
+            borderColor: const Color(0xFFFF4081),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 1))),
           ),
-        ),
-      ],
+          const SizedBox(width: 6),
+          _buildTagChip(
+            imagePath: 'assets/images/level_logo_game.png',
+            text: 'Lv.$gameLvl',
+            color: const Color(0xFFB388FF),
+            bgColor: const Color(0xFF261842),
+            borderColor: const Color(0xFF7C4DFF),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 2))),
+          ),
+          const SizedBox(width: 6),
+          _buildTagChip(
+            imagePath: 'assets/images/level_logo_account.png',
+            text: 'Lv.$accountLvl',
+            color: const Color(0xFF00E676),
+            bgColor: const Color(0xFF0E3D1E),
+            borderColor: const Color(0xFF00E676),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 3))),
+          ),
+          if (hasNobleTitle) ...[
+            const SizedBox(width: 6),
+            _buildTagChip(
+              icon: Icons.military_tech_rounded,
+              text: _user!.nobleTitle!,
+              color: const Color(0xFFFFD700),
+              bgColor: const Color(0xFF3B2E05),
+              borderColor: const Color(0xFFFFD700),
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AristocracyCenterScreen())),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
   Widget _buildTagChip({
     required String text,
     IconData? icon,
+    String? imagePath,
     required Color color,
     required Color bgColor,
     Color? borderColor,
@@ -1481,7 +1450,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(14),
@@ -1493,10 +1462,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (icon != null) ...[
+            if (imagePath != null)
+              Image.asset(imagePath, width: 16, height: 16,
+                errorBuilder: (_, __, ___) => icon != null
+                    ? Icon(icon, size: 12, color: color)
+                    : const SizedBox.shrink())
+            else if (icon != null) ...[
               Icon(icon, size: 12, color: color),
-              const SizedBox(width: 4),
             ],
+            const SizedBox(width: 4),
             Text(
               text,
               style: TextStyle(
@@ -1511,253 +1485,13 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     );
   }
 
-  Widget _buildOutlineTagChip({
-    required String text,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: color,
-          width: 1.2,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(
-            text,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Status Level Cards Strip (SVIP, WEALTH, CHARM, GAME, LEVEL - Compact & Responsive)
-  Widget _buildFourStatusCards(bool isDark, SVIPProvider svip) {
-    final svipLvl = svip.currentLevel > 0 ? svip.currentLevel : 11;
-    final wealthLvl = _user?.wealthLevel ?? 30;
-    final charmLvl = _user?.charmLevel ?? 15;
-    final gameLvl = _user?.gameLevel ?? 12;
-    final accountLvl = _user?.accountLevel ?? 24;
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(),
-      child: Row(
-        children: [
-          // 1. SVIP Card (Gold)
-          SizedBox(
-            width: 78,
-            child: _buildStatusGridCard(
-              headerIcon: Icons.workspace_premium_rounded,
-              headerText: 'SVIP $svipLvl',
-              title: 'SVIP',
-              subtitle: 'Privilege Active',
-              accentColor: const Color(0xFFFFB300),
-              progress: null,
-              isDark: isDark,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen())),
-            ),
-          ),
-          const SizedBox(width: 5),
-
-          // 2. WEALTH Card (Cyan)
-          SizedBox(
-            width: 78,
-            child: _buildStatusGridCard(
-              headerIcon: Icons.diamond_rounded,
-              headerText: 'Lv. $wealthLvl',
-              title: 'WEALTH',
-              subtitle: 'Sending',
-              accentColor: const Color(0xFF00E5FF),
-              progress: ((_user?.wealthXp ?? 823083480) / 1000000000).clamp(0.15, 1.0),
-              isDark: isDark,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 0))),
-            ),
-          ),
-          const SizedBox(width: 5),
-
-          // 3. CHARM Card (Pink)
-          SizedBox(
-            width: 78,
-            child: _buildStatusGridCard(
-              headerIcon: Icons.favorite_rounded,
-              headerText: 'Lv. $charmLvl',
-              title: 'CHARM',
-              subtitle: 'Receiving',
-              accentColor: const Color(0xFFFF4081),
-              progress: ((_user?.charmXp ?? 7800) / 10000).clamp(0.15, 1.0),
-              isDark: isDark,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 1))),
-            ),
-          ),
-          const SizedBox(width: 5),
-
-          // 4. GAME Card (Purple)
-          SizedBox(
-            width: 78,
-            child: _buildStatusGridCard(
-              headerIcon: Icons.sports_esports_rounded,
-              headerText: 'Lv. $gameLvl',
-              title: 'GAME',
-              subtitle: 'Game Level',
-              accentColor: const Color(0xFFB388FF),
-              progress: ((_user?.gameXp ?? 3200) / 5000).clamp(0.15, 1.0),
-              isDark: isDark,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 2))),
-            ),
-          ),
-          const SizedBox(width: 5),
-
-          // 5. LEVEL Card (Green)
-          SizedBox(
-            width: 78,
-            child: _buildStatusGridCard(
-              headerIcon: Icons.stars_rounded,
-              headerText: 'Lv. $accountLvl',
-              title: 'LEVEL',
-              subtitle: 'Account Level',
-              accentColor: const Color(0xFF00E676),
-              progress: ((_user?.accountXp ?? 14200) / 20000).clamp(0.15, 1.0),
-              isDark: isDark,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 3))),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusGridCard({
-    required IconData headerIcon,
-    required String headerText,
-    required String title,
-    required String subtitle,
-    required Color accentColor,
-    double? progress,
-    required bool isDark,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 7),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF171326) : Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: accentColor.withValues(alpha: 0.75),
-            width: 1.0,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: accentColor.withValues(alpha: 0.12),
-              blurRadius: 5,
-              spreadRadius: 0,
-              offset: const Offset(0, 1),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // Top Badge (Icon + Level Text)
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(headerIcon, size: 10.5, color: accentColor),
-                  const SizedBox(width: 2.5),
-                  Text(
-                    headerText,
-                    style: TextStyle(
-                      color: accentColor,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 4),
-
-            // Title Label (SVIP / WEALTH / CHARM / GAME)
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                title,
-                style: TextStyle(
-                  color: AppColors.getTextPrimary(isDark),
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.3,
-                ),
-              ),
-            ),
-            const SizedBox(height: 1),
-
-            // Subtitle Label
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                subtitle,
-                style: TextStyle(
-                  color: AppColors.getTextSecondary(isDark).withValues(alpha: 0.65),
-                  fontSize: 7.5,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 5),
-
-            // Progress Bar Indicator at Bottom
-            if (progress != null)
-              Container(
-                height: 2.5,
-                width: double.infinity,
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(2),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    backgroundColor: isDark ? const Color(0xFF292238) : Colors.grey[300],
-                    valueColor: AlwaysStoppedAnimation<Color>(accentColor),
-                  ),
-                ),
-              )
-            else
-              Container(
-                height: 2.5,
-                width: double.infinity,
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.25),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // MEDAL GALLERY (Header + 5 Medal Circular Badges)
+  // MEDAL GALLERY (Header + Medal Badges)
+  // Shows only medals the user has actually earned (isEarned == true)
   Widget _buildMedalGallery(bool isDark) {
     final primaryText = AppColors.getTextPrimary(isDark);
+    // Use MedalModel.defaultMedals filtered by isEarned -- new users have none
+    final earnedMedals = MedalModel.defaultMedals.where((m) => m.isEarned).toList();
+    final medalsCount = earnedMedals.length;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1770,11 +1504,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               Text('Medal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: primaryText)),
               GestureDetector(
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MedalScreen())),
-                child: const Row(
+                child: Row(
                   children: [
-                    Text('33 medals', style: TextStyle(fontSize: 13, color: Color(0xFF8C38FF), fontWeight: FontWeight.bold)),
-                    SizedBox(width: 2),
-                    Icon(Icons.chevron_right_rounded, size: 16, color: Color(0xFF8C38FF)),
+                    Text('$medalsCount medals', style: const TextStyle(fontSize: 13, color: Color(0xFF8C38FF), fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 2),
+                    const Icon(Icons.chevron_right_rounded, size: 16, color: Color(0xFF8C38FF)),
                   ],
                 ),
               ),
@@ -1782,47 +1516,96 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           ),
           const SizedBox(height: 14),
 
-          // 5 Featured Medal Circles (Gold Trophy, Blue Chair, Teal Star, Orange Flame, Pink Heart)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildMedalCircle(Icons.emoji_events_rounded, const Color(0xFFFFD700)),
-              _buildMedalCircle(Icons.chair_rounded, const Color(0xFF29B6F6)),
-              _buildMedalCircle(Icons.stars_rounded, const Color(0xFF00E5FF)),
-              _buildMedalCircle(Icons.local_fire_department_rounded, const Color(0xFFFF9100)),
-              _buildMedalCircle(Icons.favorite_rounded, const Color(0xFFFF4081)),
-            ],
-          ),
+          if (medalsCount == 0)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF161224) : Colors.grey[100],
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+              ),
+              child: Center(
+                child: Text(
+                  'No medals assigned yet',
+                  style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(isDark)),
+                ),
+              ),
+            )
+          else
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: earnedMedals.take(5).map((medal) {
+                return _buildMedalCircleAsset(medal);
+              }).toList(),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildMedalCircle(IconData icon, Color color) {
+  Widget _buildMedalCircleAsset(MedalModel medal) {
     return Container(
       width: 52,
       height: 52,
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [color.withValues(alpha: 0.35), color.withValues(alpha: 0.1)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: Colors.amber.withValues(alpha: 0.15),
         shape: BoxShape.circle,
-        border: Border.all(color: color.withValues(alpha: 0.7), width: 1.5),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.7), width: 1.5),
         boxShadow: [
-          BoxShadow(color: color.withValues(alpha: 0.25), blurRadius: 8),
+          BoxShadow(color: Colors.amber.withValues(alpha: 0.25), blurRadius: 8),
         ],
       ),
-      child: Icon(icon, size: 26, color: color),
+      child: Image.asset(
+        'assets/medals/${medal.iconUrl}.webp',
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => const Icon(Icons.emoji_events_rounded, size: 26, color: Colors.amber),
+      ),
     );
   }
 
-  // 5. DIAGRAM B: BADGE GALLERY
+  // BADGE GALLERY (Shows ONLY active assigned badges & real count)
   Widget _buildBadgeGallery(bool isDark, SVIPProvider svip) {
     final primaryText = AppColors.getTextPrimary(isDark);
-    final nobleTitle = _user?.nobleTitle ?? 'Emperor Royalty';
-    final effectiveSvipLevel = svip.currentLevel > 0 ? svip.currentLevel : 10;
+    
+    // Collect ONLY active assigned badges for this user
+    final List<Map<String, dynamic>> activeBadges = [];
+
+    if (_user != null) {
+      if (_user!.role == UserRole.admin) {
+        activeBadges.add({'asset': 'assets/roles/super_admin_tag.webp', 'label': 'Super Admin', 'color': Colors.redAccent});
+      } else if (_user!.isAgency) {
+        activeBadges.add({'asset': 'assets/roles/agency_tag.webp', 'label': 'Agency', 'color': Colors.cyan});
+      } else if (_user!.isBd) {
+        activeBadges.add({'asset': 'assets/roles/bd_tag.webp', 'label': 'BD Manager', 'color': Colors.teal});
+      }
+
+      if (_user!.nobleTitle != null && _user!.nobleTitle!.isNotEmpty) {
+        final nobleBadge = NobleBadgeHelper.getBadgeAsset(_user!.nobleTitle);
+        if (nobleBadge != null) {
+          activeBadges.add({'asset': nobleBadge, 'label': _user!.nobleTitle!, 'color': const Color(0xFFFFD700)});
+        }
+      }
+
+      final currentSvip = svip.currentLevel > 0 ? svip.currentLevel : _user!.svipLevel;
+      if (currentSvip > 0) {
+        final svipBadge = NobleBadgeHelper.getBadgeAsset('SVIP $currentSvip');
+        if (svipBadge != null) {
+          activeBadges.add({'asset': svipBadge, 'label': 'SVIP $currentSvip', 'color': Colors.amber});
+        }
+      }
+
+      if (_user!.isHost) {
+        activeBadges.add({'asset': 'assets/roles/host_tag.webp', 'label': 'Official Host', 'color': Colors.orangeAccent});
+      }
+
+      if (_user!.isSeller) {
+        activeBadges.add({'asset': 'assets/roles/coins_saller_tag.webp', 'label': 'Coin Seller', 'color': Colors.lightGreenAccent});
+      }
+    }
+
+    final badgeCount = activeBadges.length;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1835,11 +1618,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               Text('Badge & Role Gallery', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: primaryText)),
               GestureDetector(
                 onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
-                child: const Row(
+                child: Row(
                   children: [
-                    Text('View All (28)', style: TextStyle(fontSize: 13, color: Color(0xFF8C38FF), fontWeight: FontWeight.bold)),
-                    SizedBox(width: 2),
-                    Icon(Icons.chevron_right_rounded, size: 16, color: Color(0xFF8C38FF)),
+                    Text('$badgeCount Badges', style: const TextStyle(fontSize: 13, color: Color(0xFF8C38FF), fontWeight: FontWeight.bold)),
+                    const SizedBox(width: 2),
+                    const Icon(Icons.chevron_right_rounded, size: 16, color: Color(0xFF8C38FF)),
                   ],
                 ),
               ),
@@ -1847,110 +1630,40 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           ),
           const SizedBox(height: 10),
 
-          // Priority Sorted Graphical Badges Row
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Row(
-              children: [
-                // 1. Role Badges (Admin / Super Admin / Agency / CS)
-                if (_user!.role == UserRole.admin)
-                  _buildGraphicBadge(
-                    assetPath: 'assets/roles/super_admin_tag.webp',
-                    fallbackLabel: 'Super Admin',
-                    fallbackColor: Colors.redAccent,
-                    onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
-                  )
-                else if (_user!.isAgency)
-                  _buildGraphicBadge(
-                    assetPath: 'assets/roles/agency_tag.webp',
-                    fallbackLabel: 'Agency',
-                    fallbackColor: Colors.cyan,
-                    onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
-                  )
-                else if (_user!.isBd)
-                  _buildGraphicBadge(
-                    assetPath: 'assets/roles/bd_tag.webp',
-                    fallbackLabel: 'BD Manager',
-                    fallbackColor: Colors.teal,
-                    onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
-                  ),
-                const SizedBox(width: 8),
-
-                // 2. Noble Badge (Emperor / King / Duke / Marquis / Count / Viscount / Baron)
-                _buildGraphicBadge(
-                  assetPath: NobleBadgeHelper.getBadgeAsset(nobleTitle) ?? 'assets/nobles/emperor_badge.webp',
-                  fallbackLabel: nobleTitle,
-                  fallbackColor: const Color(0xFFFFD700),
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AristocracyCenterScreen())),
+          if (badgeCount == 0)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF161224) : Colors.grey[100],
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+              ),
+              child: Center(
+                child: Text(
+                  'No active badges or SVIP assigned',
+                  style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(isDark)),
                 ),
-                const SizedBox(width: 8),
-
-                // 3. SVIP Level Badge
-                _buildGraphicBadge(
-                  assetPath: NobleBadgeHelper.getBadgeAsset('SVIP $effectiveSvipLevel') ?? 'assets/svip/svip${effectiveSvipLevel}_badge.webp',
-                  fallbackLabel: 'SVIP $effectiveSvipLevel',
-                  fallbackColor: Colors.amber,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen())),
-                ),
-                const SizedBox(width: 8),
-
-                // 4. Host Tag
-                if (_user!.isHost) ...[
-                  _buildGraphicBadge(
-                    assetPath: 'assets/roles/host_tag.webp',
-                    fallbackLabel: 'Official Host',
-                    fallbackColor: Colors.orangeAccent,
-                    onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-
-                // 5. Merchant / Coin Seller Tag
-                if (_user!.isSeller) ...[
-                  _buildGraphicBadge(
-                    assetPath: 'assets/roles/coins_saller_tag.webp',
-                    fallbackLabel: 'Coin Seller',
-                    fallbackColor: Colors.lightGreenAccent,
-                    onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-
-                // 6. Top Fan Badge
-                _buildGraphicBadge(
-                  assetPath: 'assets/roles/top_fan_tag.webp',
-                  fallbackLabel: 'Top Fan',
-                  fallbackColor: Colors.purpleAccent,
-                  onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
-                ),
-                const SizedBox(width: 8),
-
-                // 7. Store Link Pill
-                GestureDetector(
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StoreScreen())),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [Color(0xFF8C38FF), Color(0xFF6C20DF)]),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(color: const Color(0xFF8C38FF).withValues(alpha: 0.4), blurRadius: 6),
-                      ],
+              ),
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  for (final b in activeBadges) ...[
+                    _buildGraphicBadge(
+                      assetPath: b['asset'] as String,
+                      fallbackLabel: b['label'] as String,
+                      fallbackColor: b['color'] as Color,
+                      onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
                     ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.storefront_rounded, color: Colors.white, size: 14),
-                        SizedBox(width: 4),
-                        Text('Get More', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+                    const SizedBox(width: 8),
+                  ],
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -2038,7 +1751,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     const SizedBox(height: 16),
 
                     // SECTION 1: NOBLE ARISTOCRACY
-                    _buildSectionHeader('Aristocracy Nobles 👑', () {
+                    _buildSectionHeader('Aristocracy Nobles', () {
                       Navigator.pop(ctx);
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const AristocracyCenterScreen()));
                     }),
@@ -2060,7 +1773,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     const SizedBox(height: 24),
 
                     // SECTION 2: OFFICIAL ROLES & HONORS
-                    _buildSectionHeader('Official Roles & Privileges 🛡️', null),
+                    _buildSectionHeader('Official Roles & Privileges', null),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 12,
@@ -2068,7 +1781,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       children: [
                         _buildBadgeModalItem('Super Admin', 'assets/roles/super_admin_tag.webp', 'assets/roles/super_admin_frame.webp', Colors.redAccent),
                         _buildBadgeModalItem('Admin', 'assets/roles/admin_badge.webp', 'assets/roles/admin_frame.webp', Colors.deepOrangeAccent),
-                        _buildBadgeModalItem('Agency Boss', 'assets/roles/agency_badge.webp', 'assets/roles/agency_frame.webp', Colors.cyan),
+                        _buildBadgeModalItem('Agency', 'assets/roles/agency_badge.webp', 'assets/roles/agency_frame.webp', Colors.cyan),
                         _buildBadgeModalItem('BD Manager', 'assets/roles/bd_badge.webp', 'assets/roles/bd_frame.webp', Colors.teal),
                         _buildBadgeModalItem('Game Master', 'assets/roles/game_master_badge.webp', 'assets/roles/game_master_frame.webp', Colors.amber),
                         _buildBadgeModalItem('Official Host', 'assets/roles/host_badge.webp', 'assets/roles/host_frame.webp', Colors.orange),
@@ -2082,7 +1795,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     const SizedBox(height: 24),
 
                     // SECTION 3: SVIP TIERS
-                    _buildSectionHeader('SVIP Royalty Tiers ⭐', () {
+                    _buildSectionHeader('SVIP Royalty Tiers â­', () {
                       Navigator.pop(ctx);
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen()));
                     }),
@@ -2167,8 +1880,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   // 6. DIAGRAM B: RELATIONSHIP + HONOR
   Widget _buildRelationshipAndHonor(bool isDark) {
     final hasCp = _user!.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty;
+    final hasCustomTitles = _user!.customTitles.isNotEmpty;
     final primaryText = AppColors.getTextPrimary(isDark);
     final secondaryText = AppColors.getTextSecondary(isDark);
+
+    if (!hasCp && !hasCustomTitles) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2193,47 +1909,68 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           ),
           const SizedBox(height: 10),
 
-          // CP / Relationship Active Card or Reserved Honor Card
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.getCard(isDark),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.getBorder(isDark)),
-              boxShadow: AppColors.cardShadow,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.pinkAccent.withValues(alpha: 0.15),
-                    shape: BoxShape.circle,
+          if (hasCp)
+            Container(
+              padding: const EdgeInsets.all(14),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: AppColors.getCard(isDark),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.getBorder(isDark)),
+                boxShadow: AppColors.cardShadow,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.pinkAccent.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 22),
                   ),
-                  child: const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        hasCp ? 'Active CP Relationship 💕' : 'Seasonal Honor Title 🏆',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: primaryText),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        hasCp
-                            ? 'CP Level ${_user!.cpPoints ~/ 100 + 1} • Partner Assigned'
-                            : 'Hall of Fame Distinction & Event Titles',
-                        style: TextStyle(fontSize: 11, color: secondaryText),
-                      ),
-                    ],
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Active CP Relationship',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: primaryText),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'CP Level ${_user!.cpPoints ~/ 100 + 1} • Partner Assigned',
+                          style: TextStyle(fontSize: 11, color: secondaryText),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+            
+          if (hasCustomTitles)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _user!.customTitles.map((titleAsset) {
+                return Image.asset(
+                  titleAsset,
+                  height: 36,
+                  fit: BoxFit.contain,
+                  errorBuilder: (c, e, s) => Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.getCard(isDark),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.getBorder(isDark)),
+                    ),
+                    child: Text('Custom Title', style: TextStyle(color: primaryText, fontSize: 12)),
+                  ),
+                );
+              }).toList(),
+            ),
         ],
       ),
     );
@@ -2318,7 +2055,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         const Text('Bio', style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w500)),
         const SizedBox(height: 6),
         Text(
-          _user!.bio.isNotEmpty ? _user!.bio : 'Welcome to my official ZeParty profile! ✨',
+          _user!.bio.isNotEmpty ? _user!.bio : 'Welcome to my official ZeParty profile! âœ¨',
           style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: primaryText),
         ),
 
@@ -2556,7 +2293,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       ),
       child: Center(
         child: Text(
-          post.content.isNotEmpty ? post.content : 'ZeParty Moment ✨',
+          post.content.isNotEmpty ? post.content : 'ZeParty Moment âœ¨',
           maxLines: 4,
           overflow: TextOverflow.ellipsis,
           textAlign: TextAlign.center,
@@ -2773,7 +2510,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text('Post deleted successfully 🗑️'),
+                      content: Text('Post deleted successfully'),
                       backgroundColor: Colors.redAccent,
                       behavior: SnackBarBehavior.floating,
                     ),

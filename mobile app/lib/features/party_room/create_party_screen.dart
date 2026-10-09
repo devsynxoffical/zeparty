@@ -376,20 +376,6 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
       final errLower = errStr.toLowerCase();
       final isApiErr = e is ApiException;
 
-      if (errStr.contains('HOST_APPROVAL_REQUIRED') || errStr.contains('approved active hosts')) {
-        if (mounted) {
-          setState(() => _isCreating = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('⚠️ Host approval required. Please submit a Host Application in your profile to host audio party rooms.'),
-              backgroundColor: Colors.redAccent,
-              duration: Duration(seconds: 4),
-            ),
-          );
-        }
-        return;
-      }
-
       final isAlreadyActive = isApiErr || errLower.contains('active') || errLower.contains('chal rahi hai') || errLower.contains('exists');
       if (isAlreadyActive) {
         if (mounted) {
@@ -405,18 +391,22 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
         return;
       }
 
-      roomToJoin = LiveRoomModel(
-        id: isVideo ? 'live_${currentUser.id}' : 'party_${currentUser.id}',
-        title: title,
-        host: currentUser,
-        coverUrl: coverUrl,
-        viewerCount: 0,
-        category: _selectedCategory,
-        isPrivate: _privacy != 'Public',
-        startTime: DateTime.now(),
-        roomType: _roomType,
-        seatCapacity: _capacity,
-      );
+      if (mounted) {
+        setState(() => _isCreating = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to initialize room: ${e is ApiException ? e.message : e.toString()}'),
+            backgroundColor: Colors.redAccent,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Retry',
+              textColor: Colors.white,
+              onPressed: _createParty,
+            ),
+          ),
+        );
+      }
+      return;
     } finally {
       if (mounted) setState(() => _isCreating = false);
     }

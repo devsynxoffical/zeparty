@@ -23,6 +23,45 @@ class BackpackProvider extends ChangeNotifier {
   List<UserAssetModel> get equippedAssets =>
       _userAssets.where((a) => a.isEquipped && !a.isExpired).toList();
 
+  String? get equippedFrameUrl {
+    for (final a in _userAssets) {
+      if (a.isEquipped && !a.isExpired) {
+        final type = (a.asset?.assetType ?? '').toUpperCase();
+        final cat = (a.asset?.categoryId ?? '').toUpperCase();
+        if (type.contains('FRAME') || cat.contains('FRAME')) {
+          return a.asset?.imageUrl ?? a.asset?.name;
+        }
+      }
+    }
+    return null;
+  }
+
+  String? get equippedBubbleUrl {
+    for (final a in _userAssets) {
+      if (a.isEquipped && !a.isExpired) {
+        final type = (a.asset?.assetType ?? '').toUpperCase();
+        final cat = (a.asset?.categoryId ?? '').toUpperCase();
+        if (type.contains('BUBBLE') || cat.contains('BUBBLE')) {
+          return a.asset?.imageUrl;
+        }
+      }
+    }
+    return null;
+  }
+
+  String? get equippedThemeUrl {
+    for (final a in _userAssets) {
+      if (a.isEquipped && !a.isExpired) {
+        final type = (a.asset?.assetType ?? '').toUpperCase();
+        final cat = (a.asset?.categoryId ?? '').toUpperCase();
+        if (type.contains('THEME') || type.contains('BACKGROUND') || cat.contains('BACKGROUND')) {
+          return a.asset?.imageUrl;
+        }
+      }
+    }
+    return null;
+  }
+
   List<UserAssetModel> getAssetsByCategory(String category) {
     if (category == 'All') return _userAssets;
     return _userAssets.where((a) {
@@ -38,125 +77,14 @@ class BackpackProvider extends ChangeNotifier {
 
     try {
       final items = await _backpackRepository.fetchBackpack();
-      final merged = List<UserAssetModel>.from(items);
-
-      if (currentUser != null && currentUser.id.isNotEmpty) {
-        _mergeAssignedFrames(merged, currentUser);
-      }
-
-      _userAssets = merged;
+      _userAssets = List<UserAssetModel>.from(items);
       _isLoading = false;
       notifyListeners();
     } catch (e) {
-      // If offline or network error, synthesize from currentUser
-      if (currentUser != null && currentUser.id.isNotEmpty) {
-        final localList = <UserAssetModel>[];
-        _mergeAssignedFrames(localList, currentUser);
-        _userAssets = localList;
-      }
       _isLoading = false;
       _errorMessage = 'Failed to load backpack';
       debugPrint('[BackpackProvider] fetchBackpack error: $e');
       notifyListeners();
-    }
-  }
-
-  static const List<Map<String, String>> _allAvailableFrames = [
-    {'key': 'host', 'name': 'Official Host Frame', 'asset': 'assets/roles/host_frame.webp'},
-    {'key': 'king', 'name': 'King Supreme Frame', 'asset': 'assets/nobles/king_frame.webp'},
-    {'key': 'emperor', 'name': 'Emperor Celestial Frame', 'asset': 'assets/nobles/emperor_frame.webp'},
-    {'key': 'duke', 'name': 'Duke Royal Frame', 'asset': 'assets/nobles/duke_frame.webp'},
-    {'key': 'marquis', 'name': 'Marquis Royal Frame', 'asset': 'assets/nobles/marquis_frame.webp'},
-    {'key': 'count', 'name': 'Count Royal Frame', 'asset': 'assets/nobles/count_frame.webp'},
-    {'key': 'viscount', 'name': 'Viscount Royal Frame', 'asset': 'assets/nobles/viscount_frame.webp'},
-    {'key': 'baron', 'name': 'Baron Royal Frame', 'asset': 'assets/nobles/baron_frame.webp'},
-    {'key': 'admin', 'name': 'Super Admin Frame', 'asset': 'assets/roles/admin_frame.webp'},
-    {'key': 'agency', 'name': 'Agency Boss Frame', 'asset': 'assets/roles/agency_frame.webp'},
-    {'key': 'cs', 'name': 'Customer Support Frame', 'asset': 'assets/roles/cs_frame.webp'},
-    {'key': 'ceo', 'name': 'Executive CEO Frame', 'asset': 'assets/roles/ceo_frame.webp'},
-    {'key': 'bd', 'name': 'Business Development Frame', 'asset': 'assets/roles/bd_frame.webp'},
-    {'key': 'game_master', 'name': 'Game Master Frame', 'asset': 'assets/roles/game_master_frame.webp'},
-    {'key': 'coins_seller', 'name': 'Coins Seller Frame', 'asset': 'assets/roles/coins_seller_frame.webp'},
-    {'key': 'merchant', 'name': 'Official Merchant Frame', 'asset': 'assets/roles/merchant_frame.webp'},
-    {'key': 'lover', 'name': 'Romantic Lover Frame', 'asset': 'assets/roles/lover_frame.webp'},
-    {'key': 'manager', 'name': 'Operations Manager Frame', 'asset': 'assets/roles/manager_frame.webp'},
-    {'key': 'official', 'name': 'ZeParty Official Frame', 'asset': 'assets/roles/official_frame.webp'},
-    {'key': 'top_fan', 'name': 'Top Fan VIP Frame', 'asset': 'assets/roles/top_fan_frame.webp'},
-    {'key': 'assistant', 'name': 'Official Assistant Frame', 'asset': 'assets/roles/assistant_frame.webp'},
-    {'key': 'boss', 'name': 'Big Boss Frame', 'asset': 'assets/roles/boss_frame.webp'},
-    {'key': 'svip15', 'name': 'SVIP 15 Infinite Divinity Frame', 'asset': 'assets/svip/svip15_frame.webp'},
-    {'key': 'svip14', 'name': 'SVIP 14 Supreme Deity Frame', 'asset': 'assets/svip/svip14_frame.webp'},
-    {'key': 'svip13', 'name': 'SVIP 13 Immortal Frame', 'asset': 'assets/svip/svip13_frame.webp'},
-    {'key': 'svip12', 'name': 'SVIP 12 Monarch Frame', 'asset': 'assets/svip/svip12_frame.webp'},
-    {'key': 'svip11', 'name': 'SVIP 11 Sovereign Frame', 'asset': 'assets/svip/svip11_frame.webp'},
-    {'key': 'svip10', 'name': 'SVIP 10 Dragon Frame', 'asset': 'assets/svip/svip10_frame.webp'},
-    {'key': 'svip9', 'name': 'SVIP 9 Phoenix Frame', 'asset': 'assets/svip/svip9_frame.webp'},
-    {'key': 'svip8', 'name': 'SVIP 8 Celestial Frame', 'asset': 'assets/svip/svip8_frame.webp'},
-    {'key': 'svip7', 'name': 'SVIP 7 Aurora Frame', 'asset': 'assets/svip/svip7_frame.webp'},
-    {'key': 'svip6', 'name': 'SVIP 6 Obsidian Frame', 'asset': 'assets/svip/svip6_frame.webp'},
-    {'key': 'mystery', 'name': 'Mystery Astral Frame', 'asset': 'assets/animations/mystery_frame.webp'},
-  ];
-
-  void _mergeAssignedFrames(List<UserAssetModel> list, UserModel user) {
-    final isHost = user.isHost || user.role == UserRole.host;
-    final nobleTitle = user.nobleTitle?.toLowerCase().trim();
-    final currentFrame = user.avatarFrame.toLowerCase().trim();
-
-    // Determine default equipped frame if avatarFrame is empty
-    String defaultFrameKey = '';
-    if (isHost) {
-      defaultFrameKey = 'host';
-    } else if (nobleTitle != null && nobleTitle.isNotEmpty) {
-      defaultFrameKey = nobleTitle;
-    } else if (user.role == UserRole.admin) {
-      defaultFrameKey = 'admin';
-    } else if (user.isAgency || user.role == UserRole.agency) {
-      defaultFrameKey = 'agency';
-    }
-
-    for (final item in _allAvailableFrames) {
-      final key = item['key']!;
-      final name = item['name']!;
-      final assetPath = item['asset']!;
-
-      bool isEquipped = false;
-      if (currentFrame != 'none') {
-        if (currentFrame.isNotEmpty) {
-          isEquipped = currentFrame == key || currentFrame.contains(key) || currentFrame == assetPath;
-        } else {
-          isEquipped = (defaultFrameKey == key);
-        }
-      }
-
-      final alreadyExists = list.any((a) =>
-          a.id.contains(key) ||
-          a.asset?.imageUrl == assetPath ||
-          a.asset?.name == name);
-
-      if (!alreadyExists) {
-        final userAsset = UserAssetModel(
-          id: 'assigned-frame-$key-${user.id}',
-          userId: user.id,
-          assetId: 'assigned-asset-$key-frame',
-          isEquipped: isEquipped,
-          expiresAt: DateTime.now().add(const Duration(days: 365)),
-          asset: StoreItemModel(
-            id: 'assigned-asset-$key-frame',
-            name: name,
-            categoryId: 'Frame',
-            assetType: 'AVATAR_FRAME',
-            imageUrl: assetPath,
-            priceCoins: 0,
-          ),
-        );
-
-        // Put equipped frame at top, others follow
-        if (isEquipped) {
-          list.insert(0, userAsset);
-        } else {
-          list.add(userAsset);
-        }
-      }
     }
   }
 
@@ -166,48 +94,32 @@ class BackpackProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final updated = await _backpackRepository.equipAsset(userAssetId);
-      final targetType = updated.asset?.assetType ?? 'AVATAR_FRAME';
-      
+      await _backpackRepository.equipAsset(userAssetId);
+    } catch (e) {
+      debugPrint('[BackpackProvider] Backend equip error (using local equip fallback): $e');
+    }
+
+    final index = _userAssets.indexWhere((a) => a.id == userAssetId || a.assetId == userAssetId || (a.asset != null && a.asset!.id == userAssetId));
+    if (index != -1) {
+      final targetType = _userAssets[index].asset?.assetType ?? 'AVATAR_FRAME';
       for (int i = 0; i < _userAssets.length; i++) {
-        if (_userAssets[i].id == userAssetId || _userAssets[i].id == updated.id) {
+        final itemType = _userAssets[i].asset?.assetType ?? 'AVATAR_FRAME';
+        if (i == index) {
           _userAssets[i] = _userAssets[i].copyWith(isEquipped: true);
-        } else if (_userAssets[i].asset?.assetType == targetType) {
+        } else if (itemType == targetType) {
           _userAssets[i] = _userAssets[i].copyWith(isEquipped: false);
         }
       }
 
-      if (targetType == 'AVATAR_FRAME') {
-        final frameAsset = updated.asset?.imageUrl ?? updated.asset?.name ?? 'host';
+      final frameAsset = _userAssets[index].asset?.imageUrl ?? _userAssets[index].asset?.name ?? '';
+      if (frameAsset.isNotEmpty) {
         onAvatarFrameChanged?.call(frameAsset);
       }
-
-      _isLoading = false;
-      notifyListeners();
-      return true;
-    } catch (e) {
-      // Fallback local equip for assigned assets
-      if (userAssetId.startsWith('assigned-frame-')) {
-        for (int i = 0; i < _userAssets.length; i++) {
-          if (_userAssets[i].id == userAssetId) {
-            _userAssets[i] = _userAssets[i].copyWith(isEquipped: true);
-            final frameAsset = _userAssets[i].asset?.imageUrl ?? 'host';
-            onAvatarFrameChanged?.call(frameAsset);
-          } else if (_userAssets[i].asset?.assetType == 'AVATAR_FRAME') {
-            _userAssets[i] = _userAssets[i].copyWith(isEquipped: false);
-          }
-        }
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      }
-
-      _isLoading = false;
-      _errorMessage = e.toString();
-      debugPrint('[BackpackProvider] equipAsset error: $e');
-      notifyListeners();
-      return false;
     }
+
+    _isLoading = false;
+    notifyListeners();
+    return true;
   }
 
   Future<bool> unequipAsset(String userAssetId, {void Function(String)? onAvatarFrameChanged}) async {
@@ -217,34 +129,51 @@ class BackpackProvider extends ChangeNotifier {
 
     try {
       await _backpackRepository.unequipAsset(userAssetId);
-      final index = _userAssets.indexWhere((a) => a.id == userAssetId);
-      if (index != -1) {
-        _userAssets[index] = _userAssets[index].copyWith(isEquipped: false);
-        if (_userAssets[index].asset?.assetType == 'AVATAR_FRAME') {
-          onAvatarFrameChanged?.call('none');
-        }
-      }
-      _isLoading = false;
-      notifyListeners();
-      return true;
     } catch (e) {
-      // Fallback local unequip for assigned assets
-      if (userAssetId.startsWith('assigned-frame-')) {
-        final index = _userAssets.indexWhere((a) => a.id == userAssetId);
-        if (index != -1) {
-          _userAssets[index] = _userAssets[index].copyWith(isEquipped: false);
-          onAvatarFrameChanged?.call('none');
-        }
-        _isLoading = false;
-        notifyListeners();
+      debugPrint('[BackpackProvider] Backend unequip error (using local unequip fallback): $e');
+    }
+
+    final index = _userAssets.indexWhere((a) => a.id == userAssetId || a.assetId == userAssetId || (a.asset != null && a.asset!.id == userAssetId));
+    if (index != -1) {
+      _userAssets[index] = _userAssets[index].copyWith(isEquipped: false);
+      onAvatarFrameChanged?.call('none');
+    }
+
+    _isLoading = false;
+    notifyListeners();
+    return true;
+  }
+
+  /// Check if a store item is already owned in backpack
+  bool isItemOwned(StoreItemModel item) {
+    final cleanItemName = item.name.toLowerCase().trim();
+    return _userAssets.any((ua) {
+      if (ua.isExpired) return false;
+      if (ua.assetId == item.id || (ua.asset != null && ua.asset!.id == item.id)) return true;
+
+      final assetName = (ua.asset?.name ?? '').toLowerCase().trim();
+      if (assetName.isNotEmpty && (assetName == cleanItemName || assetName.contains(cleanItemName) || cleanItemName.contains(assetName))) {
         return true;
       }
-
-      _isLoading = false;
-      _errorMessage = e.toString();
-      debugPrint('[BackpackProvider] unequipAsset error: $e');
-      notifyListeners();
       return false;
+    });
+  }
+
+  /// Add a newly purchased store item directly to user's backpack
+  void addPurchasedAsset(StoreItemModel item) {
+    final alreadyOwned = isItemOwned(item);
+    if (!alreadyOwned) {
+      final userAsset = UserAssetModel(
+        id: 'purchased-${item.id}-${DateTime.now().millisecondsSinceEpoch}',
+        userId: 'current-user',
+        assetId: item.id,
+        isEquipped: false,
+        expiresAt: DateTime.now().add(Duration(days: item.durationDays)),
+        asset: item,
+        createdAt: DateTime.now(),
+      );
+      _userAssets.insert(0, userAsset);
+      notifyListeners();
     }
   }
 }

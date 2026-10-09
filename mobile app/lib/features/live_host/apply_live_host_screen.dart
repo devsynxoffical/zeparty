@@ -550,80 +550,94 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
                   ),
                 )
               else
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                    ),
-                    onPressed: _isSubmitting
-                        ? null
-                        : () async {
-                            if (!_formKey.currentState!.validate()) return;
-                            if (!_agreeRules || !_agreePayoutTerms) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Please accept the Live Host rules and payout terms.'), backgroundColor: Colors.orange),
-                              );
-                              return;
-                            }
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 12, bottom: 16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primary,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
+                        ),
+                        onPressed: _isSubmitting
+                            ? null
+                            : () async {
+                                if (!_formKey.currentState!.validate()) return;
+                                if (!_agreeRules || !_agreePayoutTerms) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Please accept the Live Host rules and payout terms.'), backgroundColor: Colors.orange),
+                                  );
+                                  return;
+                                }
 
-                            setState(() => _isSubmitting = true);
+                                setState(() => _isSubmitting = true);
 
-                            final app = LiveHostApplicationModel(
-                              id: 'app_lh_${DateTime.now().millisecondsSinceEpoch}',
-                              userId: authUser.id,
-                              legalName: _legalNameController.text.trim(),
-                              displayName: _displayNameController.text.trim(),
-                              dateOfBirth: _dobController.text.trim(),
-                              gender: _selectedGender,
-                              country: 'GLOBAL',
-                              city: _cityController.text.trim(),
-                              languages: _languagesController.text.trim(),
-                              category: _selectedCategory,
-                              schedule: 'Daily 20:00 GMT',
-                              phoneOrEmail: _phoneController.text.trim(),
-                              govIdType: 'DIRECT_VERIFIED',
-                              govIdNumber: 'VERIFIED',
-                              frontIdUrl: 'https://example.com/id_front.jpg',
-                              backIdUrl: 'https://example.com/id_back.jpg',
-                              selfieUrl: authUser.avatarUrl,
-                              status: 'Submitted',
-                              submittedAt: DateTime.now(),
-                            );
-
-                            try {
-                              await liveHostProv.submitApplicationAsync(
-                                app: app,
-                                hostType: _selectedHostType,
-                              );
-
-                              setState(() => _isSubmitting = false);
-
-                              if (context.mounted) {
-                                _showSubmissionSuccessDialog(context, _readableHostType);
-                              }
-                            } catch (e) {
-                              setState(() => _isSubmitting = false);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Host Application error: ${e.toString()}'),
-                                    backgroundColor: Colors.redAccent,
-                                  ),
+                                final app = LiveHostApplicationModel(
+                                  id: 'app_lh_${DateTime.now().millisecondsSinceEpoch}',
+                                  userId: authUser.id,
+                                  legalName: _legalNameController.text.trim(),
+                                  displayName: _displayNameController.text.trim(),
+                                  dateOfBirth: _dobController.text.trim(),
+                                  gender: _selectedGender,
+                                  country: 'GLOBAL',
+                                  city: _cityController.text.trim(),
+                                  languages: _languagesController.text.trim(),
+                                  category: _selectedCategory,
+                                  schedule: 'Daily 20:00 GMT',
+                                  phoneOrEmail: _phoneController.text.trim(),
+                                  govIdType: 'DIRECT_VERIFIED',
+                                  govIdNumber: 'VERIFIED',
+                                  frontIdUrl: 'https://example.com/id_front.jpg',
+                                  backIdUrl: 'https://example.com/id_back.jpg',
+                                  selfieUrl: authUser.avatarUrl,
+                                  status: 'Submitted',
+                                  submittedAt: DateTime.now(),
                                 );
-                              }
-                            }
-                          },
-                    child: _isSubmitting
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                          )
-                        : Text('Submit Application for $_readableHostType', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+
+                                try {
+                                  await liveHostProv.submitApplicationAsync(
+                                    app: app,
+                                    hostType: _selectedHostType,
+                                  );
+
+                                  setState(() => _isSubmitting = false);
+
+                                  if (context.mounted) {
+                                    _showSubmissionSuccessDialog(context, _readableHostType);
+                                  }
+                                } catch (e) {
+                                  setState(() => _isSubmitting = false);
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Host Application error: ${e.toString()}'),
+                                        backgroundColor: Colors.redAccent,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                        child: _isSubmitting
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2.5),
+                              )
+                            : const Text(
+                                'Submit Live Host Application',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Colors.black,
+                                ),
+                              ),
+                      ),
+                    ),
                   ),
                 ),
             ],

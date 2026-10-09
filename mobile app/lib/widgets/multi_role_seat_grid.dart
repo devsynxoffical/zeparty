@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/party_participant_model.dart';
-import '../models/user_model.dart';
 import '../providers/live_party_provider.dart';
 import '../providers/emoji_reaction_provider.dart';
 import '../core/utils/noble_badge_helper.dart';
@@ -233,9 +232,11 @@ class MultiRoleSeatGrid extends StatelessWidget {
                         name: participant.user.name,
                         radius: radius + 1,
                         glowColor: isHostUser ? Colors.amber : const Color(0xFF00E676),
-                        frameAsset: NobleBadgeHelper.getFrameAsset(
-                          participant.user.nobleTitle ?? (participant.user.svipLevel > 0 ? 'SVIP ${participant.user.svipLevel}' : (participant.user.role != UserRole.user ? participant.user.role.name : null)),
-                        ),
+                        frameAsset: participant.user.avatarFrame.isNotEmpty && participant.user.avatarFrame != 'none'
+                            ? participant.user.avatarFrame
+                            : (participant.user.nobleTitle != null && participant.user.nobleTitle!.isNotEmpty
+                                ? NobleBadgeHelper.getFrameAsset(participant.user.nobleTitle)
+                                : (participant.user.svipLevel > 0 ? NobleBadgeHelper.getFrameAsset('SVIP ${participant.user.svipLevel}') : null)),
                       )
                     : Container(
                         decoration: BoxDecoration(
@@ -257,9 +258,11 @@ class MultiRoleSeatGrid extends StatelessWidget {
                           imageUrl: participant.user.avatarUrl,
                           name: participant.user.name,
                           radius: radius,
-                          frameAsset: NobleBadgeHelper.getFrameAsset(
-                            participant.user.nobleTitle ?? (participant.user.svipLevel > 0 ? 'SVIP ${participant.user.svipLevel}' : (participant.user.role != UserRole.user ? participant.user.role.name : null)),
-                          ),
+                          frameAsset: participant.user.avatarFrame.isNotEmpty && participant.user.avatarFrame != 'none'
+                              ? participant.user.avatarFrame
+                              : (participant.user.nobleTitle != null && participant.user.nobleTitle!.isNotEmpty
+                                  ? NobleBadgeHelper.getFrameAsset(participant.user.nobleTitle)
+                                  : (participant.user.svipLevel > 0 ? NobleBadgeHelper.getFrameAsset('SVIP ${participant.user.svipLevel}') : null)),
                         ),
                       ),
                 if (activeReaction != null)

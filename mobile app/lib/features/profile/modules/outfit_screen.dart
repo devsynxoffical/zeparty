@@ -413,9 +413,23 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
   Widget _buildAssetCategoryGrid(String typeKeyword, bool isDark) {
     final backpack = context.watch<BackpackProvider>();
     final items = backpack.userAssets.where((ua) {
-      final type = ua.asset?.assetType ?? '';
-      final cat = ua.asset?.categoryId ?? '';
-      return type.toUpperCase().contains(typeKeyword) || cat.toUpperCase().contains(typeKeyword);
+      final type = (ua.asset?.assetType ?? '').toUpperCase();
+      final cat = (ua.asset?.categoryId ?? '').toUpperCase();
+
+      if (typeKeyword == 'VEHICLE' || typeKeyword == 'CAR') {
+        return type.contains('CAR') || type.contains('MOUNT') || type.contains('VEHICLE') || cat.contains('CAR');
+      }
+      if (typeKeyword == 'FRAME') {
+        return type.contains('FRAME') || cat.contains('FRAME');
+      }
+      if (typeKeyword == 'BUBBLE') {
+        return type.contains('BUBBLE') || cat.contains('BUBBLE');
+      }
+      if (typeKeyword == 'EFFECT' || typeKeyword == 'BACKGROUND' || typeKeyword == 'CARD') {
+        return type.contains(typeKeyword) || cat.contains(typeKeyword) || type.contains('THEME') || cat.contains('THEME') || cat.contains('BACKGROUND') || cat.contains('CARD');
+      }
+
+      return type.contains(typeKeyword) || cat.contains(typeKeyword);
     }).toList();
 
     if (items.isEmpty) {

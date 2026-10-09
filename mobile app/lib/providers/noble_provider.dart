@@ -73,7 +73,7 @@ class NobleProvider extends ChangeNotifier {
       returnPercentage: 10,
       durationDays: 30,
       colors: const [Color(0xFFFB8C00), Color(0xFFE65100)],
-      badgeAsset: 'assets/nobles/viscount_card.png',
+      badgeAsset: 'assets/nobles/viscount_badge.webp',
       privileges: [
         ..._basePrivileges.take(6),
         _functionalPrivileges[0],

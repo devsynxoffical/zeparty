@@ -233,6 +233,15 @@ class AgoraRtcService {
     _currentChannel = null;
   }
 
+  Future<void> muteAllRemoteAudio(bool muted) async {
+    try {
+      await _engine?.muteAllRemoteAudioStreams(muted);
+      await _engine?.adjustPlaybackSignalVolume(muted ? 0 : 100);
+    } catch (e) {
+      debugPrint('[AgoraRtcService] muteAllRemoteAudio error: $e');
+    }
+  }
+
   Future<void> muteLocalAudio(bool muted) async {
     try {
       await _engine?.muteLocalAudioStream(muted);

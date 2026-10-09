@@ -530,20 +530,6 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                           final errLower = errStr.toLowerCase();
                           final isApiErr = e is ApiException;
 
-                          if (errStr.contains('HOST_APPROVAL_REQUIRED') || errStr.contains('approved active hosts')) {
-                            if (mounted) {
-                              setState(() => _isCreating = false);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('⚠️ Host approval required. Please submit a Host Application in your profile to broadcast live.'),
-                                  backgroundColor: Colors.redAccent,
-                                  duration: Duration(seconds: 4),
-                                ),
-                              );
-                            }
-                            return;
-                          }
-
                           final isAlreadyActive = isApiErr || errLower.contains('active') || errLower.contains('chal rahi hai') || errLower.contains('exists');
                           if (isAlreadyActive) {
                             if (mounted) {
@@ -559,17 +545,17 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                             return;
                           }
 
-                          roomToJoin = LiveRoomModel(
-                            id: 'live_${DateTime.now().millisecondsSinceEpoch}',
-                            title: title,
-                            host: currentUser,
-                            coverUrl: coverUrl,
-                            viewerCount: 0,
-                            category: _selectedCategory,
-                            isPrivate: _isPrivate,
-                            startTime: DateTime.now(),
-                            roomType: 'LIVE_VIDEO',
-                          );
+                          if (mounted) {
+                            setState(() => _isCreating = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to initialize stream: ${e is ApiException ? e.message : e.toString()}'),
+                                backgroundColor: Colors.redAccent,
+                                duration: const Duration(seconds: 5),
+                              ),
+                            );
+                          }
+                          return;
                         }
 
                         BackendRepository.instance.addLiveRoom(roomToJoin);

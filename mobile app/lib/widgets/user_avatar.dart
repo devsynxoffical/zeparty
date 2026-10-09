@@ -119,10 +119,14 @@ class UserAvatar extends StatelessWidget {
     }
 
     String? effectiveFrameAsset = frameAsset;
-    if (effectiveFrameAsset == null || effectiveFrameAsset.isEmpty || effectiveFrameAsset == 'none') {
-      effectiveFrameAsset = showVipFrame ? 'assets/nobles/baron_frame.webp' : null;
-    } else if (!effectiveFrameAsset.startsWith('assets/') && !effectiveFrameAsset.startsWith('http')) {
-      effectiveFrameAsset = NobleBadgeHelper.getFrameAsset(effectiveFrameAsset) ?? effectiveFrameAsset;
+    
+    // Only resolve frameAsset if explicitly provided for this specific user
+    if (effectiveFrameAsset != null && effectiveFrameAsset.isNotEmpty && effectiveFrameAsset != 'none') {
+      if (!effectiveFrameAsset.startsWith('assets/') && !effectiveFrameAsset.startsWith('http')) {
+        effectiveFrameAsset = NobleBadgeHelper.getFrameAsset(effectiveFrameAsset) ?? effectiveFrameAsset;
+      }
+    } else {
+      effectiveFrameAsset = null;
     }
 
     Widget avatar = Container(
@@ -175,11 +179,17 @@ class UserAvatar extends StatelessWidget {
               left: -frameOffset,
               right: -frameOffset,
               child: IgnorePointer(
-                child: Image.asset(
-                  effectiveFrameAsset,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-                ),
+                child: (effectiveFrameAsset.startsWith('http://') || effectiveFrameAsset.startsWith('https://'))
+                    ? Image.network(
+                        effectiveFrameAsset,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                      )
+                    : Image.asset(
+                        effectiveFrameAsset,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                      ),
               ),
             ),
           if (isLive)

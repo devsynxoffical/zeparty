@@ -3,8 +3,11 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/vip_honor_model.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/svip_provider.dart';
 import '../../providers/vip_honor_provider.dart';
 import '../../widgets/design/premium_card.dart';
+import '../../widgets/user_avatar.dart';
 
 class VIPHonorScreen extends StatefulWidget {
   const VIPHonorScreen({super.key});
@@ -20,6 +23,14 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<VIPHonorProvider>().fetchHonorData(
+          context.read<AuthProvider>(),
+          context.read<SVIPProvider>(),
+        );
+      }
+    });
   }
 
   @override
@@ -33,6 +44,8 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = AppColors.getPrimary(isDark);
     final honor = context.watch<VIPHonorProvider>();
+    final auth = context.watch<AuthProvider>();
+    final svip = context.watch<SVIPProvider>();
     final hof = honor.hallOfFame;
     final rem = hof.remainingDuration;
 
@@ -58,28 +71,37 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          // ─── TAB 1: VIP RANK ───
-          _buildVipRankTab(honor, isDark, primary),
+      body: honor.isLoading
+          ? Center(child: CircularProgressIndicator(color: primary))
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                // ─── TAB 1: VIP RANK ───
+                _buildVipRankTab(honor, auth, svip, isDark, primary),
 
-          // ─── TAB 2: HALL OF FAME ───
-          _buildHallOfFameTab(hof, rem, isDark, primary),
-        ],
-      ),
+                // ─── TAB 2: HALL OF FAME ───
+                _buildHallOfFameTab(honor, hof, rem, isDark, primary),
+              ],
+            ),
     );
   }
 
-  Widget _buildVipRankTab(VIPHonorProvider honor, bool isDark, Color primary) {
-    final currentUser = honor.hallOfFame.currentUserRank;
+  Widget _buildVipRankTab(VIPHonorProvider honor, AuthProvider auth, SVIPProvider svip, bool isDark, Color primary) {
+    final hasUser = auth.hasUser;
+    final user = auth.currentUser;
+    final nickname = hasUser ? user.name : 'You';
+    final avatarUrl = hasUser ? user.avatarUrl : null;
+    final svipLvl = svip.currentLevel > 0 ? svip.currentLevel : (hasUser ? (int.tryParse(user.vipLevel) ?? 0) : 0);
+    final currentPoints = svip.currentPoints > 0 ? svip.currentPoints : (hasUser ? user.coins : 0);
+    final rank = honor.hallOfFame.currentUserRank.rank;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       physics: const BouncingScrollPhysics(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Personal VIP Standing
+          // Personal Real VIP Standing
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -89,9 +111,10 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
             ),
             child: Row(
               children: [
-                CircleAvatar(
+                UserAvatar(
+                  imageUrl: avatarUrl,
+                  name: nickname,
                   radius: 28,
-                  backgroundImage: NetworkImage(currentUser.avatarUrl),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -99,7 +122,7 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        currentUser.nickname,
+                        nickname,
                         style: TextStyle(
                           color: AppColors.onPrimary(isDark: isDark),
                           fontWeight: FontWeight.bold,
@@ -108,7 +131,7 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Global Rank #${currentUser.rank} • SVIP ${currentUser.svipLevel}',
+                        'Global Rank #$rank • SVIP $svipLvl',
                         style: TextStyle(
                           color: AppColors.onPrimary(isDark: isDark).withValues(alpha: 0.8),
                           fontSize: 12,
@@ -116,7 +139,7 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        '${AppFormatters.formatNumber(currentUser.points)} Honor Points',
+                        '${AppFormatters.formatNumber(currentPoints)} Honor Points',
                         style: TextStyle(
                           color: AppColors.onPrimary(isDark: isDark),
                           fontWeight: FontWeight.w900,
@@ -199,10 +222,12 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildHallOfFameTab(HallOfFameRanking hof, Duration rem, bool isDark, Color primary) {
+  Widget _buildHallOfFameTab(VIPHonorProvider honor, HallOfFameRanking hof, Duration rem, bool isDark, Color primary) {
+    final hasRankings = hof.topPodium.isNotEmpty || hof.listRankings.isNotEmpty;
+
     return Column(
       children: [
-        // Countdown banner
+        // Countdown banner (Real season end)
         Container(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
           color: isDark ? AppColors.softBlack : AppColors.champagneSoft,
@@ -220,88 +245,132 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
         ),
 
         Expanded(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                // ─── Top 3 Podium ───
-                _buildTop3Podium(hof.topPodium, isDark, primary),
-
-                const SizedBox(height: 24),
-
-                // ─── 4th Onward Ranked List ───
-                ...hof.listRankings.map((user) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: PremiumCard(
-                      padding: const EdgeInsets.all(12),
-                      radius: 14,
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 28,
-                            alignment: Alignment.center,
-                            child: Text(
-                              '#${user.rank}',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 14,
-                                color: AppColors.getTextSecondary(isDark),
-                              ),
-                            ),
+          child: !hasRankings
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 76,
+                          height: 76,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: primary.withValues(alpha: 0.12),
+                            border: Border.all(color: primary.withValues(alpha: 0.35)),
                           ),
-                          const SizedBox(width: 8),
-                          CircleAvatar(
-                            radius: 20,
-                            backgroundImage: NetworkImage(user.avatarUrl),
+                          child: const Center(
+                            child: Text('🏆', style: TextStyle(fontSize: 34)),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          'No Hall of Fame Champions Yet',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppColors.getTextPrimary(isDark),
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Recharge SVIP points or send gifts in live party rooms to claim the #1 Grand Emperor throne for this season!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppColors.getTextSecondary(isDark),
+                            fontSize: 12.5,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      // ─── Top 3 Podium ───
+                      _buildTop3Podium(hof.topPodium, isDark, primary),
+
+                      const SizedBox(height: 24),
+
+                      // ─── 4th Onward Ranked List ───
+                      ...hof.listRankings.map((user) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: PremiumCard(
+                            padding: const EdgeInsets.all(12),
+                            radius: 14,
+                            child: Row(
                               children: [
-                                Row(
-                                  children: [
-                                    Text(user.countryFlag),
-                                    const SizedBox(width: 4),
-                                    Flexible(
-                                      child: Text(
-                                        user.nickname,
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                          color: AppColors.getTextPrimary(isDark),
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                Container(
+                                  width: 28,
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    '#${user.rank}',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                      fontSize: 14,
+                                      color: AppColors.getTextSecondary(isDark),
                                     ),
-                                  ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                UserAvatar(
+                                  imageUrl: user.avatarUrl,
+                                  name: user.nickname,
+                                  radius: 20,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Text(user.countryFlag),
+                                          const SizedBox(width: 4),
+                                          Flexible(
+                                            child: Text(
+                                              user.nickname,
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                                color: AppColors.getTextPrimary(isDark),
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      Text(
+                                        'SVIP ${user.svipLevel}',
+                                        style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                                 Text(
-                                  'SVIP ${user.svipLevel}',
-                                  style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.bold),
+                                  '${AppFormatters.formatNumber(user.points)} pts',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: AppColors.getTextPrimary(isDark),
+                                  ),
                                 ),
                               ],
                             ),
                           ),
-                          Text(
-                            '${AppFormatters.formatNumber(user.points)} pts',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                              color: AppColors.getTextPrimary(isDark),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-                const SizedBox(height: 60),
-              ],
-            ),
-          ),
+                        );
+                      }),
+                      const SizedBox(height: 60),
+                    ],
+                  ),
+                ),
         ),
 
         // Sticky Bottom User Rank Bar
@@ -329,9 +398,10 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
                   ),
                 ),
                 const SizedBox(width: 12),
-                CircleAvatar(
+                UserAvatar(
+                  imageUrl: hof.currentUserRank.avatarUrl,
+                  name: hof.currentUserRank.nickname,
                   radius: 18,
-                  backgroundImage: NetworkImage(hof.currentUserRank.avatarUrl),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -344,7 +414,7 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.getTextPrimary(isDark)),
                       ),
                       Text(
-                        'SVIP ${hof.currentUserRank.svipLevel} • Top Contributor',
+                        'SVIP ${hof.currentUserRank.svipLevel} • Your Standing',
                         style: TextStyle(fontSize: 10, color: AppColors.getTextSecondary(isDark)),
                       ),
                     ],
@@ -390,9 +460,10 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
         children: [
           Text(crownIcon, style: const TextStyle(fontSize: 22)),
           const SizedBox(height: 2),
-          CircleAvatar(
+          UserAvatar(
+            imageUrl: user.avatarUrl,
+            name: user.nickname,
             radius: rank == 1 ? 30 : 24,
-            backgroundImage: NetworkImage(user.avatarUrl),
           ),
           const SizedBox(height: 6),
           Text(

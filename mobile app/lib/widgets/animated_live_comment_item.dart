@@ -183,9 +183,9 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                     name: widget.senderName,
                     radius: 14,
                     showVipFrame: widget.isVip,
-                    frameAsset: NobleBadgeHelper.getFrameAsset(
-                      widget.nobleTitle ?? (widget.isVip ? 'Baron' : (widget.isHost ? 'Host' : (widget.isMod ? 'Admin' : null))),
-                    ),
+                    frameAsset: widget.nobleTitle != null && widget.nobleTitle!.isNotEmpty
+                        ? NobleBadgeHelper.getFrameAsset(widget.nobleTitle)
+                        : null,
                   ),
                 ),
                 Flexible(

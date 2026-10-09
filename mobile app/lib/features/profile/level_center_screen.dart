@@ -22,6 +22,20 @@ class LevelCenterScreen extends StatefulWidget {
 }
 
 class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTickerProviderStateMixin {
+  Color _getLevelColor(int level) {
+    if (level <= 1) return const Color(0xFF607D8B); // Grey for 0 and 1
+    if (level < 10) return const Color(0xFF29B6F6);
+    if (level < 20) return const Color(0xFF66BB6A);
+    if (level < 30) return const Color(0xFFFFA726);
+    if (level < 40) return const Color(0xFFAB47BC);
+    if (level < 50) return const Color(0xFFEF5350);
+    if (level < 60) return const Color(0xFF26A69A);
+    if (level < 70) return const Color(0xFFEC407A);
+    if (level < 80) return const Color(0xFF5C6BC0);
+    if (level < 90) return const Color(0xFFFF7043);
+    return const Color(0xFFFFCA28);
+  }
+
   late TabController _tabController;
 
   @override
@@ -70,11 +84,11 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
           unselectedLabelColor: Colors.grey,
           labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
           tabs: const [
-            Tab(text: '💎 Wealth'),
-            Tab(text: '💖 Charm'),
-            Tab(text: '🎮 Game'),
-            Tab(text: '⭐ Account'),
-            Tab(text: '👑 SVIP Tier'),
+            Tab(text: 'Wealth'),
+            Tab(text: 'Charm'),
+            Tab(text: 'Game'),
+            Tab(text: 'Account'),
+            Tab(text: 'SVIP Tier'),
           ],
         ),
       ),
@@ -86,11 +100,12 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
             context,
             title: 'Wealth Level Track',
             subtitle: 'Calculated from total sending history & gifts',
-            level: user.wealthLevel,
-            currentXp: user.wealthXp,
-            requiredXp: 1000000000,
+            level: user.computedWealthLevel,
+            currentXp: user.wealthLevelXp,
+            requiredXp: 10000,
             icon: Icons.diamond_rounded,
-            color: Colors.amberAccent,
+            imagePath: 'assets/images/level_logo_wealth.png',
+            color: const Color(0xFF00E5FF),
             perks: [
               '💎 Gold Crown Mic Frame',
               '👑 Wealth Rank Leaderboard Badge',
@@ -106,11 +121,12 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
             context,
             title: 'Charm Level Track',
             subtitle: 'Calculated from gifts received & popularity',
-            level: user.charmLevel,
-            currentXp: user.charmXp,
+            level: user.computedCharmLevel,
+            currentXp: user.charmLevelXp,
             requiredXp: 10000,
             icon: Icons.favorite_rounded,
-            color: Colors.pinkAccent,
+            imagePath: 'assets/images/level_logo_charm.png',
+            color: const Color(0xFFFF4081),
             perks: [
               '💖 Sweet Heart Avatar Frame',
               '🌹 Charm Superstar Rank Badge',
@@ -125,11 +141,12 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
             context,
             title: 'Game Level Track',
             subtitle: 'Calculated from game participation & win volume',
-            level: user.gameLevel,
-            currentXp: user.gameXp,
-            requiredXp: 5000,
+            level: user.computedGameLevel,
+            currentXp: user.gameLevelXp,
+            requiredXp: 10000,
             icon: Icons.sports_esports_rounded,
-            color: Colors.cyanAccent,
+            imagePath: 'assets/images/level_logo_game.png',
+            color: const Color(0xFFB388FF),
             perks: [
               '🎮 Game Master Profile Badge',
               '🎰 Super Wheel Spin Multiplier Boost',
@@ -144,11 +161,12 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
             context,
             title: 'Account Level Track',
             subtitle: 'Calculated from total platform activity & tenure',
-            level: user.accountLevel,
-            currentXp: user.accountXp,
-            requiredXp: 20000,
+            level: user.computedAccountLevel,
+            currentXp: user.accountLevelXp,
+            requiredXp: 10000,
             icon: Icons.stars_rounded,
-            color: Colors.greenAccent,
+            imagePath: 'assets/images/level_logo_account.png',
+            color: const Color(0xFF00E676),
             perks: [
               '⭐ Veteran Account Status Badge',
               '🛡️ Enhanced Profile Security Perks',
@@ -173,6 +191,7 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
     required int currentXp,
     required int requiredXp,
     required IconData icon,
+    String? imagePath,
     required Color color,
     required List<String> perks,
     required bool isDark,
@@ -199,7 +218,10 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
                 CircleAvatar(
                   radius: 28,
                   backgroundColor: color.withValues(alpha: 0.2),
-                  child: Icon(icon, size: 28, color: color),
+                  child: imagePath != null
+                      ? Image.asset(imagePath, width: 36, height: 36,
+                          errorBuilder: (_, __, ___) => Icon(icon, size: 28, color: color))
+                      : Icon(icon, size: 28, color: color),
                 ),
                 const SizedBox(width: 14),
                 Expanded(

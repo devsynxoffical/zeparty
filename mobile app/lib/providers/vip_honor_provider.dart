@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import '../core/services/api_client.dart';
 import '../models/vip_honor_model.dart';
+import 'auth_provider.dart';
+import 'svip_provider.dart';
 
 class VIPHonorProvider extends ChangeNotifier {
   bool _isLoading = false;
@@ -8,100 +11,21 @@ class VIPHonorProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   int get selectedTab => _selectedTab;
 
-  void setSelectedTab(int tabIndex) {
-    _selectedTab = tabIndex;
-    notifyListeners();
-  }
-
-  // Top 3 Podium Users
-  final List<VIPRankUser> _topPodium = [
-    const VIPRankUser(
-      rank: 1,
-      userId: '777888',
-      nickname: 'Sheikh Sultan',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-      svipLevel: 16,
-      points: 158400200,
-      countryFlag: '🇦🇪',
-      badgeTitle: 'Grand Emperor ✨',
-    ),
-    const VIPRankUser(
-      rank: 2,
-      userId: '992015',
-      nickname: 'Lady Victoria',
-      avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80',
-      svipLevel: 15,
-      points: 112500000,
-      countryFlag: '🇬🇧',
-      badgeTitle: 'Royal Queen 👑',
-    ),
-    const VIPRankUser(
-      rank: 3,
-      userId: '448201',
-      nickname: 'King Richard',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
-      svipLevel: 14,
-      points: 89400000,
-      countryFlag: '🇺🇸',
-      badgeTitle: 'Apex Duke ⚡',
-    ),
-  ];
-
-  // Ranked List 4..10
-  final List<VIPRankUser> _listRankings = [
-    const VIPRankUser(
-      rank: 4,
-      userId: '884102',
-      nickname: 'Alpha Knight',
-      avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80',
-      svipLevel: 13,
-      points: 45200000,
-      countryFlag: '🇸🇦',
-    ),
-    const VIPRankUser(
-      rank: 5,
-      userId: '661890',
-      nickname: 'Princess Aurora',
-      avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80',
-      svipLevel: 12,
-      points: 28400000,
-      countryFlag: '🇨🇦',
-    ),
-    const VIPRankUser(
-      rank: 6,
-      userId: '339102',
-      nickname: 'Dragon Lord',
-      avatarUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=300&q=80',
-      svipLevel: 11,
-      points: 18900000,
-      countryFlag: '🇶🇦',
-    ),
-    const VIPRankUser(
-      rank: 7,
-      userId: '558291',
-      nickname: 'Zeus Thunder',
-      avatarUrl: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=300&q=80',
-      svipLevel: 10,
-      points: 9200000,
-      countryFlag: '🇩🇪',
-    ),
-  ];
-
-  // Current User's Ranking
-  final VIPRankUser _currentUserRank = const VIPRankUser(
-    rank: 18,
-    userId: '88091',
-    nickname: 'ZeParty Official',
-    avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
-    svipLevel: 11,
-    points: 14500000,
+  List<VIPRankUser> _topPodium = [];
+  List<VIPRankUser> _listRankings = [];
+  VIPRankUser _currentUserRank = const VIPRankUser(
+    rank: 1,
+    userId: '',
+    nickname: 'You',
+    avatarUrl: '',
+    svipLevel: 0,
+    points: 0,
     countryFlag: '🌐',
-    badgeTitle: 'Top VIP Contributor',
   );
 
   // VIP Honor Reward Tiers
-  final List<VIPHonorRewardTier> _rewardTiers = [
-    const VIPHonorRewardTier(
+  final List<VIPHonorRewardTier> _rewardTiers = const [
+    VIPHonorRewardTier(
       rankRangeText: 'Top 1 Champion',
       title: 'Supreme Hall of Fame Grand Trophy',
       bonusCoins: 1000000,
@@ -109,7 +33,7 @@ class VIPHonorProvider extends ChangeNotifier {
       rewardFrame: 'Permanent Grand Champion Diamond Frame',
       entranceEffect: 'Global Golden Dragon Entrance',
     ),
-    const VIPHonorRewardTier(
+    VIPHonorRewardTier(
       rankRangeText: 'Top 2 - 3 Podium',
       title: 'Royal Platinum Honor',
       bonusCoins: 500000,
@@ -117,7 +41,7 @@ class VIPHonorProvider extends ChangeNotifier {
       rewardFrame: '30-Day Royal Platinum Wings Frame',
       entranceEffect: 'Phoenix Wave Entrance Splash',
     ),
-    const VIPHonorRewardTier(
+    VIPHonorRewardTier(
       rankRangeText: 'Top 4 - 10 Elite',
       title: 'Gold Star Honor',
       bonusCoins: 200000,
@@ -130,10 +54,23 @@ class VIPHonorProvider extends ChangeNotifier {
   late HallOfFameRanking _hallOfFame;
 
   VIPHonorProvider() {
+    _initHallOfFame();
+  }
+
+  void _initHallOfFame() {
+    final now = DateTime.now();
+    final nextMonth = DateTime(now.year, now.month + 1, 1);
+    final periodEnd = nextMonth.subtract(const Duration(seconds: 1));
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    final periodTitle = '${months[now.month - 1]} ${now.year} Season Championship';
+
     _hallOfFame = HallOfFameRanking(
-      eventId: 'hof_august_2026',
-      periodTitle: 'August 2026 Season 8 Championship',
-      periodEnd: DateTime(2026, 8, 31, 23, 59, 59),
+      eventId: 'hof_${now.year}_${now.month}',
+      periodTitle: periodTitle,
+      periodEnd: periodEnd,
       topPodium: _topPodium,
       listRankings: _listRankings,
       currentUserRank: _currentUserRank,
@@ -143,11 +80,96 @@ class VIPHonorProvider extends ChangeNotifier {
 
   HallOfFameRanking get hallOfFame => _hallOfFame;
 
-  Future<void> fetchHonorData() async {
+  void setSelectedTab(int tabIndex) {
+    _selectedTab = tabIndex;
+    notifyListeners();
+  }
+
+  Future<void> fetchHonorData([AuthProvider? auth, SVIPProvider? svip]) async {
     _isLoading = true;
     notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 250));
-    _isLoading = false;
-    notifyListeners();
+
+    try {
+      final res = await ApiClient.instance.get<Map<String, dynamic>>(
+        '/v1/rankings',
+        queryParameters: {
+          'category': 'wealth',
+          'period': 'monthly',
+          'limit': 50,
+        },
+      );
+
+      final rawData = res.data?['data'];
+      final List<VIPRankUser> loadedUsers = [];
+
+      if (rawData is List) {
+        for (int i = 0; i < rawData.length; i++) {
+          final item = rawData[i];
+          if (item is Map<String, dynamic>) {
+            final rank = (item['rank'] as num?)?.toInt() ?? (i + 1);
+            final userObj = item['user'] is Map<String, dynamic> ? item['user'] : item;
+            final userId = userObj['_id']?.toString() ?? userObj['id']?.toString() ?? 'user_$i';
+            final nickname = userObj['name']?.toString() ?? userObj['nickname']?.toString() ?? 'VIP User';
+            final avatarUrl = userObj['avatar']?.toString() ?? userObj['avatarUrl']?.toString() ?? '';
+            final svipLvl = (userObj['svipLevel'] as num?)?.toInt() ?? (userObj['level'] as num?)?.toInt() ?? 0;
+            final points = (item['score'] as num?)?.toInt() ?? (item['points'] as num?)?.toInt() ?? (item['coins'] as num?)?.toInt() ?? 0;
+            final countryFlag = userObj['countryFlag']?.toString() ?? '🌐';
+
+            loadedUsers.add(VIPRankUser(
+              rank: rank,
+              userId: userId,
+              nickname: nickname,
+              avatarUrl: avatarUrl,
+              svipLevel: svipLvl,
+              points: points,
+              countryFlag: countryFlag,
+              badgeTitle: rank == 1 ? 'Grand Emperor ✨' : (rank == 2 ? 'Royal Queen 👑' : (rank == 3 ? 'Apex Duke ⚡' : null)),
+            ));
+          }
+        }
+      }
+
+      _topPodium = loadedUsers.take(3).toList();
+      _listRankings = loadedUsers.length > 3 ? loadedUsers.sublist(3) : [];
+
+      if (auth != null && auth.hasUser) {
+        final user = auth.currentUser;
+        final myIndex = loadedUsers.indexWhere((u) => u.userId == user.id);
+        final currentPoints = svip?.currentPoints ?? user.coins;
+        final currentLevel = svip?.currentLevel ?? (int.tryParse(user.vipLevel) ?? 0);
+
+        _currentUserRank = VIPRankUser(
+          rank: myIndex >= 0 ? myIndex + 1 : (loadedUsers.isNotEmpty ? loadedUsers.length + 1 : 1),
+          userId: user.id,
+          nickname: user.name,
+          avatarUrl: user.avatarUrl,
+          svipLevel: currentLevel,
+          points: currentPoints,
+          countryFlag: '🌐',
+        );
+      }
+
+      _initHallOfFame();
+    } catch (e) {
+      debugPrint('[VIPHonorProvider] Real ranking fetch error: $e');
+      _topPodium = [];
+      _listRankings = [];
+      if (auth != null && auth.hasUser) {
+        final user = auth.currentUser;
+        _currentUserRank = VIPRankUser(
+          rank: 1,
+          userId: user.id,
+          nickname: user.name,
+          avatarUrl: user.avatarUrl,
+          svipLevel: svip?.currentLevel ?? (int.tryParse(user.vipLevel) ?? 0),
+          points: svip?.currentPoints ?? 0,
+          countryFlag: '🌐',
+        );
+      }
+      _initHallOfFame();
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 }

@@ -18,7 +18,7 @@ class StoreProvider extends ChangeNotifier {
 
   final Set<String> _pendingPurchaseKeys = {};
 
-  List<String> get categories => ['All', 'Cars', 'Frame', 'Special card', 'Bubble', 'Background'];
+  List<String> get categories => ['All', 'Cars', 'Frame', 'Special card', 'Bubble', 'Background', 'Badges'];
 
   StoreProvider() {
     fetchStoreItems();
@@ -28,7 +28,35 @@ class StoreProvider extends ChangeNotifier {
     if (categoryId == 'All' || categoryId.isEmpty) {
       return _items;
     }
-    return _items.where((item) => item.categoryId == categoryId).toList();
+
+    final target = categoryId.trim().toLowerCase();
+
+    return _items.where((item) {
+      final cat = item.categoryId.trim().toLowerCase();
+      final type = item.assetType.trim().toLowerCase();
+
+      // Flexible fuzzy matching for categories and backend assetType enums
+      if (target == 'cars' || target == 'car') {
+        return cat.contains('car') || type.contains('car') || type.contains('mount');
+      }
+      if (target == 'frame' || target == 'frames') {
+        return cat.contains('frame') || type.contains('frame');
+      }
+      if (target == 'special card' || target == 'special_card' || target == 'card') {
+        return cat.contains('card') || type.contains('card');
+      }
+      if (target == 'bubble' || target == 'bubbles') {
+        return cat.contains('bubble') || type.contains('bubble');
+      }
+      if (target == 'background' || target == 'backgrounds') {
+        return cat.contains('background') || cat.contains('theme') || type.contains('background') || type.contains('theme');
+      }
+      if (target == 'badges' || target == 'badge') {
+        return cat.contains('badge') || type.contains('badge');
+      }
+
+      return cat == target || type == target;
+    }).toList();
   }
 
   /// Fetch active store items from backend

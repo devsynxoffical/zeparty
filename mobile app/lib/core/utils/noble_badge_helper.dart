@@ -41,17 +41,22 @@ class NobleBadgeHelper {
     if (lower.contains('duke')) return 'assets/nobles/duke_badge.webp';
     if (lower.contains('marquis')) return 'assets/nobles/marquis_badge.webp';
     if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_badge.webp';
-    if (lower.contains('viscount')) return 'assets/nobles/viscount_card.webp';
+    if (lower.contains('viscount')) return 'assets/nobles/viscount_badge.webp';
     if (lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/baron_badge.webp';
 
-    // SVIP Badges (Accurate existing asset mapping for all 1-16 tiers)
+    // SVIP Badges (Accurate exact mapping for all 1-16 tiers using live animated webp assets)
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 1; i--) {
-        if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          return 'assets/svip/svip${i}_badge.webp';
+      final match = RegExp(r'svip\s*(\d+)', caseSensitive: false).firstMatch(lower);
+      if (match != null) {
+        final level = int.tryParse(match.group(1)!) ?? 1;
+        final clampedLevel = level.clamp(1, 16);
+        final pad2 = clampedLevel.toString().padLeft(2, '0');
+        if (clampedLevel <= 15) {
+          return 'assets/svip/SVIP${pad2}_badge_live.webp';
         }
+        return 'assets/svip/SVIP16_badge_live.webp';
       }
-      return 'assets/svip/svip10_badge.webp';
+      return 'assets/svip/SVIP01_badge_live.webp';
     }
 
     // Role Badges
@@ -92,12 +97,13 @@ class NobleBadgeHelper {
 
     // SVIP Frames
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 1; i--) {
-        if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          return 'assets/svip/svip${i}_frame.webp';
-        }
+      final match = RegExp(r'svip\s*(\d+)', caseSensitive: false).firstMatch(lower);
+      if (match != null) {
+        final level = int.tryParse(match.group(1)!) ?? 1;
+        final clampedLevel = level.clamp(1, 16);
+        return 'assets/svip/svip${clampedLevel}_frame.webp';
       }
-      return 'assets/svip/svip10_frame.webp';
+      return 'assets/svip/svip1_frame.webp';
     }
 
     // Role Frames
@@ -129,12 +135,12 @@ class NobleBadgeHelper {
 
     // SVIP Tags
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 1; i--) {
+      for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          return 'assets/svip/svip${i}_tag.webp';
+          return 'assets/svip/svip${i}_tag.png';
         }
       }
-      return 'assets/svip/svip10_tag.webp';
+      return 'assets/svip/svip1_tag.png';
     }
 
     // Role Tags
@@ -171,12 +177,12 @@ class NobleBadgeHelper {
 
     // SVIP Chat Bubbles
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 1; i--) {
+      for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
           return 'assets/svip/svip${i}_chat_bubble.webp';
         }
       }
-      return 'assets/svip/svip10_chat_bubble.webp';
+      return 'assets/svip/svip1_chat_bubble.webp';
     }
 
     if (lower.contains('mystery')) return 'assets/animations/mystery_chat_bubble.webp';
@@ -194,12 +200,12 @@ class NobleBadgeHelper {
 
     // SVIP Cards
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 1; i--) {
+      for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
           return 'assets/svip/svip${i}_card.webp';
         }
       }
-      return 'assets/svip/svip10_card.webp';
+      return 'assets/svip/svip1_card.webp';
     }
 
     return null;
@@ -215,12 +221,12 @@ class NobleBadgeHelper {
 
     // SVIP Entrances
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 1; i--) {
+      for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
           return 'assets/svip/svip${i}_entry.webp';
         }
       }
-      return 'assets/svip/svip10_entry.webp';
+      return 'assets/svip/svip1_entry.webp';
     }
 
     if (lower.contains('mystery')) return 'assets/animations/mystery_entry.webp';
@@ -310,7 +316,7 @@ class NobleBadgeChip extends StatelessWidget {
           assetPath,
           height: fontSize * 2.4,
           fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => _buildFallbackChip(context, title),
+          errorBuilder: (context, error, stackTrace) => _buildFallbackChip(context, title),
         ),
       );
     }
@@ -393,7 +399,7 @@ class NobleTagChip extends StatelessWidget {
           tagAsset,
           height: height,
           fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
         ),
       );
     }

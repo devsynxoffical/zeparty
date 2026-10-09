@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
 import '../models/message_model.dart';
 import '../core/utils/formatters.dart';
 import '../features/social/short_videos_screen.dart';
+import '../providers/backpack_provider.dart';
 
 class ChatBubble extends StatefulWidget {
   final MessageModel message;
@@ -196,13 +198,16 @@ class _ChatBubbleState extends State<ChatBubble> {
                 mediaPath.contains('image')));
 
     final isGift = widget.message.type == 'gift' || widget.message.text.contains('🎁');
+    final backpack = context.watch<BackpackProvider>();
+    final equippedBubble = widget.isMe ? backpack.equippedBubbleUrl : null;
+    final hasCustomBubble = equippedBubble != null && equippedBubble.isNotEmpty;
 
     final bubbleColor = widget.isMe
         ? primaryColor
         : Theme.of(context).colorScheme.surfaceContainerHighest;
 
     final textColor = widget.isMe
-        ? onPrimary
+        ? (hasCustomBubble ? Colors.white : onPrimary)
         : Theme.of(context).textTheme.bodyLarge?.color;
 
     return Align(
@@ -214,14 +219,24 @@ class _ChatBubbleState extends State<ChatBubble> {
         decoration: BoxDecoration(
           color: isGift
               ? (isDark ? const Color(0xFF2A153E) : const Color(0xFFF3E5F5))
-              : bubbleColor,
+              : (hasCustomBubble ? Colors.transparent : bubbleColor),
+          image: hasCustomBubble
+              ? DecorationImage(
+                  image: (equippedBubble.startsWith('http://') || equippedBubble.startsWith('https://'))
+                      ? NetworkImage(equippedBubble) as ImageProvider
+                      : AssetImage(equippedBubble),
+                  fit: BoxFit.fill,
+                )
+              : null,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
             bottomLeft: Radius.circular(widget.isMe ? 16 : 4),
             bottomRight: Radius.circular(widget.isMe ? 4 : 16),
           ),
-          border: isGift ? Border.all(color: Colors.purpleAccent, width: 1.5) : null,
+          border: isGift
+              ? Border.all(color: Colors.purpleAccent, width: 1.5)
+              : (hasCustomBubble ? Border.all(color: AppColors.metallicGold, width: 1.2) : null),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.08),

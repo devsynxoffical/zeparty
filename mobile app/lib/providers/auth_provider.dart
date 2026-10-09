@@ -92,14 +92,8 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _saveUserLocalSession(UserModel user) async {
     try {
-      // Validate that user has a genuine 7-digit ID before persisting
-      if (!RegExp(r'^[1-9]\d{6}$').hasMatch(user.id)) {
-        debugPrint('[AuthProvider] Refusing to persist invalid non-7-digit user session: ${user.id}');
-        return;
-      }
-      final token = await ApiClient.instance.getAccessToken();
-      if (token == null || token.isEmpty || token.startsWith('session_token_')) {
-        debugPrint('[AuthProvider] Refusing to persist session without genuine backend JWT token');
+      if (user.id.isEmpty) {
+        debugPrint('[AuthProvider] Refusing to persist empty user session');
         return;
       }
       final prefs = await SharedPreferences.getInstance();
@@ -144,19 +138,8 @@ class AuthProvider extends ChangeNotifier {
       // Check first-run flag across app uninstalls/reinstalls
       final bool hasRunBefore = prefs.getBool('app_has_run_before') ?? false;
       if (!hasRunBefore) {
-        // App was freshly installed or re-installed!
-        // Clear all persistent iOS Keychain tokens & local stored sessions
-        await ApiClient.instance.clearTokens();
-        await prefs.remove(_userSessionKey);
-        await prefs.remove(_followingIdsKey);
-        await prefs.remove(_blockedIdsKey);
+        // App was freshly installed or re-installed
         await prefs.setBool('app_has_run_before', true);
-        _currentUser = null;
-        _isAuthenticated = false;
-        _isGuest = false;
-        _isInitialized = true;
-        notifyListeners();
-        return;
       }
 
       final userJsonStr = prefs.getString(_userSessionKey);
@@ -165,22 +148,13 @@ class AuthProvider extends ChangeNotifier {
         try {
           final Map<String, dynamic> map = jsonDecode(userJsonStr);
           final restored = UserModel.fromJson(map);
-          final hasToken = await _authRepository
-              .hasSavedToken()
-              .timeout(const Duration(seconds: 2), onTimeout: () => false);
-          // Strictly validate that restored session has a genuine 7-digit ID and valid backend token
-          if (RegExp(r'^[1-9]\d{6}$').hasMatch(restored.id) && hasToken) {
+          if (restored.id.isNotEmpty) {
             _currentUser = restored;
             _isAuthenticated = true;
             _isGuest = false;
-          } else {
-            debugPrint('[AuthProvider] Stored session has invalid ID (${restored.id}) or missing token. Purging.');
-            await _clearUserLocalSession();
-            _currentUser = null;
-            _isAuthenticated = false;
           }
-        } catch (_) {
-          await _clearUserLocalSession();
+        } catch (e) {
+          debugPrint('[AuthProvider] Restoring stored session failed: $e');
         }
       }
 

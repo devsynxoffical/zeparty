@@ -32,7 +32,7 @@ class StoreItemModel {
     
     // Map backend assetType to display category
     String category = 'Frame';
-    if (type.contains('VEHICLE') || type.contains('CAR')) {
+    if (type.contains('VEHICLE') || type.contains('CAR') || type.contains('MOUNT')) {
       category = 'Cars';
     } else if (type.contains('FRAME')) {
       category = 'Frame';
@@ -42,6 +42,8 @@ class StoreItemModel {
       category = 'Background';
     } else if (type.contains('SPECIAL') || type.contains('CARD') || type.contains('ID')) {
       category = 'Special card';
+    } else if (type.contains('BADGE')) {
+      category = 'Badges';
     } else {
       category = json['categoryId'] as String? ?? 'General';
     }

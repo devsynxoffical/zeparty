@@ -231,37 +231,49 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               // 1. Mine Tab: User's owned / hosted rooms
               MineTab(isDark: isDark),
 
-              // 2. Party Tab: Audio Voice Party Rooms (shown to others, not host himself)
+              // 2. Party Tab: Audio Voice Party Rooms (sorted with host's own room first)
               LiveDiscoveryGrid(
-                liveRooms: liveRooms.where((r) {
-                  final isMyOwn = currentUserId.isNotEmpty &&
-                      (r.host.id == currentUserId || r.creatorUserId == currentUserId);
-                  if (isMyOwn) return false;
-
-                  final t = r.roomType.toUpperCase();
-                  final isAudio = t.contains('AUDIO') || t.contains('VOICE') || (t.contains('PARTY') && !t.contains('VIDEO'));
-                  return isAudio || (t != 'LIVE_VIDEO' && !t.contains('VIDEO') && r.category.toUpperCase() == 'PARTY');
-                }).toList(),
+                liveRooms: (() {
+                  final list = liveRooms.where((r) {
+                    final t = r.roomType.toUpperCase();
+                    final isAudio = t.contains('AUDIO') || t.contains('VOICE') || (t.contains('PARTY') && !t.contains('VIDEO'));
+                    return isAudio || (t != 'LIVE_VIDEO' && !t.contains('VIDEO') && r.category.toUpperCase() == 'PARTY');
+                  }).toList();
+                  list.sort((a, b) {
+                    final aIsMine = currentUserId.isNotEmpty && (a.host.id == currentUserId || a.creatorUserId == currentUserId);
+                    final bIsMine = currentUserId.isNotEmpty && (b.host.id == currentUserId || b.creatorUserId == currentUserId);
+                    if (aIsMine && !bIsMine) return -1;
+                    if (!aIsMine && bIsMine) return 1;
+                    return b.viewerCount.compareTo(a.viewerCount);
+                  });
+                  return list;
+                })(),
                 isDark: isDark,
                 isPartyTab: true,
               ),
 
-              // 3. Live Tab: Video Streams (shown to others, not host himself, excludes PK)
+              // 3. Live Tab: Video Streams (sorted with host's own room first, excludes PK)
               LiveDiscoveryGrid(
-                liveRooms: liveRooms.where((r) {
-                  final isMyOwn = currentUserId.isNotEmpty &&
-                      (r.host.id == currentUserId || r.creatorUserId == currentUserId);
-                  if (isMyOwn) return false;
+                liveRooms: (() {
+                  final list = liveRooms.where((r) {
+                    final isPk = r.category.toUpperCase() == 'PK' ||
+                        r.title.toUpperCase().contains('PK') ||
+                        r.roomType.toUpperCase().contains('PK');
+                    if (isPk) return false;
 
-                  final isPk = r.category.toUpperCase() == 'PK' ||
-                      r.title.toUpperCase().contains('PK') ||
-                      r.roomType.toUpperCase().contains('PK');
-                  if (isPk) return false;
-
-                  final t = r.roomType.toUpperCase();
-                  final isVideo = t.contains('VIDEO') || t == 'LIVE_VIDEO' || t == 'VIDEO ROOM';
-                  return isVideo || (!t.contains('AUDIO') && !t.contains('VOICE') && !t.contains('PARTY'));
-                }).toList(),
+                    final t = r.roomType.toUpperCase();
+                    final isVideo = t.contains('VIDEO') || t == 'LIVE_VIDEO' || t == 'VIDEO ROOM';
+                    return isVideo || (!t.contains('AUDIO') && !t.contains('VOICE') && !t.contains('PARTY'));
+                  }).toList();
+                  list.sort((a, b) {
+                    final aIsMine = currentUserId.isNotEmpty && (a.host.id == currentUserId || a.creatorUserId == currentUserId);
+                    final bIsMine = currentUserId.isNotEmpty && (b.host.id == currentUserId || b.creatorUserId == currentUserId);
+                    if (aIsMine && !bIsMine) return -1;
+                    if (!aIsMine && bIsMine) return 1;
+                    return b.viewerCount.compareTo(a.viewerCount);
+                  });
+                  return list;
+                })(),
                 isDark: isDark,
                 isPartyTab: false,
               ),
@@ -269,14 +281,24 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               // 4. Games Tab
               GamesTab(isDark: isDark),
 
-              // 5. PK Tab: Live PK Battles ONLY (broadcasts shifted to PK appear here exclusively)
+              // 5. PK Tab: Live PK Battles ONLY
               LiveDiscoveryGrid(
-                liveRooms: liveRooms.where((r) {
-                  final isPk = r.category.toUpperCase() == 'PK' ||
-                      r.title.toUpperCase().contains('PK') ||
-                      r.roomType.toUpperCase().contains('PK');
-                  return isPk;
-                }).toList(),
+                liveRooms: (() {
+                  final list = liveRooms.where((r) {
+                    final isPk = r.category.toUpperCase() == 'PK' ||
+                        r.title.toUpperCase().contains('PK') ||
+                        r.roomType.toUpperCase().contains('PK');
+                    return isPk;
+                  }).toList();
+                  list.sort((a, b) {
+                    final aIsMine = currentUserId.isNotEmpty && (a.host.id == currentUserId || a.creatorUserId == currentUserId);
+                    final bIsMine = currentUserId.isNotEmpty && (b.host.id == currentUserId || b.creatorUserId == currentUserId);
+                    if (aIsMine && !bIsMine) return -1;
+                    if (!aIsMine && bIsMine) return 1;
+                    return b.viewerCount.compareTo(a.viewerCount);
+                  });
+                  return list;
+                })(),
                 isDark: isDark,
               ),
             ],
