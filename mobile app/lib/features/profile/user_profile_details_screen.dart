@@ -569,24 +569,24 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 const SizedBox(height: 2),
                                 if (_user != null) ...[
                                   // 1. LIVE / IN ROOM Status Badge
-                                  if (_user!.isLive || (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty)) ...[
+                                  if (_user != null && _user!.isLive) ...[
                                     GestureDetector(
                                       onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
                                       child: Container(
                                         margin: const EdgeInsets.only(bottom: 6, right: 6),
                                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                         decoration: BoxDecoration(
-                                          gradient: const LinearGradient(colors: [Color(0xFFE91E63), Color(0xFF9C27B0)]),
+                                          gradient: const LinearGradient(colors: [Color(0xFFFF1744), Color(0xFFFF5252)]),
                                           borderRadius: BorderRadius.circular(16),
                                           border: Border.all(color: Colors.white, width: 1.2),
                                           boxShadow: [
-                                            BoxShadow(color: const Color(0xFFE91E63).withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 1),
+                                            BoxShadow(color: const Color(0xFFFF1744).withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 1),
                                           ],
                                         ),
                                         child: const Row(
                                           mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 13),
+                                            Icon(Icons.videocam_rounded, color: Colors.white, size: 13),
                                             SizedBox(width: 4),
                                             Text(
                                               '🔴 LIVE',
@@ -1234,40 +1234,38 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     ),
                   ),
 
-                  // Live or In Room Tag Badge
-                  if (_user != null && (_user!.isLive || (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty))) ...[
+                  // Live Tag Badge (only shown when user is live)
+                  if (_user != null && _user!.isLive) ...[
                     const SizedBox(width: 6),
                     GestureDetector(
                       onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: _user!.isLive
-                                ? [const Color(0xFFFF1744), const Color(0xFFFF5252)]
-                                : [const Color(0xFF9C27B0), const Color(0xFFE040FB)],
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFF1744), Color(0xFFFF5252)],
                           ),
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: (_user!.isLive ? Colors.redAccent : Colors.purpleAccent).withValues(alpha: 0.5),
+                              color: Colors.redAccent.withValues(alpha: 0.5),
                               blurRadius: 6,
                               spreadRadius: 1,
                             ),
                           ],
                         ),
-                        child: Row(
+                        child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              _user!.isLive ? Icons.videocam_rounded : Icons.graphic_eq_rounded,
+                              Icons.videocam_rounded,
                               color: Colors.white,
                               size: 12,
                             ),
-                            const SizedBox(width: 3),
+                            SizedBox(width: 3),
                             Text(
-                              _user!.isLive ? 'LIVE' : 'In Room',
-                              style: const TextStyle(
+                              'LIVE',
+                              style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w900,
@@ -1489,8 +1487,17 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   // Shows only medals the user has actually earned (isEarned == true)
   Widget _buildMedalGallery(bool isDark) {
     final primaryText = AppColors.getTextPrimary(isDark);
-    // Use MedalModel.defaultMedals filtered by isEarned -- new users have none
-    final earnedMedals = MedalModel.defaultMedals.where((m) => m.isEarned).toList();
+    // Filter earned medals based on isEarned flag or user milestone achievements
+    final earnedMedals = MedalModel.defaultMedals.where((m) {
+      if (m.isEarned) return true;
+      if (_user != null) {
+        if (m.id == 'm1' && _user!.isHost) return true;
+        if (m.id == 'm2' && _user!.wealthLevel >= 3) return true;
+        if (m.id == 'm3' && (_user!.followers >= 50 || _user!.charmLevel >= 3)) return true;
+        if (m.id == 'm4' && (_user!.svipLevel >= 1 || _user!.nobleTitle != null || _user!.role == UserRole.admin)) return true;
+      }
+      return false;
+    }).toList();
     final medalsCount = earnedMedals.length;
 
     return Padding(
@@ -1602,6 +1609,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
       if (_user!.isSeller) {
         activeBadges.add({'asset': 'assets/roles/coins_saller_tag.webp', 'label': 'Coin Seller', 'color': Colors.lightGreenAccent});
+      }
+
+      if (_user!.badge.isNotEmpty && _user!.badge != 'none') {
+        final badgeAsset = NobleBadgeHelper.getBadgeAsset(_user!.badge) ?? 'assets/badges/${_user!.badge}.webp';
+        activeBadges.add({'asset': badgeAsset, 'label': _user!.badge, 'color': Colors.amberAccent});
       }
     }
 
@@ -1760,13 +1772,13 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _buildBadgeModalItem('Emperor', 'assets/nobles/emperor_badge.webp', 'assets/nobles/emperor_frame.webp', const Color(0xFFFFD700)),
-                        _buildBadgeModalItem('King', 'assets/nobles/king_badge.webp', 'assets/nobles/king_frame.webp', const Color(0xFFD4AF37)),
-                        _buildBadgeModalItem('Duke', 'assets/nobles/duke_badge.webp', 'assets/nobles/duke_frame.webp', const Color(0xFF8E24AA)),
-                        _buildBadgeModalItem('Marquis', 'assets/nobles/marquis_badge.webp', 'assets/nobles/marquis_frame.webp', const Color(0xFFC2185B)),
-                        _buildBadgeModalItem('Count', 'assets/nobles/count_badge.webp', 'assets/nobles/count_frame.webp', const Color(0xFF1E88E5)),
-                        _buildBadgeModalItem('Viscount', 'assets/nobles/viscount_card.webp', 'assets/nobles/viscount_frame.webp', const Color(0xFFFB8C00)),
-                        _buildBadgeModalItem('Baron', 'assets/nobles/baron_badge.webp', 'assets/nobles/baron_frame.webp', const Color(0xFF78909C)),
+                        _buildBadgeModalItem('Emperor', 'assets/nobles/emperor_badge.webp', 'assets/nobles/emperor_frame.webp', const Color(0xFFFFD700), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('emperor') == true),
+                        _buildBadgeModalItem('King', 'assets/nobles/king_badge.webp', 'assets/nobles/king_frame.webp', const Color(0xFFD4AF37), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('king') == true),
+                        _buildBadgeModalItem('Duke', 'assets/nobles/duke_badge.webp', 'assets/nobles/duke_frame.webp', const Color(0xFF8E24AA), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('duke') == true),
+                        _buildBadgeModalItem('Marquis', 'assets/nobles/marquis_badge.webp', 'assets/nobles/marquis_frame.webp', const Color(0xFFC2185B), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('marquis') == true),
+                        _buildBadgeModalItem('Count', 'assets/nobles/count_badge.webp', 'assets/nobles/count_frame.webp', const Color(0xFF1E88E5), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('count') == true),
+                        _buildBadgeModalItem('Viscount', 'assets/nobles/viscount_card.webp', 'assets/nobles/viscount_frame.webp', const Color(0xFFFB8C00), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('viscount') == true),
+                        _buildBadgeModalItem('Baron', 'assets/nobles/baron_badge.webp', 'assets/nobles/baron_frame.webp', const Color(0xFF78909C), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('baron') == true),
                       ],
                     ),
 
@@ -1779,23 +1791,23 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _buildBadgeModalItem('Super Admin', 'assets/roles/super_admin_tag.webp', 'assets/roles/super_admin_frame.webp', Colors.redAccent),
-                        _buildBadgeModalItem('Admin', 'assets/roles/admin_badge.webp', 'assets/roles/admin_frame.webp', Colors.deepOrangeAccent),
-                        _buildBadgeModalItem('Agency', 'assets/roles/agency_badge.webp', 'assets/roles/agency_frame.webp', Colors.cyan),
-                        _buildBadgeModalItem('BD Manager', 'assets/roles/bd_badge.webp', 'assets/roles/bd_frame.webp', Colors.teal),
-                        _buildBadgeModalItem('Game Master', 'assets/roles/game_master_badge.webp', 'assets/roles/game_master_frame.webp', Colors.amber),
-                        _buildBadgeModalItem('Official Host', 'assets/roles/host_badge.webp', 'assets/roles/host_frame.webp', Colors.orange),
-                        _buildBadgeModalItem('Coin Merchant', 'assets/roles/marchent_badge.webp', 'assets/roles/marchent_frame.webp', Colors.blue),
-                        _buildBadgeModalItem('Customer Service', 'assets/roles/cs_badge.webp', 'assets/roles/cs_frame.webp', Colors.lightGreen),
-                        _buildBadgeModalItem('CP Lover', 'assets/roles/lover_tag.webp', 'assets/roles/lover_frame.webp', Colors.pinkAccent),
-                        _buildBadgeModalItem('Top Fan', 'assets/roles/top_fan_badge.webp', 'assets/roles/top_fan_frame.webp', Colors.purpleAccent),
+                        _buildBadgeModalItem('Super Admin', 'assets/roles/super_admin_tag.webp', 'assets/roles/super_admin_frame.webp', Colors.redAccent, isUnlocked: _user?.role == UserRole.admin),
+                        _buildBadgeModalItem('Admin', 'assets/roles/admin_badge.webp', 'assets/roles/admin_frame.webp', Colors.deepOrangeAccent, isUnlocked: _user?.role == UserRole.admin),
+                        _buildBadgeModalItem('Agency', 'assets/roles/agency_badge.webp', 'assets/roles/agency_frame.webp', Colors.cyan, isUnlocked: _user?.isAgency == true),
+                        _buildBadgeModalItem('BD Manager', 'assets/roles/bd_badge.webp', 'assets/roles/bd_frame.webp', Colors.teal, isUnlocked: _user?.isBd == true),
+                        _buildBadgeModalItem('Game Master', 'assets/roles/game_master_badge.webp', 'assets/roles/game_master_frame.webp', Colors.amber, isUnlocked: _user?.role == UserRole.admin),
+                        _buildBadgeModalItem('Official Host', 'assets/roles/host_badge.webp', 'assets/roles/host_frame.webp', Colors.orange, isUnlocked: _user?.isHost == true),
+                        _buildBadgeModalItem('Coin Merchant', 'assets/roles/marchent_badge.webp', 'assets/roles/marchent_frame.webp', Colors.blue, isUnlocked: _user?.isSeller == true),
+                        _buildBadgeModalItem('Customer Service', 'assets/roles/cs_badge.webp', 'assets/roles/cs_frame.webp', Colors.lightGreen, isUnlocked: _user?.role == UserRole.admin),
+                        _buildBadgeModalItem('CP Lover', 'assets/roles/lover_tag.webp', 'assets/roles/lover_frame.webp', Colors.pinkAccent, isUnlocked: _user?.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty),
+                        _buildBadgeModalItem('Top Fan', 'assets/roles/top_fan_badge.webp', 'assets/roles/top_fan_frame.webp', Colors.purpleAccent, isUnlocked: _user != null && (_user!.wealthLevel >= 3 || _user!.charmLevel >= 3)),
                       ],
                     ),
 
                     const SizedBox(height: 24),
 
                     // SECTION 3: SVIP TIERS
-                    _buildSectionHeader('SVIP Royalty Tiers â­', () {
+                    _buildSectionHeader('SVIP Royalty Tiers ⭐', () {
                       Navigator.pop(ctx);
                       Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen()));
                     }),
@@ -1804,14 +1816,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _buildBadgeModalItem('SVIP 15', 'assets/svip/svip15_badge.webp', 'assets/svip/svip15_frame.webp', const Color(0xFFFFD700)),
-                        _buildBadgeModalItem('SVIP 14', 'assets/svip/svip14_badge.webp', 'assets/svip/svip14_frame.webp', const Color(0xFF26C6DA)),
-                        _buildBadgeModalItem('SVIP 12', 'assets/svip/svip12_badge.webp', 'assets/svip/svip12_frame.webp', const Color(0xFF7E57C2)),
-                        _buildBadgeModalItem('SVIP 10', 'assets/svip/svip10_badge.webp', 'assets/svip/svip10_frame.webp', const Color(0xFFE91E63)),
-                        _buildBadgeModalItem('SVIP 8', 'assets/svip/svip8_badge.webp', 'assets/svip/svip8_frame.webp', const Color(0xFFFFA726)),
-                        _buildBadgeModalItem('SVIP 6', 'assets/svip/svip6_badge.webp', 'assets/svip/svip6_frame.webp', const Color(0xFFAB47BC)),
-                        _buildBadgeModalItem('SVIP 3', 'assets/svip/svip3_badge.webp', null, const Color(0xFF42A5F5)),
-                        _buildBadgeModalItem('SVIP 1', 'assets/svip/svip1_badge.webp', null, const Color(0xFF9E9E9E)),
+                        _buildBadgeModalItem('SVIP 15', 'assets/svip/svip15_badge.webp', 'assets/svip/svip15_frame.webp', const Color(0xFFFFD700), isUnlocked: (_user?.svipLevel ?? 0) >= 15),
+                        _buildBadgeModalItem('SVIP 14', 'assets/svip/svip14_badge.webp', 'assets/svip/svip14_frame.webp', const Color(0xFF26C6DA), isUnlocked: (_user?.svipLevel ?? 0) >= 14),
+                        _buildBadgeModalItem('SVIP 12', 'assets/svip/svip12_badge.webp', 'assets/svip/svip12_frame.webp', const Color(0xFF7E57C2), isUnlocked: (_user?.svipLevel ?? 0) >= 12),
+                        _buildBadgeModalItem('SVIP 10', 'assets/svip/svip10_badge.webp', 'assets/svip/svip10_frame.webp', const Color(0xFFE91E63), isUnlocked: (_user?.svipLevel ?? 0) >= 10),
+                        _buildBadgeModalItem('SVIP 8', 'assets/svip/svip8_badge.webp', 'assets/svip/svip8_frame.webp', const Color(0xFFFFA726), isUnlocked: (_user?.svipLevel ?? 0) >= 8),
+                        _buildBadgeModalItem('SVIP 6', 'assets/svip/svip6_badge.webp', 'assets/svip/svip6_frame.webp', const Color(0xFFAB47BC), isUnlocked: (_user?.svipLevel ?? 0) >= 6),
+                        _buildBadgeModalItem('SVIP 3', 'assets/svip/svip3_badge.webp', null, const Color(0xFF42A5F5), isUnlocked: (_user?.svipLevel ?? 0) >= 3),
+                        _buildBadgeModalItem('SVIP 1', 'assets/svip/svip1_badge.webp', null, const Color(0xFF9E9E9E), isUnlocked: (_user?.svipLevel ?? 0) >= 1),
                       ],
                     ),
                     const SizedBox(height: 30),
@@ -1847,31 +1859,70 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     );
   }
 
-  Widget _buildBadgeModalItem(String name, String badgeAsset, String? frameAsset, Color accentColor) {
+  Widget _buildBadgeModalItem(String name, String badgeAsset, String? frameAsset, Color accentColor, {bool isUnlocked = false}) {
     return Container(
       width: 100,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.35),
+        color: isUnlocked ? accentColor.withValues(alpha: 0.15) : Colors.black.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: accentColor.withValues(alpha: 0.4)),
+        border: Border.all(color: isUnlocked ? accentColor : accentColor.withValues(alpha: 0.25), width: isUnlocked ? 1.5 : 1.0),
+        boxShadow: isUnlocked
+            ? [BoxShadow(color: accentColor.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 1)]
+            : null,
       ),
       child: Column(
         children: [
-          Image.asset(
-            badgeAsset,
-            height: 36,
-            fit: BoxFit.contain,
-            errorBuilder: (_, __, ___) => Icon(Icons.shield_rounded, color: accentColor, size: 32),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              Opacity(
+                opacity: isUnlocked ? 1.0 : 0.45,
+                child: Image.asset(
+                  badgeAsset,
+                  height: 36,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Icon(Icons.shield_rounded, color: accentColor, size: 32),
+                ),
+              ),
+              if (!isUnlocked)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(color: Colors.black87, shape: BoxShape.circle),
+                    child: const Icon(Icons.lock_outline_rounded, size: 12, color: Colors.white54),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 6),
           Text(
             name,
-            style: TextStyle(color: accentColor, fontSize: 10.5, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: isUnlocked ? accentColor : Colors.white54,
+              fontSize: 10.5,
+              fontWeight: isUnlocked ? FontWeight.w900 : FontWeight.normal,
+            ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
           ),
+          if (isUnlocked) ...[
+            const SizedBox(height: 2),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              decoration: BoxDecoration(
+                color: accentColor,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'UNLOCKED',
+                style: TextStyle(color: Colors.black, fontSize: 8, fontWeight: FontWeight.w900),
+              ),
+            ),
+          ],
         ],
       ),
     );

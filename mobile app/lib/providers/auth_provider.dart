@@ -193,8 +193,21 @@ class AuthProvider extends ChangeNotifier {
           .getCurrentUser()
           .timeout(const Duration(seconds: 4));
 
-      // Remote user from backend database is the single authoritative source of truth
-      _currentUser = remoteUser;
+      // Remote user from backend database is authoritative, but preserve equipped outfit fields if empty
+      final String effectiveFrame = (remoteUser.avatarFrame.isNotEmpty && remoteUser.avatarFrame != 'none')
+          ? remoteUser.avatarFrame
+          : ((_currentUser?.avatarFrame.isNotEmpty == true && _currentUser?.avatarFrame != 'none')
+              ? _currentUser!.avatarFrame
+              : remoteUser.avatarFrame);
+
+      final String effectiveBadge = remoteUser.badge.isNotEmpty
+          ? remoteUser.badge
+          : (_currentUser?.badge ?? remoteUser.badge);
+
+      _currentUser = remoteUser.copyWith(
+        avatarFrame: effectiveFrame,
+        badge: effectiveBadge,
+      );
       _isAuthenticated = true;
       _isGuest = false;
       await _saveUserLocalSession(_currentUser!);
