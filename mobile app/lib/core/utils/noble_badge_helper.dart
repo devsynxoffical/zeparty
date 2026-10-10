@@ -36,49 +36,48 @@ class NobleBadgeHelper {
     final lower = title.toLowerCase().trim();
 
     // Noble Badges
-    if (lower.contains('emperor')) return 'assets/nobles/emperor_badge.png';
-    if (lower.contains('king') || lower.contains('prince')) return 'assets/nobles/king_badge.png';
-    if (lower.contains('duke')) return 'assets/nobles/duke_badge.png';
-    if (lower.contains('marquis')) return 'assets/nobles/marquis_badge.png';
-    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_badge.png';
-    if (lower.contains('viscount')) return 'assets/nobles/viscount_card.png';
-    if (lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/baron_badge.png';
+    if (lower.contains('emperor')) return 'assets/nobles/emperor_badge.webp';
+    if (lower.contains('king') || lower.contains('prince')) return 'assets/nobles/king_badge.webp';
+    if (lower.contains('duke')) return 'assets/nobles/duke_badge.webp';
+    if (lower.contains('marquis')) return 'assets/nobles/marquis_badge.webp';
+    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_badge.webp';
+    if (lower.contains('viscount')) return 'assets/nobles/viscount_badge.webp';
+    if (lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/baron_badge.webp';
 
-    // SVIP Badges (Accurate existing asset mapping for all 1-16 tiers)
+    // SVIP Badges (Accurate exact mapping for all 1-16 tiers using live animated webp assets)
     if (lower.contains('svip')) {
-      if (lower.contains('15') || lower.contains('16')) return 'assets/svip/svip15_badge.png';
-      if (lower.contains('14')) return 'assets/svip/svip14_badge.png';
-      if (lower.contains('13')) return 'assets/svip/svip13_badge.png';
-      if (lower.contains('12')) return 'assets/svip/svip12_badge.png';
-      if (lower.contains('11')) return 'assets/svip/svip11_badge.png';
-      if (lower.contains('10')) return 'assets/svip/svip10_badge.png';
-      if (lower.contains('9')) return 'assets/svip/svip9_badge.png';
-      if (lower.contains('8')) return 'assets/svip/svip8_badge.png';
-      if (lower.contains('7')) return 'assets/svip/svip7_badge.png';
-      if (lower.contains('6')) return 'assets/svip/svip6_badge.png';
-      if (lower.contains('5')) return 'assets/svip/svip5_tag.png';
-      if (lower.contains('4')) return 'assets/svip/svip4_badge.png';
-      if (lower.contains('3')) return 'assets/svip/svip3_badge.png';
-      if (lower.contains('2')) return 'assets/svip/svip1_badge.png';
-      if (lower.contains('1')) return 'assets/svip/svip1_badge.png';
-      return 'assets/svip/svip10_badge.png';
+      final match = RegExp(r'svip\s*(\d+)', caseSensitive: false).firstMatch(lower);
+      if (match != null) {
+        final level = int.tryParse(match.group(1)!) ?? 1;
+        final clampedLevel = level.clamp(1, 16);
+        final pad2 = clampedLevel.toString().padLeft(2, '0');
+        if (clampedLevel <= 15) {
+          return 'assets/svip/SVIP${pad2}_badge_live.webp';
+        }
+        return 'assets/svip/SVIP16_badge_live.webp';
+      }
+      return 'assets/svip/SVIP01_badge_live.webp';
     }
 
     // Role Badges
-    if (lower.contains('admin') && lower.contains('super')) return 'assets/roles/super_admin_tag.png';
-    if (lower.contains('admin')) return 'assets/roles/admin_badge.png';
-    if (lower.contains('agency')) return 'assets/roles/agency_badge.png';
-    if (lower.contains('assistant')) return 'assets/roles/assistant_badge.png';
-    if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/bd_badge.png';
-    if (lower.contains('boss')) return 'assets/roles/boss_badge.png';
-    if (lower.contains('ceo')) return 'assets/roles/ceo_badge.png';
-    if (lower.contains('cs') || lower.contains('support')) return 'assets/roles/cs_badge.png';
-    if (lower.contains('master') || lower.contains('game master')) return 'assets/roles/game_master_badge.png';
-    if (lower.contains('live host')) return 'assets/roles/host_badge.png';
-    if (lower.contains('host')) return 'assets/roles/host_badge.png';
-    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_badge.png';
-    if (lower.contains('top fan')) return 'assets/roles/top_fan_badge.png';
-    if (lower.contains('mystery')) return 'assets/animations/mystery_badge.png';
+    if (lower.contains('admin') && lower.contains('super')) return 'assets/roles/super_admin_tag.webp';
+    if (lower.contains('admin')) return 'assets/roles/admin_badge.webp';
+    if (lower.contains('agency')) return 'assets/roles/agency_badge.webp';
+    if (lower.contains('assistant')) return 'assets/roles/assistant_badge.webp';
+    if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/bd_badge.webp';
+    if (lower.contains('boss')) return 'assets/roles/boss_badge.webp';
+    if (lower.contains('ceo')) return 'assets/roles/ceo_badge.webp';
+    if (lower.contains('cs') || lower.contains('support')) return 'assets/roles/cs_badge.webp';
+    if (lower.contains('master') || lower.contains('game master')) return 'assets/roles/game_master_badge.webp';
+    if (lower.contains('live host')) return 'assets/roles/host_badge.webp';
+    if (lower.contains('host')) return 'assets/roles/host_badge.webp';
+    if (lower.contains('coins') || lower.contains('seller')) return 'assets/roles/coins_saller_badge.webp';
+    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_badge.webp';
+    if (lower.contains('top fan')) return 'assets/roles/top_fan_badge.webp';
+    if (lower.contains('lover')) return 'assets/roles/lover_badge.webp';
+    if (lower.contains('official')) return 'assets/roles/official_badge.webp';
+    if (lower.contains('manager')) return 'assets/roles/manager_badge.webp';
+    if (lower.contains('mystery')) return 'assets/animations/mystery_badge.webp';
 
     return null;
   }
@@ -88,40 +87,44 @@ class NobleBadgeHelper {
     final lower = title.toLowerCase().trim();
 
     // Noble Frames
-    if (lower.contains('emperor')) return 'assets/nobles/emperor_frame.png';
-    if (lower.contains('king')) return 'assets/nobles/king_frame.png';
-    if (lower.contains('duke')) return 'assets/nobles/duke_frame.png';
-    if (lower.contains('marquis')) return 'assets/nobles/marquis_frame.png';
-    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_frame.png';
-    if (lower.contains('viscount')) return 'assets/nobles/viscount_frame.png';
-    if (lower.contains('baron')) return 'assets/nobles/baron_frame.png';
+    if (lower.contains('emperor')) return 'assets/nobles/emperor_frame.webp';
+    if (lower.contains('king')) return 'assets/nobles/king_frame.webp';
+    if (lower.contains('duke')) return 'assets/nobles/duke_frame.webp';
+    if (lower.contains('marquis')) return 'assets/nobles/marquis_frame.webp';
+    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_frame.webp';
+    if (lower.contains('viscount')) return 'assets/nobles/viscount_frame.webp';
+    if (lower.contains('baron')) return 'assets/nobles/baron_frame.webp';
 
     // SVIP Frames
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 6; i--) {
-        if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          return 'assets/svip/svip${i}_frame.png';
-        }
+      final match = RegExp(r'svip\s*(\d+)', caseSensitive: false).firstMatch(lower);
+      if (match != null) {
+        final level = int.tryParse(match.group(1)!) ?? 1;
+        final clampedLevel = level.clamp(1, 16);
+        return 'assets/svip/svip${clampedLevel}_frame.webp';
       }
+      return 'assets/svip/svip1_frame.webp';
     }
 
     // Role Frames
-    if (lower.contains('admin')) return 'assets/roles/admin_frame.png';
-    if (lower.contains('agency')) return 'assets/roles/agency_frame.png';
-    if (lower.contains('assistant')) return 'assets/roles/assistant_frame.png';
-    if (lower.contains('bd')) return 'assets/roles/bd_frame.png';
-    if (lower.contains('boss')) return 'assets/roles/boss_frame.png';
-    if (lower.contains('ceo')) return 'assets/roles/ceo_frame.png';
-    if (lower.contains('cs')) return 'assets/roles/cs_frame.png';
-    if (lower.contains('game master')) return 'assets/roles/game_master_frame.png';
-    if (lower.contains('live host')) return 'assets/roles/live_host_frame.png';
-    if (lower.contains('host')) return 'assets/roles/host_frame.png';
-    if (lower.contains('lover')) return 'assets/roles/lover_frame.png';
-    if (lower.contains('manager')) return 'assets/roles/manager_frame.png';
-    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_frame.png';
-    if (lower.contains('official')) return 'assets/roles/official_frame.png';
-    if (lower.contains('top fan')) return 'assets/roles/top_fan_frame.png';
-    if (lower.contains('mystery')) return 'assets/animations/mystery_frame.png';
+    if (lower.contains('super') && lower.contains('admin')) return 'assets/roles/super_admin_frame.webp';
+    if (lower.contains('admin')) return 'assets/roles/admin_frame.webp';
+    if (lower.contains('agency')) return 'assets/roles/agency_frame.webp';
+    if (lower.contains('assistant')) return 'assets/roles/assistant_frame.webp';
+    if (lower.contains('bd')) return 'assets/roles/bd_frame.webp';
+    if (lower.contains('boss')) return 'assets/roles/boss_frame.webp';
+    if (lower.contains('ceo')) return 'assets/roles/ceo_frame.webp';
+    if (lower.contains('cs')) return 'assets/roles/cs_frame.webp';
+    if (lower.contains('game master')) return 'assets/roles/game_master_frame.webp';
+    if (lower.contains('live host')) return 'assets/roles/host_frame.webp';
+    if (lower.contains('host')) return 'assets/roles/host_frame.webp';
+    if (lower.contains('coins') || lower.contains('seller')) return 'assets/roles/coins_saller_frame.webp';
+    if (lower.contains('lover')) return 'assets/roles/lover_frame.webp';
+    if (lower.contains('manager')) return 'assets/roles/manager_frame.webp';
+    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_frame.webp';
+    if (lower.contains('official')) return 'assets/roles/official_frame.webp';
+    if (lower.contains('top fan')) return 'assets/roles/top_fan_frame.webp';
+    if (lower.contains('mystery')) return 'assets/animations/mystery_frame.webp';
 
     return null;
   }
@@ -132,44 +135,34 @@ class NobleBadgeHelper {
 
     // SVIP Tags
     if (lower.contains('svip')) {
-      if (lower.contains('15') || lower.contains('16')) return 'assets/svip/svip15_tag.png';
-      if (lower.contains('14')) return 'assets/svip/svip14_tag.png';
-      if (lower.contains('13')) return 'assets/svip/svip13_tag.png';
-      if (lower.contains('12')) return 'assets/svip/svip12_tag.png';
-      if (lower.contains('11')) return 'assets/svip/svip11_tag.png';
-      if (lower.contains('10')) return 'assets/svip/svip10_tag.png';
-      if (lower.contains('9')) return 'assets/svip/svip9_tag.png';
-      if (lower.contains('8')) return 'assets/svip/svip8_tag.png';
-      if (lower.contains('7')) return 'assets/svip/svip7_tag.png';
-      if (lower.contains('6')) return 'assets/svip/svip6_tag.png';
-      if (lower.contains('5')) return 'assets/svip/svip5_tag.png';
-      if (lower.contains('4')) return 'assets/svip/svip4_tag.png';
-      if (lower.contains('3')) return 'assets/svip/svip3_tag.png';
-      if (lower.contains('2')) return 'assets/svip/svip1_tag.png';
-      if (lower.contains('1')) return 'assets/svip/svip1_tag.png';
-      return 'assets/svip/svip10_tag.png';
+      for (int i = 16; i >= 1; i--) {
+        if (lower.contains('svip $i') || lower.contains('svip$i')) {
+          return 'assets/svip/svip${i}_tag.png';
+        }
+      }
+      return 'assets/svip/svip1_tag.png';
     }
 
     // Role Tags
-    if (lower.contains('super') && lower.contains('admin')) return 'assets/roles/super_admin_tag.png';
-    if (lower.contains('admin')) return 'assets/roles/admin_tag.png';
-    if (lower.contains('agency')) return 'assets/roles/agency_tag.png';
-    if (lower.contains('assistant')) return 'assets/roles/assistant_tag.png';
-    if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/bd_tag.png';
-    if (lower.contains('boss')) return 'assets/roles/boss_tag.png';
-    if (lower.contains('ceo')) return 'assets/roles/ceo_tag.png';
-    if (lower.contains('coin') || lower.contains('seller')) return 'assets/roles/coins_saller_tag.png';
-    if (lower.contains('cs') || lower.contains('support')) return 'assets/roles/cs_tag.png';
-    if (lower.contains('game master') || lower.contains('master')) return 'assets/roles/game_master_tag.png';
-    if (lower.contains('host')) return 'assets/roles/host_tag.png';
-    if (lower.contains('lover')) return 'assets/roles/lover_tag.png';
-    if (lower.contains('manager')) return 'assets/roles/manager_tag.png';
-    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_tag.png';
-    if (lower.contains('official')) return 'assets/roles/official_tag.png';
-    if (lower.contains('top fan')) return 'assets/roles/top_fan_tag.png';
-
-    // Nobles tag fallback using badge
-    return getBadgeAsset(title);
+    if (lower.contains('super') && lower.contains('admin')) return 'assets/roles/super_admin_tag.webp';
+    if (lower.contains('admin')) return 'assets/roles/admin_tag.webp';
+    if (lower.contains('agency')) return 'assets/roles/agency_tag.webp';
+    if (lower.contains('assistant')) return 'assets/roles/assistant_tag.webp';
+    if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/bd_tag.webp';
+    if (lower.contains('boss')) return 'assets/roles/boss_tag.webp';
+    if (lower.contains('ceo')) return 'assets/roles/ceo_tag.webp';
+    if (lower.contains('coin') || lower.contains('seller')) return 'assets/roles/coins_saller_tag.webp';
+    if (lower.contains('cs') || lower.contains('support')) return 'assets/roles/cs_tag.webp';
+    if (lower.contains('game master') || lower.contains('master')) return 'assets/roles/game_master_tag.webp';
+    if (lower.contains('host')) return 'assets/roles/host_tag.webp';
+    if (lower.contains('lover')) return 'assets/roles/lover_tag.webp';
+    if (lower.contains('manager')) return 'assets/roles/manager_tag.webp';
+    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_tag.webp';
+    if (lower.contains('official')) return 'assets/roles/official_tag.webp';
+    if (lower.contains('top fan')) return 'assets/roles/top_fan_tag.webp';
+    if (lower.contains('mystery')) return 'assets/animations/mystery_tag.webp';
+    // Nobles do not have a separate rectangular tag (they use the noble badge)
+    return null;
   }
 
   static String? getChatBubbleAsset(String? title) {
@@ -177,20 +170,22 @@ class NobleBadgeHelper {
     final lower = title.toLowerCase().trim();
 
     // Noble Chat Bubbles
-    if (lower.contains('emperor')) return 'assets/nobles/emperor_chat_bubble.png';
-    if (lower.contains('duke')) return 'assets/nobles/duke_chat_bubble.png';
-    if (lower.contains('marquis')) return 'assets/nobles/marquis_chat_bubble.png';
-    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_chat_bubble.png';
+    if (lower.contains('emperor')) return 'assets/nobles/emperor_chat_bubble.webp';
+    if (lower.contains('duke')) return 'assets/nobles/duke_chat_bubble.webp';
+    if (lower.contains('marquis')) return 'assets/nobles/marquis_chat_bubble.webp';
+    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_chat_bubble.webp';
 
     // SVIP Chat Bubbles
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 6; i--) {
+      for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          return 'assets/svip/svip${i}_chat_bubble.png';
+          return 'assets/svip/svip${i}_chat_bubble.webp';
         }
       }
-      return 'assets/svip/svip10_chat_bubble.png';
+      return 'assets/svip/svip1_chat_bubble.webp';
     }
+
+    if (lower.contains('mystery')) return 'assets/animations/mystery_chat_bubble.webp';
 
     return null;
   }
@@ -200,17 +195,17 @@ class NobleBadgeHelper {
     final lower = title.toLowerCase().trim();
 
     // Noble Cards
-    if (lower.contains('king') || lower.contains('emperor')) return 'assets/nobles/king_card.png';
-    if (lower.contains('viscount') || lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/viscount_card.png';
+    if (lower.contains('king') || lower.contains('emperor')) return 'assets/nobles/king_card.webp';
+    if (lower.contains('viscount') || lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/viscount_card.webp';
 
     // SVIP Cards
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 3; i--) {
+      for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          return 'assets/svip/svip${i}_card.png';
+          return 'assets/svip/svip${i}_card.webp';
         }
       }
-      return 'assets/svip/svip10_card.png';
+      return 'assets/svip/svip1_card.webp';
     }
 
     return null;
@@ -221,18 +216,20 @@ class NobleBadgeHelper {
     final lower = title.toLowerCase().trim();
 
     // Noble Entrances
-    if (lower.contains('emperor') || lower.contains('king')) return 'assets/nobles/emperor_entrance.png';
-    if (lower.contains('marquis') || lower.contains('duke') || lower.contains('count')) return 'assets/nobles/marquis_entrance.png';
+    if (lower.contains('emperor') || lower.contains('king')) return 'assets/nobles/emperor_entrance.webp';
+    if (lower.contains('marquis') || lower.contains('duke') || lower.contains('count')) return 'assets/nobles/marquis_entrance.webp';
 
     // SVIP Entrances
     if (lower.contains('svip')) {
-      for (int i = 15; i >= 6; i--) {
+      for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          return 'assets/svip/svip${i}_entry.png';
+          return 'assets/svip/svip${i}_entry.webp';
         }
       }
-      return 'assets/svip/svip10_entry.png';
+      return 'assets/svip/svip1_entry.webp';
     }
+
+    if (lower.contains('mystery')) return 'assets/animations/mystery_entry.webp';
 
     return null;
   }
@@ -319,7 +316,7 @@ class NobleBadgeChip extends StatelessWidget {
           assetPath,
           height: fontSize * 2.4,
           fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => _buildFallbackChip(context, title),
+          errorBuilder: (context, error, stackTrace) => _buildFallbackChip(context, title),
         ),
       );
     }
@@ -375,14 +372,22 @@ class NobleTagChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    String? title = tagTitleOverride ?? user.nobleTitle;
+    String? title = tagTitleOverride;
     if (title == null || title.isEmpty) {
-      if (user.svipLevel > 0) {
-        title = 'SVIP ${user.svipLevel}';
-      } else if (user.role != UserRole.user) {
+      if (user.role != UserRole.user) {
         title = user.role.name;
-      } else if (user.isVip) {
-        title = 'SVIP 1';
+      } else if (user.isHost) {
+        title = 'host';
+      } else if (user.isAgency) {
+        title = 'agency';
+      } else if (user.isBd) {
+        title = 'bd';
+      } else if (user.isSeller) {
+        title = 'seller';
+      } else if (user.svipLevel > 0) {
+        title = 'SVIP ${user.svipLevel}';
+      } else if (user.nobleTitle != null && user.nobleTitle!.isNotEmpty) {
+        title = user.nobleTitle;
       }
     }
 
@@ -394,7 +399,7 @@ class NobleTagChip extends StatelessWidget {
           tagAsset,
           height: height,
           fit: BoxFit.contain,
-          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
         ),
       );
     }

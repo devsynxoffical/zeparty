@@ -20,6 +20,8 @@ class PartyParticipantModel {
     this.isSpeaking = false,
   });
 
+  bool get isMuted => micStatus == MicStatus.muted;
+
   factory PartyParticipantModel.fromRoomSeatJson(Map<String, dynamic> json, int index) {
     final userData = json['user'] is Map
         ? Map<String, dynamic>.from(json['user'] as Map)

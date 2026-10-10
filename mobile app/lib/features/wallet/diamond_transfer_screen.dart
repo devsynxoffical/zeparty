@@ -7,6 +7,10 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/wallet_date_gate.dart';
 import '../../models/categorized_transaction_model.dart';
+import '../../models/user_model.dart';
+import '../../providers/agency_provider.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/live_host_provider.dart';
 import '../../providers/wallet_details_provider.dart';
 import '../../providers/wallet_provider.dart';
 
@@ -406,6 +410,61 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = AppColors.getPrimary(isDark);
     final wallet = context.watch<WalletProvider>();
+    final authUser = context.watch<AuthProvider>().currentUser;
+    final agencyProv = context.watch<AgencyProvider>();
+    final liveHostProv = context.watch<LiveHostProvider>();
+
+    final isAuthorized = authUser.role == UserRole.admin ||
+        authUser.isAgency ||
+        authUser.role == UserRole.agency ||
+        agencyProv.userAgency != null ||
+        authUser.isHost ||
+        authUser.role == UserRole.host ||
+        agencyProv.getAudioHostByUserId(authUser.id) != null ||
+        liveHostProv.activeLiveHost != null;
+
+    if (!isAuthorized) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(isDark),
+        appBar: AppBar(
+          title: const Text('Access Restricted'),
+          backgroundColor: AppColors.getBackground(isDark),
+          elevation: 0,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_person_rounded, size: 64, color: AppColors.gold.withValues(alpha: 0.6)),
+                const SizedBox(height: 16),
+                Text(
+                  'Center Authorization Required',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Transfers and settlements are exclusively available to authorized members within Agency Center, Host Center, and Live Host Center.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(isDark), height: 1.4),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Back to Home', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),

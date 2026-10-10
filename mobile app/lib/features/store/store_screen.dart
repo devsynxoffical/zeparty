@@ -3,8 +3,11 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../models/store_item_model.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/backpack_provider.dart';
 import '../../providers/store_provider.dart';
 import '../../providers/wallet_provider.dart';
+import '../profile/modules/outfit_screen.dart';
 import '../wallet/wallet_screen.dart';
 
 class StoreScreen extends StatefulWidget {
@@ -20,6 +23,8 @@ class _StoreScreenState extends State<StoreScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<StoreProvider>().fetchStoreItems();
+      final auth = context.read<AuthProvider>();
+      context.read<BackpackProvider>().fetchBackpack(currentUser: auth.currentUser);
     });
   }
 
@@ -40,8 +45,24 @@ class _StoreScreenState extends State<StoreScreen> {
     if (mounted) Navigator.pop(context); // hide loading
 
     if (success && mounted) {
+      final auth = context.read<AuthProvider>();
+      final backpack = context.read<BackpackProvider>();
+      backpack.addPurchasedAsset(item);
+      await backpack.fetchBackpack(refresh: true, currentUser: auth.currentUser);
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Successfully purchased ${item.name}! Check your backpack.'), backgroundColor: AppColors.success),
+        SnackBar(
+          content: Text('Successfully purchased ${item.name}! Added to My Outfit.'),
+          backgroundColor: AppColors.success,
+          action: SnackBarAction(
+            label: 'MY OUTFIT',
+            textColor: Colors.amberAccent,
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (c) => const OutfitScreen()));
+            },
+          ),
+        ),
       );
     } else if (mounted) {
       final error = context.read<StoreProvider>().errorMessage;
@@ -49,12 +70,6 @@ class _StoreScreenState extends State<StoreScreen> {
         SnackBar(content: Text(error ?? 'Failed to purchase item'), backgroundColor: AppColors.error),
       );
     }
-  }
-
-  void _handleSend(StoreItemModel item) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Store items are bound to account upon purchase. Use live room gifting to send gifts to friends!')),
-    );
   }
 
   void _showInsufficientCoinsDialog() {
@@ -119,7 +134,11 @@ class _StoreScreenState extends State<StoreScreen> {
                 ),
                 child: Icon(Icons.refresh_rounded, size: 18, color: AppColors.getPrimary(isDark)),
               ),
-              onPressed: () => context.read<StoreProvider>().fetchStoreItems(),
+              onPressed: () {
+                context.read<StoreProvider>().fetchStoreItems();
+                final auth = context.read<AuthProvider>();
+                context.read<BackpackProvider>().fetchBackpack(refresh: true, currentUser: auth.currentUser);
+              },
             ),
             const SizedBox(width: 8),
           ],
@@ -137,17 +156,14 @@ class _StoreScreenState extends State<StoreScreen> {
             tabs: categories.map((c) => Tab(text: c)).toList(),
           ),
         ),
-        body: LuxBackground(
-          showGlow: true,
-          child: storeProvider.isLoading
-              ? Center(child: CircularProgressIndicator(color: AppColors.getPrimary(isDark)))
-              : TabBarView(
-                  children: categories.map((category) {
-                    final items = storeProvider.getItemsByCategory(category);
-                    return _buildCategoryGrid(items, isDark);
-                  }).toList(),
-                ),
-        ),
+        body: storeProvider.isLoading
+            ? Center(child: CircularProgressIndicator(color: AppColors.getPrimary(isDark)))
+            : TabBarView(
+                children: categories.map((category) {
+                  final items = storeProvider.getItemsByCategory(category);
+                  return _buildCategoryGrid(items, isDark);
+                }).toList(),
+              ),
       ),
     );
   }
@@ -191,6 +207,8 @@ class _StoreScreenState extends State<StoreScreen> {
     final border = AppColors.getBorder(isDark);
     final primaryText = AppColors.getTextPrimary(isDark);
     final secondaryText = AppColors.getTextSecondary(isDark);
+    final backpack = context.watch<BackpackProvider>();
+    final isOwned = backpack.isItemOwned(item);
 
     return Container(
       decoration: BoxDecoration(
@@ -235,32 +253,65 @@ class _StoreScreenState extends State<StoreScreen> {
           const SizedBox(height: 6),
           
           // Image / Icon
-          item.imageUrl.startsWith('http')
-              ? Image.network(
+          Builder(
+            builder: (context) {
+              final catLower = item.categoryId.toLowerCase();
+              final typeLower = item.assetType.toLowerCase();
+              final isBg = catLower.contains('background') || typeLower.contains('theme') || typeLower.contains('background');
+              final fitMode = isBg ? BoxFit.cover : BoxFit.contain;
+              final imgHeight = isBg ? 65.0 : 60.0;
+              final imgWidth = isBg ? double.infinity : null;
+
+              Widget imageWidget;
+              if (item.imageUrl.startsWith('http')) {
+                imageWidget = Image.network(
                   item.imageUrl,
-                  height: 60,
-                  fit: BoxFit.contain,
-                  errorBuilder: (c, e, s) => const Icon(Icons.star_rounded, size: 40, color: Colors.amber),
-                )
-              : item.imageUrl.isNotEmpty
-                  ? Image.asset(
-                      item.imageUrl,
-                      height: 60,
-                      fit: BoxFit.contain,
-                      errorBuilder: (c, e, s) => const Icon(Icons.star_rounded, size: 40, color: Colors.amber),
-                    )
-                  : const Icon(Icons.shopping_bag_rounded, size: 40, color: Colors.purpleAccent),
+                  height: imgHeight,
+                  width: imgWidth,
+                  fit: fitMode,
+                  errorBuilder: (c, e, s) => const Icon(Icons.stars_rounded, size: 40, color: Colors.amber),
+                );
+              } else if (item.imageUrl.isNotEmpty) {
+                imageWidget = Image.asset(
+                  item.imageUrl,
+                  height: imgHeight,
+                  width: imgWidth,
+                  fit: fitMode,
+                  errorBuilder: (c, e, s) => const Icon(Icons.stars_rounded, size: 40, color: Colors.amber),
+                );
+              } else {
+                imageWidget = const Icon(Icons.shopping_bag_rounded, size: 40, color: Colors.purpleAccent);
+              }
+
+              if (isBg) {
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    height: imgHeight,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.black26,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: imageWidget,
+                  ),
+                );
+              }
+
+              return imageWidget;
+            },
+          ),
           
           const Spacer(),
           
-          // Price
+          // Price / Owned State
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Icon(Icons.monetization_on_rounded, size: 15, color: Colors.orangeAccent),
               const SizedBox(width: 4),
               Text(
-                item.priceCoins.toString(),
+                (item.priceCoins > 0 ? item.priceCoins : 50000).toString(),
                 style: TextStyle(color: primaryText, fontWeight: FontWeight.bold, fontSize: 14),
               ),
             ],
@@ -268,19 +319,42 @@ class _StoreScreenState extends State<StoreScreen> {
           
           const SizedBox(height: 10),
           
-          // Buy Button
-          GestureDetector(
-            onTap: () => _handleBuy(item),
-            child: Container(
-              height: 34,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Colors.purple, Colors.deepPurpleAccent]),
-                borderRadius: BorderRadius.circular(17),
-              ),
-              alignment: Alignment.center,
-              child: const Text('Buy Now', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-            ),
-          ),
+          // Action Button: Owned vs Buy Now
+          isOwned
+              ? GestureDetector(
+                  onTap: () {
+                    Navigator.push(context, MaterialPageRoute(builder: (c) => const OutfitScreen()));
+                  },
+                  child: Container(
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.green.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(17),
+                      border: Border.all(color: Colors.green, width: 1.2),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_circle_rounded, size: 14, color: Colors.green),
+                        SizedBox(width: 4),
+                        Text('Owned', style: TextStyle(color: Colors.green, fontSize: 12, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                )
+              : GestureDetector(
+                  onTap: () => _handleBuy(item),
+                  child: Container(
+                    height: 34,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [Colors.purple, Colors.deepPurpleAccent]),
+                      borderRadius: BorderRadius.circular(17),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text('Buy Now', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ),
         ],
       ),
     );

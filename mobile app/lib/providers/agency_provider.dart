@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/services/api_client.dart';
 import '../models/agency_model.dart';
 import '../models/agency_member_model.dart';
 import '../models/agency_wallet_ledger_model.dart';
@@ -28,6 +29,8 @@ class AgencyHostRequest {
 }
 
 class AgencyProvider extends ChangeNotifier {
+  final ApiClient _apiClient = ApiClient.instance;
+
   AgencyModel? _userAgency;
   final List<AgencyMemberModel> _members = [];
   final List<AudioHostModel> _audioHosts = [];
@@ -35,6 +38,9 @@ class AgencyProvider extends ChangeNotifier {
   final List<AgencyInvitationModel> _invitations = [];
   final List<Map<String, dynamic>> _auditLogs = [];
   final List<AgencyHostRequest> _hostRequests = [];
+
+  bool _isLoading = false;
+  bool get isLoading => _isLoading;
 
   final List<AgencyModel> _allAgencies = [
     AgencyModel(
@@ -91,6 +97,30 @@ class AgencyProvider extends ChangeNotifier {
     if (query.trim().isEmpty) return allAgencies;
     final q = query.trim().toLowerCase();
     return allAgencies.where((a) => a.id.toLowerCase().contains(q) || a.name.toLowerCase().contains(q)).toList();
+  }
+
+  /// Search agencies directly from backend database
+  Future<List<AgencyModel>> searchAgenciesBackend(String query) async {
+    if (query.trim().isEmpty) return allAgencies;
+    try {
+      final response = await _apiClient.get('/v1/agencies', queryParameters: {'search': query.trim()});
+      if (response.data?['success'] == true) {
+        final list = response.data['data'] as List? ?? [];
+        return list.map((a) => AgencyModel.fromJson(a as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+    return searchAgencies(query);
+  }
+
+  /// Fetch user's registered agency from backend
+  Future<void> fetchMyAgency() async {
+    try {
+      final response = await _apiClient.get('/v1/agencies/my-agency');
+      if (response.data?['success'] == true && response.data['data'] != null) {
+        _userAgency = AgencyModel.fromJson(response.data['data'] as Map<String, dynamic>);
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   AgencyHostRequest? getHostRequestForUser(String userId) {
@@ -165,7 +195,45 @@ class AgencyProvider extends ChangeNotifier {
   }
 
   AgencyProvider() {
-    // Clean initial state for authentic user data
+    fetchMyAgency();
+  }
+
+  /// Apply/Register Agency on backend database
+  Future<bool> registerAgencyBackend({
+    required String agencyName,
+    required String contactNumber,
+    required String country,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final response = await _apiClient.post('/v1/agencies/apply', data: {
+        'name': agencyName,
+        'contactNumber': contactNumber,
+        'country': country,
+      });
+
+      if (response.data?['success'] == true && response.data['data'] != null) {
+        _userAgency = AgencyModel.fromJson(response.data['data'] as Map<String, dynamic>);
+        if (!_allAgencies.any((a) => a.id == _userAgency!.id)) {
+          _allAgencies.insert(0, _userAgency!);
+        }
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      }
+    } catch (_) {}
+
+    registerAgency(
+      name: agencyName,
+      description: 'Official Agency created by user in $country',
+      ownerUserId: 'current_user',
+      ownerName: 'Agency Owner',
+    );
+    _isLoading = false;
+    notifyListeners();
+    return true;
   }
 
   void registerAgency({

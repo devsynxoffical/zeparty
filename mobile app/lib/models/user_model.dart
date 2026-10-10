@@ -56,10 +56,27 @@ class UserModel {
 
   // Noble Title (Addendum 32)
   final String? nobleTitle;
+  
+  // Custom assigned visual titles (Requirement 10)
+  final List<String> customTitles;
   final String status;
   final int likesReceived;
   final bool isCountryLocked;
   final bool isPrivate;
+  final DateTime? lastActiveAt;
+
+  String get lastActiveText {
+    if (isOnline) return 'Online';
+    if (lastActiveAt != null) {
+      final diff = DateTime.now().difference(lastActiveAt!);
+      if (diff.inMinutes < 1) return 'Active just now';
+      if (diff.inMinutes < 60) return 'Active ${diff.inMinutes}m ago';
+      if (diff.inHours < 24) return 'Active ${diff.inHours}h ago';
+      if (diff.inDays < 30) return 'Active ${diff.inDays}d ago';
+      return 'Offline';
+    }
+    return 'Active 2h ago';
+  }
 
   int get svipLevel {
     final search = '$vipLevel ${nobleTitle ?? ''} $badge'.toLowerCase();
@@ -104,18 +121,20 @@ class UserModel {
     referralCount: 0,
     role: UserRole.user,
     hostApplicationStatus: 'none',
-    wealthLevel: 1,
+    wealthLevel: 0,
     wealthXp: 0,
-    charmLevel: 1,
+    charmLevel: 0,
     charmXp: 0,
-    gameLevel: 1,
+    gameLevel: 0,
     gameXp: 0,
-    accountLevel: 1,
+    accountLevel: 0,
     accountXp: 0,
     profileCompleted: false,
     likesReceived: 0,
     isCountryLocked: false,
     isPrivate: false,
+    lastActiveAt: null,
+    customTitles: [],
   );
 
   const UserModel({
@@ -154,13 +173,13 @@ class UserModel {
     this.role = UserRole.user,
     this.hostApplicationStatus = 'none',
     this.hostRejectionReason,
-    this.wealthLevel = 1,
+    this.wealthLevel = 0,
     this.wealthXp = 0,
-    this.charmLevel = 1,
+    this.charmLevel = 0,
     this.charmXp = 0,
-    this.gameLevel = 1,
+    this.gameLevel = 0,
     this.gameXp = 0,
-    this.accountLevel = 1,
+    this.accountLevel = 0,
     this.accountXp = 0,
     this.cpPartnerId,
     this.cpPoints = 0,
@@ -170,6 +189,8 @@ class UserModel {
     this.likesReceived = 0,
     this.isCountryLocked = false,
     this.isPrivate = false,
+    this.lastActiveAt,
+    this.customTitles = const [],
   });
 
   /// Automatically calculate exact age from date of birth securely
@@ -286,9 +307,9 @@ class UserModel {
       hostAppStatus = 'approved';
     }
 
-    final int wealthLevel = profile['wealthLevel'] is int ? profile['wealthLevel'] as int : (json['wealthLevel'] is int ? json['wealthLevel'] as int : 1);
-    final int charmLevel = profile['charmLevel'] is int ? profile['charmLevel'] as int : (json['charmLevel'] is int ? json['charmLevel'] as int : 1);
-    final int accountLevel = profile['level'] is int ? profile['level'] as int : (json['accountLevel'] is int ? json['accountLevel'] as int : 1);
+    final int wealthLevel = profile['wealthLevel'] is int ? profile['wealthLevel'] as int : (json['wealthLevel'] is int ? json['wealthLevel'] as int : 0);
+    final int charmLevel = profile['charmLevel'] is int ? profile['charmLevel'] as int : (json['charmLevel'] is int ? json['charmLevel'] as int : 0);
+    final int accountLevel = profile['level'] is int ? profile['level'] as int : (json['accountLevel'] is int ? json['accountLevel'] as int : 0);
     final bool isVipUser = json['isVip'] == true || (wealthLevel > 10);
 
     return UserModel(
@@ -321,8 +342,15 @@ class UserModel {
       agencyName: json['agencyName']?.toString(),
       sellerBalance: sellerBalance,
       isOnline: json['isOnline'] ?? true,
-      isLive: json['isLive'] ?? false,
-      liveRoomId: json['liveRoomId']?.toString(),
+      isLive: json['isLive'] == true ||
+          json['isInRoom'] == true ||
+          (json['liveRoomId'] != null && json['liveRoomId'].toString().isNotEmpty) ||
+          (json['currentRoomId'] != null && json['currentRoomId'].toString().isNotEmpty) ||
+          (json['currentRoom'] != null && json['currentRoom'] is Map && (json['currentRoom']['id'] != null || json['currentRoom']['roomId'] != null)),
+      liveRoomId: json['liveRoomId']?.toString() ??
+          json['currentRoomId']?.toString() ??
+          json['roomId']?.toString() ??
+          (json['currentRoom'] is Map ? (json['currentRoom']['id']?.toString() ?? json['currentRoom']['roomId']?.toString()) : null),
       avatarFrame: json['avatarFrame']?.toString() ?? '',
       badge: json['badge']?.toString() ?? '',
       referralCode: json['referralCode']?.toString() ?? 'ZEP$id',
@@ -333,11 +361,11 @@ class UserModel {
       wealthLevel: wealthLevel,
       wealthXp: profile['experience'] is int ? profile['experience'] as int : (json['wealthXp'] is int ? json['wealthXp'] as int : 0),
       charmLevel: charmLevel,
-      charmXp: 0,
-      gameLevel: json['gameLevel'] is int ? json['gameLevel'] as int : 1,
-      gameXp: 0,
+      charmXp: json['charmXp'] is int ? json['charmXp'] as int : 0,
+      gameLevel: json['gameLevel'] is int ? json['gameLevel'] as int : 0,
+      gameXp: json['gameXp'] is int ? json['gameXp'] as int : 0,
       accountLevel: accountLevel,
-      accountXp: 0,
+      accountXp: json['accountXp'] is int ? json['accountXp'] as int : 0,
       cpPartnerId: json['cpPartnerId']?.toString(),
       nobleTitle: json['nobleTitle']?.toString(),
       status: json['status']?.toString() ?? 'ACTIVE',
@@ -348,6 +376,10 @@ class UserModel {
               : (json['likesCount'] is int ? json['likesCount'] as int : 0)),
       isCountryLocked: json['isCountryLocked'] == true || profile['isCountryLocked'] == true,
       isPrivate: json['isPrivate'] == true || profile['isPrivate'] == true,
+      lastActiveAt: json['lastActiveAt'] != null
+          ? DateTime.tryParse(json['lastActiveAt'].toString())
+          : (json['lastSeen'] != null ? DateTime.tryParse(json['lastSeen'].toString()) : null),
+      customTitles: json['customTitles'] != null ? List<String>.from(json['customTitles']) : [],
     );
   }
 
@@ -393,6 +425,38 @@ class UserModel {
     return region.replaceAll(RegExp(r'[\u{1F1E6}-\u{1F1FF}]{2}', unicode: true), '').trim();
   }
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // LEVEL PROGRESSION (Requirement 16)
+  // Each level requires 10,000 diamonds.  XP is per-level spend (resets on
+  // level-up), so computed level = XP ÷ 10,000 (integer division).
+  // Lv. 0 → < 10,000 XP   |   Lv. 1 → 10,000 – 19,999   |   etc.
+  // ──────────────────────────────────────────────────────────────────────────
+  static const int _xpPerLevel = 10000;
+
+  /// Computed wealth level from cumulative wealthXp
+  int get computedWealthLevel => wealthXp ~/ _xpPerLevel;
+
+  /// XP progress within the current wealth level
+  int get wealthLevelXp => wealthXp % _xpPerLevel;
+
+  /// Computed charm level from cumulative charmXp
+  int get computedCharmLevel => charmXp ~/ _xpPerLevel;
+
+  /// XP progress within the current charm level
+  int get charmLevelXp => charmXp % _xpPerLevel;
+
+  /// Computed game level from cumulative gameXp
+  int get computedGameLevel => gameXp ~/ _xpPerLevel;
+
+  /// XP progress within the current game level
+  int get gameLevelXp => gameXp % _xpPerLevel;
+
+  /// Computed account level from cumulative accountXp
+  int get computedAccountLevel => accountXp ~/ _xpPerLevel;
+
+  /// XP progress within the current account level
+  int get accountLevelXp => accountXp % _xpPerLevel;
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -437,6 +501,7 @@ class UserModel {
       'likesReceived': likesReceived,
       'isCountryLocked': isCountryLocked,
       'isPrivate': isPrivate,
+      'customTitles': customTitles,
     };
   }
 
@@ -492,6 +557,7 @@ class UserModel {
     int? likesReceived,
     bool? isCountryLocked,
     bool? isPrivate,
+    List<String>? customTitles,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -545,6 +611,7 @@ class UserModel {
       likesReceived: likesReceived ?? this.likesReceived,
       isCountryLocked: isCountryLocked ?? this.isCountryLocked,
       isPrivate: isPrivate ?? this.isPrivate,
+      customTitles: customTitles ?? this.customTitles,
     );
   }
 }

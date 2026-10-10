@@ -3,14 +3,12 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/auth_guard.dart';
 import '../../core/utils/formatters.dart';
-import '../../core/utils/wallet_date_gate.dart';
 import '../../providers/wallet_provider.dart';
 import '../../widgets/wallet_card.dart';
 import '../recharge/recharge_screen.dart';
 import 'agency_recharge_screen.dart';
 import 'wallet_details_screen.dart';
 import 'coin_records_screen.dart';
-import 'diamond_transfer_screen.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -85,17 +83,18 @@ class _WalletScreenState extends State<WalletScreen> {
               ),
               const SizedBox(height: 16),
 
-              // 2. Action Buttons: Top Up, Authorized Sellers & Transfer
+              // 2. Action Buttons: Top Up & Authorized Sellers (Transfer removed per Change 04)
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      icon: const Icon(Icons.add_circle_rounded, size: 18),
-                      label: const Text('Top Up', style: TextStyle(fontSize: 12)),
+                      icon: const Icon(Icons.add_circle_rounded, size: 20),
+                      label: const Text('Top Up', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: primaryColor,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
                       onPressed: () {
                         AuthGuard.require(context, () {
@@ -104,35 +103,19 @@ class _WalletScreenState extends State<WalletScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton.icon(
-                      icon: const Icon(Icons.storefront_rounded, size: 18),
-                      label: const Text('Sellers', style: TextStyle(fontSize: 12)),
+                      icon: const Icon(Icons.storefront_rounded, size: 20),
+                      label: const Text('Sellers', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.getTextPrimary(isDark),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        side: BorderSide(color: primaryColor.withValues(alpha: 0.5)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: BorderSide(color: primaryColor.withValues(alpha: 0.6), width: 1.2),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                       ),
                       onPressed: () {
                         Navigator.push(context, MaterialPageRoute(builder: (c) => const AgencyRechargeScreen()));
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      icon: const Icon(Icons.swap_horiz_rounded, size: 18),
-                      label: const Text('Transfer', style: TextStyle(fontSize: 12)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blueAccent,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      onPressed: () {
-                        AuthGuard.require(context, () {
-                          Navigator.push(context, MaterialPageRoute(builder: (c) => const DiamondTransferScreen()));
-                        }, reason: 'Sign in to transfer');
                       },
                     ),
                   ),
@@ -140,26 +123,26 @@ class _WalletScreenState extends State<WalletScreen> {
               ),
               const SizedBox(height: 20),
 
-              // 3. Module 19: Permanent Date Gate Notice Banner
+              // 3. Information Notice Banner (Updated for Change 04)
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E1B2E),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.amber, width: 1.5),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.8), width: 1.2),
                 ),
-                child: Row(
+                child: const Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.info_outline_rounded, size: 22, color: Colors.amberAccent),
-                    const SizedBox(width: 12),
+                    Icon(Icons.info_outline_rounded, size: 22, color: Colors.amberAccent),
+                    SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        WalletDateGate.restrictionNotice,
-                        style: const TextStyle(
+                        'IMPORTANT NOTE: Coin top-ups and official seller recharges are available 24/7. Settlements and transfers are exclusively accessible within authorized Agency Center, Host Center, and Live Host Center.',
+                        style: TextStyle(
                           fontSize: 12,
                           height: 1.4,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w600,
                           color: Colors.white,
                         ),
                       ),

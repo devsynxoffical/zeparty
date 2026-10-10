@@ -90,13 +90,15 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       );
 
       // 1. Shift Room Category to PK on Backend
-      await ApiClient.instance.post('/v1/pk/create', data: {
-        'hostRoomId': activeRoom.id,
-        'opponentUserId': _coHostUser!.id,
-        'durationMinutes': 5,
-      }).catchError((e) {
+      try {
+        await ApiClient.instance.post('/v1/pk/create', data: {
+          'hostRoomId': activeRoom.id,
+          'opponentUserId': _coHostUser!.id,
+          'durationMinutes': 5,
+        });
+      } catch (e) {
         debugPrint('[LiveRoom] PK create error: $e');
-      });
+      }
 
       // 2. Emit socket direct PK start
       SocketService.instance.emit('pk:start_direct', {
@@ -2041,6 +2043,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       liveProvider.luckyBagActive ? 'Claim!' : 'Lucky',
                       liveProvider.luckyBagActive ? Colors.orangeAccent : AppColors.liveRed,
                       onTap: () => _showLuckyBagQuickActionDialog(context, isDark, liveProvider),
+                      imageAsset: 'assets/images/party_tool_luckybag.png',
                     ),
                     if (liveProvider.luckyBagActive)
                       Positioned(
@@ -2060,27 +2063,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 const SizedBox(height: 12),
                 _buildQuickActionBtn(
                   isDark,
-                  Icons.rocket_launch_rounded,
-                  'Rocket',
-                  Colors.purpleAccent,
-                  onTap: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => const RocketGameSheet(),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildQuickActionBtn(
-                  isDark,
-                  Icons.videogame_asset_rounded,
+                  Icons.sports_esports_rounded,
                   'Games',
                   AppColors.cyan,
                   onTap: () {
                     GameCenterSheet.show(context);
                   },
+                  imageAsset: 'assets/images/party_tool_game_center.png',
                 ),
                 const SizedBox(height: 12),
                 _buildQuickActionBtn(
@@ -2107,6 +2096,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       },
                     );
                   },
+                  imageAsset: 'assets/images/party_tool_members.png',
                 ),
                 const SizedBox(height: 12),
                 _buildQuickActionBtn(
@@ -2122,12 +2112,20 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       isParty: false,
                     );
                   },
+                  imageAsset: 'assets/images/party_tool_share.png',
                 ),
                 const SizedBox(height: 12),
-                _buildQuickActionBtn(isDark, Icons.more_horiz_rounded, 'More', Colors.white, onTap: () {
-                  // Phase 6: Room Tools panel
-                  _showRoomTools(context, isDark);
-                }),
+                _buildQuickActionBtn(
+                  isDark,
+                  Icons.more_horiz_rounded,
+                  'More',
+                  Colors.white,
+                  onTap: () {
+                    // Phase 6: Room Tools panel
+                    _showRoomTools(context, isDark);
+                  },
+                  imageAsset: 'assets/images/party_tool_settings.png',
+                ),
               ],
             ),
           ),
@@ -2174,13 +2172,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
                     const SizedBox(height: 12),
 
-                    // Actions Bar (WhatsApp Toolbar Layout matching reference image)
+                    // Actions Bar (3D Luxury Toolbar with tight spacing & prominent input)
                     Row(
                       children: [
-                        // Far Left: Standalone "+" Button
-                        IconButton(
-                          icon: const Icon(Icons.add, color: Colors.white, size: 28),
-                          onPressed: () {
+                        // Far Left: 3D "+" Action Tool Button
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
                             showModalBottomSheet(
                               context: context,
                               backgroundColor: const Color(0xFF1E1B2E),
@@ -2249,38 +2247,76 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               ),
                             );
                           },
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: const RadialGradient(
+                                center: Alignment(-0.3, -0.4),
+                                radius: 0.9,
+                                colors: [
+                                  Color(0xFF3E4450),
+                                  Color(0xFF262A34),
+                                  Color(0xFF14171E),
+                                ],
+                              ),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.22),
+                                width: 1.2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.5),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: const Center(
+                              child: Icon(Icons.add_rounded, color: Colors.white, size: 20),
+                            ),
+                          ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 6),
 
-                        // Center: WhatsApp Dark Pill Input Field
+                        // Center: Prominent Comment Input Field with 3D Border-Aligned Emoji Button
                         Expanded(
                           child: Container(
-                            height: 46,
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            height: 42,
+                            padding: const EdgeInsets.only(left: 12, right: 6),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(23),
+                              color: Colors.black.withValues(alpha: 0.35),
+                              borderRadius: BorderRadius.circular(21),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.18),
+                                width: 1.2,
+                              ),
                             ),
                             child: Row(
                               children: [
                                 Expanded(
                                   child: TextField(
                                     controller: _chatController,
-                                    style: const TextStyle(color: Colors.white, fontSize: 14),
-                                    cursorColor: Colors.white,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    cursorColor: const Color(0xFFFF4081),
+                                    textAlignVertical: TextAlignVertical.center,
                                     decoration: InputDecoration(
                                       hintText: 'Say something...',
                                       hintStyle: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.45),
-                                        fontSize: 14,
+                                        color: Colors.white.withValues(alpha: 0.5),
+                                        fontSize: 13,
                                       ),
                                       filled: false,
+                                      isDense: true,
                                       border: InputBorder.none,
                                       enabledBorder: InputBorder.none,
                                       focusedBorder: InputBorder.none,
-                                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
                                     ),
                                     onSubmitted: (_) {
                                       final text = _chatController.text.trim();
@@ -2296,52 +2332,100 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                     },
                                   ),
                                 ),
-                                 _chatController.text.isNotEmpty
-                                     ? GestureDetector(
-                                         onTap: () {
-                                           final text = _chatController.text.trim();
-                                           if (text.isNotEmpty) {
-                                             final currentUser = context.read<AuthProvider>().currentUser;
-                                             liveProvider.sendMessage(text, currentUser.name, user: currentUser);
-                                             _chatController.clear();
-                                             if (mounted) setState(() {});
-                                           }
-                                         },
-                                         child: const Padding(
-                                           padding: EdgeInsets.symmetric(horizontal: 4),
-                                           child: Icon(Icons.send_rounded, color: Color(0xFFFF416C), size: 20),
-                                         ),
-                                       )
-                                     : IconButton(
-                                         icon: const Icon(Icons.sentiment_satisfied_alt_rounded, color: Colors.amber, size: 22),
-                                         onPressed: () {
-                                           AuthGuard.require(context, () {
-                                             EmojiPickerSheet.show(context, onEmojiSelected: (emoji) {
-                                               final currentUser = context.read<AuthProvider>().currentUser;
-                                               liveProvider.sendMessage(emoji, currentUser.name);
-                                               context.read<EmojiReactionProvider>().sendReaction(
-                                                 roomId: widget.room.id,
-                                                 senderId: currentUser.id,
-                                                 emoji: emoji,
-                                                 senderName: currentUser.name,
-                                               );
-                                             });
-                                           }, reason: 'Sign in to send reactions');
-                                         },
-                                         padding: EdgeInsets.zero,
-                                         constraints: const BoxConstraints(),
-                                         tooltip: 'Emojis & Reactions',
-                                       ),
+
+                                // 3D Emoji Face Button (positioned nicely at the inner border)
+                                GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () {
+                                    AuthGuard.require(context, () {
+                                      EmojiPickerSheet.show(context, onEmojiSelected: (emoji) {
+                                        final currentUser = context.read<AuthProvider>().currentUser;
+                                        liveProvider.sendMessage(emoji, currentUser.name);
+                                        context.read<EmojiReactionProvider>().sendReaction(
+                                          roomId: widget.room.id,
+                                          senderId: currentUser.id,
+                                          emoji: emoji,
+                                          senderName: currentUser.name,
+                                        );
+                                      });
+                                    }, reason: 'Sign in to send reactions');
+                                  },
+                                  child: Container(
+                                    width: 28,
+                                    height: 28,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: const RadialGradient(
+                                        center: Alignment(-0.3, -0.4),
+                                        radius: 0.85,
+                                        colors: [
+                                          Color(0xFFFFE082),
+                                          Color(0xFFFFB300),
+                                          Color(0xFFFF8F00),
+                                          Color(0xFFE65100),
+                                        ],
+                                      ),
+                                      border: Border.all(
+                                        color: const Color(0xFFFFF9C4).withValues(alpha: 0.85),
+                                        width: 1.2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: const Color(0xFFFF8F00).withValues(alpha: 0.5),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 1.5),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.sentiment_satisfied_alt_rounded,
+                                        color: Color(0xFF5D2800),
+                                        size: 17,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+
+                                if (_chatController.text.isNotEmpty) ...[
+                                  const SizedBox(width: 6),
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () {
+                                      final text = _chatController.text.trim();
+                                      if (text.isNotEmpty) {
+                                        final currentUser = context.read<AuthProvider>().currentUser;
+                                        liveProvider.sendMessage(text, currentUser.name, user: currentUser);
+                                        _chatController.clear();
+                                        if (mounted) setState(() {});
+                                      }
+                                    },
+                                    child: Container(
+                                      width: 28,
+                                      height: 28,
+                                      decoration: const BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient: LinearGradient(
+                                          colors: [Color(0xFFFF416C), Color(0xFFFF4B2B)],
+                                        ),
+                                      ),
+                                      child: const Center(
+                                        child: Icon(Icons.send_rounded, color: Colors.white, size: 15),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 6),
 
-                        // Far Right Action Icons (Gift & Like Heart)
-                        IconButton(
-                          icon: const Icon(Icons.card_giftcard_rounded, color: Colors.white, size: 25),
-                          onPressed: () {
+                        // Far Right 3D Action Icons: (1) 3D Gift Box, (2) 3D Mic, (3) 3D Like Heart
+                        // 1. 3D Gift Box
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
                             AuthGuard.require(context, () {
                               showModalBottomSheet(
                                 context: context,
@@ -2363,33 +2447,163 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               );
                             }, reason: 'Sign in to send gifts');
                           },
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                        const SizedBox(width: 12),
-
-                        IconButton(
-                          icon: Icon(
-                            liveProvider.isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                            color: liveProvider.isMicMuted ? Colors.redAccent : const Color(0xFF00E676),
-                            size: 25,
+                          child: SizedBox(
+                            width: 38,
+                            height: 38,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFFFF4081).withValues(alpha: 0.45),
+                                        blurRadius: 8,
+                                        spreadRadius: 1,
+                                      ),
+                                    ],
+                                  ),
+                                  child: ClipOval(
+                                    child: Image.asset(
+                                      'assets/images/party_gift_box.jpg',
+                                      width: 36,
+                                      height: 36,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) => Container(
+                                        color: const Color(0xFFFF4081),
+                                        child: const Icon(Icons.card_giftcard_rounded, color: Colors.white, size: 20),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: -2,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [Color(0xFFFFB300), Color(0xFFFF8F00)],
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
+                                      boxShadow: [
+                                        BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 2),
+                                      ],
+                                    ),
+                                    child: const Text(
+                                      'GIFT',
+                                      style: TextStyle(
+                                        color: Colors.black,
+                                        fontSize: 6.5,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                          onPressed: _toggleMic,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          tooltip: 'Microphone Toggle',
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 6),
 
-                        IconButton(
-                          icon: const Icon(Icons.favorite_outline_rounded, color: Colors.white, size: 26),
-                          onPressed: () {
+                        // 2. 3D Microphone Toggle Button
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _toggleMic,
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: RadialGradient(
+                                center: const Alignment(-0.3, -0.4),
+                                radius: 0.9,
+                                colors: liveProvider.isMicMuted
+                                    ? [
+                                        const Color(0xFFFF8A80),
+                                        const Color(0xFFFF1744),
+                                        const Color(0xFFD50000),
+                                        const Color(0xFF880E4F),
+                                      ]
+                                    : [
+                                        const Color(0xFF69F0AE),
+                                        const Color(0xFF00E676),
+                                        const Color(0xFF00C853),
+                                        const Color(0xFF1B5E20),
+                                      ],
+                              ),
+                              border: Border.all(
+                                color: (liveProvider.isMicMuted ? const Color(0xFFFFEBEE) : const Color(0xFFE8F5E9))
+                                    .withValues(alpha: 0.8),
+                                width: 1.2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (liveProvider.isMicMuted ? const Color(0xFFFF1744) : const Color(0xFF00E676))
+                                      .withValues(alpha: 0.5),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Icon(
+                                liveProvider.isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                                color: Colors.white,
+                                size: 19,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+
+                        // 3. 3D Heart / Like Button
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
                             AuthGuard.require(context, () {
                               _triggerFloatingHeart();
                             }, reason: 'Sign in to send likes');
                           },
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: const RadialGradient(
+                                center: Alignment(-0.3, -0.4),
+                                radius: 0.9,
+                                colors: [
+                                  Color(0xFFFF80AB),
+                                  Color(0xFFFF4081),
+                                  Color(0xFFF50057),
+                                  Color(0xFF880E4F),
+                                ],
+                              ),
+                              border: Border.all(
+                                color: const Color(0xFFFCE4EC).withValues(alpha: 0.8),
+                                width: 1.2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFFFF4081).withValues(alpha: 0.55),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.favorite_rounded,
+                                color: Colors.white,
+                                size: 19,
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -2418,22 +2632,119 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     ));
   }
 
-  Widget _buildQuickActionBtn(bool isDark, IconData icon, String label, Color color, {VoidCallback? onTap}) {
+  Widget _buildQuickActionBtn(
+    bool isDark,
+    IconData icon,
+    String label,
+    Color color, {
+    VoidCallback? onTap,
+    String? imageAsset,
+    List<Color>? customGradient,
+    Color? customGlow,
+    Color? customBorder,
+  }) {
+    // 3D Sphere Gradients tailored to each action name
+    List<Color> gradientColors;
+    Color glowColor;
+    Color borderColor;
+
+    final lower = label.toLowerCase();
+    if (lower.contains('lucky') || lower.contains('claim')) {
+      gradientColors = customGradient ?? const [
+        Color(0xFFFF5252),
+        Color(0xFFFF1744),
+        Color(0xFFD50000),
+        Color(0xFF880E4F),
+      ];
+      glowColor = customGlow ?? const Color(0xFFFF1744);
+      borderColor = customBorder ?? const Color(0xFFFFCDD2).withValues(alpha: 0.85);
+    } else if (lower.contains('game')) {
+      gradientColors = customGradient ?? const [
+        Color(0xFFB388FF),
+        Color(0xFF7C4DFF),
+        Color(0xFF651FFF),
+        Color(0xFF311B92),
+      ];
+      glowColor = customGlow ?? const Color(0xFF7C4DFF);
+      borderColor = customBorder ?? const Color(0xFFEDE7F6).withValues(alpha: 0.85);
+    } else if (lower.contains('viewer')) {
+      gradientColors = customGradient ?? const [
+        Color(0xFF69F0AE),
+        Color(0xFF00E676),
+        Color(0xFF00BFA5),
+        Color(0xFF004D40),
+      ];
+      glowColor = customGlow ?? const Color(0xFF00E676);
+      borderColor = customBorder ?? const Color(0xFFE8F5E9).withValues(alpha: 0.85);
+    } else if (lower.contains('share')) {
+      gradientColors = customGradient ?? const [
+        Color(0xFF80D8FF),
+        Color(0xFF00B0FF),
+        Color(0xFF0091EA),
+        Color(0xFF01579B),
+      ];
+      glowColor = customGlow ?? const Color(0xFF00B0FF);
+      borderColor = customBorder ?? const Color(0xFFE1F5FE).withValues(alpha: 0.85);
+    } else {
+      // More / Tools
+      gradientColors = customGradient ?? const [
+        Color(0xFF84FFFF),
+        Color(0xFF00E5FF),
+        Color(0xFF00B8D4),
+        Color(0xFF006064),
+      ];
+      glowColor = customGlow ?? const Color(0xFF00E5FF);
+      borderColor = customBorder ?? const Color(0xFFE0F7FA).withValues(alpha: 0.85);
+    }
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
-              color: AppColors.black.withValues(alpha: 0.5),
               shape: BoxShape.circle,
+              gradient: RadialGradient(
+                center: const Alignment(-0.35, -0.4),
+                radius: 0.9,
+                colors: gradientColors,
+              ),
+              border: Border.all(
+                color: borderColor,
+                width: 1.3,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: glowColor.withValues(alpha: 0.45),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2.5),
+                ),
+              ],
             ),
-            child: Icon(icon, color: color, size: 24),
+            child: Center(
+              child: Icon(
+                icon,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
           ),
           const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              shadows: [
+                Shadow(color: Colors.black, blurRadius: 4),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -2475,6 +2786,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Share Link',
                     color: Colors.lightBlueAccent,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_share.png',
                     onTap: () {
                       Navigator.pop(c);
                       RoomShareService.shareRoom(
@@ -2492,6 +2804,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Invite Co-Host',
                     color: const Color(0xFF00E5FF),
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_seat.png',
                     onTap: () {
                       Navigator.pop(c);
                       RoomShareService.shareCoHostInvite(
@@ -2508,6 +2821,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'YouTube',
                     color: Colors.red,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_youtube.png',
                     onTap: () {
                       Navigator.pop(c);
                       showDialog(
@@ -2556,6 +2870,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Super Wheel',
                     color: Colors.purple,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_superwheel.png',
                     onTap: () {
                       Navigator.pop(c);
                       final participants = ['Sophia', 'Alex', 'Elena', 'Marcus', 'Zayn', 'Aisha'];
@@ -2605,6 +2920,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Lucky Bag',
                     color: Colors.orange,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_luckybag.png',
                     onTap: () {
                       Navigator.pop(c);
                       final amounts = [50, 100, 200, 500, 1000];
@@ -2679,6 +2995,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Music',
                     color: Colors.blue,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_music_player.png',
                     onTap: () {
                       Navigator.pop(c);
                       final tracks = [
@@ -2741,6 +3058,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'PK',
                     color: Colors.cyan,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_pk_match.png',
                     onTap: () {
                       Navigator.pop(c);
                       Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
@@ -2753,6 +3071,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Settings',
                     color: Colors.grey,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_settings.png',
                     onTap: () {
                       Navigator.pop(c);
                       showDialog(
@@ -2815,6 +3134,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Clear Chat',
                     color: Colors.amber,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_mute_room.png',
                     onTap: () {
                       Navigator.pop(c);
                       showDialog(
@@ -2848,6 +3168,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: liveProvider.isRoomLocked ? 'Unlock Room' : 'Lock Room',
                     color: Colors.redAccent,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_lockroom.png',
                     onTap: () {
                       Navigator.pop(c);
                       liveProvider.toggleRoomLock();
@@ -2868,6 +3189,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Mic Stats',
                     color: Colors.green,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_mic.png',
                     onTap: () {
                       Navigator.pop(c);
                       final lp = context.read<LiveProvider>();
@@ -2929,6 +3251,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     label: 'Effects',
                     color: Colors.pink,
                     isDark: isDark,
+                    imageAsset: 'assets/images/party_tool_effects_settings.png',
                     onTap: () {
                       Navigator.pop(c);
                       final effects = ['None', 'Beauty', 'Blur BG', 'Vintage', 'Neon Glow', 'Black & White'];
@@ -3163,22 +3486,46 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     required Color color, 
     required bool isDark,
     required VoidCallback onTap,
+    String? imageAsset,
   }) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(16),
+          if (imageAsset != null)
+            SizedBox(
+              width: 52,
+              height: 52,
+              child: ClipOval(
+                child: Image.asset(
+                  imageAsset,
+                  width: 52,
+                  height: 52,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(icon, color: color, size: 28),
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 28),
             ),
-            child: Icon(icon, color: color, size: 28),
-          ),
-          const SizedBox(height: 8),
-          Text(label, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 11)),
+          const SizedBox(height: 6),
+          Text(label, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 11, fontWeight: FontWeight.w600)),
         ],
       ),
     );

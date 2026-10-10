@@ -338,16 +338,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   name: user.displayName,
                   radius: 40,
                   showVipFrame: user.isVip,
-                  frameAsset: NobleBadgeHelper.getFrameAsset(
-                    user.nobleTitle ?? (user.svipLevel > 0 ? 'SVIP ${user.svipLevel}' : (user.role != UserRole.user ? user.role.name : 'baron')),
-                  ),
+                  frameAsset: user.avatarFrame.isNotEmpty && user.avatarFrame != 'none'
+                      ? user.avatarFrame
+                      : (user.nobleTitle != null
+                          ? NobleBadgeHelper.getFrameAsset(user.nobleTitle)
+                          : (user.svipLevel > 0 ? NobleBadgeHelper.getFrameAsset('SVIP ${user.svipLevel}') : null)),
                 ),
               ),
               Positioned(
-                bottom: 0,
-                right: 0,
+                bottom: -2,
+                right: -2,
                 child: Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
                     color: primary,
                     shape: BoxShape.circle,
@@ -357,7 +359,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.25),
+                        color: Colors.black.withValues(alpha: 0.35),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -365,7 +367,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   child: const Icon(
                     Icons.camera_alt_rounded,
-                    size: 14,
+                    size: 12,
                     color: Colors.white,
                   ),
                 ),
@@ -404,8 +406,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ),
-                    NobleBadgeChip(user: user, fontSize: 9.5),
-                    NobleTagChip(user: user, height: 16),
                     if (context.watch<LivePartyProvider>().activeRoom != null) ...[
                       GestureDetector(
                         onTap: () {
@@ -801,15 +801,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       },
       {
         'title': 'Host Center',
-        'iconData': Icons.mic_external_on_rounded,
-        'iconColor': const Color(0xFFFFC107),
+        'imagePath': 'assets/images/profile_host_center.png',
         'badge': hasAudioHostAccess ? 'AUDIO' : null,
         'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => HostCenterScreen())),
       },
       if (isBdAuthorized)
         {
           'title': 'BD Center',
-          'iconData': Icons.business_center_rounded,
+          'imagePath': 'assets/images/profile_admin.jpg',
           'badge': 'BD',
           'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const BDCenterDashboardScreen())),
         },
@@ -835,8 +834,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (isMerchantAuthorized)
         {
           'title': 'Merchant Center',
-          'iconData': Icons.workspace_premium_rounded,
-          'iconColor': const Color(0xFFFFD700),
+          'imagePath': 'assets/images/profile_merchant.jpg',
           'badge': 'MERCHANT',
           'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const MerchantCenterScreen())),
         },
@@ -866,20 +864,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        color: feature['iconData'] != null ? AppColors.getCard(isDark) : null,
-                        image: feature['imagePath'] != null ? DecorationImage(
-                          image: AssetImage(feature['imagePath'] as String),
-                          fit: BoxFit.cover,
-                          onError: (e, s) => {},
-                        ) : null,
-                      ),
-                      child: feature['iconData'] != null ? Icon(feature['iconData'] as IconData, size: 28, color: (feature['iconColor'] as Color?) ?? Colors.pinkAccent) : null,
-                    ),
+                    Builder(builder: (context) {
+                      final iconSize = (feature['iconSize'] as double?) ?? 48.0;
+                      return Container(
+                        width: iconSize,
+                        height: iconSize,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(iconSize * 0.33),
+                          color: feature['iconData'] != null
+                              ? AppColors.getCard(isDark)
+                              : Colors.transparent,
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: feature['iconData'] != null
+                            ? Icon(feature['iconData'] as IconData, size: iconSize * 0.58,
+                                color: (feature['iconColor'] as Color?) ?? Colors.pinkAccent)
+                            : feature['imagePath'] != null
+                                ? Image.asset(
+                                    feature['imagePath'] as String,
+                                    width: iconSize,
+                                    height: iconSize,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.broken_image_rounded,
+                                      size: 28,
+                                      color: Colors.grey,
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
+                      );
+                    }),
                     if (feature['hasDot'] == true)
                       Positioned(
                         top: -2,
@@ -969,23 +983,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
           physics: const BouncingScrollPhysics(),
           child: Row(
             children: [
-              _buildAchievementCard('SVIP Center', 'assets/svip/svip10_badge.png', Colors.orangeAccent, isDark, onTap: () {
-                AuthGuard.require(context, () {
-                  Navigator.push(context, MaterialPageRoute(builder: (c) => const SVIPCenterScreen()));
-                });
-              }),
+              _buildAchievementCard(
+                'SVIP Center',
+                'assets/svip/SVIP16_badge_live.webp',
+                const Color(0xFFFFB300),
+                isDark,
+                subtitle: 'VIP Privileges',
+                badgeText: 'SVIP 1-16',
+                gradientColors: const [Color(0xFF2C1F08), Color(0xFF140D04)],
+                borderColor: const Color(0xFFFFD54F),
+                onTap: () {
+                  AuthGuard.require(context, () {
+                    Navigator.push(context, MaterialPageRoute(builder: (c) => const SVIPCenterScreen()));
+                  });
+                },
+              ),
               const SizedBox(width: 12),
-              _buildAchievementCard('Aristocracy', 'assets/nobles/emperor_badge.png', Colors.amber, isDark, onTap: () {
-                AuthGuard.require(context, () {
-                  Navigator.push(context, MaterialPageRoute(builder: (c) => const AristocracyCenterScreen()));
-                });
-              }),
-              const SizedBox(width: 12),
-              _buildAchievementCard('Store & Items', 'assets/roles/official_tag.png', Colors.purpleAccent, isDark, onTap: () {
-                AuthGuard.require(context, () {
-                  Navigator.push(context, MaterialPageRoute(builder: (c) => const StoreScreen()));
-                });
-              }),
+              _buildAchievementCard(
+                'Aristocracy',
+                'assets/nobles/emperor_badge.webp',
+                const Color(0xFFD500F9),
+                isDark,
+                subtitle: 'Noble Status',
+                badgeText: 'Emperor',
+                gradientColors: const [Color(0xFF240046), Color(0xFF10002B)],
+                borderColor: const Color(0xFFE040FB),
+                onTap: () {
+                  AuthGuard.require(context, () {
+                    Navigator.push(context, MaterialPageRoute(builder: (c) => const AristocracyCenterScreen()));
+                  });
+                },
+              ),
             ],
           ),
         ),
@@ -993,33 +1021,101 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildAchievementCard(String title, String imagePath, Color color, bool isDark, {VoidCallback? onTap}) {
+  Widget _buildAchievementCard(
+    String title,
+    String imagePath,
+    Color color,
+    bool isDark, {
+    String? subtitle,
+    String? badgeText,
+    List<Color>? gradientColors,
+    Color? borderColor,
+    VoidCallback? onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 120,
-        height: 80,
-        padding: const EdgeInsets.all(12),
+        width: 145,
+        height: 88,
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.15),
+          gradient: LinearGradient(
+            colors: gradientColors ?? [color.withValues(alpha: 0.25), color.withValues(alpha: 0.08)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: (borderColor ?? color).withValues(alpha: 0.45),
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.end,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.asset(imagePath, width: 28, height: 28, fit: BoxFit.cover, errorBuilder: (c,e,s) => Icon(Icons.star, color: color, size: 28)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: Image.asset(
+                    imagePath,
+                    width: 36,
+                    height: 36,
+                    fit: BoxFit.contain,
+                    errorBuilder: (c, e, s) => Icon(Icons.workspace_premium_rounded, color: color, size: 28),
+                  ),
+                ),
+                if (badgeText != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: color.withValues(alpha: 0.5), width: 0.8),
+                    ),
+                    child: Text(
+                      badgeText,
+                      style: TextStyle(
+                        fontSize: 8.5,
+                        fontWeight: FontWeight.w900,
+                        color: color,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            const Spacer(),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: AppColors.getTextPrimary(isDark),
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                if (subtitle != null)
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white.withValues(alpha: 0.65),
+                    ),
+                  ),
+              ],
             ),
           ],
         ),

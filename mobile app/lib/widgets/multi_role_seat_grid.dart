@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/party_participant_model.dart';
-import '../models/user_model.dart';
 import '../providers/live_party_provider.dart';
 import '../providers/emoji_reaction_provider.dart';
 import '../core/utils/noble_badge_helper.dart';
@@ -75,20 +74,20 @@ class MultiRoleSeatGrid extends StatelessWidget {
             ],
           ),
         ),
-        // Row 2: 4 Seats
+        // Row 2: 4 Seats (1 to 4)
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
+          padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(4, (i) => _buildSeat(context, i + 2, 'Seat ${i + 3}', seatRad, false)),
+            children: List.generate(4, (i) => _buildSeat(context, i + 2, '${i + 1}', seatRad, false)),
           ),
         ),
-        // Row 3: 4 Seats
+        // Row 3: 4 Seats (5 to 8)
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 5),
+          padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(4, (i) => _buildSeat(context, i + 6, 'Seat ${i + 7}', seatRad, false)),
+            children: List.generate(4, (i) => _buildSeat(context, i + 6, '${i + 5}', seatRad, false)),
           ),
         ),
       ];
@@ -118,7 +117,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                 (colIdx) => _buildSeat(
                   context,
                   startIdx + colIdx,
-                  'Seat ${startIdx + colIdx + 1}',
+                  '${startIdx + colIdx - 2}',
                   21 * scale,
                   false,
                 ),
@@ -152,7 +151,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                 (colIdx) {
                   int idx = startIdx + colIdx;
                   if (idx >= 20) return const SizedBox();
-                  return _buildSeat(context, idx, 'Seat ${idx + 1}', 18.5 * scale, false);
+                  return _buildSeat(context, idx, '${idx - 1}', 18.5 * scale, false);
                 },
               ),
             ),
@@ -185,7 +184,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                 (colIdx) {
                   int idx = startIdx + colIdx;
                   if (idx >= 30) return const SizedBox();
-                  return _buildSeat(context, idx, '${idx + 1}', 17 * scale, false);
+                  return _buildSeat(context, idx, '${idx - 1}', 17 * scale, false);
                 },
               ),
             ),
@@ -232,24 +231,26 @@ class MultiRoleSeatGrid extends StatelessWidget {
                         imageUrl: participant.user.avatarUrl,
                         name: participant.user.name,
                         radius: radius + 1,
-                        glowColor: isHostUser ? Colors.amber : Colors.greenAccent,
-                        frameAsset: NobleBadgeHelper.getFrameAsset(
-                          participant.user.nobleTitle ?? (participant.user.svipLevel > 0 ? 'SVIP ${participant.user.svipLevel}' : (participant.user.role != UserRole.user ? participant.user.role.name : null)),
-                        ),
+                        glowColor: isHostUser ? Colors.amber : const Color(0xFF00E676),
+                        frameAsset: participant.user.avatarFrame.isNotEmpty && participant.user.avatarFrame != 'none'
+                            ? participant.user.avatarFrame
+                            : (participant.user.nobleTitle != null && participant.user.nobleTitle!.isNotEmpty
+                                ? NobleBadgeHelper.getFrameAsset(participant.user.nobleTitle)
+                                : (participant.user.svipLevel > 0 ? NobleBadgeHelper.getFrameAsset('SVIP ${participant.user.svipLevel}') : null)),
                       )
                     : Container(
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           border: Border.all(
                             color: isHostUser
-                                ? Colors.amber
-                                : (isMod ? Colors.blueAccent : Colors.pinkAccent.withValues(alpha: 0.6)),
+                                ? const Color(0xFFFFD700)
+                                : (isMod ? const Color(0xFF40C4FF) : const Color(0xFFAB47BC).withValues(alpha: 0.8)),
                             width: 2,
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: (isHostUser ? Colors.amber : Colors.purpleAccent).withValues(alpha: 0.2),
-                              blurRadius: 6,
+                              color: (isHostUser ? Colors.amber : const Color(0xFFAB47BC)).withValues(alpha: 0.3),
+                              blurRadius: 8,
                             ),
                           ],
                         ),
@@ -257,9 +258,11 @@ class MultiRoleSeatGrid extends StatelessWidget {
                           imageUrl: participant.user.avatarUrl,
                           name: participant.user.name,
                           radius: radius,
-                          frameAsset: NobleBadgeHelper.getFrameAsset(
-                            participant.user.nobleTitle ?? (participant.user.svipLevel > 0 ? 'SVIP ${participant.user.svipLevel}' : (participant.user.role != UserRole.user ? participant.user.role.name : null)),
-                          ),
+                          frameAsset: participant.user.avatarFrame.isNotEmpty && participant.user.avatarFrame != 'none'
+                              ? participant.user.avatarFrame
+                              : (participant.user.nobleTitle != null && participant.user.nobleTitle!.isNotEmpty
+                                  ? NobleBadgeHelper.getFrameAsset(participant.user.nobleTitle)
+                                  : (participant.user.svipLevel > 0 ? NobleBadgeHelper.getFrameAsset('SVIP ${participant.user.svipLevel}') : null)),
                         ),
                       ),
                 if (activeReaction != null)
@@ -293,38 +296,45 @@ class MultiRoleSeatGrid extends StatelessWidget {
                   ),
                 if (isHostUser)
                   const Positioned(
-                    top: -5,
-                    child: Text('👑', style: TextStyle(fontSize: 12)),
+                    top: -6,
+                    child: Text('👑', style: TextStyle(fontSize: 13)),
                   ),
                 if (isMod && !isHostUser)
                   const Positioned(
-                    top: -5,
-                    child: Text('🛡️', style: TextStyle(fontSize: 10)),
+                    top: -6,
+                    child: Text('🛡️', style: TextStyle(fontSize: 11)),
                   ),
                 if (label == 'VIP' && !isHostUser && !isMod)
                   const Positioned(
-                    top: -5,
-                    child: Text('💎', style: TextStyle(fontSize: 10)),
+                    top: -6,
+                    child: Text('💎', style: TextStyle(fontSize: 11)),
                   ),
                 Positioned(
                   bottom: -2,
                   right: -2,
                   child: Container(
-                    padding: const EdgeInsets.all(2),
+                    padding: const EdgeInsets.all(2.5),
                     decoration: BoxDecoration(
-                      color: isMuted ? Colors.red : const Color(0xFF00C853),
+                      color: isMuted ? const Color(0xFFFF1744) : const Color(0xFF00E676),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.black, width: 1),
+                      border: Border.all(color: const Color(0xFF1E1338), width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: (isMuted ? Colors.red : Colors.green).withValues(alpha: 0.5),
+                          blurRadius: 4,
+                        ),
+                      ],
                     ),
                     child: Icon(
-                      isMuted ? Icons.mic_off : Icons.mic,
-                      size: radius * 0.35,
+                      isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                      size: radius * 0.38,
                       color: Colors.white,
                     ),
                   ),
                 ),
               ],
             ),
+            const SizedBox(height: 3),
             SizedBox(
               width: radius * 3.4,
               child: Row(
@@ -342,7 +352,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                           NobleBadgeHelper.getTierFromTitle(participant.user.nobleTitle),
                         ),
                         fontWeight: FontWeight.w600,
-                        fontSize: isHostRow ? 10 : 8.5,
+                        fontSize: isHostRow ? 10.5 : 9,
                       ),
                     ),
                   ),
@@ -369,26 +379,39 @@ class MultiRoleSeatGrid extends StatelessWidget {
               height: radius * 2,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.redAccent.withValues(alpha: 0.15),
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF3E1A2E).withValues(alpha: 0.7),
+                    const Color(0xFF200F1A).withValues(alpha: 0.8),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
                 border: Border.all(
-                  color: Colors.redAccent.withValues(alpha: 0.4),
+                  color: Colors.redAccent.withValues(alpha: 0.5),
                   width: 1.2,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.redAccent.withValues(alpha: 0.15),
+                    blurRadius: 6,
+                  ),
+                ],
               ),
               child: Center(
                 child: Icon(
                   Icons.lock_rounded,
-                  color: Colors.redAccent,
-                  size: radius * 0.8,
+                  color: Colors.redAccent.withValues(alpha: 0.9),
+                  size: radius * 0.75,
                 ),
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               'Locked',
               style: TextStyle(
-                color: Colors.redAccent.withValues(alpha: 0.8),
-                fontSize: isHostRow ? 10 : 8.5,
+                color: Colors.redAccent.withValues(alpha: 0.85),
+                fontSize: isHostRow ? 10 : 9,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -397,7 +420,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
       );
     }
 
-    // Empty Seat
+    // Empty Seat with Sleek Cushioned Chair Graphic (Ahlan Reference Match)
     return GestureDetector(
       key: seatKey,
       onTap: () => onSeatTap(seatIndex),
@@ -409,26 +432,41 @@ class MultiRoleSeatGrid extends StatelessWidget {
             height: radius * 2,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: 0.05),
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF4A3468).withValues(alpha: 0.45),
+                  const Color(0xFF281C40).withValues(alpha: 0.65),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.18),
+                color: Colors.white.withValues(alpha: 0.22),
                 width: 1.2,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: Center(
               child: Icon(
-                Icons.mic_none_rounded,
-                color: Colors.white.withValues(alpha: 0.4),
-                size: radius * 0.8,
+                Icons.weekend_rounded,
+                color: Colors.white.withValues(alpha: 0.55),
+                size: radius * 0.9,
               ),
             ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 3),
           Text(
             label,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
-              fontSize: isHostRow ? 10 : 8.5,
+              color: Colors.white.withValues(alpha: 0.65),
+              fontSize: isHostRow ? 10 : 9.5,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

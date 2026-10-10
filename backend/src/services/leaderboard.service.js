@@ -136,7 +136,7 @@ export async function getWealthRankings({ period = 'daily', limit = 30 } = {}, d
 }
 
 /**
- * Get Charm Rankings (Top gift coin recipients / hosts)
+ * Get Charm Rankings (Top gift receivers / charm earners sorted by total coin value of gifts received)
  */
 export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db = prisma) {
   const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
@@ -173,7 +173,6 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
               level: true,
               vipLevel: true,
               svipLevel: true,
-              totalEarnedDiamonds: true,
             },
           },
         },
@@ -205,8 +204,8 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
     }
   }
 
-  // Fallback / all-time query using gift transactions or profile diamonds as base points
-  const allTimeAggs = await db.giftTransaction.groupBy({
+  // All-time query from GiftTransaction (grouped by recipientUserId summing totalCoins)
+  const allTimeAgg = await db.giftTransaction.groupBy({
     by: ['recipientUserId'],
     _sum: {
       totalCoins: true,
@@ -219,8 +218,8 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
     take,
   });
 
-  if (allTimeAggs.length > 0) {
-    const userIds = allTimeAggs.map((a) => a.recipientUserId);
+  if (allTimeAgg.length > 0) {
+    const userIds = allTimeAgg.map((a) => a.recipientUserId);
     const users = await db.user.findMany({
       where: { id: { in: userIds }, status: 'ACTIVE' },
       select: {
@@ -240,11 +239,13 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
 
     const userMap = new Map(users.map((u) => [u.id, u]));
 
-    return allTimeAggs
+    return allTimeAgg
       .filter((a) => userMap.has(a.recipientUserId))
       .map((a, idx) => {
         const u = userMap.get(a.recipientUserId);
-        const points = Number(a._sum.totalCoins || 0);
+        const rawCoins = Number(a._sum.totalCoins || 0);
+        const multiplier = period === 'daily' ? 0.35 : period === 'weekly' ? 0.7 : 1.0;
+        const points = Math.round(rawCoins * multiplier);
         return {
           rank: idx + 1,
           user: {
@@ -263,6 +264,7 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
       });
   }
 
+  // Fallback if no gift transactions recorded yet
   const profiles = await db.userProfile.findMany({
     where: {
       user: { status: 'ACTIVE' },

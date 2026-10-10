@@ -206,6 +206,12 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> toggleSpeakerOutput() async {
+    _isSpeakerMuted = !_isSpeakerMuted;
+    await _agoraService.muteAllRemoteAudio(_isSpeakerMuted);
+    notifyListeners();
+  }
+
   Future<void> initialize() async {
     await _agoraService.initialize();
   }
@@ -295,12 +301,14 @@ class LivePartyProvider extends ChangeNotifier {
         }
       });
 
-      // 5. Listen to Agora Remote Users to ensure audio callers are immediately visible in participants
+      // 5. Listen to Agora Remote Users (Keep real logged-in user names without overriding with dummy Guest IDs)
       _remoteUsersSub?.cancel();
       _remoteUsersSub = _agoraService.remoteUsersStream.listen((uids) {
         for (final uid in uids) {
           final isAlreadyTracked = _participants.any(
-            (p) => p.user.id == uid.toString() || p.user.id == 'agora_$uid'
+            (p) => p.user.id == uid.toString() ||
+                   p.user.id == 'agora_$uid' ||
+                   (p.user.name.isNotEmpty && p.user.name != 'Guest' && !p.user.name.startsWith('Guest '))
           );
           if (!isAlreadyTracked) {
             final guestUser = UserModel(
@@ -315,7 +323,6 @@ class LivePartyProvider extends ChangeNotifier {
               seatNumber: null,
               joinedAt: DateTime.now(),
             ));
-            sendSystemMessage('👋 Guest ($uid) joined audio!');
           }
         }
         notifyListeners();
@@ -852,7 +859,12 @@ class LivePartyProvider extends ChangeNotifier {
     }
 
     // Atomic move: release previous seat if actor was sitting elsewhere
-    final existingIdx = _participants.indexWhere((p) => p.user.id == actor.id);
+    final existingIdx = _participants.indexWhere(
+      (p) => p.user.id == actor.id ||
+             (actor.username.isNotEmpty && p.user.username.toLowerCase() == actor.username.toLowerCase()) ||
+             (actor.name.isNotEmpty && p.user.name.toLowerCase() == actor.name.toLowerCase())
+    );
+
     if (existingIdx != -1 && _participants[existingIdx].seatNumber != null && _participants[existingIdx].seatNumber != seatIndex) {
       final oldSeat = _participants[existingIdx].seatNumber!;
       try {
@@ -868,9 +880,13 @@ class LivePartyProvider extends ChangeNotifier {
       debugPrint('[LivePartyProvider] Backend occupySeat error: $e, executing local state seat update');
     }
 
-    // Update local state
-    if (existingIdx != -1) {
+    // Clean up any old Guest placeholder entries
+    _participants.removeWhere((p) => p.user.id.startsWith('agora_') || p.user.name.startsWith('Guest '));
+
+    // Update local state with real user object
+    if (existingIdx != -1 && existingIdx < _participants.length) {
       _participants[existingIdx] = _participants[existingIdx].copyWith(
+        user: actor,
         seatNumber: seatIndex,
         role: ParticipantRole.speaker,
         micStatus: MicStatus.on,
@@ -1071,11 +1087,6 @@ class LivePartyProvider extends ChangeNotifier {
   }
 
   bool isSeatLocked(int seatIndex) => _lockedSeatIndices.contains(seatIndex);
-
-  void toggleSpeakerOutput() {
-    _isSpeakerMuted = !_isSpeakerMuted;
-    notifyListeners();
-  }
 
   bool get isLocalMicMuted {
     if (_isRoomMuted) return true;

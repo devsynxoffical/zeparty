@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -11,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../models/live_room_model.dart';
 import '../../models/user_model.dart';
+import '../../core/utils/noble_badge_helper.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/game_provider.dart';
 import '../../providers/wallet_provider.dart';
@@ -24,7 +24,6 @@ import '../../widgets/gift_dialog.dart';
 import '../../widgets/gift_animation_overlay.dart';
 import '../../widgets/tiktok_gift_overlay.dart';
 import '../../providers/live_gift_provider.dart';
-import '../games/rocket_game_sheet.dart';
 import '../games/game_center_sheet.dart';
 import '../pk_battle/pk_match_screen.dart';
 import 'widgets/room_info_sheet.dart';
@@ -59,6 +58,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   final ScrollController _chatScrollController = ScrollController();
   bool _isMicMuted = false;
   final GlobalKey<GiftAnimationOverlayState> _giftOverlayKey = GlobalKey<GiftAnimationOverlayState>();
+  String _activeChatFilter = 'All';
+  bool _isNoticeExpanded = true;
 
   // ─── Room Tools State ───
   List<Color> _roomBackgroundGradient = [
@@ -524,7 +525,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                   isDark: isDark,
                 ),
 
-                // Notification & Chat stream directly following the last mic row
+                // Coordinated Room Guidelines Notice & Chat Filters Bar
+                _buildRoomNoticeAndFilterBar(provider),
+
+                // Notification & Chat stream directly following the notice bar
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.only(top: 2),
@@ -538,57 +542,46 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             ),
           ),
 
-          // Right-side Floating Action Shortcuts (Rocket Game & Game Lobby) - Lower-right placement above bottom composer (CR 32)
+          // Right-side Floating Action Shortcut (Game Lobby)
           Positioned(
-            right: 14,
-            bottom: MediaQuery.of(context).padding.bottom + 74 + MediaQuery.of(context).viewInsets.bottom,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Rocket Game Floating Icon (Rocket above Games)
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => const RocketGameSheet(),
-                    );
-                  },
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [Color(0xFFFF4081), Color(0xFF7C4DFF)]),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(color: Colors.purpleAccent.withValues(alpha: 0.6), blurRadius: 10, spreadRadius: 1),
-                      ],
+            right: 12,
+            bottom: MediaQuery.of(context).padding.bottom + 66 + MediaQuery.of(context).viewInsets.bottom,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => GameCenterSheet.show(context),
+              child: Container(
+                width: 46,
+                height: 46,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.8), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF00E5FF).withValues(alpha: 0.45),
+                      blurRadius: 10,
+                      spreadRadius: 1,
                     ),
-                    child: const Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 22),
+                  ],
+                ),
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/images/party_games_icon.jpg',
+                    width: 42,
+                    height: 42,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(colors: [Color(0xFF00E676), Color(0xFF00B0FF)]),
+                        ),
+                        child: const Icon(Icons.sports_esports_rounded, color: Colors.white, size: 22),
+                      );
+                    },
                   ),
                 ),
-                const SizedBox(height: 10),
-
-                // Game Center Lobby Icon
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => GameCenterSheet.show(context),
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [Color(0xFF00E676), Color(0xFF00B0FF)]),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(color: Colors.cyanAccent.withValues(alpha: 0.6), blurRadius: 10, spreadRadius: 1),
-                      ],
-                    ),
-                    child: const Icon(Icons.sports_esports_rounded, color: Colors.white, size: 22),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
 
@@ -669,19 +662,27 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                   const SizedBox(height: 2),
                                   Row(
                                     children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                        decoration: BoxDecoration(
-                                          color: Colors.amber.withValues(alpha: 0.25),
-                                          borderRadius: BorderRadius.circular(4),
-                                          border: Border.all(color: Colors.amber.withValues(alpha: 0.5), width: 0.5),
+                                      if (activeRoom.host.svipLevel > 0 ||
+                                          (activeRoom.host.nobleTitle != null &&
+                                              activeRoom.host.nobleTitle!.isNotEmpty &&
+                                              activeRoom.host.nobleTitle!.toLowerCase() != 'none') ||
+                                          (activeRoom.nobleTitle.isNotEmpty &&
+                                              activeRoom.nobleTitle.toLowerCase() != 'none' &&
+                                              NobleBadgeHelper.getTierFromTitle(activeRoom.nobleTitle) != NobleTier.none)) ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: Colors.amber.withValues(alpha: 0.25),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.amber.withValues(alpha: 0.5), width: 0.5),
+                                          ),
+                                          child: Text(
+                                            '👑 ${activeRoom.host.svipLevel > 0 ? (activeRoom.host.nobleTitle != null && activeRoom.host.nobleTitle!.toLowerCase().contains("svip") ? activeRoom.host.nobleTitle! : "SVIP ${activeRoom.host.svipLevel}") : (activeRoom.host.nobleTitle?.isNotEmpty == true ? activeRoom.host.nobleTitle! : activeRoom.nobleTitle)}',
+                                            style: const TextStyle(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.bold),
+                                          ),
                                         ),
-                                        child: Text(
-                                          '👑 ${activeRoom.nobleTitle}',
-                                          style: const TextStyle(color: Colors.amber, fontSize: 9, fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
+                                        const SizedBox(width: 6),
+                                      ],
                                       Expanded(
                                         child: Text(
                                           'ID:${activeRoom.id.length > 6 ? activeRoom.id.substring(0, 6) : activeRoom.id} • 👥 ${activeRoom.viewerCount}',
@@ -997,15 +998,25 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       capacity: activeRoom.seatCapacity,
       lockedSeats: provider.lockedSeatIndices,
       micSizePreset: gameProvider.roomMicSizePreset,
-      onSeatTap: (index) {
+      onSeatTap: (index) async {
         final occupant = provider.participants.where((p) => p.seatNumber == index).firstOrNull;
-        MicSeatManagementSheet.show(
-          context,
-          micIndex: index,
-          occupant: occupant,
-          isLocked: provider.isSeatLocked(index),
-          isMuted: provider.isSeatMuted(index),
-        );
+        final authUser = context.read<AuthProvider>().currentUser;
+        if (occupant == null && !provider.isSeatLocked(index)) {
+          final err = await provider.takeMicSeat(index, authUser);
+          if (context.mounted && err != null) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('❌ $err'), backgroundColor: Colors.redAccent),
+            );
+          }
+        } else {
+          MicSeatManagementSheet.show(
+            context,
+            micIndex: index,
+            occupant: occupant,
+            isLocked: provider.isSeatLocked(index),
+            isMuted: provider.isSeatMuted(index),
+          );
+        }
       },
       onParticipantTap: (participant) {
         InRoomProfileCardSheet.show(
@@ -1018,15 +1029,190 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     );
   }
 
+  Widget _buildRoomNoticeAndFilterBar(LivePartyProvider provider) {
+    final activeRoom = provider.activeRoom ?? widget.room;
+    final announcement = activeRoom.announcement;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Filter Tabs Row (Matching Ahlan reference)
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _activeChatFilter,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    const Icon(Icons.arrow_drop_down_rounded, color: Colors.white70, size: 16),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _activeChatFilter = _activeChatFilter == 'My' ? 'All' : 'My';
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _activeChatFilter == 'My' ? Colors.white.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'My',
+                    style: TextStyle(
+                      color: _activeChatFilter == 'My' ? Colors.amberAccent : Colors.white60,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _activeChatFilter = _activeChatFilter == 'Radio' ? 'All' : 'Radio';
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _activeChatFilter == 'Radio' ? Colors.white.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Radio',
+                    style: TextStyle(
+                      color: _activeChatFilter == 'Radio' ? Colors.cyanAccent : Colors.white60,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              // Collapsible chevron toggle for room notice
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isNoticeExpanded = !_isNoticeExpanded;
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _isNoticeExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                    color: Colors.white70,
+                    size: 16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          // Coordinated Room Guidelines Notice (Ahlan Reference Match)
+          if (_isNoticeExpanded) ...[
+            const SizedBox(height: 5),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E1338).withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.deepOrangeAccent.withValues(alpha: 0.25)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Welcome to ${activeRoom.title}: please respect each other, no vulgar words, no politics, no religion, no violence, no sexual topic etc.',
+                    style: const TextStyle(
+                      color: Color(0xFFFFB74D),
+                      fontSize: 11,
+                      height: 1.3,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (announcement.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Notice: 📝 ',
+                          style: TextStyle(
+                            color: Color(0xFFFFCC80),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            announcement,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildChatFeed(LivePartyProvider provider) {
+    final messages = provider.messages;
+    final filteredMessages = messages.where((msg) {
+      if (_activeChatFilter == 'My') {
+        final currentUserId = Provider.of<AuthProvider>(context, listen: false).currentUser.id;
+        return msg.sender.id == currentUserId;
+      } else if (_activeChatFilter == 'Radio') {
+        return msg.isGiftMessage || msg.sender.id == 'system';
+      }
+      return true;
+    }).toList();
+
     return ListView.builder(
       controller: _chatScrollController,
       reverse: true,
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-      itemCount: provider.messages.length,
+      padding: const EdgeInsets.fromLTRB(14, 4, 68, 4), // 68px right-padding ensures floating tools never obscure chat
+      itemCount: filteredMessages.length,
       itemBuilder: (context, index) {
-        final msg = provider.messages.reversed.toList()[index];
+        final msg = filteredMessages.reversed.toList()[index];
         final isSystem = msg.sender.id == 'system';
         final isHostMsg = msg.sender.id == widget.room.host.id;
         
@@ -1070,155 +1256,368 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: const Color(0xFF140D24).withValues(alpha: 0.96),
-          border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
-        ),
-        child: Row(
-          children: [
-            // ── Far Left: Standalone "+" Options Button ──
-            IconButton(
-              icon: const Icon(Icons.add, color: Colors.white, size: 28),
-              onPressed: () => _showRoomTools(context, canManage, isHost, provider, isDark),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              tooltip: 'More Options',
-            ),
-            const SizedBox(width: 10),
-
-            // ── Center: WhatsApp Dark Pill Input Field ──
-            Expanded(
-              child: Container(
-                height: 46,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(23),
-                  border: Border.all(color: Colors.purple.withValues(alpha: 0.2)),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _chatController,
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
-                        cursorColor: Colors.pinkAccent,
-                        readOnly: false,
-                        onTap: () {
-                          ExpandedMessagePanel.show(
-                            context,
-                            onOpenStickers: () => _showStickerPanel(context),
-                          );
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Say something...',
-                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 14),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          filled: false,
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        onSubmitted: (_) => _sendChatMessage(),
-                        onChanged: (val) {
-                          if (mounted) setState(() {});
-                        },
+          decoration: BoxDecoration(
+            color: const Color(0xFF140D24).withValues(alpha: 0.96),
+            border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+          ),
+          child: Row(
+            children: [
+              // ── Far Left: Standalone 3D "+" Options Button ──
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _showRoomTools(context, canManage, isHost, provider, isDark),
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const RadialGradient(
+                      center: Alignment(-0.3, -0.4),
+                      radius: 0.9,
+                      colors: [
+                        Color(0xFF5A447E),
+                        Color(0xFF2C194D),
+                        Color(0xFF190C30),
+                      ],
+                    ),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.35),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        blurRadius: 6,
+                        offset: const Offset(0, 3),
                       ),
-                    ),
-                    
-                    // Emoji Face Logo Icon (Amber Gold)
-                    IconButton(
-                      icon: const Icon(Icons.sentiment_satisfied_alt_rounded, color: Colors.amber, size: 22),
-                      onPressed: () => _showStickerPanel(context),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      tooltip: 'Emojis & Stickers',
-                    ),
-
-                    if (_chatController.text.isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      IconButton(
-                        icon: const Icon(Icons.send_rounded, color: Color(0xFFFF416C), size: 20),
-                        onPressed: _sendChatMessage,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        tooltip: 'Send Message',
+                      BoxShadow(
+                        color: const Color(0xFF7E57C2).withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        spreadRadius: 0.5,
                       ),
                     ],
-                  ],
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.add_rounded,
+                      color: Colors.white,
+                      size: 22,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black54,
+                          blurRadius: 3,
+                          offset: Offset(0, 1.5),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
+              const SizedBox(width: 8),
 
-            // ── Far Right Action Icons (Gift, Sound Speaker & Microphone) ──
-            if (!isKeyboardOpen) ...[
-              // Gift Icon Button
-              IconButton(
-                icon: const Icon(Icons.card_giftcard_rounded, color: Color(0xFFFF4081), size: 24),
-                onPressed: _openGiftDialog,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                tooltip: 'Send Gift',
-              ),
-              const SizedBox(width: 10),
+              // ── Center: Dark Pill Input Field with 3D Emoji Icon ──
+              Expanded(
+                child: Container(
+                  height: 40,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _chatController,
+                          style: const TextStyle(color: Colors.white, fontSize: 13.5),
+                          cursorColor: Colors.pinkAccent,
+                          readOnly: false,
+                          onTap: () {
+                            ExpandedMessagePanel.show(
+                              context,
+                              onOpenStickers: () => _showStickerPanel(context),
+                            );
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'Say something...',
+                            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 13.5),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            filled: false,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                          ),
+                          onSubmitted: (_) => _sendChatMessage(),
+                          onChanged: (val) {
+                            if (mounted) setState(() {});
+                          },
+                        ),
+                      ),
+                      
+                      // 3D Emoji Face Logo Button
+                      GestureDetector(
+                        onTap: () => _showStickerPanel(context),
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const RadialGradient(
+                              center: Alignment(-0.3, -0.4),
+                              radius: 0.85,
+                              colors: [
+                                Color(0xFFFFE082),
+                                Color(0xFFFFB300),
+                                Color(0xFFFF8F00),
+                                Color(0xFFE65100),
+                              ],
+                            ),
+                            border: Border.all(
+                              color: const Color(0xFFFFF9C4).withValues(alpha: 0.8),
+                              width: 1.2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFF8F00).withValues(alpha: 0.5),
+                                blurRadius: 5,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Center(
+                            child: Icon(
+                              Icons.sentiment_satisfied_alt_rounded,
+                              color: Color(0xFF5D2800),
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                      ),
 
-              // Room Sound / Speaker Button (Cyan when Active, Red when Muted)
-              IconButton(
-                icon: Icon(
-                  provider.isSpeakerMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                  color: provider.isSpeakerMuted ? Colors.redAccent : const Color(0xFF00E5FF),
-                  size: 24,
+                      if (_chatController.text.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        IconButton(
+                          icon: const Icon(Icons.send_rounded, color: Color(0xFFFF416C), size: 18),
+                          onPressed: _sendChatMessage,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          tooltip: 'Send Message',
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-                onPressed: () {
-                  provider.toggleSpeakerOutput();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(provider.isSpeakerMuted ? 'Room Audio Off 🔇' : 'Room Audio On 🔊'),
-                      duration: const Duration(seconds: 1),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                tooltip: provider.isSpeakerMuted ? 'Turn Sound On' : 'Turn Sound Off',
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
 
-              // Microphone Toggle Button (Green when Active, Red/Grey when Muted)
-              Builder(
-                builder: (ctx) {
-                  final user = ctx.watch<AuthProvider>().currentUser;
-                  final isHost = provider.activeRoom?.host.id == user.id || provider.activeRoom?.creatorUserId == user.id;
-                  final isSeated = provider.participants.any((p) => (p.user.id == user.id || p.user.username == user.username) && p.seatNumber != null);
-                  final canSpeak = isHost || isSeated;
-
-                  final isMuted = provider.isRoomMuted || _isMicMuted || !canSpeak;
-                  final micColor = !canSpeak
-                      ? Colors.grey
-                      : (isMuted ? Colors.redAccent : const Color(0xFF00E676));
-
-                  return IconButton(
-                    icon: Icon(
-                      isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                      color: micColor,
-                      size: 24,
+              // ── Far Right Action Icons (3D Sound Speaker, 3D Microphone & 3D Gift Box) ──
+              if (!isKeyboardOpen) ...[
+                // 3D Room Sound / Speaker Button
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {
+                    provider.toggleSpeakerOutput();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(provider.isSpeakerMuted ? 'Room Audio Off 🔇' : 'Room Audio On 🔊'),
+                        duration: const Duration(seconds: 1),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  },
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        center: const Alignment(-0.3, -0.4),
+                        radius: 0.9,
+                        colors: provider.isSpeakerMuted
+                            ? [
+                                const Color(0xFFFF8A80),
+                                const Color(0xFFFF1744),
+                                const Color(0xFFB71C1C),
+                              ]
+                            : [
+                                const Color(0xFF80D8FF),
+                                const Color(0xFF00B0FF),
+                                const Color(0xFF0D47A1),
+                              ],
+                      ),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: (provider.isSpeakerMuted ? Colors.redAccent : const Color(0xFF00B0FF)).withValues(alpha: 0.45),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
                     ),
-                    onPressed: _toggleMic,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                    tooltip: isMuted ? 'Unmute Mic' : 'Mute Mic',
-                  );
-                },
-              ),
+                    child: Center(
+                      child: Icon(
+                        provider.isSpeakerMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                        color: Colors.white,
+                        size: 20,
+                        shadows: const [
+                          Shadow(color: Colors.black45, blurRadius: 3, offset: Offset(0, 1.5)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // 3D Microphone Toggle Button
+                Builder(
+                  builder: (ctx) {
+                    final user = ctx.watch<AuthProvider>().currentUser;
+                    final isHost = provider.activeRoom?.host.id == user.id || provider.activeRoom?.creatorUserId == user.id;
+                    final isSeated = provider.participants.any((p) => (p.user.id == user.id || p.user.username == user.username) && p.seatNumber != null);
+                    final canSpeak = isHost || isSeated;
+
+                    final isMuted = provider.isRoomMuted || _isMicMuted || !canSpeak;
+
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _toggleMic,
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            center: const Alignment(-0.3, -0.4),
+                            radius: 0.9,
+                            colors: !canSpeak
+                                ? [
+                                    const Color(0xFF9E9E9E),
+                                    const Color(0xFF616161),
+                                    const Color(0xFF212121),
+                                  ]
+                                : (isMuted
+                                    ? [
+                                        const Color(0xFFFF8A80),
+                                        const Color(0xFFFF1744),
+                                        const Color(0xFFB71C1C),
+                                      ]
+                                    : [
+                                        const Color(0xFFB9F6CA),
+                                        const Color(0xFF00E676),
+                                        const Color(0xFF004D40),
+                                      ]),
+                          ),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.45),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: (!canSpeak
+                                      ? Colors.black38
+                                      : (isMuted ? Colors.redAccent : const Color(0xFF00E676)))
+                                  .withValues(alpha: 0.45),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Center(
+                          child: Icon(
+                            isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                            color: Colors.white,
+                            size: 20,
+                            shadows: const [
+                              Shadow(color: Colors.black45, blurRadius: 3, offset: Offset(0, 1.5)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 8),
+
+                // 3D Gift Box Button (Upgraded detailed asset with depth, gradient badge & shadow)
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _openGiftDialog,
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFF4081).withValues(alpha: 0.4),
+                                blurRadius: 10,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                          child: ClipOval(
+                            child: Image.asset(
+                              'assets/images/party_gift_box.jpg',
+                              width: 42,
+                              height: 42,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  color: const Color(0xFFFF4081),
+                                  child: const Icon(Icons.card_giftcard_rounded, color: Colors.white, size: 22),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        // Vibrant Glow Ring & Tag
+                        Positioned(
+                          bottom: -3,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFFB300), Color(0xFFFF8F00)],
+                              ),
+                              borderRadius: BorderRadius.circular(6),
+                              boxShadow: [
+                                BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 2),
+                              ],
+                            ),
+                            child: const Text(
+                              'GIFT',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 7.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   void _showRoomTools(
@@ -1262,128 +1661,249 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                     crossAxisSpacing: 12,
                     childAspectRatio: 0.95,
                     children: [
-                      // Member controls (Unmarked - Available to all users)
-                      _buildRoomToolBtn(_isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded, _isMicMuted ? 'Unmute Mic' : 'Mute Mic', _isMicMuted ? Colors.redAccent : Colors.green, () {
-                        Navigator.pop(ctx);
-                        _toggleMic();
-                      }),
-                      _buildRoomToolBtn(provider.isSpeakerMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded, provider.isSpeakerMuted ? 'Unmute Room' : 'Mute Room', provider.isSpeakerMuted ? Colors.redAccent : Colors.cyan, () {
-                        Navigator.pop(ctx);
-                        provider.toggleSpeakerOutput();
-                      }),
-                      _buildRoomToolBtn(Icons.card_giftcard_rounded, 'Send Gift', Colors.pinkAccent, () {
-                        Navigator.pop(ctx);
-                        _openGiftDialog();
-                      }),
-                      _buildRoomToolBtn(Icons.share_rounded, 'Share Link', Colors.lightBlueAccent, () {
-                        Navigator.pop(ctx);
-                        RoomShareService.shareRoom(
-                          context,
-                          roomId: widget.room.id,
-                          roomTitle: widget.room.title,
-                          isParty: true,
-                        );
-                      }),
-                      _buildRoomToolBtn(Icons.airline_seat_recline_normal_rounded, 'Assign Seat', Colors.tealAccent, () {
-                        Navigator.pop(ctx);
-                        _showManagementPanel(context, isDark, provider);
-                      }),
-                      _buildRoomToolBtn(Icons.rocket_launch_rounded, 'Rocket Game', Colors.indigoAccent, () {
-                        Navigator.pop(ctx);
-                        showModalBottomSheet(
-                          context: context,
-                          isScrollControlled: true,
-                          backgroundColor: Colors.transparent,
-                          builder: (_) => const RocketGameSheet(),
-                        );
-                      }),
+                      // Member controls (Upgraded with 3D Glass Option Icons)
+                      _buildRoomToolBtn(
+                        _isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                        _isMicMuted ? 'Unmute Mic' : 'Mute Mic',
+                        _isMicMuted ? Colors.redAccent : Colors.green,
+                        () {
+                          Navigator.pop(ctx);
+                          _toggleMic();
+                        },
+                        imageAsset: 'assets/images/party_tool_mic.png',
+                      ),
+                      _buildRoomToolBtn(
+                        provider.isSpeakerMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                        provider.isSpeakerMuted ? 'Unmute Room' : 'Mute Room',
+                        provider.isSpeakerMuted ? Colors.redAccent : Colors.cyan,
+                        () {
+                          Navigator.pop(ctx);
+                          provider.toggleSpeakerOutput();
+                        },
+                        imageAsset: 'assets/images/party_tool_mute_room.png',
+                      ),
+                      _buildRoomToolBtn(
+                        Icons.card_giftcard_rounded,
+                        'Send Gift',
+                        Colors.pinkAccent,
+                        () {
+                          Navigator.pop(ctx);
+                          _openGiftDialog();
+                        },
+                        imageAsset: 'assets/images/party_tool_gift.png',
+                      ),
+                      _buildRoomToolBtn(
+                        Icons.share_rounded,
+                        'Share Link',
+                        Colors.lightBlueAccent,
+                        () {
+                          Navigator.pop(ctx);
+                          RoomShareService.shareRoom(
+                            context,
+                            roomId: widget.room.id,
+                            roomTitle: widget.room.title,
+                            isParty: true,
+                          );
+                        },
+                        imageAsset: 'assets/images/party_tool_share.png',
+                      ),
+                      _buildRoomToolBtn(
+                        Icons.airline_seat_recline_normal_rounded,
+                        'Assign Seat',
+                        Colors.tealAccent,
+                        () {
+                          Navigator.pop(ctx);
+                          _showManagementPanel(context, isDark, provider);
+                        },
+                        imageAsset: 'assets/images/party_tool_seat.png',
+                      ),
+                      _buildRoomToolBtn(
+                        Icons.sports_esports_rounded,
+                        'Game Center',
+                        Colors.cyanAccent,
+                        () {
+                          Navigator.pop(ctx);
+                          GameCenterSheet.show(context);
+                        },
+                        imageAsset: 'assets/images/party_tool_game_center.png',
+                      ),
 
                       // Management Controls (CR 38 - Strictly Gated to Owner & Admins)
                       if (canManage) ...[
-                        _buildRoomToolBtn(Icons.dashboard_customize_rounded, 'Room Type', Colors.amber, () {
-                          Navigator.pop(ctx);
-                          final activeRoom = provider.activeRoom ?? widget.room;
-                          showModalBottomSheet(
-                            context: context,
-                            backgroundColor: Colors.transparent,
-                            isScrollControlled: true,
-                            builder: (_) => RoomTypeSelectorSheet(
-                              initialRoomType: activeRoom.roomType,
-                              initialCapacity: activeRoom.seatCapacity,
-                              onApply: (roomType, capacity) {
-                                provider.updateRoomTypeAndCapacity(roomType, capacity);
-                              },
-                            ),
-                          );
-                        }),
-                        _buildRoomToolBtn(Icons.flash_on_rounded, provider.isPkActive ? 'End PK' : 'PK Match', Colors.deepOrangeAccent, () {
-                          Navigator.pop(ctx);
-                          if (provider.isPkActive) {
-                            provider.endPk();
-                          } else {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
-                          }
-                        }),
-                        _buildRoomToolBtn(Icons.group_rounded, 'Members', Colors.teal, () {
-                          Navigator.pop(ctx);
-                          _showManagementPanel(context, isDark, provider);
-                        }),
-                        _buildRoomToolBtn(Icons.lock_rounded, 'Lock Seats', Colors.redAccent, () {
-                          Navigator.pop(ctx);
-                          _showSeatLockDialog(context, provider);
-                        }),
-                        _buildRoomToolBtn(Icons.wallpaper_rounded, 'Backgrounds', Colors.blue, () {
-                          Navigator.pop(ctx);
-                          _showBackgroundPicker(context);
-                        }),
-                        _buildRoomToolBtn(Icons.add_photo_alternate_rounded, 'Change Cover', Colors.purpleAccent, () {
-                          Navigator.pop(ctx);
-                          _showCoverPicker(context);
-                        }),
-                        _buildRoomToolBtn(Icons.palette_outlined, 'Themes', Colors.purple, () {
-                          Navigator.pop(ctx);
-                          _showThemePicker(context);
-                        }),
-                        _buildRoomToolBtn(Icons.music_note_rounded, 'Music Player', Colors.pink, () {
-                          Navigator.pop(ctx);
-                          _showMusicLibrary(context);
-                        }),
-                        _buildRoomToolBtn(Icons.auto_awesome_rounded, 'Effects Settings', Colors.amberAccent, () {
-                          Navigator.pop(ctx);
-                          EffectsSettingsSheet.show(context);
-                        }),
-                        _buildRoomToolBtn(Icons.campaign_rounded, 'Announcement', Colors.amber, () {
-                          Navigator.pop(ctx);
-                          final authUser = context.read<AuthProvider>().currentUser;
-                          final isHost = widget.room.host.id == authUser.id;
-                          final isAdmin = authUser.role == UserRole.admin || authUser.id == 'admin';
-                          RoomAnnouncementEditDialog.show(
-                            context,
-                            roomId: widget.room.id,
-                            isHost: isHost,
-                            isAdmin: isAdmin,
-                          );
-                        }),
-                        _buildRoomToolBtn(Icons.settings_suggest_outlined, 'Settings', Colors.orange, () {
-                          Navigator.pop(ctx);
-                          _showRoomSettings(context);
-                        }),
-                        _buildRoomToolBtn(Icons.play_circle_fill_rounded, 'YouTube', Colors.redAccent, () {
-                          Navigator.pop(ctx);
-                          _showYouTubeControlDialog(context);
-                        }),
-                        _buildRoomToolBtn(Icons.casino_rounded, 'Super Wheel', Colors.amberAccent, () {
-                          Navigator.pop(ctx);
-                          _showSuperWheelControlDialog(context);
-                        }),
-                        _buildRoomToolBtn(Icons.card_giftcard_rounded, 'Lucky Bag', Colors.orangeAccent, () {
-                          Navigator.pop(ctx);
-                          _showLuckyBagControlDialog(context);
-                        }),
-                        _buildRoomToolBtn(Icons.lock_rounded, 'Lock Room', Colors.cyanAccent, () {
-                          Navigator.pop(ctx);
-                          _showLockRoomControlDialog(context);
-                        }),
+                        _buildRoomToolBtn(
+                          Icons.dashboard_customize_rounded,
+                          'Room Type',
+                          Colors.amber,
+                          () {
+                            Navigator.pop(ctx);
+                            final activeRoom = provider.activeRoom ?? widget.room;
+                            showModalBottomSheet(
+                              context: context,
+                              backgroundColor: Colors.transparent,
+                              isScrollControlled: true,
+                              builder: (_) => RoomTypeSelectorSheet(
+                                initialRoomType: activeRoom.roomType,
+                                initialCapacity: activeRoom.seatCapacity,
+                                onApply: (roomType, capacity) {
+                                  provider.updateRoomTypeAndCapacity(roomType, capacity);
+                                },
+                              ),
+                            );
+                          },
+                          imageAsset: 'assets/images/party_tool_room_type.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.flash_on_rounded,
+                          provider.isPkActive ? 'End PK' : 'PK Match',
+                          Colors.deepOrangeAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            if (provider.isPkActive) {
+                              provider.endPk();
+                            } else {
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
+                            }
+                          },
+                          imageAsset: 'assets/images/party_tool_pk_match.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.group_rounded,
+                          'Members',
+                          Colors.teal,
+                          () {
+                            Navigator.pop(ctx);
+                            _showManagementPanel(context, isDark, provider);
+                          },
+                          imageAsset: 'assets/images/party_tool_members.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.lock_rounded,
+                          'Lock Seats',
+                          Colors.redAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            _showSeatLockDialog(context, provider);
+                          },
+                          imageAsset: 'assets/images/party_tool_lock_seats.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.wallpaper_rounded,
+                          'Backgrounds',
+                          Colors.blue,
+                          () {
+                            Navigator.pop(ctx);
+                            _showBackgroundPicker(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_backgrounds.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.add_photo_alternate_rounded,
+                          'Change Cover',
+                          Colors.purpleAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            _showCoverPicker(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_change_cover.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.palette_outlined,
+                          'Themes',
+                          Colors.purple,
+                          () {
+                            Navigator.pop(ctx);
+                            _showThemePicker(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_themes.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.music_note_rounded,
+                          'Music Player',
+                          Colors.pink,
+                          () {
+                            Navigator.pop(ctx);
+                            _showMusicLibrary(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_music_player.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.auto_awesome_rounded,
+                          'Effects Settings',
+                          Colors.amberAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            EffectsSettingsSheet.show(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_effects_settings.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.campaign_rounded,
+                          'Announcement',
+                          Colors.amber,
+                          () {
+                            Navigator.pop(ctx);
+                            final authUser = context.read<AuthProvider>().currentUser;
+                            final isHost = widget.room.host.id == authUser.id;
+                            final isAdmin = authUser.role == UserRole.admin || authUser.id == 'admin';
+                            RoomAnnouncementEditDialog.show(
+                              context,
+                              roomId: widget.room.id,
+                              isHost: isHost,
+                              isAdmin: isAdmin,
+                            );
+                          },
+                          imageAsset: 'assets/images/party_tool_announcement.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.settings_suggest_outlined,
+                          'Settings',
+                          Colors.orange,
+                          () {
+                            Navigator.pop(ctx);
+                            _showRoomSettings(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_settings.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.play_circle_fill_rounded,
+                          'YouTube',
+                          Colors.redAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            _showYouTubeControlDialog(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_youtube.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.casino_rounded,
+                          'Super Wheel',
+                          Colors.amberAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            _showSuperWheelControlDialog(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_superwheel.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.card_giftcard_rounded,
+                          'Lucky Bag',
+                          Colors.orangeAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            _showLuckyBagControlDialog(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_luckybag.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.lock_rounded,
+                          'Lock Room',
+                          Colors.cyanAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            _showLockRoomControlDialog(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_lockroom.png',
+                        ),
                       ],
                     ],
                   ),
@@ -2862,28 +3382,58 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     );
   }
 
-  Widget _buildRoomToolBtn(IconData icon, String label, Color color, VoidCallback onTap) {
+  Widget _buildRoomToolBtn(
+    IconData icon,
+    String label,
+    Color color,
+    VoidCallback onTap, {
+    String? imageAsset,
+  }) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-              border: Border.all(color: color.withValues(alpha: 0.3)),
+          if (imageAsset != null)
+            SizedBox(
+              width: 52,
+              height: 52,
+              child: ClipOval(
+                child: Image.asset(
+                  imageAsset,
+                  width: 52,
+                  height: 52,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: color.withValues(alpha: 0.3)),
+                    ),
+                    child: Icon(icon, color: color, size: 26),
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+                border: Border.all(color: color.withValues(alpha: 0.3)),
+              ),
+              child: Icon(icon, color: color, size: 26),
             ),
-            child: Icon(icon, color: color, size: 28),
-          ),
           const SizedBox(height: 6),
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
               label,
-              style: const TextStyle(color: Colors.white70, fontSize: 12),
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
               textAlign: TextAlign.center,
             ),
           ),

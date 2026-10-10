@@ -68,12 +68,10 @@ class _ApplyAgencyScreenState extends State<ApplyAgencyScreen> {
                     return;
                   }
 
-                  // 1. Register Agency in Provider
-                  context.read<AgencyProvider>().registerAgency(
-                    name: name,
-                    description: desc.isEmpty ? 'Official ZeParty Agency' : desc,
-                    ownerUserId: authUser.id,
-                    ownerName: authUser.name,
+                  context.read<AgencyProvider>().registerAgencyBackend(
+                    agencyName: name,
+                    contactNumber: 'N/A',
+                    country: authUser.countryFlag.isNotEmpty ? authUser.countryFlag : 'Global',
                   );
 
                   // 2. Notify User

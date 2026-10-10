@@ -256,15 +256,11 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
             ),
           ),
           Container(
-            padding: EdgeInsets.all(8.w),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
+            padding: EdgeInsets.all(4.w),
             child: Image.asset(
               rank.badgeAsset,
-              width: 56.w,
-              height: 56.h,
+              width: 64.w,
+              height: 64.h,
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) => const Text('👑', style: TextStyle(fontSize: 34)),
             ),
