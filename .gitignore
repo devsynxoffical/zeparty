@@ -25,14 +25,24 @@ build/
 npm-debug.log*
 yarn-debug.log*
 
-# Excluded by request: Docs, Plans, Readmes, Markdown
+# Excluded by request: Docs, Plans, Readmes, Markdown, Word Docs & Text
 docs/
 **/docs/
 *.md
 **/*.md
+*.docx
+**/*.docx
+*.pdf
+**/*.pdf
 *.txt
 **/*.txt
 temp_mobile/
+scratch/
+**/scratch/
+
+# Excluded by request: Python helper scripts
+*.py
+**/*.py
 
 # Excluded by request: Tests & test runners
 tests/
@@ -43,9 +53,14 @@ test_*.js
 **/test_*.js
 run_all_tests.js
 **/run_all_tests.js
+run_all_test_suites.js
+**/run_all_test_suites.js
 check_*.js
 **/check_*.js
 quick_test.js
 **/quick_test.js
 verify_*.js
 **/verify_*.js
+backend/scripts/test_*
+backend/scripts/generate_*
+backend/scripts/build_*
