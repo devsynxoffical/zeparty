@@ -1178,25 +1178,6 @@ export async function putAdminUserPermissions(req, res, next) {
   }
 }
 
-export default {
-  getAdminUsers,
-  getAdminUserById,
-  patchAdminUserStatus,
-  postAdminUser,
-  putAdminUser,
-  deleteAdminUser,
-  restoreAdminUser,
-  purgeAdminUser,
-  deleteSelfAccount,
-  getMe,
-  putMyProfile,
-  getPublicUserById,
-  searchUsers,
-  postAdminChangeUserCountry,
-  postAdminVerifyUserForGrant,
-  postAdminGrantUniqueItem,
-  postAdminRevokeUniqueItem,
-  getProfileGrid,
 export async function getAdminPropsCatalog(req, res, next) {
   try {
     const { category } = req.query;

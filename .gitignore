@@ -64,3 +64,5 @@ verify_*.js
 backend/scripts/test_*
 backend/scripts/generate_*
 backend/scripts/build_*
+backend/scripts/git_audit.js
+scripts/
