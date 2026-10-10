@@ -1234,6 +1234,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         final isMod = participantInfo?.role == ParticipantRole.moderator;
         final isVip = msg.sender.wealthLevel >= 10 || msg.sender.isVip;
 
+        final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
         final isHost = widget.room.host.id == currentUser.id;
         final canManage = isHost || provider.participants.any((p) => p.user.id == currentUser.id && p.role == ParticipantRole.moderator);
         final isMeMsg = msg.sender.id == currentUser.id;
