@@ -1,14 +1,32 @@
 import prisma from '../config/database.js';
 
 export async function createBanner(
-  { title, imageUrl, destinationUrl = null, position = 0, isActive = true, startsAt = null, endsAt = null },
+  {
+    title = null,
+    subtitle = null,
+    customText = null,
+    imageUrl,
+    destinationUrl = null,
+    placement = 'HOME_CAROUSEL',
+    targetType = 'GLOBAL',
+    countries = null,
+    position = 0,
+    isActive = true,
+    startsAt = null,
+    endsAt = null,
+  },
   db = prisma
 ) {
   return await db.banner.create({
     data: {
-      title,
+      title: title || null,
+      subtitle: subtitle || null,
+      customText: customText || null,
       imageUrl,
-      destinationUrl,
+      destinationUrl: destinationUrl || null,
+      placement: placement || 'HOME_CAROUSEL',
+      targetType: targetType || 'GLOBAL',
+      countries: countries || null,
       position: Number(position) || 0,
       isActive: Boolean(isActive),
       startsAt: startsAt ? new Date(startsAt) : null,
@@ -35,7 +53,11 @@ export async function findAdminBanners(
   }
 
   if (search && search.trim() !== '') {
-    where.title = { contains: search.trim(), mode: 'insensitive' };
+    where.OR = [
+      { title: { contains: search.trim(), mode: 'insensitive' } },
+      { subtitle: { contains: search.trim(), mode: 'insensitive' } },
+      { customText: { contains: search.trim(), mode: 'insensitive' } },
+    ];
   }
 
   const parsedPage = Math.max(1, Number(page) || 1);

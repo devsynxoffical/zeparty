@@ -1529,9 +1529,14 @@ model PaymentProvider {
 
 model Banner {
   id             String    @id @default(uuid())
-  title          String
+  title          String?
+  subtitle       String?
+  customText     String?
   imageUrl       String
   destinationUrl String?
+  placement      String?   @default("HOME_CAROUSEL")
+  targetType     String?   @default("GLOBAL")
+  countries      String?
   position       Int       @default(0)
   isActive       Boolean   @default(true)
   startsAt       DateTime?

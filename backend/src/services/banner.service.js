@@ -106,8 +106,11 @@ export async function getActiveBanners(userCountryCode, db = prisma) {
     const targetCountry = String(userCountryCode).toUpperCase();
     banners = banners.filter((b) => {
       // If banner has specific country targeting, enforce matching
-      if (b.targetType === 'COUNTRY_WISE' && Array.isArray(b.countries) && b.countries.length > 0) {
-        return b.countries.map((c) => c.toUpperCase()).includes(targetCountry);
+      if (b.targetType === 'COUNTRY_WISE' && b.countries) {
+        const countryArr = Array.isArray(b.countries)
+          ? b.countries.map((c) => String(c).toUpperCase())
+          : String(b.countries).split(',').map((c) => c.trim().toUpperCase());
+        return countryArr.includes(targetCountry);
       }
       return true; // Global banners
     });
