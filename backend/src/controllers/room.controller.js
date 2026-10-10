@@ -177,6 +177,19 @@ export async function getAdminRoomById(req, res, next) {
   }
 }
 
+export async function getAdminPinnedPositions(req, res, next) {
+  try {
+    const result = await roomService.adminGetPinnedPositions();
+    return res.status(200).json({
+      success: true,
+      message: 'Pinned room positions retrieved successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function postAdminPinRoom(req, res, next) {
   try {
     const { id } = roomIdParamSchema.parse(req.params);
@@ -429,6 +442,142 @@ export async function getRoomSendingRankings(req, res, next) {
   }
 }
 
+export async function uploadPaidRoomTheme(req, res, next) {
+  try {
+    const { id } = req.params;
+    const userId = req.auth?.userId;
+    const { themeUrl, themeType } = req.body;
+    const result = await roomService.uploadPaidRoomTheme({ roomId: id, userId, themeUrl, themeType });
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRoomMicConfig(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await roomService.getRoomMicConfig(id);
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateRoomMicConfig(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { micPreset } = req.body;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.updateRoomMicConfig(id, { micPreset, actorUserId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRoomAnnouncement(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await roomService.getRoomAnnouncement(id);
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateRoomAnnouncement(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { announcement, isEnabled } = req.body;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.updateRoomAnnouncement(id, { announcement, isEnabled, actorUserId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function controlRoomYouTube(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.controlRoomYouTube(id, { ...req.body, actorUserId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function controlSuperWheel(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.controlSuperWheel(id, { ...req.body, actorUserId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function controlLuckyBag(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.controlLuckyBag(id, { ...req.body, actorUserId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function controlRoomLock(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.controlRoomLock(id, { ...req.body, actorUserId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function manageMicSeatAction(req, res, next) {
+  try {
+    const { id, seatIndex } = req.params;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.manageMicSeatAction(id, { seatIndex, ...req.body, actorUserId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function sendMicReaction(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.sendMicReaction(id, { ...req.body, actorUserId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEntryBannerConfig(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await roomService.getEntryBannerConfig(id);
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -440,6 +589,7 @@ export default {
   closeMyRoom,
   getAdminRooms,
   getAdminRoomById,
+  getAdminPinnedPositions,
   postAdminPinRoom,
   deleteAdminPinRoom,
   postAdminCloseRoom,
@@ -452,4 +602,16 @@ export default {
   getRoomMembers,
   updateMemberRole,
   getRoomSendingRankings,
+  uploadPaidRoomTheme,
+  getRoomMicConfig,
+  updateRoomMicConfig,
+  getRoomAnnouncement,
+  updateRoomAnnouncement,
+  controlRoomYouTube,
+  controlSuperWheel,
+  controlLuckyBag,
+  controlRoomLock,
+  manageMicSeatAction,
+  sendMicReaction,
+  getEntryBannerConfig,
 };

@@ -29,7 +29,13 @@ userGameRouter.get('/leaderboards/:id', gameController.getLeaderboard);
 userGameRouter.get('/missions', authenticate, gameController.getMissions);
 userGameRouter.post('/missions/:id/claim', authenticate, gameController.claimMission);
 
+// ── Module 01: Rocket Game 5-Level Targets ──
+userGameRouter.get('/rocket/progress', gameController.getRocketProgress);
+userGameRouter.post('/rocket/contribute', authenticate, gameController.contributeRocket);
+
 // ── Admin Game Routes ──
 adminGameRouter.get('/', gameController.getCatalog);
+adminGameRouter.get('/rocket/targets', gameController.getRocketTargetsAdmin);
+adminGameRouter.put('/rocket/targets', gameController.updateRocketTargetsAdmin);
 
 export default { userGameRouter, adminGameRouter };

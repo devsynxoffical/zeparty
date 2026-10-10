@@ -15,6 +15,10 @@ adminMerchantRouter.post('/:id/adjust-balance', requirePermission('manage_mercha
 adminMerchantRouter.post('/:id/balance', requirePermission('manage_merchants'), merchantController.adjustBalance);
 adminMerchantRouter.delete('/:id', requirePermission('manage_merchants'), merchantController.deleteMerchant);
 
+export const userMerchantRouter = express.Router();
+userMerchantRouter.get('/recharge/verify', authenticate, merchantController.verifyMerchantRecharge);
+
 export default {
   adminMerchantRouter,
+  userMerchantRouter,
 };

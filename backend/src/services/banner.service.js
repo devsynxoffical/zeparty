@@ -84,7 +84,7 @@ export async function createBanner(
   return banner;
 }
 
-export async function getActiveBanners(db = prisma) {
+export async function getActiveBanners(userCountryCode, db = prisma) {
   let banners = await bannerRepository.findActiveBanners(new Date(), db);
   
   // Auto-seed default rich templates if table is completely empty
@@ -102,8 +102,20 @@ export async function getActiveBanners(db = prisma) {
     }
   }
 
+  if (userCountryCode && userCountryCode !== 'GLOBAL') {
+    const targetCountry = String(userCountryCode).toUpperCase();
+    banners = banners.filter((b) => {
+      // If banner has specific country targeting, enforce matching
+      if (b.targetType === 'COUNTRY_WISE' && Array.isArray(b.countries) && b.countries.length > 0) {
+        return b.countries.map((c) => c.toUpperCase()).includes(targetCountry);
+      }
+      return true; // Global banners
+    });
+  }
+
   return banners;
 }
+
 
 export async function getBannerById(id, db = prisma) {
   const banner = await bannerRepository.findBannerById(id, db);

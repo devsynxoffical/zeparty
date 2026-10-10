@@ -686,29 +686,27 @@ export async function leaveSeatTx({ roomId, seatIndex, userId, force = false }, 
 }
 
 export async function pinRoom({ roomId, isPinnedTop, pinnedPosition = null }, db = prisma) {
-  return await db.$transaction(async (tx) => {
-    if (isPinnedTop && pinnedPosition) {
-      // Unpin any other room occupying the exact same pinned position
-      await tx.room.updateMany({
-        where: {
-          id: { not: roomId },
-          isPinnedTop: true,
-          pinnedPosition: Number(pinnedPosition),
-        },
-        data: {
-          isPinnedTop: false,
-          pinnedPosition: null,
-        },
-      });
-    }
-
-    return await tx.room.update({
-      where: { id: roomId },
+  if (isPinnedTop && pinnedPosition) {
+    // Unpin any other room occupying the exact same pinned position
+    await db.room.updateMany({
+      where: {
+        id: { not: roomId },
+        isPinnedTop: true,
+        pinnedPosition: Number(pinnedPosition),
+      },
       data: {
-        isPinnedTop,
-        pinnedPosition: isPinnedTop ? (Number(pinnedPosition) || 1) : null,
+        isPinnedTop: false,
+        pinnedPosition: null,
       },
     });
+  }
+
+  return await db.room.update({
+    where: { id: roomId },
+    data: {
+      isPinnedTop,
+      pinnedPosition: isPinnedTop ? (Number(pinnedPosition) || 1) : null,
+    },
   });
 }
 

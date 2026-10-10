@@ -544,11 +544,46 @@ export async function getConfigurations() {
         key: 'RESELLER_PACKAGES',
         valueJson: {
           packages: [
-            { id: 'res-1', tierName: 'Silver Reseller Tier', priceUSD: 50, totalCoins: 525000, bonusCoins: 25000, profitPercent: 8 },
-            { id: 'res-2', tierName: 'Gold Reseller Tier', priceUSD: 200, totalCoins: 2160000, bonusCoins: 160000, profitPercent: 10 },
-            { id: 'res-3', tierName: 'Platinum Reseller Tier', priceUSD: 1000, totalCoins: 11200000, bonusCoins: 1200000, profitPercent: 12 },
-            { id: 'res-4', tierName: 'VIP Master Reseller Tier', priceUSD: 5000, totalCoins: 58000000, bonusCoins: 8000000, profitPercent: 15 }
+            { id: 'res-300', tierName: '$300 Coin Seller Tier', priceUSD: 300, totalCoins: 2205000, profitRatioPercent: 5 },
+            { id: 'res-500', tierName: '$500 Coin Seller Tier', priceUSD: 500, totalCoins: 3675000, profitRatioPercent: 5 },
+            { id: 'res-1000', tierName: '$1,000 Coin Seller Tier', priceUSD: 1000, totalCoins: 7700000, profitRatioPercent: 10 }
+          ],
+          rules: [
+            'To become a ZeParty Coins Seller, you must complete the required security insurance/verification before starting.',
+            "If a Coins Seller changes the official coin rate or fails to provide a user's withdrawal on time, the Coins Seller account may be terminated and Coins Seller privileges may be removed."
           ]
+        }
+      },
+      {
+        key: 'MERCHANT_POLICY',
+        valueJson: {
+          packages: [
+            { id: 'mer-3000', tierName: '$3,000 Merchant Tier', priceUSD: 3000, totalCoins: 25200000, profitRatioPercent: 20 }
+          ],
+          profitRatioPercent: 20,
+          minMonthlyAppPurchasesUSD: 1000,
+          minPortalOpeningAmountUSD: 300,
+          rules: [
+            'The Merchant level offers a higher profit rate of 20%.',
+            'To become a ZeParty Merchant, you must achieve a minimum target of $1,000 in purchases on the app within one month.',
+            'After completing the requirement, you will be eligible to become a Merchant.',
+            'A Merchant cannot open a new portal for an amount below $300.'
+          ]
+        }
+      },
+      {
+        key: 'MANAGER_POLICY',
+        valueJson: {
+          maxMonthlyWorkTargetUSD: 2000,
+          initialCoinSellerRequiredUSD: 1000,
+          locationScope: 'GLOBAL_ANY_LOCATION',
+          requirements: [
+            { key: 'Location', policy: 'Manager applications are open for any location.' },
+            { key: 'Team', policy: 'You must have a strong and reliable team before becoming a Manager.' },
+            { key: 'Monthly Work', policy: 'Your maximum monthly work/target should be up to $2,000.' },
+            { key: 'Initial Coins Seller', policy: 'You must first open/manage a Coins Seller level up to $1,000.' }
+          ],
+          managerNote: 'To become a ZeParty Manager, you should have a capable team that can actively support users and operations in your selected location. The Manager must first demonstrate performance by opening a Coins Seller operation up to $1,000, while the maximum monthly work/target is set at $2,000.'
         }
       }
     ];
@@ -592,8 +627,14 @@ export async function updateConfiguration({
     policyType = 'LIVE_HOST';
   } else if (normKey === 'AUDIO_HOST' || normKey === 'AUDIO_HOST_TIERS' || normKey.startsWith('AUDIO_HOST')) {
     policyType = 'AUDIO_HOST';
+  } else if (normKey === 'AGENCY_HOST' || normKey === 'AGENCY_HOST_TIERS' || normKey.startsWith('AGENCY_HOST')) {
+    policyType = 'AGENCY_HOST';
   } else if (normKey === 'RESELLER' || normKey === 'RESELLER_PACKAGES' || normKey.startsWith('RESELLER')) {
     policyType = 'RESELLER';
+  } else if (normKey === 'MERCHANT' || normKey === 'MERCHANT_POLICY' || normKey.startsWith('MERCHANT')) {
+    policyType = 'MERCHANT';
+  } else if (normKey === 'MANAGER' || normKey === 'MANAGER_POLICY' || normKey.startsWith('MANAGER')) {
+    policyType = 'MANAGER';
   }
 
   if (policyType) {

@@ -343,6 +343,206 @@ export async function getMyHostApplication(userId, db = prisma) {
   return await hostRepository.findLatestApplicationByUserId(userId, db);
 }
 
+export async function getHostIncomeDashboard(userId, db = prisma) {
+  const host = await hostRepository.findHostProfileByUserId(userId, db);
+  const wallet = await db.wallet.findUnique({
+    where: { userId },
+  });
+
+  const isLiveHost = host?.hostType === 'LIVE_HOST';
+  const eligibleDiamonds = Number(wallet?.diamondBalance || 0n);
+
+  // 25-level target tiers (ZeParty 2026 Policy)
+  const tiers = [
+    { level: 1, targetDiamonds: 25000, durationDays: 10, basicSalaryUSD: 2.00, hostSalaryUSD: 1.60, agencySalaryUSD: 0.40, specialId: '/' },
+    { level: 2, targetDiamonds: 50000, durationDays: 10, basicSalaryUSD: 4.00, hostSalaryUSD: 3.20, agencySalaryUSD: 0.80, specialId: '/' },
+    { level: 3, targetDiamonds: 100000, durationDays: 10, basicSalaryUSD: 8.00, hostSalaryUSD: 6.40, agencySalaryUSD: 1.60, specialId: '/' },
+    { level: 4, targetDiamonds: 250000, durationDays: 10, basicSalaryUSD: 20.00, hostSalaryUSD: 16.00, agencySalaryUSD: 4.00, specialId: '/' },
+    { level: 5, targetDiamonds: 500000, durationDays: 8, basicSalaryUSD: 40.00, hostSalaryUSD: 32.00, agencySalaryUSD: 8.00, specialId: '/' },
+    { level: 6, targetDiamonds: 750000, durationDays: 8, basicSalaryUSD: 60.00, hostSalaryUSD: 48.00, agencySalaryUSD: 12.00, specialId: '/' },
+    { level: 7, targetDiamonds: 1000000, durationDays: 8, basicSalaryUSD: 80.00, hostSalaryUSD: 64.00, agencySalaryUSD: 16.00, specialId: '/' },
+    { level: 8, targetDiamonds: 1500000, durationDays: 8, basicSalaryUSD: 120.00, hostSalaryUSD: 96.00, agencySalaryUSD: 24.00, specialId: '/' },
+    { level: 9, targetDiamonds: 2000000, durationDays: 8, basicSalaryUSD: 160.00, hostSalaryUSD: 128.00, agencySalaryUSD: 32.00, specialId: '/' },
+    { level: 10, targetDiamonds: 2500000, durationDays: 8, basicSalaryUSD: 200.00, hostSalaryUSD: 160.00, agencySalaryUSD: 40.00, specialId: '/' },
+    { level: 11, targetDiamonds: 3000000, durationDays: 5, basicSalaryUSD: 240.00, hostSalaryUSD: 192.00, agencySalaryUSD: 48.00, specialId: 'Special ID 3 Days' },
+    { level: 12, targetDiamonds: 3500000, durationDays: 5, basicSalaryUSD: 280.00, hostSalaryUSD: 224.00, agencySalaryUSD: 56.00, specialId: 'Special ID 3 Days' },
+    { level: 13, targetDiamonds: 4000000, durationDays: 5, basicSalaryUSD: 320.00, hostSalaryUSD: 256.00, agencySalaryUSD: 64.00, specialId: 'Special ID 3 Days' },
+    { level: 14, targetDiamonds: 4500000, durationDays: 5, basicSalaryUSD: 360.00, hostSalaryUSD: 288.00, agencySalaryUSD: 72.00, specialId: 'Special ID 7 Days' },
+    { level: 15, targetDiamonds: 5000000, durationDays: 5, basicSalaryUSD: 400.00, hostSalaryUSD: 320.00, agencySalaryUSD: 80.00, specialId: 'Special ID 15 Days' },
+    { level: 16, targetDiamonds: 6000000, durationDays: 5, basicSalaryUSD: 480.00, hostSalaryUSD: 384.00, agencySalaryUSD: 96.00, specialId: 'Special ID 15 Days' },
+    { level: 17, targetDiamonds: 7000000, durationDays: 5, basicSalaryUSD: 560.00, hostSalaryUSD: 448.00, agencySalaryUSD: 112.00, specialId: 'Special ID 15 Days' },
+    { level: 18, targetDiamonds: 8000000, durationDays: 5, basicSalaryUSD: 640.00, hostSalaryUSD: 512.00, agencySalaryUSD: 128.00, specialId: 'Special ID 30 Days' },
+    { level: 19, targetDiamonds: 9000000, durationDays: 5, basicSalaryUSD: 720.00, hostSalaryUSD: 576.00, agencySalaryUSD: 144.00, specialId: 'Special ID 30 Days' },
+    { level: 20, targetDiamonds: 10000000, durationDays: 5, basicSalaryUSD: 800.00, hostSalaryUSD: 640.00, agencySalaryUSD: 160.00, specialId: 'Special ID 60 Days' },
+    { level: 21, targetDiamonds: 15000000, durationDays: 5, basicSalaryUSD: 1200.00, hostSalaryUSD: 960.00, agencySalaryUSD: 240.00, specialId: 'Special ID 60 Days' },
+    { level: 22, targetDiamonds: 20000000, durationDays: 5, basicSalaryUSD: 1600.00, hostSalaryUSD: 1280.00, agencySalaryUSD: 320.00, specialId: 'Special ID 60 Days' },
+    { level: 23, targetDiamonds: 30000000, durationDays: 5, basicSalaryUSD: 2400.00, hostSalaryUSD: 1920.00, agencySalaryUSD: 480.00, specialId: 'Special ID 90 Days' },
+    { level: 24, targetDiamonds: 40000000, durationDays: 5, basicSalaryUSD: 3200.00, hostSalaryUSD: 2560.00, agencySalaryUSD: 640.00, specialId: 'Special ID 90 Days' },
+    { level: 25, targetDiamonds: 50000000, durationDays: 5, basicSalaryUSD: 4000.00, hostSalaryUSD: 3200.00, agencySalaryUSD: 800.00, specialId: 'Special ID 120 Days' },
+  ];
+
+  // Determine current active tier
+  let activeTier = tiers[0];
+  for (const t of tiers) {
+    if (eligibleDiamonds >= t.targetDiamonds) {
+      activeTier = t;
+    }
+  }
+
+  const dollarTarget = isLiveHost ? activeTier.basicSalaryUSD : activeTier.basicSalaryUSD;
+  const achievedDollars = Math.round((eligibleDiamonds / 10000) * 100) / 100;
+  const remainingDiamonds = Math.max(0, activeTier.targetDiamonds - eligibleDiamonds);
+  const remainingDollars = Math.max(0, dollarTarget - achievedDollars);
+  const progressPercent = Math.min(100, Math.round((eligibleDiamonds / activeTier.targetDiamonds) * 100));
+
+  // 15-day transfer eligibility countdown
+  const now = new Date();
+  const hostCreated = host?.createdAt || now;
+  const daysSinceActive = Math.floor((now.getTime() - hostCreated.getTime()) / (24 * 60 * 60 * 1000));
+  const remainingDaysToWithdraw = Math.max(0, 15 - daysSinceActive);
+
+  // Daily hosting requirements
+  const requiredDailyHours = isLiveHost ? 1 : 2;
+  const dailyTargetMinutes = requiredDailyHours * 60;
+  const completedMinutesToday = 45; // Simulated/tracked in-app hosting minutes
+
+  return {
+    currentLevel: activeTier.level,
+    targetDiamonds: activeTier.targetDiamonds,
+    eligibleDiamonds,
+    dollarTarget,
+    achievedDollars,
+    remainingDiamonds,
+    remainingDollars,
+    progressPercent,
+    specialIdBonus: activeTier.specialId,
+    durationDays: activeTier.durationDays,
+    targetPeriod: `15 Days (${now.toLocaleString('default', { month: 'long', year: 'numeric' })})`,
+    targetStatus: eligibleDiamonds >= activeTier.targetDiamonds ? 'TARGET_ACHIEVED' : 'IN_PROGRESS',
+    policyNotes: {
+      roomOwnerReward: 'If you send users to a room, the room owner will receive a 5% reward weekly.',
+      incompleteDaysRule: 'If the host does not complete the valid days, he will receive only 50% of the target.',
+      noAgencyRequired: isLiveHost ? 'No agency is required — you can register directly through the app and become a Live Host yourself.' : undefined,
+    },
+    withdrawalEligibility: {
+      isEligible: remainingDaysToWithdraw === 0,
+      holdingPeriodDays: 15,
+      remainingDays: remainingDaysToWithdraw,
+      notice: 'The host can transfer eligible diamond earnings to an authorized Coin Seller after 15 days and then request/receive withdrawal according to the configured withdrawal process. The host is required to complete at least 2 hours of hosting activity every day.',
+    },
+    dailyHosting: {
+      dailyRequiredHours: requiredDailyHours,
+      completedMinutesToday,
+      remainingMinutesToday: Math.max(0, dailyTargetMinutes - completedMinutesToday),
+      isDailyTargetMet: completedMinutesToday >= dailyTargetMinutes,
+      hostingType: isLiveHost ? 'Live Video Hosting (1h daily for 10 days)' : 'Audio Hosting (2h daily)',
+    },
+  };
+}
+
+export async function becomeLiveHost(userId, { phone, otpCode, idCardFrontUrl, idCardBackUrl }, { ipAddress } = {}, db = prisma) {
+  const existingHost = await hostRepository.findHostProfileByUserId(userId, db);
+  if (existingHost && existingHost.hostStatus === 'ACTIVE') {
+    return { status: 'ACTIVE', message: 'You are already an active Live Host', hostProfile: existingHost };
+  }
+
+  const application = await applyForHost({
+    userId,
+    hostType: 'LIVE_HOST',
+    idCardFrontUrl: idCardFrontUrl || 'https://assets.zeparty.app/verifications/id_front.jpg',
+    idCardBackUrl: idCardBackUrl || 'https://assets.zeparty.app/verifications/id_back.jpg',
+    videoSampleUrl: 'https://assets.zeparty.app/verifications/selfie_liveness.mp4',
+    ipAddress,
+  }, db);
+
+  return {
+    status: 'SUBMITTED',
+    message: 'Live Host application and liveness verification submitted for review',
+    application,
+  };
+}
+
+/**
+ * Module 14: Agency Host Policy Table (Levels 1–25)
+ */
+export async function getAgencyHostPolicyTable() {
+  const levels = [
+    { level: 1, diamondTarget: 25000, validDays: 10, basicTotalSalary: 2, hostSalary: 1.60, agencySalary: 0.40, specialIdBonus: '/' },
+    { level: 2, diamondTarget: 50000, validDays: 10, basicTotalSalary: 4, hostSalary: 3.20, agencySalary: 0.80, specialIdBonus: '/' },
+    { level: 3, diamondTarget: 100000, validDays: 10, basicTotalSalary: 8, hostSalary: 6.40, agencySalary: 1.60, specialIdBonus: '/' },
+    { level: 4, diamondTarget: 250000, validDays: 10, basicTotalSalary: 20, hostSalary: 16.00, agencySalary: 4.00, specialIdBonus: '/' },
+    { level: 5, diamondTarget: 500000, validDays: 8, basicTotalSalary: 40, hostSalary: 32.00, agencySalary: 8.00, specialIdBonus: '/' },
+    { level: 6, diamondTarget: 750000, validDays: 8, basicTotalSalary: 60, hostSalary: 48.00, agencySalary: 12.00, specialIdBonus: '/' },
+    { level: 7, diamondTarget: 1000000, validDays: 8, basicTotalSalary: 80, hostSalary: 64.00, agencySalary: 16.00, specialIdBonus: '/' },
+    { level: 8, diamondTarget: 1500000, validDays: 8, basicTotalSalary: 120, hostSalary: 96.00, agencySalary: 24.00, specialIdBonus: '/' },
+    { level: 9, diamondTarget: 2000000, validDays: 8, basicTotalSalary: 160, hostSalary: 128.00, agencySalary: 32.00, specialIdBonus: '/' },
+    { level: 10, diamondTarget: 2500000, validDays: 8, basicTotalSalary: 200, hostSalary: 160.00, agencySalary: 40.00, specialIdBonus: '/' },
+    { level: 11, diamondTarget: 3000000, validDays: 5, basicTotalSalary: 240, hostSalary: 192.00, agencySalary: 48.00, specialIdBonus: 'Special ID 3 Days' },
+    { level: 12, diamondTarget: 3500000, validDays: 5, basicTotalSalary: 280, hostSalary: 224.00, agencySalary: 56.00, specialIdBonus: 'Special ID 3 Days' },
+    { level: 13, diamondTarget: 4000000, validDays: 5, basicTotalSalary: 320, hostSalary: 256.00, agencySalary: 64.00, specialIdBonus: 'Special ID 3 Days' },
+    { level: 14, diamondTarget: 4500000, validDays: 5, basicTotalSalary: 360, hostSalary: 288.00, agencySalary: 72.00, specialIdBonus: 'Special ID 7 Days' },
+    { level: 15, diamondTarget: 5000000, validDays: 5, basicTotalSalary: 400, hostSalary: 320.00, agencySalary: 80.00, specialIdBonus: 'Special ID 15 Days' },
+    { level: 16, diamondTarget: 6000000, validDays: 5, basicTotalSalary: 480, hostSalary: 384.00, agencySalary: 96.00, specialIdBonus: 'Special ID 15 Days' },
+    { level: 17, diamondTarget: 7000000, validDays: 5, basicTotalSalary: 560, hostSalary: 448.00, agencySalary: 112.00, specialIdBonus: 'Special ID 15 Days' },
+    { level: 18, diamondTarget: 8000000, validDays: 5, basicTotalSalary: 640, hostSalary: 512.00, agencySalary: 128.00, specialIdBonus: 'Special ID 30 Days' },
+    { level: 19, diamondTarget: 9000000, validDays: 5, basicTotalSalary: 720, hostSalary: 576.00, agencySalary: 144.00, specialIdBonus: 'Special ID 30 Days' },
+    { level: 20, diamondTarget: 10000000, validDays: 5, basicTotalSalary: 800, hostSalary: 640.00, agencySalary: 160.00, specialIdBonus: 'Special ID 60 Days' },
+    { level: 21, diamondTarget: 15000000, validDays: 5, basicTotalSalary: 1200, hostSalary: 960.00, agencySalary: 240.00, specialIdBonus: 'Special ID 60 Days' },
+    { level: 22, diamondTarget: 20000000, validDays: 5, basicTotalSalary: 1600, hostSalary: 1280.00, agencySalary: 320.00, specialIdBonus: 'Special ID 60 Days' },
+    { level: 23, diamondTarget: 30000000, validDays: 5, basicTotalSalary: 2400, hostSalary: 1920.00, agencySalary: 480.00, specialIdBonus: 'Special ID 90 Days' },
+    { level: 24, diamondTarget: 40000000, validDays: 5, basicTotalSalary: 3200, hostSalary: 2560.00, agencySalary: 640.00, specialIdBonus: 'Special ID 90 Days' },
+    { level: 25, diamondTarget: 50000000, validDays: 5, basicTotalSalary: 4000, hostSalary: 3200.00, agencySalary: 800.00, specialIdBonus: 'Special ID 120 Days' },
+  ];
+
+  return {
+    cycleDays: 15,
+    dailyRequirementHours: 2.0,
+    dailyRequirementUnmuted: true,
+    levels,
+  };
+}
+
+/**
+ * Module 15: Live Host Direct Registration Policy Table (Levels 1–25)
+ */
+export async function getLiveHostPolicyTable() {
+  const levels = [
+    { level: 1, diamondTarget: 25000, validDays: 10, basicSalaryUSD: 2 },
+    { level: 2, diamondTarget: 50000, validDays: 10, basicSalaryUSD: 4 },
+    { level: 3, diamondTarget: 100000, validDays: 10, basicSalaryUSD: 8 },
+    { level: 4, diamondTarget: 250000, validDays: 10, basicSalaryUSD: 20 },
+    { level: 5, diamondTarget: 500000, validDays: 8, basicSalaryUSD: 40 },
+    { level: 6, diamondTarget: 750000, validDays: 8, basicSalaryUSD: 60 },
+    { level: 7, diamondTarget: 1000000, validDays: 8, basicSalaryUSD: 80 },
+    { level: 8, diamondTarget: 1500000, validDays: 8, basicSalaryUSD: 120 },
+    { level: 9, diamondTarget: 2000000, validDays: 8, basicSalaryUSD: 160 },
+    { level: 10, diamondTarget: 2500000, validDays: 8, basicSalaryUSD: 200 },
+    { level: 11, diamondTarget: 3000000, validDays: 5, basicSalaryUSD: 240 },
+    { level: 12, diamondTarget: 3500000, validDays: 5, basicSalaryUSD: 280 },
+    { level: 13, diamondTarget: 4000000, validDays: 5, basicSalaryUSD: 320 },
+    { level: 14, diamondTarget: 4500000, validDays: 5, basicSalaryUSD: 360 },
+    { level: 15, diamondTarget: 5000000, validDays: 5, basicSalaryUSD: 400 },
+    { level: 16, diamondTarget: 6000000, validDays: 5, basicSalaryUSD: 480 },
+    { level: 17, diamondTarget: 7000000, validDays: 5, basicSalaryUSD: 560 },
+    { level: 18, diamondTarget: 8000000, validDays: 5, basicSalaryUSD: 640 },
+    { level: 19, diamondTarget: 9000000, validDays: 5, basicSalaryUSD: 720 },
+    { level: 20, diamondTarget: 10000000, validDays: 5, basicSalaryUSD: 800 },
+    { level: 21, diamondTarget: 15000000, validDays: 5, basicSalaryUSD: 1200 },
+    { level: 22, diamondTarget: 20000000, validDays: 5, basicSalaryUSD: 1600 },
+    { level: 23, diamondTarget: 30000000, validDays: 5, basicSalaryUSD: 2400 },
+    { level: 24, diamondTarget: 40000000, validDays: 5, basicSalaryUSD: 3200 },
+    { level: 25, diamondTarget: 50000000, validDays: 5, basicSalaryUSD: 4000 },
+  ];
+
+  return {
+    cycleDays: 15,
+    dailyRequirementHours: 1.0,
+    directPlatformSalary: true,
+    agencyCommissionDeducted: 0,
+    levels,
+  };
+}
+
 export default {
   applyForHost,
   reviewHostApplication,
@@ -351,4 +551,8 @@ export default {
   getHostProfileByUserId,
   getMyHostApplication,
   recordHostPerformance,
+  getHostIncomeDashboard,
+  becomeLiveHost,
+  getAgencyHostPolicyTable,
+  getLiveHostPolicyTable,
 };

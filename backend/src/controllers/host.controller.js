@@ -169,6 +169,51 @@ export async function updateHostStatus(req, res, next) {
   }
 }
 
+export async function getHostIncomeDashboard(req, res, next) {
+  try {
+    const userId = req.auth.userId;
+    const result = await hostService.getHostIncomeDashboard(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function becomeLiveHost(req, res, next) {
+  try {
+    const userId = req.auth.userId;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+    const result = await hostService.becomeLiveHost(userId, req.body, { ipAddress });
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAgencyHostPolicyTable(req, res, next) {
+  try {
+    const result = await hostService.getAgencyHostPolicyTable();
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getLiveHostPolicyTable(req, res, next) {
+  try {
+    const result = await hostService.getLiveHostPolicyTable();
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   applyHost,
   getMyHostProfile,
@@ -178,4 +223,8 @@ export default {
   getHostApplications,
   reviewHostApplication,
   updateHostStatus,
+  getHostIncomeDashboard,
+  becomeLiveHost,
+  getAgencyHostPolicyTable,
+  getLiveHostPolicyTable,
 };

@@ -13,9 +13,13 @@ adminHostRouter.get('/:id', requirePermission('view_hosts'), hostController.getH
 adminHostRouter.put('/:id/status', requirePermission('approve_reject_hosts'), hostController.updateHostStatus);
 
 export const userHostRouter = express.Router();
+userHostRouter.get('/policy/agency-table', hostController.getAgencyHostPolicyTable);
+userHostRouter.get('/policy/live-host-table', hostController.getLiveHostPolicyTable);
 userHostRouter.post('/apply', authenticate, hostController.applyHost);
 userHostRouter.get('/profile', authenticate, hostController.getMyHostProfile);
 userHostRouter.get('/application', authenticate, hostController.getMyHostApplication);
+userHostRouter.get('/center/income', authenticate, hostController.getHostIncomeDashboard);
+userHostRouter.post('/become-live-host', authenticate, hostController.becomeLiveHost);
 
 export default {
   adminHostRouter,

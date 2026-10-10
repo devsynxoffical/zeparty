@@ -4,9 +4,16 @@ export const applyHostSchema = z.object({
   hostType: z.enum(['LIVE_HOST', 'AUDIO_HOST', 'BOTH', 'live_host', 'audio_host', 'both'], {
     required_error: 'Host type is required (LIVE_HOST, AUDIO_HOST, BOTH)',
   }).transform((val) => val.toUpperCase()),
-  idCardFrontUrl: z.string().min(1, 'idCardFrontUrl is required'),
-  idCardBackUrl: z.string().min(1, 'idCardBackUrl is required'),
+  idCardFrontUrl: z.string().optional().nullable(),
+  idCardBackUrl: z.string().optional().nullable(),
   videoSampleUrl: z.string().optional().nullable(),
+  name: z.string().optional().nullable(),
+  displayName: z.string().optional().nullable(),
+  dob: z.string().optional().nullable(),
+  gender: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  contentCategory: z.string().optional().nullable(),
+  introduction: z.string().optional().nullable(),
 });
 
 export const reviewHostApplicationSchema = z.object({

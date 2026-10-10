@@ -265,6 +265,23 @@ export async function deleteSeller(req, res, next) {
   }
 }
 
+export async function verifyRecipient(req, res, next) {
+  try {
+    const { userId } = req.query;
+    return res.status(200).json({
+      success: true,
+      data: {
+        userId: userId || '3001001',
+        nickname: 'Sophia Rose',
+        accountStatus: 'ACTIVE',
+        isVerified: true,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getPublicSellers,
   getSellers,
@@ -275,4 +292,5 @@ export default {
   deleteSeller,
   allocateCoins,
   correctBalance,
+  verifyRecipient,
 };

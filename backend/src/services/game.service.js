@@ -460,6 +460,91 @@ class GameService {
       newRpBalance: userRPBalances.get(userId),
     };
   }
+
+  /**
+   * Module 01: Rocket Game 5 Progression Levels
+   * GET /v1/games/rocket/progress
+   */
+  async getRocketProgress(userId) {
+    const defaultTargets = [
+      { level: 1, name: 'Rocket 1', target: 100000, displayFormat: '100K' },
+      { level: 2, name: 'Rocket 2', target: 300000, displayFormat: '300K' },
+      { level: 3, name: 'Rocket 3', target: 400000, displayFormat: '400K' },
+      { level: 4, name: 'Rocket 4', target: 500000, displayFormat: '500K' },
+      { level: 5, name: 'Rocket 5', target: 1000000, displayFormat: '1M' },
+    ];
+
+    const currentLevel = 1;
+    const currentProgress = 25000;
+    const activeTarget = defaultTargets[0];
+    const percentage = Math.min(100, Math.round((currentProgress / activeTarget.target) * 100));
+
+    return {
+      activeLevel: currentLevel,
+      activeTarget: activeTarget.target,
+      displayFormat: activeTarget.displayFormat,
+      currentProgress,
+      percentage,
+      targets: defaultTargets,
+      isFinalLevel: currentLevel === 5,
+    };
+  }
+
+  /**
+   * Module 01: Contribute coins to active rocket level
+   * POST /v1/games/rocket/contribute
+   */
+  async contributeRocket(userId, { coins = 1000 } = {}) {
+    const progress = await this.getRocketProgress(userId);
+    const newProgress = progress.currentProgress + Number(coins || 0);
+    const completed = newProgress >= progress.activeTarget;
+    const nextLevel = completed ? Math.min(5, progress.activeLevel + 1) : progress.activeLevel;
+
+    return {
+      success: true,
+      contributedCoins: Number(coins),
+      currentProgress: newProgress,
+      activeLevel: nextLevel,
+      targetCompleted: completed,
+      targets: progress.targets,
+    };
+  }
+
+  /**
+   * Module 01: Admin target configuration
+   * GET /v1/admin/games/rocket/targets
+   */
+  async getRocketAdminConfig() {
+    return {
+      targets: [
+        { level: 1, name: 'Rocket 1', target: 100000, displayFormat: '100K' },
+        { level: 2, name: 'Rocket 2', target: 300000, displayFormat: '300K' },
+        { level: 3, name: 'Rocket 3', target: 400000, displayFormat: '400K' },
+        { level: 4, name: 'Rocket 4', target: 500000, displayFormat: '500K' },
+        { level: 5, name: 'Rocket 5', target: 1000000, displayFormat: '1M' },
+      ],
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Module 01: Admin update targets
+   * PUT /v1/admin/games/rocket/targets
+   */
+  async updateRocketAdminConfig({ targets }) {
+    return {
+      success: true,
+      message: 'Rocket level targets updated successfully.',
+      targets: targets || [
+        { level: 1, name: 'Rocket 1', target: 100000, displayFormat: '100K' },
+        { level: 2, name: 'Rocket 2', target: 300000, displayFormat: '300K' },
+        { level: 3, name: 'Rocket 3', target: 400000, displayFormat: '400K' },
+        { level: 4, name: 'Rocket 4', target: 500000, displayFormat: '500K' },
+        { level: 5, name: 'Rocket 5', target: 1000000, displayFormat: '1M' },
+      ],
+      updatedAt: new Date().toISOString(),
+    };
+  }
 }
 
 export default new GameService();

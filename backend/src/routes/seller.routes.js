@@ -19,6 +19,7 @@ adminSellerRouter.post('/:id/correct', requirePermission('reseller_corrections')
 
 export const userSellerRouter = express.Router();
 userSellerRouter.get('/public', sellerController.getPublicSellers);
+userSellerRouter.get('/recharge/verify-recipient', authenticate, sellerController.verifyRecipient);
 
 export default {
   adminSellerRouter,

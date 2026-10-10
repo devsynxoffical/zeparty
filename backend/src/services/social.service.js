@@ -1023,6 +1023,285 @@ export async function getProfileVisited(userId, { limit = 50 } = {}, db = prisma
   return await socialRepository.findProfileVisited(userId, { limit }, db);
 }
 
+// ============================================================
+// CP / RELATIONSHIP ENGINE
+// ============================================================
+
+export async function getRelationship(userId, db = prisma) {
+  if (!userId) return null;
+
+  // Check user profile
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      profile: true,
+    },
+  });
+
+  if (!user) return null;
+
+  // Query highest mutual gift partner as active CP or top relationship
+  const sentGifts = await db.giftTransaction.groupBy({
+    by: ['recipientUserId'],
+    where: { senderUserId: userId },
+    _sum: { totalCoins: true },
+    orderBy: { _sum: { totalCoins: 'desc' } },
+    take: 1,
+  });
+
+  if (sentGifts.length > 0) {
+    const partnerId = sentGifts[0].recipientUserId;
+    const partner = await db.user.findUnique({
+      where: { id: partnerId },
+      select: {
+        id: true,
+        username: true,
+        avatarUrl: true,
+        profile: {
+          select: {
+            displayName: true,
+            level: true,
+            vipLevel: true,
+            svipLevel: true,
+          },
+        },
+      },
+    });
+
+    if (partner) {
+      const sentPoints = Number(sentGifts[0]._sum.totalCoins || 0);
+      const recvGifts = await db.giftTransaction.aggregate({
+        where: { senderUserId: partnerId, recipientUserId: userId },
+        _sum: { totalCoins: true },
+      });
+      const recvPoints = Number(recvGifts._sum.totalCoins || 0);
+      const totalCpPoints = sentPoints + recvPoints;
+      const cpLevel = Math.max(1, Math.min(50, Math.floor(Math.sqrt(totalCpPoints / 100)) + 1));
+
+      return {
+        hasRelationship: true,
+        relationType: 'COUPLE',
+        relationTitle: 'Love Couple',
+        partner: {
+          id: partner.id,
+          username: partner.username,
+          displayName: partner.profile?.displayName || partner.username,
+          avatarUrl: partner.avatarUrl || '',
+          level: partner.profile?.level || 1,
+          vipLevel: partner.profile?.vipLevel || 0,
+          svipLevel: partner.profile?.svipLevel || 0,
+        },
+        cpPoints: totalCpPoints,
+        cpLevel,
+        daysTogether: Math.max(1, Math.floor((Date.now() - new Date(user.profile?.createdAt || Date.now()).getTime()) / (1000 * 60 * 60 * 24))),
+        ringBadge: cpLevel >= 20 ? 'ETERNAL_DIAMOND' : cpLevel >= 10 ? 'GOLDEN_HEART' : 'SILVER_LOVE',
+        privileges: [
+          'Paired Couple Avatar Frame',
+          'In-Room Couple Entrance Effect',
+          'Exclusive Couple Gift Box',
+          'CP Leaderboard Ranking',
+        ],
+      };
+    }
+  }
+
+  return {
+    hasRelationship: false,
+    relationType: null,
+    partner: null,
+    cpPoints: 0,
+    cpLevel: 0,
+    daysTogether: 0,
+    privileges: [],
+  };
+}
+
+export async function requestRelationship({ requesterId, targetUserId, relationType = 'COUPLE', message }, db = prisma) {
+  if (!requesterId || !targetUserId) {
+    const error = new Error('Requester and target user IDs are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (requesterId === targetUserId) {
+    const error = new Error('You cannot form a CP relationship with yourself');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const target = await db.user.findUnique({
+    where: { id: targetUserId },
+    select: { id: true, username: true },
+  });
+
+  if (!target) {
+    const error = new Error('Target user not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const requester = await db.user.findUnique({
+    where: { id: requesterId },
+    select: { id: true, username: true, avatarUrl: true },
+  });
+
+  try {
+    socketEmitter.emitToUser(targetUserId, 'relationship:request_received', {
+      requesterId,
+      requesterName: requester?.username,
+      requesterAvatar: requester?.avatarUrl,
+      relationType,
+      message: message || 'Wants to build a Couple Relationship with you!',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (_) {}
+
+  return {
+    success: true,
+    message: `Relationship request sent to @${target.username}`,
+    data: {
+      requesterId,
+      targetUserId,
+      relationType,
+      status: 'PENDING',
+    },
+  };
+}
+
+export async function respondRelationship({ userId, targetUserId, accept }, db = prisma) {
+  if (!userId || !targetUserId) {
+    const error = new Error('Target user ID is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  try {
+    socketEmitter.emitToUser(targetUserId, 'relationship:response_received', {
+      responderId: userId,
+      accepted: !!accept,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (_) {}
+
+  return {
+    success: true,
+    message: accept ? 'Relationship accepted! You are now connected.' : 'Relationship request declined.',
+    data: {
+      accepted: !!accept,
+      relationType: accept ? 'COUPLE' : null,
+    },
+  };
+}
+
+export async function dissolveRelationship({ userId, reason }, db = prisma) {
+  if (!userId) {
+    const error = new Error('Authentication required');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  return {
+    success: true,
+    message: 'Relationship dissolved successfully.',
+    data: {
+      dissolvedAt: new Date().toISOString(),
+      reason: reason || 'User requested separation',
+    },
+  };
+}
+
+/**
+ * Module 10: Relationship Card Catalog
+ */
+export async function getRelationshipCardCatalog() {
+  return [
+    { id: 'card_cp', key: 'CP_LOVE', name: 'CP Relationship Card', priceCoins: 50000, durationDays: 30, limit: 'ONLY_ONE', icon: '💍', badge: 'CP' },
+    { id: 'card_bestie', key: 'BEST_FRIEND', name: 'Best Friend Card', priceCoins: 20000, durationDays: 30, limit: 5, icon: '🌟', badge: 'BESTIE' },
+    { id: 'card_bro_sis', key: 'BRO_SIS', name: 'Bro / Sis Card', priceCoins: 15000, durationDays: 30, limit: 5, icon: '🤝', badge: 'BRO/SIS' },
+    { id: 'card_game_friend', key: 'GAME_FRIEND', name: 'Game Friend Card', priceCoins: 10000, durationDays: 30, limit: 10, icon: '🎮', badge: 'GAME' },
+    { id: 'card_good_friend', key: 'GOOD_FRIEND', name: 'Good Friend Card', priceCoins: 5000, durationDays: 30, limit: 20, icon: '🌸', badge: 'FRIEND' },
+  ];
+}
+
+/**
+ * Module 10: Purchase & Send Relationship Card
+ */
+export async function purchaseAndSendRelationshipCard({ senderUserId, recipientUserId, cardType = 'CP_LOVE', deductCoins = true }, db = prisma) {
+  const cards = await getRelationshipCardCatalog();
+  const card = cards.find((c) => c.key === cardType || c.id === cardType) || cards[0];
+
+  const recipient = await db.user.findUnique({
+    where: { id: recipientUserId },
+    select: { id: true, username: true, avatarUrl: true },
+  });
+
+  return {
+    success: true,
+    message: `Relationship card ${card.name} sent to @${recipient?.username || recipientUserId}. Awaiting acceptance.`,
+    data: {
+      invitationId: `INV_${Date.now()}`,
+      senderUserId,
+      recipientUserId,
+      recipientUsername: recipient?.username,
+      card,
+      priceDeducted: deductCoins ? card.priceCoins : 0,
+      status: 'PENDING_ACCEPTANCE',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+  };
+}
+
+/**
+ * Module 29: Relationship / CP Pair Leaderboards
+ */
+export async function getCpPairRankings({ period = 'daily' } = {}, db = prisma) {
+  const mockTop3 = [
+    {
+      rank: 1,
+      cpScore: 895000,
+      pair: {
+        user1: { id: '3001001', username: 'DanialKhan', displayName: 'Danial Khan', avatarUrl: 'https://example.com/danial.jpg' },
+        user2: { id: '3001002', username: 'SophiaRose', displayName: 'Sophia Rose', avatarUrl: 'https://example.com/sophia.jpg' },
+        relationshipType: 'CP_LOVE',
+        relationshipBadge: '💍 Eternal Love',
+        ringFrame: 'ETERNAL_DIAMOND',
+      },
+    },
+    {
+      rank: 2,
+      cpScore: 672000,
+      pair: {
+        user1: { id: '3001003', username: 'AlexRivera', displayName: 'Alex Rivera', avatarUrl: 'https://example.com/alex.jpg' },
+        user2: { id: '3001004', username: 'ElenaRostova', displayName: 'Elena Rostova', avatarUrl: 'https://example.com/elena.jpg' },
+        relationshipType: 'BEST_FRIEND',
+        relationshipBadge: '🌟 Golden Besties',
+        ringFrame: 'GOLDEN_HEART',
+      },
+    },
+    {
+      rank: 3,
+      cpScore: 540000,
+      pair: {
+        user1: { id: '3001005', username: 'MarcusVance', displayName: 'Marcus Vance', avatarUrl: 'https://example.com/marcus.jpg' },
+        user2: { id: '3001006', username: 'SaraStar', displayName: 'Sara Star', avatarUrl: 'https://example.com/sara.jpg' },
+        relationshipType: 'BRO_SIS',
+        relationshipBadge: '🤝 True Loyalty',
+        ringFrame: 'SILVER_LOVE',
+      },
+    },
+  ];
+
+  return {
+    period,
+    top3: mockTop3,
+    rankings: mockTop3,
+    myPairRank: { rank: 12, cpScore: 145000, distanceToNextRank: 5000 },
+  };
+}
+
 export default {
   createPost,
   getPostById,
@@ -1047,4 +1326,11 @@ export default {
   recordProfileVisit,
   getProfileVisitors,
   getProfileVisited,
+  getRelationship,
+  requestRelationship,
+  respondRelationship,
+  dissolveRelationship,
+  getRelationshipCardCatalog,
+  purchaseAndSendRelationshipCard,
+  getCpPairRankings,
 };

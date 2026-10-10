@@ -225,9 +225,43 @@ export async function transferHostMembership(hostProfileId, fromAgencyId, toAgen
   return newMember;
 }
 
+export async function findAgencyByOwnerUserId(ownerUserId, db = prisma) {
+  if (!ownerUserId) return null;
+  return await db.agency.findFirst({
+    where: { ownerUserId },
+    include: {
+      owner: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true,
+          profile: true,
+        },
+      },
+      _count: {
+        select: { hosts: true, members: true },
+      },
+      hosts: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              profile: true,
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
 export default {
   findAgencyById,
   findAgencyByCode,
+  findAgencyByOwnerUserId,
   findAgencies,
   createAgency,
   updateAgency,
@@ -237,3 +271,4 @@ export default {
   removeMember,
   transferHostMembership,
 };
+

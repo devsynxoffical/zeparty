@@ -162,8 +162,105 @@ export async function purchaseAsset({ userId, assetId }, { ipAddress } = {}, db 
   };
 }
 
+export async function sendAsset({ senderUserId, recipientUserId, assetId }, { ipAddress } = {}, db = prisma) {
+  if (!senderUserId || !recipientUserId || !assetId) {
+    const error = new Error('Sender, recipient, and asset IDs are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const asset = await assetRepository.findAssetById(assetId, db);
+  if (!asset || !asset.isActive) {
+    const error = new Error('Asset is not available or does not exist');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const [senderWallet, recipientUser] = await Promise.all([
+    walletRepository.findByUserId(senderUserId, db),
+    prisma.user.findUnique({ where: { id: recipientUserId }, select: { id: true, username: true } }),
+  ]);
+
+  if (!senderWallet) {
+    const error = new Error('Sender wallet not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (!recipientUser) {
+    const error = new Error('Recipient user not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const priceCoins = BigInt(asset.priceCoins || 0);
+  const validDays = Number(asset.validDays) || 30;
+  const validDurationMs = validDays * 24 * 60 * 60 * 1000;
+  const refId = generateReference('STORE_GIFT');
+
+  const result = await db.$transaction(async (tx) => {
+    const lockedWallet = await walletRepository.findWithLock(senderWallet.id, tx);
+    if (!lockedWallet || BigInt(lockedWallet.coinBalance) < priceCoins) {
+      const error = new Error(`Insufficient coins to send item. Required: ${priceCoins}`);
+      error.statusCode = 400;
+      throw error;
+    }
+
+    if (priceCoins > 0n) {
+      await ledgerService.postTransaction({
+        operations: [
+          {
+            walletId: senderWallet.id,
+            coinDelta: -priceCoins,
+            diamondDelta: 0n,
+          },
+        ],
+        referenceId: refId,
+        transactionType: 'STORE_GIFT_SENT',
+        db: tx,
+      });
+    }
+
+    const existingActive = await userAssetRepository.findActiveUserAssetByAssetId(recipientUserId, assetId, tx);
+    let userAssetRecord;
+    if (existingActive) {
+      const currentExpiry = new Date(existingActive.expiresAt);
+      const baseTime = currentExpiry > new Date() ? currentExpiry.getTime() : Date.now();
+      userAssetRecord = await userAssetRepository.updateUserAsset(
+        existingActive.id,
+        { expiresAt: new Date(baseTime + validDurationMs) },
+        tx
+      );
+    } else {
+      userAssetRecord = await userAssetRepository.createUserAsset(
+        {
+          userId: recipientUserId,
+          assetId,
+          isEquipped: false,
+          expiresAt: new Date(Date.now() + validDurationMs),
+        },
+        tx
+      );
+    }
+
+    return { userAsset: userAssetRecord };
+  });
+
+  return {
+    success: true,
+    message: `Successfully sent ${asset.name} to @${recipientUser.username}!`,
+    data: {
+      referenceId: refId,
+      recipient: recipientUser,
+      userAsset: serializeUserAsset(result.userAsset),
+      coinsDebited: priceCoins.toString(),
+    },
+  };
+}
+
 export default {
   getStoreCatalog,
   getVipStoreCatalog,
   purchaseAsset,
+  sendAsset,
 };

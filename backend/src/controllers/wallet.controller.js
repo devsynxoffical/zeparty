@@ -77,9 +77,89 @@ export async function adjustBalance(req, res, next) {
   }
 }
 
+export async function exchangeDiamonds(req, res, next) {
+  try {
+    const userId = req.auth.userId;
+    const { diamondAmount } = req.body;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await walletService.exchangeDiamondsToCoins(
+      { userId, diamondAmount },
+      { ipAddress }
+    );
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function transferDiamonds(req, res, next) {
+  try {
+    const senderUserId = req.auth.userId;
+    const { recipientUserId, diamondAmount } = req.body;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await walletService.transferDiamonds(
+      { senderUserId, recipientUserId, diamondAmount },
+      { ipAddress }
+    );
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getDiamondDetails(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const { tab = 'ALL', page = 1, limit = 20 } = req.query;
+    const result = await walletService.getDiamondDetails(userId, { tab, page, limit });
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getTransferReceivers(req, res, next) {
+  try {
+    const { country = 'GLOBAL', type = 'ALL' } = req.query;
+    const result = await walletService.getTransferReceivers({ country, type });
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getCoinRecords(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const { tab = 'ALL', page = 1, limit = 20 } = req.query;
+    const result = await walletService.getCoinRecords(userId, { tab, page, limit });
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getBalance,
   getLedger,
   getPlatformStats,
   adjustBalance,
+  exchangeDiamonds,
+  transferDiamonds,
+  getDiamondDetails,
+  getTransferReceivers,
+  getCoinRecords,
 };

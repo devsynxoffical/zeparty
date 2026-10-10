@@ -6,6 +6,9 @@ export const messageRouter = express.Router();
 
 messageRouter.use(authenticate);
 
+// Get inbox summary with activity channels
+messageRouter.get('/inbox-summary', messageController.getInboxSummary);
+
 // List conversations
 messageRouter.get('/conversations', messageController.getConversations);
 

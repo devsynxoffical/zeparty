@@ -14,7 +14,7 @@ import { adminHostRouter, userHostRouter } from './host.routes.js';
 import { adminAgencyRouter, userAgencyRouter } from './agency.routes.js';
 import { adminBDCenterRouter, userBDCenterRouter } from './bdCenter.routes.js';
 import { adminSellerRouter, userSellerRouter } from './seller.routes.js';
-import { adminMerchantRouter } from './merchant.routes.js';
+import { adminMerchantRouter, userMerchantRouter } from './merchant.routes.js';
 import { adminGiftRouter, userGiftRouter } from './gift.routes.js';
 import { adminAssetRouter, userBackpackRouter } from './asset.routes.js';
 import { adminStoreRouter, userStoreRouter } from './store.routes.js';
@@ -40,8 +40,15 @@ import mediaRoutes from './media.routes.js';
 import { userPKRouter, adminPKRouter } from './pk.routes.js';
 import messageRouter from './message.routes.js';
 import leaderboardRouter from './leaderboard.routes.js';
+import { adminBDReactionRouter, userBDReactionRouter } from './reaction.routes.js';
+import { adminEmojiRouter, userEmojiRouter } from './emoji.routes.js';
+import { adminExchangeTransferRouter, userExchangeTransferRouter } from './exchangeTransfer.routes.js';
+import { adminRankingRewardRouter, userRankingRewardRouter } from './rankingReward.routes.js';
+import completeSettingsRouter from './completeSettings.routes.js';
 
 const router = express.Router();
+
+
 
 // Leaderboard & Global Rankings routes
 router.use('/v1/rankings', leaderboardRouter);
@@ -71,9 +78,11 @@ router.use('/admin/users', adminUserRouter);
 router.use('/v1/admin/posts', adminPostRouter);
 router.use('/admin/posts', adminPostRouter);
 
-// Phase 2 Live Room Admin routes
+// Phase 2 Live Room routes
 router.use('/v1/admin/rooms', adminRoomRouter);
 router.use('/admin/rooms', adminRoomRouter);
+router.use('/v1/rooms', userRoomRouter);
+router.use('/rooms', userRoomRouter);
 
 // Phase 2 Banner Admin routes
 router.use('/v1/admin/banners', adminBannerRouter);
@@ -100,6 +109,11 @@ router.use('/admin/approvals', approvalRoutes);
 router.use('/v1/admin/policies', policyRoutes);
 router.use('/admin/policies', policyRoutes);
 
+router.use('/v1/admin/settings', completeSettingsRouter);
+router.use('/admin/settings', completeSettingsRouter);
+router.use('/v1/admin/complete-settings', completeSettingsRouter);
+router.use('/admin/complete-settings', completeSettingsRouter);
+
 router.use('/v1/admin/economy', economyRoutes);
 router.use('/admin/economy', economyRoutes);
 
@@ -115,6 +129,18 @@ router.use('/admin/agencies', adminAgencyRouter);
 
 router.use('/v1/admin/bd-centers', adminBDCenterRouter);
 router.use('/admin/bd-centers', adminBDCenterRouter);
+
+router.use('/v1/admin/bd-reactions', adminBDReactionRouter);
+router.use('/admin/bd-reactions', adminBDReactionRouter);
+
+router.use('/v1/admin/emojis', adminEmojiRouter);
+router.use('/admin/emojis', adminEmojiRouter);
+
+router.use('/v1/admin/exchange-transfer', adminExchangeTransferRouter);
+router.use('/admin/exchange-transfer', adminExchangeTransferRouter);
+
+router.use('/v1/admin/ranking-rewards', adminRankingRewardRouter);
+router.use('/admin/ranking-rewards', adminRankingRewardRouter);
 
 router.use('/v1/admin/sellers', adminSellerRouter);
 router.use('/admin/sellers', adminSellerRouter);
@@ -144,9 +170,30 @@ router.use('/agencies', userAgencyRouter);
 
 router.use('/v1/bd-centers', userBDCenterRouter);
 router.use('/bd-centers', userBDCenterRouter);
+router.use('/v1/bd-center', userBDCenterRouter);
+router.use('/bd-center', userBDCenterRouter);
+
+router.use('/v1/bd-center/reactions', userBDReactionRouter);
+router.use('/bd-center/reactions', userBDReactionRouter);
+router.use('/v1/bd-reactions', userBDReactionRouter);
+router.use('/bd-reactions', userBDReactionRouter);
+
+router.use('/v1/emojis', userEmojiRouter);
+router.use('/emojis', userEmojiRouter);
+
+router.use('/v1/wallet/exchange-transfer', userExchangeTransferRouter);
+router.use('/wallet/exchange-transfer', userExchangeTransferRouter);
+
+router.use('/v1/events/ranking-rewards', userRankingRewardRouter);
+router.use('/events/ranking-rewards', userRankingRewardRouter);
 
 router.use('/v1/sellers', userSellerRouter);
 router.use('/sellers', userSellerRouter);
+
+router.use('/v1/merchants', userMerchantRouter);
+router.use('/merchants', userMerchantRouter);
+
+
 
 // Phase 9 User / Mobile routes
 router.use('/v1/gifts', userGiftRouter);

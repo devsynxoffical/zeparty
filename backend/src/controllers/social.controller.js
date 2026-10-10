@@ -219,6 +219,101 @@ export async function getProfileVisited(req, res, next) {
   }
 }
 
+export async function getRelationship(req, res, next) {
+  try {
+    const targetUserId = req.params.userId || req.auth?.userId;
+    const rel = await socialService.getRelationship(targetUserId);
+
+    return res.status(200).json({
+      success: true,
+      data: rel,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function requestRelationship(req, res, next) {
+  try {
+    const requesterId = req.auth?.userId;
+    const { targetUserId, relationType, message } = req.body;
+    const result = await socialService.requestRelationship({
+      requesterId,
+      targetUserId,
+      relationType,
+      message,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function respondRelationship(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const targetUserId = req.body.targetUserId || req.body.requesterId;
+    const accept = req.body.accept !== undefined ? req.body.accept : (req.body.action === 'ACCEPT' || req.body.status === 'ACCEPT');
+    const result = await socialService.respondRelationship({
+      userId,
+      targetUserId,
+      accept,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function dissolveRelationship(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const { reason } = req.body;
+    const result = await socialService.dissolveRelationship({ userId, reason });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRelationshipCards(req, res, next) {
+  try {
+    const cards = await socialService.getRelationshipCardCatalog();
+    return res.status(200).json({ success: true, data: cards });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function purchaseAndSendRelationshipCard(req, res, next) {
+  try {
+    const senderUserId = req.auth?.userId;
+    const { recipientUserId, cardType, deductCoins } = req.body;
+    const result = await socialService.purchaseAndSendRelationshipCard({
+      senderUserId,
+      recipientUserId,
+      cardType,
+      deductCoins: deductCoins !== false,
+    });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getCpPairRankings(req, res, next) {
+  try {
+    const { period } = req.query;
+    const result = await socialService.getCpPairRankings({ period });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getSocialProfile,
   putPrivacySettings,
@@ -232,4 +327,11 @@ export default {
   recordProfileVisit,
   getProfileVisitors,
   getProfileVisited,
+  getRelationship,
+  requestRelationship,
+  respondRelationship,
+  dissolveRelationship,
+  getRelationshipCards,
+  purchaseAndSendRelationshipCard,
+  getCpPairRankings,
 };

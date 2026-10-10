@@ -108,7 +108,8 @@ export async function deleteAdminBanner(req, res, next) {
 
 export async function getActiveBanners(req, res, next) {
   try {
-    const banners = await bannerService.getActiveBanners();
+    const userCountryCode = req.user?.countryCode || req.query.countryCode || req.query.country;
+    const banners = await bannerService.getActiveBanners(userCountryCode);
 
     return res.status(200).json({
       success: true,
@@ -119,6 +120,7 @@ export async function getActiveBanners(req, res, next) {
     next(err);
   }
 }
+
 
 export default {
   getAdminBanners,

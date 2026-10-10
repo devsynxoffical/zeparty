@@ -22,9 +22,10 @@ import apiClient from '../../services/api';
 import { getCoinSellers, createCoinSeller, toggleSellerStatus, allocateCoinsToSeller, correctSellerBalance, deleteCoinSeller, updateCoinSeller } from '../../services/modules/coinSellers.service';
 
 const PACKAGES = [
-  { value: '300', label: '$300 Package', coins: 2205000, profit: '5%' },
-  { value: '500', label: '$500 Package', coins: 3675000, profit: '5%' },
-  { value: '1000', label: '$1,000 Package', coins: 7700000, profit: '10%' },
+  { value: '300', label: '$300 Coin Seller Tier', coins: 2205000, profit: '5%' },
+  { value: '500', label: '$500 Coin Seller Tier', coins: 3675000, profit: '5%' },
+  { value: '1000', label: '$1,000 Coin Seller Tier', coins: 7700000, profit: '10%' },
+  { value: '3000', label: '$3,000 Merchant Tier', coins: 25200000, profit: '20%' },
 ];
 
 export function CoinSellersPage() {

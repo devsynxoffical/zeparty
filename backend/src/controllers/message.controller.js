@@ -94,9 +94,23 @@ export async function markAsRead(req, res, next) {
   }
 }
 
+export async function getInboxSummary(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await messageService.getInboxSummary(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export default {
   getConversations,
   getMessages,
   sendMessage,
   markAsRead,
+  getInboxSummary,
 };

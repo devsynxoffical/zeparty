@@ -14,10 +14,16 @@ adminAgencyRouter.post('/:id/transfer-host', requirePermission('approve_reject_a
 adminAgencyRouter.get('/:id/members', requirePermission('view_agencies'), agencyController.getAgencyMembers);
 
 export const userAgencyRouter = express.Router();
+userAgencyRouter.get('/', agencyController.getPublicAgencies);
 userAgencyRouter.get('/public', agencyController.getPublicAgencies);
+userAgencyRouter.get('/my-agency', authenticate, agencyController.getMyAgency);
+userAgencyRouter.get('/me', authenticate, agencyController.getMyAgency);
+userAgencyRouter.post('/apply', authenticate, agencyController.applyRegisterAgency);
+userAgencyRouter.post('/', authenticate, agencyController.applyRegisterAgency);
 userAgencyRouter.post('/join', authenticate, agencyController.joinAgency);
 
 export default {
   adminAgencyRouter,
   userAgencyRouter,
 };
+

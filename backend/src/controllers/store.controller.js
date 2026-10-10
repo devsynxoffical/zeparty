@@ -74,9 +74,27 @@ export async function purchaseAsset(req, res, next) {
   }
 }
 
+export async function sendAsset(req, res, next) {
+  try {
+    const { assetId, recipientUserId } = req.body;
+    const senderUserId = req.auth.userId;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await storeService.sendAsset(
+      { senderUserId, recipientUserId, assetId },
+      { ipAddress }
+    );
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getAdminStoreCatalog,
   getAdminVipStore,
   getPublicStoreCatalog,
   purchaseAsset,
+  sendAsset,
 };

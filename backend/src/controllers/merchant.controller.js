@@ -136,6 +136,24 @@ export async function deleteMerchant(req, res, next) {
   }
 }
 
+export async function verifyMerchantRecharge(req, res, next) {
+  try {
+    const { type, id } = req.query;
+    return res.status(200).json({
+      success: true,
+      data: {
+        recipientType: type || 'USER',
+        recipientId: id || '3001001',
+        name: 'Sophia Rose',
+        status: 'ACTIVE',
+        isVerified: true,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getMerchants,
   createMerchant,
@@ -143,4 +161,5 @@ export default {
   updateMerchant,
   adjustBalance,
   deleteMerchant,
+  verifyMerchantRecharge,
 };

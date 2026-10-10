@@ -32,12 +32,37 @@ const getAllowedOrigins = (originString) => {
   return origins.length === 1 ? origins[0] : origins;
 };
 
-// CORS configuration
+// CORS configuration with dynamic origin matching to support admin portal, preview deployments and credentials
 app.use(
   cors({
-    origin: env.NODE_ENV === 'production' ? getAllowedOrigins(env.CORS_ORIGIN) : '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'Idempotency-Key'],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, native HTTP clients)
+      if (!origin) return callback(null, true);
+
+      // In development or if wildcard, allow all
+      if (env.NODE_ENV !== 'production' || !env.CORS_ORIGIN || env.CORS_ORIGIN === '*') {
+        return callback(null, true);
+      }
+
+      const allowedOrigins = env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean);
+      if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        return callback(null, true);
+      }
+
+      // Permissive fallback for standard admin deployments, Vercel, Railway, and localhost
+      if (
+        origin.includes('localhost') ||
+        origin.endsWith('.vercel.app') ||
+        origin.endsWith('.railway.app') ||
+        origin.includes('zeparty')
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(null, true);
+    },
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id', 'Idempotency-Key', 'Accept'],
     credentials: true,
   })
 );

@@ -198,9 +198,83 @@ export async function getAgencyMembers(req, res, next) {
   }
 }
 
+export async function getMyAgency(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const agency = await agencyRepository.findAgencyByOwnerUserId(userId);
+    return res.status(200).json({
+      success: true,
+      data: agency || null,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function applyRegisterAgency(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const agencyName = req.body.agencyName || req.body.name;
+    const { description, agencyType } = req.body;
+    if (!agencyName || agencyName.trim().length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Agency name must be at least 2 characters.',
+        error: { code: 'INVALID_AGENCY_NAME' },
+      });
+    }
+
+    const existing = await agencyRepository.findAgencyByOwnerUserId(userId);
+    if (existing) {
+      return res.status(200).json({
+        success: true,
+        message: 'You already own an active agency.',
+        data: existing,
+      });
+    }
+
+    const agencyCode = `AG_${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const agency = await agencyRepository.createAgency({
+      agencyName: agencyName.trim(),
+      agencyCode,
+      agencyType: agencyType || 'LIVE_AGENCY',
+      ownerUserId: userId,
+      commissionRate: 20.0,
+      status: 'ACTIVE',
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Agency registered successfully.',
+      data: agency,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getPublicAgencies,
   joinAgency,
+  getMyAgency,
+  applyRegisterAgency,
   getAgencies,
   createAgency,
   getAgencyById,

@@ -87,7 +87,9 @@ export async function findAllOfflineRecharges(
   if (status) where.status = status;
   if (userId) where.userId = userId;
 
-  const skip = (Math.max(1, page) - 1) * limit;
+  const pageNum = parseInt(page, 10) || 1;
+  const limitNum = parseInt(limit, 10) || 20;
+  const skip = (Math.max(1, pageNum) - 1) * limitNum;
 
   return await db.offlineRecharge.findMany({
     where,
@@ -98,7 +100,7 @@ export async function findAllOfflineRecharges(
     },
     orderBy: { createdAt: 'desc' },
     skip,
-    take: limit,
+    take: limitNum,
   });
 }
 

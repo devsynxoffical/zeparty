@@ -11,6 +11,11 @@ router.use(authenticate);
 // User-facing endpoints
 router.get('/balance', walletController.getBalance);
 router.get('/ledger', walletController.getLedger);
+router.get('/diamond-details', walletController.getDiamondDetails);
+router.get('/transfer-receivers', walletController.getTransferReceivers);
+router.get('/coin-records', walletController.getCoinRecords);
+router.post('/diamonds/exchange', idempotencyMiddleware, walletController.exchangeDiamonds);
+router.post('/diamonds/transfer', idempotencyMiddleware, walletController.transferDiamonds);
 
 // Administrative financial endpoints
 router.get('/stats', requirePermission('view_finance'), walletController.getPlatformStats);

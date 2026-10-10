@@ -314,6 +314,9 @@ export async function getRoomRankings({ period = 'daily', limit = 30 } = {}, db 
   const rooms = await db.room.findMany({
     where: {
       status: 'LIVE',
+      creator: {
+        status: 'ACTIVE',
+      },
     },
     orderBy: [
       { currentViewersCount: 'desc' },
@@ -340,8 +343,8 @@ export async function getRoomRankings({ period = 'daily', limit = 30 } = {}, db 
     },
   });
 
-  return rooms.map((r, idx) => {
-    const rawDiamonds = Number(r.creator.profile?.totalEarnedDiamonds || 0n);
+  return rooms.filter((r) => r.creator).map((r, idx) => {
+    const rawDiamonds = Number(r.creator?.profile?.totalEarnedDiamonds || 0n);
     const viewers = r.currentViewersCount || 1;
     const points = Math.max(viewers * 10, rawDiamonds > 0 ? Math.round(rawDiamonds * 0.1) : viewers * 15);
     return {
@@ -422,6 +425,214 @@ export async function getSvipRankings({ limit = 30 } = {}, db = prisma) {
 }
 
 /**
+ * Get Aristocratic Rankings (Aristocracy / Nobility level tiers)
+ */
+export async function getAristocraticRankings({ limit = 30 } = {}, db = prisma) {
+  const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
+
+  const profiles = await db.userProfile.findMany({
+    where: {
+      user: { status: 'ACTIVE' },
+    },
+    orderBy: [
+      { svipLevel: 'desc' },
+      { vipLevel: 'desc' },
+      { level: 'desc' },
+      { totalSpentCoins: 'desc' },
+    ],
+    take,
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+        },
+      },
+    },
+  });
+
+  return profiles.map((p, idx) => {
+    const rawSpent = Number(p.totalSpentCoins || 0n);
+    const nobleLevel = Math.max(1, Math.min(7, Math.floor((p.svipLevel * 2 + p.vipLevel) / 2) || 1));
+    const score = p.svipLevel * 150000 + p.vipLevel * 25000 + rawSpent;
+    return {
+      rank: idx + 1,
+      nobleLevel,
+      nobleTitle: nobleLevel >= 7 ? 'Emperor' : nobleLevel >= 6 ? 'King' : nobleLevel >= 5 ? 'Duke' : nobleLevel >= 4 ? 'Marquis' : nobleLevel >= 3 ? 'Count' : nobleLevel >= 2 ? 'Viscount' : 'Baron',
+      user: {
+        id: p.user.id,
+        username: p.user.username,
+        name: p.displayName || p.user.username,
+        displayName: p.displayName || p.user.username,
+        avatarUrl: p.user.avatarUrl || '',
+        level: p.level || 1,
+        vipLevel: p.vipLevel || 0,
+        svipLevel: p.svipLevel || 0,
+      },
+      points: score,
+      formattedPoints: score >= 1000000 ? `${(score / 1000000).toFixed(1)}M` : score >= 1000 ? `${(score / 1000).toFixed(1)}K` : `${score}`,
+    };
+  });
+}
+
+/**
+ * Get Lucky Rankings (Top Lucky Gift & Mini-game participants)
+ */
+export async function getLuckyRankings({ period = 'daily', limit = 30 } = {}, db = prisma) {
+  const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
+  const since = getPeriodDateFilter(period);
+
+  const where = {};
+  if (since) where.createdAt = { gte: since };
+
+  const luckyTxs = await db.giftTransaction.findMany({
+    where,
+    take: take * 2,
+    orderBy: { createdAt: 'desc' },
+    include: {
+      sender: {
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          profile: true,
+        },
+      },
+    },
+  });
+
+  if (luckyTxs.length > 0) {
+    const senderMap = new Map();
+    for (const tx of luckyTxs) {
+      if (!tx.sender) continue;
+      const sId = tx.sender.id;
+      const current = senderMap.get(sId) || {
+        user: {
+          id: tx.sender.id,
+          username: tx.sender.username,
+          name: tx.sender.profile?.displayName || tx.sender.username,
+          displayName: tx.sender.profile?.displayName || tx.sender.username,
+          avatarUrl: tx.sender.avatarUrl || '',
+          level: tx.sender.profile?.level || 1,
+          vipLevel: tx.sender.profile?.vipLevel || 0,
+          svipLevel: tx.sender.profile?.svipLevel || 0,
+        },
+        points: 0,
+      };
+      current.points += Number(tx.totalCoins || 0);
+      senderMap.set(sId, current);
+    }
+
+    const list = Array.from(senderMap.values()).sort((a, b) => b.points - a.points).slice(0, take);
+    return list.map((item, idx) => ({
+      rank: idx + 1,
+      user: item.user,
+      points: item.points,
+      formattedPoints: item.points >= 1000000 ? `${(item.points / 1000000).toFixed(1)}M` : item.points >= 1000 ? `${(item.points / 1000).toFixed(1)}K` : `${item.points}`,
+    }));
+  }
+
+  // Fallback to wealth
+  return await getWealthRankings({ period, limit }, db);
+}
+
+/**
+ * Get Lucky Gift & Magic Gift Records
+ */
+export async function getLuckyGiftRecords({ type = 'lucky', page = 1, limit = 20 } = {}, db = prisma) {
+  const p = Math.max(1, parseInt(page, 10) || 1);
+  const l = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
+  const skip = (p - 1) * l;
+
+  const [records, totalCount] = await Promise.all([
+    db.giftTransaction.findMany({
+      skip,
+      take: l,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        gift: {
+          select: {
+            id: true,
+            name: true,
+            iconUrl: true,
+            svgaAssetUrl: true,
+            coinValue: true,
+            giftCategory: true,
+          },
+        },
+        sender: {
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: { select: { displayName: true } },
+          },
+        },
+        recipient: {
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: { select: { displayName: true } },
+          },
+        },
+        room: {
+          select: {
+            id: true,
+            title: true,
+            roomType: true,
+          },
+        },
+      },
+    }),
+    db.giftTransaction.count(),
+  ]);
+
+  const formattedRecords = records.map((r) => ({
+    id: r.id,
+    recordType: type === 'magic' ? 'MAGIC_GIFT' : 'LUCKY_GIFT',
+    sender: {
+      id: r.sender.id,
+      username: r.sender.username,
+      name: r.sender.profile?.displayName || r.sender.username,
+      avatarUrl: r.sender.avatarUrl || '',
+    },
+    recipient: {
+      id: r.recipient.id,
+      username: r.recipient.username,
+      name: r.recipient.profile?.displayName || r.recipient.username,
+      avatarUrl: r.recipient.avatarUrl || '',
+    },
+    room: r.room ? {
+      id: r.room.id,
+      title: r.room.title,
+      roomType: r.room.roomType,
+    } : null,
+    gift: {
+      id: r.gift.id,
+      name: r.gift.name,
+      iconUrl: r.gift.iconUrl,
+      animationUrl: r.gift.svgaAssetUrl || '',
+      category: r.gift.giftCategory,
+    },
+    quantity: r.giftCount,
+    coinValue: Number(r.totalCoins),
+    timestamp: r.createdAt.toISOString(),
+  }));
+
+  return {
+    records: formattedRecords,
+    pagination: {
+      page: p,
+      limit: l,
+      totalCount,
+      totalPages: Math.ceil(totalCount / l) || 1,
+    },
+  };
+}
+
+/**
  * Get CP (Couple Partner) Rankings
  */
 export async function getCpRankings({ period = 'daily', limit = 30 } = {}, db = prisma) {
@@ -449,5 +660,8 @@ export default {
   getCharmRankings,
   getRoomRankings,
   getSvipRankings,
+  getAristocraticRankings,
+  getLuckyRankings,
+  getLuckyGiftRecords,
   getCpRankings,
 };

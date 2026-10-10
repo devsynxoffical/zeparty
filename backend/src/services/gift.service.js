@@ -361,6 +361,46 @@ export async function sendGift(
     } catch (_) {}
   }
 
+  // High-Value Activity Announcement Trigger (100,000+ Coins)
+  if (totalCoins >= 100000n) {
+    try {
+      const sender = await db.user.findUnique({
+        where: { id: senderUserId },
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          profile: { select: { displayName: true, vipLevel: true, svipLevel: true } },
+        },
+      });
+
+      const tier = totalCoins >= 1000000n ? 'MEGA' : totalCoins >= 500000n ? 'SUPER' : 'HIGH_VALUE';
+
+      socketEmitter.broadcastGlobal('room:high_value_announcement', {
+        eventType: 'GIFT',
+        tier,
+        sender: {
+          id: sender?.id || senderUserId,
+          username: sender?.username,
+          displayName: sender?.profile?.displayName || sender?.username,
+          avatarUrl: sender?.avatarUrl,
+          vipLevel: sender?.profile?.vipLevel || 0,
+          svipLevel: sender?.profile?.svipLevel || 0,
+        },
+        recipientUserId,
+        roomId: roomId || null,
+        gift: {
+          id: gift.id,
+          name: gift.name,
+          iconUrl: gift.iconUrl,
+        },
+        quantity: qty,
+        amount: Number(totalCoins),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (_) {}
+  }
+
   return {
     success: true,
     message: `Successfully sent ${qty}x ${gift.name} to host!`,

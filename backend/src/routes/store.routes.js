@@ -13,6 +13,7 @@ adminStoreRouter.get('/vip', requirePermission('view_vip_store'), storeControlle
 export const userStoreRouter = express.Router();
 userStoreRouter.get('/catalog', storeController.getPublicStoreCatalog);
 userStoreRouter.post('/purchase', authenticate, idempotency, storeController.purchaseAsset);
+userStoreRouter.post('/send', authenticate, idempotency, storeController.sendAsset);
 
 export default {
   adminStoreRouter,

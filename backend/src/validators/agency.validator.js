@@ -7,8 +7,13 @@ export const createAgencySchema = z.object({
     .min(3, 'Agency code must be at least 3 characters')
     .max(30)
     .regex(/^[A-Za-z0-9_-]+$/, 'Agency code must contain only alphanumeric characters, underscores, or hyphens')
-    .transform((val) => val.toUpperCase().trim()),
-  ownerUserId: z.string().min(1, 'Owner user ID is required'),
+    .transform((val) => val.toUpperCase().trim())
+    .optional(),
+  description: z.string().max(500).optional().nullable(),
+  phoneNumber: z.string().optional().nullable(),
+  countryCallingCode: z.string().optional().nullable(),
+  hostIds: z.array(z.string()).max(5).optional().default([]),
+  ownerUserId: z.string().optional(),
   agencyType: z.enum(['LIVE_AGENCY', 'AUDIO_AGENCY', 'HYBRID']).default('LIVE_AGENCY'),
   commissionRate: z.coerce.number().min(0, 'Commission rate must be >= 0').max(100, 'Commission rate must be <= 100').default(20.0),
   bdCenterId: z.string().optional().nullable(),

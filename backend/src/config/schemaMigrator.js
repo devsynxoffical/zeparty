@@ -144,6 +144,7 @@ export async function ensureDatabaseSchema(db = prisma) {
         NOW()
       FROM "Room" r
       WHERE r."status" = 'LIVE'
+        AND EXISTS (SELECT 1 FROM "User" u WHERE u."id" = r."creatorUserId")
         AND NOT EXISTS (SELECT 1 FROM "HostProfile" hp WHERE hp."userId" = r."creatorUserId")
       ON CONFLICT ("userId") DO NOTHING;
     `);
@@ -174,6 +175,57 @@ export async function ensureDatabaseSchema(db = prisma) {
     }
   } catch (err) {
     console.warn('User ID auto-migration note:', err.message);
+  }
+
+  // 9. Ensure Super Admin and Owner accounts exist and are ACTIVE
+  try {
+    const adminCount = await db.admin.count();
+    if (adminCount === 0) {
+      console.log('🔄 No admin accounts detected in database. Auto-bootstrapping default super admin & owner...');
+      const bcrypt = await import('bcryptjs');
+      const superAdminUsername = process.env.SUPER_ADMIN_USERNAME || 'admin';
+      const superAdminEmail = process.env.SUPER_ADMIN_EMAIL || 'admin@zeparty.app';
+      const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || 'admin123';
+
+      const ownerUsername = process.env.OWNER_USERNAME || 'owner';
+      const ownerEmail = process.env.OWNER_EMAIL || 'owner@zeparty.app';
+      const ownerPassword = process.env.OWNER_PASSWORD || 'owner123';
+
+      const [adminHash, ownerHash] = await Promise.all([
+        bcrypt.default.hash(superAdminPassword, 10),
+        bcrypt.default.hash(ownerPassword, 10),
+      ]);
+
+      await db.admin.createMany({
+        data: [
+          {
+            id: 'dev-admin-main-001',
+            name: 'Super Admin',
+            username: superAdminUsername,
+            email: superAdminEmail,
+            passwordHash: adminHash,
+            status: 'ACTIVE',
+            isSuperAdmin: true,
+            isOwner: false,
+            roleId: 'super_admin',
+          },
+          {
+            id: 'dev-owner-001',
+            name: 'Root Owner',
+            username: ownerUsername,
+            email: ownerEmail,
+            passwordHash: ownerHash,
+            status: 'ACTIVE',
+            isSuperAdmin: true,
+            isOwner: true,
+          },
+        ],
+        skipDuplicates: true,
+      });
+      console.log('✅ Super Admin and Owner accounts bootstrapped successfully into PostgreSQL');
+    }
+  } catch (err) {
+    console.warn('Admin bootstrap auto-check note:', err.message);
   }
 
   console.log('✅ Database schema and platform analytics verified and synchronized successfully');

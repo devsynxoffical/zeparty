@@ -175,6 +175,371 @@ export async function getBDCenterInvites(req, res, next) {
   }
 }
 
+export async function getMyBDStatus(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await bdCenterService.getMyBDStatus(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getBDAgentsList(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await bdCenterService.getBDAgentsList(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function sendAgentInvitation(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const { targetUserId, message } = req.body;
+    const result = await bdCenterService.sendAgentInvitation(userId, { targetUserId, message });
+    return res.status(201).json({
+      success: true,
+      message: 'Agent invitation sent successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getBDSalary(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await bdCenterService.getBDSalary(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getBDDashboard(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await bdCenterService.getBDDashboard(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getBDTargets(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await bdCenterService.getBDTargets(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getBDIncome(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await bdCenterService.getBDIncome(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getBDCommission(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await bdCenterService.getBDCommission(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getBDSalaryHistory(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await bdCenterService.getBDSalaryHistory(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getBDSettings(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await bdCenterService.getBDSettings(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getBDAuditHistory(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await bdCenterService.getBDAuditHistory(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ─── SVIP & Noble Control Endpoints ───
+
+export async function searchUserSVIP(req, res, next) {
+  try {
+    const { query } = req.query;
+    const result = await bdCenterService.searchUserForSVIP(query || '');
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function manageUserSVIP(req, res, next) {
+  try {
+    const operatorId = req.auth?.userId || 'ADMIN';
+    const { targetUserId, level, actionType, startDate, expiryDate, reason } = req.body;
+    const result = await bdCenterService.grantOrUpdateUserSVIP(operatorId, {
+      targetUserId,
+      level,
+      actionType: actionType || 'GRANT',
+      startDate,
+      expiryDate,
+      reason: reason || 'BD Center / Admin manual assignment',
+    });
+    return res.status(200).json({
+      success: true,
+      message: `User SVIP successfully updated to Level ${level}`,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getSVIPHistory(req, res, next) {
+  try {
+    const { userId } = req.params;
+    const result = await bdCenterService.getSVIPAuditHistory(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function searchUserNoble(req, res, next) {
+  try {
+    const { query } = req.query;
+    const result = await bdCenterService.searchUserForNoble(query || '');
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function manageUserNoble(req, res, next) {
+  try {
+    const operatorId = req.auth?.userId || 'ADMIN';
+    const { targetUserId, rank, actionType, startDate, expiryDate, reason } = req.body;
+    const result = await bdCenterService.grantOrUpdateUserNoble(operatorId, {
+      targetUserId,
+      rank,
+      actionType: actionType || 'GRANT',
+      startDate,
+      expiryDate,
+      reason: reason || 'BD Center / Admin manual assignment',
+    });
+    return res.status(200).json({
+      success: true,
+      message: `User Noble status successfully updated to ${rank}`,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getNobleHistory(req, res, next) {
+  try {
+    const { userId } = req.params;
+    const result = await bdCenterService.getNobleAuditHistory(userId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listEvents(req, res, next) {
+  try {
+    const { page, limit, status, type, scope, search } = req.query;
+    const result = await bdCenterService.listBDEvents({ page, limit, status, type, scope, search });
+    return res.status(200).json({
+      success: true,
+      message: 'Events retrieved successfully',
+      data: result.events,
+      pagination: result.pagination,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function createEvent(req, res, next) {
+  try {
+    const operatorId = req.auth.userId;
+    const operatorName = req.admin?.name || 'BD Manager';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await bdCenterService.createBDEvent(req.body, {
+      operatorId,
+      operatorName,
+      ipAddress,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Event created successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEventDetails(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await bdCenterService.getBDEventDetails(id);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateEvent(req, res, next) {
+  try {
+    const { id } = req.params;
+    const operatorId = req.auth.userId;
+    const operatorName = req.admin?.name || 'BD Manager';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await bdCenterService.updateBDEvent(id, req.body, {
+      operatorId,
+      operatorName,
+      ipAddress,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Event updated successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function settleEvent(req, res, next) {
+  try {
+    const { id } = req.params;
+    const operatorId = req.auth.userId;
+    const operatorName = req.admin?.name || 'BD Manager';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await bdCenterService.settleBDEvent(id, {
+      operatorId,
+      operatorName,
+      ipAddress,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Event settled and final rankings locked',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEventHistory(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await bdCenterService.getBDEventAuditHistory(id);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getCommissionPolicyTable(req, res, next) {
+  try {
+    const table = bdCenterService.getBDMonthlyCommissionPolicyTable();
+    return res.status(200).json({
+      success: true,
+      message: 'BD Monthly Commission Policy Table retrieved successfully',
+      data: table,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   validateInvite,
   acceptInvite,
@@ -184,4 +549,30 @@ export default {
   updateBDCenter,
   sendInvite,
   getBDCenterInvites,
+  getMyBDStatus,
+  getBDAgentsList,
+  sendAgentInvitation,
+  getBDSalary,
+  getBDDashboard,
+  getBDTargets,
+  getBDIncome,
+  getBDCommission,
+  getCommissionPolicyTable,
+  getBDSalaryHistory,
+  getBDSettings,
+  getBDAuditHistory,
+  searchUserSVIP,
+  manageUserSVIP,
+  getSVIPHistory,
+  searchUserNoble,
+  manageUserNoble,
+  getNobleHistory,
+  listEvents,
+  createEvent,
+  getEventDetails,
+  updateEvent,
+  settleEvent,
+  getEventHistory,
 };
+
+
