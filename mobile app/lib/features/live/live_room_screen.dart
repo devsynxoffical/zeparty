@@ -30,6 +30,7 @@ import '../../widgets/tiktok_gift_overlay.dart';
 import 'widgets/high_value_announcement.dart';
 import '../../providers/emoji_reaction_provider.dart';
 import '../../providers/live_gift_provider.dart';
+import '../../providers/backpack_provider.dart';
 import '../../core/services/room_share_service.dart';
 import '../../core/services/agora_rtc_service.dart';
 import '../../widgets/user_avatar.dart';
@@ -403,9 +404,15 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   void _triggerFloatingHeart() => _sendLikeWithHeart(const Offset(250, 450));
 
   Widget _buildLiveHostBackground(bool isDark) {
-    final bgUrl = widget.room.coverUrl.isNotEmpty
-        ? widget.room.coverUrl
-        : widget.room.host.avatarUrl;
+    String? equippedTheme;
+    try {
+      final backpack = context.watch<BackpackProvider>();
+      equippedTheme = backpack.equippedThemeUrl;
+    } catch (_) {}
+
+    final bgUrl = (equippedTheme != null && equippedTheme.isNotEmpty)
+        ? equippedTheme
+        : (widget.room.coverUrl.isNotEmpty ? widget.room.coverUrl : widget.room.host.avatarUrl);
 
     return Container(
       decoration: BoxDecoration(
@@ -420,27 +427,33 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Background cover / host avatar image
+          // Background cover / host avatar / equipped theme image
           if (bgUrl.isNotEmpty)
             Positioned.fill(
               child: Opacity(
-                opacity: 0.45,
-                child: bgUrl.startsWith('http')
+                opacity: (equippedTheme != null && equippedTheme.isNotEmpty) ? 0.75 : 0.45,
+                child: (bgUrl.startsWith('http://') || bgUrl.startsWith('https://'))
                     ? Image.network(
                         bgUrl,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) => Container(color: Colors.black26),
                       )
-                    : Container(
-                        decoration: BoxDecoration(
-                          gradient: RadialGradient(
-                            colors: [
-                              (isDark ? AppColors.warmGold : AppColors.royalBlue).withValues(alpha: 0.3),
-                              Colors.black,
-                            ],
+                    : (bgUrl.startsWith('assets/'))
+                        ? Image.asset(
+                            bgUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(color: Colors.black26),
+                          )
+                        : Container(
+                            decoration: BoxDecoration(
+                              gradient: RadialGradient(
+                                colors: [
+                                  (isDark ? AppColors.warmGold : AppColors.royalBlue).withValues(alpha: 0.3),
+                                  Colors.black,
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
               ),
             ),
 
@@ -2164,6 +2177,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               isMod: msg.isMod,
                               isVip: msg.isVip,
                               nobleTitle: msg.nobleTitle,
+                              avatarFrame: msg.avatarFrame,
+                              chatBubble: msg.chatBubble,
                               isSystem: isSystem,
                               isGift: msg.isGift,
                             );

@@ -8,6 +8,7 @@ import '../core/services/agora_rtc_service.dart';
 import '../core/services/socket_service.dart';
 import '../core/repositories/room_repository.dart';
 import '../core/repositories/pk_repository.dart';
+import '../core/utils/noble_badge_helper.dart';
 
 class LiveMessage {
   final String id;
@@ -21,6 +22,8 @@ class LiveMessage {
   final bool isMod;
   final bool isVip;
   final String? nobleTitle;
+  final String? avatarFrame;
+  final String? chatBubble;
   final DateTime timestamp;
 
   LiveMessage({
@@ -35,6 +38,8 @@ class LiveMessage {
     this.isMod = false,
     this.isVip = false,
     this.nobleTitle,
+    this.avatarFrame,
+    this.chatBubble,
     DateTime? timestamp,
   })  : id = id ?? 'msg_${DateTime.now().millisecondsSinceEpoch}',
         timestamp = timestamp ?? DateTime.now();
@@ -397,6 +402,8 @@ class LiveProvider extends ChangeNotifier {
           isHost: isHost,
           isVip: senderMap['isVip'] == true,
           nobleTitle: senderMap['nobleTitle']?.toString() ?? senderMap['nobleLevel']?.toString(),
+          avatarFrame: senderMap['avatarFrame']?.toString() ?? senderMap['frameUrl']?.toString(),
+          chatBubble: senderMap['chatBubble']?.toString() ?? senderMap['bubbleUrl']?.toString(),
           timestamp: DateTime.tryParse(data['timestamp']?.toString() ?? '') ?? DateTime.now(),
         ));
         if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
@@ -691,6 +698,10 @@ class LiveProvider extends ChangeNotifier {
       isHost: isHost,
       isVip: effectiveUser?.isVip ?? false,
       nobleTitle: effectiveUser?.nobleTitle,
+      avatarFrame: effectiveUser?.avatarFrame,
+      chatBubble: (effectiveUser?.nobleTitle != null && effectiveUser!.nobleTitle!.isNotEmpty)
+          ? NobleBadgeHelper.getChatBubbleAsset(effectiveUser.nobleTitle)
+          : null,
     );
 
     _messages.add(localMsg);

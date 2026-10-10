@@ -13,6 +13,8 @@ class AnimatedLiveCommentItem extends StatefulWidget {
   final bool isSystem;
   final bool isGift;
   final String? nobleTitle;
+  final String? avatarFrame;
+  final String? chatBubble;
   final int wealthLevel;
   final VoidCallback? onTap;
 
@@ -28,6 +30,8 @@ class AnimatedLiveCommentItem extends StatefulWidget {
     this.isSystem = false,
     this.isGift = false,
     this.nobleTitle,
+    this.avatarFrame,
+    this.chatBubble,
     this.wealthLevel = 1,
     this.onTap,
   });
@@ -183,9 +187,11 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                     name: widget.senderName,
                     radius: 14,
                     showVipFrame: widget.isVip,
-                    frameAsset: widget.nobleTitle != null && widget.nobleTitle!.isNotEmpty
-                        ? NobleBadgeHelper.getFrameAsset(widget.nobleTitle)
-                        : null,
+                    frameAsset: (widget.avatarFrame != null && widget.avatarFrame!.isNotEmpty && widget.avatarFrame != 'none')
+                        ? widget.avatarFrame
+                        : (widget.nobleTitle != null && widget.nobleTitle!.isNotEmpty
+                            ? NobleBadgeHelper.getFrameAsset(widget.nobleTitle)
+                            : (widget.isVip ? NobleBadgeHelper.getFrameAsset('Baron') : null)),
                   ),
                 ),
                 Flexible(
@@ -206,8 +212,15 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                                     const Color(0xFF311B92).withValues(alpha: 0.35),
                                   ],
                                 )
-                              : null),
-                      color: (!widget.isGift && !widget.isHost)
+                              : (widget.chatBubble != null && widget.chatBubble!.isNotEmpty
+                                  ? LinearGradient(
+                                      colors: [
+                                        const Color(0xFFD4AF37).withValues(alpha: 0.35),
+                                        const Color(0xFF7A34DC).withValues(alpha: 0.25),
+                                      ],
+                                    )
+                                  : null)),
+                      color: (!widget.isGift && !widget.isHost && (widget.chatBubble == null || widget.chatBubble!.isEmpty))
                           ? (widget.isMod
                               ? const Color(0xFF0D47A1).withValues(alpha: 0.35)
                               : Colors.black.withValues(alpha: 0.55))
@@ -218,10 +231,12 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                             ? const Color(0xFFFF4081).withValues(alpha: 0.6)
                             : (widget.isHost
                                 ? Colors.amber.withValues(alpha: 0.4)
-                                : (widget.isMod
-                                    ? Colors.blueAccent.withValues(alpha: 0.35)
-                                    : Colors.white.withValues(alpha: 0.09))),
-                        width: 0.8,
+                                : (widget.chatBubble != null && widget.chatBubble!.isNotEmpty
+                                    ? const Color(0xFFF5C76B).withValues(alpha: 0.6)
+                                    : (widget.isMod
+                                        ? Colors.blueAccent.withValues(alpha: 0.35)
+                                        : Colors.white.withValues(alpha: 0.09)))),
+                        width: (widget.chatBubble != null && widget.chatBubble!.isNotEmpty) ? 1.2 : 0.8,
                       ),
                     ),
                     child: RichText(
