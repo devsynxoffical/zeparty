@@ -2166,6 +2166,18 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                             final msg = liveProvider.messages.reversed.toList()[index];
                             final isSystem = msg.sender.toLowerCase().contains('system') || msg.sender.contains('🛡️');
                             final isHostMsg = msg.isHost || msg.sender == widget.room.host.name;
+                            final isMeMsg = msg.senderId == currentUser.id;
+                            String? equippedBubble = msg.chatBubble;
+                            String? equippedFrame = msg.avatarFrame;
+                            try {
+                              final backpack = Provider.of<BackpackProvider>(context, listen: false);
+                              if (isMeMsg && (equippedBubble == null || equippedBubble.isEmpty)) {
+                                equippedBubble = backpack.equippedBubbleUrl;
+                              }
+                              if (isMeMsg && (equippedFrame == null || equippedFrame.isEmpty)) {
+                                equippedFrame = currentUser.avatarFrame;
+                              }
+                            } catch (_) {}
 
                             return AnimatedLiveCommentItem(
                               key: ValueKey('${msg.sender}_${msg.text}_${msg.id}_$index'),
@@ -2177,8 +2189,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               isMod: msg.isMod,
                               isVip: msg.isVip,
                               nobleTitle: msg.nobleTitle,
-                              avatarFrame: msg.avatarFrame,
-                              chatBubble: msg.chatBubble,
+                              avatarFrame: equippedFrame,
+                              chatBubble: equippedBubble,
                               isSystem: isSystem,
                               isGift: msg.isGift,
                             );

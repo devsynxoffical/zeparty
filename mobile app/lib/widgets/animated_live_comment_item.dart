@@ -166,6 +166,8 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
     final defaultAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80';
     final avatarToUse = (widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty) ? widget.avatarUrl! : defaultAvatar;
 
+    final hasCustomBubble = widget.chatBubble != null && widget.chatBubble!.isNotEmpty && widget.chatBubble != 'none';
+
     return FadeTransition(
       opacity: _fadeAnimation,
       child: SlideTransition(
@@ -196,48 +198,53 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                 ),
                 Flexible(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: hasCustomBubble
+                        ? const EdgeInsets.symmetric(horizontal: 14, vertical: 7)
+                        : const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      gradient: widget.isGift
-                          ? LinearGradient(
-                              colors: [
-                                const Color(0xFFE91E63).withValues(alpha: 0.45),
-                                const Color(0xFF880E4F).withValues(alpha: 0.3),
-                              ],
+                      image: hasCustomBubble
+                          ? DecorationImage(
+                              image: (widget.chatBubble!.startsWith('http://') || widget.chatBubble!.startsWith('https://'))
+                                  ? NetworkImage(widget.chatBubble!) as ImageProvider
+                                  : AssetImage(widget.chatBubble!),
+                              fit: BoxFit.fill,
                             )
-                          : (widget.isHost
+                          : null,
+                      gradient: !hasCustomBubble
+                          ? (widget.isGift
                               ? LinearGradient(
                                   colors: [
-                                    const Color(0xFF4A148C).withValues(alpha: 0.5),
-                                    const Color(0xFF311B92).withValues(alpha: 0.35),
+                                    const Color(0xFFE91E63).withValues(alpha: 0.45),
+                                    const Color(0xFF880E4F).withValues(alpha: 0.3),
                                   ],
                                 )
-                              : (widget.chatBubble != null && widget.chatBubble!.isNotEmpty
+                              : (widget.isHost
                                   ? LinearGradient(
                                       colors: [
-                                        const Color(0xFFD4AF37).withValues(alpha: 0.35),
-                                        const Color(0xFF7A34DC).withValues(alpha: 0.25),
+                                        const Color(0xFF4A148C).withValues(alpha: 0.5),
+                                        const Color(0xFF311B92).withValues(alpha: 0.35),
                                       ],
                                     )
-                                  : null)),
-                      color: (!widget.isGift && !widget.isHost && (widget.chatBubble == null || widget.chatBubble!.isEmpty))
+                                  : null))
+                          : null,
+                      color: (!hasCustomBubble && !widget.isGift && !widget.isHost)
                           ? (widget.isMod
                               ? const Color(0xFF0D47A1).withValues(alpha: 0.35)
                               : Colors.black.withValues(alpha: 0.55))
                           : null,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: widget.isGift
-                            ? const Color(0xFFFF4081).withValues(alpha: 0.6)
-                            : (widget.isHost
-                                ? Colors.amber.withValues(alpha: 0.4)
-                                : (widget.chatBubble != null && widget.chatBubble!.isNotEmpty
-                                    ? const Color(0xFFF5C76B).withValues(alpha: 0.6)
-                                    : (widget.isMod
-                                        ? Colors.blueAccent.withValues(alpha: 0.35)
-                                        : Colors.white.withValues(alpha: 0.09)))),
-                        width: (widget.chatBubble != null && widget.chatBubble!.isNotEmpty) ? 1.2 : 0.8,
-                      ),
+                      border: !hasCustomBubble
+                          ? Border.all(
+                              color: widget.isGift
+                                  ? const Color(0xFFFF4081).withValues(alpha: 0.6)
+                                  : (widget.isHost
+                                      ? Colors.amber.withValues(alpha: 0.4)
+                                      : (widget.isMod
+                                          ? Colors.blueAccent.withValues(alpha: 0.35)
+                                          : Colors.white.withValues(alpha: 0.09))),
+                              width: 0.8,
+                            )
+                          : null,
                     ),
                     child: RichText(
                       text: TextSpan(

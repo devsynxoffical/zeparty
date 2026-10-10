@@ -214,7 +214,11 @@ class _ChatBubbleState extends State<ChatBubble> {
       alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
-        padding: isImage ? const EdgeInsets.all(4) : const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: isImage
+            ? const EdgeInsets.all(4)
+            : (hasCustomBubble
+                ? const EdgeInsets.fromLTRB(20, 12, 20, 12)
+                : const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.76),
         decoration: BoxDecoration(
           color: isGift
@@ -228,22 +232,24 @@ class _ChatBubbleState extends State<ChatBubble> {
                   fit: BoxFit.fill,
                 )
               : null,
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(widget.isMe ? 16 : 4),
-            bottomRight: Radius.circular(widget.isMe ? 4 : 16),
-          ),
-          border: isGift
-              ? Border.all(color: Colors.purpleAccent, width: 1.5)
-              : (hasCustomBubble ? Border.all(color: AppColors.metallicGold, width: 1.2) : null),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          borderRadius: hasCustomBubble
+              ? BorderRadius.circular(16)
+              : BorderRadius.only(
+                  topLeft: const Radius.circular(16),
+                  topRight: const Radius.circular(16),
+                  bottomLeft: Radius.circular(widget.isMe ? 16 : 4),
+                  bottomRight: Radius.circular(widget.isMe ? 4 : 16),
+                ),
+          border: isGift ? Border.all(color: Colors.purpleAccent, width: 1.5) : null,
+          boxShadow: hasCustomBubble
+              ? null
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
         ),
         child: Column(
           crossAxisAlignment: widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -489,7 +495,14 @@ class _ChatBubbleState extends State<ChatBubble> {
             ] else ...[
               Text(
                 widget.message.text,
-                style: TextStyle(color: textColor, fontSize: 14),
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 14,
+                  fontWeight: hasCustomBubble ? FontWeight.w600 : FontWeight.normal,
+                  shadows: hasCustomBubble
+                      ? [const Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1))]
+                      : null,
+                ),
               ),
             ],
             const SizedBox(height: 4),
@@ -503,8 +516,14 @@ class _ChatBubbleState extends State<ChatBubble> {
                   Text(
                     AppFormatters.formatTimeAgo(widget.message.timestamp),
                     style: TextStyle(
-                      color: widget.isMe ? onPrimary.withValues(alpha: 0.75) : Theme.of(context).textTheme.bodySmall?.color,
+                      color: widget.isMe
+                          ? (hasCustomBubble ? Colors.white.withValues(alpha: 0.9) : onPrimary.withValues(alpha: 0.75))
+                          : Theme.of(context).textTheme.bodySmall?.color,
                       fontSize: 10,
+                      fontWeight: hasCustomBubble ? FontWeight.bold : FontWeight.normal,
+                      shadows: hasCustomBubble
+                          ? [const Shadow(color: Colors.black45, blurRadius: 3, offset: Offset(0, 1))]
+                          : null,
                     ),
                   ),
                   if (widget.isMe) ...[

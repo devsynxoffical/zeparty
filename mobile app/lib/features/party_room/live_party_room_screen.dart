@@ -12,6 +12,7 @@ import '../../models/live_room_model.dart';
 import '../../models/user_model.dart';
 import '../../core/utils/noble_badge_helper.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/backpack_provider.dart';
 import '../../providers/game_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/live_party_provider.dart';
@@ -366,29 +367,42 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         children: [
           // TikTok Live Gifting Overlay
           TikTokGiftOverlay(roomId: widget.room.id),
-          // Ambient Gradient or Custom Background Image
+          // Ambient Gradient, Equipped Room Theme, or Custom Background Image
           Positioned.fill(
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              decoration: BoxDecoration(
-                image: _customBackgroundPath != null
-                    ? DecorationImage(
-                        image: FileImage(File(_customBackgroundPath!)),
-                        fit: BoxFit.cover,
-                        colorFilter: ColorFilter.mode(
-                          Colors.black.withValues(alpha: 0.5),
-                          BlendMode.darken,
-                        ),
-                      )
-                    : null,
-                gradient: _customBackgroundPath == null
-                    ? LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: _roomBackgroundGradient,
-                      )
-                    : null,
-              ),
+            child: Builder(
+              builder: (context) {
+                final equippedTheme = context.watch<BackpackProvider>().equippedThemeUrl;
+                final bgImage = _customBackgroundPath != null
+                    ? FileImage(File(_customBackgroundPath!)) as ImageProvider
+                    : (equippedTheme != null && equippedTheme.isNotEmpty
+                        ? ((equippedTheme.startsWith('http://') || equippedTheme.startsWith('https://'))
+                            ? NetworkImage(equippedTheme) as ImageProvider
+                            : AssetImage(equippedTheme) as ImageProvider)
+                        : null);
+
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 500),
+                  decoration: BoxDecoration(
+                    image: bgImage != null
+                        ? DecorationImage(
+                            image: bgImage,
+                            fit: BoxFit.cover,
+                            colorFilter: ColorFilter.mode(
+                              Colors.black.withValues(alpha: 0.55),
+                              BlendMode.darken,
+                            ),
+                          )
+                        : null,
+                    gradient: bgImage == null
+                        ? LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: _roomBackgroundGradient,
+                          )
+                        : null,
+                  ),
+                );
+              },
             ),
           ),
 
@@ -1220,9 +1234,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         final isMod = participantInfo?.role == ParticipantRole.moderator;
         final isVip = msg.sender.wealthLevel >= 10 || msg.sender.isVip;
 
-        final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
         final isHost = widget.room.host.id == currentUser.id;
         final canManage = isHost || provider.participants.any((p) => p.user.id == currentUser.id && p.role == ParticipantRole.moderator);
+        final isMeMsg = msg.sender.id == currentUser.id;
+        final backpack = Provider.of<BackpackProvider>(context, listen: false);
+        final equippedBubble = isMeMsg ? backpack.equippedBubbleUrl : (msg.sender.badge.isNotEmpty ? msg.sender.badge : null);
+        final equippedFrame = msg.sender.avatarFrame.isNotEmpty
+            ? msg.sender.avatarFrame
+            : (isMeMsg ? currentUser.avatarFrame : null);
 
         return AnimatedLiveCommentItem(
           key: ValueKey(msg.id),
@@ -1236,6 +1255,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           isSystem: isSystem,
           isGift: msg.isGiftMessage,
           nobleTitle: msg.sender.nobleTitle,
+          avatarFrame: equippedFrame,
+          chatBubble: equippedBubble,
           wealthLevel: msg.sender.wealthLevel,
           onTap: () {
             final participant = provider.participants.where((p) => p.user.id == msg.sender.id).firstOrNull ??

@@ -10,6 +10,7 @@ import '../../core/theme/app_colors.dart';
 import '../../models/user_model.dart';
 import '../../providers/messaging_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/backpack_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/gift_dialog.dart';
@@ -258,6 +259,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final messaging = context.watch<MessagingProvider>();
     final messages = messaging.getMessagesForUser(widget.user.id);
     final isTargetTyping = messaging.isUserTyping(widget.user.id);
+    final backpack = context.watch<BackpackProvider>();
+    final equippedTheme = backpack.equippedThemeUrl;
 
     return Scaffold(
       appBar: AppBar(
@@ -376,8 +379,24 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
+      body: Container(
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF0F0D1B) : AppColors.getBackground(isDark),
+          image: (equippedTheme != null && equippedTheme.isNotEmpty)
+              ? DecorationImage(
+                  image: (equippedTheme.startsWith('http://') || equippedTheme.startsWith('https://'))
+                      ? NetworkImage(equippedTheme) as ImageProvider
+                      : AssetImage(equippedTheme),
+                  fit: BoxFit.cover,
+                  colorFilter: ColorFilter.mode(
+                    Colors.black.withValues(alpha: isDark ? 0.45 : 0.25),
+                    BlendMode.darken,
+                  ),
+                )
+              : null,
+        ),
+        child: Stack(
+          children: [
           Column(
             children: [
               // Chat Messages Feed
@@ -650,6 +669,7 @@ class _ChatScreenState extends State<ChatScreen> {
           GiftAnimationOverlay(key: _giftOverlayKey),
         ],
       ),
-    );
+    ),
+  );
   }
 }
