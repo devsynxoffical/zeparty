@@ -17,7 +17,6 @@ import '../../providers/social_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/user_list_sheet.dart';
 import '../../widgets/full_screen_image_viewer.dart';
-import '../../core/repositories/backend_repository.dart';
 import 'level_center_screen.dart';
 import 'modules/gift_showcase_screen.dart';
 import 'modules/medal_screen.dart';
@@ -33,7 +32,6 @@ import 'user_profile_details_screen.dart';
 import '../wallet/wallet_screen.dart';
 import '../rewards/rewards_screen.dart';
 import '../leaderboard/leaderboard_screen.dart';
-import '../host/host_verification_screen.dart';
 import '../agency/agency_center_screen.dart';
 import '../agency/apply_agency_screen.dart';
 import '../live_host/apply_live_host_screen.dart';
@@ -48,7 +46,6 @@ import '../../providers/agency_provider.dart';
 import '../../providers/live_host_provider.dart';
 import '../../providers/live_party_provider.dart';
 import '../party_room/live_party_room_screen.dart';
-import '../host/host_dashboard_screen.dart';
 
 
 import '../store/store_screen.dart';
@@ -1036,8 +1033,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       onTap: onTap,
       child: Container(
         width: 145,
-        height: 88,
-        padding: const EdgeInsets.all(10),
+        height: 92,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: gradientColors ?? [color.withValues(alpha: 0.25), color.withValues(alpha: 0.08)],

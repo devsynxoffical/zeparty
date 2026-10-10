@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/messaging_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../wallet/diamond_transfer_screen.dart';
+import 'bd_center_screen.dart';
 
 class AgencyCenterScreen extends StatefulWidget {
   const AgencyCenterScreen({super.key});
@@ -77,6 +78,13 @@ class _AgencyCenterScreenState extends State<AgencyCenterScreen> with SingleTick
         backgroundColor: AppColors.getBackground(isDark),
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.business_center_rounded, color: Colors.cyanAccent),
+            tooltip: 'BD Center',
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const BDCenterScreen()));
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.history_edu_rounded, color: Colors.amberAccent),
             tooltip: 'Admin Audit Log',

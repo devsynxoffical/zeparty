@@ -99,10 +99,42 @@ export async function getUserExchangeTransferStatus(req, res, next) {
   }
 }
 
+export async function postUserExecuteConversion(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const { type, amount } = req.body;
+    const numAmount = Number(amount);
+    if (!numAmount || numAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid amount is required for exchange',
+      });
+    }
+
+    const result = await exchangeTransferService.previewRateCalculation({ type, amount: numAmount });
+    
+    return res.status(200).json({
+      success: true,
+      message: `Conversion calculation processed successfully for ${numAmount} ${type === 'COINS_TO_DIAMONDS' ? 'Coins' : 'Diamonds'}`,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getAdminExchangeTransferControl,
   postAdminPreviewCalculation,
   postAdminPublishConfiguration,
   postAdminRollbackConfiguration,
   getUserExchangeTransferStatus,
+  postUserExecuteConversion,
 };

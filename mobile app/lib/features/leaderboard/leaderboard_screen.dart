@@ -6,6 +6,7 @@ import '../../core/services/api_client.dart';
 import '../../models/user_model.dart';
 import '../../widgets/user_avatar.dart';
 import '../profile/user_profile_details_screen.dart';
+import 'event_ranking_rewards_screen.dart';
 
 class RankingEntry {
   final int rank;
@@ -175,6 +176,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                 fontSize: 18,
               ),
             ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.stars_rounded, color: Colors.amber),
+                tooltip: 'Event Rewards',
+                onPressed: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const EventRankingRewardsScreen()));
+                },
+              ),
+            ],
             bottom: TabBar(
               controller: _tabController,
               indicatorColor: primary,

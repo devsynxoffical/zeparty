@@ -9,6 +9,7 @@ import '../recharge/recharge_screen.dart';
 import 'agency_recharge_screen.dart';
 import 'wallet_details_screen.dart';
 import 'coin_records_screen.dart';
+import 'coin_exchange_screen.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -47,7 +48,14 @@ class _WalletScreenState extends State<WalletScreen> {
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.history_rounded, color: Colors.amberAccent),
+            icon: const Icon(Icons.currency_exchange_rounded, color: Colors.amberAccent),
+            tooltip: 'Exchange Coins',
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const CoinExchangeScreen()));
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.history_rounded, color: Colors.white70),
             tooltip: 'Coin Records',
             onPressed: () {
               Navigator.push(context, MaterialPageRoute(builder: (_) => const CoinRecordsScreen()));

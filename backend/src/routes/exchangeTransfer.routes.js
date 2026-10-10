@@ -13,8 +13,10 @@ adminExchangeTransferRouter.post('/publish', requirePermission('manage_finance')
 adminExchangeTransferRouter.post('/rollback', requirePermission('manage_finance'), exchangeTransferController.postAdminRollbackConfiguration);
 
 export const userExchangeTransferRouter = express.Router();
+userExchangeTransferRouter.use(authenticate);
 userExchangeTransferRouter.get('/status', exchangeTransferController.getUserExchangeTransferStatus);
 userExchangeTransferRouter.post('/preview', exchangeTransferController.postAdminPreviewCalculation);
+userExchangeTransferRouter.post('/convert', exchangeTransferController.postUserExecuteConversion);
 
 export default {
   adminExchangeTransferRouter,

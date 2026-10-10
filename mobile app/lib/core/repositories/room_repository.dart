@@ -30,20 +30,43 @@ class RoomRepository {
       normCat = 'GAMING';
     }
 
-    final response = await _apiClient.post(
-      '/v1/rooms',
-      data: {
-        'title': title,
-        'coverImageUrl': coverImageUrl ?? '',
-        'roomType': normType,
-        'category': normCat,
-        'isPrivate': isPrivate,
-        if (roomPin != null && roomPin.isNotEmpty) 'roomPin': roomPin,
-      },
-    );
+    Map<String, dynamic> payload = {
+      'title': title,
+      'coverImageUrl': coverImageUrl ?? '',
+      'roomType': normType,
+      'category': normCat,
+      'isPrivate': isPrivate,
+      if (roomPin != null && roomPin.isNotEmpty) 'roomPin': roomPin,
+    };
 
-    final data = response.data?['data'] as Map<String, dynamic>;
-    return LiveRoomModel.fromJson(data);
+    try {
+      final response = await _apiClient.post('/v1/rooms', data: payload);
+      final data = response.data?['data'] as Map<String, dynamic>;
+      return LiveRoomModel.fromJson(data);
+    } catch (e) {
+      bool isUnauthorized = false;
+      if (e is ApiException) {
+        if (e.statusCode == 401 || e.code == 'UNAUTHORIZED' || (e.message.toLowerCase().contains('unauthorized') || e.message.toLowerCase().contains('jwt expired'))) {
+          isUnauthorized = true;
+        }
+      }
+
+      if (isUnauthorized) {
+        // Attempt automatic token refresh retry
+        final newToken = await _apiClient.refreshToken();
+        if (newToken != null && newToken.isNotEmpty) {
+          final retryResponse = await _apiClient.post('/v1/rooms', data: payload);
+          final data = retryResponse.data?['data'] as Map<String, dynamic>;
+          return LiveRoomModel.fromJson(data);
+        }
+        throw ApiException(
+          message: 'Your session has expired. Please sign in again.',
+          code: 'UNAUTHORIZED',
+          statusCode: 401,
+        );
+      }
+      rethrow;
+    }
   }
 
   /// Get active live rooms with discovery filtering

@@ -375,9 +375,10 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
                     padding: EdgeInsets.only(top: topPad),
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [Color(0xCC0E0A07), Color(0x000E0A07)],
+                        colors: [Color(0xFA0B0806), Color(0xD90B0806), Color(0x000B0806)],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
+                        stops: [0.0, 0.7, 1.0],
                       ),
                     ),
                     child: Column(
@@ -585,116 +586,131 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
             : 'You need ${AppFormatters.formatNumber(remaining)} points to reach SVIP${lvl.level}';
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(1.5),
-                        decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white24),
-                        child: UserAvatar(imageUrl: user.avatarUrl, name: user.name, radius: 15),
-                      ),
-                      const SizedBox(width: 8),
-                      _GoldText('SVIP${lvl.level}', fontSize: 26),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  // Thin progress line
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(2),
-                    child: Stack(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _kGold.withValues(alpha: 0.3), width: 0.8),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.45),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Container(height: 3, color: Colors.white24),
-                        FractionallySizedBox(
-                          widthFactor: isUnlocked && !isCurrent ? 1.0 : progress,
-                          child: Container(
-                            height: 3,
-                            decoration: const BoxDecoration(gradient: LinearGradient(colors: [_kGoldLight, _kGold])),
+                        Container(
+                          padding: const EdgeInsets.all(1.5),
+                          decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white24),
+                          child: UserAvatar(imageUrl: user.avatarUrl, name: user.name, radius: 15),
+                        ),
+                        const SizedBox(width: 8),
+                        _GoldText('SVIP${lvl.level}', fontSize: 26),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    // Thin progress line
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: Stack(
+                        children: [
+                          Container(height: 3, color: Colors.white24),
+                          FractionallySizedBox(
+                            widthFactor: isUnlocked && !isCurrent ? 1.0 : progress,
+                            child: Container(
+                              height: 3,
+                              decoration: const BoxDecoration(gradient: LinearGradient(colors: [_kGoldLight, _kGold])),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Text(
+                          '${AppFormatters.formatNumber(svip.currentPoints)}/${lvl.requiredPoints}',
+                          style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600),
+                        ),
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: () => _showRecordSheet(svip),
+                          child: const Row(
+                            children: [
+                              Text('Record', style: TextStyle(color: Colors.white, fontSize: 11.5)),
+                              SizedBox(width: 3),
+                              CustomPaint(size: Size(5, 9), painter: _ChevronPainter(direction: AxisDirection.right, stroke: 1.4)),
+                            ],
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Text(
-                        '${AppFormatters.formatNumber(svip.currentPoints)}/${lvl.requiredPoints}',
-                        style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w600),
-                      ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () => _showRecordSheet(svip),
-                        child: const Row(
-                          children: [
-                            Text('Record', style: TextStyle(color: Colors.white, fontSize: 11.5)),
-                            SizedBox(width: 3),
-                            CustomPaint(size: Size(5, 9), painter: _ChevronPainter(direction: AxisDirection.right, stroke: 1.4)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(hint, style: const TextStyle(color: _kGold, fontSize: 11.5, height: 1.25)),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Expiry Date: ${svip.expiryDate.year}.${svip.expiryDate.month.toString().padLeft(2, '0')}.${svip.expiryDate.day.toString().padLeft(2, '0')}',
-                    style: const TextStyle(color: Colors.white, fontSize: 11.5),
-                  ),
-                  const SizedBox(height: 14),
-                  GestureDetector(
-                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen())),
-                    child: Container(
-                      width: 72,
-                      height: 30,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(15),
-                        gradient: const LinearGradient(colors: [Color(0xFFA05BFF), _kPurple]),
-                        boxShadow: [BoxShadow(color: _kPurple.withValues(alpha: 0.45), blurRadius: 10, offset: const Offset(0, 3))],
-                      ),
-                      child: const Text('Keep', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 4),
+                    Text(hint, style: const TextStyle(color: _kGold, fontSize: 11.5, height: 1.25)),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Expiry Date: ${svip.expiryDate.year}.${svip.expiryDate.month.toString().padLeft(2, '0')}.${svip.expiryDate.day.toString().padLeft(2, '0')}',
+                      style: const TextStyle(color: Colors.white, fontSize: 11.5),
                     ),
+                    const SizedBox(height: 14),
+                    GestureDetector(
+                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen())),
+                      child: Container(
+                        width: 72,
+                        height: 30,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(15),
+                          gradient: const LinearGradient(colors: [Color(0xFFA05BFF), _kPurple]),
+                          boxShadow: [BoxShadow(color: _kPurple.withValues(alpha: 0.45), blurRadius: 10, offset: const Offset(0, 3))],
+                        ),
+                        child: const Text('Keep', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            // Crest
+            SizedBox(
+              width: 140,
+              child: Column(
+                children: [
+                  AnimatedSVIPBadge(
+                    key: ValueKey('crest_${lvl.level}'),
+                    assetPath: NobleBadgeHelper.getBadgeAsset('SVIP ${lvl.level}') ?? 'assets/svip/svip1_badge.webp',
+                    width: 140,
+                    height: 140,
+                  ),
+                  const SizedBox(height: 2),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.65),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Text(statusText, style: const TextStyle(color: Colors.white70, fontSize: 10.5)),
                   ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(width: 6),
-          // Crest
-          SizedBox(
-            width: 150,
-            child: Column(
-              children: [
-                AnimatedSVIPBadge(
-                  key: ValueKey('crest_${lvl.level}'),
-                  assetPath: NobleBadgeHelper.getBadgeAsset('SVIP ${lvl.level}') ?? 'assets/svip/svip1_badge.webp',
-                  width: 150,
-                  height: 150,
-                ),
-                const SizedBox(height: 2),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.55),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: Colors.white12),
-                  ),
-                  child: Text(statusText, style: const TextStyle(color: Colors.white70, fontSize: 10.5)),
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
