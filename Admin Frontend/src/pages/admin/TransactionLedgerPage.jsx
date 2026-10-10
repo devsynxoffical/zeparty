@@ -52,25 +52,33 @@ export function TransactionLedgerPage() {
   useEffect(() => {
     getMasterLedger({ limit: 100 })
       .then((res) => {
-        const rawItems = res?.data || [];
-        const formatted = rawItems.map((tx) => ({
-          txnId: tx.id,
-          timestamp: tx.createdAt,
-          type: tx.type,
-          user: tx.wallet?.user?.username || tx.wallet?.userId || 'System',
-          userId: tx.wallet?.userId,
-          source: tx.source || (tx.type === 'RECHARGE' ? 'Gateway' : 'Wallet'),
-          destination: tx.destination || (tx.type === 'WITHDRAWAL' ? 'Payout Account' : 'Wallet'),
-          amountUSD: Number(tx.amount || 0),
-          coinsAdded: Number(tx.coinAmount > 0 ? tx.coinAmount : 0),
-          coinsSpent: Number(tx.coinAmount < 0 ? Math.abs(tx.coinAmount) : 0),
-          status: tx.status || 'SUCCESS',
-          chainId: tx.referenceId || `CHAIN-${tx.id.slice(0, 8)}`,
-          operator: tx.operator || 'System Automated',
-          linkedRecords: tx.referenceId ? [tx.referenceId] : [],
-          rate: tx.rate || '10,000/$1',
-          note: tx.reason || '',
-        }));
+        const rawItems = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
+        const formatted = rawItems.map((tx) => {
+          const type = tx.type || tx.transactionType || 'TRANSACTION';
+          const id = tx.id || tx.txnId || 'TXN-000';
+          const refId = tx.referenceId || tx.chainId || (id ? `CHAIN-${String(id).slice(0, 8)}` : 'CHAIN-AUTO');
+          const coinVal = Number(tx.coinAmount ?? tx.coinDelta ?? 0);
+          const usdVal = Number(tx.amount ?? tx.usdDelta ?? 0);
+
+          return {
+            txnId: String(id),
+            timestamp: tx.createdAt || tx.timestamp || new Date().toISOString(),
+            type: String(type),
+            user: tx.wallet?.user?.username || tx.wallet?.userId || tx.user || 'System',
+            userId: tx.wallet?.userId || tx.userId || null,
+            source: tx.source || (type === 'RECHARGE' ? 'Gateway' : 'Wallet'),
+            destination: tx.destination || (type === 'WITHDRAWAL' ? 'Payout Account' : 'Wallet'),
+            amountUSD: usdVal,
+            coinsAdded: coinVal > 0 ? coinVal : 0,
+            coinsSpent: coinVal < 0 ? Math.abs(coinVal) : 0,
+            status: tx.status || 'SUCCESS',
+            chainId: String(refId),
+            operator: tx.operator || 'System Automated',
+            linkedRecords: tx.referenceId ? [tx.referenceId] : [],
+            rate: tx.rate || '10,000/$1',
+            note: tx.reason || '',
+          };
+        });
         setLedger(formatted);
       })
       .catch((err) => {
@@ -103,18 +111,18 @@ export function TransactionLedgerPage() {
 
   // Filtered Ledger Chain
   const filteredLedger = useMemo(() => {
-    const q = search.toLowerCase();
+    const q = (search || '').toLowerCase();
 
     if (typeFilter === 'COINS') {
-      return coinSales
-        .filter((item) => item.entityType === coinsToggle)
+      return (coinSales || [])
+        .filter((item) => item?.entityType === coinsToggle)
         .filter((item) => {
           return (
             !q ||
-            item.txnId.toLowerCase().includes(q) ||
-            item.entityName.toLowerCase().includes(q) ||
-            item.username.toLowerCase().includes(q) ||
-            item.chainId.toLowerCase().includes(q)
+            String(item?.txnId || '').toLowerCase().includes(q) ||
+            String(item?.entityName || '').toLowerCase().includes(q) ||
+            String(item?.username || '').toLowerCase().includes(q) ||
+            String(item?.chainId || '').toLowerCase().includes(q)
           );
         })
         .map((item) => ({
@@ -135,14 +143,15 @@ export function TransactionLedgerPage() {
         }));
     }
 
-    return ledger.filter((tx) => {
-      const matchType = typeFilter === 'ALL' || tx.type === typeFilter;
+    return (ledger || []).filter((tx) => {
+      const txType = String(tx?.type || '');
+      const matchType = typeFilter === 'ALL' || txType === typeFilter;
       const matchSearch =
         !q ||
-        tx.txnId.toLowerCase().includes(q) ||
-        tx.chainId.toLowerCase().includes(q) ||
-        (tx.user && tx.user.toLowerCase().includes(q)) ||
-        (tx.hostId && tx.hostId.toLowerCase().includes(q));
+        String(tx?.txnId || '').toLowerCase().includes(q) ||
+        String(tx?.chainId || '').toLowerCase().includes(q) ||
+        String(tx?.user || '').toLowerCase().includes(q) ||
+        String(tx?.hostId || '').toLowerCase().includes(q);
       return matchType && matchSearch;
     });
   }, [search, typeFilter, coinsToggle, ledger, coinSales]);
@@ -208,14 +217,13 @@ export function TransactionLedgerPage() {
         return false;
       }
 
-      // 2. Search Query
       if (search) {
         const q = search.toLowerCase();
         const match =
-          item.txnId.toLowerCase().includes(q) ||
-          item.entityName.toLowerCase().includes(q) ||
-          item.username.toLowerCase().includes(q) ||
-          item.userRef.toLowerCase().includes(q);
+          String(item?.txnId || '').toLowerCase().includes(q) ||
+          String(item?.entityName || '').toLowerCase().includes(q) ||
+          String(item?.username || '').toLowerCase().includes(q) ||
+          String(item?.userRef || '').toLowerCase().includes(q);
         if (!match) return false;
       }
 
@@ -296,10 +304,11 @@ export function TransactionLedgerPage() {
       header: 'Type',
       render: (row) => {
         let variant = 'purple';
-        if (row.type === 'REVERSAL_ADJUSTMENT' || row.status === 'REVERSED') variant = 'danger';
-        if (row.type === 'RECHARGE' || row.type.includes('COIN')) variant = 'success';
-        if (row.type === 'HOST_EARNING') variant = 'info';
-        return <Badge variant={variant}>{row.type}</Badge>;
+        const typeStr = String(row?.type || 'TRANSACTION');
+        if (typeStr === 'REVERSAL_ADJUSTMENT' || row?.status === 'REVERSED') variant = 'danger';
+        if (typeStr === 'RECHARGE' || typeStr.includes('COIN')) variant = 'success';
+        if (typeStr.includes('HOST') || typeStr.includes('SETTLEMENT')) variant = 'info';
+        return <Badge variant={variant}>{typeStr}</Badge>;
       },
     },
     {
@@ -534,7 +543,7 @@ export function TransactionLedgerPage() {
             )}
           </Card>
 
-          <DataTable columns={columns} data={filteredLedger} isLoading={false} />
+          <DataTable columns={columns} data={filteredLedger} isLoading={isLoading} />
         </>
       )}
 
