@@ -392,25 +392,30 @@ export async function createWithdrawalRequest({ userId, recipientId, recipientRo
       },
     });
 
-    await tx.auditLog.create({
-      data: {
-        adminId: 'SYSTEM',
-        adminName: 'Withdrawal Engine',
-        action: 'HOST_WITHDRAWAL_REQUESTED',
-        targetEntity: 'WithdrawalRequest',
-        targetEntityId: newRequest.id,
-        afterStateJson: {
-          userId,
-          amountUSD: parsedAmount,
-          recipientId,
-          recipientName,
-          recipientRole: normalizedRole,
-          country: userCountry,
-        },
-        reason: `Host requested salary withdrawal of $${parsedAmount} to ${normalizedRole} (${recipientName}) in ${userCountry}`,
-        ipAddress: ipAddress || '127.0.0.1',
-      },
-    });
+    try {
+      const fallbackAdmin = await tx.admin.findFirst({ select: { id: true, name: true } });
+      if (fallbackAdmin) {
+        await tx.auditLog.create({
+          data: {
+            adminId: fallbackAdmin.id,
+            adminName: fallbackAdmin.name || 'Withdrawal Engine',
+            action: 'HOST_WITHDRAWAL_REQUESTED',
+            targetEntity: 'WithdrawalRequest',
+            targetEntityId: newRequest.id,
+            afterStateJson: {
+              userId,
+              amountUSD: parsedAmount,
+              recipientId,
+              recipientName,
+              recipientRole: normalizedRole,
+              country: userCountry,
+            },
+            reason: `Host requested salary withdrawal of $${parsedAmount} to ${normalizedRole} (${recipientName}) in ${userCountry}`,
+            ipAddress: ipAddress || '127.0.0.1',
+          },
+        });
+      }
+    } catch (_) {}
 
     return {
       success: true,

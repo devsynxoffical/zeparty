@@ -72,6 +72,8 @@ export async function lookupUserForBD(searchQuery, db = prisma) {
 
   return {
     success: true,
+    id: user.id,
+    hasActiveBD: Boolean(existingBD),
     user: {
       id: user.id,
       username: user.username,
@@ -80,6 +82,7 @@ export async function lookupUserForBD(searchQuery, db = prisma) {
       countryCode: user.countryCode || 'GLOBAL',
       userType: user.userType,
       isAlreadyBD: Boolean(existingBD),
+      hasActiveBD: Boolean(existingBD),
       existingBDCenterName: existingBD?.centerName || null,
       existingBDCenterId: existingBD?.id || null,
     },
@@ -160,7 +163,11 @@ export async function createBDCenter(data, { adminId, adminName, ipAddress } = {
       ipAddress,
     }, tx);
 
-    return created;
+    return {
+      ...created,
+      ownerUserId: created.managerUserId,
+      managerUserId: created.managerUserId,
+    };
   });
 
   return center;

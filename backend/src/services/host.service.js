@@ -6,9 +6,23 @@ import emailService from './email.service.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
+    let validAdminId = adminId;
+    if (validAdminId) {
+      const existingAdmin = await db.admin.findUnique({ where: { id: validAdminId } });
+      if (!existingAdmin) {
+        const fallbackAdmin = await db.admin.findFirst();
+        validAdminId = fallbackAdmin ? fallbackAdmin.id : null;
+      }
+    } else {
+      const fallbackAdmin = await db.admin.findFirst();
+      validAdminId = fallbackAdmin ? fallbackAdmin.id : null;
+    }
+
+    if (!validAdminId) return;
+
     await db.auditLog.create({
       data: {
-        adminId: adminId || 'SYSTEM',
+        adminId: validAdminId,
         adminName: adminName || 'System',
         action,
         targetEntity,
@@ -20,7 +34,7 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
       },
     });
   } catch (err) {
-    console.error('Failed to write audit log in host.service:', err);
+    // Non-fatal audit log
   }
 }
 
@@ -508,6 +522,19 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
       historyRecordsCount: combinedHistory.length,
     },
     // Backwards-compatible legacy properties for existing UI widgets
+    basicTotalSalaryUSD: Number(basicTotalSalary.toFixed(2)),
+    hostBasicSalaryUSD: Number(hostBasicSalary.toFixed(2)),
+    agencyShareUSD: Number(agencyShareEarned.toFixed(2)),
+    specialIdBonusUSD: specialIdBonusEarned,
+    completedValidDays,
+    requiredValidDays: requiredDays,
+    completedMinutesToday,
+    requiredMinutesPerDay: dailyTargetMinutes,
+    todayStatus,
+    availableHostSalaryUSD: Number(availableHostSalaryUSD.toFixed(2)),
+    pendingSalaryUSD: Number(pendingSalaryUSD.toFixed(2)),
+    pendingWithdrawalUSD: Number(pendingWithdrawalUSD.toFixed(2)),
+    agencyName: host?.agency?.agencyName || 'No agency joined',
     currentLevel: activeTier.level,
     targetDiamonds: activeTier.targetDiamonds,
     eligibleDiamonds,

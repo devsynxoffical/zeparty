@@ -2658,7 +2658,7 @@ export async function getPropsCatalog(category, db = prisma) {
 export async function assignSpecialIdToUser(
   userId,
   { newPublicId, reason },
-  { adminId, adminName, ipAddress },
+  { adminId, adminName, ipAddress } = {},
   db = prisma
 ) {
   const sanitizedId = String(newPublicId || '').trim();
@@ -2724,6 +2724,8 @@ export async function assignSpecialIdToUser(
 
     return {
       success: true,
+      publicId: sanitizedId,
+      newPublicId: sanitizedId,
       message: `Public User ID successfully updated from "${oldPublicId}" to "${sanitizedId}".`,
       user: {
         id: updated.id,
@@ -2740,18 +2742,17 @@ export async function assignSpecialIdToUser(
  */
 export async function getNoblesCatalog() {
   const titles = [
-    { rank: 'Viscount', level: 1, name: 'Viscount', badge: '🥈', badgeName: 'Viscount Silver Crest', frame: 'assets/frames/viscount_frame.png', durationDays: 30, monthlyPriceCoins: 15000, description: 'Viscount Aristocratic Status with room seat priority' },
-    { rank: 'Earl', level: 2, name: 'Earl', badge: '🥉', badgeName: 'Earl Bronze Crest', frame: 'assets/frames/earl_frame.png', durationDays: 30, monthlyPriceCoins: 35000, description: 'Earl Aristocratic Status with chat bubble & highlight' },
-    { rank: 'Marquis', level: 3, name: 'Marquis', badge: '💎', badgeName: 'Marquis Diamond Crest', frame: 'assets/frames/marquis_frame.png', durationDays: 30, monthlyPriceCoins: 75000, description: 'Marquis Aristocratic Status with custom badge & gift perks' },
-    { rank: 'Duke', level: 4, name: 'Duke', badge: '🛡️', badgeName: 'Grand Duke Golden Shield', frame: 'assets/frames/duke_frame.png', durationDays: 30, monthlyPriceCoins: 150000, description: 'Grand Duke Status with entry announcement banner' },
-    { rank: 'King', level: 5, name: 'King', badge: '👑', badgeName: 'Imperial King Crown', frame: 'assets/frames/king_frame.png', durationDays: 30, monthlyPriceCoins: 300000, description: 'Royal King Rank with golden room banner & top seat' },
-    { rank: 'Emperor', level: 6, name: 'Emperor', badge: '🌟', badgeName: 'Supreme Emperor Dragon Crest', frame: 'assets/frames/emperor_frame.png', durationDays: 30, monthlyPriceCoins: 600000, description: 'Supreme Emperor Status with platform-wide royal privileges' },
+    { title: 'Viscount', rank: 'Viscount', level: 1, name: 'Viscount', badge: '🥈', badgeName: 'Viscount Silver Crest', frame: 'assets/frames/viscount_frame.png', durationDays: 30, monthlyPriceCoins: 15000, description: 'Viscount Aristocratic Status with room seat priority' },
+    { title: 'Earl', rank: 'Earl', level: 2, name: 'Earl', badge: '🥉', badgeName: 'Earl Bronze Crest', frame: 'assets/frames/earl_frame.png', durationDays: 30, monthlyPriceCoins: 35000, description: 'Earl Aristocratic Status with chat bubble & highlight' },
+    { title: 'Marquis', rank: 'Marquis', level: 3, name: 'Marquis', badge: '💎', badgeName: 'Marquis Diamond Crest', frame: 'assets/frames/marquis_frame.png', durationDays: 30, monthlyPriceCoins: 75000, description: 'Marquis Aristocratic Status with custom badge & gift perks' },
+    { title: 'Duke', rank: 'Duke', level: 4, name: 'Duke', badge: '🛡️', badgeName: 'Grand Duke Golden Shield', frame: 'assets/frames/duke_frame.png', durationDays: 30, monthlyPriceCoins: 150000, description: 'Grand Duke Status with entry announcement banner' },
+    { title: 'King', rank: 'King', level: 5, name: 'King', badge: '👑', badgeName: 'Imperial King Crown', frame: 'assets/frames/king_frame.png', durationDays: 30, monthlyPriceCoins: 300000, description: 'Royal King Rank with golden room banner & top seat' },
+    { title: 'Emperor', rank: 'Emperor', level: 6, name: 'Emperor', badge: '🌟', badgeName: 'Supreme Emperor Dragon Crest', frame: 'assets/frames/emperor_frame.png', durationDays: 30, monthlyPriceCoins: 600000, description: 'Supreme Emperor Status with platform-wide royal privileges' },
   ];
 
-  return {
-    success: true,
-    nobles: titles,
-  };
+  titles.success = true;
+  titles.nobles = titles;
+  return titles;
 }
 
 /**
@@ -2760,7 +2761,7 @@ export async function getNoblesCatalog() {
 export async function grantNobleTitleToUser(
   userId,
   { nobleTitle, durationDays = 30, reason },
-  { adminId, adminName, ipAddress },
+  { adminId, adminName, ipAddress } = {},
   db = prisma
 ) {
   const targetUser = await db.user.findUnique({
@@ -2806,6 +2807,8 @@ export async function grantNobleTitleToUser(
 
     return {
       success: true,
+      nobleTitle,
+      nobleRank: updatedProfile.nobleRank,
       message: `Noble title "${nobleTitle}" granted successfully to @${targetUser.username}.`,
       user: {
         id: targetUser.id,
