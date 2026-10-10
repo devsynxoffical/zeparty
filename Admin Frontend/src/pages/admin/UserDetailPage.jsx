@@ -10,7 +10,7 @@ import {
   ArrowLeft, Mail, Globe, Phone, Building, ShieldCheck, ShieldAlert,
   Smartphone, Lock, RefreshCw, Key, Award, Sparkles, AlertTriangle,
   Coins, Diamond, CheckCircle, XCircle, Slash, MessageSquare, Heart,
-  Share2, Trash2, FileText, Camera, Eye, Film, Play, ExternalLink
+  Share2, Trash2, FileText, Camera, Eye, Film, Play, ExternalLink, Crown
 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
@@ -20,7 +20,17 @@ import { Input } from '../../components/ui/Input';
 import { Toast } from '../../components/ui/Toast';
 import { ImageViewerModal } from '../../components/ui/ImageViewerModal';
 import { DataTable } from '../../components/tables/DataTable';
-import { getUserById, updateUser, updateUserStatus } from '../../services/modules/users.service';
+import {
+  getUserById,
+  updateUser,
+  updateUserStatus,
+  getPropsCatalog,
+  grantPropToUser,
+  assignSpecialIdToUser,
+  getNoblesCatalog,
+  grantNobleToUser,
+  reconcileUserWealth
+} from '../../services/modules/users.service';
 import { getBDCenters } from '../../services/modules/bdCenter.service';
 import { getUserPosts, deleteUserPost } from '../../services/modules/posts.service';
 import { CountryFlag } from '../../components/ui/CountryFlag';
@@ -58,11 +68,34 @@ export function UserDetailPage() {
   const [selectedBDCenter, setSelectedBDCenter] = useState('');
 
   // Modals state
-  const [modalAction, setModalAction] = useState(null); // 'ban' | 'freeze' | 'reset' | 'grant_prop' | 'revoke_session' | 'change_country'
+  const [modalAction, setModalAction] = useState(null); // 'ban' | 'freeze' | 'reset' | 'grant_prop' | 'grant_noble' | 'revoke_session' | 'change_country'
   const [actionReason, setActionReason] = useState('');
   const [selectedProp, setSelectedProp] = useState('avatarFrame');
   const [propValue, setPropValue] = useState('');
   const [targetSessionId, setTargetSessionId] = useState(null);
+
+  // Props Catalog & Real Grant State
+  const [propsCatalog, setPropsCatalog] = useState([]);
+  const [isLoadingPropsCatalog, setIsLoadingPropsCatalog] = useState(false);
+  const [propsSearchQuery, setPropsSearchQuery] = useState('');
+  const [selectedCatalogItem, setSelectedCatalogItem] = useState(null);
+  const [propDurationDays, setPropDurationDays] = useState(30);
+  const [isGrantingProp, setIsGrantingProp] = useState(false);
+
+  // Special ID State
+  const [specialIdInput, setSpecialIdInput] = useState('786');
+  const [isAssigningSpecialId, setIsAssigningSpecialId] = useState(false);
+  const [specialIdError, setSpecialIdError] = useState(null);
+
+  // Noble Titles Grant State
+  const [noblesCatalog, setNoblesCatalog] = useState([]);
+  const [selectedNoble, setSelectedNoble] = useState(null);
+  const [nobleDurationDays, setNobleDurationDays] = useState(30);
+  const [isGrantingNoble, setIsGrantingNoble] = useState(false);
+
+  // Wealth Reconcile State
+  const [isReconcilingWealth, setIsReconcilingWealth] = useState(false);
+
 
   // Toast State
   const [toast, setToast] = useState(null);
@@ -233,27 +266,150 @@ export function UserDetailPage() {
     setHistory(freshLogs || []);
   };
 
+  const loadPropsCatalog = async (category) => {
+    setIsLoadingPropsCatalog(true);
+    try {
+      const items = await getPropsCatalog(category);
+      setPropsCatalog(items || []);
+      if (items?.length > 0) setSelectedCatalogItem(items[0]);
+      else setSelectedCatalogItem(null);
+    } catch (err) {
+      console.error('Failed to load props catalog:', err);
+      setPropsCatalog([]);
+    } finally {
+      setIsLoadingPropsCatalog(false);
+    }
+  };
+
+  const loadNoblesCatalog = async () => {
+    try {
+      const nobles = await getNoblesCatalog();
+      setNoblesCatalog(nobles || []);
+      if (nobles?.length > 0) setSelectedNoble(nobles[0]);
+    } catch (err) {
+      console.error('Failed to load nobles catalog:', err);
+      setNoblesCatalog([]);
+    }
+  };
+
+  useEffect(() => {
+    if (modalAction === 'grant_prop' && selectedProp !== 'specialId') {
+      loadPropsCatalog(selectedProp);
+    } else if (modalAction === 'grant_noble') {
+      loadNoblesCatalog();
+    }
+  }, [modalAction, selectedProp]);
+
   const handleGrantProp = async () => {
-    if (!propValue) return;
-    const updatedProps = { ...user.props, [selectedProp]: propValue };
-    setUser({ ...user, props: updatedProps });
-    showToast(`Granted ${selectedProp}: "${propValue}" to user.`, 'success', 'Item Granted');
+    if (!selectedCatalogItem) return;
+    setIsGrantingProp(true);
+    try {
+      await grantPropToUser(user.id, {
+        category: selectedProp,
+        propId: selectedCatalogItem.id,
+        propName: selectedCatalogItem.name,
+        durationDays: Number(propDurationDays) || 30,
+        reason: actionReason || 'Admin catalog grant'
+      });
+      const updatedProps = { ...user.props, [selectedProp]: selectedCatalogItem.name };
+      setUser({ ...user, props: updatedProps });
+      showToast(`Granted ${selectedCatalogItem.name} (${selectedProp}) to user inventory!`, 'success', 'Item Granted');
+      await logEvent({
+        action: `GRANT_CATALOG_PROP_${selectedProp.toUpperCase()}`,
+        targetId: user.id,
+        targetType: 'USER',
+        operatorName: 'Super Admin',
+        reason: actionReason || `Granted ${selectedCatalogItem.name}`,
+        riskLevel: 'LOW',
+        status: 'SUCCESS',
+      });
+      setModalAction(null);
+      setSelectedCatalogItem(null);
+      setActionReason('');
+    } catch (err) {
+      showToast(err.response?.data?.message || err.message || 'Failed to grant item', 'error', 'Grant Failed');
+    } finally {
+      setIsGrantingProp(false);
+    }
+  };
 
-    await logEvent({
-      action: `GRANT_PROP_${selectedProp.toUpperCase()}`,
-      targetId: user.id,
-      targetType: 'USER',
-      operatorName: 'Super Admin',
-      reason: actionReason || 'Admin Grant',
-      riskLevel: 'LOW',
-      status: 'SUCCESS',
-    });
+  const handleAssignSpecialId = async () => {
+    if (!specialIdInput.trim()) {
+      setSpecialIdError('Please enter a valid unique ID.');
+      return;
+    }
+    setIsAssigningSpecialId(true);
+    setSpecialIdError(null);
+    try {
+      const res = await assignSpecialIdToUser(user.id, {
+        newPublicId: specialIdInput.trim(),
+        reason: actionReason || 'Admin Special ID assignment'
+      });
+      const newId = res.data?.publicId || specialIdInput.trim();
+      setUser({ ...user, username: newId });
+      showToast(`Special Unique ID "${newId}" assigned to @${user.username} successfully!`, 'success', 'Special ID Assigned');
+      await logEvent({
+        action: 'ASSIGN_SPECIAL_USER_ID',
+        targetId: user.id,
+        targetType: 'USER',
+        operatorName: 'Super Admin',
+        reason: actionReason || `Assigned Special ID ${newId}`,
+        riskLevel: 'HIGH',
+        status: 'SUCCESS',
+      });
+      setModalAction(null);
+      setSpecialIdInput('');
+      setActionReason('');
+    } catch (err) {
+      const errMsg = err.response?.data?.message || err.message || 'This ID is already in use by another account.';
+      setSpecialIdError(errMsg);
+    } finally {
+      setIsAssigningSpecialId(false);
+    }
+  };
 
-    setModalAction(null);
-    setPropValue('');
-    setActionReason('');
-    const freshLogs = await getLogsForTarget(user.id);
-    setHistory(freshLogs);
+  const handleGrantNoble = async () => {
+    if (!selectedNoble) return;
+    setIsGrantingNoble(true);
+    try {
+      await grantNobleToUser(user.id, {
+        nobleTitle: selectedNoble.title,
+        durationDays: Number(nobleDurationDays) || 30,
+        reason: actionReason || 'Admin Noble Title grant'
+      });
+      setUser({ ...user, nobleRank: selectedNoble.title });
+      showToast(`Noble Title "${selectedNoble.title}" granted to user successfully!`, 'success', 'Noble Title Granted');
+      await logEvent({
+        action: 'GRANT_NOBLE_TITLE',
+        targetId: user.id,
+        targetType: 'USER',
+        operatorName: 'Super Admin',
+        reason: actionReason || `Granted Noble ${selectedNoble.title}`,
+        riskLevel: 'HIGH',
+        status: 'SUCCESS',
+      });
+      setModalAction(null);
+      setSelectedNoble(null);
+      setActionReason('');
+    } catch (err) {
+      showToast(err.response?.data?.message || err.message || 'Failed to grant noble title', 'error', 'Grant Failed');
+    } finally {
+      setIsGrantingNoble(false);
+    }
+  };
+
+  const handleReconcileWealth = async () => {
+    setIsReconcilingWealth(true);
+    try {
+      const res = await reconcileUserWealth(user.id);
+      const data = res.data || {};
+      setUser({ ...user, totalGifted: data.currentXP || user.totalGifted });
+      showToast(`Wealth XP reconciled! Current XP: ${data.currentXP || 0}, Level: Lv. ${data.currentLevel || 1} (${data.reconciledCount || 0} gifts audited).`, 'success', 'Wealth Reconciled');
+    } catch (err) {
+      showToast(err.response?.data?.message || err.message || 'Failed to reconcile wealth XP', 'error', 'Reconciliation Failed');
+    } finally {
+      setIsReconcilingWealth(false);
+    }
   };
 
   const handleRevokeSession = async () => {
@@ -511,9 +667,31 @@ export function UserDetailPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setModalAction('grant_prop')}
+              onClick={() => {
+                setModalAction('grant_prop');
+                setSelectedCatalogItem(null);
+                setSpecialIdError(null);
+              }}
             >
               <Sparkles className="h-4 w-4 mr-1 text-gold-400" /> Grant Item
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setModalAction('grant_noble');
+                loadNoblesCatalog();
+              }}
+            >
+              <Crown className="h-4 w-4 mr-1 text-purple-400" /> Grant Noble
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReconcileWealth}
+              disabled={isReconcilingWealth}
+            >
+              <RefreshCw className={`h-4 w-4 mr-1 text-amber-400 ${isReconcilingWealth ? 'animate-spin' : ''}`} /> Reconcile Wealth
             </Button>
             <Button
               variant="outline"
@@ -1046,51 +1224,306 @@ export function UserDetailPage() {
         </Modal>
       )}
 
+      {/* Grant Special Item / Catalog Props Modal */}
       {modalAction === 'grant_prop' && (
         <Modal
           isOpen={true}
           onClose={() => setModalAction(null)}
-          title="Grant Special Item or Badge"
+          title={`Grant Special Item — @${user.username}`}
+          size="md"
         >
-          <div className="space-y-4">
+          <div className="space-y-4 text-xs text-slate-300">
+            {/* Category Selector */}
             <div>
-              <label className="text-xs font-medium text-slate-300 block mb-1.5">Select Item Type</label>
+              <label className="text-xs font-semibold text-slate-300 block mb-1.5">1. Select Item Category</label>
               <select
-                className="w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-gold-500"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-gold-500 font-medium"
                 value={selectedProp}
-                onChange={(e) => setSelectedProp(e.target.value)}
+                onChange={(e) => {
+                  setSelectedProp(e.target.value);
+                  setSelectedCatalogItem(null);
+                  setSpecialIdError(null);
+                }}
               >
-                <option value="avatarFrame">Avatar Frame</option>
-                <option value="ride">Mount / Ride</option>
-                <option value="chatBubble">Chat Bubble</option>
-                <option value="badge">Honor Badge</option>
-                <option value="specialId">Special ID</option>
+                <option value="avatarFrame">Avatar Frame (Real App Catalog)</option>
+                <option value="ride">Mount / Ride (Real App Catalog)</option>
+                <option value="chatBubble">Chat Bubble (Real App Catalog)</option>
+                <option value="badge">Honor Badge (Real App Catalog)</option>
+                <option value="specialId">Special ID (Custom Public ID: 786)</option>
               </select>
             </div>
 
-            <Input
-              id="propVal"
-              label="Item Name / Title"
-              placeholder="e.g. Golden Phoenix Frame"
-              value={propValue}
-              onChange={(e) => setPropValue(e.target.value)}
-              required
-            />
+            {/* Special ID Mode: Custom Input */}
+            {selectedProp === 'specialId' ? (
+              <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-3">
+                <div className="flex items-center gap-2 text-purple-400 font-bold text-xs">
+                  <Sparkles className="w-4 h-4" />
+                  <span>Assign Custom Public Unique ID</span>
+                </div>
+                <p className="text-slate-400 text-[11px] leading-relaxed">
+                  Assigning a Special ID updates the user's public handle and searchable ID (e.g. <strong className="text-white">786</strong>). Internal system identifier, balances, hosts/agencies, chats, and posts remain completely safe.
+                </p>
 
-            <Input
-              id="propReason"
-              label="Audit Reason"
-              placeholder="e.g. Special event reward"
-              value={actionReason}
-              onChange={(e) => setActionReason(e.target.value)}
-            />
+                <div className="bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 space-y-1 text-[11px] font-mono">
+                  <p>Current Public Handle: <strong className="text-gold-400">@{user.username}</strong></p>
+                  <p>System User ID: <span className="text-slate-400">{user.id}</span></p>
+                </div>
 
-            <div className="flex justify-end gap-3 pt-2">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Enter Unique ID (e.g. 786) *
+                  </label>
+                  <Input
+                    size="sm"
+                    value={specialIdInput}
+                    onChange={(e) => {
+                      setSpecialIdInput(e.target.value);
+                      if (specialIdError) setSpecialIdError(null);
+                    }}
+                    placeholder="e.g. 786, VIP99, LUCKY888"
+                    required
+                  />
+                </div>
+
+                {specialIdError && (
+                  <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-500/50 text-rose-300 text-[11px] flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>{specialIdError}</span>
+                  </div>
+                )}
+
+                <Input
+                  label="Audit Reason"
+                  placeholder="e.g. High roller special ID assignment approved by platform"
+                  value={actionReason}
+                  onChange={(e) => setActionReason(e.target.value)}
+                />
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                  <Button variant="outline" size="sm" onClick={() => setModalAction(null)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleAssignSpecialId}
+                    disabled={isAssigningSpecialId || !specialIdInput.trim()}
+                  >
+                    {isAssigningSpecialId ? 'Assigning...' : 'Assign Unique ID (Done)'}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              /* Real Item Catalog Picker */
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300">
+                    2. Browse & Select from Real Item Catalog
+                  </label>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {propsCatalog.length} items available
+                  </span>
+                </div>
+
+                {/* Filter / Search input */}
+                <Input
+                  size="sm"
+                  placeholder="Search item name in this category..."
+                  value={propsSearchQuery}
+                  onChange={(e) => setPropsSearchQuery(e.target.value)}
+                />
+
+                {/* Catalog Grid */}
+                <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/60 p-2 space-y-1.5">
+                  {isLoadingPropsCatalog ? (
+                    <div className="p-6 text-center text-slate-500 text-xs">
+                      <RefreshCw className="w-4 h-4 animate-spin mx-auto mb-1 text-gold-400" />
+                      Loading catalog items from server...
+                    </div>
+                  ) : propsCatalog.length === 0 ? (
+                    <p className="p-4 text-center text-slate-500 italic text-xs">No items currently available in this catalog category.</p>
+                  ) : (
+                    propsCatalog
+                      .filter((item) => !propsSearchQuery || item.name.toLowerCase().includes(propsSearchQuery.toLowerCase()))
+                      .map((item) => {
+                        const isSelected = selectedCatalogItem?.id === item.id;
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={() => setSelectedCatalogItem(item)}
+                            className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-center justify-between ${
+                              isSelected
+                                ? 'bg-gold-500/15 border-gold-500/60 shadow-sm'
+                                : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              {item.iconUrl || item.animationUrl ? (
+                                <img src={item.iconUrl || item.animationUrl} alt={item.name} className="w-8 h-8 rounded object-contain bg-slate-950 p-0.5 border border-slate-700" />
+                              ) : (
+                                <div className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center text-gold-400 font-bold text-xs">
+                                  ★
+                                </div>
+                              )}
+                              <div>
+                                <p className="font-bold text-white text-xs">{item.name}</p>
+                                <p className="text-[10px] text-slate-400 font-mono">ID: {item.id} · Type: {item.type || selectedProp}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              {isSelected ? (
+                                <Badge variant="success">Selected</Badge>
+                              ) : (
+                                <Badge variant="outline">{item.rarity || 'Store Item'}</Badge>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                  )}
+                </div>
+
+                {/* Duration & Reason */}
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 mb-1 block">Duration Validity</label>
+                    <select
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                      value={propDurationDays}
+                      onChange={(e) => setPropDurationDays(Number(e.target.value))}
+                    >
+                      <option value={7}>7 Days</option>
+                      <option value={30}>30 Days (Standard)</option>
+                      <option value={90}>90 Days (Quarterly)</option>
+                      <option value={365}>365 Days (1 Year)</option>
+                      <option value={0}>Permanent Ownership</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-400 mb-1 block">Audit Reason</label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                      placeholder="e.g. VIP event reward"
+                      value={actionReason}
+                      onChange={(e) => setActionReason(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+                  <Button variant="outline" size="sm" onClick={() => setModalAction(null)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleGrantProp}
+                    disabled={isGrantingProp || !selectedCatalogItem}
+                  >
+                    {isGrantingProp ? 'Granting...' : `Grant ${selectedCatalogItem ? selectedCatalogItem.name : 'Selected Item'}`}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Grant Noble Title Modal */}
+      {modalAction === 'grant_noble' && (
+        <Modal
+          isOpen={true}
+          onClose={() => setModalAction(null)}
+          title={`Grant Noble Title — @${user.username}`}
+          size="md"
+        >
+          <div className="space-y-4 text-xs text-slate-300">
+            <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-1.5">
+              <div className="flex items-center gap-2 text-purple-400 font-bold">
+                <Crown className="w-4 h-4 text-gold-400" />
+                <span>Noble Catalog Assignment Control</span>
+              </div>
+              <p className="text-slate-300 text-[11px]">
+                Granting a Noble title bestows royal badge styling, entrance banner alerts, and lounge seat privileges without deducting coins or altering Wealth XP.
+              </p>
+              {user.nobleRank && (
+                <p className="text-gold-400 font-semibold text-[11px] pt-1 border-t border-purple-500/30">
+                  Current Assigned Title: {user.nobleRank} (New grant will update/extend this status)
+                </p>
+              )}
+            </div>
+
+            {/* Nobles Grid */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-300 block">
+                Select Configured Noble Title
+              </label>
+              <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
+                {noblesCatalog.map((noble) => {
+                  const isSelected = selectedNoble?.tier === noble.tier;
+                  return (
+                    <div
+                      key={noble.tier}
+                      onClick={() => setSelectedNoble(noble)}
+                      className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-purple-950/40 border-purple-400 shadow-lg ring-1 ring-purple-400'
+                          : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-xl">{noble.badgeIcon}</span>
+                        <Badge variant={isSelected ? 'purple' : 'outline'}>Tier {noble.tier}</Badge>
+                      </div>
+                      <p className="font-bold text-white text-sm">{noble.title}</p>
+                      <p className="text-[10px] text-slate-400 mt-1 line-clamp-2">
+                        {noble.privileges?.join(' · ') || 'Royal Privileges'}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Duration Selector */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 mb-1 block">Title Duration</label>
+                <select
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                  value={nobleDurationDays}
+                  onChange={(e) => setNobleDurationDays(Number(e.target.value))}
+                >
+                  <option value={30}>30 Days (Standard)</option>
+                  <option value={90}>90 Days (Quarterly)</option>
+                  <option value={365}>365 Days (1 Year)</option>
+                  <option value={0}>Permanent Royal Grant</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 mb-1 block">Grant Audit Reason</label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                  placeholder="e.g. VIP contributor royal honorary grant"
+                  value={actionReason}
+                  onChange={(e) => setActionReason(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
               <Button variant="outline" size="sm" onClick={() => setModalAction(null)}>
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleGrantProp} disabled={!propValue}>
-                Grant Item
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleGrantNoble}
+                disabled={isGrantingNoble || !selectedNoble}
+              >
+                {isGrantingNoble ? 'Granting...' : `Confirm Grant: ${selectedNoble ? selectedNoble.title : 'Noble'}`}
               </Button>
             </div>
           </div>

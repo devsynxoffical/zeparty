@@ -80,10 +80,9 @@ const NAV_GROUPS = [
     label: 'Hosts & Agencies',
     icon: Crown,
     children: [
-      { id: 'hosts', label: 'Live Video Hosts', path: '/admin/hosts?type=live' },
-      { id: 'audio-hosts', label: 'AUDIO HOSTS', path: '/admin/hosts?type=audio' },
-      { id: 'agencies', label: 'Live Video Agencies', path: '/admin/agencies?type=live' },
-      { id: 'audio-agencies', label: 'AUDIO AGENCIES', path: '/admin/agencies?type=audio' },
+      { id: 'hosts', label: 'Live Video Hosts (Direct Platform)', path: '/admin/hosts?type=live' },
+      { id: 'audio-hosts', label: 'Audio Hosts (Agency Members)', path: '/admin/hosts?type=audio' },
+      { id: 'audio-agencies', label: 'Social Audio Agencies', path: '/admin/agencies' },
       { id: 'bd-centers', label: 'BD Center', path: '/admin/bd-centers' },
     ],
   },

@@ -93,7 +93,7 @@ export function AgenciesPage() {
     setTimeout(() => setFeedback(null), 3500);
   };
 
-  const activeCategory = typeParam === 'audio' ? 'AUDIO_AGENCY' : 'LIVE_AGENCY';
+  const activeCategory = 'AUDIO_AGENCY';
 
   const handleApprove = async (id) => {
     await approveAgency(id);
@@ -437,23 +437,9 @@ export function AgenciesPage() {
           </p>
         </div>
 
-        <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-800">
-          <button
-            onClick={() => setSearchParams({ type: 'live' })}
-            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-              typeParam === 'live' ? 'bg-purple-600 text-white shadow shadow-purple-600/20' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Live Video Agencies
-          </button>
-          <button
-            onClick={() => setSearchParams({ type: 'audio' })}
-            className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-colors ${
-              typeParam === 'audio' ? 'bg-indigo-600 text-white shadow shadow-indigo-600/20' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Social Audio Agencies
-          </button>
+        <div className="flex items-center gap-2 bg-indigo-950/60 border border-indigo-800/60 rounded-xl px-4 py-2 text-xs font-bold text-indigo-300">
+          <Mic className="h-4 w-4 text-indigo-400" />
+          Social Audio Agencies Only
         </div>
       </div>
 

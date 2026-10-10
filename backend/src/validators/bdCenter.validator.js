@@ -3,10 +3,15 @@ import { z } from 'zod';
 export const createBDCenterSchema = z.object({
   centerName: z.string().min(2, 'Center name must be at least 2 characters').max(100),
   regionCode: z.string().min(2).max(10).default('US').transform((val) => val.toUpperCase().trim()),
-  managerUserId: z.string().min(1, 'Manager user ID is required'),
+  managerUserId: z.string().min(1).optional(),
+  userId: z.string().min(1).optional(),
   currentTier: z.enum(['BRONZE', 'SILVER', 'GOLD', 'PLATINUM', 'DIAMOND']).default('BRONZE'),
   baseSalaryUSD: z.coerce.number().min(0, 'Base salary must be >= 0').default(500.00),
+}).refine(data => data.managerUserId || data.userId, {
+  message: 'User ID is required to register a BD account',
+  path: ['userId'],
 });
+
 
 export const updateBDCenterSchema = z.object({
   centerName: z.string().min(2).max(100).optional(),

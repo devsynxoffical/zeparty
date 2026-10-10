@@ -7,10 +7,13 @@ export const adminBDCenterRouter = express.Router();
 adminBDCenterRouter.use(authenticate);
 
 adminBDCenterRouter.get('/policy/commission-table', requirePermission('manage_bd_centers'), bdCenterController.getCommissionPolicyTable);
+adminBDCenterRouter.get('/lookup-user', requirePermission('manage_bd_centers'), bdCenterController.lookupUserForBD);
 adminBDCenterRouter.get('/', requirePermission('manage_bd_centers'), bdCenterController.getBDCenters);
 adminBDCenterRouter.post('/', requirePermission('manage_bd_centers'), bdCenterController.createBDCenter);
 adminBDCenterRouter.get('/:id', requirePermission('manage_bd_centers'), bdCenterController.getBDCenterById);
 adminBDCenterRouter.put('/:id', requirePermission('manage_bd_centers'), bdCenterController.updateBDCenter);
+adminBDCenterRouter.delete('/:id', requirePermission('manage_bd_centers'), bdCenterController.removeBDRole);
+adminBDCenterRouter.post('/:id/remove', requirePermission('manage_bd_centers'), bdCenterController.removeBDRole);
 adminBDCenterRouter.post('/:id/invites', requirePermission('manage_bd_centers'), bdCenterController.sendInvite);
 adminBDCenterRouter.get('/:id/invites', requirePermission('manage_bd_centers'), bdCenterController.getBDCenterInvites);
 

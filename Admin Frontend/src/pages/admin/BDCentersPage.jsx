@@ -8,7 +8,7 @@ import {
   Building, Search, Plus, Eye, CheckCircle, ShieldAlert, Globe, Users,
   Building2, TrendingUp, RefreshCw, Settings, ToggleLeft, ToggleRight, DollarSign, Filter,
   FileText, Award, AlertTriangle, Lock, Unlock, ArrowUpRight, ChevronRight, CheckSquare,
-  XSquare, History, Download, Sparkles, UserCheck, UserX, Shield, Smile, BarChart3, CreditCard
+  XSquare, History, Download, Sparkles, UserCheck, UserX, Shield, Smile, BarChart3, CreditCard, UserMinus
 } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -23,7 +23,9 @@ import {
   getBDCenters,
   createBDCenter,
   updateBDCenter,
-  deactivateBDCenter
+  deactivateBDCenter,
+  lookupUserForBD,
+  removeBDRole
 } from '../../services/modules/bdCenter.service';
 import { getAgencies } from '../../services/modules/agencies.service';
 import { useAuditLog } from '../../context/AuditLogContext';
@@ -92,9 +94,20 @@ export function BDCentersPage() {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showLockPeriodModal, setShowLockPeriodModal] = useState(false);
   const [payoutModal, setPayoutModal] = useState(null); // payout object
-  const [showAddReactionModal, setShowAddReactionModal] = useState(false);
   const [feedback, setFeedback] = useState(null);
   const [simSending, setSimSending] = useState(1500000);
+
+  // BD User ID Lookup State
+  const [bdUserQuery, setBdUserQuery] = useState('');
+  const [isSearchingUser, setIsSearchingUser] = useState(false);
+  const [matchedBDUser, setMatchedBDUser] = useState(null);
+  const [bdLookupError, setBdLookupError] = useState(null);
+
+  // Remove BD Modal State
+  const [removeBDTarget, setRemoveBDTarget] = useState(null);
+  const [removeBDReason, setRemoveBDReason] = useState('');
+  const [isRemovingBD, setIsRemovingBD] = useState(false);
+
 
   const [transferForm, setTransferForm] = useState({
     memberType: 'Agency',
@@ -257,26 +270,97 @@ export function BDCentersPage() {
     setTimeout(() => setFeedback(null), 3500);
   };
 
-  // BD Creation
+  // BD User ID Lookup
+  const handleLookupBDUser = async (e) => {
+    if (e) e.preventDefault();
+    if (!bdUserQuery.trim()) {
+      setBdLookupError('Please enter a User ID or Username');
+      return;
+    }
+    setIsSearchingUser(true);
+    setBdLookupError(null);
+    try {
+      const user = await lookupUserForBD(bdUserQuery.trim());
+      setMatchedBDUser(user);
+      setFormData((prev) => ({
+        ...prev,
+        userId: user.id,
+        name: prev.name || `${user.displayName || user.username}'s BD Center`,
+        managerName: user.displayName || user.username,
+        managerEmail: user.email || prev.managerEmail,
+        country: user.country || 'PK',
+      }));
+    } catch (err) {
+      setMatchedBDUser(null);
+      setBdLookupError(err.response?.data?.message || 'User not found. Please verify the User ID.');
+    } finally {
+      setIsSearchingUser(false);
+    }
+  };
+
+  // BD Creation with User Binding
   const handleCreateCenter = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.managerName) return;
+    if (!formData.name || !formData.userId) {
+      setBdLookupError('A verified User ID is required before saving.');
+      return;
+    }
 
-    const created = await createBDCenter(formData);
-    await logAdminAction({
-      action: 'CREATE_BD_CENTER',
-      module: 'BD Center',
-      targetType: 'BD_CENTER',
-      targetId: created.id,
-      reason: `Manually created BD Center: ${created.name}`,
-      riskLevel: 'MEDIUM',
-      status: 'SUCCESS'
-    });
+    try {
+      const created = await createBDCenter({
+        ...formData,
+        userId: formData.userId,
+      });
+      await logAdminAction({
+        action: 'CREATE_BD_CENTER',
+        module: 'BD Center',
+        targetType: 'BD_CENTER',
+        targetId: created.id,
+        reason: `Assigned BD role to user ${matchedBDUser?.username || formData.userId}`,
+        riskLevel: 'MEDIUM',
+        status: 'SUCCESS'
+      });
 
-    showFeedback(`BD Center "${created.name}" created successfully!`);
-    setShowAddModal(false);
-    setFormData({ name: '', managerName: '', managerEmail: '', country: 'PK', region: 'Asia Pacific', targetCoins: 15000000, notes: '' });
-    loadCenters();
+      showFeedback(`BD Center "${created.name}" created and assigned to user successfully!`);
+      setShowAddModal(false);
+      setFormData({ name: '', managerName: '', managerEmail: '', country: 'PK', region: 'Asia Pacific', targetCoins: 15000000, notes: '', userId: '' });
+      setMatchedBDUser(null);
+      setBdUserQuery('');
+      setBdLookupError(null);
+      loadCenters();
+    } catch (err) {
+      setBdLookupError(err.response?.data?.message || 'Failed to create BD center');
+    }
+  };
+
+  // Remove BD Role (preserves normal account, wallet & past earnings)
+  const handleRemoveBDConfirm = async () => {
+    if (!removeBDTarget) return;
+    setIsRemovingBD(true);
+    try {
+      await removeBDRole(removeBDTarget.id, removeBDReason || 'BD role removed by administrator');
+      await logAdminAction({
+        action: 'BD_ROLE_REMOVED',
+        module: 'BD Center',
+        targetType: 'BD_CENTER',
+        targetId: removeBDTarget.id,
+        targetName: removeBDTarget.name,
+        reason: removeBDReason || 'BD role removed by administrator',
+        riskLevel: 'HIGH',
+        status: 'SUCCESS'
+      });
+      showFeedback(`BD Role removed successfully for ${removeBDTarget.name}. User account preserved.`);
+      setRemoveBDTarget(null);
+      setRemoveBDReason('');
+      if (selectedRosterCenter?.id === removeBDTarget.id) {
+        setSelectedRosterCenter(null);
+      }
+      loadCenters();
+    } catch (err) {
+      showFeedback(err.response?.data?.message || 'Failed to remove BD role');
+    } finally {
+      setIsRemovingBD(false);
+    }
   };
 
   // Status Change (Freeze / Suspend / Terminate / Restore)
@@ -398,8 +482,10 @@ export function BDCentersPage() {
         !q ||
         b.name.toLowerCase().includes(q) ||
         b.code.toLowerCase().includes(q) ||
-        b.managerName.toLowerCase().includes(q) ||
-        b.region.toLowerCase().includes(q);
+        (b.managerName && b.managerName.toLowerCase().includes(q)) ||
+        (b.region && b.region.toLowerCase().includes(q)) ||
+        (b.ownerUserId && String(b.ownerUserId).toLowerCase().includes(q)) ||
+        (b.ownerUsername && b.ownerUsername.toLowerCase().includes(q));
       return matchStatus && matchRegion && matchSearch;
     });
   }, [bdCenters, search, statusFilter, regionFilter]);
@@ -416,7 +502,7 @@ export function BDCentersPage() {
             <span className="text-sm font-bold text-white">{row.name}</span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            <code className="font-mono text-purple-400">{row.code}</code> • {row.managerName} ({row.managerEmail})
+            <code className="font-mono text-purple-400">{row.code}</code> • User ID: <span className="font-mono text-gold-400 font-semibold">{row.ownerUserId || row.userId || 'N/A'}</span> ({row.ownerUsername || row.managerName})
           </p>
         </div>
       ),
@@ -506,6 +592,13 @@ export function BDCentersPage() {
             }`}
           >
             {row.status === 'ACTIVE' ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            title="Remove BD Role"
+            onClick={() => { setRemoveBDTarget(row); setRemoveBDReason(''); }}
+            className="p-1.5 rounded text-rose-400 hover:text-white hover:bg-rose-900/40 transition-colors"
+          >
+            <UserMinus className="h-3.5 w-3.5" />
           </button>
         </div>
       ),
@@ -1260,27 +1353,124 @@ export function BDCentersPage() {
       )}
 
       {/* Modals */}
-      {/* Create BD Modal */}
+      {/* Create BD Modal with Mandatory User ID Lookup */}
       {showAddModal && (
-        <Modal isOpen={true} onClose={() => setShowAddModal(false)} title="Register New BD Account">
-          <form onSubmit={handleCreateCenter} className="space-y-3 text-xs text-slate-300">
-            <div>
-              <label className="text-[11px] text-slate-400 mb-1 block">BD Center Name *</label>
-              <Input size="sm" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[11px] text-slate-400 mb-1 block">Manager Name *</label>
-                <Input size="sm" value={formData.managerName} onChange={(e) => setFormData({ ...formData, managerName: e.target.value })} required />
+        <Modal isOpen={true} onClose={() => setShowAddModal(false)} title="Register New BD Account (Assign by User ID)" size="md">
+          <form onSubmit={handleCreateCenter} className="space-y-4 text-xs text-slate-300">
+            {/* User ID Lookup Block */}
+            <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-3">
+              <label className="text-[11px] font-bold text-gold-400 uppercase tracking-wider block">
+                1. Lookup Existing User ID (Required) *
+              </label>
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Input
+                    size="sm"
+                    value={bdUserQuery}
+                    onChange={(e) => {
+                      setBdUserQuery(e.target.value);
+                      if (bdLookupError) setBdLookupError(null);
+                    }}
+                    placeholder="Enter Unique User ID or Username (e.g. 786 or dev_user)"
+                    required
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  disabled={isSearchingUser || !bdUserQuery.trim()}
+                  onClick={handleLookupBDUser}
+                >
+                  {isSearchingUser ? 'Verifying...' : 'Verify User'}
+                </Button>
               </div>
+
+              {bdLookupError && (
+                <div className="p-2.5 rounded-lg bg-rose-950/40 border border-rose-500/50 text-rose-300 text-[11px] flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{bdLookupError}</span>
+                </div>
+              )}
+
+              {matchedBDUser && (
+                <div className="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/40 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      {matchedBDUser.avatarUrl ? (
+                        <img src={matchedBDUser.avatarUrl} alt="Avatar" className="w-9 h-9 rounded-full object-cover border border-emerald-500/50" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-emerald-700/40 text-emerald-300 flex items-center justify-center font-bold text-sm">
+                          {(matchedBDUser.displayName || matchedBDUser.username || 'U')[0].toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-sm font-bold text-white flex items-center gap-1.5">
+                          {matchedBDUser.displayName || matchedBDUser.username}
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                        </p>
+                        <p className="text-slate-400 text-[11px]">
+                          @{matchedBDUser.username} · Unique Public ID: <span className="font-mono text-gold-400 font-bold">{matchedBDUser.uniqueId || matchedBDUser.id}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="flex items-center gap-1 text-[11px] text-slate-300 justify-end">
+                        <CountryFlag code={matchedBDUser.country || 'PK'} className="w-3.5 h-2.5 object-cover rounded-sm" />
+                        <span>{getCountryName(matchedBDUser.country || 'PK')}</span>
+                      </div>
+                      <Badge variant={matchedBDUser.hasActiveBD ? 'danger' : 'success'} className="mt-1">
+                        {matchedBDUser.hasActiveBD ? 'Already BD Agent' : 'Eligible User'}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {matchedBDUser.hasActiveBD && (
+                    <p className="text-[11px] text-rose-400 font-semibold pt-1 border-t border-rose-500/30">
+                      ⚠ This user already owns an active BD Center ({matchedBDUser.existingBDCenter?.name}). Duplicate active BD registrations are prevented.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* BD Center Details Block */}
+            <div className="space-y-3">
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                2. BD Center Configuration
+              </label>
               <div>
-                <label className="text-[11px] text-slate-400 mb-1 block">Manager Email</label>
-                <Input size="sm" type="email" value={formData.managerEmail} onChange={(e) => setFormData({ ...formData, managerEmail: e.target.value })} />
+                <label className="text-[11px] text-slate-400 mb-1 block">BD Center Display Name *</label>
+                <Input
+                  size="sm"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g. Apex Horizon BD Center"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] text-slate-400 mb-1 block">Manager Name</label>
+                  <Input size="sm" value={formData.managerName} onChange={(e) => setFormData({ ...formData, managerName: e.target.value })} required />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 mb-1 block">Manager Email</label>
+                  <Input size="sm" type="email" value={formData.managerEmail} onChange={(e) => setFormData({ ...formData, managerEmail: e.target.value })} />
+                </div>
               </div>
             </div>
+
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
               <Button type="button" variant="outline" size="sm" onClick={() => setShowAddModal(false)}>Cancel</Button>
-              <Button type="submit" variant="primary" size="sm">Save BD Account</Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={!matchedBDUser || matchedBDUser.hasActiveBD || !formData.name.trim()}
+              >
+                Save & Assign BD Account
+              </Button>
             </div>
           </form>
         </Modal>
@@ -1332,7 +1522,17 @@ export function BDCentersPage() {
               </div>
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-slate-800">
+            <div className="flex justify-between items-center pt-2 border-t border-slate-800">
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  setRemoveBDTarget(selectedRosterCenter);
+                  setRemoveBDReason('');
+                }}
+              >
+                <UserMinus className="w-3.5 h-3.5 mr-1" /> Remove BD Role
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setSelectedRosterCenter(null)}>Close Roster</Button>
             </div>
           </div>
@@ -1590,6 +1790,69 @@ export function BDCentersPage() {
           </form>
         </Modal>
       )}
+
+      {/* Remove BD Confirmation Modal */}
+      {removeBDTarget && (
+        <Modal
+          isOpen={true}
+          onClose={() => { if (!isRemovingBD) setRemoveBDTarget(null); }}
+          title={`Remove BD Role: ${removeBDTarget.name}`}
+          size="md"
+        >
+          <div className="space-y-4 text-xs text-slate-300">
+            <div className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-500/40 space-y-2">
+              <div className="flex items-center gap-2 text-rose-400 font-bold">
+                <ShieldAlert className="w-4 h-4" />
+                <span>BD Role Revocation Confirmation</span>
+              </div>
+              <p className="text-slate-300 leading-relaxed">
+                This action deactivates the <strong className="text-white">Business Developer (BD) Role</strong> and revokes future BD commission accrual. Attributed team and agency records are safely preserved and flagged for admin reassignment.
+              </p>
+              <div className="bg-slate-900/80 p-2.5 rounded-lg space-y-1 text-slate-300 font-mono text-[11px] border border-slate-800">
+                <p>• BD Center: <strong className="text-white">{removeBDTarget.name}</strong></p>
+                <p>• User ID: <strong className="text-gold-400">{removeBDTarget.ownerUserId || removeBDTarget.userId || 'N/A'}</strong> ({removeBDTarget.ownerUsername || removeBDTarget.managerName})</p>
+                <p>• Region / Country: <strong className="text-sky-300">{removeBDTarget.region || removeBDTarget.country}</strong></p>
+                <p>• Attributed Team: <strong className="text-purple-300">{removeBDTarget.activeAgenciesCount || 0} Agencies · {removeBDTarget.activeHostsCount || 0} Hosts</strong></p>
+              </div>
+              <p className="text-emerald-400 text-[11px] font-semibold">
+                ✓ Safety Guarantee: The user's regular app account, login, chats, posts, personal wallet, and confirmed historical commission & salary records remain 100% safe and intact.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">
+                Reason for BD Removal (Required for Audit Log)
+              </label>
+              <Input
+                value={removeBDReason}
+                onChange={(e) => setRemoveBDReason(e.target.value)}
+                placeholder="e.g. BD contract ended / Reassigned to another department / Inactive"
+                required
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isRemovingBD}
+                onClick={() => setRemoveBDTarget(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={isRemovingBD || !removeBDReason.trim()}
+                onClick={handleRemoveBDConfirm}
+              >
+                {isRemovingBD ? 'Removing BD...' : 'Confirm Remove BD'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
+

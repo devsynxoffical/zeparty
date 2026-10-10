@@ -54,6 +54,18 @@ export async function getBDCenterInvites(id) {
   return res.data?.data || [];
 }
 
+export async function lookupUserForBD(query) {
+  const res = await apiClient.get('/v1/admin/bd-centers/lookup-user', { params: { query } });
+  return res.data?.data;
+}
+
+export async function removeBDRole(id, reason) {
+  const res = await apiClient.delete(`/v1/admin/bd-centers/${id}`, {
+    data: { reason: reason || 'BD role removed by administrator' },
+  });
+  return res.data;
+}
+
 export default {
   getBDCenters,
   getBDCenterById,
@@ -62,4 +74,7 @@ export default {
   deactivateBDCenter,
   sendBDCenterInvite,
   getBDCenterInvites,
+  lookupUserForBD,
+  removeBDRole,
 };
+

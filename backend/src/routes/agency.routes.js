@@ -18,9 +18,14 @@ userAgencyRouter.get('/', agencyController.getPublicAgencies);
 userAgencyRouter.get('/public', agencyController.getPublicAgencies);
 userAgencyRouter.get('/my-agency', authenticate, agencyController.getMyAgency);
 userAgencyRouter.get('/me', authenticate, agencyController.getMyAgency);
+userAgencyRouter.get('/wallet', authenticate, agencyController.getMyAgencyWallet);
+userAgencyRouter.post('/wallet/withdraw', authenticate, agencyController.withdrawMyAgencyCommission);
+userAgencyRouter.get('/:id/wallet', authenticate, agencyController.getAgencyWallet);
+userAgencyRouter.post('/:id/wallet/withdraw', authenticate, agencyController.withdrawAgencyCommission);
 userAgencyRouter.post('/apply', authenticate, agencyController.applyRegisterAgency);
 userAgencyRouter.post('/', authenticate, agencyController.applyRegisterAgency);
 userAgencyRouter.post('/join', authenticate, agencyController.joinAgency);
+
 
 export default {
   adminAgencyRouter,

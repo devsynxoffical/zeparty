@@ -11,6 +11,8 @@ adminHostRouter.get('/applications', requirePermission('review_hosts'), hostCont
 adminHostRouter.put('/applications/:id', requirePermission('approve_reject_hosts'), hostController.reviewHostApplication);
 adminHostRouter.get('/:id', requirePermission('view_hosts'), hostController.getHostById);
 adminHostRouter.put('/:id/status', requirePermission('approve_reject_hosts'), hostController.updateHostStatus);
+adminHostRouter.delete('/:id', requirePermission('approve_reject_hosts'), hostController.removeHostRole);
+adminHostRouter.post('/:id/remove', requirePermission('approve_reject_hosts'), hostController.removeHostRole);
 
 export const userHostRouter = express.Router();
 userHostRouter.get('/policy/agency-table', hostController.getAgencyHostPolicyTable);

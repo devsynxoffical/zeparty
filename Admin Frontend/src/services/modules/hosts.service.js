@@ -77,6 +77,13 @@ export async function updateHostStatus(id, status, reason) {
   return res.data;
 }
 
+export async function removeHost(id, reason) {
+  const res = await apiClient.delete(`/v1/admin/hosts/${id}`, {
+    data: { reason: reason || 'Host role removed by administrator' },
+  });
+  return res.data;
+}
+
 export default {
   getHosts,
   getHostApplications,
@@ -84,4 +91,6 @@ export default {
   approveHostApplication,
   rejectHostApplication,
   updateHostStatus,
+  removeHost,
 };
+

@@ -1197,6 +1197,94 @@ export default {
   postAdminGrantUniqueItem,
   postAdminRevokeUniqueItem,
   getProfileGrid,
+export async function getAdminPropsCatalog(req, res, next) {
+  try {
+    const { category } = req.query;
+    const result = await userService.getPropsCatalog(category);
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminAssignSpecialId(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { newPublicId, reason } = req.body;
+    const adminId = req.auth?.userId || 'ADMIN';
+    const adminName = req.admin?.name || req.auth?.username || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await userService.assignSpecialIdToUser(
+      id,
+      { newPublicId, reason },
+      { adminId, adminName, ipAddress }
+    );
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAdminNoblesCatalog(req, res, next) {
+  try {
+    const result = await userService.getNoblesCatalog();
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminGrantNoble(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { nobleTitle, durationDays, reason } = req.body;
+    const adminId = req.auth?.userId || 'ADMIN';
+    const adminName = req.admin?.name || req.auth?.username || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await userService.grantNobleTitleToUser(
+      id,
+      { nobleTitle, durationDays, reason },
+      { adminId, adminName, ipAddress }
+    );
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminReconcileWealth(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await userService.reconcileUserWealthXP(id);
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export default {
+  listUsersForAdmin,
+  getUserDetailsForAdmin,
+  updateUserStatusByAdmin,
+  createUserByAdmin,
+  updateUserByAdmin,
+  deleteUserByAdmin,
+  deleteSelfAccount,
+  restoreUserByAdmin,
+  permanentlyPurgeUserByAdmin,
+  getSelfProfile,
+  updateSelfProfile,
+  getPublicProfile,
+  searchUsers,
+  patchAdminChangeCountry,
+  postAdminVerifyUserForGrant,
+  postAdminGrantUniqueItem,
+  postAdminRevokeUniqueItem,
+  getProfileMenuGrid,
   getRoomUserProfileCard,
   getUserLevelStrip,
   putProfileEdit,
@@ -1237,5 +1325,11 @@ export default {
   deleteAdminAllUserSessions,
   getAdminUserPermissions,
   putAdminUserPermissions,
+  getAdminPropsCatalog,
+  postAdminAssignSpecialId,
+  getAdminNoblesCatalog,
+  postAdminGrantNoble,
+  postAdminReconcileWealth,
 };
+
 

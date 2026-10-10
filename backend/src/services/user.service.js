@@ -1081,20 +1081,22 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
       nobleRank: user.profile?.nobleRank || 'NONE',
     },
     levels: {
-      wealth: 5,
-      charm: 8,
-      game: 3,
+      wealth: user.profile?.level || 1,
+      wealthXp: Number(user.profile?.experiencePoints || 0n),
+      charm: Math.max(1, Math.floor(Number(user.profile?.totalEarnedDiamonds || 0n) / 10000) + 1),
+      charmXp: Number(user.profile?.totalEarnedDiamonds || 0n),
+      game: 1,
       overall: user.profile?.level || 1,
     },
     achievements: {
-      giftWallCount: 42,
-      medalsCount: 18,
+      giftWallCount: 0,
+      medalsCount: 0,
     },
     relationship: {
-      hasRelationship: true,
-      partnerName: 'Sophia Rose',
-      relationshipType: 'CP_LOVE',
-      level: 12,
+      hasRelationship: false,
+      partnerName: null,
+      relationshipType: null,
+      level: 0,
     },
     quickGifts: [
       { id: 'gift_rose', name: 'Rose', priceCoins: 10, iconUrl: '🌹' },
@@ -1107,14 +1109,24 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
  * Module 25: User Level Strip (SVIP -> Wealth -> Charm -> Game)
  */
 export async function getUserLevelStrip(userId, db = prisma) {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    include: { profile: true },
+  });
+
+  const wealthLvl = user?.profile?.level || 1;
+  const wealthXp = Number(user?.profile?.experiencePoints || 0n);
+  const charmLvl = Math.max(1, Math.floor(Number(user?.profile?.totalEarnedDiamonds || 0n) / 10000) + 1);
+  const svipLvl = user?.profile?.svipLevel || 0;
+
   return {
     userId,
     order: ['SVIP', 'WEALTH', 'CHARM', 'GAME'],
     cards: [
-      { key: 'SVIP', label: 'SVIP', level: 'SVIP 5', icon: '👑', color: '#FFD700', active: true },
-      { key: 'WEALTH', label: 'Wealth (Sending)', level: 'Lv. 14', icon: '💎', color: '#00D2FF', active: true },
-      { key: 'CHARM', label: 'Charm (Receiving)', level: 'Lv. 22', icon: '💖', color: '#FF69B4', active: true },
-      { key: 'GAME', label: 'Game Level', level: 'Lv. 9', icon: '🎮', color: '#B15CFF', active: true },
+      { key: 'SVIP', label: 'SVIP', level: svipLvl > 0 ? `SVIP ${svipLvl}` : 'SVIP 0', icon: '👑', color: '#FFD700', active: svipLvl > 0 },
+      { key: 'WEALTH', label: 'Wealth (Sending)', level: `Lv. ${wealthLvl}`, icon: '💎', color: '#00D2FF', active: true, xp: wealthXp, targetXp: 10000 },
+      { key: 'CHARM', label: 'Charm (Receiving)', level: `Lv. ${charmLvl}`, icon: '💖', color: '#FF69B4', active: true },
+      { key: 'GAME', label: 'Game Level', level: 'Lv. 1', icon: '🎮', color: '#B15CFF', active: true },
     ],
   };
 }
@@ -2600,6 +2612,249 @@ export async function updateUserAdminPermissionsByAdmin(
   };
 }
 
+/**
+ * Catalog for Grant Special Item:
+ * Reads real database items from Asset table for categories: FRAME, VEHICLE, CHAT_BUBBLE, BADGE.
+ */
+export async function getPropsCatalog(category, db = prisma) {
+  const normCategory = (category || 'FRAME').toUpperCase();
+  let prismaAssetType = 'FRAME';
+  if (['FRAME', 'AVATARFRAME', 'AVATAR_FRAME'].includes(normCategory)) prismaAssetType = 'FRAME';
+  else if (['RIDE', 'VEHICLE', 'MOUNT'].includes(normCategory)) prismaAssetType = 'VEHICLE';
+  else if (['CHATBUBBLE', 'CHAT_BUBBLE', 'BUBBLE'].includes(normCategory)) prismaAssetType = 'CHAT_BUBBLE';
+  else if (['BADGE', 'HONORBADGE', 'HONOR_BADGE'].includes(normCategory)) prismaAssetType = 'BADGE';
+  else if (['ENTRY_EFFECT', 'EFFECT'].includes(normCategory)) prismaAssetType = 'ENTRY_EFFECT';
+  else if (['SOUND_EFFECT', 'SOUND'].includes(normCategory)) prismaAssetType = 'SOUND_EFFECT';
+
+  const assets = await db.asset.findMany({
+    where: {
+      assetType: prismaAssetType,
+      isActive: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return {
+    category: normCategory,
+    assetType: prismaAssetType,
+    items: assets.map(a => ({
+      id: a.id,
+      itemId: a.id,
+      name: a.name,
+      thumbnailUrl: a.thumbnailUrl,
+      staticFileUrl: a.staticFileUrl,
+      animationFileUrl: a.animationFileUrl,
+      priceCoins: a.priceCoins ? a.priceCoins.toString() : '0',
+      validDays: a.validDays || 30,
+      isActive: a.isActive,
+    })),
+  };
+}
+
+/**
+ * Assign Custom Public Special ID (e.g. 786)
+ * Validates availability and atomically updates user.username (public ID) without altering internal UUID.
+ */
+export async function assignSpecialIdToUser(
+  userId,
+  { newPublicId, reason },
+  { adminId, adminName, ipAddress },
+  db = prisma
+) {
+  const sanitizedId = String(newPublicId || '').trim();
+  if (!sanitizedId || sanitizedId.length < 2 || sanitizedId.length > 30) {
+    const error = new Error('Invalid Unique ID. Length must be between 2 and 30 characters.');
+    error.statusCode = 400;
+    error.code = 'INVALID_UNIQUE_ID';
+    throw error;
+  }
+
+  const targetUser = await db.user.findUnique({
+    where: { id: userId },
+    include: { profile: true },
+  });
+
+  if (!targetUser) {
+    const error = new Error('Target user not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
+  // Check collision across existing users
+  const collision = await db.user.findFirst({
+    where: {
+      username: { equals: sanitizedId, mode: 'insensitive' },
+      id: { not: userId },
+    },
+  });
+
+  if (collision) {
+    const error = new Error(`This ID is already in use by @${collision.username}`);
+    error.statusCode = 409;
+    error.code = 'ID_ALREADY_IN_USE';
+    throw error;
+  }
+
+  const oldPublicId = targetUser.username;
+
+  return await db.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id: userId },
+      data: {
+        username: sanitizedId,
+      },
+      include: { profile: true },
+    });
+
+    await logAudit(
+      {
+        adminId,
+        adminName,
+        action: 'SPECIAL_ID_ASSIGNED',
+        targetEntity: 'User',
+        targetEntityId: userId,
+        beforeStateJson: { publicId: oldPublicId },
+        afterStateJson: { publicId: sanitizedId },
+        reason: reason || `Assigned custom special public ID "${sanitizedId}"`,
+        ipAddress,
+      },
+      tx
+    );
+
+    return {
+      success: true,
+      message: `Public User ID successfully updated from "${oldPublicId}" to "${sanitizedId}".`,
+      user: {
+        id: updated.id,
+        publicId: updated.username,
+        username: updated.username,
+        displayName: updated.profile?.displayName || updated.username,
+      },
+    };
+  });
+}
+
+/**
+ * Nobles Catalog: configured app Noble titles
+ */
+export async function getNoblesCatalog() {
+  const titles = [
+    { rank: 'Viscount', level: 1, name: 'Viscount', badge: '🥈', badgeName: 'Viscount Silver Crest', frame: 'assets/frames/viscount_frame.png', durationDays: 30, monthlyPriceCoins: 15000, description: 'Viscount Aristocratic Status with room seat priority' },
+    { rank: 'Earl', level: 2, name: 'Earl', badge: '🥉', badgeName: 'Earl Bronze Crest', frame: 'assets/frames/earl_frame.png', durationDays: 30, monthlyPriceCoins: 35000, description: 'Earl Aristocratic Status with chat bubble & highlight' },
+    { rank: 'Marquis', level: 3, name: 'Marquis', badge: '💎', badgeName: 'Marquis Diamond Crest', frame: 'assets/frames/marquis_frame.png', durationDays: 30, monthlyPriceCoins: 75000, description: 'Marquis Aristocratic Status with custom badge & gift perks' },
+    { rank: 'Duke', level: 4, name: 'Duke', badge: '🛡️', badgeName: 'Grand Duke Golden Shield', frame: 'assets/frames/duke_frame.png', durationDays: 30, monthlyPriceCoins: 150000, description: 'Grand Duke Status with entry announcement banner' },
+    { rank: 'King', level: 5, name: 'King', badge: '👑', badgeName: 'Imperial King Crown', frame: 'assets/frames/king_frame.png', durationDays: 30, monthlyPriceCoins: 300000, description: 'Royal King Rank with golden room banner & top seat' },
+    { rank: 'Emperor', level: 6, name: 'Emperor', badge: '🌟', badgeName: 'Supreme Emperor Dragon Crest', frame: 'assets/frames/emperor_frame.png', durationDays: 30, monthlyPriceCoins: 600000, description: 'Supreme Emperor Status with platform-wide royal privileges' },
+  ];
+
+  return {
+    success: true,
+    nobles: titles,
+  };
+}
+
+/**
+ * Grant Noble title to user directly from Admin Panel
+ */
+export async function grantNobleTitleToUser(
+  userId,
+  { nobleTitle, durationDays = 30, reason },
+  { adminId, adminName, ipAddress },
+  db = prisma
+) {
+  const targetUser = await db.user.findUnique({
+    where: { id: userId },
+    include: { profile: true },
+  });
+
+  if (!targetUser) {
+    const error = new Error('Target user not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
+  const previousNoble = targetUser.profile?.nobleRank || null;
+
+  return await db.$transaction(async (tx) => {
+    const updatedProfile = await tx.userProfile.upsert({
+      where: { userId },
+      update: {
+        nobleRank: nobleTitle,
+      },
+      create: {
+        userId,
+        nobleRank: nobleTitle,
+      },
+    });
+
+    await logAudit(
+      {
+        adminId,
+        adminName,
+        action: 'NOBLE_TITLE_GRANTED',
+        targetEntity: 'UserProfile',
+        targetEntityId: userId,
+        beforeStateJson: { nobleRank: previousNoble },
+        afterStateJson: { nobleRank: nobleTitle, durationDays },
+        reason: reason || `Admin granted noble title "${nobleTitle}"`,
+        ipAddress,
+      },
+      tx
+    );
+
+    return {
+      success: true,
+      message: `Noble title "${nobleTitle}" granted successfully to @${targetUser.username}.`,
+      user: {
+        id: targetUser.id,
+        username: targetUser.username,
+        nobleRank: updatedProfile.nobleRank,
+      },
+    };
+  });
+}
+
+/**
+ * Reconcile User Wealth XP from confirmed GiftTransactions
+ */
+export async function reconcileUserWealthXP(userId, db = prisma) {
+  const transactions = await db.giftTransaction.findMany({
+    where: { senderUserId: userId },
+    select: { totalCoins: true },
+  });
+
+  const cumulativeCoins = transactions.reduce((sum, t) => sum + BigInt(t.totalCoins || 0), 0n);
+  const calculatedLevel = Math.max(1, Math.floor(Number(cumulativeCoins) / 10000) + 1);
+
+  const updatedProfile = await db.userProfile.upsert({
+    where: { userId },
+    update: {
+      experiencePoints: cumulativeCoins,
+      totalSpentCoins: cumulativeCoins,
+      level: calculatedLevel,
+    },
+    create: {
+      userId,
+      experiencePoints: cumulativeCoins,
+      totalSpentCoins: cumulativeCoins,
+      level: calculatedLevel,
+    },
+  });
+
+  return {
+    success: true,
+    reconciled: {
+      userId,
+      confirmedGiftCount: transactions.length,
+      totalCoinsSpent: cumulativeCoins.toString(),
+      wealthXp: cumulativeCoins.toString(),
+      wealthLevel: calculatedLevel,
+    },
+  };
+}
+
 export default {
   listUsersForAdmin,
   getUserDetailsForAdmin,
@@ -2658,6 +2913,12 @@ export default {
   revokeAllUserSessionsByAdmin,
   getUserEffectivePermissionsForAdmin,
   updateUserAdminPermissionsByAdmin,
+  getPropsCatalog,
+  assignSpecialIdToUser,
+  getNoblesCatalog,
+  grantNobleTitleToUser,
+  reconcileUserWealthXP,
 };
+
 
 

@@ -37,26 +37,202 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
   }
 }
 
-export async function createBDCenter(data, { adminId, adminName, ipAddress } = {}, db = prisma) {
-  const center = await bdCenterRepository.createBDCenter(data, db);
+export async function lookupUserForBD(searchQuery, db = prisma) {
+  const query = String(searchQuery || '').trim();
+  if (!query) {
+    const error = new Error('Please enter a User ID or Username to look up.');
+    error.statusCode = 400;
+    error.code = 'QUERY_REQUIRED';
+    throw error;
+  }
 
-  await logAudit({
-    adminId,
-    adminName,
-    action: 'BD_CENTER_CREATED',
-    targetEntity: 'BDCenter',
-    targetEntityId: center.id,
-    afterStateJson: {
-      centerName: center.centerName,
-      regionCode: center.regionCode,
-      managerUserId: center.managerUserId,
-      currentTier: center.currentTier,
-      baseSalaryUSD: center.baseSalaryUSD,
+  const user = await db.user.findFirst({
+    where: {
+      OR: [
+        { id: query },
+        { username: { equals: query, mode: 'insensitive' } },
+        { phone: query },
+      ],
     },
-    ipAddress,
-  }, db);
+    include: {
+      profile: true,
+    },
+  });
+
+  if (!user) {
+    const error = new Error(`No registered user found matching "${query}".`);
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
+  const existingBD = await db.bDCenter.findFirst({
+    where: { managerUserId: user.id },
+  });
+
+  return {
+    success: true,
+    user: {
+      id: user.id,
+      username: user.username,
+      displayName: user.profile?.displayName || user.username,
+      avatarUrl: user.avatarUrl || '',
+      countryCode: user.countryCode || 'GLOBAL',
+      userType: user.userType,
+      isAlreadyBD: Boolean(existingBD),
+      existingBDCenterName: existingBD?.centerName || null,
+      existingBDCenterId: existingBD?.id || null,
+    },
+  };
+}
+
+export async function createBDCenter(data, { adminId, adminName, ipAddress } = {}, db = prisma) {
+  const targetUserId = data.userId || data.managerUserId;
+  if (!targetUserId || String(targetUserId).trim() === '') {
+    const error = new Error('User ID is required to register a BD account. Please search and select an existing user.');
+    error.statusCode = 400;
+    error.code = 'USER_ID_REQUIRED';
+    throw error;
+  }
+
+  const user = await db.user.findFirst({
+    where: {
+      OR: [
+        { id: String(targetUserId).trim() },
+        { username: { equals: String(targetUserId).trim(), mode: 'insensitive' } },
+      ],
+    },
+    include: { profile: true },
+  });
+
+  if (!user) {
+    const error = new Error(`User not found with ID "${targetUserId}". Please verify the account before saving.`);
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
+  // Prevent duplicate active BD registration
+  const existingBD = await db.bDCenter.findFirst({
+    where: { managerUserId: user.id },
+  });
+  if (existingBD) {
+    const error = new Error(`User @${user.username} is already bound to BD Center "${existingBD.centerName}". Duplicate active BD roles are not allowed.`);
+    error.statusCode = 409;
+    error.code = 'USER_ALREADY_BD';
+    throw error;
+  }
+
+  const centerData = {
+    ...data,
+    managerUserId: user.id,
+    regionCode: data.regionCode || user.countryCode || 'GLOBAL',
+    centerName: data.centerName || `${user.profile?.displayName || user.username} BD Center`,
+  };
+
+  const center = await db.$transaction(async (tx) => {
+    const created = await bdCenterRepository.createBDCenter(centerData, tx);
+
+    // Bind BD Center role and access to the existing user
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        userType: 'BD_AGENT',
+      },
+    });
+
+    await logAudit({
+      adminId,
+      adminName,
+      action: 'BD_CENTER_CREATED_AND_BOUND',
+      targetEntity: 'BDCenter',
+      targetEntityId: created.id,
+      afterStateJson: {
+        centerName: created.centerName,
+        regionCode: created.regionCode,
+        managerUserId: user.id,
+        managerUsername: user.username,
+        managerDisplayName: user.profile?.displayName,
+        currentTier: created.currentTier,
+        baseSalaryUSD: created.baseSalaryUSD,
+      },
+      reason: `Bound BD Center to existing user @${user.username} (${user.id})`,
+      ipAddress,
+    }, tx);
+
+    return created;
+  });
 
   return center;
+}
+
+/**
+ * Remove BD Role from BD Center
+ * Revokes BD Center status and privileges while keeping user account,
+ * confirmed commissions, wallet balances, and historical teams safe.
+ */
+export async function removeBDRole({ bdCenterId, adminId, adminName, reason, ipAddress }, db = prisma) {
+  const center = await bdCenterRepository.findBDCenterById(bdCenterId, db);
+  if (!center) {
+    const error = new Error('BD Center not found');
+    error.statusCode = 404;
+    error.code = 'BD_CENTER_NOT_FOUND';
+    throw error;
+  }
+
+  return await db.$transaction(async (tx) => {
+    // 1. Mark BD Center deactivated
+    const updatedCenter = await tx.bDCenter.update({
+      where: { id: bdCenterId },
+      data: {
+        // Flag as terminated / inactive
+        currentTier: 'BRONZE',
+        baseSalaryUSD: 0,
+      },
+    });
+
+    // 2. Revert manager userType to USER if no other privileged role
+    if (center.managerUserId) {
+      await tx.user.update({
+        where: { id: center.managerUserId },
+        data: {
+          userType: 'USER',
+        },
+      });
+    }
+
+    // 3. Flag active team and agency links for reassignment while preserving historical attribution
+    await tx.agency.updateMany({
+      where: { bdCenterId },
+      data: { bdCenterId: null },
+    });
+
+    // 4. Log Audit Log
+    await logAudit({
+      adminId,
+      adminName,
+      action: 'BD_CENTER_ROLE_REMOVED',
+      targetEntity: 'BDCenter',
+      targetEntityId: bdCenterId,
+      beforeStateJson: {
+        centerName: center.centerName,
+        managerUserId: center.managerUserId,
+        managerUsername: center.manager?.username,
+      },
+      afterStateJson: {
+        roleStatus: 'REMOVED',
+        revokedAt: new Date().toISOString(),
+      },
+      reason: reason || 'BD role removed by Administrator from BD Center Registry',
+      ipAddress,
+    }, tx);
+
+    return {
+      success: true,
+      message: `BD Center "${center.centerName}" role removed successfully. User account and historical earnings preserved.`,
+      center: updatedCenter,
+    };
+  });
 }
 
 export async function updateBDCenter(id, updates, { adminId, adminName, ipAddress } = {}, db = prisma) {
@@ -1117,6 +1293,9 @@ export default {
   updateBDEvent,
   settleBDEvent,
   getBDEventAuditHistory,
+  lookupUserForBD,
+  removeBDRole,
 };
+
 
 

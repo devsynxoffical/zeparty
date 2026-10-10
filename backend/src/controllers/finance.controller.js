@@ -278,6 +278,40 @@ export async function rejectCoinRefund(req, res, next) {
   }
 }
 
+export async function getWithdrawalRecipients(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const { type } = req.query;
+    const result = await withdrawalService.getWithdrawalRecipients({ userId, type });
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function createWithdrawalRequest(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const { recipientId, recipientRole, amountUSD } = req.body;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await withdrawalService.createWithdrawalRequest({
+      userId,
+      recipientId,
+      recipientRole,
+      amountUSD,
+      ipAddress,
+    });
+
+    return res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getMasterLedger,
   getRechargePlans,
@@ -290,8 +324,11 @@ export default {
   getWithdrawals,
   approveWithdrawal,
   rejectWithdrawal,
+  getWithdrawalRecipients,
+  createWithdrawalRequest,
   getCoinRefunds,
   submitCoinRefund,
   processCoinRefund,
   rejectCoinRefund,
 };
+

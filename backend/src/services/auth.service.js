@@ -267,6 +267,13 @@ function sanitizeUser(user) {
     profile: safeUser.profile
       ? {
           ...safeUser.profile,
+          experience: safeUser.profile.experiencePoints
+            ? Number(safeUser.profile.experiencePoints)
+            : 0,
+          wealthXp: safeUser.profile.experiencePoints
+            ? Number(safeUser.profile.experiencePoints)
+            : 0,
+          wealthLevel: safeUser.profile.level || 1,
           experiencePoints: safeUser.profile.experiencePoints
             ? safeUser.profile.experiencePoints.toString()
             : '0',

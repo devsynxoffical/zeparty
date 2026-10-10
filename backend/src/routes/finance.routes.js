@@ -33,6 +33,8 @@ router.post(
 );
 
 // Host Diamond Withdrawals
+router.get('/withdrawal-recipients', financeController.getWithdrawalRecipients);
+router.post('/withdrawals', idempotencyMiddleware, financeController.createWithdrawalRequest);
 router.get('/withdrawals', requirePermission('view_withdrawals'), financeController.getWithdrawals);
 router.post(
   '/withdrawals/:id/approve',

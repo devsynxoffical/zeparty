@@ -254,7 +254,7 @@ export async function applyRegisterAgency(req, res, next) {
     const agency = await agencyRepository.createAgency({
       agencyName: agencyName.trim(),
       agencyCode,
-      agencyType: agencyType || 'LIVE_AGENCY',
+      agencyType: 'AUDIO_AGENCY',
       ownerUserId: userId,
       commissionRate: 20.0,
       status: 'ACTIVE',
@@ -265,6 +265,88 @@ export async function applyRegisterAgency(req, res, next) {
       message: 'Agency registered successfully.',
       data: agency,
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAgencyWallet(req, res, next) {
+  try {
+    const { id } = req.params;
+    const userId = req.auth?.userId;
+    const result = await agencyService.getAgencyWallet(id, userId);
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function withdrawAgencyCommission(req, res, next) {
+  try {
+    const { id } = req.params;
+    const userId = req.auth?.userId;
+    const { amountUSD, recipientId, recipientRole } = req.body;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await agencyService.withdrawAgencyCommission({
+      agencyId: id,
+      userId,
+      amountUSD,
+      recipientId,
+      recipientRole,
+      ipAddress,
+    });
+
+    return res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getMyAgencyWallet(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const agency = await agencyRepository.findAgencyByOwnerUserId(userId);
+    if (!agency) {
+      return res.status(404).json({
+        success: false,
+        message: 'No active agency found owned by your account.',
+        error: { code: 'NO_OWNED_AGENCY' },
+      });
+    }
+
+    const result = await agencyService.getAgencyWallet(agency.id, userId);
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function withdrawMyAgencyCommission(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const agency = await agencyRepository.findAgencyByOwnerUserId(userId);
+    if (!agency) {
+      return res.status(404).json({
+        success: false,
+        message: 'No active agency found owned by your account.',
+        error: { code: 'NO_OWNED_AGENCY' },
+      });
+    }
+
+    const { amountUSD, recipientId, recipientRole } = req.body;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await agencyService.withdrawAgencyCommission({
+      agencyId: agency.id,
+      userId,
+      amountUSD,
+      recipientId,
+      recipientRole,
+      ipAddress,
+    });
+
+    return res.status(201).json(result);
   } catch (err) {
     next(err);
   }
@@ -281,4 +363,9 @@ export default {
   updateAgency,
   transferHostAgency,
   getAgencyMembers,
+  getAgencyWallet,
+  withdrawAgencyCommission,
+  getMyAgencyWallet,
+  withdrawMyAgencyCommission,
 };
+

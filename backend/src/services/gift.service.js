@@ -293,13 +293,52 @@ export async function sendGift(
     });
 
     // e. Increment host monthly diamonds counter
-    await hostRepository.updateHostPerformance(
-      hostProfile.id,
-      { diamondsDelta: hostDiamonds },
-      tx
-    );
+    if (hostProfile) {
+      await hostRepository.updateHostPerformance(
+        hostProfile.id,
+        { diamondsDelta: hostDiamonds },
+        tx
+      );
+    }
 
-    // f. Create GiftTransaction record
+    // f. Update sender Wealth XP, level and total spent coins
+    const coinsSpent = BigInt(totalCoins);
+    const senderProfile = await tx.userProfile.findUnique({
+      where: { userId: senderUserId },
+    });
+    const currentXp = BigInt(senderProfile?.experiencePoints || 0n);
+    const newXp = currentXp + coinsSpent;
+    // Approved ZeParty Level Policy: starting at Lv. 1, 10,000 XP per level
+    const newWealthLevel = Math.max(1, Math.floor(Number(newXp) / 10000) + 1);
+
+    await tx.userProfile.upsert({
+      where: { userId: senderUserId },
+      update: {
+        experiencePoints: newXp,
+        totalSpentCoins: { increment: coinsSpent },
+        level: newWealthLevel,
+      },
+      create: {
+        userId: senderUserId,
+        experiencePoints: newXp,
+        totalSpentCoins: coinsSpent,
+        level: newWealthLevel,
+      },
+    });
+
+    // g. Update recipient's total earned diamonds
+    await tx.userProfile.upsert({
+      where: { userId: recipientUserId },
+      update: {
+        totalEarnedDiamonds: { increment: hostDiamonds },
+      },
+      create: {
+        userId: recipientUserId,
+        totalEarnedDiamonds: hostDiamonds,
+      },
+    });
+
+    // h. Create GiftTransaction record
     const giftTx = await giftRepository.createGiftTransaction(
       {
         giftId: gift.id,
@@ -316,6 +355,12 @@ export async function sendGift(
     return {
       giftTransaction: giftTx,
       ledgerPosting,
+      senderWealth: {
+        previousXp: currentXp.toString(),
+        newXp: newXp.toString(),
+        wealthLevel: newWealthLevel,
+        addedXp: coinsSpent.toString(),
+      },
     };
   });
 

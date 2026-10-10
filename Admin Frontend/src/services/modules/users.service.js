@@ -214,6 +214,36 @@ export async function deleteUser(id, reason = '') {
   }
 }
 
+export async function getPropsCatalog(category) {
+  const res = await apiClient.get('/v1/admin/users/props/catalog', { params: { category } });
+  return res.data?.data || [];
+}
+
+export async function grantPropToUser(userId, payload) {
+  const res = await apiClient.post(`/v1/admin/users/${userId}/grant-prop`, payload);
+  return res.data;
+}
+
+export async function assignSpecialIdToUser(userId, payload) {
+  const res = await apiClient.post(`/v1/admin/users/${userId}/assign-special-id`, payload);
+  return res.data;
+}
+
+export async function getNoblesCatalog() {
+  const res = await apiClient.get('/v1/admin/users/nobles/catalog');
+  return res.data?.data || [];
+}
+
+export async function grantNobleToUser(userId, payload) {
+  const res = await apiClient.post(`/v1/admin/users/${userId}/grant-noble`, payload);
+  return res.data;
+}
+
+export async function reconcileUserWealth(userId) {
+  const res = await apiClient.post(`/v1/admin/users/${userId}/reconcile-wealth`);
+  return res.data;
+}
+
 export default {
   getUsers,
   getUserById,
@@ -227,4 +257,11 @@ export default {
   banUser,
   unbanUser,
   adjustUserBalance,
+  getPropsCatalog,
+  grantPropToUser,
+  assignSpecialIdToUser,
+  getNoblesCatalog,
+  grantNobleToUser,
+  reconcileUserWealth,
 };
+

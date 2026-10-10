@@ -381,19 +381,95 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
     { level: 25, targetDiamonds: 50000000, durationDays: 5, basicSalaryUSD: 4000.00, hostSalaryUSD: 3200.00, agencySalaryUSD: 800.00, specialId: 'Special ID 120 Days' },
   ];
 
-  // Determine current active tier
+  // Determine current active target tier (target tier 1 is base policy)
   let activeTier = tiers[0];
+  let targetAchieved = false;
   for (const t of tiers) {
     if (eligibleDiamonds >= t.targetDiamonds) {
       activeTier = t;
+      targetAchieved = true;
     }
   }
 
-  const dollarTarget = isLiveHost ? activeTier.basicSalaryUSD : activeTier.basicSalaryUSD;
-  const achievedDollars = Math.round((eligibleDiamonds / 10000) * 100) / 100;
-  const remainingDiamonds = Math.max(0, activeTier.targetDiamonds - eligibleDiamonds);
-  const remainingDollars = Math.max(0, dollarTarget - achievedDollars);
-  const progressPercent = Math.min(100, Math.round((eligibleDiamonds / activeTier.targetDiamonds) * 100));
+  // Daily hosting requirements
+  const requiredDailyHours = isLiveHost ? 1 : 2;
+  const dailyTargetMinutes = requiredDailyHours * 60;
+  // Genuinely tracked attendance minutes: starts strictly at 0 for new host
+  const completedMinutesToday = Number(host?.todayOnlineMinutes || 0);
+
+  // Completed valid days: starts strictly at 0
+  const completedValidDays = Number(host?.targetDaysAchieved || 0);
+  const requiredDays = activeTier.durationDays;
+
+  // Earned salaries for the current cycle: strictly $0.00 until confirmed target is achieved
+  const basicTotalSalary = targetAchieved ? activeTier.basicSalaryUSD : 0.00;
+  const hostBasicSalary = targetAchieved ? activeTier.hostSalaryUSD : 0.00;
+  const agencyShareEarned = targetAchieved ? activeTier.agencySalaryUSD : 0.00;
+  const specialIdBonusEarned = targetAchieved && activeTier.specialId !== '/' ? activeTier.specialId : '$0.00';
+
+  // Progress bar strictly starts at 0%
+  const progressPercent = Math.min(100, Math.floor((eligibleDiamonds / activeTier.targetDiamonds) * 100));
+
+  // Today attendance status
+  let todayStatus = 'Not started';
+  if (completedMinutesToday >= dailyTargetMinutes) {
+    todayStatus = 'Completed';
+  } else if (completedMinutesToday > 0) {
+    todayStatus = 'In progress';
+  }
+
+  // Fetch real database settlement records & withdrawal requests for this host
+  const [settlementRecords, withdrawalRequests] = await Promise.all([
+    db.settlementRecord.findMany({
+      where: { userId, recipientType: 'HOST' },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    }),
+    db.withdrawalRequest.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    }),
+  ]);
+
+  // Available, pending and lifetime totals from genuine database records
+  const totalEarnedUSD = settlementRecords
+    .filter(r => r.status === 'PAID')
+    .reduce((sum, r) => sum + Number(r.netPayableUSD), 0);
+
+  const pendingSalaryUSD = settlementRecords
+    .filter(r => r.status === 'CALCULATED' || r.status === 'APPROVED')
+    .reduce((sum, r) => sum + Number(r.netPayableUSD), 0);
+
+  const pendingWithdrawalUSD = withdrawalRequests
+    .filter(w => w.status === 'PENDING')
+    .reduce((sum, w) => sum + Number(w.amountUSD), 0);
+
+  const totalWithdrawnUSD = Number(wallet?.totalWithdrawnUSD || 0.00);
+
+  // Available host salary in USD (converts eligible diamonds or paid settlements)
+  // 12,500 diamonds = $1 USD
+  const availableHostSalaryUSD = Math.max(0, Math.round(((eligibleDiamonds / 12500) - pendingWithdrawalUSD) * 100) / 100);
+
+  // History entries combined and formatted
+  const combinedHistory = [
+    ...settlementRecords.map(s => ({
+      id: s.id,
+      type: 'SALARY_SETTLEMENT',
+      title: 'Host Cycle Salary',
+      amountUSD: Number(s.netPayableUSD),
+      status: s.status,
+      date: s.createdAt,
+    })),
+    ...withdrawalRequests.map(w => ({
+      id: w.id,
+      type: 'WITHDRAWAL',
+      title: 'Salary Withdrawal',
+      amountUSD: Number(w.amountUSD),
+      status: w.status,
+      date: w.createdAt,
+    })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   // 15-day transfer eligibility countdown
   const now = new Date();
@@ -401,31 +477,64 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
   const daysSinceActive = Math.floor((now.getTime() - hostCreated.getTime()) / (24 * 60 * 60 * 1000));
   const remainingDaysToWithdraw = Math.max(0, 15 - daysSinceActive);
 
-  // Daily hosting requirements
-  const requiredDailyHours = isLiveHost ? 1 : 2;
-  const dailyTargetMinutes = requiredDailyHours * 60;
-  const completedMinutesToday = 45; // Simulated/tracked in-app hosting minutes
-
   return {
+    hostIdentity: {
+      userId,
+      uniqueId: host?.user?.username || userId,
+      hostName: host?.user?.profile?.displayName || host?.user?.username || 'Host',
+      avatarUrl: host?.user?.avatarUrl || '',
+      hostLevel: host?.hostLevel || 1,
+      hostType: host?.hostType || 'AUDIO_HOST',
+      agencyId: host?.agencyId || null,
+      agencyName: host?.agency?.agencyName || 'No agency joined',
+    },
+    newHostInitialDisplay: {
+      achievedCoinsOrDiamonds: eligibleDiamonds,
+      targetProgressBarPercent: progressPercent,
+      basicTotalSalaryUSD: Number(basicTotalSalary.toFixed(2)),
+      hostBasicSalaryUSD: Number(hostBasicSalary.toFixed(2)),
+      agencyShareUSD: Number(agencyShareEarned.toFixed(2)),
+      specialIdBonus: specialIdBonusEarned,
+      completedValidDays,
+      requiredValidDays: requiredDays,
+      todayTrackedMinutes: completedMinutesToday,
+      requiredDailyMinutes: dailyTargetMinutes,
+      todayStatus,
+      availableHostSalaryUSD: Number(availableHostSalaryUSD.toFixed(2)),
+      pendingSalaryUSD: Number(pendingSalaryUSD.toFixed(2)),
+      pendingWithdrawalUSD: Number(pendingWithdrawalUSD.toFixed(2)),
+      totalEarnedUSD: Number(totalEarnedUSD.toFixed(2)),
+      totalWithdrawnUSD: Number(totalWithdrawnUSD.toFixed(2)),
+      historyRecordsCount: combinedHistory.length,
+    },
+    // Backwards-compatible legacy properties for existing UI widgets
     currentLevel: activeTier.level,
     targetDiamonds: activeTier.targetDiamonds,
     eligibleDiamonds,
-    dollarTarget,
-    achievedDollars,
-    remainingDiamonds,
-    remainingDollars,
+    dollarTarget: activeTier.basicSalaryUSD,
+    achievedDollars: targetAchieved ? activeTier.hostSalaryUSD : 0.00,
+    remainingDiamonds: Math.max(0, activeTier.targetDiamonds - eligibleDiamonds),
+    remainingDollars: Math.max(0, activeTier.basicSalaryUSD - (targetAchieved ? activeTier.hostSalaryUSD : 0)),
     progressPercent,
-    specialIdBonus: activeTier.specialId,
-    durationDays: activeTier.durationDays,
+    specialIdBonus: specialIdBonusEarned,
+    durationDays: requiredDays,
     targetPeriod: `15 Days (${now.toLocaleString('default', { month: 'long', year: 'numeric' })})`,
-    targetStatus: eligibleDiamonds >= activeTier.targetDiamonds ? 'TARGET_ACHIEVED' : 'IN_PROGRESS',
+    targetStatus: targetAchieved ? 'TARGET_ACHIEVED' : 'IN_PROGRESS',
+    availableHostSalary: availableHostSalaryUSD,
+    pendingSalary: pendingSalaryUSD,
+    pendingWithdrawal: pendingWithdrawalUSD,
+    totalEarned: totalEarnedUSD,
+    totalWithdrawn: totalWithdrawnUSD,
+    history: combinedHistory,
+    hasRecords: combinedHistory.length > 0,
+    policyTiers: tiers, // Policy salary table showing potential payouts (clearly labelled as policy)
     policyNotes: {
       roomOwnerReward: 'If you send users to a room, the room owner will receive a 5% reward weekly.',
       incompleteDaysRule: 'If the host does not complete the valid days, he will receive only 50% of the target.',
       noAgencyRequired: isLiveHost ? 'No agency is required — you can register directly through the app and become a Live Host yourself.' : undefined,
     },
     withdrawalEligibility: {
-      isEligible: remainingDaysToWithdraw === 0,
+      isEligible: availableHostSalaryUSD > 0 && remainingDaysToWithdraw === 0,
       holdingPeriodDays: 15,
       remainingDays: remainingDaysToWithdraw,
       notice: 'The host can transfer eligible diamond earnings to an authorized Coin Seller after 15 days and then request/receive withdrawal according to the configured withdrawal process. The host is required to complete at least 2 hours of hosting activity every day.',
@@ -436,6 +545,7 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
       remainingMinutesToday: Math.max(0, dailyTargetMinutes - completedMinutesToday),
       isDailyTargetMet: completedMinutesToday >= dailyTargetMinutes,
       hostingType: isLiveHost ? 'Live Video Hosting (1h daily for 10 days)' : 'Audio Hosting (2h daily)',
+      todayStatus,
     },
   };
 }
@@ -543,6 +653,101 @@ export async function getLiveHostPolicyTable() {
   };
 }
 
+/**
+ * Remove Host Role from Host and Creator Registry
+ * Revokes host status and agency membership while preserving the user account,
+ * unique ID, chats, personal wallet balances, and historical earnings records.
+ */
+export async function removeHostRole({ hostProfileId, adminId, adminName, reason, ipAddress }, db = prisma) {
+  const host = await db.hostProfile.findUnique({
+    where: { id: hostProfileId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          userType: true,
+          profile: true,
+        },
+      },
+      agency: true,
+    },
+  });
+
+  if (!host) {
+    const error = new Error('Host registration not found');
+    error.statusCode = 404;
+    error.code = 'HOST_NOT_FOUND';
+    throw error;
+  }
+
+  return await db.$transaction(async (tx) => {
+    // 1. Mark host profile as REJECTED / inactive
+    const updatedHost = await tx.hostProfile.update({
+      where: { id: hostProfileId },
+      data: {
+        hostStatus: 'REJECTED',
+        agencyId: null,
+      },
+    });
+
+    // 2. Remove active agency membership if any
+    await tx.agencyMember.deleteMany({
+      where: { hostProfileId },
+    });
+
+    // 3. If user has no other active host profiles, revert userType to USER
+    const otherActiveHosts = await tx.hostProfile.findMany({
+      where: {
+        userId: host.userId,
+        id: { not: hostProfileId },
+        hostStatus: 'ACTIVE',
+      },
+    });
+
+    if (otherActiveHosts.length === 0) {
+      await tx.user.update({
+        where: { id: host.userId },
+        data: { userType: 'USER' },
+      });
+    }
+
+    // 4. Log audit log
+    await logAudit(
+      {
+        adminId,
+        adminName,
+        action: 'HOST_ROLE_REMOVED',
+        targetEntity: 'HostProfile',
+        targetEntityId: hostProfileId,
+        beforeStateJson: {
+          hostType: host.hostType,
+          hostStatus: host.hostStatus,
+          agencyId: host.agencyId,
+          agencyName: host.agency?.agencyName,
+          userId: host.userId,
+          username: host.user?.username,
+        },
+        afterStateJson: {
+          hostStatus: 'REJECTED',
+          agencyId: null,
+          roleRevokedAt: new Date().toISOString(),
+        },
+        reason: reason || 'Host role removed by Administrator from Host Registry',
+        ipAddress,
+      },
+      tx
+    );
+
+    return {
+      success: true,
+      message: `Host role successfully removed for ${host.user?.username || host.userId}. User account and personal earnings preserved.`,
+      host: updatedHost,
+    };
+  });
+}
+
 export default {
   applyForHost,
   reviewHostApplication,
@@ -555,4 +760,6 @@ export default {
   becomeLiveHost,
   getAgencyHostPolicyTable,
   getLiveHostPolicyTable,
+  removeHostRole,
 };
+

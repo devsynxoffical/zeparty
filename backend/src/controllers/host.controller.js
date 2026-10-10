@@ -214,6 +214,27 @@ export async function getLiveHostPolicyTable(req, res, next) {
   }
 }
 
+export async function removeHostRole(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+    const adminId = req.auth?.adminId || req.auth?.userId || 'ADMIN';
+    const adminName = req.auth?.name || req.auth?.username || 'Administrator';
+
+    const result = await hostService.removeHostRole({
+      hostProfileId: id,
+      adminId,
+      adminName,
+      reason,
+      ipAddress: req.ip,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   applyHost,
   getMyHostProfile,
@@ -227,4 +248,6 @@ export default {
   becomeLiveHost,
   getAgencyHostPolicyTable,
   getLiveHostPolicyTable,
+  removeHostRole,
 };
+

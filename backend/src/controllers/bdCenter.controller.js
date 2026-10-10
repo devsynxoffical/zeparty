@@ -540,6 +540,38 @@ export async function getCommissionPolicyTable(req, res, next) {
   }
 }
 
+export async function lookupUserForBD(req, res, next) {
+  try {
+    const { query } = req.query;
+    const result = await bdCenterService.lookupUserForBD(query);
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function removeBDRole(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+    const adminId = req.auth?.userId || 'ADMIN';
+    const adminName = req.admin?.name || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await bdCenterService.removeBDRole({
+      bdCenterId: id,
+      adminId,
+      adminName,
+      reason,
+      ipAddress,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   validateInvite,
   acceptInvite,
@@ -573,6 +605,9 @@ export default {
   updateEvent,
   settleEvent,
   getEventHistory,
+  lookupUserForBD,
+  removeBDRole,
 };
+
 
 

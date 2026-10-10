@@ -200,10 +200,253 @@ export async function transferHostBetweenAgencies(
   return transferredMember;
 }
 
+/**
+ * Agency Center -> Agency Wallet
+ * Contains only the agency owner's earned commission.
+ * Individual host salaries are credited to each host personal wallet.
+ */
+export async function getAgencyWallet(agencyId, userId, db = prisma) {
+  const agency = await db.agency.findUnique({
+    where: { id: agencyId },
+    include: {
+      owner: {
+        select: { id: true, username: true, countryCode: true, profile: true },
+      },
+    },
+  });
+
+  if (!agency) {
+    const error = new Error('Agency not found');
+    error.statusCode = 404;
+    error.code = 'AGENCY_NOT_FOUND';
+    throw error;
+  }
+
+  // Only agency owner can access the Agency Wallet
+  if (agency.ownerUserId !== userId) {
+    const error = new Error('Access denied. Agency Wallet is exclusively accessible to the agency owner.');
+    error.statusCode = 403;
+    error.code = 'NOT_AGENCY_OWNER';
+    throw error;
+  }
+
+  // Query actual commission records from SettlementRecord for this agency
+  const commissionRecords = await db.settlementRecord.findMany({
+    where: {
+      recipientId: agencyId,
+      recipientType: 'AGENCY',
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  // Query withdrawal requests submitted by the agency owner for this wallet
+  const withdrawalRequests = await db.withdrawalRequest.findMany({
+    where: {
+      userId,
+      accountDetails: {
+        path: ['channel'],
+        equals: 'AGENCY_COMMISSION_WALLET',
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const confirmedCommission = commissionRecords
+    .filter(r => r.status === 'PAID')
+    .reduce((sum, r) => sum + Number(r.netPayableUSD), 0);
+
+  const pendingCommission = commissionRecords
+    .filter(r => r.status === 'CALCULATED' || r.status === 'APPROVED')
+    .reduce((sum, r) => sum + Number(r.netPayableUSD), 0);
+
+  const pendingWithdrawalsUSD = withdrawalRequests
+    .filter(w => w.status === 'PENDING')
+    .reduce((sum, w) => sum + Number(w.amountUSD), 0);
+
+  const totalWithdrawnUSD = withdrawalRequests
+    .filter(w => w.status === 'APPROVED')
+    .reduce((sum, w) => sum + Number(w.amountUSD), 0);
+
+  const availableEarningsUSD = Math.max(0, confirmedCommission - pendingWithdrawalsUSD - totalWithdrawnUSD);
+
+  const history = [
+    ...commissionRecords.map(r => ({
+      id: r.id,
+      type: 'COMMISSION_ACCRUAL',
+      title: 'Agency Commission Split',
+      cycle: r.settlementPeriodId || 'Bi-Weekly Cycle',
+      amountUSD: Number(r.netPayableUSD),
+      date: r.createdAt,
+      status: r.status,
+    })),
+    ...withdrawalRequests.map(w => ({
+      id: w.id,
+      type: 'COMMISSION_WITHDRAWAL',
+      title: 'Commission Withdrawal',
+      recipientName: w.accountDetails?.recipientName || 'Authorized Recipient',
+      recipientId: w.accountDetails?.recipientId || '',
+      amountUSD: Number(w.amountUSD),
+      date: w.createdAt,
+      status: w.status,
+    })),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  return {
+    agencyId,
+    agencyName: agency.agencyName,
+    ownerUserId: agency.ownerUserId,
+    ownerCountryCode: agency.owner?.countryCode || 'GLOBAL',
+    noticeText: 'Agency Wallet receives only the agency owner commission. Individual host salaries are credited to each host personal wallet.',
+    ledgerHeading: 'Commission History',
+    availableEarningsUSD: Number(availableEarningsUSD.toFixed(2)),
+    pendingEarningsUSD: Number(pendingCommission.toFixed(2)),
+    totalWithdrawnUSD: Number(totalWithdrawnUSD.toFixed(2)),
+    commissionHistory: history,
+    hasCommissionRecords: history.length > 0,
+  };
+}
+
+/**
+ * Submit Agency Commission Withdrawal
+ * Allows agency owner to withdraw available commission only to authorized
+ * recipients registered in the same country as the agency owner.
+ */
+export async function withdrawAgencyCommission({ agencyId, userId, amountUSD, recipientId, recipientRole = 'COIN_SELLER', ipAddress }, db = prisma) {
+  const parsedAmount = Number(amountUSD);
+  if (!parsedAmount || isNaN(parsedAmount) || parsedAmount <= 0) {
+    const error = new Error('Please enter a valid withdrawal amount greater than $0.00');
+    error.statusCode = 400;
+    error.code = 'INVALID_AMOUNT';
+    throw error;
+  }
+
+  const walletInfo = await getAgencyWallet(agencyId, userId, db);
+
+  if (walletInfo.availableEarningsUSD < parsedAmount) {
+    const error = new Error(`Insufficient available commission. Available: $${walletInfo.availableEarningsUSD.toFixed(2)}, Requested: $${parsedAmount.toFixed(2)}`);
+    error.statusCode = 400;
+    error.code = 'INSUFFICIENT_COMMISSION';
+    throw error;
+  }
+
+  const ownerCountry = walletInfo.ownerCountryCode.trim().toUpperCase();
+
+  // Validate recipient country matches agency owner ID country
+  const normalizedRole = String(recipientRole).toUpperCase();
+  let recipientUser = null;
+  let recipientName = '';
+
+  if (normalizedRole === 'MERCHANT') {
+    const merchant = await db.merchant.findFirst({
+      where: {
+        OR: [{ id: recipientId }, { userId: recipientId }],
+        status: 'ACTIVE',
+      },
+      include: { user: true },
+    });
+
+    if (!merchant) {
+      const error = new Error('Selected Merchant is not active or authorized');
+      error.statusCode = 404;
+      error.code = 'RECIPIENT_NOT_FOUND';
+      throw error;
+    }
+
+    if (merchant.user?.countryCode?.toUpperCase() !== ownerCountry) {
+      const error = new Error(`Cross-country commission withdrawal is forbidden. Your owner account is registered in ${ownerCountry}, while recipient is in ${merchant.user?.countryCode || 'another country'}.`);
+      error.statusCode = 403;
+      error.code = 'CROSS_COUNTRY_WITHDRAWAL_FORBIDDEN';
+      throw error;
+    }
+
+    recipientUser = merchant.user;
+    recipientName = merchant.companyName || merchant.user.username;
+  } else {
+    // COIN_SELLER
+    const seller = await db.coinSeller.findFirst({
+      where: {
+        OR: [{ id: recipientId }, { userId: recipientId }],
+        sellerStatus: 'ACTIVE',
+      },
+      include: { user: true },
+    });
+
+    if (!seller) {
+      const error = new Error('Selected Coin Seller is not active or authorized');
+      error.statusCode = 404;
+      error.code = 'RECIPIENT_NOT_FOUND';
+      throw error;
+    }
+
+    if (seller.user?.countryCode?.toUpperCase() !== ownerCountry) {
+      const error = new Error(`Cross-country commission withdrawal is forbidden. Your owner account is registered in ${ownerCountry}, while recipient is in ${seller.user?.countryCode || 'another country'}.`);
+      error.statusCode = 403;
+      error.code = 'CROSS_COUNTRY_WITHDRAWAL_FORBIDDEN';
+      throw error;
+    }
+
+    recipientUser = seller.user;
+    recipientName = seller.businessName || seller.user.username;
+  }
+
+  return await db.$transaction(async (tx) => {
+    const withdrawal = await tx.withdrawalRequest.create({
+      data: {
+        userId,
+        amountUSD: parsedAmount,
+        diamondsDebited: BigInt(0), // Commission is tracked in USD, host diamonds unchanged
+        payoutMethod: normalizedRole,
+        accountDetails: {
+          channel: 'AGENCY_COMMISSION_WALLET',
+          agencyId,
+          agencyName: walletInfo.agencyName,
+          recipientId,
+          recipientUserId: recipientUser.id,
+          recipientName,
+          recipientRole: normalizedRole,
+          country: ownerCountry,
+          submittedAt: new Date().toISOString(),
+        },
+        status: 'PENDING',
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        adminId: 'SYSTEM',
+        adminName: 'Agency Commission Engine',
+        action: 'AGENCY_COMMISSION_WITHDRAWAL_REQUESTED',
+        targetEntity: 'WithdrawalRequest',
+        targetEntityId: withdrawal.id,
+        afterStateJson: {
+          agencyId,
+          ownerUserId: userId,
+          amountUSD: parsedAmount,
+          recipientId,
+          recipientName,
+          recipientRole: normalizedRole,
+          country: ownerCountry,
+        },
+        reason: `Agency owner requested commission withdrawal of $${parsedAmount} to ${normalizedRole} (${recipientName}) in ${ownerCountry}`,
+        ipAddress: ipAddress || '127.0.0.1',
+      },
+    });
+
+    return {
+      success: true,
+      message: `Commission withdrawal request of $${parsedAmount.toFixed(2)} submitted successfully.`,
+      withdrawal,
+    };
+  });
+}
+
 export default {
   createAgency,
   updateAgency,
   getAgencyDetails,
   bindHostToAgency,
   transferHostBetweenAgencies,
+  getAgencyWallet,
+  withdrawAgencyCommission,
 };
+

@@ -13,8 +13,13 @@ export const createAgencySchema = z.object({
   phoneNumber: z.string().optional().nullable(),
   countryCallingCode: z.string().optional().nullable(),
   hostIds: z.array(z.string()).max(5).optional().default([]),
-  ownerUserId: z.string().optional(),
-  agencyType: z.enum(['LIVE_AGENCY', 'AUDIO_AGENCY', 'HYBRID']).default('LIVE_AGENCY'),
+  agencyType: z
+    .enum(['AUDIO_AGENCY'], {
+      errorMap: () => ({
+        message: 'Agencies are exclusively for Audio Hosts. Live video hosts register directly with the platform.',
+      }),
+    })
+    .default('AUDIO_AGENCY'),
   commissionRate: z.coerce.number().min(0, 'Commission rate must be >= 0').max(100, 'Commission rate must be <= 100').default(20.0),
   bdCenterId: z.string().optional().nullable(),
 });

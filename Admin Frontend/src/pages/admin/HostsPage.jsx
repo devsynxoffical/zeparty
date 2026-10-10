@@ -7,7 +7,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Crown, Search, Eye, AlertTriangle, ToggleLeft, ToggleRight, CheckCircle, Video, Mic, ShieldAlert,
-  Building, Calendar, DollarSign, Award, Clock, Users, ArrowRight, Settings, Plus, RefreshCw
+  Building, Calendar, DollarSign, Award, Clock, Users, ArrowRight, Settings, Plus, RefreshCw, UserMinus
 } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
@@ -21,6 +21,7 @@ import {
   approveHostApplication,
   rejectHostApplication,
   updateHostStatus,
+  removeHost,
 } from '../../services/modules/hosts.service';
 import { formatDate, formatNumber, formatCurrency } from '../../utils/format';
 import { usePermission } from '../../hooks/usePermission';
@@ -144,6 +145,11 @@ export function HostsPage() {
   const [agencyModal, setAgencyModal] = useState({ open: false, host: null, newAgencyName: '', bdCenterId: '', action: 'bind' });
   const [feedback, setFeedback] = useState(null);
 
+  // Remove Host Modal State
+  const [removeHostTarget, setRemoveHostTarget] = useState(null);
+  const [removeHostReason, setRemoveHostReason] = useState('');
+  const [isRemoving, setIsRemoving] = useState(false);
+
   useEffect(() => {
     if (tabParam && tabParam !== activeTab) {
       setActiveTab(tabParam);
@@ -247,6 +253,35 @@ export function HostsPage() {
     showFeedback(`Warning issued to ${warnHost.hostName}.`);
     setWarnHost(null);
     setWarnReason('');
+  };
+
+  // Remove Host Role (preserving user account and earnings)
+  const handleRemoveHostConfirm = async () => {
+    if (!removeHostTarget) return;
+    setIsRemoving(true);
+    try {
+      await removeHost(removeHostTarget.id, removeHostReason || 'Host role removed by administrator');
+      await logAdminAction({
+        action: 'HOST_ROLE_REMOVED',
+        module: 'Hosts',
+        targetType: 'host',
+        targetId: removeHostTarget.id,
+        targetName: removeHostTarget.hostName || removeHostTarget.name,
+        reason: removeHostReason || 'Host role removed by administrator',
+        riskLevel: 'HIGH',
+      });
+      showFeedback(`Host role removed successfully for ${removeHostTarget.hostName || removeHostTarget.name}. User account preserved.`);
+      setRemoveHostTarget(null);
+      setRemoveHostReason('');
+      if (selectedHost?.id === removeHostTarget.id) {
+        setSelectedHost(null);
+      }
+      fetchHostsData();
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to remove host role');
+    } finally {
+      setIsRemoving(false);
+    }
   };
 
   // Update target/payout tiers
@@ -522,6 +557,13 @@ export function HostsPage() {
             }`}
           >
             {row.status === 'active' ? <ToggleLeft className="h-3.5 w-3.5" /> : <ToggleRight className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            title="Remove Host Role"
+            onClick={() => { setRemoveHostTarget(row); setRemoveHostReason(''); }}
+            className="p-1.5 rounded text-rose-400 hover:text-white hover:bg-rose-900/40 transition-colors"
+          >
+            <UserMinus className="h-3.5 w-3.5" />
           </button>
         </div>
       ),
@@ -851,7 +893,17 @@ export function HostsPage() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-700">
+            <div className="flex justify-between items-center gap-2 pt-2 border-t border-slate-700">
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  setRemoveHostTarget(selectedHost);
+                  setRemoveHostReason('');
+                }}
+              >
+                <UserMinus className="w-3.5 h-3.5 mr-1" /> Remove Host Role
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => setSelectedHost(null)}>
                 Close Profile
               </Button>
@@ -1081,6 +1133,69 @@ export function HostsPage() {
           </div>
         </Modal>
       )}
+
+      {/* Remove Host Confirmation Modal */}
+      {removeHostTarget && (
+        <Modal
+          isOpen={true}
+          onClose={() => { if (!isRemoving) setRemoveHostTarget(null); }}
+          title={`Remove Host: ${removeHostTarget.hostName || removeHostTarget.name}`}
+          size="md"
+        >
+          <div className="space-y-4 text-xs text-slate-300">
+            <div className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-500/40 space-y-2">
+              <div className="flex items-center gap-2 text-rose-400 font-bold">
+                <ShieldAlert className="w-4 h-4" />
+                <span>Host Role Revocation Confirmation</span>
+              </div>
+              <p className="text-slate-300 leading-relaxed">
+                This action strictly removes the <strong className="text-white">Host Registration & Role</strong> for this creator. If an audio agency is assigned, they will be detached and active agency host counts will be updated.
+              </p>
+              <div className="bg-slate-900/80 p-2.5 rounded-lg space-y-1 text-slate-300 font-mono text-[11px] border border-slate-800">
+                <p>• Host Name: <strong className="text-white">{removeHostTarget.hostName || removeHostTarget.name}</strong></p>
+                <p>• User ID / Profile: <strong className="text-gold-400">{removeHostTarget.userId || removeHostTarget.id}</strong></p>
+                <p>• Host Type: <strong className="text-purple-300">{removeHostTarget.hostType || removeHostTarget.category}</strong></p>
+                <p>• Agency: <strong className="text-sky-300">{removeHostTarget.agency || removeHostTarget.agencyName || 'Independent'}</strong></p>
+              </div>
+              <p className="text-emerald-400 text-[11px] font-semibold">
+                ✓ Safety Guarantee: The user's regular app account, login, chats, posts, wallet balance, and historical confirmed salary records remain 100% safe and intact. Outstanding salary remains accessible under payout policy.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-slate-400 mb-1 font-semibold">
+                Reason for Host Removal (Required for Audit Log)
+              </label>
+              <Input
+                value={removeHostReason}
+                onChange={(e) => setRemoveHostReason(e.target.value)}
+                placeholder="e.g. Creator contract ended / Voluntarily stepped down / Policy violation"
+                required
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isRemoving}
+                onClick={() => setRemoveHostTarget(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={isRemoving || !removeHostReason.trim()}
+                onClick={handleRemoveHostConfirm}
+              >
+                {isRemoving ? 'Removing Host...' : 'Confirm Remove Host'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
+
