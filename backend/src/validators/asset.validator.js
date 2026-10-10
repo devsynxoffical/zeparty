@@ -9,6 +9,18 @@ export const assetTypeEnum = z.enum([
   'SOUND_EFFECT',
 ]);
 
+export function normalizeAssetType(val) {
+  if (!val) return undefined;
+  const upper = String(val).toUpperCase().trim();
+  if (['FRAME', 'AVATAR_FRAME', 'FRAMES'].includes(upper)) return 'FRAME';
+  if (['VEHICLE', 'CAR', 'CARS', 'CAR_MOUNT', 'MOUNT', 'MOUNTS'].includes(upper)) return 'VEHICLE';
+  if (['CHAT_BUBBLE', 'BUBBLE', 'BUBBLES'].includes(upper)) return 'CHAT_BUBBLE';
+  if (['ENTRY_EFFECT', 'ROOM_THEME', 'BACKGROUND', 'BACKGROUNDS', 'THEME', 'THEMES', 'EFFECT', 'EFFECTS'].includes(upper)) return 'ENTRY_EFFECT';
+  if (['BADGE', 'BADGES', 'SPECIAL_CARD', 'SPECIAL_CARDS', 'CARD', 'CARDS'].includes(upper)) return 'BADGE';
+  if (['SOUND_EFFECT', 'AUDIO', 'SOUND'].includes(upper)) return 'SOUND_EFFECT';
+  return upper;
+}
+
 export const assetSubcategoryEnum = z.enum([
   'STATIC',
   'ANIMATED_SVGA',
@@ -22,7 +34,7 @@ const preprocessAssetData = (data) => {
   if (typeof data !== 'object' || data === null) return data;
   return {
     ...data,
-    assetType: data.assetType || data.category || (data.assetType === undefined ? undefined : 'FRAME'),
+    assetType: normalizeAssetType(data.assetType || data.category) || (data.assetType === undefined ? undefined : 'FRAME'),
     thumbnailUrl:
       data.thumbnailUrl ||
       data.thumbnail ||
@@ -38,7 +50,7 @@ const baseAssetObject = z.object({
   name: z.string().trim().min(1, 'Asset name is required').max(100, 'Asset name cannot exceed 100 characters'),
   assetType: z
     .string()
-    .transform((val) => val.toUpperCase())
+    .transform(normalizeAssetType)
     .pipe(assetTypeEnum),
   assetSubcategory: z
     .string()

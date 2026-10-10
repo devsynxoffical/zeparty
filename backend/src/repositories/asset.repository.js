@@ -50,9 +50,20 @@ export async function findAssets(
 
 export async function findAssetById(id, db = prisma) {
   if (!id) return null;
-  return await db.asset.findUnique({
+  const direct = await db.asset.findUnique({
     where: { id },
   });
+  if (direct) return direct;
+
+  const fallback = await db.asset.findFirst({
+    where: {
+      OR: [
+        { id: { equals: id, mode: 'insensitive' } },
+        { name: { equals: id, mode: 'insensitive' } },
+      ],
+    },
+  });
+  return fallback;
 }
 
 export async function createAsset(data, db = prisma) {

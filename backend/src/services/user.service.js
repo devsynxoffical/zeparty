@@ -194,10 +194,18 @@ export async function getSelfProfile(userId, db = prisma) {
     throw error;
   }
 
-  const [followersCount, followingCount, activeRoom] = await Promise.all([
+  const [followersCount, followingCount, activeRoom, equippedUserAssets] = await Promise.all([
     db.follow.count({ where: { followingId: userId, status: 'ACCEPTED' } }),
     db.follow.count({ where: { followerId: userId, status: 'ACCEPTED' } }),
     getActiveRoomForUser(userId, db),
+    db.userAsset.findMany({
+      where: {
+        userId,
+        isEquipped: true,
+        expiresAt: { gt: new Date() },
+      },
+      include: { asset: true },
+    }),
   ]);
 
   if (user.profile) {
@@ -222,8 +230,53 @@ export async function getSelfProfile(userId, db = prisma) {
     user.hostProfile.status = user.hostProfile.hostStatus;
   }
 
+  // Parse equipped items from database
+  let avatarFrame = '';
+  let equippedBubble = '';
+  let equippedRide = '';
+  let equippedTheme = '';
+  const customTitles = [];
+
+  for (const ua of equippedUserAssets) {
+    const asset = ua.asset;
+    if (!asset) continue;
+    const type = (asset.assetType || '').toUpperCase();
+    const url = asset.thumbnailUrl || asset.staticFileUrl || asset.animationFileUrl || '';
+
+    if (type === 'FRAME') {
+      avatarFrame = url || asset.name;
+    } else if (type === 'CHAT_BUBBLE') {
+      equippedBubble = url;
+    } else if (type === 'VEHICLE') {
+      equippedRide = url;
+    } else if (type === 'ENTRY_EFFECT') {
+      equippedTheme = url;
+    } else if (type === 'BADGE') {
+      customTitles.push(asset.name);
+    }
+  }
+
+  // Default fallback frame for hosts/nobles if no custom frame is equipped
+  if (!avatarFrame) {
+    if (isHost) avatarFrame = 'assets/roles/host_frame.webp';
+    else if (user.profile?.nobleRank) avatarFrame = `assets/nobles/${user.profile.nobleRank.toLowerCase()}_frame.webp`;
+  }
+
   return {
     ...user,
+    avatarFrame,
+    equippedFrame: avatarFrame,
+    equippedBubble,
+    equippedRide,
+    equippedTheme,
+    customTitles,
+    equippedAssets: equippedUserAssets.map((ua) => ({
+      id: ua.id,
+      assetId: ua.assetId,
+      name: ua.asset?.name,
+      assetType: ua.asset?.assetType,
+      imageUrl: ua.asset?.thumbnailUrl || ua.asset?.staticFileUrl || ua.asset?.animationFileUrl || '',
+    })),
     isHost,
     hostApplicationStatus: hostAppStatus,
     isLive: Boolean(activeRoom),
@@ -253,10 +306,18 @@ export async function getPublicProfile(userId, db = prisma) {
     throw error;
   }
 
-  const [followersCount, followingCount, activeRoom] = await Promise.all([
+  const [followersCount, followingCount, activeRoom, equippedUserAssets] = await Promise.all([
     db.follow.count({ where: { followingId: userId, status: 'ACCEPTED' } }),
     db.follow.count({ where: { followerId: userId, status: 'ACCEPTED' } }),
     getActiveRoomForUser(userId, db),
+    db.userAsset.findMany({
+      where: {
+        userId,
+        isEquipped: true,
+        expiresAt: { gt: new Date() },
+      },
+      include: { asset: true },
+    }),
   ]);
 
   if (publicUser.profile) {
@@ -272,8 +333,44 @@ export async function getPublicProfile(userId, db = prisma) {
     };
   }
 
+  let avatarFrame = '';
+  let equippedBubble = '';
+  let equippedRide = '';
+  let equippedTheme = '';
+  const customTitles = [];
+
+  for (const ua of equippedUserAssets) {
+    const asset = ua.asset;
+    if (!asset) continue;
+    const type = (asset.assetType || '').toUpperCase();
+    const url = asset.thumbnailUrl || asset.staticFileUrl || asset.animationFileUrl || '';
+
+    if (type === 'FRAME') {
+      avatarFrame = url || asset.name;
+    } else if (type === 'CHAT_BUBBLE') {
+      equippedBubble = url;
+    } else if (type === 'VEHICLE') {
+      equippedRide = url;
+    } else if (type === 'ENTRY_EFFECT') {
+      equippedTheme = url;
+    } else if (type === 'BADGE') {
+      customTitles.push(asset.name);
+    }
+  }
+
+  if (!avatarFrame) {
+    if (publicUser.userType === 'HOST') avatarFrame = 'assets/roles/host_frame.webp';
+    else if (publicUser.profile?.nobleRank) avatarFrame = `assets/nobles/${publicUser.profile.nobleRank.toLowerCase()}_frame.webp`;
+  }
+
   return {
     ...publicUser,
+    avatarFrame,
+    equippedFrame: avatarFrame,
+    equippedBubble,
+    equippedRide,
+    equippedTheme,
+    customTitles,
     isLive: Boolean(activeRoom),
     liveRoomId: activeRoom ? activeRoom.id : null,
     currentRoom: activeRoom,

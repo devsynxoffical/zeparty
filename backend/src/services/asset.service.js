@@ -3,11 +3,12 @@ import assetRepository from '../repositories/asset.repository.js';
 import userAssetRepository from '../repositories/userAsset.repository.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
+  if (!adminId) return;
   try {
     await db.auditLog.create({
       data: {
-        adminId: adminId || null,
-        adminName: adminName || (adminId ? 'Administrator' : 'User Action'),
+        adminId,
+        adminName: adminName || 'Administrator',
         action,
         targetEntity,
         targetEntityId,
@@ -24,9 +25,33 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
 
 export function serializeAsset(asset) {
   if (!asset) return null;
+  const rawType = asset.assetType || 'FRAME';
+  let category = 'Frame';
+  if (rawType === 'VEHICLE') category = 'Cars';
+  else if (rawType === 'FRAME') category = 'Frame';
+  else if (rawType === 'CHAT_BUBBLE') category = 'Bubble';
+  else if (rawType === 'ENTRY_EFFECT') category = 'Background';
+  else if (rawType === 'BADGE') category = 'Badges';
+
+  const imageUrl = asset.thumbnailUrl || asset.staticFileUrl || asset.animationFileUrl || '';
+
   return {
     ...asset,
+    id: asset.id,
+    name: asset.name,
+    categoryId: category,
+    assetType: rawType,
+    imageUrl,
+    iconUrl: imageUrl,
+    thumbnailUrl: imageUrl,
+    assetUrl: asset.animationFileUrl || asset.staticFileUrl || asset.videoFileUrl || null,
+    durationDays: asset.validDays || 30,
+    validDays: asset.validDays || 30,
     priceCoins: asset.priceCoins ? asset.priceCoins.toString() : '0',
+    isVipExclusive: Boolean(asset.isVipExclusive),
+    minVipLevelRequired: asset.minVipLevelRequired || 0,
+    roomAvailability: asset.roomAvailability || 'BOTH',
+    isActive: Boolean(asset.isActive),
   };
 }
 
@@ -34,9 +59,15 @@ export function serializeUserAsset(userAsset) {
   if (!userAsset) return null;
   const isExpired = userAsset.expiresAt ? new Date(userAsset.expiresAt) <= new Date() : false;
   return {
-    ...userAsset,
+    id: userAsset.id,
+    userId: userAsset.userId,
+    assetId: userAsset.assetId,
+    isEquipped: Boolean(userAsset.isEquipped),
+    expiresAt: userAsset.expiresAt ? (userAsset.expiresAt instanceof Date ? userAsset.expiresAt.toISOString() : new Date(userAsset.expiresAt).toISOString()) : null,
     isExpired,
     asset: userAsset.asset ? serializeAsset(userAsset.asset) : null,
+    createdAt: userAsset.createdAt ? (userAsset.createdAt instanceof Date ? userAsset.createdAt.toISOString() : new Date(userAsset.createdAt).toISOString()) : null,
+    updatedAt: userAsset.updatedAt ? (userAsset.updatedAt instanceof Date ? userAsset.updatedAt.toISOString() : new Date(userAsset.updatedAt).toISOString()) : null,
   };
 }
 
@@ -156,13 +187,8 @@ const ALL_AVAILABLE_FRAMES = [
 export async function getUserBackpack(userId, db = prisma) {
   const user = await db.user.findUnique({
     where: { id: userId },
-    select: {
-      id: true,
-      role: true,
-      nobleTitle: true,
-      isVip: true,
-      vipLevel: true,
-      avatarFrame: true,
+    include: {
+      profile: true,
     },
   });
 
@@ -170,11 +196,10 @@ export async function getUserBackpack(userId, db = prisma) {
   const serialized = userAssets.map(serializeUserAsset);
 
   if (user) {
-    const isHost = user.role === 'HOST' || user.role === 'host';
-    const isAgency = user.role === 'AGENCY' || user.role === 'agency';
-    const isAdmin = user.role === 'ADMIN' || user.role === 'admin';
-    const nobleTitle = user.nobleTitle?.toLowerCase().trim();
-    const currentFrame = (user.avatarFrame || '').toLowerCase().trim();
+    const isHost = user.userType === 'HOST';
+    const isAgency = user.userType === 'AGENCY';
+    const isAdmin = user.userType === 'ADMIN';
+    const nobleTitle = user.profile?.nobleRank?.toLowerCase().trim();
 
     let defaultFrameKey = '';
     if (isHost) defaultFrameKey = 'host';
@@ -182,40 +207,36 @@ export async function getUserBackpack(userId, db = prisma) {
     else if (isAdmin) defaultFrameKey = 'admin';
     else if (isAgency) defaultFrameKey = 'agency';
 
+    // Add eligible role/noble frames if user qualifies
     for (const f of ALL_AVAILABLE_FRAMES) {
-      let isEquipped = false;
-      if (currentFrame !== 'none') {
-        if (currentFrame.length > 0) {
-          isEquipped = currentFrame === f.key || currentFrame.includes(f.key) || currentFrame === f.asset;
-        } else {
-          isEquipped = (defaultFrameKey === f.key);
-        }
-      }
-
+      const isQualified = (defaultFrameKey === f.key);
       const alreadyExists = serialized.some(
-        s => s.asset?.imageUrl === f.asset || s.asset?.name === f.name
+        (s) => s.asset?.imageUrl === f.asset || s.asset?.name === f.name || s.assetId === `assigned-asset-${f.key}-frame`
       );
 
-      if (!alreadyExists) {
+      if (isQualified && !alreadyExists) {
         const frameAsset = {
           id: `assigned-frame-${f.key}-${user.id}`,
           userId: user.id,
           assetId: `assigned-asset-${f.key}-frame`,
-          isEquipped,
+          isEquipped: !serialized.some((s) => s.isEquipped && s.asset?.assetType === 'FRAME'),
           expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
           isExpired: false,
           asset: {
             id: `assigned-asset-${f.key}-frame`,
             name: f.name,
             categoryId: 'Frame',
-            assetType: 'AVATAR_FRAME',
+            assetType: 'FRAME',
             imageUrl: f.asset,
+            iconUrl: f.asset,
+            thumbnailUrl: f.asset,
             priceCoins: '0',
+            validDays: 365,
             isActive: true,
           },
         };
 
-        if (isEquipped) {
+        if (frameAsset.isEquipped) {
           serialized.unshift(frameAsset);
         } else {
           serialized.push(frameAsset);
@@ -230,15 +251,10 @@ export async function getUserBackpack(userId, db = prisma) {
 export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = prisma) {
   // Handle assigned frames
   if (userAssetId && userAssetId.startsWith('assigned-frame-')) {
-    let matchedFrame = ALL_AVAILABLE_FRAMES.find(f => userAssetId.startsWith(`assigned-frame-${f.key}-`));
+    let matchedFrame = ALL_AVAILABLE_FRAMES.find((f) => userAssetId.startsWith(`assigned-frame-${f.key}-`));
     if (!matchedFrame) {
       matchedFrame = ALL_AVAILABLE_FRAMES[0];
     }
-
-    await db.user.update({
-      where: { id: userId },
-      data: { avatarFrame: matchedFrame.key },
-    });
 
     return {
       id: userAssetId,
@@ -251,17 +267,25 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
         id: `assigned-asset-${matchedFrame.key}-frame`,
         name: matchedFrame.name,
         categoryId: 'Frame',
-        assetType: 'AVATAR_FRAME',
+        assetType: 'FRAME',
         imageUrl: matchedFrame.asset,
+        iconUrl: matchedFrame.asset,
+        thumbnailUrl: matchedFrame.asset,
         priceCoins: '0',
+        validDays: 365,
         isActive: true,
       },
     };
   }
 
-  const userAsset = await userAssetRepository.findUserAssetById(userAssetId, db);
+  let userAsset = await userAssetRepository.findUserAssetById(userAssetId, db);
   if (!userAsset) {
-    const error = new Error('User asset not found');
+    // Check if the parameter was passed as an assetId instead of userAssetId
+    userAsset = await userAssetRepository.findActiveUserAssetByAssetId(userId, userAssetId, db);
+  }
+
+  if (!userAsset) {
+    const error = new Error('User asset not found in your backpack');
     error.statusCode = 404;
     error.code = 'USER_ASSET_NOT_FOUND';
     throw error;
@@ -283,18 +307,12 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
     throw error;
   }
 
-  const assetType = userAsset.asset?.assetType;
+  const assetType = userAsset.asset?.assetType || 'FRAME';
 
   // Execute in transaction to ensure single-equipped exclusivity per assetType
   const updatedUserAsset = await db.$transaction(async (tx) => {
     if (assetType) {
       await userAssetRepository.unequipAssetsByType(userId, assetType, tx);
-    }
-    if (assetType === 'AVATAR_FRAME') {
-      await tx.user.update({
-        where: { id: userId },
-        data: { avatarFrame: userAsset.asset?.imageUrl || userAsset.asset?.name || 'frame' },
-      });
     }
     return await userAssetRepository.updateUserAsset(
       userAsset.id,
@@ -325,11 +343,6 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
 export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db = prisma) {
   // Handle assigned frames
   if (userAssetId && userAssetId.startsWith('assigned-frame-')) {
-    await db.user.update({
-      where: { id: userId },
-      data: { avatarFrame: 'none' },
-    });
-
     return {
       id: userAssetId,
       userId,
@@ -341,7 +354,7 @@ export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db =
         id: 'assigned-asset-frame',
         name: 'Assigned Frame',
         categoryId: 'Frame',
-        assetType: 'AVATAR_FRAME',
+        assetType: 'FRAME',
         imageUrl: 'assets/roles/host_frame.webp',
         priceCoins: '0',
         isActive: true,
@@ -349,9 +362,13 @@ export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db =
     };
   }
 
-  const userAsset = await userAssetRepository.findUserAssetById(userAssetId, db);
+  let userAsset = await userAssetRepository.findUserAssetById(userAssetId, db);
   if (!userAsset) {
-    const error = new Error('User asset not found');
+    userAsset = await userAssetRepository.findActiveUserAssetByAssetId(userId, userAssetId, db);
+  }
+
+  if (!userAsset) {
+    const error = new Error('User asset not found in your backpack');
     error.statusCode = 404;
     error.code = 'USER_ASSET_NOT_FOUND';
     throw error;
@@ -370,13 +387,6 @@ export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db =
     { isEquipped: false },
     db
   );
-
-  if (userAsset.asset?.assetType === 'AVATAR_FRAME') {
-    await db.user.update({
-      where: { id: userId },
-      data: { avatarFrame: 'none' },
-    });
-  }
 
   await logAudit({
     adminId: null,
@@ -407,3 +417,4 @@ export default {
   equipAsset,
   unequipAsset,
 };
+

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { assetTypeEnum, roomAvailabilityEnum } from './asset.validator.js';
+import { assetTypeEnum, roomAvailabilityEnum, normalizeAssetType } from './asset.validator.js';
 
 export const queryStoreCatalogSchema = z.object({
   page: z
@@ -12,7 +12,7 @@ export const queryStoreCatalogSchema = z.object({
     .default(20),
   assetType: z
     .string()
-    .transform((val) => val.toUpperCase())
+    .transform(normalizeAssetType)
     .pipe(assetTypeEnum)
     .optional(),
   roomAvailability: z

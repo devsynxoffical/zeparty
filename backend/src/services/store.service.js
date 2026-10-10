@@ -7,11 +7,12 @@ import { serializeAsset, serializeUserAsset } from './asset.service.js';
 import { generateReference } from '../utils/reference.util.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
+  if (!adminId) return;
   try {
     await db.auditLog.create({
       data: {
-        adminId: adminId || null,
-        adminName: adminName || 'User Action',
+        adminId,
+        adminName: adminName || 'Administrator',
         action,
         targetEntity,
         targetEntityId,
@@ -99,7 +100,8 @@ export async function purchaseAsset({ userId, assetId }, { ipAddress } = {}, db 
     }
 
     // c. Check if user already owns an active ownership of this asset
-    const existingActive = await userAssetRepository.findActiveUserAssetByAssetId(userId, assetId, tx);
+    const canonicalAssetId = asset.id;
+    const existingActive = await userAssetRepository.findActiveUserAssetByAssetId(userId, canonicalAssetId, tx);
 
     let userAssetRecord;
     if (existingActive) {
@@ -119,7 +121,7 @@ export async function purchaseAsset({ userId, assetId }, { ipAddress } = {}, db 
       userAssetRecord = await userAssetRepository.createUserAsset(
         {
           userId,
-          assetId,
+          assetId: canonicalAssetId,
           isEquipped: false,
           expiresAt: newExpiresAt,
         },

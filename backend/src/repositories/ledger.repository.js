@@ -1,5 +1,29 @@
 import prisma from '../config/database.js';
 
+export function normalizeLedgerType(type) {
+  const upper = String(type || 'ADMIN_ADJUSTMENT').toUpperCase();
+  const valid = [
+    'RECHARGE',
+    'GIFT_SENT',
+    'GIFT_RECEIVED',
+    'WITHDRAWAL',
+    'P2P_ESCROW_LOCK',
+    'P2P_ESCROW_RELEASE',
+    'ADMIN_ADJUSTMENT',
+    'SWAP',
+    'RESELLER_ALLOCATION',
+    'REFUND',
+    'CHARGEBACK_REVERSAL',
+    'SETTLEMENT_PAYOUT',
+    'COMMISSION_PAYOUT',
+    'SETTLEMENT_ADJUSTMENT',
+  ];
+  if (valid.includes(upper)) return upper;
+  if (upper.includes('PURCHASE') || upper.includes('STORE')) return 'SWAP';
+  if (upper.includes('RECHARGE')) return 'RECHARGE';
+  return 'ADMIN_ADJUSTMENT';
+}
+
 /**
  * Creates an immutable append-only ledger entry in WalletLedger.
  */
@@ -19,7 +43,7 @@ export async function createEntry(
   return await db.walletLedger.create({
     data: {
       walletId,
-      transactionType,
+      transactionType: normalizeLedgerType(transactionType),
       coinDelta: BigInt(coinDelta),
       diamondDelta: BigInt(diamondDelta),
       usdDelta,

@@ -109,10 +109,27 @@ export async function getPlatformStats(db = prisma) {
   };
 }
 
+/**
+ * Creates a new wallet for a user.
+ */
+export async function createWallet(userId, db = prisma) {
+  if (!userId) return null;
+  return await db.wallet.create({
+    data: {
+      userId,
+      coinBalance: 0n,
+      diamondBalance: 0n,
+      sellerBalanceCoins: 0n,
+      escrowLockedCoins: 0n,
+    },
+  });
+}
+
 export default {
   findByUserId,
   findById,
   findWithLock,
+  createWallet,
   updateBalances,
   getPlatformStats,
 };

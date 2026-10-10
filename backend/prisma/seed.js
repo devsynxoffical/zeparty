@@ -353,17 +353,56 @@ async function seed() {
 
   // 10. Seed Canonical Store Assets
   const baselineAssets = [
-    { id: 'ast-car-01', name: 'Golden Sports Car', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 500000n, validDays: 30, thumbnailUrl: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=200&auto=format&fit=crop&q=80', isVipExclusive: true, minVipLevelRequired: 3 },
-    { id: 'ast-car-02', name: 'Cyberpunk Hovercraft', assetType: 'VEHICLE', assetSubcategory: 'STATIC', priceCoins: 400000n, validDays: 30, thumbnailUrl: 'https://images.unsplash.com/photo-1542282088-72c9c27ed0cd?w=200&auto=format&fit=crop&q=80', isVipExclusive: false, minVipLevelRequired: 0 },
-    { id: 'ast-frame-01', name: 'Golden Warrior Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 300000n, validDays: 15, thumbnailUrl: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=200&auto=format&fit=crop&q=80', isVipExclusive: false, minVipLevelRequired: 0 },
-    { id: 'ast-frame-02', name: 'Neon Cyber Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 350000n, validDays: 15, thumbnailUrl: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=200&auto=format&fit=crop&q=80', isVipExclusive: false, minVipLevelRequired: 0 },
-    { id: 'ast-bubble-01', name: 'Galactic Chat Bubble', assetType: 'CHAT_BUBBLE', assetSubcategory: 'STATIC', priceCoins: 250000n, validDays: 30, thumbnailUrl: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=200&auto=format&fit=crop&q=80', isVipExclusive: false, minVipLevelRequired: 0 },
+    // Cars
+    { id: 'car_phantom', name: 'Phantom Hypercar', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 500000n, validDays: 30, thumbnailUrl: 'assets/animations/mystery_entry.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'car_astral', name: 'Astral Dragon Mount', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 350000n, validDays: 30, thumbnailUrl: 'assets/nobles/emperor_entrance.png', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'car_royal', name: 'Royal Chariot', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 200000n, validDays: 30, thumbnailUrl: 'assets/nobles/marquis_entrance.png', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'car_cyber_jet', name: 'Cyber Hoverjet', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 150000n, validDays: 30, thumbnailUrl: 'assets/svip/svip12_entry.png', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'car_gold_cruiser', name: 'Gold Cruiser', assetType: 'VEHICLE', assetSubcategory: 'STATIC', priceCoins: 80000n, validDays: 30, thumbnailUrl: 'assets/svip/svip8_entry.png', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'car_neon_coupe', name: 'Neon Coupe', assetType: 'VEHICLE', assetSubcategory: 'STATIC', priceCoins: 45000n, validDays: 30, thumbnailUrl: 'assets/svip/svip6_entry.png', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'ast-car-01', name: 'Golden Sports Car', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 500000n, validDays: 30, thumbnailUrl: 'https://cdn.zeparty.app/assets/cars/car_gold.png', isVipExclusive: true, minVipLevelRequired: 3 },
+    { id: 'ast-car-02', name: 'Luxury SUV', assetType: 'VEHICLE', assetSubcategory: 'STATIC', priceCoins: 400000n, validDays: 30, thumbnailUrl: 'https://cdn.zeparty.app/assets/cars/suv_black.png', isVipExclusive: false, minVipLevelRequired: 0 },
+    // Frames
+    { id: 'frame_zp134', name: 'Golden Glory Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 250000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-134_avatar-frames_frame.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'frame_zp135', name: 'Starlight Crown Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 180000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-135_avatar-frames_frame.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'frame_zp136', name: 'Cyber Neon Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 120000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-136_avatar-frames_frame.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'frame_zp137', name: 'Celestial Aura Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 90000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-137_avatar-frames_frame.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'frame_zp138', name: 'Luxe Diamond Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 60000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-138_avatar-frames_frame.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'frame_zp139', name: 'Mystic Wings Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 40000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-139_avatar-frames_frame.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'frame_zp140', name: 'Solar Flare Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 25000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-140_avatar-frames_frame.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'frame_zp141', name: 'Vortex Shield Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 300000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-141_avatar-frames_frame.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'frame_zp142', name: 'Astral Ring Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 200000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-142_avatar-frames_frame.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'frame_zp143', name: 'Phantom Elite Frame', assetType: 'FRAME', assetSubcategory: 'STATIC', priceCoins: 100000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-143_avatar-frames_frame.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    // Bubbles
+    { id: 'bubble_zp144', name: 'Golden Royal Bubble', assetType: 'CHAT_BUBBLE', assetSubcategory: 'STATIC', priceCoins: 150000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-144_chat-bubbles_bubble.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'bubble_zp145', name: 'Purple Luxe Bubble', assetType: 'CHAT_BUBBLE', assetSubcategory: 'STATIC', priceCoins: 90000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-145_chat-bubbles_bubble.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'bubble_zp146', name: 'Crimson Flame Bubble', assetType: 'CHAT_BUBBLE', assetSubcategory: 'STATIC', priceCoins: 70000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-146_chat-bubbles_bubble.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'bubble_zp147', name: 'Royal Blue Bubble', assetType: 'CHAT_BUBBLE', assetSubcategory: 'STATIC', priceCoins: 45000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-147_chat-bubbles_bubble.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'bubble_zp148', name: 'Sparkle Gold Bubble', assetType: 'CHAT_BUBBLE', assetSubcategory: 'STATIC', priceCoins: 200000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-148_chat-bubbles_bubble.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    // Cards
+    { id: 'card_zp165', name: 'Golden Supreme Card', assetType: 'BADGE', assetSubcategory: 'STATIC', priceCoins: 250000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-165_special-cards_card.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'card_zp166', name: 'Starlight Royalty Card', assetType: 'BADGE', assetSubcategory: 'STATIC', priceCoins: 180000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-166_special-cards_card.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    // Backgrounds
+    { id: 'bg_zp159', name: 'Imperial Palace Realm', assetType: 'ENTRY_EFFECT', assetSubcategory: 'STATIC', priceCoins: 300000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-159_room-backgrounds_background.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'bg_zp160', name: 'Starlight Castle Theme', assetType: 'ENTRY_EFFECT', assetSubcategory: 'STATIC', priceCoins: 120000n, validDays: 30, thumbnailUrl: 'assets/store/ZP-160_room-backgrounds_background.webp', isVipExclusive: false, minVipLevelRequired: 0 },
   ];
 
   for (const a of baselineAssets) {
     await prisma.asset.upsert({
       where: { id: a.id },
-      update: {},
+      update: {
+        name: a.name,
+        assetType: a.assetType,
+        assetSubcategory: a.assetSubcategory,
+        priceCoins: a.priceCoins,
+        validDays: a.validDays,
+        thumbnailUrl: a.thumbnailUrl,
+        staticFileUrl: a.thumbnailUrl,
+        roomAvailability: 'BOTH',
+        isVipExclusive: a.isVipExclusive,
+        minVipLevelRequired: a.minVipLevelRequired,
+        isActive: true,
+      },
       create: {
         id: a.id,
         name: a.name,
@@ -372,6 +411,7 @@ async function seed() {
         priceCoins: a.priceCoins,
         validDays: a.validDays,
         thumbnailUrl: a.thumbnailUrl,
+        staticFileUrl: a.thumbnailUrl,
         roomAvailability: 'BOTH',
         isVipExclusive: a.isVipExclusive,
         minVipLevelRequired: a.minVipLevelRequired,
