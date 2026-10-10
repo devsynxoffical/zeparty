@@ -1,4 +1,5 @@
 import roomRepository from '../repositories/room.repository.js';
+import userRepository from '../repositories/user.repository.js';
 import roomService from '../services/room.service.js';
 import presenceService from './presence.service.js';
 import { startHostAbsentTimer, clearHostAbsentTimer } from './roomTimer.manager.js';
@@ -470,17 +471,45 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
       socket.join(`room:${roomId}`);
     }
 
+    const senderId = socket.user?.id || socket.userId;
+    let senderName = socket.user?.displayName || socket.user?.name || socket.user?.username;
+    let senderAvatar = socket.user?.avatarUrl;
+    let senderVip = Boolean(socket.user?.isVip);
+    let senderNoble = socket.user?.nobleTitle || socket.user?.nobleLevel;
+    let senderRole = socket.user?.role;
+    let senderFrame = socket.user?.avatarFrame;
+    let senderBubble = socket.user?.chatBubble;
+
+    if (!senderName || senderName === 'User' || senderName === 'ZeParty Member') {
+      try {
+        const dbUser = await userRepository.findById(senderId);
+        if (dbUser) {
+          senderName = dbUser.profile?.displayName || dbUser.username || 'User';
+          senderAvatar = dbUser.profile?.avatarUrl || dbUser.avatarUrl || senderAvatar;
+          senderVip = Boolean(dbUser.profile?.vipLevel > 0 || dbUser.profile?.svipLevel > 0);
+          senderNoble = dbUser.profile?.nobleRank || senderNoble;
+          senderRole = dbUser.userType;
+        }
+      } catch (_) {}
+    }
+
     const payload = {
-      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: data?.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       roomId,
+      senderUserId: senderId,
       sender: {
-        id: socket.user?.id || socket.userId,
+        id: senderId,
+        userId: senderId,
         username: socket.user?.username || 'user',
-        displayName: socket.user?.displayName || socket.user?.name || socket.user?.username || 'User',
-        avatarUrl: socket.user?.avatarUrl || socket.user?.profile?.avatarUrl || null,
-        isVip: Boolean(socket.user?.isVip),
-        nobleLevel: socket.user?.nobleLevel || null,
-        nobleTitle: socket.user?.nobleTitle || null,
+        name: senderName || 'User',
+        displayName: senderName || 'User',
+        avatarUrl: senderAvatar || null,
+        avatarFrame: senderFrame || null,
+        chatBubble: senderBubble || null,
+        isVip: senderVip,
+        nobleLevel: senderNoble || null,
+        nobleTitle: senderNoble || null,
+        role: senderRole || null,
       },
       text: text.substring(0, 500),
       timestamp: new Date().toISOString(),
@@ -489,8 +518,6 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
 
     const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
     broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
-    broadcastTarget.emit('chat:message', payload);
-    broadcastTarget.emit('room_chat_message', payload);
 
     if (typeof callback === 'function') {
       return callback({ success: true, data: payload });

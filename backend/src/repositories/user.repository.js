@@ -25,6 +25,8 @@ export async function findById(id, db = prisma) {
   });
 }
 
+export const findUserById = findById;
+
 export async function findByEmail(email, db = prisma) {
   if (!email) return null;
   return await db.user.findUnique({

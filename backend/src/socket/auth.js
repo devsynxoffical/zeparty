@@ -49,21 +49,23 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
     // Look up user to verify active account status
     let user;
     if (customUserLookup) {
-      if (typeof customUserLookup.findUserById === 'function') {
+      if (typeof customUserLookup.findById === 'function') {
+        user = await customUserLookup.findById(userId);
+      } else if (typeof customUserLookup.findUserById === 'function') {
         user = await customUserLookup.findUserById(userId);
       } else if (customUserLookup.user && typeof customUserLookup.user.findUnique === 'function') {
-        user = await customUserLookup.user.findUnique({ where: { id: userId } });
+        user = await customUserLookup.user.findUnique({ where: { id: userId }, include: { profile: true } });
       } else if (typeof customUserLookup === 'function') {
         user = await customUserLookup(userId);
       }
     } else {
-      user = await userRepository.findUserById(userId).catch(() => null);
+      user = await (userRepository.findById ? userRepository.findById(userId) : userRepository.findUserById(userId)).catch(() => null);
     }
 
     if (!user) {
       user = {
         id: userId,
-        username: 'guest_' + userId.substring(0, 6),
+        username: 'guest_' + String(userId).substring(0, 6),
         status: 'ACTIVE',
         profile: { displayName: 'ZeParty Member' },
       };
@@ -75,17 +77,24 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
       return next(err);
     }
 
+    const effectiveName = user.profile?.displayName || user.username || 'User';
+
     // Attach authenticated identity to socket
     socket.user = {
       id: user.id,
       userId: user.id,
       username: user.username,
-      displayName: user.profile?.displayName || user.username,
-      avatarUrl: user.profile?.avatarUrl || null,
+      name: effectiveName,
+      displayName: effectiveName,
+      avatarUrl: user.profile?.avatarUrl || user.avatarUrl || null,
       status: user.status || 'ACTIVE',
+      isVip: Boolean(user.profile?.vipLevel > 0 || user.profile?.svipLevel > 0),
+      isHost: user.userType === 'HOST',
+      nobleTitle: user.profile?.nobleRank || null,
+      nobleLevel: user.profile?.nobleRank || null,
       isAdmin: decoded.isAdmin || false,
       isOwner: decoded.isOwner || false,
-      role: decoded.role || null,
+      role: user.userType || decoded.role || null,
     };
 
     socket.userId = user.id;
