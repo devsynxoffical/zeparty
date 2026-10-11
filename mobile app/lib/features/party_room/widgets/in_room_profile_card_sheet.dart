@@ -94,10 +94,10 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
       minChildSize: 0.50,
       maxChildSize: 0.94,
       builder: (ctx, scrollController) => Container(
-        decoration: BoxDecoration(
-          color: widget.isDark ? const Color(0xFF141024) : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          boxShadow: const [
+        decoration: const BoxDecoration(
+          color: Color(0xFF141024),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          boxShadow: [
             BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
           ],
         ),

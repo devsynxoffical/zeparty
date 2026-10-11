@@ -93,6 +93,15 @@ class StoreProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final spent = wallet.spendCoins(item.priceCoins, 'Store Purchase: ${item.name}');
+      if (!spent) {
+        _pendingPurchaseKeys.remove(idempotencyKey);
+        _isLoading = false;
+        _errorMessage = 'Insufficient coins balance';
+        notifyListeners();
+        return false;
+      }
+
       await _storeRepository.purchaseAsset(
         assetId: item.id,
         idempotencyKey: idempotencyKey,

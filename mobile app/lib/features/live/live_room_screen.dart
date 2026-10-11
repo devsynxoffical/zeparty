@@ -2219,9 +2219,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                     runSpacing: 20,
                                     alignment: WrapAlignment.center,
                                     children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.rocket_launch_rounded, color: Colors.indigoAccent, size: 28),
-                                        onPressed: () {
+                                      InkWell(
+                                        borderRadius: BorderRadius.circular(16),
+                                        onTap: () {
                                           Navigator.pop(bCtx);
                                           showModalBottomSheet(
                                             context: context,
@@ -2230,10 +2230,36 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                             builder: (_) => const RocketGameSheet(),
                                           );
                                         },
+                                        child: Container(
+                                          width: 46,
+                                          height: 46,
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            gradient: const RadialGradient(
+                                              colors: [Color(0xFF3949AB), Color(0xFF1A237E)],
+                                            ),
+                                            borderRadius: BorderRadius.circular(14),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.indigoAccent.withValues(alpha: 0.4),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 3),
+                                              ),
+                                            ],
+                                          ),
+                                          child: ClipRRect(
+                                            borderRadius: BorderRadius.circular(10),
+                                            child: Image.asset(
+                                              'assets/images/party_rocket_icon.jpg',
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => const Icon(Icons.rocket_launch_rounded, color: Colors.indigoAccent, size: 26),
+                                            ),
+                                          ),
+                                        ),
                                       ),
-                                      IconButton(
-                                        icon: const Icon(Icons.card_giftcard_rounded, color: Colors.pinkAccent, size: 28),
-                                        onPressed: () {
+                                      InkWell(
+                                        borderRadius: BorderRadius.circular(16),
+                                        onTap: () {
                                           Navigator.pop(bCtx);
                                           showModalBottomSheet(
                                             context: context,
@@ -2254,20 +2280,89 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                             },
                                           );
                                         },
+                                        child: Container(
+                                          width: 46,
+                                          height: 46,
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            gradient: const RadialGradient(
+                                              colors: [Color(0xFFD81B60), Color(0xFF880E4F)],
+                                            ),
+                                            borderRadius: BorderRadius.circular(14),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.pinkAccent.withValues(alpha: 0.4),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 3),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Image.asset(
+                                            'assets/images/party_tool_gift.png',
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) => const Icon(Icons.card_giftcard_rounded, color: Colors.pinkAccent, size: 26),
+                                          ),
+                                        ),
                                       ),
-                                      IconButton(
-                                        icon: const Icon(Icons.sports_esports_rounded, color: Colors.amber, size: 28),
-                                        onPressed: () {
+                                      InkWell(
+                                        borderRadius: BorderRadius.circular(16),
+                                        onTap: () {
                                           Navigator.pop(bCtx);
                                           Navigator.push(context, MaterialPageRoute(builder: (_) => const GameLobbyScreen()));
                                         },
+                                        child: Container(
+                                          width: 46,
+                                          height: 46,
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            gradient: const RadialGradient(
+                                              colors: [Color(0xFFFFB300), Color(0xFFE65100)],
+                                            ),
+                                            borderRadius: BorderRadius.circular(14),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.amber.withValues(alpha: 0.4),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 3),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Image.asset(
+                                            'assets/images/party_tool_game_center.png',
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) => const Icon(Icons.sports_esports_rounded, color: Colors.amber, size: 26),
+                                          ),
+                                        ),
                                       ),
-                                      IconButton(
-                                        icon: const Icon(Icons.flash_on_rounded, color: Colors.deepOrangeAccent, size: 28),
-                                        onPressed: () {
+                                      InkWell(
+                                        borderRadius: BorderRadius.circular(16),
+                                        onTap: () {
                                           Navigator.pop(bCtx);
                                           Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
                                         },
+                                        child: Container(
+                                          width: 46,
+                                          height: 46,
+                                          padding: const EdgeInsets.all(4),
+                                          decoration: BoxDecoration(
+                                            gradient: const RadialGradient(
+                                              colors: [Color(0xFFFF5722), Color(0xFFBF360C)],
+                                            ),
+                                            borderRadius: BorderRadius.circular(14),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.deepOrangeAccent.withValues(alpha: 0.4),
+                                                blurRadius: 8,
+                                                offset: const Offset(0, 3),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Image.asset(
+                                            'assets/images/party_tool_pk_match.png',
+                                            fit: BoxFit.contain,
+                                            errorBuilder: (_, __, ___) => const Icon(Icons.flash_on_rounded, color: Colors.deepOrangeAccent, size: 26),
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),

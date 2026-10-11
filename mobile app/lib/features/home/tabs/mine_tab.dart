@@ -86,7 +86,6 @@ class _MineTabState extends State<MineTab> {
           ),
           const SizedBox(height: 24),
 
-          // ── FILTER PILLS ────────────────────────────────────────────────────────────
           Row(
             children: ['Recently', 'Following', 'Friends'].asMap().entries.map((entry) {
               final idx = entry.key;
@@ -124,9 +123,10 @@ class _MineTabState extends State<MineTab> {
                 itemCount: recentRooms.length,
                 itemBuilder: (context, index) {
                   final room = recentRooms[index];
+                  final isParty = room.id.startsWith('party_') || room.category == 'Party' || room.roomType.toUpperCase().contains('PARTY') || room.roomType.toUpperCase().contains('AUDIO');
                   return GestureDetector(
                     onTap: () {
-                      if (room.id.startsWith('party_') || room.category == 'Party') {
+                      if (isParty) {
                         Navigator.push(context, MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: room)));
                       } else {
                         Navigator.push(context, MaterialPageRoute(builder: (_) => LiveRoomScreen(room: room)));
@@ -156,8 +156,8 @@ class _MineTabState extends State<MineTab> {
                           children: [
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(6)),
-                              child: const Text('● LIVE', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                              decoration: BoxDecoration(color: isParty ? Colors.orange : Colors.red, borderRadius: BorderRadius.circular(6)),
+                              child: Text(isParty ? '● PARTY' : '● LIVE', style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
                             ),
                             const SizedBox(height: 4),
                             Text(room.title, maxLines: 2, overflow: TextOverflow.ellipsis,
@@ -179,9 +179,10 @@ class _MineTabState extends State<MineTab> {
               itemCount: liveRooms.length,
               itemBuilder: (context, index) {
                 final room = liveRooms[index];
+                final isParty = room.id.startsWith('party_') || room.category == 'Party' || room.roomType.toUpperCase().contains('PARTY') || room.roomType.toUpperCase().contains('AUDIO');
                 return GestureDetector(
                   onTap: () {
-                    if (room.id.startsWith('party_') || room.category == 'Party') {
+                    if (isParty) {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: room)));
                     } else {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => LiveRoomScreen(room: room)));
@@ -215,11 +216,11 @@ class _MineTabState extends State<MineTab> {
                                 children: [
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
+                                    decoration: BoxDecoration(color: (isParty ? Colors.orange : Colors.red).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
                                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                      Container(width: 6, height: 6, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
+                                      Container(width: 6, height: 6, decoration: BoxDecoration(color: isParty ? Colors.orange : Colors.red, shape: BoxShape.circle)),
                                       const SizedBox(width: 4),
-                                      const Text('LIVE', style: TextStyle(color: Colors.red, fontSize: 9, fontWeight: FontWeight.bold)),
+                                      Text(isParty ? 'PARTY' : 'LIVE', style: TextStyle(color: isParty ? Colors.orange : Colors.red, fontSize: 9, fontWeight: FontWeight.bold)),
                                     ]),
                                   ),
                                   const SizedBox(width: 8),

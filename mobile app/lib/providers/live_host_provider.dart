@@ -96,15 +96,18 @@ class LiveHostProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    // 1. Submit to Backend API
+    // 1. Submit to Backend API (Module 08 Specification: ID fields removed)
     try {
       await ApiClient.instance.post(
-        '/v1/hosts/apply',
+        '/v1/hosts/apply-live',
         data: {
-          'hostType': hostType,
-          'idCardFrontUrl': app.frontIdUrl.isNotEmpty ? app.frontIdUrl : 'https://example.com/id_front.jpg',
-          'idCardBackUrl': app.backIdUrl.isNotEmpty ? app.backIdUrl : 'https://example.com/id_back.jpg',
-          'videoSampleUrl': app.selfieUrl.isNotEmpty ? app.selfieUrl : 'https://example.com/video_sample.mp4',
+          'name': app.legalName,
+          'displayName': app.displayName,
+          'dateOfBirth': app.dateOfBirth,
+          'gender': app.gender.toUpperCase(),
+          'phone': app.phoneOrEmail,
+          'contentCategory': app.category,
+          'hostIntroduction': app.schedule,
         },
       );
     } catch (e) {

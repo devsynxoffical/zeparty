@@ -568,35 +568,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 ),
                                 const SizedBox(height: 2),
                                 if (_user != null) ...[
-                                  // 1. LIVE / IN ROOM Status Badge
-                                  if (_user != null && _user!.isLive) ...[
-                                    GestureDetector(
-                                      onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
-                                      child: Container(
-                                        margin: const EdgeInsets.only(bottom: 6, right: 6),
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          gradient: const LinearGradient(colors: [Color(0xFFFF1744), Color(0xFFFF5252)]),
-                                          borderRadius: BorderRadius.circular(16),
-                                          border: Border.all(color: Colors.white, width: 1.2),
-                                          boxShadow: [
-                                            BoxShadow(color: const Color(0xFFFF1744).withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 1),
-                                          ],
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.videocam_rounded, color: Colors.white, size: 13),
-                                            SizedBox(width: 4),
-                                            Text(
-                                              '🔴 LIVE',
-                                              style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.5),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
 
                                   // 2. Online / Last Active Status Badge cleanly below 3-dot overflow menu
                                   Container(
@@ -694,6 +665,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 ? AppColors.getSurface(isDark)
                                 : AppColors.getPrimary(isDark),
                             elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)),
                           ),
                           onPressed: () {
@@ -722,14 +694,17 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 : AppColors.onPrimary(isDark: isDark),
                             size: 18,
                           ),
-                          label: Text(
-                            isFollowing ? 'Following' : 'Follow',
-                            style: TextStyle(
-                              color: isFollowing
-                                  ? AppColors.getTextPrimary(isDark)
-                                  : AppColors.onPrimary(isDark: isDark),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              isFollowing ? 'Following' : 'Follow',
+                              style: TextStyle(
+                                color: isFollowing
+                                    ? AppColors.getTextPrimary(isDark)
+                                    : AppColors.onPrimary(isDark: isDark),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13.5,
+                              ),
                             ),
                           ),
                         ),
@@ -747,6 +722,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                           style: ElevatedButton.styleFrom(
                             backgroundColor: isDark ? const Color(0xFF2A233D) : const Color(0xFFEBE8F3),
                             elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)),
                           ),
                           onPressed: () {
@@ -758,12 +734,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                             });
                           },
                           icon: Icon(Icons.chat_bubble_rounded, color: AppColors.getTextPrimary(isDark), size: 18),
-                          label: Text(
-                            'Message',
-                            style: TextStyle(
-                              color: AppColors.getTextPrimary(isDark),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'Message',
+                              style: TextStyle(
+                                color: AppColors.getTextPrimary(isDark),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13.5,
+                              ),
                             ),
                           ),
                         ),
@@ -779,7 +758,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.pinkAccent,
                           elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)),
                         ),
                         onPressed: () {
@@ -796,12 +775,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                           });
                         },
                         icon: const Icon(Icons.card_giftcard_rounded, color: Colors.white, size: 18),
-                        label: const Text(
-                          'Gift',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            'Gift',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13.5,
+                            ),
                           ),
                         ),
                       ),
@@ -1342,23 +1324,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     );
   }
 
-  Color _getLevelColor(int level) {
-    if (level <= 1) return const Color(0xFF607D8B); // Grey for 0 and 1
-    if (level < 10) return const Color(0xFF29B6F6);
-    if (level < 20) return const Color(0xFF66BB6A);
-    if (level < 30) return const Color(0xFFFFA726);
-    if (level < 40) return const Color(0xFFAB47BC);
-    if (level < 50) return const Color(0xFFEF5350);
-    if (level < 60) return const Color(0xFF26A69A);
-    if (level < 70) return const Color(0xFFEC407A);
-    if (level < 80) return const Color(0xFF5C6BC0);
-    if (level < 90) return const Color(0xFFFF7043);
-    return const Color(0xFFFFCA28);
-  }
-
-  Color _getBgColor(int level) {
-    return _getLevelColor(level).withValues(alpha: 0.15);
-  }
 
   // Tag Badges Section -- shows only real earned level indicators & assigned custom titles
   Widget _buildProfileTags(bool isDark, SVIPProvider svip) {
@@ -1489,13 +1454,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     final primaryText = AppColors.getTextPrimary(isDark);
     // Filter earned medals based on isEarned flag or user milestone achievements
     final earnedMedals = MedalModel.defaultMedals.where((m) {
+      if (_user != null && m.isUnlockedForLevel(_user!.wealthLevel)) return true;
       if (m.isEarned) return true;
-      if (_user != null) {
-        if (m.id == 'm1' && _user!.isHost) return true;
-        if (m.id == 'm2' && _user!.wealthLevel >= 3) return true;
-        if (m.id == 'm3' && (_user!.followers >= 50 || _user!.charmLevel >= 3)) return true;
-        if (m.id == 'm4' && (_user!.svipLevel >= 1 || _user!.nobleTitle != null || _user!.role == UserRole.admin)) return true;
-      }
       return false;
     }).toList();
     final medalsCount = earnedMedals.length;
@@ -1552,6 +1512,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   }
 
   Widget _buildMedalCircleAsset(MedalModel medal) {
+    final assetPath = medal.iconUrl.startsWith('assets/')
+        ? medal.iconUrl
+        : 'assets/nobles/${medal.iconUrl}.png';
+
     return Container(
       width: 52,
       height: 52,
@@ -1565,7 +1529,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         ],
       ),
       child: Image.asset(
-        'assets/medals/${medal.iconUrl}.webp',
+        assetPath,
         fit: BoxFit.contain,
         errorBuilder: (_, __, ___) => const Icon(Icons.emoji_events_rounded, size: 26, color: Colors.amber),
       ),
@@ -1604,7 +1568,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       }
 
       if (_user!.isHost) {
-        activeBadges.add({'asset': 'assets/roles/host_tag.webp', 'label': 'Official Host', 'color': Colors.orangeAccent});
+        activeBadges.add({'asset': 'assets/roles/host_badge.webp', 'label': 'Official Host', 'color': Colors.orangeAccent});
       }
 
       if (_user!.isSeller) {
@@ -1669,6 +1633,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       assetPath: b['asset'] as String,
                       fallbackLabel: b['label'] as String,
                       fallbackColor: b['color'] as Color,
+                      isDark: isDark,
                       onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
                     ),
                     const SizedBox(width: 8),
@@ -1686,17 +1651,28 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     required String fallbackLabel,
     required Color fallbackColor,
     required VoidCallback onTap,
+    bool isDark = true,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
+          color: isDark ? const Color(0xFF221A36) : const Color(0xFFF3EDF7),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: fallbackColor.withValues(alpha: 0.35), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: fallbackColor.withValues(alpha: 0.15),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Image.asset(
           assetPath,
-          height: 28,
+          height: 42,
           fit: BoxFit.contain,
           errorBuilder: (_, __, ___) => Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1707,7 +1683,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             ),
             child: Text(
               fallbackLabel,
-              style: TextStyle(color: fallbackColor, fontSize: 11, fontWeight: FontWeight.bold),
+              style: TextStyle(color: fallbackColor, fontSize: 12, fontWeight: FontWeight.bold),
             ),
           ),
         ),
@@ -1777,7 +1753,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         _buildBadgeModalItem('Duke', 'assets/nobles/duke_badge.webp', 'assets/nobles/duke_frame.webp', const Color(0xFF8E24AA), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('duke') == true),
                         _buildBadgeModalItem('Marquis', 'assets/nobles/marquis_badge.webp', 'assets/nobles/marquis_frame.webp', const Color(0xFFC2185B), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('marquis') == true),
                         _buildBadgeModalItem('Count', 'assets/nobles/count_badge.webp', 'assets/nobles/count_frame.webp', const Color(0xFF1E88E5), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('count') == true),
-                        _buildBadgeModalItem('Viscount', 'assets/nobles/viscount_card.webp', 'assets/nobles/viscount_frame.webp', const Color(0xFFFB8C00), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('viscount') == true),
+                        _buildBadgeModalItem('Viscount', 'assets/nobles/viscount_badge.webp', 'assets/nobles/viscount_frame.webp', const Color(0xFFFB8C00), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('viscount') == true),
                         _buildBadgeModalItem('Baron', 'assets/nobles/baron_badge.webp', 'assets/nobles/baron_frame.webp', const Color(0xFF78909C), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('baron') == true),
                       ],
                     ),
@@ -1793,8 +1769,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       children: [
                         _buildBadgeModalItem('Super Admin', 'assets/roles/super_admin_tag.webp', 'assets/roles/super_admin_frame.webp', Colors.redAccent, isUnlocked: _user?.role == UserRole.admin),
                         _buildBadgeModalItem('Admin', 'assets/roles/admin_badge.webp', 'assets/roles/admin_frame.webp', Colors.deepOrangeAccent, isUnlocked: _user?.role == UserRole.admin),
-                        _buildBadgeModalItem('Agency', 'assets/roles/agency_badge.webp', 'assets/roles/agency_frame.webp', Colors.cyan, isUnlocked: _user?.isAgency == true),
-                        _buildBadgeModalItem('BD Manager', 'assets/roles/bd_badge.webp', 'assets/roles/bd_frame.webp', Colors.teal, isUnlocked: _user?.isBd == true),
+                        _buildBadgeModalItem('Agency', 'assets/roles/agency_tag.webp', 'assets/roles/agency_frame.webp', Colors.cyan, isUnlocked: _user?.isAgency == true),
+                        _buildBadgeModalItem('BD Manager', 'assets/roles/bd_tag.webp', 'assets/roles/bd_frame.webp', Colors.teal, isUnlocked: _user?.isBd == true),
                         _buildBadgeModalItem('Game Master', 'assets/roles/game_master_badge.webp', 'assets/roles/game_master_frame.webp', Colors.amber, isUnlocked: _user?.role == UserRole.admin),
                         _buildBadgeModalItem('Official Host', 'assets/roles/host_badge.webp', 'assets/roles/host_frame.webp', Colors.orange, isUnlocked: _user?.isHost == true),
                         _buildBadgeModalItem('Coin Merchant', 'assets/roles/marchent_badge.webp', 'assets/roles/marchent_frame.webp', Colors.blue, isUnlocked: _user?.isSeller == true),

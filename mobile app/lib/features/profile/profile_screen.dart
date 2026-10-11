@@ -805,13 +805,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (isBdAuthorized)
         {
           'title': 'BD Center',
-          'imagePath': 'assets/images/profile_admin.jpg',
+          'imagePath': 'assets/images/zeparty_logo.jpg',
           'badge': 'BD',
           'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const BDCenterDashboardScreen())),
         },
       {
         'title': hasLiveHostAccess ? 'Live Host Center' : 'Become a Live Host',
-        'imagePath': 'assets/images/profile_livehost.jpg',
+        'imagePath': 'assets/images/card_vip.jpg',
         'badge': hasLiveHostAccess ? 'DIRECT' : null,
         'onTap': () {
           if (hasLiveHostAccess) {
@@ -824,21 +824,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (isSellerAuthorized)
         {
           'title': 'Recharge Agency',
-          'imagePath': 'assets/images/profile_recharge_agency.jpg',
+          'imagePath': 'assets/images/coin_ze.png',
           'badge': 'SELLER',
           'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const RechargeAgencyScreen())),
         },
       if (isMerchantAuthorized)
         {
           'title': 'Merchant Center',
-          'imagePath': 'assets/images/profile_merchant.jpg',
+          'imagePath': 'assets/images/gift_gold_crown.jpg',
           'badge': 'MERCHANT',
           'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const MerchantCenterScreen())),
         },
       if (isAdminAuthorized)
         {
           'title': 'Admin',
-          'imagePath': 'assets/images/profile_admin.jpg',
+          'imagePath': 'assets/images/zeparty_logo.jpg',
           'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const AdminAgencyPanel())),
         },
     ];

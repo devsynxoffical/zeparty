@@ -272,7 +272,6 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
 
               final auth = context.read<AuthProvider>();
               auth.sendCpRequest(targetUser.id);
-              auth.receiveMockCpRequest(targetUser.id); // For testing acceptance
 
               Navigator.pop(d);
               ScaffoldMessenger.of(context).showSnackBar(

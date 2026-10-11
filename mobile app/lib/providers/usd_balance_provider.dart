@@ -76,47 +76,12 @@ class UsdBalanceProvider extends ChangeNotifier {
   UsdBalanceProvider._internal();
 
   // Audio Host Personal USD Balance
-  double _audioHostAvailableBalance = 450.00;
-  double _audioHostPendingBalance = 0.00;
+  double _audioHostAvailableBalance = 0.00;
+  final double _audioHostPendingBalance = 0.00;
 
-  final List<AudioHostSalaryPeriod> _audioHostSalaryPeriods = [
-    const AudioHostSalaryPeriod(
-      periodId: 'P-2026-09-B',
-      periodLabel: 'Sep 16 - Sep 30, 2026',
-      earnedAmount: 450.00,
-      pendingAmount: 0.00,
-      availableAmount: 450.00,
-      status: 'Eligible',
-    ),
-    const AudioHostSalaryPeriod(
-      periodId: 'P-2026-09-A',
-      periodLabel: 'Sep 01 - Sep 15, 2026',
-      earnedAmount: 380.00,
-      pendingAmount: 0.00,
-      availableAmount: 0.00,
-      status: 'Paid',
-    ),
-  ];
+  final List<AudioHostSalaryPeriod> _audioHostSalaryPeriods = [];
 
-  final List<UsdTransactionModel> _audioHostWithdrawalHistory = [
-    UsdTransactionModel(
-      id: 'w_host_101',
-      senderId: 'host_aud_77',
-      senderName: 'Sophia Rose (Audio Host)',
-      senderRole: 'Audio Host',
-      agencyId: 'ag_royal',
-      agencyName: 'ZeParty Royal Agency',
-      recipientId: 'SEL-101',
-      recipientName: 'Global Reseller Alpha',
-      recipientType: 'Coin Seller',
-      usdAmount: 380.00,
-      payoutPeriod: 'Sep 01 - Sep 15, 2026',
-      timestamp: DateTime(2026, 9, 16, 14, 30),
-      referenceId: 'REF-HOST-3801',
-      status: 'Completed',
-      type: 'Payout Withdrawal',
-    ),
-  ];
+  final List<UsdTransactionModel> _audioHostWithdrawalHistory = [];
 
   // BD Operator Wallet
   double _bdAvailableBalance = 3450.00;

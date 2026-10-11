@@ -77,6 +77,14 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  void updateEquippedBadge(String badge) {
+    if (_currentUser != null) {
+      _currentUser = _currentUser!.copyWith(badge: badge);
+      _saveUserLocalSession(_currentUser!);
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
     _authStateSubscription?.cancel();

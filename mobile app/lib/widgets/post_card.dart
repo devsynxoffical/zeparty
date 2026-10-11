@@ -43,23 +43,36 @@ class PostCard extends StatelessWidget {
     final isLocal = !cleanPath.startsWith('http://') && !cleanPath.startsWith('https://');
     final file = isLocal ? File(cleanPath) : null;
 
+    final Widget mediaWidget;
     if (isLocal && file != null && file.existsSync()) {
-      return Image.file(
+      mediaWidget = Image.file(
         file,
         width: double.infinity,
-        height: 220,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => _buildImageError(),
       );
     } else {
-      return Image.network(
+      mediaWidget = Image.network(
         cleanPath,
         width: double.infinity,
-        height: 220,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => _buildImageError(),
       );
     }
+
+    return Container(
+      width: double.infinity,
+      height: 220,
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.25),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      alignment: Alignment.center,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: mediaWidget,
+      ),
+    );
   }
 
   Widget _buildImageError() {
@@ -289,83 +302,171 @@ class PostCard extends StatelessWidget {
               children: [
                 InkWell(
                   onTap: () => AuthGuard.require(context, onLike, reason: 'Sign in to like posts'),
-                  child: Row(
-                    children: [
-                      Icon(
-                        post.isLiked ? Icons.favorite : Icons.favorite_border,
-                        color: post.isLiked ? AppColors.live : Theme.of(context).iconTheme.color,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 4),
-                      Text('${post.likes}'),
-                    ],
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: post.isLiked
+                                ? const Color(0xFFFF2D55)
+                                : (Theme.of(context).brightness == Brightness.dark
+                                    ? Colors.white.withValues(alpha: 0.08)
+                                    : Colors.black.withValues(alpha: 0.06)),
+                            boxShadow: post.isLiked
+                                ? [
+                                    BoxShadow(
+                                      color: const Color(0xFFFF2D55).withValues(alpha: 0.45),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: Icon(
+                            post.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                            color: post.isLiked ? Colors.white : (Theme.of(context).iconTheme.color ?? Colors.grey),
+                            size: 17,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text('${post.likes}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
+                    ),
                   ),
                 ),
-              InkWell(
-                onTap: onComment,
-                child: Row(
-                  children: [
-                    const Icon(Icons.chat_bubble_outline, size: 20),
-                    const SizedBox(width: 4),
-                    Text('${post.comments}'),
-                  ],
+                InkWell(
+                  onTap: onComment,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white.withValues(alpha: 0.08)
+                                : Colors.black.withValues(alpha: 0.06),
+                          ),
+                          child: Icon(
+                            Icons.chat_bubble_rounded,
+                            color: Theme.of(context).iconTheme.color ?? Colors.grey,
+                            size: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text('${post.comments}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              InkWell(
-                onTap: () {
-                  AuthGuard.require(context, () {
-                    final currentUserId = auth.currentUser.id;
-                    if (currentUserId.isNotEmpty &&
-                        (currentUserId == post.author.id ||
-                         (post.author.username.isNotEmpty && currentUserId == post.author.username))) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('⚠️ You cannot send a gift to your own post.'),
-                          backgroundColor: Colors.orangeAccent,
+                InkWell(
+                  onTap: () {
+                    AuthGuard.require(context, () {
+                      final currentUserId = auth.currentUser.id;
+                      if (currentUserId.isNotEmpty &&
+                          (currentUserId == post.author.id ||
+                           (post.author.username.isNotEmpty && currentUserId == post.author.username))) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('⚠️ You cannot send a gift to your own post.'),
+                            backgroundColor: Colors.orangeAccent,
+                          ),
+                        );
+                        return;
+                      }
+
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (_) => GiftDialog(
+                          streamerName: displayAuthorName,
+                          targetReceiver: post.author,
+                          onGiftSent: (gift) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('🎁 Sent ${gift.name} to $displayAuthorName!'),
+                                backgroundColor: AppColors.success,
+                              ),
+                            );
+                          },
                         ),
                       );
-                      return;
-                    }
-
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (_) => GiftDialog(
-                        streamerName: displayAuthorName,
-                        targetReceiver: post.author,
-                        onGiftSent: (gift) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('🎁 Sent ${gift.name} to $displayAuthorName!'),
-                              backgroundColor: AppColors.success,
+                    }, reason: 'Sign in to gift creators');
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFF4081), Color(0xFFD81B60)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
-                          );
-                        },
-                      ),
-                    );
-                  }, reason: 'Sign in to gift creators');
-                },
-                child: const Row(
-                  children: [
-                    Icon(Icons.card_giftcard_rounded, color: AppColors.primary, size: 20),
-                    SizedBox(width: 4),
-                    Text('Gift'),
-                  ],
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFF4081).withValues(alpha: 0.4),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.card_giftcard_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text('Gift', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              InkWell(
-                onTap: onShare,
-                child: Row(
-                  children: [
-                    const Icon(Icons.share_outlined, size: 20),
-                    const SizedBox(width: 4),
-                    Text('${post.shares}'),
-                  ],
+                InkWell(
+                  onTap: onShare,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white.withValues(alpha: 0.08)
+                                : Colors.black.withValues(alpha: 0.06),
+                          ),
+                          child: Icon(
+                            Icons.share_rounded,
+                            color: Theme.of(context).iconTheme.color ?? Colors.grey,
+                            size: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text('${post.shares}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
         ],
       ),
     );

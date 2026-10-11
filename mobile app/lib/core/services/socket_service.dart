@@ -303,11 +303,8 @@ class SocketService {
     void handleChatMessage(dynamic data) {
       if (data != null) _roomChatMessageController.add(safeMap(data));
     }
+    _socket!.off('room:chat_message');
     _socket!.on('room:chat_message', handleChatMessage);
-    _socket!.on('chat_message', handleChatMessage);
-    _socket!.on('room_chat_message', handleChatMessage);
-    _socket!.on('room:chat', handleChatMessage);
-    _socket!.on('chat:message', handleChatMessage);
 
     _socket!.on('room:user_kicked', (data) {
       if (data != null) _userKickedController.add(safeMap(data));

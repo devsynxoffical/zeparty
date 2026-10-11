@@ -106,7 +106,6 @@ class VIPHonorProvider extends ChangeNotifier {
         for (int i = 0; i < rawData.length; i++) {
           final item = rawData[i];
           if (item is Map<String, dynamic>) {
-            final rank = (item['rank'] as num?)?.toInt() ?? (i + 1);
             final userObj = item['user'] is Map<String, dynamic> ? item['user'] : item;
             final userId = userObj['_id']?.toString() ?? userObj['id']?.toString() ?? 'user_$i';
             final nickname = userObj['name']?.toString() ?? userObj['nickname']?.toString() ?? 'VIP User';
@@ -115,17 +114,50 @@ class VIPHonorProvider extends ChangeNotifier {
             final points = (item['score'] as num?)?.toInt() ?? (item['points'] as num?)?.toInt() ?? (item['coins'] as num?)?.toInt() ?? 0;
             final countryFlag = userObj['countryFlag']?.toString() ?? '🌐';
 
+            // Filter out dummy/mock seed candidates
+            final nameLower = nickname.toLowerCase();
+            final idLower = userId.toLowerCase();
+            if (nameLower.contains('candidate') ||
+                nameLower.contains('tester') ||
+                nameLower.contains('dummy') ||
+                nameLower.contains('mock') ||
+                nameLower.contains('test user') ||
+                idLower.startsWith('target_') ||
+                idLower.startsWith('test_') ||
+                idLower.startsWith('dummy_')) {
+              continue;
+            }
+
+            final currentRank = loadedUsers.length + 1;
             loadedUsers.add(VIPRankUser(
-              rank: rank,
+              rank: currentRank,
               userId: userId,
               nickname: nickname,
               avatarUrl: avatarUrl,
               svipLevel: svipLvl,
               points: points,
               countryFlag: countryFlag,
-              badgeTitle: rank == 1 ? 'Grand Emperor ✨' : (rank == 2 ? 'Royal Queen 👑' : (rank == 3 ? 'Apex Duke ⚡' : null)),
+              badgeTitle: currentRank == 1 ? 'Grand Emperor ✨' : (currentRank == 2 ? 'Royal Queen 👑' : (currentRank == 3 ? 'Apex Duke ⚡' : null)),
             ));
           }
+        }
+      }
+
+      if (loadedUsers.isEmpty && auth != null && auth.hasUser) {
+        final user = auth.currentUser;
+        final currentPoints = svip?.currentPoints ?? user.coins;
+        final currentLevel = svip?.currentLevel ?? (int.tryParse(user.vipLevel) ?? 0);
+        if (currentPoints > 0 || currentLevel > 0) {
+          loadedUsers.add(VIPRankUser(
+            rank: 1,
+            userId: user.id,
+            nickname: user.name,
+            avatarUrl: user.avatarUrl,
+            svipLevel: currentLevel,
+            points: currentPoints,
+            countryFlag: '🌐',
+            badgeTitle: 'Grand Emperor ✨',
+          ));
         }
       }
 

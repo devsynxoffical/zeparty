@@ -1,14 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
-import '../core/theme/app_colors.dart';
 import '../core/services/api_client.dart';
 import '../core/services/socket_service.dart';
+import '../core/utils/banner_router.dart';
 import '../models/banner_item_model.dart';
-import '../features/social/short_videos_screen.dart';
-import '../features/games/game_lobby_screen.dart';
-import '../features/store/store_screen.dart';
-import '../features/vip/vip_store_screen.dart';
 
 class BannerCarouselWidget extends StatefulWidget {
   final bool isDark;
@@ -26,86 +21,45 @@ class BannerCarouselWidget extends StatefulWidget {
   State<BannerCarouselWidget> createState() => _BannerCarouselWidgetState();
 }
 
-class _BannerCardData {
-  final String id;
-  final String title;
-  final String subtitle;
-  final String tag;
-  final String? imageUrl;
-  final String action;
-  final List<Color> gradientColors;
-  final Color accentColor;
-  final IconData icon;
-
-  const _BannerCardData({
-    required this.id,
-    required this.title,
-    required this.subtitle,
-    required this.tag,
-    this.imageUrl,
-    required this.action,
-    required this.gradientColors,
-    required this.accentColor,
-    required this.icon,
-  });
-}
-
 class _BannerCarouselWidgetState extends State<BannerCarouselWidget> {
   late PageController _pageController;
   int _currentPage = 0;
   Timer? _timer;
   StreamSubscription? _socketBannerSub;
-  bool _isLoading = false;
 
-  // 4 Built-in Rich Preset Templates
-  static final List<_BannerCardData> _defaultTemplates = [
-    const _BannerCardData(
+  // Rich default templates shown as fallbacks
+  static final List<BannerItemModel> _defaultTemplates = [
+    BannerItemModel(
       id: 'template_welcome',
       title: '🎉 Welcome to ZeParty!',
       subtitle: 'HD 8-Seat Voice Rooms, Live Streams & Global Chat',
-      tag: 'WELCOME',
-      action: 'zeparty://party',
       imageUrl: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?auto=format&fit=crop&w=1000&q=80',
-      gradientColors: [Color(0xFF4C1D95), Color(0xFF2E1065), Color(0xFF1E1B4B)],
-      accentColor: Color(0xFFFFD700),
-      icon: Icons.celebration_rounded,
+      destinationUrl: 'zeparty://party',
     ),
-    const _BannerCardData(
+    BannerItemModel(
       id: 'template_updates',
       title: '🚀 Big Updates Coming Soon!',
       subtitle: '3D Soundstages, AI Avatars & Season 4 Tournaments',
-      tag: 'SNEAK PEEK',
-      action: 'zeparty://updates',
       imageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80',
-      gradientColors: [Color(0xFF0369A1), Color(0xFF0C4A6E), Color(0xFF082F49)],
-      accentColor: Color(0xFF38BDF8),
-      icon: Icons.rocket_launch_rounded,
+      destinationUrl: 'zeparty://updates',
     ),
-    const _BannerCardData(
+    BannerItemModel(
       id: 'template_pk_live',
       title: '⚔️ Epic PK Battles & Live Stream',
       subtitle: 'Challenge Top Creators & Vote in High-Stakes Matches',
-      tag: 'HOT BATTLE',
-      action: 'zeparty://live',
       imageUrl: 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1000&q=80',
-      gradientColors: [Color(0xFF991B1B), Color(0xFF7F1D1D), Color(0xFF450A0A)],
-      accentColor: Color(0xFFFB923C),
-      icon: Icons.local_fire_department_rounded,
+      destinationUrl: 'zeparty://live',
     ),
-    const _BannerCardData(
+    BannerItemModel(
       id: 'template_giftings',
       title: '🎁 Send Luxury Gifts & Win Big',
       subtitle: 'Super Cars, Dragon Ships & SVIP Wealth Badges',
-      tag: 'EXCLUSIVE REWARDS',
-      action: 'zeparty://store',
       imageUrl: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=1000&q=80',
-      gradientColors: [Color(0xFF065F46), Color(0xFF064E3B), Color(0xFF022C22)],
-      accentColor: Color(0xFFFBBF24),
-      icon: Icons.card_giftcard_rounded,
+      destinationUrl: 'zeparty://store',
     ),
   ];
 
-  List<_BannerCardData> _displayBanners = _defaultTemplates;
+  List<BannerItemModel> _displayBanners = _defaultTemplates;
 
   @override
   void initState() {
@@ -126,7 +80,10 @@ class _BannerCarouselWidgetState extends State<BannerCarouselWidget> {
 
   Future<void> _fetchBanners() async {
     try {
-      final response = await ApiClient.instance.get('/v1/banners/active');
+      final response = await ApiClient.instance.get(
+        '/v1/banners/active',
+        queryParameters: {'placement': 'HOME_CAROUSEL'},
+      );
       if (response.statusCode == 200 && response.data != null) {
         final dynamic rawData = response.data['data'] ?? response.data;
         if (rawData is List && rawData.isNotEmpty) {
@@ -137,7 +94,7 @@ class _BannerCarouselWidgetState extends State<BannerCarouselWidget> {
 
           if (fetched.isNotEmpty && mounted) {
             setState(() {
-              _displayBanners = fetched.map((b) => _mapModelToCard(b)).toList();
+              _displayBanners = fetched;
             });
             return;
           }
@@ -146,74 +103,6 @@ class _BannerCarouselWidgetState extends State<BannerCarouselWidget> {
     } catch (_) {
       // Fallback seamlessly to default templates if network unavailable
     }
-  }
-
-  _BannerCardData _mapModelToCard(BannerItemModel model) {
-    final titleLower = model.title.toLowerCase();
-    
-    // Choose dynamic styling based on keywords or index
-    if (titleLower.contains('welcome') || titleLower.contains('party')) {
-      return _BannerCardData(
-        id: model.id,
-        title: model.title,
-        subtitle: 'HD 8-Seat Voice Rooms, Live Streams & Global Chat',
-        tag: 'FEATURED',
-        imageUrl: model.imageUrl.isNotEmpty ? model.imageUrl : null,
-        action: model.destinationUrl ?? 'zeparty://party',
-        gradientColors: const [Color(0xFF4C1D95), Color(0xFF2E1065), Color(0xFF1E1B4B)],
-        accentColor: const Color(0xFFFFD700),
-        icon: Icons.celebration_rounded,
-      );
-    } else if (titleLower.contains('update') || titleLower.contains('soon') || titleLower.contains('coming')) {
-      return _BannerCardData(
-        id: model.id,
-        title: model.title,
-        subtitle: 'New features, rewards and exciting updates arriving soon',
-        tag: 'SNEAK PEEK',
-        imageUrl: model.imageUrl.isNotEmpty ? model.imageUrl : null,
-        action: model.destinationUrl ?? 'zeparty://updates',
-        gradientColors: const [Color(0xFF0369A1), Color(0xFF0C4A6E), Color(0xFF082F49)],
-        accentColor: const Color(0xFF38BDF8),
-        icon: Icons.rocket_launch_rounded,
-      );
-    } else if (titleLower.contains('pk') || titleLower.contains('live') || titleLower.contains('battle')) {
-      return _BannerCardData(
-        id: model.id,
-        title: model.title,
-        subtitle: 'High-Stakes Live Battles, Dynamic Combos & Leaderboards',
-        tag: 'HOT BATTLE',
-        imageUrl: model.imageUrl.isNotEmpty ? model.imageUrl : null,
-        action: model.destinationUrl ?? 'zeparty://live',
-        gradientColors: const [Color(0xFF991B1B), Color(0xFF7F1D1D), Color(0xFF450A0A)],
-        accentColor: const Color(0xFFFB923C),
-        icon: Icons.local_fire_department_rounded,
-      );
-    } else if (titleLower.contains('gift') || titleLower.contains('reward') || titleLower.contains('store')) {
-      return _BannerCardData(
-        id: model.id,
-        title: model.title,
-        subtitle: 'Send Super 3D Gifts, unlock VIP badges & earn rewards',
-        tag: 'EXCLUSIVE',
-        imageUrl: model.imageUrl.isNotEmpty ? model.imageUrl : null,
-        action: model.destinationUrl ?? 'zeparty://store',
-        gradientColors: const [Color(0xFF065F46), Color(0xFF064E3B), Color(0xFF022C22)],
-        accentColor: const Color(0xFFFBBF24),
-        icon: Icons.card_giftcard_rounded,
-      );
-    }
-
-    // Generic Custom Banner
-    return _BannerCardData(
-      id: model.id,
-      title: model.title,
-      subtitle: 'Tap to explore special events and exclusive activities',
-      tag: 'PROMO',
-      imageUrl: model.imageUrl.isNotEmpty ? model.imageUrl : null,
-      action: model.destinationUrl ?? 'zeparty://party',
-      gradientColors: const [Color(0xFF1E293B), Color(0xFF0F172A), Color(0xFF020617)],
-      accentColor: const Color(0xFFFFD700),
-      icon: Icons.auto_awesome_rounded,
-    );
   }
 
   void _startTimer() {
@@ -238,31 +127,137 @@ class _BannerCarouselWidgetState extends State<BannerCarouselWidget> {
     super.dispose();
   }
 
-  void _handleBannerTap(String action) {
-    final cleanAction = action.trim();
+  Widget _buildBannerCard(BannerItemModel banner) {
+    final bool hasTitle = banner.title != null && banner.title!.trim().isNotEmpty;
+    final bool hasSubtitle = banner.subtitle != null && banner.subtitle!.trim().isNotEmpty;
+    final bool hasText = hasTitle || hasSubtitle;
 
-    if (cleanAction == 'zeparty://party' || cleanAction == 'party') {
-      widget.onPartyTap();
-    } else if (cleanAction == 'zeparty://live' || cleanAction == 'live') {
-      widget.onLiveTap();
-    } else if (cleanAction == 'zeparty://updates' || cleanAction == 'updates') {
-      _showUpcomingUpdatesDialog();
-    } else if (cleanAction == 'zeparty://store' || cleanAction == 'store' || cleanAction == 'gifts') {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const StoreScreen()));
-    } else if (cleanAction == 'zeparty://vip' || cleanAction == 'vip') {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const VipStoreScreen()));
-    } else if (cleanAction == 'zeparty://shorts' || cleanAction == 'shorts') {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const ShortVideosScreen()));
-    } else if (cleanAction == 'zeparty://games' || cleanAction == 'games') {
-      Navigator.push(context, MaterialPageRoute(builder: (_) => const GameLobbyScreen()));
-    } else if (cleanAction.startsWith('http://') || cleanAction.startsWith('https://')) {
-      final uri = Uri.tryParse(cleanAction);
-      if (uri != null) {
-        launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } else {
-      widget.onPartyTap();
-    }
+    return GestureDetector(
+      onTap: () {
+        if (banner.destinationUrl == 'zeparty://updates') {
+          _showUpcomingUpdatesDialog();
+        } else {
+          BannerRouter.handleBannerTap(
+            context,
+            banner.destinationUrl,
+            onPartyTap: widget.onPartyTap,
+            onLiveTap: widget.onLiveTap,
+          );
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          color: const Color(0xFF1E1B2E),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 1. Banner Image (Full Coverage Graphic Artwork)
+              if (banner.imageUrl.isNotEmpty)
+                Image.network(
+                  banner.imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: const Color(0xFF1E1B2E),
+                    child: const Center(
+                      child: Icon(Icons.broken_image_rounded, color: Colors.white38, size: 40),
+                    ),
+                  ),
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      color: const Color(0xFF1E1B2E),
+                      child: const Center(
+                        child: CircularProgressIndicator(color: Colors.amber, strokeWidth: 2),
+                      ),
+                    );
+                  },
+                )
+              else
+                Container(
+                  color: const Color(0xFF1E1B2E),
+                  child: const Center(
+                    child: Icon(Icons.style_rounded, color: Colors.amber, size: 40),
+                  ),
+                ),
+
+              // 2. Text Overlay (ONLY if title or subtitle exists and is non-empty)
+              if (hasText) ...[
+                // Gradient protection overlay for contrast
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.85),
+                          Colors.black.withValues(alpha: 0.35),
+                          Colors.transparent,
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Title and Subtitle Text
+                Positioned(
+                  left: 16,
+                  bottom: 16,
+                  right: 32,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (hasTitle)
+                        Text(
+                          banner.title!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black,
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      if (hasSubtitle) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          banner.subtitle!,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            fontSize: 12,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _showUpcomingUpdatesDialog() {
@@ -425,155 +420,12 @@ class _BannerCarouselWidgetState extends State<BannerCarouselWidget> {
             },
             itemCount: _displayBanners.length,
             itemBuilder: (context, index) {
-              final banner = _displayBanners[index];
-
-              return GestureDetector(
-                onTap: () => _handleBannerTap(banner.action),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(22),
-                    gradient: LinearGradient(
-                      colors: banner.gradientColors,
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    border: Border.all(
-                      color: banner.accentColor.withValues(alpha: 0.35),
-                      width: 1.2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: banner.gradientColors.first.withValues(alpha: 0.4),
-                        blurRadius: 16,
-                        offset: const Offset(0, 6),
-                        spreadRadius: 0,
-                      )
-                    ],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(21),
-                    child: Stack(
-                      children: [
-                        // Background image if provided
-                        if (banner.imageUrl != null && banner.imageUrl!.isNotEmpty)
-                          Positioned.fill(
-                            child: Image.network(
-                              banner.imageUrl!,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                              loadingBuilder: (context, child, loadingProgress) {
-                                if (loadingProgress == null) {
-                                  return Opacity(opacity: 0.35, child: child);
-                                }
-                                return const SizedBox.shrink();
-                              },
-                            ),
-                          ),
-
-                        // Gradient protection overlay
-                        Positioned.fill(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  banner.gradientColors.first.withValues(alpha: 0.92),
-                                  banner.gradientColors.last.withValues(alpha: 0.65),
-                                  Colors.transparent,
-                                ],
-                                stops: const [0.0, 0.6, 1.0],
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        // Decorative floating background icon
-                        Positioned(
-                          right: -14,
-                          bottom: -14,
-                          child: Icon(
-                            banner.icon,
-                            size: 116,
-                            color: Colors.white.withValues(alpha: 0.12),
-                          ),
-                        ),
-
-                        // Banner Content
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              // Badge
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: banner.accentColor.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: banner.accentColor.withValues(alpha: 0.6),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Text(
-                                  banner.tag,
-                                  style: TextStyle(
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w900,
-                                    color: banner.accentColor,
-                                    letterSpacing: 0.6,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              // Title
-                              Text(
-                                banner.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                  letterSpacing: 0.2,
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.black45,
-                                      offset: Offset(0, 1),
-                                      blurRadius: 3,
-                                    )
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 3),
-                              // Subtitle
-                              Text(
-                                banner.subtitle,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.white.withValues(alpha: 0.82),
-                                  height: 1.25,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
+              return _buildBannerCard(_displayBanners[index]);
             },
           ),
         ),
         const SizedBox(height: 10),
-        // Modern Pill Pagination Indicators
+        // Pagination Indicators
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(
@@ -587,13 +439,13 @@ class _BannerCarouselWidgetState extends State<BannerCarouselWidget> {
                 width: isSelected ? 20 : 6,
                 decoration: BoxDecoration(
                   color: isSelected
-                      ? (_displayBanners[index].accentColor)
+                      ? Colors.amber
                       : (widget.isDark ? Colors.white24 : Colors.black26),
                   borderRadius: BorderRadius.circular(3),
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: _displayBanners[index].accentColor.withValues(alpha: 0.5),
+                            color: Colors.amber.withValues(alpha: 0.5),
                             blurRadius: 6,
                           )
                         ]

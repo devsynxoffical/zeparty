@@ -463,7 +463,7 @@ class LivePartyProvider extends ChangeNotifier {
         final userMap = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : null;
         if (seatIndex != null && userMap != null) {
           final occupantUser = UserModel(
-            id: userMap['id']?.toString() ?? userMap['userId']?.toString() ?? '',
+            id: userMap['id']?.toString() ?? userMap['_id']?.toString() ?? userMap['userId']?.toString() ?? '',
             username: userMap['username']?.toString() ?? userMap['name']?.toString() ?? 'Speaker',
             name: userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'Speaker',
             avatarUrl: userMap['avatarUrl']?.toString() ?? '',
@@ -605,19 +605,37 @@ class LivePartyProvider extends ChangeNotifier {
           return;
         }
         final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender'] as Map) : <String, dynamic>{};
-        final senderId = senderMap['id']?.toString() ?? data['senderUserId']?.toString() ?? '';
-        final text = data['text']?.toString() ?? '';
-        if (text.trim().isEmpty) return;
-        final msgId = data['id']?.toString() ?? 'msg_${DateTime.now().millisecondsSinceEpoch}';
+        final senderId = (senderMap['id'] ?? senderMap['_id'] ?? data['senderUserId'] ?? '').toString();
+        final text = (data['text'] ?? '').toString().trim();
+        if (text.isEmpty) return;
 
-        if (_messages.any((m) => m.id == msgId)) return;
+        final msgId = (data['id'] ?? data['_id'] ?? '').toString();
+        final clientMsgId = data['clientMessageId']?.toString();
 
-        // Prevent duplicate self-messages added optimistically
-        final isSelf = (senderId == currentUser.id || senderId == currentUser.username);
-        if (isSelf && _messages.isNotEmpty) {
-          final recentSelf = _messages.reversed.take(5).where((m) => m.sender.id == currentUser.id && m.text == text).firstOrNull;
-          if (recentSelf != null && DateTime.now().difference(recentSelf.timestamp).inSeconds < 4) {
-            return;
+        // 1. Direct ID check
+        if (msgId.isNotEmpty && _messages.any((m) => m.id == msgId)) return;
+        if (clientMsgId != null && _messages.any((m) => m.id == clientMsgId)) return;
+
+        // 2. Message deduplication (matches by senderId/name OR matching recent text within 8s)
+        if (_messages.isNotEmpty) {
+          final recentMatchingIndex = _messages.lastIndexWhere((m) =>
+            m.text.trim() == text.trim() &&
+            DateTime.now().difference(m.timestamp).inSeconds < 8
+          );
+
+          if (recentMatchingIndex != -1) {
+            // Update optimistic message with server message ID if provided
+            if (msgId.isNotEmpty) {
+              final existing = _messages[recentMatchingIndex];
+              _messages[recentMatchingIndex] = PartyMessageModel(
+                id: msgId,
+                sender: existing.sender,
+                text: existing.text,
+                timestamp: existing.timestamp,
+                isSystemMessage: existing.isSystemMessage,
+              );
+            }
+            return; // Skip adding duplicate "ZeParty Member" comment
           }
         }
 
@@ -631,13 +649,16 @@ class LivePartyProvider extends ChangeNotifier {
         );
 
         final msg = PartyMessageModel(
-          id: msgId,
+          id: msgId.isNotEmpty ? msgId : 'msg_${DateTime.now().millisecondsSinceEpoch}',
           sender: sender,
           text: text,
           timestamp: DateTime.tryParse(data['timestamp']?.toString() ?? '') ?? DateTime.now(),
         );
 
         _messages.add(msg);
+        if (_messages.length > 100) {
+          _messages.removeAt(0);
+        }
         notifyListeners();
       } catch (e) {
         debugPrint('[LivePartyProvider] ChatMessage error: $e');
@@ -858,6 +879,9 @@ class LivePartyProvider extends ChangeNotifier {
       return 'Mic ${seatIndex + 1} is already occupied by ${occupant.user.name}.';
     }
 
+    // Clean up any old Guest placeholder entries
+    _participants.removeWhere((p) => p.user.id.startsWith('agora_') || p.user.name.startsWith('Guest '));
+
     // Atomic move: release previous seat if actor was sitting elsewhere
     final existingIdx = _participants.indexWhere(
       (p) => p.user.id == actor.id ||
@@ -879,9 +903,6 @@ class LivePartyProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint('[LivePartyProvider] Backend occupySeat error: $e, executing local state seat update');
     }
-
-    // Clean up any old Guest placeholder entries
-    _participants.removeWhere((p) => p.user.id.startsWith('agora_') || p.user.name.startsWith('Guest '));
 
     // Update local state with real user object
     if (existingIdx != -1 && existingIdx < _participants.length) {
@@ -1130,17 +1151,21 @@ class LivePartyProvider extends ChangeNotifier {
   }
 
   void sendMessage(UserModel sender, String text) {
-    final msgId = 'msg_${DateTime.now().millisecondsSinceEpoch}';
+    if (text.trim().isEmpty) return;
+
+    final clientMsgId = 'client_${DateTime.now().millisecondsSinceEpoch}_${sender.id}';
+
     _messages.add(PartyMessageModel(
-      id: msgId,
+      id: clientMsgId,
       sender: sender,
-      text: text,
+      text: text.trim(),
       timestamp: DateTime.now(),
     ));
+
     if (_activeRoom != null) {
       _socketService.sendRoomChatMessage(
         roomId: _activeRoom!.id,
-        text: text,
+        text: text.trim(),
       );
     }
     notifyListeners();

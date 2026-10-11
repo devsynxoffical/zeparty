@@ -1,11 +1,16 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_asset_model.dart';
 import '../models/store_item_model.dart';
 import '../models/user_model.dart';
 import '../core/repositories/backpack_repository.dart';
+import '../core/repositories/store_repository.dart';
+import '../core/utils/noble_badge_helper.dart';
 
 class BackpackProvider extends ChangeNotifier {
   final BackpackRepository _backpackRepository = BackpackRepository.instance;
+  static const String _purchasesStorageKey = 'persisted_user_purchases_v1';
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -17,7 +22,42 @@ class BackpackProvider extends ChangeNotifier {
   List<UserAssetModel> get userAssets => List.unmodifiable(_userAssets);
 
   BackpackProvider() {
-    fetchBackpack();
+    _loadLocalPurchases().then((_) => fetchBackpack());
+  }
+
+  Future<void> _loadLocalPurchases() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_purchasesStorageKey);
+      if (raw != null && raw.isNotEmpty) {
+        final List<dynamic> list = jsonDecode(raw);
+        for (final item in list) {
+          final ua = UserAssetModel.fromJson(item as Map<String, dynamic>);
+          final assetId = ua.assetId.toLowerCase().trim();
+          final exists = _userAssets.any((existing) =>
+              existing.id == ua.id ||
+              existing.assetId.toLowerCase().trim() == assetId ||
+              (existing.asset != null && existing.asset!.id.toLowerCase().trim() == assetId));
+          if (!exists) {
+            _userAssets.insert(0, _enrichUserAsset(ua));
+          }
+        }
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[BackpackProvider] _loadLocalPurchases error: $e');
+    }
+  }
+
+  Future<void> _saveLocalPurchases() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final purchases = _userAssets.where((a) => a.id.startsWith('purchased-')).toList();
+      final raw = jsonEncode(purchases.map((a) => a.toJson()).toList());
+      await prefs.setString(_purchasesStorageKey, raw);
+    } catch (e) {
+      debugPrint('[BackpackProvider] _saveLocalPurchases error: $e');
+    }
   }
 
   List<UserAssetModel> get equippedAssets =>
@@ -70,25 +110,115 @@ class BackpackProvider extends ChangeNotifier {
     }).toList();
   }
 
+  UserAssetModel _enrichUserAsset(UserAssetModel ua) {
+    StoreItemModel? asset = ua.asset;
+    final assetId = ua.assetId.toLowerCase().trim();
+
+    if (asset == null || asset.imageUrl.isEmpty || asset.name.isEmpty) {
+      final catalogMatch = StoreRepository.defaultStoreCatalog.firstWhere(
+        (item) =>
+            item.id.toLowerCase().trim() == assetId ||
+            (asset != null && item.id.toLowerCase().trim() == asset.id.toLowerCase().trim()) ||
+            (asset != null && item.name.toLowerCase().trim() == asset.name.toLowerCase().trim()),
+        orElse: () => StoreItemModel(
+          id: ua.assetId.isNotEmpty ? ua.assetId : ua.id,
+          name: asset?.name.isNotEmpty == true ? asset!.name : 'Store Item',
+          categoryId: asset?.categoryId.isNotEmpty == true ? asset!.categoryId : 'Frame',
+          assetType: asset?.assetType.isNotEmpty == true ? asset!.assetType : 'AVATAR_FRAME',
+          imageUrl: asset?.imageUrl.isNotEmpty == true ? asset!.imageUrl : 'assets/store/ZP-134_avatar-frames_frame.webp',
+          priceCoins: asset?.priceCoins ?? 50000,
+          durationDays: asset?.durationDays ?? 30,
+        ),
+      );
+
+      final candidateName = (asset?.name.isNotEmpty == true) ? asset!.name : catalogMatch.name;
+      String resolvedImage = (asset?.imageUrl.isNotEmpty == true) ? asset!.imageUrl : catalogMatch.imageUrl;
+      if (resolvedImage.isEmpty || (!resolvedImage.startsWith('assets/') && !resolvedImage.startsWith('http'))) {
+        final localFrame = NobleBadgeHelper.getFrameAsset(candidateName) ?? NobleBadgeHelper.getFrameAsset(assetId);
+        final localBadge = NobleBadgeHelper.getBadgeAsset(candidateName) ?? NobleBadgeHelper.getBadgeAsset(assetId);
+        final localTag = NobleBadgeHelper.getTagAsset(candidateName);
+        resolvedImage = localFrame ?? localBadge ?? localTag ?? catalogMatch.imageUrl;
+      }
+
+      asset = StoreItemModel(
+        id: catalogMatch.id,
+        name: candidateName,
+        categoryId: (asset?.categoryId.isNotEmpty == true) ? asset!.categoryId : catalogMatch.categoryId,
+        assetType: (asset?.assetType.isNotEmpty == true) ? asset!.assetType : catalogMatch.assetType,
+        imageUrl: resolvedImage.isNotEmpty ? resolvedImage : catalogMatch.imageUrl,
+        priceCoins: (asset != null && asset.priceCoins > 0) ? asset.priceCoins : catalogMatch.priceCoins,
+        durationDays: (asset != null && asset.durationDays > 0) ? asset.durationDays : catalogMatch.durationDays,
+      );
+    } else {
+      if (!asset.imageUrl.startsWith('assets/') && !asset.imageUrl.startsWith('http')) {
+        final localFrame = NobleBadgeHelper.getFrameAsset(asset.name) ?? NobleBadgeHelper.getFrameAsset(asset.imageUrl) ?? NobleBadgeHelper.getFrameAsset(assetId);
+        final localBadge = NobleBadgeHelper.getBadgeAsset(asset.name) ?? NobleBadgeHelper.getBadgeAsset(asset.imageUrl);
+        final localTag = NobleBadgeHelper.getTagAsset(asset.name);
+        final resolved = localFrame ?? localBadge ?? localTag;
+        if (resolved != null) {
+          asset = asset.copyWith(imageUrl: resolved);
+        }
+      }
+    }
+
+    return ua.copyWith(asset: asset);
+  }
+
   Future<void> fetchBackpack({bool refresh = false, UserModel? currentUser}) async {
     _isLoading = true;
     _errorMessage = null;
     if (refresh) notifyListeners();
 
+    final localPurchased = _userAssets.where((a) => a.id.startsWith('purchased-')).toList();
+
     try {
       final items = await _backpackRepository.fetchBackpack();
-      _userAssets = List<UserAssetModel>.from(items);
+      final enrichedBackend = items.map((ua) => _enrichUserAsset(ua)).toList();
+
+      final mergedAssets = List<UserAssetModel>.from(enrichedBackend);
+
+      for (final local in localPurchased) {
+        final localAssetId = local.assetId.toLowerCase().trim();
+        final localItemName = (local.asset?.name ?? '').toLowerCase().trim();
+
+        final exists = mergedAssets.any((b) {
+          final bId = b.assetId.toLowerCase().trim();
+          final bNestedId = (b.asset?.id ?? '').toLowerCase().trim();
+          final bName = (b.asset?.name ?? '').toLowerCase().trim();
+          return bId == localAssetId || bNestedId == localAssetId || (bName.isNotEmpty && bName == localItemName);
+        });
+
+        if (!exists) {
+          mergedAssets.insert(0, _enrichUserAsset(local));
+        }
+      }
+
+      _userAssets = mergedAssets;
       _isLoading = false;
+      _saveLocalPurchases();
       notifyListeners();
     } catch (e) {
       _isLoading = false;
+      if (localPurchased.isNotEmpty) {
+        final existingIds = _userAssets.map((a) => a.id).toSet();
+        for (final lp in localPurchased) {
+          if (!existingIds.contains(lp.id)) {
+            _userAssets.insert(0, _enrichUserAsset(lp));
+          }
+        }
+      }
+      _saveLocalPurchases();
       _errorMessage = 'Failed to load backpack';
       debugPrint('[BackpackProvider] fetchBackpack error: $e');
       notifyListeners();
     }
   }
 
-  Future<bool> equipAsset(String userAssetId, {void Function(String)? onAvatarFrameChanged}) async {
+  Future<bool> equipAsset(
+    String userAssetId, {
+    void Function(String)? onAvatarFrameChanged,
+    void Function(String)? onBadgeChanged,
+  }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -111,9 +241,29 @@ class BackpackProvider extends ChangeNotifier {
         }
       }
 
-      final frameAsset = _userAssets[index].asset?.imageUrl ?? _userAssets[index].asset?.name ?? '';
-      if (frameAsset.isNotEmpty) {
+      final assetImage = _userAssets[index].asset?.imageUrl ?? '';
+      final assetName = _userAssets[index].asset?.name ?? '';
+      final type = (_userAssets[index].asset?.assetType ?? '').toUpperCase();
+      final cat = (_userAssets[index].asset?.categoryId ?? '').toUpperCase();
+
+      if (type.contains('FRAME') || cat.contains('FRAME') || assetName.toLowerCase().contains('frame') || assetName.toLowerCase().contains('merchant')) {
+        String frameAsset = assetImage;
+        final resolved = NobleBadgeHelper.getFrameAsset(assetName) ??
+            NobleBadgeHelper.getFrameAsset(assetImage);
+        if (resolved != null) {
+          frameAsset = resolved;
+        } else if (frameAsset.isEmpty) {
+          frameAsset = NobleBadgeHelper.getFrameAsset(assetName) ?? assetName;
+        }
         onAvatarFrameChanged?.call(frameAsset);
+      } else if (type.contains('BADGE') || cat.contains('BADGE') || assetName.toLowerCase().contains('badge')) {
+        String badgeAsset = assetImage;
+        final resolved = NobleBadgeHelper.getBadgeAsset(assetName) ??
+            NobleBadgeHelper.getBadgeAsset(assetImage);
+        if (resolved != null) {
+          badgeAsset = resolved;
+        }
+        onBadgeChanged?.call(badgeAsset);
       }
     }
 
@@ -122,7 +272,11 @@ class BackpackProvider extends ChangeNotifier {
     return true;
   }
 
-  Future<bool> unequipAsset(String userAssetId, {void Function(String)? onAvatarFrameChanged}) async {
+  Future<bool> unequipAsset(
+    String userAssetId, {
+    void Function(String)? onAvatarFrameChanged,
+    void Function(String)? onBadgeChanged,
+  }) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -135,8 +289,17 @@ class BackpackProvider extends ChangeNotifier {
 
     final index = _userAssets.indexWhere((a) => a.id == userAssetId || a.assetId == userAssetId || (a.asset != null && a.asset!.id == userAssetId));
     if (index != -1) {
+      final type = (_userAssets[index].asset?.assetType ?? '').toUpperCase();
+      final cat = (_userAssets[index].asset?.categoryId ?? '').toUpperCase();
+      final assetName = (_userAssets[index].asset?.name ?? '').toLowerCase();
+
       _userAssets[index] = _userAssets[index].copyWith(isEquipped: false);
-      onAvatarFrameChanged?.call('none');
+
+      if (type.contains('FRAME') || cat.contains('FRAME') || assetName.contains('frame') || assetName.contains('merchant')) {
+        onAvatarFrameChanged?.call('none');
+      } else if (type.contains('BADGE') || cat.contains('BADGE') || assetName.contains('badge')) {
+        onBadgeChanged?.call('');
+      }
     }
 
     _isLoading = false;
@@ -146,34 +309,48 @@ class BackpackProvider extends ChangeNotifier {
 
   /// Check if a store item is already owned in backpack
   bool isItemOwned(StoreItemModel item) {
+    final cleanItemId = item.id.toLowerCase().trim();
     final cleanItemName = item.name.toLowerCase().trim();
+
     return _userAssets.any((ua) {
       if (ua.isExpired) return false;
-      if (ua.assetId == item.id || (ua.asset != null && ua.asset!.id == item.id)) return true;
 
-      final assetName = (ua.asset?.name ?? '').toLowerCase().trim();
-      if (assetName.isNotEmpty && (assetName == cleanItemName || assetName.contains(cleanItemName) || cleanItemName.contains(assetName))) {
+      final uaAssetId = ua.assetId.toLowerCase().trim();
+      final uaNestedId = (ua.asset?.id ?? '').toLowerCase().trim();
+      if (uaAssetId == cleanItemId || uaNestedId == cleanItemId) {
         return true;
       }
+
+      final assetName = (ua.asset?.name ?? '').toLowerCase().trim();
+      if (assetName.isNotEmpty && assetName == cleanItemName) {
+        return true;
+      }
+
       return false;
     });
   }
 
   /// Add a newly purchased store item directly to user's backpack
   void addPurchasedAsset(StoreItemModel item) {
-    final alreadyOwned = isItemOwned(item);
-    if (!alreadyOwned) {
-      final userAsset = UserAssetModel(
-        id: 'purchased-${item.id}-${DateTime.now().millisecondsSinceEpoch}',
-        userId: 'current-user',
-        assetId: item.id,
-        isEquipped: false,
-        expiresAt: DateTime.now().add(Duration(days: item.durationDays)),
-        asset: item,
-        createdAt: DateTime.now(),
-      );
-      _userAssets.insert(0, userAsset);
-      notifyListeners();
-    }
+    final userAsset = UserAssetModel(
+      id: 'purchased-${item.id}-${DateTime.now().millisecondsSinceEpoch}',
+      userId: 'current-user',
+      assetId: item.id,
+      isEquipped: false,
+      expiresAt: DateTime.now().add(Duration(days: item.durationDays)),
+      asset: item,
+      createdAt: DateTime.now(),
+    );
+
+    // Remove any previous duplicate / expired entry of this exact item
+    _userAssets.removeWhere((ua) =>
+        ua.assetId.toLowerCase().trim() == item.id.toLowerCase().trim() ||
+        (ua.asset != null && ua.asset!.id.toLowerCase().trim() == item.id.toLowerCase().trim()) ||
+        (ua.asset != null && ua.asset!.name.toLowerCase().trim() == item.name.toLowerCase().trim()));
+
+    _userAssets.insert(0, _enrichUserAsset(userAsset));
+    _saveLocalPurchases();
+    notifyListeners();
   }
 }
+

@@ -199,27 +199,35 @@ class _ChatBubbleState extends State<ChatBubble> {
 
     final isGift = widget.message.type == 'gift' || widget.message.text.contains('🎁');
     final backpack = context.watch<BackpackProvider>();
-    final equippedBubble = widget.isMe ? backpack.equippedBubbleUrl : null;
-    final hasCustomBubble = equippedBubble != null && equippedBubble.isNotEmpty;
+    final equippedBubble = (widget.message.mediaUrl != null && widget.message.mediaUrl!.contains('bubble'))
+        ? widget.message.mediaUrl
+        : (backpack.equippedBubbleUrl);
+    final hasCustomBubble = equippedBubble != null && equippedBubble.isNotEmpty && equippedBubble != 'none';
 
     final bubbleColor = widget.isMe
         ? primaryColor
         : Theme.of(context).colorScheme.surfaceContainerHighest;
 
-    final textColor = widget.isMe
-        ? (hasCustomBubble ? Colors.white : onPrimary)
-        : Theme.of(context).textTheme.bodyLarge?.color;
+    final textColor = hasCustomBubble
+        ? Colors.white
+        : (widget.isMe ? onPrimary : Theme.of(context).textTheme.bodyLarge?.color);
 
     return Align(
       alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+        margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
         padding: isImage
             ? const EdgeInsets.all(4)
             : (hasCustomBubble
-                ? const EdgeInsets.fromLTRB(20, 12, 20, 12)
+                ? (widget.isMe
+                    ? const EdgeInsets.fromLTRB(30, 18, 38, 16)
+                    : const EdgeInsets.fromLTRB(40, 18, 30, 16))
                 : const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.76),
+        constraints: BoxConstraints(
+          minWidth: hasCustomBubble ? 165 : 0,
+          minHeight: hasCustomBubble ? 68 : 0,
+          maxWidth: MediaQuery.of(context).size.width * 0.78,
+        ),
         decoration: BoxDecoration(
           color: isGift
               ? (isDark ? const Color(0xFF2A153E) : const Color(0xFFF3E5F5))
@@ -252,6 +260,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                 ],
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             if (isImage && isExpired) ...[
@@ -401,30 +410,36 @@ class _ChatBubbleState extends State<ChatBubble> {
                     children: [
                       if (!isExpired) ...[
                         Row(
-                          children: List.generate(14, (index) {
-                            final barHeight = (index % 3 == 0 ? 16 : (index % 2 == 0 ? 10 : 22)).toDouble();
-                            final isActive = (index / 14) <= _playbackProgress;
+                          mainAxisSize: MainAxisSize.min,
+                          children: List.generate(10, (index) {
+                            final barHeight = (index % 3 == 0 ? 12 : (index % 2 == 0 ? 8 : 16)).toDouble();
+                            final isActive = (index / 10) <= _playbackProgress;
                             return Container(
-                              width: 3,
+                              width: 2.5,
                               height: barHeight,
-                              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                              margin: const EdgeInsets.symmetric(horizontal: 1.2),
                               decoration: BoxDecoration(
                                 color: isActive
-                                    ? (widget.isMe ? Colors.white : primaryColor)
-                                    : (widget.isMe ? Colors.white38 : Colors.grey.shade400),
+                                    ? (hasCustomBubble ? Colors.white : (widget.isMe ? Colors.white : primaryColor))
+                                    : (hasCustomBubble ? Colors.white.withValues(alpha: 0.5) : (widget.isMe ? Colors.white38 : Colors.grey.shade400)),
                                 borderRadius: BorderRadius.circular(2),
                               ),
                             );
                           }),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 3),
                         Text(
                           _isPlayingVoice
                               ? 'Playing voice note (${(_playbackProgress * 100).toInt()}%)'
                               : widget.message.text.contains('Voice Note')
                                   ? widget.message.text
                                   : 'Voice Note • Play',
-                          style: TextStyle(color: textColor?.withValues(alpha: 0.8), fontSize: 11, fontWeight: FontWeight.bold),
+                          style: TextStyle(
+                            color: textColor?.withValues(alpha: 0.9),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            shadows: hasCustomBubble ? [const Shadow(color: Colors.black54, blurRadius: 3)] : null,
+                          ),
                         ),
                       ] else ...[
                         Text(

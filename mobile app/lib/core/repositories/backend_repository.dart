@@ -163,21 +163,26 @@ class BackendRepository extends ChangeNotifier {
   }
 
   List<LiveRoomModel> getMyRooms(String userId) {
-    return _liveRooms.where((r) => r.host.id == userId).toList();
+    if (userId.isEmpty) return [];
+    return _liveRooms.where((r) => r.host.id == userId || r.creatorUserId == userId).toList();
   }
 
   List<LiveRoomModel> getPartyRooms() {
-    return _liveRooms.where((r) =>
-      r.category.toLowerCase() == 'party' ||
-      r.id.startsWith('party_')
-    ).toList();
+    return _liveRooms.where((r) {
+      final t = r.roomType.toUpperCase();
+      return t.contains('AUDIO') ||
+          t.contains('PARTY') ||
+          t.contains('VOICE') ||
+          r.category.toLowerCase() == 'party' ||
+          r.id.startsWith('party_');
+    }).toList();
   }
 
   List<LiveRoomModel> getActiveLiveStreams() {
-    return _liveRooms.where((r) =>
-      r.category.toLowerCase() != 'party' &&
-      !r.id.startsWith('party_')
-    ).toList();
+    return _liveRooms.where((r) {
+      final t = r.roomType.toUpperCase();
+      return t.contains('VIDEO') || t == 'LIVE_VIDEO' || t == 'VIDEO ROOM';
+    }).toList();
   }
 
   /// Real Backend Room Discovery Integration

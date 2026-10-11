@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/agency_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/report_sheet.dart';
+import '../../widgets/skeleton_widgets.dart';
 import '../profile/user_profile_details_screen.dart';
 import 'chat_screen.dart';
 
@@ -448,9 +449,7 @@ class _InboxScreenState extends State<InboxScreen> {
 
   Widget _buildConversationList(BuildContext context, MessagingProvider messaging, bool isDark) {
     if (messaging.isLoadingConversations && messaging.chatUsers.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
+      return const InboxShimmerSkeleton(count: 6);
     }
 
     final users = messaging.chatUsers.where((u) {

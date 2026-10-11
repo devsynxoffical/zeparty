@@ -45,7 +45,7 @@ class ActivityScreen extends StatelessWidget {
   }
 
   Widget _buildEventList(BuildContext context, bool isDark, String category) {
-    final events = _getMockEvents(category);
+    final events = _getEvents(context, category);
 
     if (events.isEmpty) {
       return Center(
@@ -193,41 +193,47 @@ class ActivityScreen extends StatelessWidget {
     );
   }
 
-  List<Map<String, dynamic>> _getMockEvents(String category) {
+  List<Map<String, dynamic>> _getEvents(BuildContext context, String category) {
+    final List<Map<String, dynamic>> realEvents = [];
+
     if (category == 'Game') {
-      return [
-        {
-          'title': 'Rocket Game Launch Event',
-          'desc': 'Play Rocket Game in any party room to win exclusive frames.',
-          'status': 'Ongoing',
-          'countdown': 'Ends in 2 days 14 hours',
-          'reward': 'Exclusive Frame + 5000 Coins',
-          'color': Colors.deepOrangeAccent,
-        },
-      ];
+      realEvents.add({
+        'title': '🚀 Rocket & Fruit Match Game Challenges',
+        'desc': 'Join any active party room to play Rocket & Fruit games and share the daily jackpot coin pool.',
+        'status': 'Active',
+        'countdown': 'Live 24/7 in Voice Rooms',
+        'reward': 'Jackpot Coins & Trophy Badges',
+        'color': Colors.deepOrangeAccent,
+      });
     } else if (category == 'PK') {
-      return [
-        {
-          'title': 'Summer PK Tournament',
-          'desc': 'Join the battle and win up to 10M Diamonds!',
-          'status': 'Upcoming',
-          'countdown': 'Starts in 5 hours',
-          'reward': '10M Diamonds Pool',
-          'color': Colors.blueAccent,
-        },
-      ];
+      realEvents.add({
+        'title': '⚔️ Live Host PK Battle Tournament',
+        'desc': 'Challenge rival hosts in 1v1 PK Battles. Top streamers receive global entrance banners and badges.',
+        'status': 'Active',
+        'countdown': 'Ongoing Matches',
+        'reward': 'Global Banners & SVIP Points',
+        'color': Colors.blueAccent,
+      });
     } else if (category == 'Recharge') {
-      return [
-        {
-          'title': 'New User Top-Up Bonus',
-          'desc': 'Get 100% extra coins on your first recharge.',
-          'status': 'Ended',
-          'countdown': 'Event Finished',
-          'reward': '100% Bonus Coins',
-          'color': Colors.greenAccent,
-        },
-      ];
+      realEvents.add({
+        'title': '💎 Official P2P & Agency Coin Bonus',
+        'desc': 'Recharge coins through verified recharge agencies or P2P trading board to unlock extra tier rewards.',
+        'status': 'Active',
+        'countdown': 'Available Now',
+        'reward': 'Extra Coins & SVIP Leveling',
+        'color': Colors.greenAccent,
+      });
+    } else if (category == 'Gift') {
+      realEvents.add({
+        'title': '🎁 Supercar & Crown Gifting Festival',
+        'desc': 'Send luxury Supercar or Crown gifts in live rooms to boost your Wealth level and climb the leaderboard.',
+        'status': 'Active',
+        'countdown': 'Daily Leaderboard Reset',
+        'reward': 'Wealth Level Badges & Custom Frames',
+        'color': Colors.purpleAccent,
+      });
     }
-    return [];
+
+    return realEvents;
   }
 }

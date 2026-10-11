@@ -25,9 +25,9 @@ class NobleBadgeHelper {
     if (lower.contains('prince')) return NobleTier.prince;
     if (lower.contains('duke')) return NobleTier.duke;
     if (lower.contains('marquis')) return NobleTier.marquis;
-    if (lower.contains('earl')) return NobleTier.earl;
+    if (lower.contains('count') || lower.contains('earl')) return NobleTier.earl;
     if (lower.contains('viscount')) return NobleTier.viscount;
-    if (lower.contains('knight')) return NobleTier.knight;
+    if (lower.contains('baron') || lower.contains('knight')) return NobleTier.knight;
     return NobleTier.none;
   }
 
@@ -44,40 +44,46 @@ class NobleBadgeHelper {
     if (lower.contains('viscount')) return 'assets/nobles/viscount_badge.webp';
     if (lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/baron_badge.webp';
 
-    // SVIP Badges (Accurate exact mapping for all 1-16 tiers using live animated webp assets)
+    // SVIP Badges (Accurate exact mapping for all 1-16 tiers using authentic dedicated webp assets)
     if (lower.contains('svip')) {
       final match = RegExp(r'svip\s*(\d+)', caseSensitive: false).firstMatch(lower);
       if (match != null) {
         final level = int.tryParse(match.group(1)!) ?? 1;
         final clampedLevel = level.clamp(1, 16);
+        if (clampedLevel == 1) return 'assets/svip/svip1_badge.webp';
+        if (clampedLevel == 2) return 'assets/svip/svip2_badge.webp';
+        if (clampedLevel == 3) return 'assets/svip/svip3_badge.webp';
+        if (clampedLevel == 4) return 'assets/svip/svip4_badge.webp';
+        if (clampedLevel == 5) return 'assets/svip/svip5_badge.webp';
+        if (clampedLevel == 6) return 'assets/svip/svip6_badge.webp';
         final pad2 = clampedLevel.toString().padLeft(2, '0');
         if (clampedLevel <= 15) {
           return 'assets/svip/SVIP${pad2}_badge_live.webp';
         }
         return 'assets/svip/SVIP16_badge_live.webp';
       }
-      return 'assets/svip/SVIP01_badge_live.webp';
+      return 'assets/svip/svip1_badge.webp';
     }
 
     // Role Badges
     if (lower.contains('admin') && lower.contains('super')) return 'assets/roles/super_admin_tag.webp';
     if (lower.contains('admin')) return 'assets/roles/admin_badge.webp';
-    if (lower.contains('agency')) return 'assets/roles/agency_badge.webp';
-    if (lower.contains('assistant')) return 'assets/roles/assistant_badge.webp';
-    if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/bd_badge.webp';
-    if (lower.contains('boss')) return 'assets/roles/boss_badge.webp';
-    if (lower.contains('ceo')) return 'assets/roles/ceo_badge.webp';
+    if (lower.contains('agency')) return 'assets/roles/agency_tag.webp';
+    if (lower.contains('assistant')) return 'assets/roles/assistant_tag.webp';
+    if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/bd_tag.webp';
+    if (lower.contains('boss')) return 'assets/roles/boss_tag.webp';
+    if (lower.contains('ceo')) return 'assets/roles/ceo_tag.webp';
     if (lower.contains('cs') || lower.contains('support')) return 'assets/roles/cs_badge.webp';
     if (lower.contains('master') || lower.contains('game master')) return 'assets/roles/game_master_badge.webp';
     if (lower.contains('live host')) return 'assets/roles/host_badge.webp';
     if (lower.contains('host')) return 'assets/roles/host_badge.webp';
-    if (lower.contains('coins') || lower.contains('seller')) return 'assets/roles/coins_saller_badge.webp';
+    if (lower.contains('coins') || lower.contains('seller')) return 'assets/roles/coins_saller_tag.webp';
     if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_badge.webp';
     if (lower.contains('top fan')) return 'assets/roles/top_fan_badge.webp';
-    if (lower.contains('lover')) return 'assets/roles/lover_badge.webp';
-    if (lower.contains('official')) return 'assets/roles/official_badge.webp';
-    if (lower.contains('manager')) return 'assets/roles/manager_badge.webp';
-    if (lower.contains('mystery')) return 'assets/animations/mystery_badge.webp';
+    if (lower.contains('lover')) return 'assets/roles/lover_tag.webp';
+    if (lower.contains('official')) return 'assets/roles/official_tag.webp';
+    if (lower.contains('manager')) return 'assets/roles/manager_tag.webp';
+    if (lower.contains('mystery')) return 'assets/svip/SVIP16_badge_live.webp';
 
     return null;
   }
@@ -103,7 +109,7 @@ class NobleBadgeHelper {
         final clampedLevel = level.clamp(1, 16);
         return 'assets/svip/svip${clampedLevel}_frame.webp';
       }
-      return 'assets/svip/svip1_frame.webp';
+      return 'assets/nobles/baron_frame.webp';
     }
 
     // Role Frames
@@ -124,7 +130,7 @@ class NobleBadgeHelper {
     if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_frame.webp';
     if (lower.contains('official')) return 'assets/roles/official_frame.webp';
     if (lower.contains('top fan')) return 'assets/roles/top_fan_frame.webp';
-    if (lower.contains('mystery')) return 'assets/animations/mystery_frame.webp';
+    if (lower.contains('mystery')) return 'assets/svip/svip16_frame.webp';
 
     return null;
   }
@@ -137,6 +143,7 @@ class NobleBadgeHelper {
     if (lower.contains('svip')) {
       for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
+          if (i == 2) return null; // SVIP 2 does not have an official VIP tag
           return 'assets/svip/svip${i}_tag.png';
         }
       }
@@ -145,21 +152,21 @@ class NobleBadgeHelper {
 
     // Role Tags
     if (lower.contains('super') && lower.contains('admin')) return 'assets/roles/super_admin_tag.webp';
-    if (lower.contains('admin')) return 'assets/roles/admin_tag.webp';
+    if (lower.contains('admin')) return 'assets/roles/admin_badge.webp';
     if (lower.contains('agency')) return 'assets/roles/agency_tag.webp';
     if (lower.contains('assistant')) return 'assets/roles/assistant_tag.webp';
     if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/bd_tag.webp';
     if (lower.contains('boss')) return 'assets/roles/boss_tag.webp';
     if (lower.contains('ceo')) return 'assets/roles/ceo_tag.webp';
     if (lower.contains('coin') || lower.contains('seller')) return 'assets/roles/coins_saller_tag.webp';
-    if (lower.contains('cs') || lower.contains('support')) return 'assets/roles/cs_tag.webp';
-    if (lower.contains('game master') || lower.contains('master')) return 'assets/roles/game_master_tag.webp';
-    if (lower.contains('host')) return 'assets/roles/host_tag.webp';
+    if (lower.contains('cs') || lower.contains('support')) return 'assets/roles/cs_badge.webp';
+    if (lower.contains('game master') || lower.contains('master')) return 'assets/roles/game_master_badge.webp';
+    if (lower.contains('host')) return 'assets/roles/host_badge.webp';
     if (lower.contains('lover')) return 'assets/roles/lover_tag.webp';
     if (lower.contains('manager')) return 'assets/roles/manager_tag.webp';
-    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_tag.webp';
+    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_badge.webp';
     if (lower.contains('official')) return 'assets/roles/official_tag.webp';
-    if (lower.contains('top fan')) return 'assets/roles/top_fan_tag.webp';
+    if (lower.contains('top fan')) return 'assets/roles/top_fan_badge.webp';
     if (lower.contains('mystery')) return 'assets/animations/mystery_tag.webp';
     // Nobles do not have a separate rectangular tag (they use the noble badge)
     return null;
@@ -169,11 +176,11 @@ class NobleBadgeHelper {
     if (title == null || title.isEmpty) return null;
     final lower = title.toLowerCase().trim();
 
-    // Noble Chat Bubbles
-    if (lower.contains('emperor')) return 'assets/nobles/emperor_chat_bubble.webp';
+    // Noble Chat Bubbles for all 7 Aristocracy Tiers
+    if (lower.contains('emperor') || lower.contains('king')) return 'assets/nobles/emperor_chat_bubble.webp';
     if (lower.contains('duke')) return 'assets/nobles/duke_chat_bubble.webp';
     if (lower.contains('marquis')) return 'assets/nobles/marquis_chat_bubble.webp';
-    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_chat_bubble.webp';
+    if (lower.contains('count') || lower.contains('earl') || lower.contains('viscount') || lower.contains('baron')) return 'assets/nobles/count_chat_bubble.webp';
 
     // SVIP Chat Bubbles
     if (lower.contains('svip')) {
@@ -182,10 +189,10 @@ class NobleBadgeHelper {
           return 'assets/svip/svip${i}_chat_bubble.webp';
         }
       }
-      return 'assets/svip/svip1_chat_bubble.webp';
+      return 'assets/nobles/count_chat_bubble.webp';
     }
 
-    if (lower.contains('mystery')) return 'assets/animations/mystery_chat_bubble.webp';
+    if (lower.contains('mystery')) return 'assets/svip/svip16_chat_bubble.webp';
 
     return null;
   }
@@ -194,18 +201,24 @@ class NobleBadgeHelper {
     if (title == null || title.isEmpty) return null;
     final lower = title.toLowerCase().trim();
 
-    // Noble Cards
-    if (lower.contains('king') || lower.contains('emperor')) return 'assets/nobles/king_card.webp';
-    if (lower.contains('viscount') || lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/viscount_card.webp';
+    // Noble Profile Cards for all 7 Aristocracy Tiers
+    if (lower.contains('emperor')) return 'assets/nobles/tier-7-emperor_profilecard.webp';
+    if (lower.contains('king')) return 'assets/nobles/king_card.webp';
+    if (lower.contains('duke')) return 'assets/nobles/tier-5-duke_profilecard.webp';
+    if (lower.contains('marquis')) return 'assets/nobles/tier-4-marquis_profilecard.webp';
+    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_card.webp';
+    if (lower.contains('viscount')) return 'assets/nobles/viscount_badge.webp';
+    if (lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/viscount_badge.webp';
 
     // SVIP Cards
     if (lower.contains('svip')) {
       for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
+          if (i == 1 || i == 2) return null; // SVIP 1 and 2 do not have an official profile card / skin
           return 'assets/svip/svip${i}_card.webp';
         }
       }
-      return 'assets/svip/svip1_card.webp';
+      return null;
     }
 
     return null;
@@ -215,18 +228,20 @@ class NobleBadgeHelper {
     if (title == null || title.isEmpty) return null;
     final lower = title.toLowerCase().trim();
 
-    // Noble Entrances
+    // Noble Entrance Animations for all 7 Aristocracy Tiers
     if (lower.contains('emperor') || lower.contains('king')) return 'assets/nobles/emperor_entrance.webp';
-    if (lower.contains('marquis') || lower.contains('duke') || lower.contains('count')) return 'assets/nobles/marquis_entrance.webp';
+    if (lower.contains('duke')) return 'assets/nobles/duke_entrance.webp';
+    if (lower.contains('marquis') || lower.contains('count') || lower.contains('viscount') || lower.contains('baron')) return 'assets/nobles/marquis_entrance.webp';
 
     // SVIP Entrances
     if (lower.contains('svip')) {
       for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
+          if (i == 13) return 'assets/svip/ZP-124_svip-14_entry.webp';
           return 'assets/svip/svip${i}_entry.webp';
         }
       }
-      return 'assets/svip/svip1_entry.webp';
+      return 'assets/nobles/marquis_entrance.webp';
     }
 
     if (lower.contains('mystery')) return 'assets/animations/mystery_entry.webp';
@@ -431,5 +446,19 @@ class NobleBadgeAndTagRow extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Module 32 Specification: 7 Noble Tiers & Color Palette
+class NobleHelper {
+  static const Map<int, Color> nobleColors = {
+    0: Color(0xFFFFFFFF), // None
+    1: Color(0xFFCD7F32), // 1: Baron (Bronze)
+    2: Color(0xFF94A3B8), // 2: Viscount (Silver)
+    3: Color(0xFFEAB308), // 3: Earl (Gold)
+    4: Color(0xFF38BDF8), // 4: Marquis (Diamond Blue)
+    5: Color(0xFFA855F7), // 5: Duke (Royal Purple)
+    6: Color(0xFFEC4899), // 6: Prince (Rose Gold)
+    7: Color(0xFFFF5A4F), // 7: Emperor (Crimson Red)
+  };
 }
 

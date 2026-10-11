@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/game_session_model.dart';
 import '../core/repositories/backend_repository.dart';
+import '../core/services/api_client.dart';
 import 'wallet_provider.dart';
 
 class GameProvider extends ChangeNotifier {
@@ -135,19 +136,33 @@ class GameProvider extends ChangeNotifier {
 
   Future<void> _loadRocketTargets() async {
     try {
+      // 1. Fetch live status from backend API if available (Module 01 Spec)
+      try {
+        final res = await ApiClient.instance.get('/v1/games/rocket/status');
+        if (res.data != null && res.data['data'] != null) {
+          final data = res.data['data'];
+          if (data['levels'] is List) {
+            final List<dynamic> levelsList = data['levels'];
+            final parsedTargets = levelsList.map((l) => (l['target'] as num).toInt()).toList();
+            if (parsedTargets.length == 5) {
+              _rocketLevelTargets = parsedTargets;
+            }
+          }
+        }
+      } catch (_) {}
+
       final prefs = await SharedPreferences.getInstance();
       final targetsJson = prefs.getString('rocket_level_targets');
-      if (targetsJson != null) {
+      if (targetsJson != null && _rocketLevelTargets.isEmpty) {
         final List<dynamic> list = jsonDecode(targetsJson);
         final parsed = list.map((e) => (e as num).toInt()).toList();
         final validationError = validateRocketTargets(parsed);
         if (validationError == null) {
           _rocketLevelTargets = parsed;
         } else {
-          // Use safe fallback defaults if saved target config is invalid
           _rocketLevelTargets = List.from(defaultRocketTargets);
         }
-      } else {
+      } else if (_rocketLevelTargets.isEmpty) {
         _rocketLevelTargets = List.from(defaultRocketTargets);
       }
 
@@ -160,7 +175,9 @@ class GameProvider extends ChangeNotifier {
       }
       notifyListeners();
     } catch (_) {
-      _rocketLevelTargets = List.from(defaultRocketTargets);
+      if (_rocketLevelTargets.isEmpty) {
+        _rocketLevelTargets = List.from(defaultRocketTargets);
+      }
     }
   }
 

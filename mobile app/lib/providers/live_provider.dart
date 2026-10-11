@@ -375,14 +375,15 @@ class LiveProvider extends ChangeNotifier {
           return;
         }
 
-        // Deduplicate optimistic local messages from the current user
-        final isSelf = _currentUser != null && (senderId == _currentUser!.id || senderId == _currentUser!.username);
-        if (isSelf && _messages.isNotEmpty) {
-          final recentSelf = _messages.reversed.take(5).where(
-            (m) => (m.senderId == _currentUser!.id || m.sender == _currentUser!.name || m.sender == _currentUser!.username) && m.text == text
+        // Deduplicate optimistic local messages (matches by identical text within 8s)
+        if (_messages.isNotEmpty) {
+          final recentMatching = _messages.reversed.take(10).where((m) =>
+            m.text.trim() == text.trim() &&
+            DateTime.now().difference(m.timestamp).inSeconds < 8
           ).firstOrNull;
-          if (recentSelf != null && DateTime.now().difference(recentSelf.timestamp).inSeconds < 4) {
-            return;
+
+          if (recentMatching != null) {
+            return; // Prevent duplicate insertion
           }
         }
 

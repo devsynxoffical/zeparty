@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/utils/noble_badge_helper.dart';
 import '../../../../models/user_asset_model.dart';
 import '../../../../providers/auth_provider.dart';
 import '../../../../providers/backpack_provider.dart';
@@ -20,7 +21,7 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
       context.read<BackpackProvider>().fetchBackpack(currentUser: auth.currentUser);
@@ -41,6 +42,7 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
       final success = await backpack.unequipAsset(
         userAsset.id,
         onAvatarFrameChanged: (frame) => auth.updateAvatarFrame(frame),
+        onBadgeChanged: (badge) => auth.updateEquippedBadge(badge),
       );
       if (success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -51,6 +53,7 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
       final success = await backpack.equipAsset(
         userAsset.id,
         onAvatarFrameChanged: (frame) => auth.updateAvatarFrame(frame),
+        onBadgeChanged: (badge) => auth.updateEquippedBadge(badge),
       );
       if (success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -63,7 +66,42 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
   void _showFrameZoomPreviewDialog(BuildContext context, UserAssetModel item, bool isDark) {
     String displayName = item.asset?.name ?? 'Asset';
     displayName = displayName.replaceAll(RegExp(r'\s+Frame$', caseSensitive: false), '').trim();
-    final imageUrl = item.asset?.imageUrl ?? '';
+    final rawImageUrl = item.asset?.imageUrl ?? '';
+    final name = item.asset?.name ?? '';
+    final type = (item.asset?.assetType ?? '').toUpperCase();
+    final cat = (item.asset?.categoryId ?? '').toUpperCase();
+    final isFrame = type.contains('FRAME') ||
+        cat.contains('FRAME') ||
+        name.toLowerCase().contains('frame') ||
+        name.toLowerCase().contains('merchant') ||
+        name.toLowerCase().contains('profile');
+
+    String effectiveAsset = rawImageUrl;
+    if (rawImageUrl.startsWith('assets/')) {
+      effectiveAsset = rawImageUrl;
+    } else {
+      final framePath = NobleBadgeHelper.getFrameAsset(name) ??
+          NobleBadgeHelper.getFrameAsset(displayName) ??
+          NobleBadgeHelper.getFrameAsset(rawImageUrl);
+      final badgePath = NobleBadgeHelper.getBadgeAsset(name) ?? NobleBadgeHelper.getBadgeAsset(rawImageUrl);
+      final tagPath = NobleBadgeHelper.getTagAsset(name);
+
+      if (isFrame) {
+        effectiveAsset = framePath ?? rawImageUrl;
+      } else if (type.contains('BADGE') || cat.contains('BADGE')) {
+        effectiveAsset = badgePath ?? rawImageUrl;
+      } else if (type.contains('TAG')) {
+        effectiveAsset = tagPath ?? rawImageUrl;
+      } else {
+        effectiveAsset = framePath ?? badgePath ?? tagPath ?? rawImageUrl;
+      }
+    }
+
+    if (effectiveAsset.isEmpty || (!effectiveAsset.startsWith('assets/') && !effectiveAsset.startsWith('http'))) {
+      effectiveAsset = NobleBadgeHelper.getFrameAsset(name) ??
+          NobleBadgeHelper.getFrameAsset(displayName) ??
+          (name.toLowerCase().contains('merchant') ? 'assets/roles/marchent_frame.webp' : rawImageUrl);
+    }
 
     showGeneralDialog(
       context: context,
@@ -72,6 +110,7 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
       barrierColor: Colors.black.withValues(alpha: 0.75),
       transitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (ctx, anim1, anim2) {
+        final TransformationController zoomController = TransformationController();
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
             final backpack = context.watch<BackpackProvider>();
@@ -179,24 +218,58 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(20),
-                            child: InteractiveViewer(
-                              minScale: 0.8,
-                              maxScale: 4.5,
-                              clipBehavior: Clip.none,
-                              child: Center(
-                                child: imageUrl.startsWith('assets/')
-                                    ? Image.asset(
-                                        imageUrl,
-                                        width: 170,
-                                        height: 170,
-                                        fit: BoxFit.contain,
-                                      )
-                                    : Image.network(
-                                        imageUrl,
-                                        width: 170,
-                                        height: 170,
-                                        fit: BoxFit.contain,
-                                      ),
+                            child: GestureDetector(
+                              onDoubleTap: () {
+                                if (zoomController.value != Matrix4.identity()) {
+                                  zoomController.value = Matrix4.identity();
+                                } else {
+                                  final matrix = Matrix4.diagonal3Values(1.8, 1.8, 1.0)
+                                    ..setTranslationRaw(-45.0, -45.0, 0.0);
+                                  zoomController.value = matrix;
+                                }
+                              },
+                              child: InteractiveViewer(
+                                transformationController: zoomController,
+                                minScale: 0.8,
+                                maxScale: 4.5,
+                                clipBehavior: Clip.none,
+                                child: Center(
+                                  child: isFrame
+                                      ? UserAvatar(
+                                          imageUrl: auth.currentUser.avatarUrl,
+                                          name: auth.currentUser.displayName,
+                                          radius: 50,
+                                          frameAsset: effectiveAsset,
+                                        )
+                                      : (effectiveAsset.startsWith('assets/')
+                                          ? Image.asset(
+                                              effectiveAsset,
+                                              width: 170,
+                                              height: 170,
+                                              fit: BoxFit.contain,
+                                            )
+                                          : Image.network(
+                                              effectiveAsset,
+                                              width: 170,
+                                              height: 170,
+                                              fit: BoxFit.contain,
+                                              errorBuilder: (c, e, s) => Column(
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                children: [
+                                                  const Icon(
+                                                    Icons.workspace_premium_rounded,
+                                                    size: 56,
+                                                    color: Colors.amberAccent,
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                    displayName,
+                                                    style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
+                                                  ),
+                                                ],
+                                              ),
+                                            )),
+                                ),
                               ),
                             ),
                           ),
@@ -217,8 +290,9 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
                             children: [
                               UserAvatar(
                                 imageUrl: auth.currentUser.avatarUrl,
+                                name: auth.currentUser.displayName,
                                 radius: 18,
-                                frameAsset: imageUrl,
+                                frameAsset: isFrame ? effectiveAsset : (isEquipped ? effectiveAsset : auth.currentUser.avatarFrame),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -259,7 +333,10 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
                             isDark: isDark,
                             fontSize: 13.5,
                             verticalPadding: 9,
-                            onPressed: () => _toggleEquip(currentAsset),
+                            onPressed: () {
+                              _toggleEquip(currentAsset);
+                              setDialogState(() {});
+                            },
                           ),
                         ),
                       ],
@@ -365,9 +442,11 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
           isScrollable: true,
           tabAlignment: TabAlignment.start,
           tabs: const [
-            Tab(text: 'Bubbles'),
+            Tab(text: 'All'),
             Tab(text: 'Frames'),
+            Tab(text: 'Bubbles'),
             Tab(text: 'Cars'),
+            Tab(text: 'Badges'),
             Tab(text: 'Effects'),
           ],
         ),
@@ -377,9 +456,11 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
           : TabBarView(
               controller: _tabController,
               children: [
-                _buildAssetCategoryGrid('BUBBLE', isDark),
+                _buildAssetCategoryGrid('ALL', isDark),
                 _buildAssetCategoryGrid('FRAME', isDark),
+                _buildAssetCategoryGrid('BUBBLE', isDark),
                 _buildAssetCategoryGrid('VEHICLE', isDark),
+                _buildAssetCategoryGrid('BADGE', isDark),
                 _buildAssetCategoryGrid('EFFECT', isDark),
               ],
             ),
@@ -388,45 +469,84 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
 
   Widget _buildAssetPreview(UserAssetModel item, bool isDark) {
     final imageUrl = item.asset?.imageUrl ?? '';
+    final name = item.asset?.name ?? '';
+    final type = (item.asset?.assetType ?? '').toUpperCase();
+    final cat = (item.asset?.categoryId ?? '').toUpperCase();
 
+    // Priority 1: Check if imageUrl is valid local asset
+    String? localAsset;
     if (imageUrl.startsWith('assets/')) {
+      localAsset = imageUrl;
+    } else {
+      // Look up fallback from NobleBadgeHelper
+      if (type.contains('BADGE') || cat.contains('BADGE')) {
+        localAsset = NobleBadgeHelper.getBadgeAsset(name);
+      } else if (type.contains('FRAME') || cat.contains('FRAME')) {
+        localAsset = NobleBadgeHelper.getFrameAsset(name);
+      } else if (type.contains('TAG')) {
+        localAsset = NobleBadgeHelper.getTagAsset(name);
+      }
+    }
+
+    final finalAssetPath = localAsset ?? imageUrl;
+
+    if (finalAssetPath.startsWith('assets/')) {
       return Image.asset(
-        imageUrl,
+        finalAssetPath,
         width: 58,
         height: 58,
         fit: BoxFit.contain,
-        errorBuilder: (c, e, s) => const Icon(Icons.style_rounded, size: 36, color: AppColors.gold),
+        errorBuilder: (c, e, s) {
+          final fallback = NobleBadgeHelper.getFrameAsset(name) ?? NobleBadgeHelper.getBadgeAsset(name);
+          if (fallback != null && fallback != finalAssetPath) {
+            return Image.asset(fallback, width: 58, height: 58, fit: BoxFit.contain, errorBuilder: (_, _, _) => const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold));
+          }
+          return const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold);
+        },
       );
-    } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+    } else if (finalAssetPath.startsWith('http://') || finalAssetPath.startsWith('https://')) {
       return Image.network(
-        imageUrl,
+        finalAssetPath,
         width: 58,
         height: 58,
         fit: BoxFit.contain,
-        errorBuilder: (c, e, s) => const Icon(Icons.style_rounded, size: 36, color: AppColors.gold),
+        errorBuilder: (c, e, s) {
+          final fallback = NobleBadgeHelper.getFrameAsset(name) ?? NobleBadgeHelper.getBadgeAsset(name);
+          if (fallback != null) {
+            return Image.asset(fallback, width: 58, height: 58, fit: BoxFit.contain, errorBuilder: (_, _, _) => const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold));
+          }
+          return const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold);
+        },
       );
     }
 
-    return const Icon(Icons.style_rounded, size: 36, color: AppColors.gold);
+    return const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold);
   }
 
   Widget _buildAssetCategoryGrid(String typeKeyword, bool isDark) {
     final backpack = context.watch<BackpackProvider>();
     final items = backpack.userAssets.where((ua) {
+      if (typeKeyword == 'ALL') return true;
       final type = (ua.asset?.assetType ?? '').toUpperCase();
       final cat = (ua.asset?.categoryId ?? '').toUpperCase();
+      final name = (ua.asset?.name ?? '').toUpperCase();
 
       if (typeKeyword == 'VEHICLE' || typeKeyword == 'CAR') {
         return type.contains('CAR') || type.contains('MOUNT') || type.contains('VEHICLE') || cat.contains('CAR');
       }
       if (typeKeyword == 'FRAME') {
-        return type.contains('FRAME') || cat.contains('FRAME');
+        return (type.contains('FRAME') || cat.contains('FRAME') || name.contains('FRAME')) &&
+            !type.contains('BADGE') && !cat.contains('BADGE') &&
+            !type.contains('CARD') && !cat.contains('CARD') && !type.contains('SPECIAL');
+      }
+      if (typeKeyword == 'BADGE') {
+        return type.contains('BADGE') || cat.contains('BADGE') || name.contains('BADGE');
       }
       if (typeKeyword == 'BUBBLE') {
-        return type.contains('BUBBLE') || cat.contains('BUBBLE');
+        return type.contains('BUBBLE') || cat.contains('BUBBLE') || name.contains('BUBBLE');
       }
       if (typeKeyword == 'EFFECT' || typeKeyword == 'BACKGROUND' || typeKeyword == 'CARD') {
-        return type.contains(typeKeyword) || cat.contains(typeKeyword) || type.contains('THEME') || cat.contains('THEME') || cat.contains('BACKGROUND') || cat.contains('CARD');
+        return type.contains(typeKeyword) || cat.contains(typeKeyword) || type.contains('THEME') || cat.contains('THEME') || cat.contains('BACKGROUND') || cat.contains('CARD') || type.contains('SPECIAL') || cat.contains('SPECIAL');
       }
 
       return type.contains(typeKeyword) || cat.contains(typeKeyword);

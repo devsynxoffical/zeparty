@@ -130,8 +130,27 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
         for (int i = 0; i < rawData.length; i++) {
           final item = rawData[i];
           if (item is Map<String, dynamic>) {
-            item['rank'] = item['rank'] ?? (i + 1);
-            loaded.add(RankingEntry.fromJson(item));
+            final entry = RankingEntry.fromJson(item);
+            final uname = entry.user.username.toLowerCase();
+            final name = entry.user.name.toLowerCase();
+            // Filter out dummy mock test seeds
+            if (uname.startsWith('target_') ||
+                uname.startsWith('test_') ||
+                name.startsWith('candidate user') ||
+                name.startsWith('outfit tester')) {
+              continue;
+            }
+            loaded.add(RankingEntry(
+              rank: loaded.length + 1,
+              user: entry.user,
+              partnerUser: entry.partnerUser,
+              points: entry.points,
+              formattedPoints: entry.formattedPoints,
+              roomId: entry.roomId,
+              roomTitle: entry.roomTitle,
+              coverImageUrl: entry.coverImageUrl,
+              currentViewersCount: entry.currentViewersCount,
+            ));
           }
         }
       }
@@ -442,11 +461,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                       const SizedBox(height: 2),
                       Row(
                         children: [
-                          Text(
-                            '@${entry.user.username}',
-                            style: TextStyle(
-                              color: AppColors.getTextSecondary(isDark),
-                              fontSize: 11,
+                          Flexible(
+                            child: Text(
+                              '@${entry.user.username}',
+                              style: TextStyle(
+                                color: AppColors.getTextSecondary(isDark),
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           if (entry.user.vipLevel.isNotEmpty && entry.user.vipLevel != 'None') ...[

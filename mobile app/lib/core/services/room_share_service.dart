@@ -368,19 +368,28 @@ class RoomShareService {
     String? title,
   }) async {
     final link = generatePostLink(postId);
-    await Clipboard.setData(ClipboardData(text: link));
-
-    try {
-      if (context.mounted) {
-        context.read<SocialProvider>().sharePost(postId);
-      }
-    } catch (_) {}
 
     if (!context.mounted) return;
-    _showShareDialog(context, title: title ?? 'Social Post', link: link);
+    _showShareDialog(
+      context,
+      title: title ?? 'Social Post',
+      link: link,
+      onShareSuccess: () {
+        try {
+          if (context.mounted) {
+            context.read<SocialProvider>().sharePost(postId);
+          }
+        } catch (_) {}
+      },
+    );
   }
 
-  static void _showShareDialog(BuildContext context, {required String title, required String link}) {
+  static void _showShareDialog(
+    BuildContext context, {
+    required String title,
+    required String link,
+    VoidCallback? onShareSuccess,
+  }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
@@ -443,6 +452,7 @@ class RoomShareService {
                     icon: const Icon(Icons.copy_rounded, color: AppColors.primary, size: 20),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: link));
+                      onShareSuccess?.call();
                       ScaffoldMessenger.of(ctx).showSnackBar(
                         const SnackBar(
                           content: Text('✅ Share link copied to clipboard!'),
@@ -463,21 +473,30 @@ class RoomShareService {
                   icon: Icons.chat_bubble_rounded,
                   label: 'WhatsApp',
                   color: const Color(0xFF25D366),
-                  onTap: () => _copyAndNotify(ctx, link, 'WhatsApp share link copied! Paste in WhatsApp chat.'),
+                  onTap: () {
+                    onShareSuccess?.call();
+                    _copyAndNotify(ctx, link, 'WhatsApp share link copied! Paste in WhatsApp chat.');
+                  },
                 ),
                 _buildShareOption(
                   ctx,
                   icon: Icons.send_rounded,
                   label: 'Telegram',
                   color: const Color(0xFF0088CC),
-                  onTap: () => _copyAndNotify(ctx, link, 'Telegram share link copied! Paste in Telegram chat.'),
+                  onTap: () {
+                    onShareSuccess?.call();
+                    _copyAndNotify(ctx, link, 'Telegram share link copied! Paste in Telegram chat.');
+                  },
                 ),
                 _buildShareOption(
                   ctx,
                   icon: Icons.link_rounded,
                   label: 'Copy Link',
                   color: AppColors.primary,
-                  onTap: () => _copyAndNotify(ctx, link, 'Link copied! Send to anyone to watch.'),
+                  onTap: () {
+                    onShareSuccess?.call();
+                    _copyAndNotify(ctx, link, 'Link copied! Send to anyone to watch.');
+                  },
                 ),
               ],
             ),

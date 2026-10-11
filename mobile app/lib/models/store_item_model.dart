@@ -72,6 +72,36 @@ class StoreItemModel {
     );
   }
 
+  StoreItemModel copyWith({
+    String? id,
+    String? name,
+    String? categoryId,
+    String? assetType,
+    String? imageUrl,
+    String? assetUrl,
+    int? durationDays,
+    int? priceCoins,
+    bool? isVipExclusive,
+    int? minVipLevelRequired,
+    String? roomAvailability,
+    bool? isActive,
+  }) {
+    return StoreItemModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      categoryId: categoryId ?? this.categoryId,
+      assetType: assetType ?? this.assetType,
+      imageUrl: imageUrl ?? this.imageUrl,
+      assetUrl: assetUrl ?? this.assetUrl,
+      durationDays: durationDays ?? this.durationDays,
+      priceCoins: priceCoins ?? this.priceCoins,
+      isVipExclusive: isVipExclusive ?? this.isVipExclusive,
+      minVipLevelRequired: minVipLevelRequired ?? this.minVipLevelRequired,
+      roomAvailability: roomAvailability ?? this.roomAvailability,
+      isActive: isActive ?? this.isActive,
+    );
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,

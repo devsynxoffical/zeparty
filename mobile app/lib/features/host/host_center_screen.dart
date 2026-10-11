@@ -19,6 +19,14 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
   String _searchQuery = '';
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AgencyProvider>().fetchAllAgencies();
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
@@ -74,7 +82,7 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                 onChanged: (val) => setState(() => _searchQuery = val),
                 style: TextStyle(color: AppColors.getTextPrimary(isDark)),
                 decoration: InputDecoration(
-                  hintText: 'Search Agency by ID (e.g. agency_101)...',
+                  hintText: 'Search Agency by ID or Name...',
                   hintStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
                   prefixIcon: Icon(Icons.search_rounded, color: primary),
                   suffixIcon: _searchQuery.isNotEmpty
@@ -170,7 +178,7 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: matchingAgencies.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  separatorBuilder: (_, _) => const SizedBox(height: 12),
                   itemBuilder: (context, idx) {
                     final agency = matchingAgencies[idx];
                     final isPendingThis = existingReq != null && existingReq.agencyId == agency.id && existingReq.status == 'Pending';
@@ -302,7 +310,16 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                     ],
                   ),
                   const SizedBox(height: 6),
-                  Text('Agency: ${audioHost.agencyName} (ID: ${audioHost.agencyId})', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                  Builder(builder: (_) {
+                    final hasRealAgency = audioHost.agencyName.isNotEmpty &&
+                        !audioHost.agencyName.toLowerCase().contains('dummy') &&
+                        audioHost.agencyName != 'ZeParty Agency' &&
+                        audioHost.agencyName != 'ZeParty Royal Agency';
+                    final agencyLabel = hasRealAgency
+                        ? 'Agency: ${audioHost.agencyName}${audioHost.agencyId.isNotEmpty ? ' (ID: ${audioHost.agencyId})' : ''}'
+                        : 'Independent Audio Host';
+                    return Text(agencyLabel, style: const TextStyle(color: Colors.white70, fontSize: 12));
+                  }),
                   const SizedBox(height: 14),
 
                   // Progress Bar
@@ -507,7 +524,10 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                         // 15-Day Payout Periods Table
                         Text('15-Day Payout Periods', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
                         const SizedBox(height: 8),
-                        ...usdProv.audioHostSalaryPeriods.map((period) => Container(
+                        if (usdProv.audioHostSalaryPeriods.isEmpty)
+                          const Text('No salary payout periods recorded yet.', style: TextStyle(fontSize: 11, color: Colors.white60))
+                        else
+                          ...usdProv.audioHostSalaryPeriods.map((period) => Container(
                           margin: const EdgeInsets.only(bottom: 8),
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(

@@ -692,7 +692,7 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
                 children: [
                   AnimatedSVIPBadge(
                     key: ValueKey('crest_${lvl.level}'),
-                    assetPath: NobleBadgeHelper.getBadgeAsset('SVIP ${lvl.level}') ?? 'assets/svip/svip1_badge.webp',
+                    assetPath: _getSvipBadgeAsset(lvl.level),
                     width: 140,
                     height: 140,
                   ),
@@ -827,33 +827,36 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
 
   // ─── Dedicated Privilege Asset Resolvers for SVIP 1..16 (Strict Category Isolation) ───
   String _getVipTagAsset(int level) {
-    if (level <= 1) return 'assets/svip/svip1_tag.png';
-    if (level <= 15) return 'assets/svip/svip${level}_tag.png';
-    return 'assets/svip/svip16_tag.png';
+    if (level == 2) return ''; // SVIP 2 does not have an official VIP tag in source deliverables
+    final clamped = level.clamp(1, 16);
+    return 'assets/svip/svip${clamped}_tag.png';
   }
 
   String _getHomepageSkinAsset(int level) {
-    if (level <= 15) return 'assets/svip/svip${level}_card.webp';
-    return 'assets/svip/svip16_card.webp';
+    if (level == 1 || level == 2) return ''; // SVIP 1 & 2 do not have an official homepage skin in source deliverables
+    final clamped = level.clamp(1, 16);
+    return 'assets/svip/svip${clamped}_card.webp';
   }
 
   String _getChatBubbleAsset(int level) {
-    if (level <= 15) return 'assets/svip/svip${level}_chat_bubble.webp';
-    return 'assets/svip/svip16_chat_bubble.webp';
+    final clamped = level.clamp(1, 16);
+    return 'assets/svip/svip${clamped}_chat_bubble.webp';
   }
 
   String _getAvatarFrameAsset(int level) {
-    if (level <= 15) return 'assets/svip/svip${level}_frame.webp';
-    return 'assets/svip/svip16_frame.webp';
+    final clamped = level.clamp(1, 16);
+    return 'assets/svip/svip${clamped}_frame.webp';
   }
 
   String _getEntranceEffectAsset(int level) {
-    if (level <= 15) return 'assets/svip/svip${level}_entry.webp';
-    return 'assets/svip/svip16_entry.webp';
+    final clamped = level.clamp(1, 16);
+    if (clamped == 13) return 'assets/svip/ZP-124_svip-14_entry.webp';
+    return 'assets/svip/svip${clamped}_entry.webp';
   }
 
   String _getSvipBadgeAsset(int level) {
-    return NobleBadgeHelper.getBadgeAsset('SVIP $level') ?? 'assets/svip/SVIP${level < 10 ? '0$level' : (level <= 15 ? level : '15')}_badge_live.webp';
+    final clamped = level.clamp(1, 16);
+    return NobleBadgeHelper.getBadgeAsset('SVIP $clamped') ?? 'assets/svip/svip${clamped}_badge.webp';
   }
 
   // ─── Privilege cards (3 per row, expandable, strictly category-correct) ───
@@ -861,12 +864,12 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
     final l = lvl.level;
 
     final items = <_PrivItem>[
-      _PrivItem('VIP Tag', _getVipTagAsset(l), fallback: 'assets/svip/svip1_tag.png'),
-      _PrivItem('Homepage Skin', _getHomepageSkinAsset(l), fallback: 'assets/svip/svip3_card.webp', isSkin: true),
-      _PrivItem('Chat Bubble', _getChatBubbleAsset(l), fallback: 'assets/svip/svip6_chat_bubble.webp'),
-      _PrivItem('Avatar Frame', _getAvatarFrameAsset(l), fallback: 'assets/svip/svip6_frame.webp'),
-      _PrivItem('Entrance Effect', _getEntranceEffectAsset(l), fallback: 'assets/svip/svip6_entry.webp'),
-      _PrivItem('SVIP Badge', _getSvipBadgeAsset(l), fallback: 'assets/svip/SVIP01_badge_live.webp'),
+      _PrivItem('VIP Tag', _getVipTagAsset(l), fallback: _getVipTagAsset(l)),
+      _PrivItem('Homepage Skin', _getHomepageSkinAsset(l), fallback: _getHomepageSkinAsset(l), isSkin: true),
+      _PrivItem('Chat Bubble', _getChatBubbleAsset(l), fallback: _getChatBubbleAsset(l)),
+      _PrivItem('Avatar Frame', _getAvatarFrameAsset(l), fallback: _getAvatarFrameAsset(l)),
+      _PrivItem('Entrance Effect', _getEntranceEffectAsset(l), fallback: _getEntranceEffectAsset(l)),
+      _PrivItem('SVIP Badge', _getSvipBadgeAsset(l), fallback: _getSvipBadgeAsset(l)),
     ];
 
     final expanded = _expandedLevels.contains(l);
@@ -909,20 +912,24 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
   }
 
   Widget _privCard(_PrivItem item) {
-    Widget img = Image.asset(
-      item.asset,
-      fit: item.isSkin ? BoxFit.cover : BoxFit.contain,
-      errorBuilder: (_, _, _) => Image.asset(item.fallback, fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox()),
-    );
-
-    if (item.isSkin) {
-      img = ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: ColorFiltered(
-          colorFilter: const ColorFilter.mode(Color(0xFFCFA766), BlendMode.multiply),
-          child: img,
-        ),
+    Widget img;
+    if (item.asset.isEmpty) {
+      img = const SizedBox.shrink();
+    } else {
+      img = Image.asset(
+        item.asset,
+        fit: item.isSkin ? BoxFit.cover : BoxFit.contain,
+        errorBuilder: (_, _, _) => item.fallback.isNotEmpty
+            ? Image.asset(item.fallback, fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox.shrink())
+            : const SizedBox.shrink(),
       );
+
+      if (item.isSkin) {
+        img = ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: img,
+        );
+      }
     }
 
     return Container(

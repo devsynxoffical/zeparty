@@ -380,57 +380,63 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                             : AssetImage(equippedTheme) as ImageProvider)
                         : null);
 
-                return AnimatedContainer(
-                  duration: const Duration(milliseconds: 500),
-                  decoration: BoxDecoration(
-                    image: bgImage != null
-                        ? DecorationImage(
-                            image: bgImage,
-                            fit: BoxFit.cover,
-                            colorFilter: ColorFilter.mode(
-                              Colors.black.withValues(alpha: 0.55),
-                              BlendMode.darken,
-                            ),
-                          )
-                        : null,
-                    gradient: bgImage == null
-                        ? LinearGradient(
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Default Build-in Gradient (only shown if NO custom background theme is equipped)
+                    if (bgImage == null)
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
                             begin: Alignment.topCenter,
                             end: Alignment.bottomCenter,
                             colors: _roomBackgroundGradient,
-                          )
-                        : null,
-                  ),
+                          ),
+                        ),
+                      ),
+
+                    // Default Neon Glow Shapes (only shown if NO custom background theme is equipped)
+                    if (bgImage == null) ...[
+                      Positioned(
+                        top: -60,
+                        left: -40,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 500),
+                          width: 260,
+                          height: 260,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _ambientGlowColor1.withValues(alpha: 0.28),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 120,
+                        right: -60,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 500),
+                          width: 220,
+                          height: 220,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _ambientGlowColor2.withValues(alpha: 0.2),
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    // Equipped Background Theme Image (replaces build-in background completely)
+                    if (bgImage != null)
+                      Positioned.fill(
+                        child: Image(
+                          image: bgImage,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(color: const Color(0xFF0D0B18)),
+                        ),
+                      ),
+                  ],
                 );
               },
-            ),
-          ),
-
-          // Neon Glow Shapes
-          Positioned(
-            top: -60,
-            left: -40,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              width: 260,
-              height: 260,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _ambientGlowColor1.withValues(alpha: 0.28),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 120,
-            right: -60,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 500),
-              width: 220,
-              height: 220,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _ambientGlowColor2.withValues(alpha: 0.2),
-              ),
             ),
           ),
 
@@ -1986,14 +1992,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: [
-                _buildActionBtn(Icons.person_outline_rounded, 'Profile', isDark, () {
+                _buildActionBtn(Icons.account_circle_rounded, 'Profile', isDark, () {
                   Navigator.pop(ctx);
                   Navigator.push(
                     ctx,
                     MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: p.user.id)),
                   );
                 }),
-                _buildActionBtn(Icons.person_add, 'Follow', isDark, () {
+                _buildActionBtn(Icons.person_add_rounded, 'Follow', isDark, () {
                   final auth = context.read<AuthProvider>();
                   final alreadyFollowing = auth.isFollowing(p.user.id);
                   if (alreadyFollowing) {
@@ -2006,14 +2012,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                     ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('✨ Following ${p.user.name}!')));
                   }
                 }),
-                _buildActionBtn(Icons.chat_bubble_outline, 'Message', isDark, () {
+                _buildActionBtn(Icons.forum_rounded, 'Message', isDark, () {
                   Navigator.pop(ctx);
                   Navigator.push(
                     ctx,
                     MaterialPageRoute(builder: (_) => ChatScreen(user: p.user)),
                   );
                 }),
-                _buildActionBtn(Icons.card_giftcard, 'Gift', isDark, () {
+                _buildActionBtn(Icons.redeem_rounded, 'Gift', isDark, () {
                   Navigator.pop(ctx);
                   _openGiftDialog();
                 }),

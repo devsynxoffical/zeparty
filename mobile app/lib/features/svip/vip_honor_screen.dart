@@ -433,23 +433,29 @@ class _VIPHonorScreenState extends State<VIPHonorScreen> with SingleTickerProvid
   }
 
   Widget _buildTop3Podium(List<VIPRankUser> top3, bool isDark, Color primary) {
-    if (top3.length < 3) return const SizedBox.shrink();
-    final rank1 = top3[0];
-    final rank2 = top3[1];
-    final rank3 = top3[2];
+    if (top3.isEmpty) return const SizedBox.shrink();
+    final rank1 = top3.isNotEmpty ? top3[0] : null;
+    final rank2 = top3.length > 1 ? top3[1] : null;
+    final rank3 = top3.length > 2 ? top3[2] : null;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         // Rank 2 (Left)
-        _buildPodiumPillar(rank2, 2, 110, Colors.grey.shade400, '🥈', isDark),
-        const SizedBox(width: 10),
+        if (rank2 != null) ...[
+          _buildPodiumPillar(rank2, 2, 110, Colors.grey.shade400, '🥈', isDark),
+          const SizedBox(width: 10),
+        ],
         // Rank 1 (Center - Tallest)
-        _buildPodiumPillar(rank1, 1, 140, Colors.amber, '👑', isDark),
-        const SizedBox(width: 10),
+        if (rank1 != null) ...[
+          _buildPodiumPillar(rank1, 1, 140, Colors.amber, '👑', isDark),
+        ],
         // Rank 3 (Right)
-        _buildPodiumPillar(rank3, 3, 90, Colors.brown.shade400, '🥉', isDark),
+        if (rank3 != null) ...[
+          const SizedBox(width: 10),
+          _buildPodiumPillar(rank3, 3, 90, Colors.brown.shade400, '🥉', isDark),
+        ],
       ],
     );
   }

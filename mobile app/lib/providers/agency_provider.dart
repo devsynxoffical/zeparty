@@ -42,40 +42,7 @@ class AgencyProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
-  final List<AgencyModel> _allAgencies = [
-    AgencyModel(
-      id: 'agency_101',
-      name: 'ZeParty Premier Agency',
-      logoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-      description: 'Official ZeParty Elite Audio Host Network',
-      ownerUserId: '6076247',
-      ownerName: 'ZeParty Official Owner',
-      status: 'Active',
-      totalHosts: 12,
-      totalMembers: 15,
-      cycle15DayId: 'cycle_2026_09_A',
-      pendingBalanceUsd: 250.0,
-      availableBalanceUsd: 1200.0,
-      countryCode: 'GLOBAL',
-      createdAt: DateTime.now().subtract(const Duration(days: 90)),
-    ),
-    AgencyModel(
-      id: 'agency_102',
-      name: 'Global Star Talent Agency',
-      logoUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
-      description: 'Top-tier audio broadcasting and live show hosts',
-      ownerUserId: 'user_star_owner',
-      ownerName: 'Alex Mercer',
-      status: 'Active',
-      totalHosts: 8,
-      totalMembers: 10,
-      cycle15DayId: 'cycle_2026_09_A',
-      pendingBalanceUsd: 180.0,
-      availableBalanceUsd: 750.0,
-      countryCode: 'US',
-      createdAt: DateTime.now().subtract(const Duration(days: 60)),
-    ),
-  ];
+  final List<AgencyModel> _allAgencies = [];
 
   AgencyModel? get userAgency => _userAgency;
   List<AgencyMemberModel> get members => List.unmodifiable(_members);
@@ -139,7 +106,7 @@ class AgencyProvider extends ChangeNotifier {
     }
 
     final targetAgency = allAgencies.where((a) => a.id == agencyId).firstOrNull;
-    final agencyName = targetAgency?.name ?? 'ZeParty Agency';
+    final agencyName = targetAgency?.name ?? 'Agency $agencyId';
 
     final req = AgencyHostRequest(
       id: 'req_${DateTime.now().millisecondsSinceEpoch}',
@@ -194,8 +161,22 @@ class AgencyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Fetch all active agencies from backend
+  Future<void> fetchAllAgencies() async {
+    try {
+      final response = await _apiClient.get('/v1/agencies');
+      if (response.data?['success'] == true) {
+        final list = response.data['data'] as List? ?? [];
+        _allAgencies.clear();
+        _allAgencies.addAll(list.map((a) => AgencyModel.fromJson(a as Map<String, dynamic>)));
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
   AgencyProvider() {
     fetchMyAgency();
+    fetchAllAgencies();
   }
 
   /// Apply/Register Agency on backend database
@@ -287,8 +268,8 @@ class AgencyProvider extends ChangeNotifier {
     final inviteId = 'inv_ag_${DateTime.now().millisecondsSinceEpoch}';
     final invitation = AgencyInvitationModel(
       id: inviteId,
-      agencyId: _userAgency?.id ?? 'agency_777',
-      agencyName: _userAgency?.name ?? 'ZeParty Agency',
+      agencyId: _userAgency?.id ?? '',
+      agencyName: _userAgency?.name ?? 'Official Agency',
       inviterUserId: inviterUserId,
       inviterName: inviterName,
       targetUserId: targetUserId,
@@ -323,8 +304,8 @@ class AgencyProvider extends ChangeNotifier {
           userId: targetUserId,
           userName: targetName,
           avatarUrl: targetAvatar ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
-          agencyId: _userAgency?.id ?? 'agency_777',
-          agencyName: _userAgency?.name ?? 'ZeParty Agency',
+          agencyId: _userAgency?.id ?? '',
+          agencyName: _userAgency?.name ?? 'Direct Agency',
           achievedDiamonds: 10000,
           completedValidDays: 5,
           dailyOnlineMinutes: 90,

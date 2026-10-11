@@ -264,6 +264,110 @@ class SkeletonAvatarStrip extends StatelessWidget {
   }
 }
 
+/// Exact 6-item conversation shimmer skeleton matching Image 4
+class InboxShimmerSkeleton extends StatelessWidget {
+  final int count;
+
+  const InboxShimmerSkeleton({super.key, this.count = 6});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg = isDark ? const Color(0xFF191919) : Colors.grey.shade100;
+    final baseShimmer = isDark ? const Color(0xFF282828) : Colors.grey.shade300;
+    final highlightShimmer = isDark ? const Color(0xFF383838) : Colors.grey.shade100;
+
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      itemCount: count,
+      itemBuilder: (context, index) {
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.05),
+              width: 0.8,
+            ),
+          ),
+          child: Row(
+            children: [
+              // Circular avatar shimmer
+              Shimmer.fromColors(
+                baseColor: baseShimmer,
+                highlightColor: highlightShimmer,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: baseShimmer,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              // Message lines
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Shimmer.fromColors(
+                          baseColor: baseShimmer,
+                          highlightColor: highlightShimmer,
+                          child: Container(
+                            width: 140,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: baseShimmer,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                        ),
+                        // Row 2 red unread indicator dot matching Image 4
+                        if (index == 1) ...[
+                          const Spacer(),
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFF2D55),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Shimmer.fromColors(
+                      baseColor: baseShimmer,
+                      highlightColor: highlightShimmer,
+                      child: Container(
+                        width: index == 1 ? 180 : 200,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: baseShimmer,
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+
 /// Empty-state widget with icon, title, subtitle
 class EmptyStateWidget extends StatelessWidget {
   final IconData icon;
