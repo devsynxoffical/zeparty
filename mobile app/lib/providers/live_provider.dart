@@ -197,8 +197,8 @@ class LiveProvider extends ChangeNotifier {
 
     try {
       // 1. Connect Socket.IO
-      _socketService.connect();
-      _socketService.joinRoom(room.id);
+      _socketService.connect(user: currentUser?.toJson());
+      _socketService.joinRoom(room.id, user: currentUser?.toJson());
       _setupSocketSubscriptions(currentUser);
 
       // 2. REST Join
@@ -375,15 +375,33 @@ class LiveProvider extends ChangeNotifier {
           return;
         }
 
-        // Deduplicate optimistic local messages (matches by identical text within 8s)
-        if (_messages.isNotEmpty) {
-          final recentMatching = _messages.reversed.take(10).where((m) =>
+        // Deduplicate only our own optimistic local message echo
+        if (_messages.isNotEmpty && senderId.isNotEmpty && senderId == _currentUser?.id) {
+          final recentMatchingIndex = _messages.lastIndexWhere((m) =>
+            m.senderId == senderId &&
             m.text.trim() == text.trim() &&
             DateTime.now().difference(m.timestamp).inSeconds < 8
-          ).firstOrNull;
+          );
 
-          if (recentMatching != null) {
-            return; // Prevent duplicate insertion
+          if (recentMatchingIndex != -1) {
+            // Update local message with server assigned id if available
+            if (incomingId != null) {
+              final existing = _messages[recentMatchingIndex];
+              _messages[recentMatchingIndex] = LiveMessage(
+                id: incomingId,
+                senderId: existing.senderId,
+                sender: existing.sender,
+                text: existing.text,
+                avatarUrl: existing.avatarUrl,
+                isHost: existing.isHost,
+                isVip: existing.isVip,
+                nobleTitle: existing.nobleTitle,
+                avatarFrame: existing.avatarFrame,
+                chatBubble: existing.chatBubble,
+                timestamp: existing.timestamp,
+              );
+            }
+            return;
           }
         }
 
@@ -715,6 +733,7 @@ class LiveProvider extends ChangeNotifier {
       _socketService.sendRoomChatMessage(
         roomId: _activeRoom!.id,
         text: trimmedText,
+        sender: effectiveUser?.toJson(),
       );
     }
   }

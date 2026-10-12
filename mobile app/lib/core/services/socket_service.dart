@@ -167,7 +167,7 @@ class SocketService {
   }
 
   /// Connect to backend Socket.IO server with JWT token
-  Future<void> connect({String? token}) async {
+  Future<void> connect({String? token, Map<String, dynamic>? user}) async {
     final authToken = token ?? await ApiClient.instance.getAccessToken() ?? 'guest_anonymous';
 
     if (_socket != null && _isConnected) {
@@ -181,12 +181,18 @@ class SocketService {
 
     final baseUrl = ApiClient.baseUrl;
 
+    final authMap = <String, dynamic>{'token': authToken};
+    if (user != null) {
+      authMap['user'] = user;
+      if (user['id'] != null) authMap['userId'] = user['id'];
+    }
+
     _socket = IO.io(
       baseUrl,
       IO.OptionBuilder()
           .setTransports(['websocket', 'polling'])
           .disableAutoConnect()
-          .setAuth({'token': authToken})
+          .setAuth(authMap)
           .setExtraHeaders({'Authorization': 'Bearer $authToken'})
           .enableReconnection()
           .setReconnectionAttempts(10)
@@ -305,6 +311,10 @@ class SocketService {
     }
     _socket!.off('room:chat_message');
     _socket!.on('room:chat_message', handleChatMessage);
+    _socket!.off('chat_message');
+    _socket!.on('chat_message', handleChatMessage);
+    _socket!.off('room:comment');
+    _socket!.on('room:comment', handleChatMessage);
 
     _socket!.on('room:user_kicked', (data) {
       if (data != null) _userKickedController.add(safeMap(data));
@@ -473,15 +483,18 @@ class SocketService {
   }
 
   /// Subscribe to room channel on server
-  void joinRoomSubscription(String roomId) {
+  void joinRoomSubscription(String roomId, {Map<String, dynamic>? user}) {
     _currentRoomId = roomId;
     if (_socket != null) {
-      _socket!.emit('room:join', {'roomId': roomId});
+      _socket!.emit('room:join', {
+        'roomId': roomId,
+        if (user != null) 'user': user,
+      });
       debugPrint('[SocketService] Subscribed to room:$roomId');
     }
   }
 
-  void joinRoom(String roomId) => joinRoomSubscription(roomId);
+  void joinRoom(String roomId, {Map<String, dynamic>? user}) => joinRoomSubscription(roomId, user: user);
 
   /// Unsubscribe from room channel on server
   void leaveRoomSubscription(String roomId) {
@@ -521,12 +534,14 @@ class SocketService {
     required String roomId,
     required String text,
     String type = 'text',
+    Map<String, dynamic>? sender,
   }) {
     if (_socket != null) {
       _socket!.emit('room:chat_send', {
         'roomId': roomId,
         'text': text,
         'type': type,
+        if (sender != null) 'sender': sender,
       });
     }
   }

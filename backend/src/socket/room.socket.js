@@ -90,14 +90,14 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    if (room.status !== 'LIVE') {
+    if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
       const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_LIVE, message: `Room is not live (status: ${room.status})` } };
       if (typeof callback === 'function') return callback(err);
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
     // 2. Persistent RoomMember registration via authoritative Room Service
-    const joinResult = await roomService.joinRoom(roomId, userId, db);
+    const joinResult = await roomService.joinRoom(roomId, userId, db).catch(() => null);
 
     // Cancel any active host absence timer if host returned
     const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
@@ -116,25 +116,33 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     // 5. Generate and Send Authoritative Room Snapshot
     const currentCount = typeof joinResult?.currentViewersCount === 'number'
       ? joinResult.currentViewersCount
-      : (typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 0);
+      : (typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 1);
     const snapshot = buildRoomSnapshot(room, currentCount);
     socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, { room, seats: room.seats || [] });
 
     // 6. Broadcast user joined event to ALL room members (including host's own socket)
+    const clientUser = data?.user || {};
+    const effectiveJoinedId = clientUser.id || clientUser.userId || socket.user?.id || userId;
+    const effectiveJoinedName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || 'Viewer';
+    const effectiveJoinedAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
+    const effectiveJoinedVip = Boolean(clientUser.isVip || socket.user?.isVip);
+    const effectiveJoinedNoble = clientUser.nobleTitle || socket.user?.nobleTitle || null;
+
     const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
     const userPayload = {
       roomId,
-      userId: socket.user?.id || userId,
+      userId: effectiveJoinedId,
+      id: effectiveJoinedId,
       user: {
-        id: socket.user?.id || userId,
-        userId: socket.user?.id || userId,
-        username: socket.user?.username || 'user',
-        name: socket.user?.displayName || socket.user?.name || socket.user?.username || 'User',
-        displayName: socket.user?.displayName || socket.user?.name || socket.user?.username || 'User',
-        avatarUrl: socket.user?.avatarUrl || socket.user?.profile?.avatarUrl || null,
-        isVip: Boolean(socket.user?.isVip),
-        nobleLevel: socket.user?.nobleLevel || null,
-        nobleTitle: socket.user?.nobleTitle || null,
+        id: effectiveJoinedId,
+        userId: effectiveJoinedId,
+        username: clientUser.username || socket.user?.username || effectiveJoinedName,
+        name: effectiveJoinedName,
+        displayName: effectiveJoinedName,
+        avatarUrl: effectiveJoinedAvatar,
+        isVip: effectiveJoinedVip,
+        nobleLevel: effectiveJoinedNoble,
+        nobleTitle: effectiveJoinedNoble,
       },
       viewerCount: currentCount,
       count: currentCount,
@@ -471,26 +479,33 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
       socket.join(`room:${roomId}`);
     }
 
-    const senderId = socket.user?.id || socket.userId;
-    let senderName = socket.user?.displayName || socket.user?.name || socket.user?.username;
-    let senderAvatar = socket.user?.avatarUrl;
-    let senderVip = Boolean(socket.user?.isVip);
-    let senderNoble = socket.user?.nobleTitle || socket.user?.nobleLevel;
-    let senderRole = socket.user?.role;
-    let senderFrame = socket.user?.avatarFrame;
-    let senderBubble = socket.user?.chatBubble;
+    const clientSender = data?.sender || data?.user || {};
+    const senderId = clientSender.id || clientSender.userId || socket.user?.id || socket.userId;
+    let senderName = clientSender.displayName || clientSender.name || clientSender.username || socket.user?.displayName || socket.user?.name || socket.user?.username;
+    let senderAvatar = clientSender.avatarUrl || socket.user?.avatarUrl;
+    let senderVip = Boolean(clientSender.isVip || socket.user?.isVip);
+    let senderNoble = clientSender.nobleTitle || clientSender.nobleLevel || socket.user?.nobleTitle || socket.user?.nobleLevel;
+    let senderRole = clientSender.role || socket.user?.role;
+    let senderFrame = clientSender.avatarFrame || clientSender.frameUrl || socket.user?.avatarFrame;
+    let senderBubble = clientSender.chatBubble || clientSender.bubbleUrl || socket.user?.chatBubble;
 
-    if (!senderName || senderName === 'User' || senderName === 'ZeParty Member') {
+    if (!senderName || senderName === 'User' || senderName === 'ZeParty Member' || senderName.startsWith('guest_')) {
       try {
-        const dbUser = await userRepository.findById(senderId);
-        if (dbUser) {
-          senderName = dbUser.profile?.displayName || dbUser.username || 'User';
-          senderAvatar = dbUser.profile?.avatarUrl || dbUser.avatarUrl || senderAvatar;
-          senderVip = Boolean(dbUser.profile?.vipLevel > 0 || dbUser.profile?.svipLevel > 0);
-          senderNoble = dbUser.profile?.nobleRank || senderNoble;
-          senderRole = dbUser.userType;
+        if (senderId && !String(senderId).startsWith('guest_')) {
+          const dbUser = await userRepository.findById(senderId);
+          if (dbUser) {
+            senderName = dbUser.profile?.displayName || dbUser.name || dbUser.username || senderName;
+            senderAvatar = dbUser.profile?.avatarUrl || dbUser.avatarUrl || senderAvatar;
+            senderVip = Boolean(dbUser.profile?.vipLevel > 0 || dbUser.profile?.svipLevel > 0);
+            senderNoble = dbUser.profile?.nobleRank || senderNoble;
+            senderRole = dbUser.userType || senderRole;
+          }
         }
       } catch (_) {}
+    }
+
+    if (!senderName || senderName === 'ZeParty Member') {
+      senderName = `User_${String(senderId).replace('guest_', '').substring(0, 5)}`;
     }
 
     const payload = {
@@ -500,7 +515,7 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
       sender: {
         id: senderId,
         userId: senderId,
-        username: socket.user?.username || 'user',
+        username: clientSender.username || socket.user?.username || senderName,
         name: senderName || 'User',
         displayName: senderName || 'User',
         avatarUrl: senderAvatar || null,
@@ -518,6 +533,9 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
 
     const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
     broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
+    broadcastTarget.emit('room:chat_message', payload);
+    broadcastTarget.emit('chat_message', payload);
+    broadcastTarget.emit('room:comment', payload);
 
     if (typeof callback === 'function') {
       return callback({ success: true, data: payload });

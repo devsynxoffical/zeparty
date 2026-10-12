@@ -234,8 +234,8 @@ class LivePartyProvider extends ChangeNotifier {
 
     try {
       // 1. Connect Socket.IO
-      _socketService.connect();
-      _socketService.joinRoom(room.id);
+      _socketService.connect(user: currentUser.toJson());
+      _socketService.joinRoom(room.id, user: currentUser.toJson());
       _setupSocketSubscriptions(currentUser);
 
       // 2. Perform backend REST join
@@ -401,15 +401,25 @@ class LivePartyProvider extends ChangeNotifier {
     _socketUserJoinedSub = _socketService.userJoinedStream.listen((data) {
       try {
         final userObj = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : <String, dynamic>{};
-        final joinedUserId = userObj['id']?.toString() ?? data['userId']?.toString() ?? data['id']?.toString();
+        final joinedUserId = userObj['id']?.toString() ??
+            userObj['userId']?.toString() ??
+            data['userId']?.toString() ??
+            data['id']?.toString();
         if (joinedUserId != null && joinedUserId != currentUser.id) {
+          final displayName = userObj['displayName']?.toString() ??
+              userObj['name']?.toString() ??
+              userObj['username']?.toString() ??
+              data['name']?.toString() ??
+              'A user';
           final existingIdx = _participants.indexWhere((p) => p.user.id == joinedUserId);
           if (existingIdx == -1) {
             final joinedUser = UserModel(
               id: joinedUserId,
-              username: userObj['username']?.toString() ?? 'viewer',
-              name: userObj['displayName']?.toString() ?? userObj['name']?.toString() ?? userObj['username']?.toString() ?? 'Viewer',
+              username: userObj['username']?.toString() ?? displayName,
+              name: displayName,
               avatarUrl: userObj['avatarUrl']?.toString() ?? '',
+              nobleTitle: userObj['nobleTitle']?.toString() ?? userObj['nobleLevel']?.toString(),
+              isVip: userObj['isVip'] == true,
             );
             _participants.add(PartyParticipantModel(
               user: joinedUser,
@@ -418,7 +428,6 @@ class LivePartyProvider extends ChangeNotifier {
               joinedAt: DateTime.now(),
             ));
           }
-          final displayName = userObj['displayName']?.toString() ?? userObj['name']?.toString() ?? userObj['username']?.toString() ?? 'A user';
           sendSystemMessage('👋 $displayName joined the room.');
           final viewerCount = (data['viewerCount'] is num) ? (data['viewerCount'] as num).toInt() : int.tryParse(data['viewerCount']?.toString() ?? '');
           if (viewerCount != null && _activeRoom != null) {
@@ -616,9 +625,10 @@ class LivePartyProvider extends ChangeNotifier {
         if (msgId.isNotEmpty && _messages.any((m) => m.id == msgId)) return;
         if (clientMsgId != null && _messages.any((m) => m.id == clientMsgId)) return;
 
-        // 2. Message deduplication (matches by senderId/name OR matching recent text within 8s)
-        if (_messages.isNotEmpty) {
+        // 2. Message deduplication (matches only for same sender's optimistic message within 8s)
+        if (_messages.isNotEmpty && senderId.isNotEmpty) {
           final recentMatchingIndex = _messages.lastIndexWhere((m) =>
+            (m.sender.id == senderId || m.sender.name == senderMap['displayName'] || m.sender.name == senderMap['name']) &&
             m.text.trim() == text.trim() &&
             DateTime.now().difference(m.timestamp).inSeconds < 8
           );
@@ -635,7 +645,7 @@ class LivePartyProvider extends ChangeNotifier {
                 isSystemMessage: existing.isSystemMessage,
               );
             }
-            return; // Skip adding duplicate "ZeParty Member" comment
+            return;
           }
         }
 
@@ -1166,6 +1176,7 @@ class LivePartyProvider extends ChangeNotifier {
       _socketService.sendRoomChatMessage(
         roomId: _activeRoom!.id,
         text: text.trim(),
+        sender: _currentUser?.toJson(),
       );
     }
     notifyListeners();
