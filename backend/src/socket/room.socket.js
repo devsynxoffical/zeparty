@@ -2,6 +2,7 @@ import roomRepository from '../repositories/room.repository.js';
 import userRepository from '../repositories/user.repository.js';
 import roomService from '../services/room.service.js';
 import presenceService from './presence.service.js';
+import prisma from '../config/database.js';
 import { startHostAbsentTimer, clearHostAbsentTimer } from './roomTimer.manager.js';
 import { deriveAgoraUid } from '../utils/agoraToken.util.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
@@ -16,14 +17,17 @@ export function buildRoomSnapshot(room, viewerCount) {
   const hostUserId = room.creatorUserId || room.creator?.id;
 
   return {
+    id: room.id,
     roomId: room.id,
+    creatorUserId: hostUserId,
     title: room.title,
     roomType: room.roomType || 'VIDEO_PARTY',
     category: room.category || 'CHATTING',
     status: room.status,
     isPinned: Boolean(room.isPinned),
     pinPosition: room.pinPosition || null,
-    currentViewersCount: typeof viewerCount === 'number' ? viewerCount : room.currentViewersCount || 0,
+    currentViewersCount: typeof viewerCount === 'number' ? viewerCount : (room.currentViewersCount || 0),
+    viewerCount: typeof viewerCount === 'number' ? viewerCount : (room.currentViewersCount || 0),
     agoraChannelName: room.agoraChannelName || null,
     agoraHostUid: hostUserId ? deriveAgoraUid(hostUserId) : null,
     host: room.creator ? {
@@ -46,6 +50,19 @@ export function buildRoomSnapshot(room, viewerCount) {
         } : null,
       };
     }),
+    members: (room.members || []).map((m) => {
+      const u = m.user || {};
+      return {
+        userId: m.userId,
+        role: m.role || 'MEMBER',
+        user: {
+          id: u.id || m.userId,
+          username: u.username || 'User',
+          displayName: u.profile?.displayName || u.username || 'User',
+          avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
+        },
+      };
+    }),
     createdAt: room.createdAt,
   };
 }
@@ -57,7 +74,8 @@ function resolveArgs(arg1, arg2, arg3, arg4, arg5) {
     const socket = arg2;
     const data = arg3;
     const callback = typeof arg4 === 'function' ? arg4 : (typeof arg5 === 'function' ? arg5 : null);
-    const db = (arg4 && typeof arg4 === 'object' && typeof arg4 !== 'function') ? arg4 : (arg5 || null);
+    const dbCandidate = (arg4 && typeof arg4 === 'object' && typeof arg4 !== 'function') ? arg4 : arg5;
+    const db = (dbCandidate && typeof dbCandidate === 'object') ? dbCandidate : prisma;
     return { io, socket, data, callback, db };
   }
 
@@ -65,7 +83,8 @@ function resolveArgs(arg1, arg2, arg3, arg4, arg5) {
   const socket = arg1;
   const data = arg2;
   const callback = typeof arg3 === 'function' ? arg3 : (typeof arg4 === 'function' ? arg4 : null);
-  const db = (arg3 && typeof arg3 === 'object' && typeof arg3 !== 'function') ? arg3 : ((arg4 && typeof arg4 === 'object' && typeof arg4 !== 'function') ? arg4 : (arg5 || null));
+  const dbCandidate = (arg3 && typeof arg3 === 'object' && typeof arg3 !== 'function') ? arg3 : ((arg4 && typeof arg4 === 'object' && typeof arg4 !== 'function') ? arg4 : arg5);
+  const db = (dbCandidate && typeof dbCandidate === 'object') ? dbCandidate : prisma;
   return { io: null, socket, data, callback, db };
 }
 
@@ -83,7 +102,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     const userId = socket.userId;
 
     // 1. Authoritative Room Existence and Lifecycle Check
-    const room = await roomRepository.findRoomById(roomId, db);
+    const room = await roomRepository.findRoomById(roomId, db || prisma);
     if (!room) {
       const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_FOUND, message: 'Room not found' } };
       if (typeof callback === 'function') return callback(err);
@@ -96,8 +115,18 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    // 2. Persistent RoomMember registration via authoritative Room Service
-    const joinResult = await roomService.joinRoom(roomId, userId, db).catch(() => null);
+    // 2. Immediately subscribe socket to room channel so broadcasts & chat are reliably delivered
+    if (typeof socket.join === 'function') {
+      socket.join(`room:${roomId}`);
+    }
+
+    // 3. Persistent RoomMember registration via authoritative Room Service
+    let joinResult = null;
+    try {
+      joinResult = await roomService.joinRoom(roomId, userId, db || prisma);
+    } catch (joinErr) {
+      console.warn(`[RoomSocket] Warning joining room ${roomId} for user ${userId}:`, joinErr.message);
+    }
 
     // Cancel any active host absence timer if host returned
     const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
@@ -105,20 +134,19 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       clearHostAbsentTimer(roomId, io);
     }
 
-    // 3. Socket subscription to Room
-    if (typeof socket.join === 'function') {
-      socket.join(`room:${roomId}`);
-    }
-
     // 4. Ephemeral Presence Tracking
-    const { isFirstSocket } = await presenceService.addSocketToRoom(roomId, userId, socket.id);
+    let isFirstSocket = true;
+    try {
+      const pres = await presenceService.addSocketToRoom(roomId, userId, socket.id);
+      isFirstSocket = pres?.isFirstSocket ?? true;
+    } catch (_) {}
 
     // 5. Generate and Send Authoritative Room Snapshot
     const currentCount = typeof joinResult?.currentViewersCount === 'number'
       ? joinResult.currentViewersCount
       : (typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 1);
     const snapshot = buildRoomSnapshot(room, currentCount);
-    socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, { room, seats: room.seats || [] });
+    socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, { room: snapshot, seats: snapshot.seats || [], members: snapshot.members || [] });
 
     // 6. Broadcast user joined event to ALL room members (including host's own socket)
     const clientUser = data?.user || {};
@@ -534,8 +562,16 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
     const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
     broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
     broadcastTarget.emit('room:chat_message', payload);
+    broadcastTarget.emit('room_chat_message', payload);
     broadcastTarget.emit('chat_message', payload);
     broadcastTarget.emit('room:comment', payload);
+    if (!io && socket && typeof socket.emit === 'function') {
+      socket.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
+      socket.emit('room:chat_message', payload);
+      socket.emit('room_chat_message', payload);
+      socket.emit('chat_message', payload);
+      socket.emit('room:comment', payload);
+    }
 
     if (typeof callback === 'function') {
       return callback({ success: true, data: payload });

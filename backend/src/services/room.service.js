@@ -121,11 +121,29 @@ export async function getRoomDetails(roomId, db = prisma) {
 }
 
 export async function joinRoom(roomId, userId, db = prisma) {
-  return await roomRepository.joinRoomTx({ roomId, userId }, db);
+  const result = await roomRepository.joinRoomTx({ roomId, userId }, db);
+  if (result) {
+    const viewerCount = typeof result.currentViewersCount === 'number' ? result.currentViewersCount : 0;
+    try {
+      socketEmitter.emitToRoom(roomId, 'room:viewer_count_changed', { roomId, viewerCount, count: viewerCount });
+      socketEmitter.emitToRoom(roomId, 'room:viewer_count', { roomId, viewerCount, count: viewerCount });
+      socketEmitter.emitToRoom(roomId, 'viewer_count_changed', { roomId, viewerCount, count: viewerCount });
+    } catch (_) {}
+  }
+  return result;
 }
 
 export async function leaveRoom(roomId, userId, db = prisma) {
-  return await roomRepository.leaveRoomTx({ roomId, userId }, db);
+  const result = await roomRepository.leaveRoomTx({ roomId, userId }, db);
+  if (result) {
+    const viewerCount = typeof result.currentViewersCount === 'number' ? result.currentViewersCount : 0;
+    try {
+      socketEmitter.emitToRoom(roomId, 'room:viewer_count_changed', { roomId, viewerCount, count: viewerCount });
+      socketEmitter.emitToRoom(roomId, 'room:viewer_count', { roomId, viewerCount, count: viewerCount });
+      socketEmitter.emitToRoom(roomId, 'viewer_count_changed', { roomId, viewerCount, count: viewerCount });
+    } catch (_) {}
+  }
+  return result;
 }
 
 export async function occupySeat(roomId, seatIndex, userId, db = prisma) {

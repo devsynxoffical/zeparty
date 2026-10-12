@@ -274,6 +274,33 @@ class LivePartyProvider extends ChangeNotifier {
         ));
       }
 
+      // Populate existing room members if returned by join
+      if (roomData is Map<String, dynamic> && roomData['members'] is List) {
+        for (final memberRaw in (roomData['members'] as List)) {
+          if (memberRaw is! Map) continue;
+          final memberMap = Map<String, dynamic>.from(memberRaw);
+          final userRaw = memberMap['user'] ?? memberMap;
+          if (userRaw is! Map) continue;
+          final userMap = Map<String, dynamic>.from(userRaw);
+          final memberId = userMap['id']?.toString() ?? memberMap['userId']?.toString() ?? '';
+          if (memberId.isEmpty) continue;
+          final existingIdx = _participants.indexWhere((p) => p.user.id == memberId);
+          if (existingIdx == -1) {
+            _participants.add(PartyParticipantModel(
+              user: UserModel(
+                id: memberId,
+                username: userMap['username']?.toString() ?? 'User',
+                name: userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'User',
+                avatarUrl: userMap['avatarUrl']?.toString() ?? '',
+              ),
+              role: ParticipantRole.listener,
+              seatNumber: null,
+              joinedAt: DateTime.now(),
+            ));
+          }
+        }
+      }
+
       // 3. Acquire short-lived Agora RTC token from backend
       final agoraData = await _roomRepository.getAgoraToken(room.id);
       if (agoraData['token'] != null) {
@@ -388,6 +415,32 @@ class LivePartyProvider extends ChangeNotifier {
                 ));
               }
             }
+          }
+        }
+        final membersList = data['members'] is List
+            ? (data['members'] as List)
+            : (roomObj['members'] is List ? (roomObj['members'] as List) : []);
+        for (final memberRaw in membersList) {
+          if (memberRaw is! Map) continue;
+          final memberMap = Map<String, dynamic>.from(memberRaw);
+          final userRaw = memberMap['user'] ?? memberMap;
+          if (userRaw is! Map) continue;
+          final userMap = Map<String, dynamic>.from(userRaw);
+          final memberId = userMap['id']?.toString() ?? memberMap['userId']?.toString() ?? '';
+          if (memberId.isEmpty) continue;
+          final existingIdx = _participants.indexWhere((p) => p.user.id == memberId);
+          if (existingIdx == -1) {
+            _participants.add(PartyParticipantModel(
+              user: UserModel(
+                id: memberId,
+                username: userMap['username']?.toString() ?? 'User',
+                name: userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'User',
+                avatarUrl: userMap['avatarUrl']?.toString() ?? '',
+              ),
+              role: ParticipantRole.listener,
+              seatNumber: null,
+              joinedAt: DateTime.now(),
+            ));
           }
         }
         notifyListeners();

@@ -311,6 +311,8 @@ class SocketService {
     }
     _socket!.off('room:chat_message');
     _socket!.on('room:chat_message', handleChatMessage);
+    _socket!.off('room_chat_message');
+    _socket!.on('room_chat_message', handleChatMessage);
     _socket!.off('chat_message');
     _socket!.on('chat_message', handleChatMessage);
     _socket!.off('room:comment');

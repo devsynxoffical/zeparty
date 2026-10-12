@@ -78,7 +78,9 @@ class LiveRoomModel {
                 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
           );
 
-    final id = json['id']?.toString() ?? '';
+    final id = (json['id']?.toString().isNotEmpty == true)
+        ? json['id'].toString()
+        : (json['roomId']?.toString() ?? '');
     final title = json['title']?.toString() ?? 'ZeParty Live';
     final coverUrl = json['coverImageUrl']?.toString() ??
         json['coverUrl']?.toString() ??

@@ -202,7 +202,34 @@ class LiveProvider extends ChangeNotifier {
       _setupSocketSubscriptions(currentUser);
 
       // 2. REST Join
-      await _roomRepository.joinRoom(room.id);
+      final joinResult = await _roomRepository.joinRoom(room.id);
+      final roomData = joinResult['room'] ?? joinResult;
+      if (roomData is Map<String, dynamic>) {
+        final rawCount = roomData['currentViewersCount'] ?? roomData['viewerCount'];
+        if (rawCount is int && _activeRoom != null) {
+          _activeRoom = _activeRoom!.copyWith(viewerCount: rawCount);
+        }
+        if (roomData['members'] is List) {
+          for (final mRaw in (roomData['members'] as List)) {
+            if (mRaw is! Map) continue;
+            final mMap = Map<String, dynamic>.from(mRaw);
+            final uRaw = mMap['user'] ?? mMap;
+            if (uRaw is! Map) continue;
+            final uMap = Map<String, dynamic>.from(uRaw);
+            final mId = uMap['id']?.toString() ?? mMap['userId']?.toString() ?? '';
+            final isHostUser = (_activeRoom != null) &&
+                (mId == _activeRoom!.host.id || mId == _activeRoom!.creatorUserId);
+            if (!isHostUser && mId.isNotEmpty && !_viewers.any((v) => v.id == mId)) {
+              _viewers.add(UserModel(
+                id: mId,
+                name: uMap['displayName']?.toString() ?? uMap['name']?.toString() ?? uMap['username']?.toString() ?? 'Viewer',
+                username: uMap['username']?.toString() ?? 'user_$mId',
+                avatarUrl: uMap['avatarUrl']?.toString() ?? '',
+              ));
+            }
+          }
+        }
+      }
 
       // 3. Acquire short-lived Agora RTC token & initialize video camera
       final isVideo = (room.roomType == 'LIVE_VIDEO' || room.roomType == 'VIDEO_PARTY' || !room.roomType.contains('AUDIO'));
@@ -248,6 +275,40 @@ class LiveProvider extends ChangeNotifier {
   }
 
   void _setupSocketSubscriptions(UserModel? currentUser) {
+    _socketRoomSnapshotSub?.cancel();
+    _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      final roomObj = data['room'] is Map ? Map<String, dynamic>.from(data['room'] as Map) : <String, dynamic>{};
+      final rawCount = data['viewerCount'] ?? roomObj['currentViewersCount'] ?? roomObj['viewerCount'];
+      if (rawCount is int && _activeRoom != null) {
+        _activeRoom = _activeRoom!.copyWith(viewerCount: rawCount);
+      }
+      final membersList = data['members'] is List
+          ? (data['members'] as List)
+          : (roomObj['members'] is List ? (roomObj['members'] as List) : []);
+      for (final mRaw in membersList) {
+        if (mRaw is! Map) continue;
+        final mMap = Map<String, dynamic>.from(mRaw);
+        final uRaw = mMap['user'] ?? mMap;
+        if (uRaw is! Map) continue;
+        final uMap = Map<String, dynamic>.from(uRaw);
+        final mId = uMap['id']?.toString() ?? mMap['userId']?.toString() ?? '';
+        final isHostUser = (_activeRoom != null) &&
+            (mId == _activeRoom!.host.id || mId == _activeRoom!.creatorUserId);
+        if (!isHostUser && mId.isNotEmpty && !_viewers.any((v) => v.id == mId)) {
+          _viewers.add(UserModel(
+            id: mId,
+            name: uMap['displayName']?.toString() ?? uMap['name']?.toString() ?? uMap['username']?.toString() ?? 'Viewer',
+            username: uMap['username']?.toString() ?? 'user_$mId',
+            avatarUrl: uMap['avatarUrl']?.toString() ?? '',
+          ));
+        }
+      }
+      notifyListeners();
+    });
+
     _socketUserJoinedSub?.cancel();
     _socketUserJoinedSub = _socketService.userJoinedStream.listen((data) {
       if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
