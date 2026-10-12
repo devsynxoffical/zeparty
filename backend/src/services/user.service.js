@@ -144,14 +144,15 @@ export async function getActiveRoomForUser(userId, db = prisma) {
       };
     }
 
-    // 2. Check if user is an active member/participant in a LIVE room
-    const membership = await db.roomMember.findFirst({
+    // 2. Check if user is actively occupying an on-stage speaker seat in a LIVE room
+    const seatOccupation = await db.roomSeat.findFirst({
       where: {
-        userId,
+        occupiedUserId: userId,
         room: { status: 'LIVE' },
       },
       select: {
         roomId: true,
+        seatIndex: true,
         room: {
           select: {
             id: true,
@@ -164,18 +165,18 @@ export async function getActiveRoomForUser(userId, db = prisma) {
           },
         },
       },
-      orderBy: { joinedAt: 'desc' },
     });
 
-    if (membership && membership.room) {
+    if (seatOccupation && seatOccupation.room) {
       return {
-        id: membership.room.id,
-        title: membership.room.title,
-        roomType: membership.room.roomType,
-        coverImageUrl: membership.room.coverImageUrl,
-        currentViewersCount: membership.room.currentViewersCount || 1,
-        status: membership.room.status,
-        isHost: false,
+        id: seatOccupation.room.id,
+        title: seatOccupation.room.title,
+        roomType: seatOccupation.room.roomType,
+        coverImageUrl: seatOccupation.room.coverImageUrl,
+        currentViewersCount: seatOccupation.room.currentViewersCount || 1,
+        status: seatOccupation.room.status,
+        isHost: seatOccupation.room.creatorUserId === userId,
+        seatIndex: seatOccupation.seatIndex,
       };
     }
   } catch (e) {

@@ -386,8 +386,9 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
     throw error;
   }
 
-  if (room.status !== 'LIVE') {
-    const error = new Error('Room is not currently live');
+  const isRoomOpen = ['LIVE', 'ACTIVE', 'OPEN'].includes(room.status);
+  if (!isRoomOpen) {
+    const error = new Error('Room is not available or has ended');
     error.statusCode = 400;
     error.code = 'ROOM_NOT_LIVE';
     throw error;
@@ -555,7 +556,7 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
       throw error;
     }
 
-    if (room.status !== 'LIVE') {
+    if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
       const error = new Error('Room is not live');
       error.statusCode = 400;
       error.code = 'ROOM_NOT_LIVE';
@@ -581,8 +582,8 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
       });
     }
 
-    // Find target seat
-    const targetSeat = await tx.roomSeat.findUnique({
+    // Find target seat or auto-create if missing
+    let targetSeat = await tx.roomSeat.findUnique({
       where: {
         roomId_seatIndex: {
           roomId,
@@ -592,10 +593,14 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
     });
 
     if (!targetSeat) {
-      const error = new Error(`Seat index ${seatIndex} does not exist`);
-      error.statusCode = 404;
-      error.code = 'SEAT_NOT_FOUND';
-      throw error;
+      targetSeat = await tx.roomSeat.create({
+        data: {
+          roomId,
+          seatIndex,
+          isMuted: false,
+          isLocked: false,
+        },
+      });
     }
 
     if (seatIndex === 0 && room.creatorUserId !== userId) {

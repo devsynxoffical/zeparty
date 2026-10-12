@@ -512,11 +512,17 @@ class SocketService {
   void leaveRoom(String roomId) => leaveRoomSubscription(roomId);
 
   /// Occupy a seat via realtime socket emission
-  void occupySeat(String roomId, int seatIndex) {
+  void occupySeat(String roomId, int seatIndex, {Map<String, dynamic>? user}) {
     if (_socket != null) {
       _socket!.emit('room:seat_occupy', {
         'roomId': roomId,
         'seatIndex': seatIndex,
+        if (user != null) 'user': user,
+      });
+      _socket!.emit('seat:occupy', {
+        'roomId': roomId,
+        'seatIndex': seatIndex,
+        if (user != null) 'user': user,
       });
     }
   }

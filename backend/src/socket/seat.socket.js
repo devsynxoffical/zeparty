@@ -7,35 +7,46 @@ export async function onOccupySeat(io, socket, data, callback, db) {
     const roomId = data?.roomId;
     const seatIndex = Number(data?.seatIndex);
 
-    if (!roomId || isNaN(seatIndex) || seatIndex < 0 || seatIndex > 7) {
+    if (!roomId || isNaN(seatIndex) || seatIndex < 0 || seatIndex > 15) {
       const err = {
         success: false,
-        error: { code: SOCKET_ERRORS.INVALID_SEAT_INDEX, message: 'Valid roomId and seatIndex (0-7) are required' },
+        error: { code: SOCKET_ERRORS.INVALID_SEAT_INDEX, message: 'Valid roomId and seatIndex (0-15) are required' },
       };
       if (typeof callback === 'function') return callback(err);
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    const userId = socket.userId;
+    const clientUser = data?.user || {};
+    const userId = clientUser.id || clientUser.userId || socket.user?.id || socket.userId;
 
     // Delegate to authoritative room service for atomic occupancy and concurrency locking
     const updatedSeat = await roomService.occupySeat(roomId, seatIndex, userId, db);
+
+    const effectiveName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || 'Speaker';
+    const effectiveAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
+    const effectiveNoble = clientUser.nobleTitle || socket.user?.nobleTitle || null;
+    const effectiveVip = Boolean(clientUser.isVip || socket.user?.isVip);
 
     const payload = {
       roomId,
       seatIndex: updatedSeat.seatIndex,
       user: {
-        id: socket.user?.id || userId,
-        username: socket.user?.username || 'user',
-        displayName: socket.user?.displayName || socket.user?.username || 'User',
-        avatarUrl: socket.user?.avatarUrl || null,
+        id: userId,
+        userId: userId,
+        username: clientUser.username || socket.user?.username || effectiveName,
+        displayName: effectiveName,
+        name: effectiveName,
+        avatarUrl: effectiveAvatar,
+        nobleTitle: effectiveNoble,
+        isVip: effectiveVip,
       },
     };
 
     // Broadcast authoritative seat occupied event to the entire room
-    if (io && io.to) {
-      io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_SEAT_OCCUPIED, payload);
-    }
+    const broadcastTarget = io && io.to ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
+    broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_OCCUPIED, payload);
+    broadcastTarget.emit('room:seat_occupied', payload);
+    broadcastTarget.emit('seat_occupied', payload);
 
     if (typeof callback === 'function') {
       return callback({
@@ -117,9 +128,33 @@ export function registerSeatHandlers(io, socket) {
     SOCKET_EVENTS.ROOM_SEAT_OCCUPY,
     withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
   );
+  socket.on(
+    'room_seat_occupy',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
+  );
+  socket.on(
+    'seat_occupy',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
+  );
+  socket.on(
+    'seat:occupy',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
+  );
 
   socket.on(
     SOCKET_EVENTS.ROOM_SEAT_LEAVE,
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+  );
+  socket.on(
+    'room_seat_leave',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+  );
+  socket.on(
+    'seat_leave',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+  );
+  socket.on(
+    'seat:leave',
     withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
 }

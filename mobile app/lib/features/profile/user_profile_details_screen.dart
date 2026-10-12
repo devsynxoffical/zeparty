@@ -149,10 +149,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         final isFollowing = profileData['isFollowing'] == true;
         final fCount = profileData['followersCount'] is int ? profileData['followersCount'] as int : user.followers;
         final followingCount = profileData['followingCount'] is int ? profileData['followingCount'] as int : user.following;
+        final isLiveVal = profileData['isLive'] == true;
+        final liveRoomIdVal = profileData['liveRoomId']?.toString();
         user = user.copyWith(
           followers: fCount,
           following: followingCount,
           isPrivate: profileData['isPrivate'] == true,
+          isLive: isLiveVal,
+          liveRoomId: isLiveVal ? liveRoomIdVal : null,
         );
         if (isFollowing && !auth.isFollowing(user.id)) {
           auth.syncFollowingList();
@@ -886,7 +890,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                             } catch (_) {}
                           }
 
-                          final bool isInActiveRoom = _user != null && (_user!.isLive || (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty));
+                          final bool isInActiveRoom = _user != null && _user!.isLive && (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty);
 
                           Widget avatarWidget = UserAvatar(
                             imageUrl: effAvatar,
@@ -1116,7 +1120,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                           ),
 
                           // In Room Action Button in the Circled Area
-                          if (_user != null && (_user!.isLive || (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty))) ...[
+                          if (_user != null && _user!.isLive && (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty)) ...[
                             const SizedBox(width: 10),
                             GestureDetector(
                               onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
@@ -1216,8 +1220,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     ),
                   ),
 
-                  // Live Tag Badge (only shown when user is live)
-                  if (_user != null && _user!.isLive) ...[
+                  // Live Tag Badge (only shown when user is actually live)
+                  if (_user != null && _user!.isLive && (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty)) ...[
                     const SizedBox(width: 6),
                     GestureDetector(
                       onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),

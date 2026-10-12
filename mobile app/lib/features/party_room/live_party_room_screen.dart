@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -45,6 +46,7 @@ import '../../widgets/tiktok_user_join_banner.dart';
 import '../../providers/emoji_reaction_provider.dart';
 import '../profile/user_profile_details_screen.dart';
 import '../messages/chat_screen.dart';
+import '../live/widgets/live_viewers_sheet.dart';
 
 class LivePartyRoomScreen extends StatefulWidget {
   final LiveRoomModel room;
@@ -115,13 +117,13 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           children: [
             Icon(Icons.nightlife_rounded, color: Color(0xFFB524E4), size: 26),
             SizedBox(width: 10),
-            Text('Party Ended', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+            Text('Room Not Available', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
           ],
         ),
         content: Text(
           reason != null && reason.isNotEmpty
               ? reason
-              : 'This party room has ended.',
+              : 'This party room is not available or has ended.',
           style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
         ),
         actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -154,11 +156,26 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     super.initState();
     _roomEntrySessionId = 'session_${widget.room.id}_${DateTime.now().millisecondsSinceEpoch}';
     _requestMicPermission();
+
+    final initialStatus = widget.room.status.toUpperCase();
+    if (initialStatus == 'ENDED' || initialStatus == 'CLOSED') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _handlePartyRoomEnded('This party room is not available or has ended.');
+        }
+      });
+      return;
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
       final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
       if (partyProv.activeRoom?.id != widget.room.id) {
-        partyProv.joinParty(widget.room, user);
+        partyProv.joinParty(widget.room, user).then((success) {
+          if (!success && mounted) {
+            _handlePartyRoomEnded('This party room is not available or has ended.');
+          }
+        });
       }
       Provider.of<EmojiReactionProvider>(context, listen: false).setActiveRoom(widget.room.id);
       Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id);
@@ -166,12 +183,16 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       _partyRoomClosedSub?.cancel();
       _partyRoomClosedSub = partyProv.onRoomClosed.listen((data) {
         final isHost = widget.room.host.id == user.id || widget.room.creatorUserId == user.id;
-        if (!isHost && mounted) {
-          final reason = data['reason']?.toString();
+        final reason = data['reason']?.toString();
+        if ((!isHost || reason == 'ROOM_NOT_AVAILABLE') && mounted) {
           _handlePartyRoomEnded(
             reason == 'HOST_ABSENT_TIMEOUT'
                 ? 'Party ended because the host was absent for 2 minutes.'
-                : reason,
+                : (reason == 'ROOM_NOT_AVAILABLE'
+                    ? 'This party room is not available or has ended.'
+                    : (reason == 'HOST_CLOSED'
+                        ? 'The host has ended this party room.'
+                        : 'This party room is not available or has ended.')),
           );
         }
       });
@@ -443,63 +464,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           // Overlays
           const HighValueAnnouncementOverlay(),
 
-          // Admin Moderation Warning Banner
-          if (provider.activeWarningMessage != null)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 70,
-              left: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFD97706), Color(0xFFB45309)],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.amber.withValues(alpha: 0.4),
-                      blurRadius: 16,
-                      spreadRadius: 2,
-                    ),
-                  ],
-                  border: Border.all(color: Colors.amberAccent, width: 1.5),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'MODERATION WARNING',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 12,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            provider.activeWarningMessage!,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
           // Main Layout
           SafeArea(
             bottom: false,
@@ -613,6 +577,84 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
           // Onscreen 3D Gift Animation Overlay
           GiftAnimationOverlay(key: _giftOverlayKey),
+
+          // Admin Moderation Warning Banner (Floats in FRONT of seats and all stage layers)
+          if (provider.activeWarningMessage != null)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 54,
+              left: 14,
+              right: 14,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFEA580C), Color(0xFFC2410C)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                      ),
+                      BoxShadow(
+                        color: const Color(0xFFEA580C).withValues(alpha: 0.4),
+                        blurRadius: 14,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                    border: Border.all(color: const Color(0xFFFDBA74), width: 1.5),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 26),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'MODERATION WARNING',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 11.5,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              provider.activeWarningMessage!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () => provider.dismissWarning(),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.25),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.close_rounded, color: Colors.white70, size: 16),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     ),
@@ -704,14 +746,24 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                         const SizedBox(width: 6),
                                       ],
                                       Expanded(
-                                        child: Text(
-                                          'ID:${activeRoom.id.length > 6 ? activeRoom.id.substring(0, 6) : activeRoom.id} • 👥 ${activeRoom.viewerCount}',
-                                          style: TextStyle(
-                                            color: Colors.white.withValues(alpha: 0.6),
-                                            fontSize: 10,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                        child: Builder(
+                                          builder: (_) {
+                                            final audienceCount = provider.participants.where((p) =>
+                                              p.role != ParticipantRole.host &&
+                                              p.user.id != activeRoom.host.id &&
+                                              p.user.id != activeRoom.creatorUserId
+                                            ).length;
+                                            final headerViewerCount = math.max(activeRoom.viewerCount, audienceCount);
+                                            return Text(
+                                              'ID:${activeRoom.id.length > 6 ? activeRoom.id.substring(0, 6) : activeRoom.id} • 👥 $headerViewerCount',
+                                              style: TextStyle(
+                                                color: Colors.white.withValues(alpha: 0.6),
+                                                fontSize: 10,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            );
+                                          },
                                         ),
                                       ),
                                     ],
@@ -842,30 +894,43 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       p.user.id != (provider.activeRoom?.host.id ?? widget.room.host.id) &&
       p.user.id != (provider.activeRoom?.creatorUserId ?? widget.room.creatorUserId)
     ).toList();
-    final viewerCount = provider.activeRoom != null ? provider.activeRoom!.viewerCount : audience.length;
+    final viewerCount = math.max(provider.activeRoom?.viewerCount ?? 0, audience.length);
 
     return Container(
       height: 38,
       margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.people_alt_rounded, color: Colors.cyanAccent, size: 13),
-                const SizedBox(width: 4),
-                Text(
-                  '$viewerCount',
-                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                ),
-              ],
+          GestureDetector(
+            onTap: () {
+              final viewerUsers = audience.map((p) => p.user).toList();
+              LiveViewersSheet.show(
+                context,
+                viewers: viewerUsers,
+                roomId: provider.activeRoom?.id ?? widget.room.id,
+                roomTitle: provider.activeRoom?.title ?? widget.room.title,
+                isDark: isDark,
+                isHost: canManage,
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.people_alt_rounded, color: Colors.cyanAccent, size: 13),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$viewerCount',
+                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 8),

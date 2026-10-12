@@ -507,7 +507,8 @@ class MysteryScreen extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16.r),
       child: Container(
-        height: 102.h,
+        constraints: BoxConstraints(minHeight: 96.h),
+        padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 14.h),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16.r),
           gradient: const LinearGradient(
@@ -524,27 +525,19 @@ class MysteryScreen extends StatelessWidget {
             ),
           ],
         ),
-        child: Stack(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Positioned(
-              right: 14.w,
-              top: 10.h,
-              bottom: 10.h,
-              child: Image.asset(
-                imagePath,
-                width: 86.w,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(Icons.stars_rounded, color: Color(0xFFFFD54F), size: 48),
-              ),
-            ),
-            Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.w, vertical: 16.h),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: const Color(0xFFFFD54F),
                       fontWeight: FontWeight.bold,
@@ -552,16 +545,27 @@ class MysteryScreen extends StatelessWidget {
                       letterSpacing: 0.2,
                     ),
                   ),
-                  SizedBox(height: 5.h),
+                  SizedBox(height: 6.h),
                   Text(
                     subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: const Color(0xFFCEBFDF),
                       fontSize: 12.sp,
+                      height: 1.3,
                     ),
                   ),
                 ],
               ),
+            ),
+            SizedBox(width: 12.w),
+            Image.asset(
+              imagePath,
+              width: 80.w,
+              height: 56.h,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(Icons.stars_rounded, color: Color(0xFFFFD54F), size: 44),
             ),
           ],
         ),
@@ -578,7 +582,8 @@ class MysteryScreen extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16.r),
       child: Container(
-        height: 114.h,
+        height: 118.h,
+        padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 12.h),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16.r),
           gradient: const LinearGradient(
@@ -595,35 +600,29 @@ class MysteryScreen extends StatelessWidget {
             ),
           ],
         ),
-        child: Stack(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Positioned(
-              right: 10.w,
-              bottom: 10.h,
-              child: Image.asset(
-                imagePath,
-                width: 60.w,
-                height: 60.h,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(Icons.stars_rounded, color: Color(0xFFFFD54F), size: 40),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13.sp,
+                  height: 1.25,
+                ),
               ),
             ),
-            Padding(
-              padding: EdgeInsets.all(14.w),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13.5.sp,
-                      height: 1.25,
-                    ),
-                  ),
-                ],
-              ),
+            SizedBox(width: 8.w),
+            Image.asset(
+              imagePath,
+              width: 52.w,
+              height: 52.h,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(Icons.stars_rounded, color: Color(0xFFFFD54F), size: 36),
             ),
           ],
         ),

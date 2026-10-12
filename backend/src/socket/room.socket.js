@@ -52,13 +52,15 @@ export function buildRoomSnapshot(room, viewerCount) {
     }),
     members: (room.members || []).map((m) => {
       const u = m.user || {};
+      const displayName = u.profile?.displayName || u.displayName || u.username || 'User';
       return {
-        userId: m.userId,
-        role: m.role || 'MEMBER',
+        userId: m.userId || u.id,
+        role: m.role || 'LISTENER',
         user: {
           id: u.id || m.userId,
-          username: u.username || 'User',
-          displayName: u.profile?.displayName || u.username || 'User',
+          username: u.username || displayName,
+          displayName,
+          name: displayName,
           avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
         },
       };
@@ -110,7 +112,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     }
 
     if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
-      const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_LIVE, message: `Room is not live (status: ${room.status})` } };
+      const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_LIVE, message: 'Room is not available or has ended' } };
       if (typeof callback === 'function') return callback(err);
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
@@ -146,7 +148,14 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       ? joinResult.currentViewersCount
       : (typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 1);
     const snapshot = buildRoomSnapshot(room, currentCount);
-    socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, { room: snapshot, seats: snapshot.seats || [], members: snapshot.members || [] });
+    socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, {
+      room: snapshot,
+      ...snapshot,
+      seats: snapshot.seats || [],
+      members: snapshot.members || [],
+      currentViewersCount: currentCount,
+      viewerCount: currentCount,
+    });
 
     // 6. Broadcast user joined event to ALL room members (including host's own socket)
     const clientUser = data?.user || {};
@@ -193,6 +202,30 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     broadcastTarget.emit('room:viewer_count_changed', viewerPayload);
     broadcastTarget.emit('room:viewer_count', viewerPayload);
     broadcastTarget.emit('viewer_count_changed', viewerPayload);
+
+    // 7. Broadcast system chat announcement so all room participants see "[User] has joined the party"
+    const chatPayload = {
+      id: `sys_join_${Date.now()}_${effectiveJoinedId}`,
+      roomId,
+      userId: effectiveJoinedId,
+      sender: {
+        id: effectiveJoinedId,
+        username: clientUser.username || socket.user?.username || effectiveJoinedName,
+        name: effectiveJoinedName,
+        displayName: effectiveJoinedName,
+        avatarUrl: effectiveJoinedAvatar,
+        isVip: effectiveJoinedVip,
+        nobleLevel: effectiveJoinedNoble,
+      },
+      text: `${effectiveJoinedName} has joined the party 🎉`,
+      type: 'SYSTEM',
+      isSystemMessage: true,
+      timestamp: new Date().toISOString(),
+    };
+    broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_RECEIVE, chatPayload);
+    broadcastTarget.emit('room:chat_message', chatPayload);
+    broadcastTarget.emit('room:chat', chatPayload);
+    broadcastTarget.emit('chat_message', chatPayload);
 
     if (typeof callback === 'function') {
       return callback({
