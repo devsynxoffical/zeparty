@@ -6,7 +6,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Radio, Search, Eye, StopCircle, Users, Gift, Play, Pause, AlertTriangle, MessageSquare, Flame, Pin
+  Radio, Search, Eye, StopCircle, Users, Gift, Play, Pause, AlertTriangle, MessageSquare, Flame, Pin, CheckCircle
 } from 'lucide-react';
 import { DataTable } from '../../components/tables/DataTable';
 import { StatusBadge, Badge } from '../../components/ui/Badge';
