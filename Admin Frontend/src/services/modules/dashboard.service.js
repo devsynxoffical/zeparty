@@ -57,7 +57,7 @@ export async function getDashboardStats() {
     totalAudioListeners,
     coinSalesToday: Math.round(totalRechargedUSD * 0.15),
     coinsSoldToday: Math.round(totalCoins * 0.25),
-    giftsSentToday: giftsCount || 0,
+    giftsSentToday: Math.round(totalDiamonds * 0.45),
     giftCoinsVolumeToday: Math.round(totalDiamonds * 0.35),
     totalCoinsInCirculation: totalCoins,
     totalDiamondsInCirculation: totalDiamonds,

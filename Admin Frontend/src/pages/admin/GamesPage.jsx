@@ -30,6 +30,7 @@ import { Card, CardHeader } from '../../components/ui/Card';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
+import { Select } from '../../components/ui/Select';
 const GAME_STATUSES = ['all', 'active', 'paused', 'inactive'];
 const GAME_TYPES = ['All', 'Arcade', 'Card Game', 'Table Game', 'Crash / Multiplier', 'Slots / Jackpot', 'Multiplier', 'Slots / Match'];
 import { getGames, updateGameConfig } from '../../services/modules/games.service';
