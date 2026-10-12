@@ -613,6 +613,9 @@ export function UserDetailPage() {
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
                 <h1 className="text-2xl font-bold text-white">{user.displayName}</h1>
                 <StatusBadge status={user.status} />
+                {user.nobleRank && <Badge variant="purple">👑 {user.nobleRank}</Badge>}
+                <Badge variant="warning">💎 Wealth Lv. {user.wealthLevel || 1}</Badge>
+                <Badge variant="info">💖 Charm Lv. {user.charmLevel || 1}</Badge>
                 {user.vip && <Badge variant="warning">{user.vipLevel}</Badge>}
                 {user.svipLevel && <Badge variant="primary">{user.svipLevel}</Badge>}
                 {user.isHost && (
@@ -781,6 +784,10 @@ export function UserDetailPage() {
                 } />
                 <InfoRow label="Registration Date" value={formatDate(user.registeredAt)} />
                 <InfoRow label="Last Active" value={timeAgo(user.lastActive)} />
+                <InfoRow label="Wealth Level" value={`Lv. ${user.wealthLevel || 1} (${formatNumber(user.wealthXp || user.totalGifted || 0)} XP)`} valueClass="text-yellow-400 font-bold" />
+                <InfoRow label="Charm Level" value={`Lv. ${user.charmLevel || 1} (${formatNumber(user.charmXp || user.diamonds || 0)} Diamonds)`} valueClass="text-cyan-400 font-bold" />
+                <InfoRow label="SVIP Tier" value={user.svipLevel || 'None'} valueClass="text-indigo-400 font-bold" />
+                <InfoRow label="Noble Title" value={user.nobleRank ? `👑 ${user.nobleRank}` : 'None'} valueClass="text-purple-400 font-bold" />
               </div>
             </Card>
 
