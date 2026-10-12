@@ -148,7 +148,7 @@ export async function getAssetDetails(id, db = prisma) {
   return serializeAsset(asset);
 }
 
-const ALL_AVAILABLE_FRAMES = [
+export const ALL_AVAILABLE_FRAMES = [
   { key: 'host', name: 'Official Host Frame', asset: 'assets/roles/host_frame.webp' },
   { key: 'king', name: 'King Supreme Frame', asset: 'assets/nobles/king_frame.webp' },
   { key: 'emperor', name: 'Emperor Celestial Frame', asset: 'assets/nobles/emperor_frame.webp' },
