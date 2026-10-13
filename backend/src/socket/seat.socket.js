@@ -7,10 +7,10 @@ export async function onOccupySeat(io, socket, data, callback, db) {
     const roomId = data?.roomId;
     const seatIndex = Number(data?.seatIndex);
 
-    if (!roomId || isNaN(seatIndex) || seatIndex < 0 || seatIndex > 15) {
+    if (!roomId || isNaN(seatIndex) || seatIndex < 0 || seatIndex > 30) {
       const err = {
         success: false,
-        error: { code: SOCKET_ERRORS.INVALID_SEAT_INDEX, message: 'Valid roomId and seatIndex (0-15) are required' },
+        error: { code: SOCKET_ERRORS.INVALID_SEAT_INDEX, message: 'Valid roomId and seatIndex (0-30) are required' },
       };
       if (typeof callback === 'function') return callback(err);
       return socket.emit(SOCKET_EVENTS.ERROR, err);
@@ -20,7 +20,23 @@ export async function onOccupySeat(io, socket, data, callback, db) {
     const userId = clientUser.id || clientUser.userId || socket.user?.id || socket.userId;
 
     // Delegate to authoritative room service for atomic occupancy and concurrency locking
-    const updatedSeat = await roomService.occupySeat(roomId, seatIndex, userId, db);
+    const result = await roomService.occupySeat(roomId, seatIndex, userId, db);
+    const updatedSeat = result?.updatedSeat || result;
+    const vacatedSeatIndex = result?.vacatedSeatIndex;
+
+    // If moving from a previous seat, broadcast seat release for old seat first
+    if (typeof vacatedSeatIndex === 'number' && vacatedSeatIndex !== seatIndex) {
+      const releasePayload = {
+        roomId,
+        seatIndex: vacatedSeatIndex,
+        releasedByUserId: userId,
+      };
+      const broadcastTarget = io && io.to ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
+      broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, releasePayload);
+      broadcastTarget.emit('room:seat_released', releasePayload);
+      broadcastTarget.emit('seat_released', releasePayload);
+      broadcastTarget.emit('seat:released', releasePayload);
+    }
 
     const effectiveName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || 'Speaker';
     const effectiveAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
@@ -30,6 +46,7 @@ export async function onOccupySeat(io, socket, data, callback, db) {
     const payload = {
       roomId,
       seatIndex: updatedSeat.seatIndex,
+      vacatedSeatIndex: typeof vacatedSeatIndex === 'number' ? vacatedSeatIndex : null,
       user: {
         id: userId,
         userId: userId,
@@ -75,10 +92,10 @@ export async function onLeaveSeat(io, socket, data, callback, db) {
     const roomId = data?.roomId;
     const seatIndex = Number(data?.seatIndex);
 
-    if (!roomId || isNaN(seatIndex) || seatIndex < 0 || seatIndex > 7) {
+    if (!roomId || isNaN(seatIndex) || seatIndex < 0 || seatIndex > 30) {
       const err = {
         success: false,
-        error: { code: SOCKET_ERRORS.INVALID_SEAT_INDEX, message: 'Valid roomId and seatIndex (0-7) are required' },
+        error: { code: SOCKET_ERRORS.INVALID_SEAT_INDEX, message: 'Valid roomId and seatIndex (0-30) are required' },
       };
       if (typeof callback === 'function') return callback(err);
       return socket.emit(SOCKET_EVENTS.ERROR, err);
@@ -97,9 +114,11 @@ export async function onLeaveSeat(io, socket, data, callback, db) {
     };
 
     // Broadcast authoritative seat released event to the entire room
-    if (io && io.to) {
-      io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, payload);
-    }
+    const broadcastTarget = io && io.to ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
+    broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, payload);
+    broadcastTarget.emit('room:seat_released', payload);
+    broadcastTarget.emit('seat_released', payload);
+    broadcastTarget.emit('seat:released', payload);
 
     if (typeof callback === 'function') {
       return callback({

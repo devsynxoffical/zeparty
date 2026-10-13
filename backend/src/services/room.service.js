@@ -697,10 +697,16 @@ export async function adminUpdateRoomDp(
 }
 
 export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
-  const room = await db.room.findUnique({
+  let room = await db.room.findUnique({
     where: { id: roomId },
     select: { id: true, creatorUserId: true },
   });
+  if (!room && roomId && roomId.length <= 16) {
+    room = await db.room.findFirst({
+      where: { id: { startsWith: roomId, mode: 'insensitive' } },
+      select: { id: true, creatorUserId: true },
+    });
+  }
   if (!room) {
     const error = new Error('Room not found');
     error.statusCode = 404;
@@ -708,14 +714,24 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
     throw error;
   }
 
-  const where = { roomId };
+  const resolvedRoomId = room.id;
+  const where = {
+    roomId: resolvedRoomId,
+    userId: { not: room.creatorUserId },
+  };
   if (search && search.trim() !== '') {
     const q = search.trim();
-    where.OR = [
-      { userId: { equals: q } },
-      { user: { username: { contains: q, mode: 'insensitive' } } },
-      { user: { profile: { displayName: { contains: q, mode: 'insensitive' } } } },
+    where.AND = [
+      { userId: { not: room.creatorUserId } },
+      {
+        OR: [
+          { userId: { equals: q } },
+          { user: { username: { contains: q, mode: 'insensitive' } } },
+          { user: { profile: { displayName: { contains: q, mode: 'insensitive' } } } },
+        ],
+      },
     ];
+    delete where.userId;
   }
 
   const members = await db.roomMember.findMany({
@@ -740,29 +756,34 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
     },
   });
 
-  const formatted = members.map((m) => {
-    let role = 'MEMBER';
-    if (m.userId === room.creatorUserId) {
-      role = 'HOST';
-    } else if (m.role === 'ADMIN') {
-      role = 'ADMIN';
-    }
-    return {
-      id: m.id,
-      userId: m.userId,
-      role,
-      joinedAt: m.joinedAt,
-      user: {
-        id: m.user.id,
-        username: m.user.username,
-        displayName: m.user.profile?.displayName || m.user.username,
-        avatarUrl: m.user.avatarUrl || '',
-        lastSeenAt: m.user.lastLoginAt,
-      },
-    };
-  });
+  const formatted = members
+    .filter((m) => m.userId !== room.creatorUserId)
+    .map((m) => {
+      let role = 'MEMBER';
+      if (m.role === 'ADMIN') {
+        role = 'ADMIN';
+      }
+      return {
+        id: m.id,
+        userId: m.userId,
+        role,
+        joinedAt: m.joinedAt,
+        user: {
+          id: m.user.id,
+          username: m.user.username,
+          displayName: m.user.profile?.displayName || m.user.username,
+          avatarUrl: m.user.avatarUrl || '',
+          lastSeenAt: m.user.lastLoginAt,
+        },
+      };
+    });
 
-  const totalMembers = await db.roomMember.count({ where: { roomId } });
+  const totalMembers = await db.roomMember.count({
+    where: {
+      roomId: resolvedRoomId,
+      userId: { not: room.creatorUserId },
+    },
+  });
 
   return {
     members: formatted,

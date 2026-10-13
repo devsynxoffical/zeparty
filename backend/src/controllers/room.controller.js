@@ -102,12 +102,15 @@ export async function occupySeat(req, res, next) {
   try {
     const { id, seatIndex } = occupySeatParamSchema.parse(req.params);
     const userId = req.auth.userId;
-    const seat = await roomService.occupySeat(id, seatIndex, userId);
+    const result = await roomService.occupySeat(id, seatIndex, userId);
+    const seat = result?.updatedSeat || result;
+    const vacatedSeatIndex = result?.vacatedSeatIndex ?? null;
 
     return res.status(200).json({
       success: true,
       message: `Seat ${seatIndex} occupied successfully`,
       data: seat,
+      vacatedSeatIndex,
     });
   } catch (err) {
     next(err);

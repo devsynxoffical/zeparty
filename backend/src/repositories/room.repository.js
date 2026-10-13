@@ -103,68 +103,82 @@ export async function createRoomWithSeats(
 }
 
 export async function findRoomById(id, db = prisma) {
-  if (!id) return null;
-  return await db.room.findUnique({
-    where: { id },
-    include: {
-      creator: {
-        select: {
-          id: true,
-          username: true,
-          avatarUrl: true,
-          profile: {
-            select: {
-              displayName: true,
-              level: true,
-              vipLevel: true,
-              svipLevel: true,
-              nobleRank: true,
-            },
+  if (!id || typeof id !== 'string') return null;
+  const cleanId = id.trim();
+  const include = {
+    creator: {
+      select: {
+        id: true,
+        username: true,
+        avatarUrl: true,
+        profile: {
+          select: {
+            displayName: true,
+            level: true,
+            vipLevel: true,
+            svipLevel: true,
+            nobleRank: true,
           },
-        },
-      },
-      seats: {
-        orderBy: { seatIndex: 'asc' },
-        include: {
-          occupiedUser: {
-            select: {
-              id: true,
-              username: true,
-              avatarUrl: true,
-              profile: {
-                select: {
-                  displayName: true,
-                  level: true,
-                  vipLevel: true,
-                },
-              },
-            },
-          },
-        },
-      },
-      members: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              avatarUrl: true,
-              profile: {
-                select: {
-                  displayName: true,
-                },
-              },
-            },
-          },
-        },
-      },
-      giftTransactions: {
-        select: {
-          totalCoins: true,
         },
       },
     },
-  });
+    seats: {
+      orderBy: { seatIndex: 'asc' },
+      include: {
+        occupiedUser: {
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: {
+              select: {
+                displayName: true,
+                level: true,
+                vipLevel: true,
+              },
+            },
+          },
+        },
+      },
+    },
+    members: {
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: {
+              select: {
+                displayName: true,
+              },
+            },
+          },
+        },
+      },
+    },
+    giftTransactions: {
+      select: {
+        totalCoins: true,
+      },
+    },
+  };
+
+  let room = await db.room.findUnique({
+    where: { id: cleanId },
+    include,
+  }).catch(() => null);
+
+  if (!room && cleanId.length >= 4 && cleanId.length <= 32) {
+    room = await db.room.findFirst({
+      where: {
+        id: { startsWith: cleanId, mode: 'insensitive' },
+      },
+      include,
+    }).catch(() => null);
+  }
+
+  return room;
 }
 
 export async function findActiveRooms(
@@ -383,9 +397,19 @@ export async function findAdminRooms(
 }
 
 export async function joinRoomTx({ roomId, userId }, db = prisma) {
-  const room = await db.room.findUnique({
+  let resolvedRoomId = roomId;
+  let room = await db.room.findUnique({
     where: { id: roomId },
   });
+
+  if (!room && roomId && roomId.length <= 16) {
+    room = await db.room.findFirst({
+      where: { id: { startsWith: roomId, mode: 'insensitive' } },
+    });
+    if (room) {
+      resolvedRoomId = room.id;
+    }
+  }
 
   if (!room) {
     const error = new Error('Room not found');
@@ -406,7 +430,7 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
   await db.roomMember.deleteMany({
     where: {
       userId,
-      roomId: { not: roomId },
+      roomId: { not: resolvedRoomId },
     },
   }).catch(() => {});
 
@@ -414,7 +438,7 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
   const existingMember = await db.roomMember.findUnique({
     where: {
       roomId_userId: {
-        roomId,
+        roomId: resolvedRoomId,
         userId,
       },
     },
@@ -423,7 +447,7 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
   if (!existingMember) {
     await db.roomMember.create({
       data: {
-        roomId,
+        roomId: resolvedRoomId,
         userId,
       },
     }).catch(() => {});
@@ -433,11 +457,11 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
   if (room.creatorUserId === userId) {
     try {
       const seat0 = await db.roomSeat.findUnique({
-        where: { roomId_seatIndex: { roomId, seatIndex: 0 } },
+        where: { roomId_seatIndex: { roomId: resolvedRoomId, seatIndex: 0 } },
       });
       if (seat0 && (!seat0.occupiedUserId || seat0.occupiedUserId === userId)) {
         await db.roomSeat.update({
-          where: { roomId_seatIndex: { roomId, seatIndex: 0 } },
+          where: { roomId_seatIndex: { roomId: resolvedRoomId, seatIndex: 0 } },
           data: { occupiedUserId: userId },
         });
       }
@@ -446,13 +470,13 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
 
   const audienceMemberCount = await db.roomMember.count({
     where: {
-      roomId,
+      roomId: resolvedRoomId,
       userId: { not: room.creatorUserId },
     },
   });
 
   return await db.room.update({
-    where: { id: roomId },
+    where: { id: resolvedRoomId },
     data: {
       currentViewersCount: audienceMemberCount,
     },
@@ -472,9 +496,19 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
 }
 
 export async function leaveRoomTx({ roomId, userId }, db = prisma) {
-  const room = await db.room.findUnique({
+  let resolvedRoomId = roomId;
+  let room = await db.room.findUnique({
     where: { id: roomId },
   });
+
+  if (!room && roomId && roomId.length <= 16) {
+    room = await db.room.findFirst({
+      where: { id: { startsWith: roomId, mode: 'insensitive' } },
+    });
+    if (room) {
+      resolvedRoomId = room.id;
+    }
+  }
 
   if (!room) {
     const error = new Error('Room not found');
@@ -486,7 +520,7 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
   // Release seat if user occupied one
   await db.roomSeat.updateMany({
     where: {
-      roomId,
+      roomId: resolvedRoomId,
       occupiedUserId: userId,
     },
     data: {
@@ -498,13 +532,13 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
   // Remove membership record
   await db.roomMember.deleteMany({
     where: {
-      roomId,
+      roomId: resolvedRoomId,
       userId,
     },
   });
 
   const totalMemberCount = await db.roomMember.count({
-    where: { roomId },
+    where: { roomId: resolvedRoomId },
   });
 
   // Do NOT terminate room when host leaves; keep room active so other users and speakers stay inside
@@ -513,7 +547,7 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
   if (shouldDeleteRoom) {
     try {
       await db.room.update({
-        where: { id: roomId },
+        where: { id: resolvedRoomId },
         data: {
           status: 'ENDED',
           currentViewersCount: 0,
@@ -521,18 +555,18 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
         },
       });
     } catch {}
-    return { id: roomId, currentViewersCount: 0, status: 'ENDED' };
+    return { id: resolvedRoomId, currentViewersCount: 0, status: 'ENDED' };
   }
 
   const audienceMemberCount = await db.roomMember.count({
     where: {
-      roomId,
+      roomId: resolvedRoomId,
       userId: { not: room.creatorUserId },
     },
   });
 
   return await db.room.update({
-    where: { id: roomId },
+    where: { id: resolvedRoomId },
     data: {
       currentViewersCount: audienceMemberCount,
     },
@@ -553,9 +587,19 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
 
 export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
   return await db.$transaction(async (tx) => {
-    const room = await tx.room.findUnique({
+    let resolvedRoomId = roomId;
+    let room = await tx.room.findUnique({
       where: { id: roomId },
     });
+
+    if (!room && roomId && roomId.length <= 16) {
+      room = await tx.room.findFirst({
+        where: { id: { startsWith: roomId, mode: 'insensitive' } },
+      });
+      if (room) {
+        resolvedRoomId = room.id;
+      }
+    }
 
     if (!room) {
       const error = new Error('Room not found');
@@ -574,16 +618,18 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
     // Check if user already occupies another seat in this room
     const existingUserSeat = await tx.roomSeat.findFirst({
       where: {
-        roomId,
+        roomId: resolvedRoomId,
         occupiedUserId: userId,
       },
     });
 
+    let vacatedSeatIndex = null;
     if (existingUserSeat) {
       if (existingUserSeat.seatIndex === seatIndex) {
-        return existingUserSeat; // Idempotent already on this seat
+        return { ...existingUserSeat, updatedSeat: existingUserSeat, vacatedSeatIndex: null }; // Idempotent already on this seat
       }
       // Auto-vacate previous seat to allow seamless mic assignment/move
+      vacatedSeatIndex = existingUserSeat.seatIndex;
       await tx.roomSeat.update({
         where: { id: existingUserSeat.id },
         data: { occupiedUserId: null },
@@ -594,7 +640,7 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
     let targetSeat = await tx.roomSeat.findUnique({
       where: {
         roomId_seatIndex: {
-          roomId,
+          roomId: resolvedRoomId,
           seatIndex,
         },
       },
@@ -603,7 +649,7 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
     if (!targetSeat) {
       targetSeat = await tx.roomSeat.create({
         data: {
-          roomId,
+          roomId: resolvedRoomId,
           seatIndex,
           isMuted: false,
           isLocked: false,
@@ -632,10 +678,10 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
       throw error;
     }
 
-    return await tx.roomSeat.update({
+    const updatedSeat = await tx.roomSeat.update({
       where: {
         roomId_seatIndex: {
-          roomId,
+          roomId: resolvedRoomId,
           seatIndex,
         },
       },
@@ -653,15 +699,18 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
         },
       },
     });
-  });
+
+    return { ...updatedSeat, updatedSeat, vacatedSeatIndex };
+  }, { maxWait: 15000, timeout: 20000 });
 }
 
 export async function leaveSeatTx({ roomId, seatIndex, userId, force = false }, db = prisma) {
   return await db.$transaction(async (tx) => {
-    const seat = await tx.roomSeat.findUnique({
+    let resolvedRoomId = roomId;
+    let seat = await tx.roomSeat.findUnique({
       where: {
         roomId_seatIndex: {
-          roomId,
+          roomId: resolvedRoomId,
           seatIndex,
         },
       },
@@ -669,6 +718,27 @@ export async function leaveSeatTx({ roomId, seatIndex, userId, force = false }, 
         room: true,
       },
     });
+
+    if (!seat && roomId && roomId.length <= 16) {
+      const room = await tx.room.findFirst({
+        where: { id: { startsWith: roomId, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      if (room) {
+        resolvedRoomId = room.id;
+        seat = await tx.roomSeat.findUnique({
+          where: {
+            roomId_seatIndex: {
+              roomId: resolvedRoomId,
+              seatIndex,
+            },
+          },
+          include: {
+            room: true,
+          },
+        });
+      }
+    }
 
     if (!seat) {
       const error = new Error('Seat not found');
@@ -694,7 +764,7 @@ export async function leaveSeatTx({ roomId, seatIndex, userId, force = false }, 
     return await tx.roomSeat.update({
       where: {
         roomId_seatIndex: {
-          roomId,
+          roomId: resolvedRoomId,
           seatIndex,
         },
       },
@@ -703,7 +773,7 @@ export async function leaveSeatTx({ roomId, seatIndex, userId, force = false }, 
         isMuted: false,
       },
     });
-  });
+  }, { maxWait: 15000, timeout: 20000 });
 }
 
 export async function pinRoom({ roomId, isPinnedTop, pinnedPosition = null }, db = prisma) {

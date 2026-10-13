@@ -77,7 +77,7 @@ export const queryAdminRoomsSchema = z.object({
 
 export const occupySeatParamSchema = z.object({
   id: z.string().min(1, 'Room ID is required'),
-  seatIndex: z.coerce.number().int().min(0, 'Seat index must be between 0 and 15').max(15, 'Seat index must be between 0 and 15'),
+  seatIndex: z.coerce.number().int().min(0, 'Seat index must be between 0 and 30').max(30, 'Seat index must be between 0 and 30'),
 });
 
 export const pinRoomSchema = z.object({

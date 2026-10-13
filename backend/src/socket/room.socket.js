@@ -50,21 +50,23 @@ export function buildRoomSnapshot(room, viewerCount) {
         } : null,
       };
     }),
-    members: (room.members || []).map((m) => {
-      const u = m.user || {};
-      const displayName = u.profile?.displayName || u.displayName || u.username || 'User';
-      return {
-        userId: m.userId || u.id,
-        role: m.role || 'LISTENER',
-        user: {
-          id: u.id || m.userId,
-          username: u.username || displayName,
-          displayName,
-          name: displayName,
-          avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
-        },
-      };
-    }),
+    members: (room.members || [])
+      .filter((m) => (m.userId || m.user?.id) !== (room.creatorUserId || room.creator?.id))
+      .map((m) => {
+        const u = m.user || {};
+        const displayName = u.profile?.displayName || u.displayName || u.username || 'User';
+        return {
+          userId: m.userId || u.id,
+          role: m.role || 'LISTENER',
+          user: {
+            id: u.id || m.userId,
+            username: u.username || displayName,
+            displayName,
+            name: displayName,
+            avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
+          },
+        };
+      }),
     createdAt: room.createdAt,
   };
 }
@@ -120,12 +122,15 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     // 2. Immediately subscribe socket to room channel so broadcasts & chat are reliably delivered
     if (typeof socket.join === 'function') {
       socket.join(`room:${roomId}`);
+      if (room.id !== roomId) {
+        socket.join(`room:${room.id}`);
+      }
     }
 
     // 3. Persistent RoomMember registration via authoritative Room Service
     let joinResult = null;
     try {
-      joinResult = await roomService.joinRoom(roomId, userId, db || prisma);
+      joinResult = await roomService.joinRoom(room.id, userId, db || prisma);
     } catch (joinErr) {
       console.warn(`[RoomSocket] Warning joining room ${roomId} for user ${userId}:`, joinErr.message);
     }
@@ -133,13 +138,13 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     // Cancel any active host absence timer if host returned
     const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
     if (isHostUser) {
-      clearHostAbsentTimer(roomId, io);
+      clearHostAbsentTimer(room.id, io);
     }
 
     // 4. Ephemeral Presence Tracking
     let isFirstSocket = true;
     try {
-      const pres = await presenceService.addSocketToRoom(roomId, userId, socket.id);
+      const pres = await presenceService.addSocketToRoom(room.id, userId, socket.id);
       isFirstSocket = pres?.isFirstSocket ?? true;
     } catch (_) {}
 
@@ -157,75 +162,94 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       viewerCount: currentCount,
     });
 
-    // 6. Broadcast user joined event to ALL room members (including host's own socket)
-    const clientUser = data?.user || {};
-    const effectiveJoinedId = clientUser.id || clientUser.userId || socket.user?.id || userId;
-    const effectiveJoinedName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || 'Viewer';
-    const effectiveJoinedAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
-    const effectiveJoinedVip = Boolean(clientUser.isVip || socket.user?.isVip);
-    const effectiveJoinedNoble = clientUser.nobleTitle || socket.user?.nobleTitle || null;
+    // 6. Broadcast user joined event ONLY on genuine initial entry (not reconnects/pings)
+    if (isFirstSocket) {
+      const clientUser = data?.user || {};
+      const effectiveJoinedId = clientUser.id || clientUser.userId || socket.user?.id || userId;
+      const effectiveJoinedName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || 'Viewer';
+      const effectiveJoinedAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
+      const effectiveJoinedVip = Boolean(clientUser.isVip || socket.user?.isVip);
+      const effectiveJoinedNoble = clientUser.nobleTitle || socket.user?.nobleTitle || null;
 
-    const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
-    const userPayload = {
-      roomId,
-      userId: effectiveJoinedId,
-      id: effectiveJoinedId,
-      user: {
-        id: effectiveJoinedId,
+      const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
+      const userPayload = {
+        roomId: room.id,
+        clientRoomId: roomId,
         userId: effectiveJoinedId,
-        username: clientUser.username || socket.user?.username || effectiveJoinedName,
-        name: effectiveJoinedName,
-        displayName: effectiveJoinedName,
-        avatarUrl: effectiveJoinedAvatar,
-        isVip: effectiveJoinedVip,
-        nobleLevel: effectiveJoinedNoble,
-        nobleTitle: effectiveJoinedNoble,
-      },
-      viewerCount: currentCount,
-      count: currentCount,
-      currentViewersCount: currentCount,
-    };
-
-    broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
-    broadcastTarget.emit('room:user_joined', userPayload);
-    broadcastTarget.emit('user_joined', userPayload);
-    broadcastTarget.emit('user:joined', userPayload);
-    broadcastTarget.emit('room_user_joined', userPayload);
-
-    const viewerPayload = {
-      roomId,
-      viewerCount: currentCount,
-      count: currentCount,
-      currentViewersCount: currentCount,
-    };
-    broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
-    broadcastTarget.emit('room:viewer_count_changed', viewerPayload);
-    broadcastTarget.emit('room:viewer_count', viewerPayload);
-    broadcastTarget.emit('viewer_count_changed', viewerPayload);
-
-    // 7. Broadcast system chat announcement so all room participants see "[User] has joined the party"
-    const chatPayload = {
-      id: `sys_join_${Date.now()}_${effectiveJoinedId}`,
-      roomId,
-      userId: effectiveJoinedId,
-      sender: {
         id: effectiveJoinedId,
-        username: clientUser.username || socket.user?.username || effectiveJoinedName,
-        name: effectiveJoinedName,
-        displayName: effectiveJoinedName,
-        avatarUrl: effectiveJoinedAvatar,
-        isVip: effectiveJoinedVip,
-        nobleLevel: effectiveJoinedNoble,
-      },
-      text: `${effectiveJoinedName} has joined the party 🎉`,
-      type: 'SYSTEM',
-      isSystemMessage: true,
-      timestamp: new Date().toISOString(),
-    };
-    broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_RECEIVE, chatPayload);
-    broadcastTarget.emit('room:chat_message', chatPayload);
-    broadcastTarget.emit('room:chat', chatPayload);
-    broadcastTarget.emit('chat_message', chatPayload);
+        user: {
+          id: effectiveJoinedId,
+          userId: effectiveJoinedId,
+          username: clientUser.username || socket.user?.username || effectiveJoinedName,
+          name: effectiveJoinedName,
+          displayName: effectiveJoinedName,
+          avatarUrl: effectiveJoinedAvatar,
+          isVip: effectiveJoinedVip,
+          nobleLevel: effectiveJoinedNoble,
+          nobleTitle: effectiveJoinedNoble,
+        },
+        viewerCount: currentCount,
+        count: currentCount,
+        currentViewersCount: currentCount,
+      };
+
+      broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
+      broadcastTarget.emit('room:user_joined', userPayload);
+      broadcastTarget.emit('user_joined', userPayload);
+      broadcastTarget.emit('user:joined', userPayload);
+      broadcastTarget.emit('room_user_joined', userPayload);
+
+      if (room.id !== roomId && io) {
+        io.to(`room:${room.id}`).emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
+        io.to(`room:${room.id}`).emit('room:user_joined', userPayload);
+      }
+
+      const viewerPayload = {
+        roomId: room.id,
+        clientRoomId: roomId,
+        viewerCount: currentCount,
+        count: currentCount,
+        currentViewersCount: currentCount,
+      };
+      broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
+      broadcastTarget.emit('room:viewer_count_changed', viewerPayload);
+      broadcastTarget.emit('room:viewer_count', viewerPayload);
+      broadcastTarget.emit('viewer_count_changed', viewerPayload);
+
+      if (room.id !== roomId && io) {
+        io.to(`room:${room.id}`).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
+      }
+
+      // 7. Broadcast system chat announcement so all room participants see "[User] has joined the party"
+      const chatPayload = {
+        id: `sys_join_${Date.now()}_${effectiveJoinedId}`,
+        roomId: room.id,
+        clientRoomId: roomId,
+        userId: effectiveJoinedId,
+        sender: {
+          id: effectiveJoinedId,
+          username: clientUser.username || socket.user?.username || effectiveJoinedName,
+          name: effectiveJoinedName,
+          displayName: effectiveJoinedName,
+          avatarUrl: effectiveJoinedAvatar,
+          isVip: effectiveJoinedVip,
+          nobleLevel: effectiveJoinedNoble,
+        },
+        text: `${effectiveJoinedName} has joined the party 🎉`,
+        type: 'SYSTEM',
+        isSystemMessage: true,
+        timestamp: new Date().toISOString(),
+      };
+      broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_RECEIVE, chatPayload);
+      broadcastTarget.emit('room:chat_message', chatPayload);
+      broadcastTarget.emit('room:chat', chatPayload);
+      broadcastTarget.emit('chat_message', chatPayload);
+
+      if (room.id !== roomId && io) {
+        io.to(`room:${room.id}`).emit(SOCKET_EVENTS.ROOM_CHAT_RECEIVE, chatPayload);
+        io.to(`room:${room.id}`).emit('room:chat_message', chatPayload);
+      }
+    }
 
     if (typeof callback === 'function') {
       return callback({
@@ -555,7 +579,7 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
 }
 
 export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
-  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
   try {
     const roomId = data?.roomId;
     const text = (data?.text || '').trim();
@@ -572,9 +596,23 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
+    // Resolve canonical room ID if short ID was passed
+    let canonicalRoomId = roomId;
+    if (roomId && roomId.length <= 16) {
+      try {
+        const found = await roomRepository.findRoomById(roomId, db || prisma);
+        if (found) {
+          canonicalRoomId = found.id;
+        }
+      } catch (_) {}
+    }
+
     // Ensure socket is joined to room channel
     if (typeof socket.join === 'function') {
       socket.join(`room:${roomId}`);
+      if (canonicalRoomId !== roomId) {
+        socket.join(`room:${canonicalRoomId}`);
+      }
     }
 
     const clientSender = data?.sender || data?.user || {};
@@ -608,7 +646,8 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
 
     const payload = {
       id: data?.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      roomId,
+      roomId: canonicalRoomId,
+      clientRoomId: roomId,
       senderUserId: senderId,
       sender: {
         id: senderId,
@@ -635,6 +674,15 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
     broadcastTarget.emit('room_chat_message', payload);
     broadcastTarget.emit('chat_message', payload);
     broadcastTarget.emit('room:comment', payload);
+
+    if (io && canonicalRoomId !== roomId) {
+      io.to(`room:${canonicalRoomId}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
+      io.to(`room:${canonicalRoomId}`).emit('room:chat_message', payload);
+      io.to(`room:${canonicalRoomId}`).emit('room_chat_message', payload);
+      io.to(`room:${canonicalRoomId}`).emit('chat_message', payload);
+      io.to(`room:${canonicalRoomId}`).emit('room:comment', payload);
+    }
+
     if (!io && socket && typeof socket.emit === 'function') {
       socket.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
       socket.emit('room:chat_message', payload);
