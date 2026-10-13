@@ -94,6 +94,62 @@ export async function getActiveRooms(filters, db = prisma) {
   return await roomRepository.findActiveRooms(filters, db);
 }
 
+export async function cleanupStaleRooms(db = prisma) {
+  try {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+    const staleRooms = await db.room.findMany({
+      where: {
+        status: 'LIVE',
+        createdAt: { lt: cutoff },
+      },
+      select: { id: true },
+    });
+
+    if (staleRooms.length > 0) {
+      const ids = staleRooms.map((r) => r.id);
+      await db.room.updateMany({
+        where: { id: { in: ids } },
+        data: {
+          status: 'ENDED',
+          endedAt: new Date(),
+          currentViewersCount: 0,
+        },
+      });
+      console.log(`[RoomService] Cleaned up ${staleRooms.length} stale live rooms.`);
+    }
+
+    // Also close any orphaned room whose creator no longer exists
+    const liveRooms = await db.room.findMany({
+      where: { status: 'LIVE' },
+      select: { id: true, creatorUserId: true },
+    });
+    const userIds = liveRooms.map((r) => r.creatorUserId);
+    const existingUsers = await db.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true },
+    });
+    const existingSet = new Set(existingUsers.map((u) => u.id));
+    const orphaned = liveRooms.filter((r) => !existingSet.has(r.creatorUserId));
+    if (orphaned.length > 0) {
+      const orphanedIds = orphaned.map((r) => r.id);
+      await db.room.updateMany({
+        where: { id: { in: orphanedIds } },
+        data: {
+          status: 'ENDED',
+          endedAt: new Date(),
+          currentViewersCount: 0,
+        },
+      });
+      console.log(`[RoomService] Cleaned up ${orphaned.length} orphaned live rooms.`);
+    }
+
+    return { cleanedCount: staleRooms.length + orphaned.length };
+  } catch (err) {
+    console.warn('[RoomService] Cleanup stale rooms warning:', err?.message);
+    return { error: err?.message };
+  }
+}
+
 export async function getRoomDetails(roomId, db = prisma) {
   const room = await roomRepository.findRoomById(roomId, db);
   if (!room) {
@@ -1100,6 +1156,7 @@ export async function getEntryBannerConfig(roomId, db = prisma) {
 export default {
   createRoom,
   getActiveRooms,
+  cleanupStaleRooms,
   getRoomDetails,
   joinRoom,
   leaveRoom,

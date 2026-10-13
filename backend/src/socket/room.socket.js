@@ -458,6 +458,43 @@ export async function onRequestSnapshot(socket, data, callback, db) {
   }
 }
 
+export async function onRequestActiveRooms(socket, data, callback, db = prisma) {
+  try {
+    const filters = {
+      roomType: data?.roomType,
+      category: data?.category,
+      search: data?.search,
+      page: data?.page || 1,
+      limit: data?.limit || 50,
+      isPrivate: false,
+    };
+
+    const result = await roomService.getActiveRooms(filters, db);
+    const payload = {
+      success: true,
+      data: result.rooms,
+      rooms: result.rooms,
+      pagination: result.pagination,
+      timestamp: new Date().toISOString(),
+    };
+
+    if (typeof callback === 'function') {
+      return callback(payload);
+    }
+    socket.emit('rooms:active_list', payload);
+    socket.emit('rooms_active_list', payload);
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: {
+        code: SOCKET_ERRORS.INTERNAL_ERROR,
+        message: err.message || 'Failed to retrieve active rooms',
+      },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
 
 export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
   const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
@@ -801,6 +838,20 @@ export function registerRoomHandlers(io, socket) {
     withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onKickUser(io, s, d, cb))
   );
 
+  // Authoritative Active Rooms Snapshot Request for newly connected or reconnecting clients
+  socket.on(
+    'rooms:get_active',
+    withRateLimit('ROOM_ACTIVE_LIST', 15, 1000, (s, d, cb) => onRequestActiveRooms(s, d, cb))
+  );
+  socket.on(
+    'rooms_get_active',
+    withRateLimit('ROOM_ACTIVE_LIST', 15, 1000, (s, d, cb) => onRequestActiveRooms(s, d, cb))
+  );
+  socket.on(
+    'rooms:list',
+    withRateLimit('ROOM_ACTIVE_LIST', 15, 1000, (s, d, cb) => onRequestActiveRooms(s, d, cb))
+  );
+
   socket.on(SOCKET_EVENTS.DISCONNECT, () => onSocketDisconnect(io, socket));
 }
 
@@ -809,6 +860,7 @@ export default {
   onJoinRoom,
   onLeaveRoom,
   onRequestSnapshot,
+  onRequestActiveRooms,
   onSendRoomChat,
   onSendRoomEmoji,
   onSendRoomLike,

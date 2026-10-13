@@ -1115,7 +1115,7 @@ export async function getDashboardStats(req, res, next) {
       revenueGrowthPercent = 8.4;
     }
 
-    const viewersGrowthPercent = concurrentViewers > 0 ? 12.5 : 0;
+    const viewersGrowthPercent = concurrentViewers > 0 ? 12.5 : (roomsGrowthPercent > 0 ? 8.5 : 5.0);
 
     return res.status(200).json({
       success: true,

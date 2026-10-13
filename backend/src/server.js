@@ -10,6 +10,7 @@ import {
   startAutoRestoreScheduler,
   stopAutoRestoreScheduler,
 } from './jobs/autoRestore.job.js';
+import roomService from './services/room.service.js';
 
 // Ensure BigInt values serialize cleanly to JSON across all API endpoints
 BigInt.prototype.toJSON = function () {
@@ -61,6 +62,8 @@ async function startServer() {
       .then(async () => {
         // Run Phase 7 Auto-Restore Startup Recovery Sweep
         await runStartupRecoverySweep().catch((e) => console.warn('Recovery sweep warning:', e.message));
+        // Run stale and orphaned rooms recovery sweep
+        await roomService.cleanupStaleRooms().catch((e) => console.warn('Room cleanup warning:', e.message));
         // Start Phase 7 Recurring Auto-Restore Scheduler
         startAutoRestoreScheduler({ intervalMs: 60000 });
       })

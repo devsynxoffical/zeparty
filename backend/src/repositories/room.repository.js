@@ -172,6 +172,7 @@ export async function findActiveRooms(
     roomType = null,
     category = null,
     search = null,
+    isPrivate = false,
     page = 1,
     limit = 20,
   } = {},
@@ -179,6 +180,10 @@ export async function findActiveRooms(
 ) {
   const where = {
     status: 'LIVE',
+    isPrivate: Boolean(isPrivate),
+    creator: {
+      id: { not: '' },
+    },
   };
 
   if (roomType) where.roomType = roomType;
@@ -206,11 +211,12 @@ export async function findActiveRooms(
       orderBy: [
         { isPinnedTop: 'desc' },
         { pinnedPosition: 'asc' },
-        { currentViewersCount: 'desc' },
         { createdAt: 'desc' },
+        { currentViewersCount: 'desc' },
       ],
       select: {
         id: true,
+        creatorUserId: true,
         title: true,
         coverImageUrl: true,
         roomType: true,
@@ -279,7 +285,9 @@ export async function findAdminRooms(
   } = {},
   db = prisma
 ) {
-  const where = {};
+  const where = {
+    creator: { id: { not: '' } },
+  };
 
   if (status === 'active' || status === 'LIVE') {
     where.status = 'LIVE';

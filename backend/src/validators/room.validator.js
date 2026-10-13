@@ -35,16 +35,22 @@ export const queryActiveRoomsSchema = z.object({
     return undefined;
   }, z.enum(['LIVE_VIDEO', 'AUDIO_PARTY']).optional()),
   category: z.preprocess((val) => {
-    if (!val || val === '' || val === 'all' || val === 'ALL') return undefined;
+    if (!val || val === '' || val === 'all' || val === 'ALL' || val === 'all categories') return undefined;
     if (typeof val === 'string') {
       const u = val.toUpperCase().trim();
+      if (u === 'ALL' || u === 'POPULAR' || u === 'EXPLORE' || u === 'LIVE') return undefined;
       if (u.includes('MUSIC')) return 'MUSIC';
       if (u.includes('GAME') || u.includes('GAMING') || u.includes('PK')) return 'GAMING';
-      if (u.includes('CHAT') || u.includes('ENTERTAINMENT') || u.includes('FRIENDS') || u.includes('OTHER') || u.includes('PARTY') || u.includes('LIVE')) return 'CHAT';
+      if (u.includes('CHAT') || u.includes('TALK') || u.includes('FRIEND') || u.includes('HANG') || u.includes('SOCIAL')) return 'CHAT';
     }
     return undefined;
   }, z.enum(['MUSIC', 'CHAT', 'GAMING']).optional()),
   search: z.string().trim().optional(),
+  isPrivate: z.preprocess((val) => {
+    if (val === 'true' || val === true || val === 1 || val === '1') return true;
+    if (val === 'false' || val === false || val === 0 || val === '0') return false;
+    return false;
+  }, z.boolean()).default(false),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
