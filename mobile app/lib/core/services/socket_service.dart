@@ -10,6 +10,8 @@ class SocketService {
   IO.Socket? _socket;
   bool _isConnected = false;
   String? _currentRoomId;
+  Map<String, dynamic>? _cachedUserData;
+  Completer<void>? _connectCompleter;
 
   bool get isConnected => _isConnected;
   String? get currentRoomId => _currentRoomId;
@@ -170,9 +172,30 @@ class SocketService {
   Future<void> connect({String? token, Map<String, dynamic>? user}) async {
     final authToken = token ?? await ApiClient.instance.getAccessToken() ?? 'guest_anonymous';
 
-    if (_socket != null && _isConnected) {
+    if (user != null) {
+      _cachedUserData = user;
+    }
+
+    final hasSameUser = user == null ||
+        (_cachedUserData != null &&
+         (user['id'] == _cachedUserData!['id'] || user['_id'] == _cachedUserData!['_id']));
+
+    if (_socket != null && _socket!.connected && hasSameUser) {
       return;
     }
+
+    if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
+      return _connectCompleter!.future;
+    }
+
+    _connectCompleter = Completer<void>();
+
+    // Safety timeout to prevent awaiting forever if server is unreachable
+    Future.delayed(const Duration(seconds: 4), () {
+      if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
+        _connectCompleter!.complete();
+      }
+    });
 
     // Clean up any stale disconnected instance
     _socket?.disconnect();
@@ -182,9 +205,12 @@ class SocketService {
     final baseUrl = ApiClient.baseUrl;
 
     final authMap = <String, dynamic>{'token': authToken};
-    if (user != null) {
-      authMap['user'] = user;
-      if (user['id'] != null) authMap['userId'] = user['id'];
+    if (user != null || _cachedUserData != null) {
+      final u = user ?? _cachedUserData;
+      authMap['user'] = u;
+      if (u != null && (u['id'] != null || u['_id'] != null)) {
+        authMap['userId'] = u['id'] ?? u['_id'];
+      }
     }
 
     _socket = IO.io(
@@ -203,8 +229,11 @@ class SocketService {
     _socket!.onConnect((_) {
       _isConnected = true;
       debugPrint('[SocketService] Connected to backend realtime server ($baseUrl)');
+      if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
+        _connectCompleter!.complete();
+      }
       if (_currentRoomId != null) {
-        joinRoomSubscription(_currentRoomId!);
+        joinRoomSubscription(_currentRoomId!, user: _cachedUserData);
       }
     });
 
@@ -216,10 +245,20 @@ class SocketService {
     _socket!.onConnectError((err) {
       _isConnected = false;
       debugPrint('[SocketService] Connection notice: $err');
+      if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
+        _connectCompleter!.complete();
+      }
     });
 
     _socket!.onError((err) {
       debugPrint('[SocketService] Socket error: $err');
+      if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
+        _connectCompleter!.complete();
+      }
+    });
+
+    _socket!.on('error', (err) {
+      debugPrint('[SocketService] Application error: $err');
     });
 
     // Helper for recursive safe string-key mapping
@@ -238,9 +277,23 @@ class SocketService {
       });
     }
 
-    // Register Authoritative Room Event Listeners with multi-alias support
+    // Register Authoritative Room Event Listeners with multi-alias support & deduplication
+    final Map<String, int> recentJoins = {};
     void handleUserJoined(dynamic data) {
-      if (data != null) _userJoinedController.add(safeMap(data));
+      if (data != null) {
+        final map = safeMap(data);
+        final userObj = map['user'] is Map ? map['user'] as Map : map;
+        final uid = map['userId'] ?? map['id'] ?? userObj['id'] ?? userObj['username'] ?? '';
+        final key = '${map['roomId']}_$uid';
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (uid.toString().isNotEmpty && recentJoins.containsKey(key)) {
+          if (now - recentJoins[key]! < 4000) {
+            return; // Ignore duplicate alias emissions within 4 seconds
+          }
+        }
+        recentJoins[key] = now;
+        _userJoinedController.add(map);
+      }
     }
     _socket!.on('room:user_joined', handleUserJoined);
     _socket!.on('user_joined', handleUserJoined);
@@ -306,8 +359,26 @@ class SocketService {
         }
       }
     });
+    final Map<String, int> recentChats = {};
     void handleChatMessage(dynamic data) {
-      if (data != null) _roomChatMessageController.add(safeMap(data));
+      if (data != null) {
+        final map = safeMap(data);
+        final msgId = (map['id'] ?? map['_id'] ?? '').toString();
+        final text = (map['text'] ?? map['message'] ?? map['content'] ?? '').toString().trim();
+        final senderMap = map['sender'] is Map
+            ? map['sender'] as Map
+            : (map['user'] is Map ? map['user'] as Map : {});
+        final senderId = (senderMap['id'] ?? senderMap['_id'] ?? map['senderUserId'] ?? map['userId'] ?? '').toString();
+        final key = msgId.isNotEmpty ? msgId : '${map['roomId']}_${senderId}_$text';
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (key.isNotEmpty && recentChats.containsKey(key)) {
+          if (now - recentChats[key]! < 500) {
+            return; // Ignore duplicate chat alias emissions within 500ms
+          }
+        }
+        recentChats[key] = now;
+        _roomChatMessageController.add(map);
+      }
     }
     _socket!.off('room:chat_message');
     _socket!.on('room:chat_message', handleChatMessage);
@@ -317,6 +388,18 @@ class SocketService {
     _socket!.on('chat_message', handleChatMessage);
     _socket!.off('room:comment');
     _socket!.on('room:comment', handleChatMessage);
+    _socket!.off('room:chat');
+    _socket!.on('room:chat', handleChatMessage);
+    _socket!.off('room_chat');
+    _socket!.on('room_chat', handleChatMessage);
+    _socket!.off('room:message');
+    _socket!.on('room:message', handleChatMessage);
+    _socket!.off('room_message');
+    _socket!.on('room_message', handleChatMessage);
+    _socket!.off('new_message');
+    _socket!.on('new_message', handleChatMessage);
+    _socket!.off('chat');
+    _socket!.on('chat', handleChatMessage);
 
     _socket!.on('room:user_kicked', (data) {
       if (data != null) _userKickedController.add(safeMap(data));
@@ -472,6 +555,7 @@ class SocketService {
     });
 
     _socket!.connect();
+    return _connectCompleter?.future ?? Future.value();
   }
 
   /// Send typing indicator to target user via socket
@@ -487,12 +571,26 @@ class SocketService {
   /// Subscribe to room channel on server
   void joinRoomSubscription(String roomId, {Map<String, dynamic>? user}) {
     _currentRoomId = roomId;
-    if (_socket != null) {
-      _socket!.emit('room:join', {
-        'roomId': roomId,
-        if (user != null) 'user': user,
+    if (user != null) _cachedUserData = user;
+    final targetUser = user ?? _cachedUserData;
+
+    final payload = {
+      'roomId': roomId,
+      if (targetUser != null) 'user': targetUser,
+      if (targetUser != null && (targetUser['id'] != null || targetUser['_id'] != null))
+        'userId': targetUser['id'] ?? targetUser['_id'],
+    };
+
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('room:join', payload);
+      debugPrint('[SocketService] Subscribed to room:$roomId with user: ${targetUser?['name'] ?? targetUser?['username']}');
+    } else {
+      connect(user: targetUser).then((_) {
+        if (_socket != null && _socket!.connected) {
+          _socket!.emit('room:join', payload);
+          debugPrint('[SocketService] Subscribed to room:$roomId after connect with user: ${targetUser?['name'] ?? targetUser?['username']}');
+        }
       });
-      debugPrint('[SocketService] Subscribed to room:$roomId');
     }
   }
 
@@ -510,6 +608,16 @@ class SocketService {
   }
 
   void leaveRoom(String roomId) => leaveRoomSubscription(roomId);
+
+  /// Inform server in realtime to end and close the room
+  void closeRoomRealtime(String roomId) {
+    if (_socket != null) {
+      _socket!.emit('room:close', {'roomId': roomId});
+      _socket!.emit('stream:end', {'roomId': roomId});
+      _socket!.emit('room_close', {'roomId': roomId});
+      debugPrint('[SocketService] Sent room:close for room:$roomId');
+    }
+  }
 
   /// Occupy a seat via realtime socket emission
   void occupySeat(String roomId, int seatIndex, {Map<String, dynamic>? user}) {
@@ -543,13 +651,34 @@ class SocketService {
     required String text,
     String type = 'text',
     Map<String, dynamic>? sender,
+    String? messageId,
   }) {
-    if (_socket != null) {
-      _socket!.emit('room:chat_send', {
-        'roomId': roomId,
-        'text': text,
-        'type': type,
-        if (sender != null) 'sender': sender,
+    final effectiveId = (messageId != null && messageId.isNotEmpty)
+        ? messageId
+        : 'msg_${DateTime.now().millisecondsSinceEpoch}_${(sender?['id'] ?? sender?['userId'] ?? 'anon')}';
+    final payload = {
+      'id': effectiveId,
+      'clientMessageId': effectiveId,
+      'roomId': roomId,
+      'text': text,
+      'message': text,
+      'content': text,
+      'type': type,
+      if (sender != null) 'sender': sender,
+      if (sender != null) 'user': sender,
+      if (sender != null && (sender['id'] != null || sender['_id'] != null))
+        'senderUserId': sender['id'] ?? sender['_id'],
+    };
+
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('room:chat_send', payload);
+      debugPrint('[SocketService] Sent room:chat_send for room:$roomId (msgId: $effectiveId)');
+    } else {
+      connect(user: sender).then((_) {
+        if (_socket != null && _socket!.connected) {
+          _socket!.emit('room:chat_send', payload);
+          debugPrint('[SocketService] Sent room:chat_send after connect for room:$roomId (msgId: $effectiveId)');
+        }
       });
     }
   }

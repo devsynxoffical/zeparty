@@ -36,7 +36,6 @@ import '../../core/services/agora_rtc_service.dart';
 import '../../widgets/user_avatar.dart';
 import '../../models/party_participant_model.dart';
 import 'widgets/live_viewers_sheet.dart';
-import '../../widgets/in_room_tools_sheet.dart';
 
 class FloatingHeart {
   final Key id;
@@ -263,9 +262,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentUser = context.read<AuthProvider>().currentUser;
       final liveProv = context.read<LiveProvider>();
-      if (liveProv.activeRoom?.id != widget.room.id) {
-        liveProv.joinRoom(widget.room, currentUser: currentUser);
-      }
+      final isEffectiveHost = widget.isHost ||
+          (widget.room.host.id == currentUser.id) ||
+          (widget.room.creatorUserId == currentUser.id);
+
+      liveProv.joinRoom(widget.room, currentUser: currentUser);
       context.read<LiveGiftProvider>().setActiveRoom(widget.room.id);
       final emojiProv = context.read<EmojiReactionProvider>();
       emojiProv.setActiveRoom(widget.room.id);
@@ -276,13 +277,17 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       emojiProv.registerAnchor('user_${currentUser.id}', _hostAvatarKey);
 
       _liveProvClosedSub = liveProv.onRoomClosed.listen((data) {
-        if (!widget.isHost && mounted) {
+        final closedRoomId = data['roomId']?.toString();
+        if (closedRoomId != null && closedRoomId != widget.room.id) return;
+        if (!isEffectiveHost && mounted) {
           _handleStreamEnded(data['reason']?.toString());
         }
       });
 
       _roomClosedSub = SocketService.instance.roomClosedStream.listen((data) {
-        if (!widget.isHost && mounted) {
+        final closedRoomId = data['roomId']?.toString();
+        if (closedRoomId != null && closedRoomId != widget.room.id) return;
+        if (!isEffectiveHost && mounted) {
           _handleStreamEnded(data['reason']?.toString());
         }
       });
@@ -1504,7 +1509,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   }
 
   Future<void> _handleExitConfirmation(BuildContext context, bool isHost, LiveProvider liveProvider) async {
-    if (!isHost) {
+    final currentUser = context.read<AuthProvider>().currentUser;
+    final effectiveIsHost = isHost || (widget.room.host.id == currentUser.id) || (widget.room.creatorUserId == currentUser.id);
+
+    if (!effectiveIsHost) {
       final shouldLeave = await showDialog<bool>(
         context: context,
         barrierDismissible: false,
@@ -1570,7 +1578,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       return;
     }
 
-    // Host Exit Options: Leave vs End for all
+    // Host Exit: End Live Stream for everyone
     final action = await showDialog<String>(
       context: context,
       barrierDismissible: false,
@@ -1596,13 +1604,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             ),
             const SizedBox(width: 12),
             const Text(
-              'Host Stream Actions',
+              'End Live Stream?',
               style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ],
         ),
         content: const Text(
-          'Choose whether to leave temporarily while keeping the room open for viewers, or end the stream for everyone.',
+          'Ending the live broadcast will close the stream for all viewers and participants.',
           style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
         ),
         actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1610,16 +1618,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
           TextButton(
             onPressed: () => Navigator.pop(ctx, 'cancel'),
             child: const Text('Cancel', style: TextStyle(color: Colors.white60, fontSize: 14)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3B82F6),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            ),
-            onPressed: () => Navigator.pop(ctx, 'leave'),
-            child: const Text('Leave (Keep Open)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -1635,14 +1633,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       ),
     );
 
-    if (action == 'leave' && mounted) {
-      try {
-        await liveProvider.leaveRoom();
-      } catch (_) {}
-      if (mounted) {
-        Navigator.pop(context);
-      }
-    } else if (action == 'close' && mounted) {
+    if (action == 'close' && mounted) {
       try {
         await liveProvider.closeRoom();
       } catch (_) {}

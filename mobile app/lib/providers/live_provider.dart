@@ -101,6 +101,8 @@ class LiveProvider extends ChangeNotifier {
   final List<UserModel> _viewers = [];
   List<UserModel> get viewers => List.unmodifiable(_viewers);
 
+  final Set<String> _announcedViewerIds = {};
+
   bool _isLiveEnded = false;
   bool get isLiveEnded => _isLiveEnded;
   String? _liveEndedReason;
@@ -334,12 +336,15 @@ class LiveProvider extends ChangeNotifier {
         _viewers.insert(0, viewerModel);
       }
 
-      if (joinedId != currentUser?.id) {
-        _messages.add(LiveMessage(
-          sender: 'System',
-          text: '👋 $userName joined the room! 🔥',
-        ));
-        if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
+      if (joinedId != null && joinedId != currentUser?.id) {
+        if (!_announcedViewerIds.contains(joinedId)) {
+          _announcedViewerIds.add(joinedId);
+          _messages.add(LiveMessage(
+            sender: 'System',
+            text: '👋 $userName joined the room! 🔥',
+          ));
+          if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
+        }
 
         final rawCount = data['viewerCount'] ?? data['count'];
         final newCount = rawCount is int
@@ -422,17 +427,33 @@ class LiveProvider extends ChangeNotifier {
     _socketChatMessageSub?.cancel();
     _socketChatMessageSub = _socketService.onRoomChatMessage.listen((data) {
       try {
-        final incomingRoomId = data['roomId']?.toString();
-        if (_activeRoom != null && incomingRoomId != null && incomingRoomId != _activeRoom!.id) {
-          return;
+        final incomingRoomId = (data['roomId'] ?? '').toString().trim();
+        final incomingClientRoomId = (data['clientRoomId'] ?? data['room'] ?? '').toString().trim();
+        final currentRoomId = (_activeRoom?.id ?? '').trim().toLowerCase();
+        final inRoomId = incomingRoomId.toLowerCase();
+        final inClientRoomId = incomingClientRoomId.toLowerCase();
+
+        final validRoomIds = <String>{
+          if (currentRoomId.isNotEmpty) currentRoomId,
+        };
+
+        if (validRoomIds.isNotEmpty) {
+          final match = (inRoomId.isNotEmpty && validRoomIds.contains(inRoomId)) ||
+              (inClientRoomId.isNotEmpty && validRoomIds.contains(inClientRoomId)) ||
+              (inRoomId.isEmpty && inClientRoomId.isEmpty);
+          if (!match) return;
         }
         final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender'] as Map) : <String, dynamic>{};
-        final senderId = senderMap['id']?.toString() ?? data['senderUserId']?.toString() ?? '';
-        final text = data['text']?.toString() ?? '';
-        if (text.trim().isEmpty) return;
+        final senderId = (senderMap['id'] ?? senderMap['_id'] ?? data['senderUserId'] ?? data['userId'] ?? '').toString();
+        final text = (data['text'] ?? data['message'] ?? data['content'] ?? '').toString().trim();
+        if (text.isEmpty) return;
 
-        final incomingId = data['id']?.toString();
-        if (incomingId != null && _messages.any((m) => m.id == incomingId)) {
+        final incomingId = (data['id'] ?? data['_id'])?.toString();
+        final clientMsgId = data['clientMessageId']?.toString();
+        if (incomingId != null && incomingId.isNotEmpty && _messages.any((m) => m.id == incomingId)) {
+          return;
+        }
+        if (clientMsgId != null && clientMsgId.isNotEmpty && _messages.any((m) => m.id == clientMsgId)) {
           return;
         }
 
@@ -440,7 +461,7 @@ class LiveProvider extends ChangeNotifier {
         if (_messages.isNotEmpty && senderId.isNotEmpty && senderId == _currentUser?.id) {
           final recentMatchingIndex = _messages.lastIndexWhere((m) =>
             m.senderId == senderId &&
-            m.text.trim() == text.trim() &&
+            m.text.trim() == text &&
             DateTime.now().difference(m.timestamp).inSeconds < 8
           );
 
@@ -679,6 +700,7 @@ class LiveProvider extends ChangeNotifier {
     final roomId = _activeRoom?.id;
     if (roomId != null) {
       try {
+        _socketService.closeRoomRealtime(roomId);
         await _roomRepository.closeRoom(roomId);
       } catch (_) {}
     }
@@ -722,6 +744,7 @@ class LiveProvider extends ChangeNotifier {
     _activeRoom = null;
     _currentUser = null;
     _messages.clear();
+    _announcedViewerIds.clear();
     _activeGiftAnimation = null;
     _activePkBattle = null;
     _isRoomLocked = false;
@@ -762,7 +785,7 @@ class LiveProvider extends ChangeNotifier {
     }
   }
 
-  void sendMessage(String text, String sender, {UserModel? user}) {
+  void sendMessage(String text, String sender, {UserModel? user, String? roomId}) {
     final trimmedText = text.trim();
     if (trimmedText.isEmpty) return;
 
@@ -770,9 +793,20 @@ class LiveProvider extends ChangeNotifier {
     final isHost = (effectiveUser != null && _activeRoom != null) &&
         (_activeRoom!.host.id == effectiveUser.id || _activeRoom!.creatorUserId == effectiveUser.id);
 
+    final resolvedSender = (effectiveUser?.displayName.isNotEmpty == true)
+        ? effectiveUser!.displayName
+        : (sender.isNotEmpty
+            ? sender
+            : (effectiveUser?.name.isNotEmpty == true
+                ? effectiveUser!.name
+                : (effectiveUser?.username.isNotEmpty == true ? effectiveUser!.username : 'User')));
+
+    final clientMsgId = 'msg_${DateTime.now().millisecondsSinceEpoch}_${effectiveUser?.id ?? "anon"}';
+
     final localMsg = LiveMessage(
+      id: clientMsgId,
       senderId: effectiveUser?.id ?? '',
-      sender: sender.isNotEmpty ? sender : (effectiveUser?.name ?? 'User'),
+      sender: resolvedSender,
       text: trimmedText,
       avatarUrl: effectiveUser?.avatarUrl,
       isHost: isHost,
@@ -790,11 +824,13 @@ class LiveProvider extends ChangeNotifier {
     }
     notifyListeners();
 
-    if (_activeRoom != null && sender != 'System') {
+    final targetRoomId = (_activeRoom?.id.isNotEmpty == true) ? _activeRoom!.id : (roomId ?? '');
+    if (targetRoomId.isNotEmpty && sender != 'System') {
       _socketService.sendRoomChatMessage(
-        roomId: _activeRoom!.id,
+        roomId: targetRoomId,
         text: trimmedText,
         sender: effectiveUser?.toJson(),
+        messageId: clientMsgId,
       );
     }
   }

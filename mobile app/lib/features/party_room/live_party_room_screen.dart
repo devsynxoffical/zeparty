@@ -176,6 +176,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             _handlePartyRoomEnded('This party room is not available or has ended.');
           }
         });
+      } else {
+        partyProv.ensureSocketSubscribed(user, roomId: widget.room.id);
       }
       Provider.of<EmojiReactionProvider>(context, listen: false).setActiveRoom(widget.room.id);
       Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id);
@@ -323,7 +325,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     if (text.isNotEmpty) {
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
       final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
-      partyProv.sendMessage(user, text);
+      partyProv.sendMessage(user, text, roomId: widget.room.id);
       _chatController.clear();
       Future.delayed(const Duration(milliseconds: 100), () {
         if (_chatScrollController.hasClients) {
@@ -569,8 +571,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             ),
           ),
 
-          // TikTok User Join Entrance Banner
-          TikTokUserJoinBanner(roomId: provider.activeRoom?.id ?? widget.room.id, bottomOffset: 240),
+          TikTokUserJoinBanner(
+            roomId: provider.activeRoom?.id ?? widget.room.id,
+            secondaryRoomId: widget.room.id != provider.activeRoom?.id ? widget.room.id : provider.initialRoomId,
+            bottomOffset: 240,
+          ),
 
           // Realtime Animated Emoji Reaction Overlay Layer (Top of Stack)
           EmojiReactionOverlay(roomId: provider.activeRoom?.id ?? widget.room.id),
@@ -1285,7 +1290,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         final currentUserId = Provider.of<AuthProvider>(context, listen: false).currentUser.id;
         return msg.sender.id == currentUserId;
       } else if (_activeChatFilter == 'Radio') {
-        return msg.isGiftMessage || msg.sender.id == 'system';
+        return msg.isGiftMessage || msg.isSystemMessage || msg.sender.id == 'system';
       }
       return true;
     }).toList();
@@ -1298,7 +1303,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       itemCount: filteredMessages.length,
       itemBuilder: (context, index) {
         final msg = filteredMessages.reversed.toList()[index];
-        final isSystem = msg.sender.id == 'system';
+        final isSystem = msg.sender.id == 'system' ||
+            msg.isSystemMessage ||
+            msg.text.contains('joined the party') ||
+            msg.text.contains('entered the room');
         final isHostMsg = msg.sender.id == widget.room.host.id;
         
         final participantInfo = provider.participants.where((p) => p.user.id == msg.sender.id).firstOrNull;

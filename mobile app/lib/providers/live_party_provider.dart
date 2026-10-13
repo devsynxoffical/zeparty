@@ -15,6 +15,8 @@ class LivePartyProvider extends ChangeNotifier {
 
   LiveRoomModel? _activeRoom;
   LiveRoomModel? get activeRoom => _activeRoom;
+  String? _initialRoomId;
+  String? get initialRoomId => _initialRoomId;
 
   UserModel? _currentUser;
   UserModel? get currentUser => _currentUser;
@@ -24,6 +26,8 @@ class LivePartyProvider extends ChangeNotifier {
 
   List<PartyMessageModel> _messages = [];
   List<PartyMessageModel> get messages => _messages;
+
+  final Set<String> _announcedJoinedUserIds = {};
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -50,6 +54,17 @@ class LivePartyProvider extends ChangeNotifier {
 
   final _roomClosedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onRoomClosed => _roomClosedController.stream;
+
+  bool get isHost {
+    final room = _activeRoom;
+    final user = _currentUser;
+    if (room == null || user == null) return false;
+    return (room.host.id == user.id) ||
+        (room.creatorUserId == user.id) ||
+        (room.host.name.trim().toLowerCase() == user.name.trim().toLowerCase()) ||
+        (room.host.username.trim().toLowerCase() == user.username.trim().toLowerCase()) ||
+        (user.name.trim().isNotEmpty && room.title.toLowerCase().contains(user.name.trim().toLowerCase()));
+  }
 
   // Admin Moderation State
   bool _isRoomMuted = false;
@@ -206,6 +221,14 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void ensureSocketSubscribed(UserModel user, {String? roomId}) {
+    final targetId = _activeRoom?.id ?? _initialRoomId ?? roomId;
+    if (targetId != null && targetId.isNotEmpty) {
+      _socketService.joinRoom(targetId, user: user.toJson());
+      _setupSocketSubscriptions(user);
+    }
+  }
+
   Future<void> toggleSpeakerOutput() async {
     _isSpeakerMuted = !_isSpeakerMuted;
     await _agoraService.muteAllRemoteAudio(_isSpeakerMuted);
@@ -221,6 +244,7 @@ class LivePartyProvider extends ChangeNotifier {
     _isLoading = true;
     _errorMessage = null;
     _activeRoom = room;
+    _initialRoomId = room.id;
     _currentUser = currentUser;
     _participants = [];
     _messages = [];
@@ -246,7 +270,7 @@ class LivePartyProvider extends ChangeNotifier {
 
     try {
       // 1. Connect Socket.IO
-      _socketService.connect(user: currentUser.toJson());
+      await _socketService.connect(user: currentUser.toJson());
       _socketService.joinRoom(room.id, user: currentUser.toJson());
       _setupSocketSubscriptions(currentUser);
 
@@ -255,6 +279,7 @@ class LivePartyProvider extends ChangeNotifier {
       final roomData = joinResult['room'] ?? joinResult;
       if (roomData is Map<String, dynamic> && roomData.isNotEmpty) {
         _activeRoom = LiveRoomModel.fromJson(roomData);
+        _socketService.joinRoom(_activeRoom!.id, user: currentUser.toJson());
       }
 
       // Add Host and self to participants
@@ -296,17 +321,21 @@ class LivePartyProvider extends ChangeNotifier {
           if (m is! Map) continue;
           final userMap = m['user'] is Map ? (m['user'] as Map) : m;
           final uId = userMap['id']?.toString() ?? userMap['userId']?.toString();
-          if (uId == null || uId.isEmpty || uId == currentUser.id) continue;
-          final existing = _participants.any((p) => p.user.id == uId);
+          final uUsername = userMap['username']?.toString() ?? '';
+          final isHostUser = (uId != null && (uId == room.host.id || uId == room.creatorUserId)) ||
+              (room.host.username.isNotEmpty && uUsername.isNotEmpty && uUsername.toLowerCase() == room.host.username.toLowerCase());
+          if (uId == null || uId.isEmpty || uId == currentUser.id || isHostUser) continue;
+          final existing = _participants.any((p) =>
+              p.user.id == uId ||
+              (uUsername.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == uUsername.toLowerCase()));
           if (!existing) {
             final uName = userMap['displayName']?.toString() ??
                 userMap['name']?.toString() ??
-                userMap['username']?.toString() ??
-                'Viewer';
+                (uUsername.isNotEmpty ? uUsername : 'Viewer');
             _participants.add(PartyParticipantModel(
               user: UserModel(
                 id: uId,
-                username: userMap['username']?.toString() ?? uName,
+                username: uUsername.isNotEmpty ? uUsername : uName,
                 name: uName,
                 avatarUrl: userMap['avatarUrl']?.toString() ?? '',
                 nobleTitle: userMap['nobleTitle']?.toString() ?? userMap['nobleRank']?.toString(),
@@ -377,6 +406,7 @@ class LivePartyProvider extends ChangeNotifier {
       final displayName = currentUser.displayName.isNotEmpty
           ? currentUser.displayName
           : (currentUser.name.isNotEmpty ? currentUser.name : currentUser.username);
+      _announcedJoinedUserIds.add(currentUser.id);
       sendSystemMessage('👋 Welcome to ${room.title}! Please follow community guidelines.');
       sendSystemMessage('🎉 $displayName has joined the party! 🔥');
       return true;
@@ -464,17 +494,21 @@ class LivePartyProvider extends ChangeNotifier {
           if (m is! Map) continue;
           final userMap = m['user'] is Map ? (m['user'] as Map) : m;
           final uId = userMap['id']?.toString() ?? userMap['userId']?.toString();
-          if (uId == null || uId.isEmpty || uId == _currentUser?.id) continue;
-          final existing = _participants.any((p) => p.user.id == uId);
+          final uUsername = userMap['username']?.toString() ?? '';
+          final isHostUser = (uId != null && (uId == _activeRoom?.host.id || uId == _activeRoom?.creatorUserId)) ||
+              (_activeRoom != null && _activeRoom!.host.username.isNotEmpty && uUsername.isNotEmpty && uUsername.toLowerCase() == _activeRoom!.host.username.toLowerCase());
+          if (uId == null || uId.isEmpty || uId == _currentUser?.id || isHostUser) continue;
+          final existing = _participants.any((p) =>
+              p.user.id == uId ||
+              (uUsername.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == uUsername.toLowerCase()));
           if (!existing) {
             final uName = userMap['displayName']?.toString() ??
                 userMap['name']?.toString() ??
-                userMap['username']?.toString() ??
-                'Viewer';
+                (uUsername.isNotEmpty ? uUsername : 'Viewer');
             _participants.add(PartyParticipantModel(
               user: UserModel(
                 id: uId,
-                username: userMap['username']?.toString() ?? uName,
+                username: uUsername.isNotEmpty ? uUsername : uName,
                 name: uName,
                 avatarUrl: userMap['avatarUrl']?.toString() ?? '',
                 nobleTitle: userMap['nobleTitle']?.toString() ?? userMap['nobleRank']?.toString(),
@@ -509,21 +543,28 @@ class LivePartyProvider extends ChangeNotifier {
             userObj['userId']?.toString() ??
             data['userId']?.toString() ??
             data['id']?.toString();
-        if (joinedUserId != null && joinedUserId != currentUser.id) {
-          final displayName = userObj['displayName']?.toString() ??
-              userObj['name']?.toString() ??
-              userObj['username']?.toString() ??
-              data['name']?.toString() ??
-              'A user';
-          final existingIdx = _participants.indexWhere((p) => p.user.id == joinedUserId);
+        final uUsername = userObj['username']?.toString() ?? '';
+        final displayName = userObj['displayName']?.toString() ??
+            userObj['name']?.toString() ??
+            (uUsername.isNotEmpty ? uUsername : (data['displayName']?.toString() ?? data['name']?.toString() ?? 'A user'));
+
+        final isSelf = joinedUserId != null && currentUser.id == joinedUserId;
+        final isHostUser = (joinedUserId != null && (_activeRoom != null && (joinedUserId == _activeRoom!.host.id || joinedUserId == _activeRoom!.creatorUserId))) ||
+            (_activeRoom != null && _activeRoom!.host.username.isNotEmpty && uUsername.isNotEmpty && uUsername.toLowerCase() == _activeRoom!.host.username.toLowerCase());
+
+        // Update participants for listeners
+        if (joinedUserId != null && !isHostUser) {
+          final existingIdx = _participants.indexWhere((p) =>
+              p.user.id == joinedUserId ||
+              (uUsername.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == uUsername.toLowerCase()));
           if (existingIdx == -1) {
             final joinedUser = UserModel(
               id: joinedUserId,
-              username: userObj['username']?.toString() ?? displayName,
+              username: uUsername.isNotEmpty ? uUsername : displayName,
               name: displayName,
-              avatarUrl: userObj['avatarUrl']?.toString() ?? '',
+              avatarUrl: userObj['avatarUrl']?.toString() ?? data['avatarUrl']?.toString() ?? '',
               nobleTitle: userObj['nobleTitle']?.toString() ?? userObj['nobleLevel']?.toString(),
-              isVip: userObj['isVip'] == true,
+              isVip: userObj['isVip'] == true || data['isVip'] == true,
             );
             _participants.add(PartyParticipantModel(
               user: joinedUser,
@@ -532,16 +573,27 @@ class LivePartyProvider extends ChangeNotifier {
               joinedAt: DateTime.now(),
             ));
           }
-          sendSystemMessage('🎉 $displayName has joined the party! 🔥');
-          final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
-          final parsedViewerCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
-          final currentAudienceCount = _participants.where((p) => p.role != ParticipantRole.host && p.user.id != _activeRoom?.host.id && p.user.id != _activeRoom?.creatorUserId).length;
-          final effectiveViewerCount = parsedViewerCount != null ? (parsedViewerCount > currentAudienceCount ? parsedViewerCount : currentAudienceCount) : currentAudienceCount;
-          if (_activeRoom != null) {
-            _activeRoom = _activeRoom!.copyWith(viewerCount: effectiveViewerCount);
-          }
-          notifyListeners();
         }
+
+        // Announce join in room chat
+        final announceKey = joinedUserId ?? displayName;
+        if (!_announcedJoinedUserIds.contains(announceKey)) {
+          _announcedJoinedUserIds.add(announceKey);
+          if (isSelf) {
+            sendSystemMessage('🎉 Welcome $displayName to the party! 🔥');
+          } else {
+            sendSystemMessage('🎉 $displayName has joined the party! 🔥');
+          }
+        }
+
+        final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
+        final parsedViewerCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
+        final currentAudienceCount = _participants.where((p) => p.role != ParticipantRole.host && p.user.id != _activeRoom?.host.id && p.user.id != _activeRoom?.creatorUserId).length;
+        final effectiveViewerCount = parsedViewerCount != null ? (parsedViewerCount > currentAudienceCount ? parsedViewerCount : currentAudienceCount) : currentAudienceCount;
+        if (_activeRoom != null) {
+          _activeRoom = _activeRoom!.copyWith(viewerCount: effectiveViewerCount);
+        }
+        notifyListeners();
       } catch (e) {
         debugPrint('[LivePartyProvider] UserJoined error: $e');
       }
@@ -552,6 +604,7 @@ class LivePartyProvider extends ChangeNotifier {
     _socketUserLeftSub = _socketService.userLeftStream.listen((data) {
       final leftUserId = data['userId']?.toString() ?? data['id']?.toString();
       if (leftUserId != null) {
+        _announcedJoinedUserIds.remove(leftUserId);
         _participants.removeWhere((p) => p.user.id == leftUserId);
         final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
         final parsedViewerCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
@@ -591,17 +644,53 @@ class LivePartyProvider extends ChangeNotifier {
             avatarUrl: userMap['avatarUrl']?.toString() ?? '',
           );
 
-          final pIdx = _participants.indexWhere((p) => p.user.id == occupantUser.id);
+          final isHostUser = occupantUser.id == _activeRoom?.host.id ||
+              occupantUser.id == _activeRoom?.creatorUserId ||
+              (isHost && occupantUser.id == currentUser.id) ||
+              (_activeRoom != null && _activeRoom!.host.username.isNotEmpty && occupantUser.username.isNotEmpty && occupantUser.username.toLowerCase() == _activeRoom!.host.username.toLowerCase());
+
+          // 1. Proactively vacate ANY previous seat held by occupantUser elsewhere
+          for (int i = 0; i < _participants.length; i++) {
+            final p = _participants[i];
+            final isUserMatch = p.user.id == occupantUser.id ||
+                (occupantUser.username.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == occupantUser.username.toLowerCase());
+            if (isUserMatch && p.seatNumber != null && p.seatNumber != seatIndex) {
+              _participants[i] = p.copyWith(
+                clearSeat: true,
+                role: (p.role == ParticipantRole.host || isHostUser) ? ParticipantRole.host : ParticipantRole.listener,
+                micStatus: MicStatus.muted,
+              );
+            }
+          }
+
+          // 2. Proactively vacate ANY other participant who was previously sitting on seatIndex
+          for (int i = 0; i < _participants.length; i++) {
+            final p = _participants[i];
+            final isNotOccupant = p.user.id != occupantUser.id &&
+                (occupantUser.username.isEmpty || p.user.username.toLowerCase() != occupantUser.username.toLowerCase());
+            if (p.seatNumber == seatIndex && isNotOccupant) {
+              _participants[i] = p.copyWith(
+                clearSeat: true,
+                role: p.role == ParticipantRole.host ? ParticipantRole.host : ParticipantRole.listener,
+                micStatus: MicStatus.muted,
+              );
+            }
+          }
+
+          final pIdx = _participants.indexWhere((p) =>
+              p.user.id == occupantUser.id ||
+              (occupantUser.username.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == occupantUser.username.toLowerCase()));
           if (pIdx != -1) {
             _participants[pIdx] = _participants[pIdx].copyWith(
+              user: occupantUser,
               seatNumber: seatIndex,
-              role: ParticipantRole.speaker,
+              role: (isHostUser || _participants[pIdx].role == ParticipantRole.host) ? ParticipantRole.host : ParticipantRole.speaker,
               micStatus: MicStatus.on,
             );
           } else {
             _participants.add(PartyParticipantModel(
               user: occupantUser,
-              role: ParticipantRole.speaker,
+              role: isHostUser ? ParticipantRole.host : ParticipantRole.speaker,
               seatNumber: seatIndex,
               micStatus: MicStatus.on,
               joinedAt: DateTime.now(),
@@ -630,9 +719,14 @@ class LivePartyProvider extends ChangeNotifier {
           final pIdx = _participants.indexWhere((p) => p.seatNumber == seatIndex);
           if (pIdx != -1) {
             final occupant = _participants[pIdx];
+            final isHostOccupant = occupant.role == ParticipantRole.host ||
+                occupant.user.id == _activeRoom?.host.id ||
+                occupant.user.id == _activeRoom?.creatorUserId ||
+                (isHost && occupant.user.id == currentUser.id);
+
             _participants[pIdx] = occupant.copyWith(
-              seatNumber: null,
-              role: ParticipantRole.listener,
+              clearSeat: true,
+              role: isHostOccupant ? ParticipantRole.host : ParticipantRole.listener,
               micStatus: MicStatus.muted,
             );
 
@@ -644,9 +738,15 @@ class LivePartyProvider extends ChangeNotifier {
         } else if (userId != null) {
           final pIdx = _participants.indexWhere((p) => p.user.id == userId);
           if (pIdx != -1) {
-            _participants[pIdx] = _participants[pIdx].copyWith(
-              seatNumber: null,
-              role: ParticipantRole.listener,
+            final occupant = _participants[pIdx];
+            final isHostOccupant = occupant.role == ParticipantRole.host ||
+                occupant.user.id == _activeRoom?.host.id ||
+                occupant.user.id == _activeRoom?.creatorUserId ||
+                (isHost && occupant.user.id == currentUser.id);
+
+            _participants[pIdx] = occupant.copyWith(
+              clearSeat: true,
+              role: isHostOccupant ? ParticipantRole.host : ParticipantRole.listener,
               micStatus: MicStatus.muted,
             );
             if (userId == currentUser.id) {
@@ -722,13 +822,32 @@ class LivePartyProvider extends ChangeNotifier {
     _socketChatMessageSub?.cancel();
     _socketChatMessageSub = _socketService.onRoomChatMessage.listen((data) {
       try {
-        final incomingRoomId = data['roomId']?.toString();
-        if (_activeRoom != null && incomingRoomId != null && incomingRoomId != _activeRoom!.id) {
-          return;
+        final incomingRoomId = (data['roomId'] ?? '').toString().trim();
+        final incomingClientRoomId = (data['clientRoomId'] ?? data['room'] ?? '').toString().trim();
+        final currentRoomId = (_activeRoom?.id ?? _initialRoomId ?? '').trim().toLowerCase();
+        final fallbackInitialId = (_initialRoomId ?? '').trim().toLowerCase();
+        final inRoomId = incomingRoomId.toLowerCase();
+        final inClientRoomId = incomingClientRoomId.toLowerCase();
+
+        final validRoomIds = <String>{
+          if (currentRoomId.isNotEmpty) currentRoomId,
+          if (fallbackInitialId.isNotEmpty) fallbackInitialId,
+        };
+
+        if (validRoomIds.isNotEmpty) {
+          final match = (inRoomId.isNotEmpty && validRoomIds.contains(inRoomId)) ||
+              (inClientRoomId.isNotEmpty && validRoomIds.contains(inClientRoomId)) ||
+              (inRoomId.isEmpty && inClientRoomId.isEmpty);
+          if (!match) return;
         }
-        final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender'] as Map) : <String, dynamic>{};
-        final senderId = (senderMap['id'] ?? senderMap['_id'] ?? data['senderUserId'] ?? '').toString();
-        final text = (data['text'] ?? '').toString().trim();
+
+        final senderMap = data['sender'] is Map
+            ? Map<String, dynamic>.from(data['sender'] as Map)
+            : (data['user'] is Map
+                ? Map<String, dynamic>.from(data['user'] as Map)
+                : (data['senderUser'] is Map ? Map<String, dynamic>.from(data['senderUser'] as Map) : <String, dynamic>{}));
+        final senderId = (senderMap['id'] ?? senderMap['_id'] ?? data['senderUserId'] ?? data['userId'] ?? '').toString();
+        final text = (data['text'] ?? data['message'] ?? data['content'] ?? data['msg'] ?? '').toString().trim();
         if (text.isEmpty) return;
 
         final msgId = (data['id'] ?? data['_id'] ?? '').toString();
@@ -736,13 +855,24 @@ class LivePartyProvider extends ChangeNotifier {
 
         // 1. Direct ID check
         if (msgId.isNotEmpty && _messages.any((m) => m.id == msgId)) return;
-        if (clientMsgId != null && _messages.any((m) => m.id == clientMsgId)) return;
+        if (clientMsgId != null && clientMsgId.isNotEmpty && _messages.any((m) => m.id == clientMsgId)) return;
 
-        // 2. Message deduplication (matches only for same sender's optimistic message within 8s)
-        if (_messages.isNotEmpty && senderId.isNotEmpty) {
+        final senderName = senderMap['displayName']?.toString() ??
+            senderMap['name']?.toString() ??
+            senderMap['username']?.toString() ??
+            data['senderName']?.toString() ??
+            'User';
+
+        final senderUsername = senderMap['username']?.toString() ?? '';
+
+        final isCurrentLocalUser = (_currentUser != null && senderId.isNotEmpty && senderId == _currentUser!.id) ||
+            (_currentUser != null && _currentUser!.username.isNotEmpty && senderUsername.isNotEmpty && senderUsername.toLowerCase() == _currentUser!.username.toLowerCase());
+
+        // 2. Message deduplication ONLY for the local user's own optimistic message within 8s
+        if (isCurrentLocalUser && _messages.isNotEmpty) {
           final recentMatchingIndex = _messages.lastIndexWhere((m) =>
-            (m.sender.id == senderId || m.sender.name == senderMap['displayName'] || m.sender.name == senderMap['name']) &&
-            m.text.trim() == text.trim() &&
+            (m.sender.id == _currentUser!.id || m.sender.username == _currentUser!.username) &&
+            m.text.trim() == text &&
             DateTime.now().difference(m.timestamp).inSeconds < 8
           );
 
@@ -762,13 +892,23 @@ class LivePartyProvider extends ChangeNotifier {
           }
         }
 
+        final isSystem = data['isSystemMessage'] == true ||
+            data['type']?.toString().toUpperCase() == 'SYSTEM' ||
+            senderId == 'system' ||
+            text.contains('has joined the party') ||
+            text.contains('joined the party') ||
+            text.contains('entered the room');
+
         final sender = UserModel(
-          id: senderId,
-          username: senderMap['username']?.toString() ?? 'User',
-          name: senderMap['displayName']?.toString() ?? senderMap['name']?.toString() ?? senderMap['username']?.toString() ?? 'User',
+          id: senderId.isNotEmpty ? senderId : (isSystem ? 'system' : 'user_${DateTime.now().millisecondsSinceEpoch}'),
+          username: senderUsername.isNotEmpty ? senderUsername : senderName,
+          name: senderName,
           avatarUrl: senderMap['avatarUrl']?.toString() ?? '',
-          isVip: senderMap['isVip'] == true,
+          isVip: senderMap['isVip'] == true || (senderMap['vipLevel'] is num && (senderMap['vipLevel'] as num) > 0),
           nobleTitle: senderMap['nobleTitle']?.toString() ?? senderMap['nobleLevel']?.toString(),
+          avatarFrame: senderMap['avatarFrame']?.toString() ?? '',
+          badge: senderMap['chatBubble']?.toString() ?? senderMap['badge']?.toString() ?? '',
+          wealthLevel: (senderMap['wealthLevel'] is num) ? (senderMap['wealthLevel'] as num).toInt() : 1,
         );
 
         final msg = PartyMessageModel(
@@ -776,6 +916,7 @@ class LivePartyProvider extends ChangeNotifier {
           sender: sender,
           text: text,
           timestamp: DateTime.tryParse(data['timestamp']?.toString() ?? '') ?? DateTime.now(),
+          isSystemMessage: isSystem,
         );
 
         _messages.add(msg);
@@ -783,6 +924,7 @@ class LivePartyProvider extends ChangeNotifier {
           _messages.removeAt(0);
         }
         notifyListeners();
+        debugPrint('[LivePartyProvider] Chat received from ${sender.name}: $text');
       } catch (e) {
         debugPrint('[LivePartyProvider] ChatMessage error: $e');
       }
@@ -977,10 +1119,12 @@ class LivePartyProvider extends ChangeNotifier {
     _pkTimer?.cancel();
 
     _activeRoom = null;
+    _initialRoomId = null;
     _currentUser = null;
     _isPkActive = false;
     _participants = [];
     _messages = [];
+    _announcedJoinedUserIds.clear();
     notifyListeners();
   }
 
@@ -1001,10 +1145,11 @@ class LivePartyProvider extends ChangeNotifier {
     }
     if (_activeRoom == null) return 'No active room.';
 
-    final isHost = (_activeRoom?.host.id == actor.id) ||
+    final isHostActor = (_activeRoom?.host.id == actor.id) ||
         (_activeRoom?.creatorUserId == actor.id) ||
-        (_currentUser?.id == _activeRoom?.host.id);
-    if (seatIndex == 0 && !isHost) {
+        (_currentUser?.id == _activeRoom?.host.id) ||
+        isHost;
+    if (seatIndex == 0 && !isHostActor) {
       return 'Seat 1 is reserved exclusively for the host.';
     }
 
@@ -1017,21 +1162,40 @@ class LivePartyProvider extends ChangeNotifier {
     // Clean up any old Guest placeholder entries
     _participants.removeWhere((p) => p.user.id.startsWith('agora_') || p.user.name.startsWith('Guest '));
 
-    // Atomic move: release previous seat if actor was sitting elsewhere
-    final existingIdx = _participants.indexWhere(
-      (p) => p.user.id == actor.id ||
-             (actor.username.isNotEmpty && p.user.username.toLowerCase() == actor.username.toLowerCase()) ||
-             (actor.name.isNotEmpty && p.user.name.toLowerCase() == actor.name.toLowerCase())
-    );
+    // 1. Proactively vacate ANY previous seat held by actor elsewhere across ALL participant entries
+    for (int i = 0; i < _participants.length; i++) {
+      final p = _participants[i];
+      final isActorMatch = p.user.id == actor.id ||
+          (actor.username.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == actor.username.toLowerCase()) ||
+          (actor.name.isNotEmpty && p.user.name.isNotEmpty && p.user.name.toLowerCase() == actor.name.toLowerCase());
+      if (isActorMatch && p.seatNumber != null && p.seatNumber != seatIndex) {
+        final oldSeat = p.seatNumber!;
+        try {
+          await _roomRepository.leaveSeat(_activeRoom!.id, oldSeat);
+        } catch (_) {}
+        try {
+          _socketService.leaveSeat(_activeRoom!.id, oldSeat);
+        } catch (_) {}
+        _participants[i] = p.copyWith(
+          clearSeat: true,
+          role: (p.role == ParticipantRole.host || isHostActor) ? ParticipantRole.host : ParticipantRole.listener,
+          micStatus: MicStatus.muted,
+        );
+      }
+    }
 
-    if (existingIdx != -1 && _participants[existingIdx].seatNumber != null && _participants[existingIdx].seatNumber != seatIndex) {
-      final oldSeat = _participants[existingIdx].seatNumber!;
-      try {
-        await _roomRepository.leaveSeat(_activeRoom!.id, oldSeat);
-      } catch (_) {}
-      try {
-        _socketService.leaveSeat(_activeRoom!.id, oldSeat);
-      } catch (_) {}
+    // 2. Proactively vacate ANY other participant who was previously sitting on seatIndex
+    for (int i = 0; i < _participants.length; i++) {
+      final p = _participants[i];
+      final isNotActor = p.user.id != actor.id &&
+          (actor.username.isEmpty || p.user.username.toLowerCase() != actor.username.toLowerCase());
+      if (p.seatNumber == seatIndex && isNotActor) {
+        _participants[i] = p.copyWith(
+          clearSeat: true,
+          role: p.role == ParticipantRole.host ? ParticipantRole.host : ParticipantRole.listener,
+          micStatus: MicStatus.muted,
+        );
+      }
     }
 
     try {
@@ -1047,17 +1211,23 @@ class LivePartyProvider extends ChangeNotifier {
     }
 
     // Update local state with real user object
-    if (existingIdx != -1 && existingIdx < _participants.length) {
+    final existingIdx = _participants.indexWhere(
+      (p) => p.user.id == actor.id ||
+             (actor.username.isNotEmpty && p.user.username.toLowerCase() == actor.username.toLowerCase()) ||
+             (actor.name.isNotEmpty && p.user.name.toLowerCase() == actor.name.toLowerCase())
+    );
+
+    if (existingIdx != -1) {
       _participants[existingIdx] = _participants[existingIdx].copyWith(
         user: actor,
         seatNumber: seatIndex,
-        role: ParticipantRole.speaker,
+        role: isHostActor ? ParticipantRole.host : ParticipantRole.speaker,
         micStatus: MicStatus.on,
       );
     } else {
       _participants.add(PartyParticipantModel(
         user: actor,
-        role: ParticipantRole.speaker,
+        role: isHostActor ? ParticipantRole.host : ParticipantRole.speaker,
         seatNumber: seatIndex,
         micStatus: MicStatus.on,
         joinedAt: DateTime.now(),
@@ -1095,11 +1265,16 @@ class LivePartyProvider extends ChangeNotifier {
       _socketService.leaveSeat(_activeRoom!.id, seatIndex);
 
       if (occupant != null) {
+        final isHostOccupant = occupant.role == ParticipantRole.host ||
+            occupant.user.id == _activeRoom?.host.id ||
+            occupant.user.id == _activeRoom?.creatorUserId ||
+            (isHost && occupant.user.id == _currentUser?.id);
+
         final existingIdx = _participants.indexWhere((p) => p.user.id == occupant.user.id);
         if (existingIdx != -1) {
           _participants[existingIdx] = _participants[existingIdx].copyWith(
-            seatNumber: null,
-            role: ParticipantRole.listener,
+            clearSeat: true,
+            role: isHostOccupant ? ParticipantRole.host : ParticipantRole.listener,
             micStatus: MicStatus.muted,
           );
         }
@@ -1292,25 +1467,37 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void sendMessage(UserModel sender, String text) {
-    if (text.trim().isEmpty) return;
+  void sendMessage(UserModel sender, String text, {String? roomId}) {
+    final trimmedText = text.trim();
+    if (trimmedText.isEmpty) return;
 
-    final clientMsgId = 'client_${DateTime.now().millisecondsSinceEpoch}_${sender.id}';
+    final targetRoomId = (_activeRoom?.id.isNotEmpty == true)
+        ? _activeRoom!.id
+        : (_initialRoomId ?? roomId ?? '');
+
+    if (targetRoomId.isEmpty) {
+      debugPrint('[LivePartyProvider] Cannot send message: room ID is unavailable');
+      return;
+    }
+
+    final clientMsgId = 'msg_${DateTime.now().millisecondsSinceEpoch}_${sender.id}';
 
     _messages.add(PartyMessageModel(
       id: clientMsgId,
       sender: sender,
-      text: text.trim(),
+      text: trimmedText,
       timestamp: DateTime.now(),
     ));
-
-    if (_activeRoom != null) {
-      _socketService.sendRoomChatMessage(
-        roomId: _activeRoom!.id,
-        text: text.trim(),
-        sender: _currentUser?.toJson(),
-      );
+    if (_messages.length > 100) {
+      _messages.removeAt(0);
     }
+
+    _socketService.sendRoomChatMessage(
+      roomId: targetRoomId,
+      text: trimmedText,
+      sender: _currentUser?.toJson() ?? sender.toJson(),
+      messageId: clientMsgId,
+    );
     notifyListeners();
   }
 
@@ -1328,6 +1515,7 @@ class LivePartyProvider extends ChangeNotifier {
         roomId: _activeRoom!.id,
         text: fullText,
         type: 'flying',
+        sender: _currentUser?.toJson() ?? sender.toJson(),
       );
     }
     notifyListeners();

@@ -5,11 +5,13 @@ import 'user_avatar.dart';
 
 class TikTokUserJoinBanner extends StatefulWidget {
   final String roomId;
+  final String? secondaryRoomId;
   final double bottomOffset;
 
   const TikTokUserJoinBanner({
     super.key,
     required this.roomId,
+    this.secondaryRoomId,
     this.bottomOffset = 210,
   });
 
@@ -33,7 +35,7 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
+      duration: const Duration(milliseconds: 320),
     );
 
     _slideAnimation = Tween<Offset>(
@@ -56,16 +58,32 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
     ));
 
     _sub = SocketService.instance.userJoinedStream.listen((data) {
-      final eventRoomId = data['roomId']?.toString() ?? '';
-      if (eventRoomId.isNotEmpty && widget.roomId.isNotEmpty && eventRoomId != widget.roomId && !widget.roomId.contains(eventRoomId) && !eventRoomId.contains(widget.roomId)) return;
+      final incomingRoomId = (data['roomId'] ?? '').toString().trim().toLowerCase();
+      final incomingClientRoomId = (data['clientRoomId'] ?? data['room'] ?? '').toString().trim().toLowerCase();
+      final primary = widget.roomId.trim().toLowerCase();
+      final secondary = (widget.secondaryRoomId ?? '').trim().toLowerCase();
+
+      final validRoomIds = <String>{
+        if (primary.isNotEmpty) primary,
+        if (secondary.isNotEmpty) secondary,
+      };
+
+      if (validRoomIds.isNotEmpty) {
+        final matches = (incomingRoomId.isNotEmpty && validRoomIds.contains(incomingRoomId)) ||
+            (incomingClientRoomId.isNotEmpty && validRoomIds.contains(incomingClientRoomId)) ||
+            (incomingRoomId.isEmpty && incomingClientRoomId.isEmpty);
+        if (!matches) return;
+      }
 
       final userObj = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : <String, dynamic>{};
+      final userId = (data['userId'] ?? data['id'] ?? userObj['id'] ?? userObj['userId'] ?? '').toString().trim();
       final displayName = userObj['displayName']?.toString() ?? userObj['name']?.toString() ?? userObj['username']?.toString() ?? data['name']?.toString() ?? 'Viewer';
       final avatarUrl = userObj['avatarUrl']?.toString() ?? data['avatarUrl']?.toString() ?? '';
       final isVip = userObj['isVip'] == true || data['isVip'] == true;
       final nobleLevel = userObj['nobleLevel']?.toString();
 
       _queueJoin({
+        'userId': userId,
         'name': displayName,
         'avatarUrl': avatarUrl,
         'isVip': isVip,
@@ -74,7 +92,43 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
     });
   }
 
+  // Sliding deduplication window: Maps stable user identity (or event ID) to last shown timestamp
+  final Map<String, int> _lastShownUserTimestamp = {};
+  static const int _dedupWindowMs = 8000; // 8-second debounce per specific user ID
+
   void _queueJoin(Map<String, dynamic> item) {
+    final name = item['name']?.toString() ?? '';
+    if (name.isEmpty) return;
+
+    final userId = (item['userId']?.toString().isNotEmpty == true)
+        ? item['userId'].toString().trim().toLowerCase()
+        : name.trim().toLowerCase();
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    // Prune stale timestamps older than 60 seconds
+    _lastShownUserTimestamp.removeWhere((_, ts) => now - ts > 60000);
+
+    // Filter duplicates within sliding cooldown window
+    if (userId.isNotEmpty && userId != 'viewer' && userId != 'a user') {
+      if (_lastShownUserTimestamp.containsKey(userId)) {
+        if (now - _lastShownUserTimestamp[userId]! < _dedupWindowMs) {
+          return; // Ignore bounce/reconnect duplicate within 8s
+        }
+      }
+      _lastShownUserTimestamp[userId] = now;
+    }
+
+    // Limit queue size to 8 items to prevent extreme backpressure
+    if (_joinQueue.length >= 8) {
+      // Remove oldest non-VIP item to prioritize new or VIP entrants
+      final nonVipIdx = _joinQueue.indexWhere((it) => it['isVip'] != true);
+      if (nonVipIdx != -1) {
+        _joinQueue.removeAt(nonVipIdx);
+      } else {
+        _joinQueue.removeAt(0);
+      }
+    }
+
     _joinQueue.add(item);
     if (!_isShowing) {
       _processNext();
@@ -92,8 +146,12 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
       _currentJoin = _joinQueue.removeAt(0);
     });
 
+    // Dynamic duration based on backlog pressure
+    final hasBacklog = _joinQueue.length >= 2;
+    final displayDurationMs = hasBacklog ? 1000 : 1600;
+
     await _controller.forward();
-    await Future.delayed(const Duration(milliseconds: 2400));
+    await Future.delayed(Duration(milliseconds: displayDurationMs));
 
     if (mounted) {
       await _controller.reverse();

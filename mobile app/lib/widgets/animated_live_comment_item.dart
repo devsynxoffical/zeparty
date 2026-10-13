@@ -89,7 +89,10 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
 
   @override
   Widget build(BuildContext context) {
-    final isEntryNotice = widget.text.contains('entered the room') || widget.isSystem;
+    final isEntryNotice = widget.text.contains('entered the room') ||
+        widget.text.contains('joined the party') ||
+        widget.text.contains('has joined') ||
+        widget.isSystem;
 
     if (isEntryNotice) {
       final senderAccent = _getSenderColor(widget.senderId);
@@ -112,7 +115,7 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                     color: Colors.black.withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: isEntered ? senderAccent.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.15),
+                      color: isEntered ? senderAccent.withValues(alpha: 0.4) : const Color(0xFFFFD54F).withValues(alpha: 0.3),
                       width: 0.8,
                     ),
                   ),
@@ -142,9 +145,9 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                       : Text(
                           widget.text,
                           style: const TextStyle(
-                            color: Colors.white70,
+                            color: Color(0xFFFFE082),
                             fontSize: 11.5,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                 ),

@@ -76,18 +76,30 @@ class PartyParticipantModel {
     );
   }
 
+  static const Object _unset = Object();
+
   PartyParticipantModel copyWith({
     UserModel? user,
     ParticipantRole? role,
-    int? seatNumber,
+    dynamic seatNumber = _unset,
     MicStatus? micStatus,
     DateTime? joinedAt,
     bool? isSpeaking,
+    bool clearSeat = false,
   }) {
+    int? resolvedSeatNumber;
+    if (clearSeat) {
+      resolvedSeatNumber = null;
+    } else if (identical(seatNumber, _unset)) {
+      resolvedSeatNumber = this.seatNumber;
+    } else {
+      resolvedSeatNumber = seatNumber as int?;
+    }
+
     return PartyParticipantModel(
       user: user ?? this.user,
       role: role ?? this.role,
-      seatNumber: seatNumber ?? this.seatNumber,
+      seatNumber: resolvedSeatNumber,
       micStatus: micStatus ?? this.micStatus,
       joinedAt: joinedAt ?? this.joinedAt,
       isSpeaking: isSpeaking ?? this.isSpeaking,

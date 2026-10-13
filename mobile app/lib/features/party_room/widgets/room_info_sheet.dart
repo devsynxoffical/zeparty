@@ -868,7 +868,19 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
         ? livePartyProv.participants
         : (widget.participants ?? []);
 
-    final filteredMembers = allMembers.where((p) {
+    // Deduplicate members by unique user ID/username so each user only appears once
+    final seenIds = <String>{};
+    final uniqueMembers = <PartyParticipantModel>[];
+    for (final p in allMembers) {
+      final key = p.user.id.isNotEmpty
+          ? p.user.id
+          : (p.user.username.isNotEmpty ? p.user.username.toLowerCase() : p.user.name.toLowerCase());
+      if (key.isNotEmpty && seenIds.add(key)) {
+        uniqueMembers.add(p);
+      }
+    }
+
+    final filteredMembers = uniqueMembers.where((p) {
       if (_memberSearchQuery.trim().isEmpty) return true;
       final q = _memberSearchQuery.trim().toLowerCase();
       final name = p.user.name.toLowerCase();
@@ -889,7 +901,7 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    'Member: ${allMembers.length}',
+                    'Member: ${uniqueMembers.length}',
                     style: TextStyle(
                       color: textColor,
                       fontSize: 15,

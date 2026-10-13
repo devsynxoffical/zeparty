@@ -572,7 +572,7 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                         if (context.mounted) {
                           Navigator.pushReplacement(
                             context,
-                            MaterialPageRoute(builder: (c) => LiveRoomScreen(room: roomToJoin)),
+                            MaterialPageRoute(builder: (c) => LiveRoomScreen(room: roomToJoin, isHost: true)),
                           );
                         }
                       } finally {
