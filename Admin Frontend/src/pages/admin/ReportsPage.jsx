@@ -130,7 +130,7 @@ export function ReportsPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                 <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `\${(v/1000000).toFixed(1)}M`} />
+                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(1)}k` : `${v}`} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="users" stroke="#6366f1" fillOpacity={1} fill="url(#colorUsers)" />
               </AreaChart>
@@ -172,7 +172,7 @@ export function ReportsPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={countryData} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" horizontal={false} />
-                  <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `\${(v/1000)}k`} />
+                  <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : `${v}`} />
                   <YAxis dataKey="country" type="category" tick={{ fill: '#cbd5e1', fontSize: 12 }} axisLine={false} tickLine={false} width={100} />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey="users" fill="#10b981" radius={[0, 4, 4, 0]} barSize={20} />
@@ -184,7 +184,7 @@ export function ReportsPage() {
                 <div key={country.country} className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className={`w-3 h-3 rounded-full`} style={{ backgroundColor: COLORS[idx % COLORS.length] }}></div>
-                    <CountryFlag code={country.country} className="w-4 h-3 object-cover rounded-sm shrink-0" />
+                    <CountryFlag code={country.code || country.country} className="w-4 h-3 object-cover rounded-sm shrink-0" />
                     <span className="text-sm text-white">{country.country}</span>
                   </div>
                   <div className="flex items-center gap-4 text-sm">
