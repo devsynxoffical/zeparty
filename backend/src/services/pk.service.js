@@ -1,858 +1,583 @@
+import pkRepository from '../repositories/pk.repository.js';
 import socketEmitter from '../socket/socket.emitter.js';
 
 export class PKService {
-  constructor(repo = null) {
-    this.customRepo = repo;
-    // Active in-memory PK battle sessions: map of pkId -> PKSession
-    this.activeSessions = new Map();
-    // Pending invitations: map of invitationId -> Invitation
-    this.pendingInvitations = new Map();
-    // Auto-end timers: map of pkId -> NodeJS.Timeout
-    this.endTimers = new Map();
-  }
-
-  async getRepo() {
-    if (this.customRepo) return this.customRepo;
-    const module = await import('../repositories/pk.repository.js');
-    return module.default;
+  constructor(repo = pkRepository) {
+    this.repo = repo;
+    // Invite rate limit tracking: map of userId -> array of timestamps
+    this.inviteRateLimits = new Map();
+    // Sweeper interval handle
+    this.sweeperInterval = null;
+    this.startBackgroundSweeper();
   }
 
   /**
-   * Helper to format a participant object safely.
+   * Periodic background sweeper.
+   * Ensures that expired invitations, preparation timeouts, finished matches,
+   * and disconnect grace periods are recovered and settled reliably across restarts.
    */
-  _formatParticipant({
-    userId,
-    name,
-    username,
-    avatarUrl,
-    roomId = null,
-    slot = 1,
-    isHost = false,
-    isInitiator = false,
-    score = 0,
-    status = 'READY',
-  }) {
-    return {
-      userId: userId.toString(),
-      name: (name || username || 'Participant').toString(),
-      username: (username || 'user').toString(),
-      avatarUrl: (avatarUrl || '').toString(),
-      roomId: roomId ? roomId.toString() : null,
-      slot: Number(slot),
-      isHost: Boolean(isHost),
-      isInitiator: Boolean(isInitiator),
-      score: Number(score) || 0,
-      status: status.toString(),
-    };
-  }
-
-  /**
-   * 1. CREATE PK SESSION (Host-Controlled Only)
-   * Only the live host can create a PK battle for their active room.
-   */
-  async createPKSession({
-    hostUserId,
-    roomId,
-    durationSeconds = 300,
-    hostInfo = {},
-  }) {
-    if (!hostUserId || !roomId) {
-      const error = new Error('hostUserId and roomId are required to initiate PK.');
-      error.status = 400;
-      error.code = 'INVALID_PK_REQUEST';
-      throw error;
-    }
-
-    const repo = await this.getRepo();
-
-    // Verify host authorization on server
-    const isLiveHost = await repo.verifyLiveHost(hostUserId, roomId);
-    if (!isLiveHost) {
-      const error = new Error('Forbidden: Only the active live host of this room can initiate a PK Battle.');
-      error.status = 403;
-      error.code = 'NOT_LIVE_HOST';
-      throw error;
-    }
-
-    // Check if room is already in an active PK battle
-    const existingPK = await repo.findActivePKForRoom(roomId);
-    if (existingPK) {
-      const error = new Error('Room is already participating in an active PK battle.');
-      error.status = 409;
-      error.code = 'PK_ALREADY_ACTIVE';
-      throw error;
-    }
-
-    const inviteCode = `pk_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const initiatorParticipant = this._formatParticipant({
-      userId: hostUserId,
-      name: hostInfo.name || hostInfo.displayName || 'Host Blue',
-      username: hostInfo.username || 'host_blue',
-      avatarUrl: hostInfo.avatarUrl || '',
-      roomId,
-      slot: 1,
-      isHost: true,
-      isInitiator: true,
-      score: 0,
-      status: 'READY',
-    });
-
-    const pkEvent = await repo.createPKEvent({
-      initiatorUserId: hostUserId,
-      roomAId: roomId,
-      hostAUserId: hostUserId,
-      durationSeconds: Number(durationSeconds) || 300,
-      participants: [initiatorParticipant],
-      inviteCode,
-      status: 'CREATED',
-    });
-
-    const session = {
-      pkId: pkEvent.id,
-      initiatorUserId: hostUserId,
-      primaryRoomId: roomId,
-      durationSeconds: Number(durationSeconds) || 300,
-      participants: [initiatorParticipant],
-      status: 'CREATED',
-      startedAt: null, // Timer is explicitly NOT running
-      endedAt: null,
-      inviteCode,
-      createdAt: Date.now(),
-    };
-
-    this.activeSessions.set(pkEvent.id, session);
-
-    // Realtime broadcast PK created event to initiator room
-    socketEmitter.emitToRoom(roomId, 'pk:created', {
-      pkId: pkEvent.id,
-      initiatorUserId: hostUserId,
-      inviteCode,
-      participants: session.participants,
-      status: 'CREATED',
-      durationSeconds: session.durationSeconds,
-      startedAt: null,
-    });
-
-    return session;
-  }
-
-  /**
-   * 2. SEND PK INVITATION (Host-Controlled to Host or User)
-   */
-  async sendPKInvite({
-    pkId,
-    fromHostUserId,
-    fromRoomId,
-    targetRoomId = null,
-    targetUserId = null,
-    durationSeconds = 300,
-    fromHostInfo = {},
-  }) {
-    let session = pkId ? this.activeSessions.get(pkId) : null;
-
-    if (!session && fromRoomId && fromHostUserId) {
-      // Auto-create PK session if host invites without creating session first
-      session = await this.createPKSession({
-        hostUserId: fromHostUserId,
-        roomId: fromRoomId,
-        durationSeconds,
-        hostInfo: fromHostInfo,
+  startBackgroundSweeper() {
+    if (this.sweeperInterval) return;
+    this.sweeperInterval = setInterval(() => {
+      this.runSweeperCycle().catch((err) => {
+        console.error('[PKService Sweeper Error]:', err.message);
       });
-    }
-
-    if (!session) {
-      const error = new Error('PK session not found.');
-      error.status = 404;
-      error.code = 'PK_NOT_FOUND';
-      throw error;
-    }
-
-    // Host authorization check
-    if (session.initiatorUserId !== fromHostUserId) {
-      const error = new Error('Only the PK initiator can send PK invitations.');
-      error.status = 403;
-      error.code = 'UNAUTHORIZED_PK_INVITE';
-      throw error;
-    }
-
-    // Maximum 4 participants limit check
-    if (session.participants.length >= 4) {
-      const error = new Error('PK Battle participant limit reached (maximum 4 participants).');
-      error.status = 400;
-      error.code = 'PK_FULL';
-      throw error;
-    }
-
-    const invitationId = `pki_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const invite = {
-      id: invitationId,
-      pkId: session.pkId,
-      fromRoomId: session.primaryRoomId,
-      fromHostUserId,
-      fromHostInfo,
-      targetRoomId,
-      targetUserId,
-      durationSeconds: session.durationSeconds,
-      createdAt: Date.now(),
-      status: 'PENDING',
-    };
-
-    this.pendingInvitations.set(invitationId, invite);
-
-    const payload = {
-      invitationId,
-      pkId: session.pkId,
-      inviteCode: session.inviteCode,
-      fromRoomId: session.primaryRoomId,
-      fromHost: fromHostInfo,
-      targetRoomId,
-      targetUserId,
-      durationSeconds: session.durationSeconds,
-      currentParticipantsCount: session.participants.length,
-      maxParticipants: 4,
-    };
-
-    // Emit to target room or target user
-    if (targetRoomId) {
-      socketEmitter.emitToRoom(targetRoomId, 'pk:invitation_received', payload);
-    }
-    if (targetUserId) {
-      socketEmitter.emitToUser(targetUserId, 'pk:invitation_received', payload);
-    }
-
-    return {
-      success: true,
-      invitationId,
-      pkId: session.pkId,
-      inviteCode: session.inviteCode,
-      message: 'PK battle invitation sent successfully.',
-    };
+    }, 3000); // Runs every 3 seconds
   }
 
-  /**
-   * 3. GET / VALIDATE INVITATION
-   */
-  async getInvitationDetails(invitationId) {
-    const invite = this.pendingInvitations.get(invitationId);
-    if (!invite) {
-      const error = new Error('PK invitation expired or not found.');
-      error.status = 404;
-      error.code = 'INVITE_NOT_FOUND';
-      throw error;
+  stopBackgroundSweeper() {
+    if (this.sweeperInterval) {
+      clearInterval(this.sweeperInterval);
+      this.sweeperInterval = null;
     }
-
-    const session = this.activeSessions.get(invite.pkId);
-    if (!session || session.status === 'ENDED' || session.status === 'CANCELLED') {
-      const error = new Error('This PK Battle has already concluded or was cancelled.');
-      error.status = 410;
-      error.code = 'PK_ENDED';
-      throw error;
-    }
-
-    if (session.participants.length >= 4) {
-      const error = new Error('PK Battle is full (maximum 4 participants).');
-      error.status = 400;
-      error.code = 'PK_FULL';
-      throw error;
-    }
-
-    return {
-      invitation: invite,
-      session: {
-        pkId: session.pkId,
-        initiatorUserId: session.initiatorUserId,
-        status: session.status,
-        participants: session.participants,
-        maxParticipants: 4,
-        durationSeconds: session.durationSeconds,
-      },
-    };
   }
 
-  /**
-   * 4. RESPOND TO PK INVITATION (ACCEPT / DECLINE)
-   */
-  async respondPKInvite({
-    invitationId,
-    responderUserId,
-    responderRoomId = null,
-    responderInfo = {},
-    action = 'ACCEPT',
-  }) {
-    const invite = this.pendingInvitations.get(invitationId);
-    if (!invite) {
-      const error = new Error('PK invitation expired or not found.');
-      error.status = 404;
-      error.code = 'INVITE_NOT_FOUND';
-      throw error;
-    }
-
-    const session = this.activeSessions.get(invite.pkId);
-    if (!session || session.status === 'ENDED' || session.status === 'CANCELLED') {
-      this.pendingInvitations.delete(invitationId);
-      const error = new Error('PK battle is no longer active.');
-      error.status = 410;
-      error.code = 'PK_INACTIVE';
-      throw error;
-    }
-
-    if (action === 'ACCEPT') {
-      // Enforce participant limit (MAX 4)
-      if (session.participants.length >= 4) {
-        this.pendingInvitations.delete(invitationId);
-        const error = new Error('PK Battle has already reached the maximum of 4 participants.');
-        error.status = 400;
-        error.code = 'PK_FULL';
-        throw error;
-      }
-
-      // Check if user already joined
-      const alreadyJoined = session.participants.some(
-        (p) => p.userId === responderUserId.toString()
-      );
-
-      if (!alreadyJoined) {
-        const nextSlot = session.participants.length + 1;
-        const newParticipant = this._formatParticipant({
-          userId: responderUserId,
-          name: responderInfo.name || responderInfo.displayName || `Participant ${nextSlot}`,
-          username: responderInfo.username || `user_${nextSlot}`,
-          avatarUrl: responderInfo.avatarUrl || '',
-          roomId: responderRoomId || invite.targetRoomId,
-          slot: nextSlot,
-          isHost: Boolean(responderRoomId),
-          isInitiator: false,
-          score: 0,
-          status: 'READY',
-        });
-
-        session.participants.push(newParticipant);
-      }
-
-      // Once 2 or more participants are on screen, PK enters READY state (Timer still NOT running)
-      if (session.participants.length >= 2 && session.status !== 'STARTED') {
-        session.status = 'READY';
-      }
-
-      this.pendingInvitations.delete(invitationId);
-
-      const repo = await this.getRepo();
-      await repo.updatePKStatus(session.pkId, {
-        status: session.status,
-        participantsJson: session.participants,
-        roomBId: responderRoomId || invite.targetRoomId || undefined,
-        hostBUserId: responderUserId || undefined,
-      });
-
-      const participantPayload = {
-        pkId: session.pkId,
-        status: session.status,
-        participants: session.participants,
-        participantCount: session.participants.length,
-        durationSeconds: session.durationSeconds,
-        startedAt: null, // Timer is explicitly NOT running yet
-      };
-
-      // Notify all participant rooms and users
-      socketEmitter.emitToRoom(session.primaryRoomId, 'pk:participant_joined', participantPayload);
-      if (responderRoomId) {
-        socketEmitter.emitToRoom(responderRoomId, 'pk:participant_joined', participantPayload);
-      }
-      for (const p of session.participants) {
-        socketEmitter.emitToUser(p.userId, 'pk:participant_joined', participantPayload);
-      }
-
-      if (session.status === 'READY') {
-        socketEmitter.emitToRoom(session.primaryRoomId, 'pk:ready', participantPayload);
-        if (responderRoomId) {
-          socketEmitter.emitToRoom(responderRoomId, 'pk:ready', participantPayload);
+  async runSweeperCycle() {
+    const now = new Date();
+    try {
+      const { expiredInvites, overdueActiveMatches } = await this.repo.sweepStaleMatchesAndInvites(now);
+      if (expiredInvites?.length) {
+        for (const inv of expiredInvites) {
+          const payload = {
+            invitationId: inv.id,
+            matchId: inv.match?.id,
+            status: 'EXPIRED',
+          };
+          if (inv.match?.roomAId) socketEmitter.emitToRoom(inv.match.roomAId, 'pk:invitation_expired', payload);
+          if (inv.match?.roomBId) socketEmitter.emitToRoom(inv.match.roomBId, 'pk:invitation_expired', payload);
+          if (inv.targetHostUserId) socketEmitter.emitToUser(inv.targetHostUserId, 'pk:invitation_expired', payload);
         }
       }
 
-      return {
-        success: true,
-        accepted: true,
-        session,
-      };
-    } else {
-      this.pendingInvitations.delete(invitationId);
-
-      socketEmitter.emitToRoom(session.primaryRoomId, 'pk:invitation_declined', {
-        invitationId,
-        declinedByUserId: responderUserId,
-      });
-
-      return {
-        success: true,
-        accepted: false,
-        message: 'PK invitation declined.',
-      };
-    }
+      if (overdueActiveMatches?.length) {
+        for (const m of overdueActiveMatches) {
+          await this.finishMatch(m.id, 'TIME_EXPIRED');
+        }
+      }
+    } catch (_) {}
   }
 
   /**
-   * 5. JOIN VIA INVITE CODE / SHARE LINK
+   * Rate limiting guard for sending invitations.
    */
-  async joinByInviteCode({
-    inviteCode,
-    userId,
-    userInfo = {},
-    roomId = null,
-  }) {
-    if (!inviteCode || !userId) {
-      const error = new Error('inviteCode and userId are required.');
-      error.status = 400;
-      throw error;
+  _checkInviteRateLimit(userId, maxPerMinute = 5) {
+    const now = Date.now();
+    const timestamps = this.inviteRateLimits.get(userId) || [];
+    const recent = timestamps.filter((t) => now - t < 60000);
+    if (recent.length >= maxPerMinute) {
+      const err = new Error(`Rate limit exceeded. Max ${maxPerMinute} invitations per minute.`);
+      err.code = 'PK_RATE_LIMITED';
+      err.status = 429;
+      throw err;
+    }
+    recent.push(now);
+    this.inviteRateLimits.set(userId, recent);
+  }
+
+  /**
+   * 1. DISCOVER OPPONENT
+   */
+  async discoverOpponent({ query, roomType, callerUserId }) {
+    return this.repo.discoverOpponent({ query, roomType, excludeUserId: callerUserId });
+  }
+
+  /**
+   * 2. SEND INVITATION
+   */
+  async sendInvitation({ fromRoomId, targetRoomId, targetHostUserId, durationSeconds = 300, callerUserId }) {
+    const settings = await this.repo.getPKSettings();
+
+    // Feature enablement check
+    const isAudio = fromRoomId.includes('audio') || durationSeconds > 0;
+    if (!settings.audioPkEnabled && !settings.videoPkEnabled) {
+      const err = new Error('PK Matches are currently disabled by platform administration.');
+      err.code = 'PK_FEATURE_DISABLED';
+      err.status = 403;
+      throw err;
     }
 
-    let session = Array.from(this.activeSessions.values()).find(
-      (s) => s.inviteCode === inviteCode
-    );
+    this._checkInviteRateLimit(callerUserId, settings.invitationRateLimit);
 
-    if (!session) {
-      const repo = await this.getRepo();
-      const pkEvent = await repo.findPKEventByInviteCode(inviteCode);
-      if (!pkEvent) {
-        const error = new Error('Invalid or expired PK Battle invitation code.');
-        error.status = 404;
-        error.code = 'INVALID_INVITE_CODE';
-        throw error;
-      }
-      session = this._rehydrateSessionFromDB(pkEvent);
-      this.activeSessions.set(session.pkId, session);
+    // Verify Inviter Room eligibility & caller operator rights
+    const fromCheck = await this.repo.verifyRoomEligibility({ roomId: fromRoomId, userId: callerUserId });
+    if (!fromCheck.eligible) {
+      const err = new Error(fromCheck.error);
+      err.code = fromCheck.code;
+      err.status = fromCheck.code === 'PK_PERMISSION_DENIED' ? 403 : 400;
+      throw err;
     }
 
-    if (session.status === 'ENDED' || session.status === 'CANCELLED') {
-      const error = new Error('This PK Battle has already ended.');
-      error.status = 410;
-      error.code = 'PK_ENDED';
-      throw error;
+    // Verify Target Room eligibility
+    const targetCheck = await this.repo.verifyRoomEligibility({ roomId: targetRoomId, userId: targetHostUserId });
+    if (!targetCheck.eligible) {
+      const err = new Error(targetCheck.error);
+      err.code = targetCheck.code;
+      err.status = 400;
+      throw err;
     }
 
-    if (session.participants.length >= 4) {
-      const error = new Error('PK Battle is full (maximum 4 participants reached).');
-      error.status = 400;
-      error.code = 'PK_FULL';
-      throw error;
+    // Check Room Type parity
+    if (fromCheck.room.roomType !== targetCheck.room.roomType) {
+      const err = new Error('Cannot match different room types (Audio vs Video).');
+      err.code = 'PK_WRONG_ROOM_TYPE';
+      err.status = 400;
+      throw err;
     }
 
-    const alreadyJoined = session.participants.some(
-      (p) => p.userId === userId.toString()
-    );
+    // Allowed duration check
+    const allowed = Array.isArray(settings.allowedDurationsJson) ? settings.allowedDurationsJson : [180, 300, 600];
+    const duration = allowed.includes(Number(durationSeconds)) ? Number(durationSeconds) : settings.defaultDurationSeconds;
 
-    if (!alreadyJoined) {
-      const nextSlot = session.participants.length + 1;
-      const newParticipant = this._formatParticipant({
-        userId,
-        name: userInfo.name || userInfo.displayName || `Participant ${nextSlot}`,
-        username: userInfo.username || `user_${nextSlot}`,
-        avatarUrl: userInfo.avatarUrl || '',
-        roomId,
-        slot: nextSlot,
-        isHost: Boolean(roomId),
-        isInitiator: false,
-        score: 0,
-        status: 'READY',
-      });
+    const configSnapshot = {
+      durationSeconds: duration,
+      reconnectGraceSeconds: settings.reconnectGraceSeconds,
+      preparationTimeoutSeconds: settings.preparationTimeoutSeconds,
+      multipliersEnabled: false,
+      additionalRewardsEnabled: false,
+    };
 
-      session.participants.push(newParticipant);
-    }
-
-    if (session.participants.length >= 2 && session.status !== 'STARTED') {
-      session.status = 'READY';
-    }
-
-    const repo = await this.getRepo();
-    await repo.updatePKStatus(session.pkId, {
-      status: session.status,
-      participantsJson: session.participants,
+    const { match, invitation } = await this.repo.createInvitationAndMatch({
+      roomA: fromCheck.room,
+      roomB: targetCheck.room,
+      inviterUserId: callerUserId,
+      targetHostUserId,
+      durationSeconds: duration,
+      configSnapshot,
+      invitationTimeoutSeconds: settings.invitationTimeoutSeconds,
     });
+
+    const invitePayload = {
+      invitationId: invitation.id,
+      matchId: match.id,
+      durationSeconds: duration,
+      expiresAt: invitation.expiresAt.toISOString(),
+      expiresInSeconds: settings.invitationTimeoutSeconds,
+      fromRoom: {
+        id: fromCheck.room.id,
+        title: fromCheck.room.title,
+        roomType: fromCheck.room.roomType,
+      },
+      fromHost: {
+        id: fromCheck.room.creator.id,
+        username: fromCheck.room.creator.username,
+        displayName: fromCheck.room.creator.profile?.displayName || fromCheck.room.creator.username,
+        avatarUrl: fromCheck.room.creator.avatarUrl || '',
+      },
+    };
+
+    // Emit realtime invitation notification directly to target user and room
+    socketEmitter.emitToUser(targetHostUserId, 'pk:invitation_received', invitePayload);
+    socketEmitter.emitToRoom(targetRoomId, 'pk:invitation_received', invitePayload);
+
+    return {
+      invitationId: invitation.id,
+      matchId: match.id,
+      status: 'PENDING',
+      durationSeconds: duration,
+      expiresAt: invitation.expiresAt.toISOString(),
+      expiresInSeconds: settings.invitationTimeoutSeconds,
+    };
+  }
+
+  /**
+   * 3. RESPOND TO INVITATION (ACCEPT / REJECT)
+   */
+  async respondInvitation({ invitationId, responderUserId, action, targetRoomId }) {
+    const act = (action || 'ACCEPT').toUpperCase();
+    if (act !== 'ACCEPT' && act !== 'REJECT') {
+      const err = new Error("Action must be either 'ACCEPT' or 'REJECT'.");
+      err.code = 'INVALID_ACTION';
+      err.status = 400;
+      throw err;
+    }
+
+    const result = await this.repo.respondToInvitation({
+      invitationId,
+      responderUserId,
+      action: act,
+      targetRoomId,
+    });
+
+    const matchSnapshot = await this.repo.getMatchSnapshot(result.match.id);
+
+    if (result.accepted) {
+      // Broadcast preparing event to both rooms
+      socketEmitter.emitToRoom(result.match.roomAId, 'pk:preparing', matchSnapshot);
+      socketEmitter.emitToRoom(result.match.roomBId, 'pk:preparing', matchSnapshot);
+    } else {
+      // Notify inviter room of rejection
+      socketEmitter.emitToRoom(result.match.roomAId, 'pk:invitation_responded', {
+        invitationId,
+        matchId: result.match.id,
+        action: 'REJECT',
+      });
+    }
+
+    return {
+      invitationId,
+      matchId: result.match.id,
+      action: act,
+      status: result.match.status,
+      match: matchSnapshot,
+    };
+  }
+
+  /**
+   * 4. CANCEL PENDING INVITATION
+   */
+  async cancelInvitation({ invitationId, callerUserId, reason }) {
+    const result = await this.repo.cancelInvitation({ invitationId, userId: callerUserId, reason });
 
     const payload = {
-      pkId: session.pkId,
-      status: session.status,
-      participants: session.participants,
-      participantCount: session.participants.length,
-      durationSeconds: session.durationSeconds,
-      startedAt: session.startedAt,
+      invitationId,
+      matchId: result.match.id,
+      status: 'CANCELLED',
+      reason,
     };
 
-    socketEmitter.emitToRoom(session.primaryRoomId, 'pk:participant_joined', payload);
-    for (const p of session.participants) {
-      socketEmitter.emitToUser(p.userId, 'pk:participant_joined', payload);
-    }
+    socketEmitter.emitToRoom(result.match.roomAId, 'pk:invitation_cancelled', payload);
+    socketEmitter.emitToRoom(result.match.roomBId, 'pk:invitation_cancelled', payload);
+    socketEmitter.emitToUser(result.invitation.targetHostUserId, 'pk:invitation_cancelled', payload);
 
-    return session;
+    return payload;
   }
 
   /**
-   * 6. START PK BATTLE (Authoritative Start Condition & Timer Start)
-   * The PK timer starts ONLY when host/server explicitly transitions to STARTED.
+   * 5. SET OPERATOR READINESS & TRIGGER COUNTDOWN
    */
-  async startPKBattle({ pkId, hostUserId }) {
-    let session = this.activeSessions.get(pkId);
-    const repo = await this.getRepo();
-
-    if (!session) {
-      const pkEvent = await repo.findPKEventById(pkId);
-      if (!pkEvent) {
-        const error = new Error('PK Battle session not found.');
-        error.status = 404;
-        error.code = 'PK_NOT_FOUND';
-        throw error;
-      }
-      session = this._rehydrateSessionFromDB(pkEvent);
-      this.activeSessions.set(pkId, session);
-    }
-
-    // Host authorization check
-    if (session.initiatorUserId !== hostUserId) {
-      const error = new Error('Only the PK host initiator can start the battle.');
-      error.status = 403;
-      error.code = 'UNAUTHORIZED_PK_START';
-      throw error;
-    }
-
-    // Minimum 2 participants required to start
-    if (session.participants.length < 2) {
-      const error = new Error('Cannot start PK Battle with fewer than 2 participants.');
-      error.status = 400;
-      error.code = 'NOT_ENOUGH_PARTICIPANTS';
-      throw error;
-    }
-
-    if (session.status === 'STARTED') {
-      return session;
-    }
-
-    const now = new Date();
-    session.status = 'STARTED';
-    session.startedAt = now.toISOString();
-
-    await repo.updatePKStatus(pkId, {
-      status: 'STARTED',
-      startedAt: now,
-      participantsJson: session.participants,
+  async setOperatorReady({ matchId, userId, roomId, isReady, mediaPrepared }) {
+    const updated = await this.repo.setOperatorReady({
+      matchId,
+      userId,
+      roomId,
+      isReady,
+      mediaPrepared,
     });
 
-    const startPayload = {
-      pkId: session.pkId,
-      status: 'STARTED',
-      startedAt: session.startedAt,
-      durationSeconds: session.durationSeconds,
-      participants: session.participants,
-      participantCount: session.participants.length,
-      hostA: session.participants[0] ? {
-        id: session.participants[0].userId,
-        name: session.participants[0].name,
-        username: session.participants[0].username,
-        avatarUrl: session.participants[0].avatarUrl,
-      } : {},
-      hostB: session.participants[1] ? {
-        id: session.participants[1].userId,
-        name: session.participants[1].name,
-        username: session.participants[1].username,
-        avatarUrl: session.participants[1].avatarUrl,
-      } : {},
-      hostAScore: (session.participants[0]?.score || 0).toString(),
-      hostBScore: (session.participants[1]?.score || 0).toString(),
-    };
+    const snapshot = await this.repo.getMatchSnapshot(matchId);
 
-    // Broadcast authoritative PK Started event to all participant rooms
-    for (const p of session.participants) {
-      if (p.roomId) {
-        socketEmitter.emitToRoom(p.roomId, 'pk:started', startPayload);
-      }
-      socketEmitter.emitToUser(p.userId, 'pk:started', startPayload);
+    // Broadcast readiness change
+    socketEmitter.emitToRoom(updated.roomAId, 'pk:ready_changed', snapshot);
+    socketEmitter.emitToRoom(updated.roomBId, 'pk:ready_changed', snapshot);
+
+    // If both operators confirmed readiness, countdown started
+    if (updated.status === 'COUNTDOWN') {
+      const countdownPayload = {
+        matchId: updated.id,
+        stateVersion: updated.stateVersion,
+        countdownSeconds: 3,
+        countdownStartAt: updated.countdownStartAt?.toISOString(),
+      };
+
+      socketEmitter.emitToRoom(updated.roomAId, 'pk:countdown_started', countdownPayload);
+      socketEmitter.emitToRoom(updated.roomBId, 'pk:countdown_started', countdownPayload);
+
+      // Trigger automatic start after 3 seconds
+      setTimeout(() => {
+        this.startMatch(matchId).catch((err) => {
+          console.error(`[PKService] Auto-start match ${matchId} error:`, err.message);
+        });
+      }, 3000);
     }
-    socketEmitter.emitToRoom(session.primaryRoomId, 'pk:started', startPayload);
 
-    // Schedule authoritative server-side auto-end timer
-    if (this.endTimers.has(pkId)) {
-      clearTimeout(this.endTimers.get(pkId));
-    }
-    const timer = setTimeout(() => {
-      this.endPKBattle(pkId).catch((err) => {
-        console.error(`[PKService] Auto-end PK error for ${pkId}:`, err);
-      });
-    }, session.durationSeconds * 1000);
-    this.endTimers.set(pkId, timer);
-
-    return session;
+    return snapshot;
   }
 
   /**
-   * 7. ACCUMULATE SCORE (Live Gifting to any Participant Slot)
+   * 6. START MATCH AUTHORITATIVELY
    */
-  async addPKScore({ roomId, targetUserId, giftCoinValue }) {
-    let session = null;
-    for (const s of this.activeSessions.values()) {
-      if (
-        (s.status === 'STARTED' || s.status === 'ACTIVE' || s.status === 'READY') &&
-        (s.primaryRoomId === roomId || s.participants.some((p) => p.roomId === roomId || p.userId === targetUserId))
-      ) {
-        session = s;
-        break;
-      }
-    }
+  async startMatch(matchId) {
+    const started = await this.repo.startMatch({ matchId });
+    const snapshot = await this.repo.getMatchSnapshot(matchId);
 
-    if (!session) {
-      return null;
-    }
+    socketEmitter.emitToRoom(started.roomAId, 'pk:match_started', snapshot);
+    socketEmitter.emitToRoom(started.roomBId, 'pk:match_started', snapshot);
 
-    const val = Number(giftCoinValue) || 0;
-    let targetIndex = -1;
+    // Schedule authoritative end timer
+    const remainingMs = Math.max(0, new Date(started.endAt).getTime() - Date.now());
+    setTimeout(() => {
+      this.finishMatch(matchId, 'TIME_EXPIRED').catch((err) => {
+        console.error(`[PKService] Auto-end match ${matchId} error:`, err.message);
+      });
+    }, remainingMs);
 
-    if (targetUserId) {
-      targetIndex = session.participants.findIndex((p) => p.userId === targetUserId.toString());
-    } else if (roomId) {
-      targetIndex = session.participants.findIndex((p) => p.roomId === roomId.toString());
-    }
+    return snapshot;
+  }
 
-    if (targetIndex === -1 && session.participants.length > 0) {
-      targetIndex = 0; // Default to host/slot 1
-    }
+  /**
+   * 7. GET AUTHORITATIVE MATCH SNAPSHOT
+   */
+  async getMatchSnapshot(matchId) {
+    return this.repo.getMatchSnapshot(matchId);
+  }
 
-    session.participants[targetIndex].score += val;
+  /**
+   * 8. GET ACTIVE MATCH FOR ROOM
+   */
+  async getActiveMatchForRoom(roomId) {
+    const active = await this.repo.findActiveOrPendingMatchForRoom(roomId);
+    if (!active) return null;
+    return this.repo.getMatchSnapshot(active.id);
+  }
 
-    const repo = await this.getRepo();
-    if (targetIndex === 0) {
-      await repo.incrementHostScore(session.pkId, 'hostA', val);
-    } else if (targetIndex === 1) {
-      await repo.incrementHostScore(session.pkId, 'hostB', val);
-    }
+  /**
+   * 9. TOP 3 SUPPORTERS PER SIDE
+   */
+  async getTopSupporters(matchId) {
+    return this.repo.getTopSupporters(matchId);
+  }
+
+  /**
+   * 10. RECORD GIFT SCORING CONTRIBUTION
+   * Called within the gift transaction lifecycle.
+   */
+  async recordGiftContribution({ giftTransactionId, senderUserId, recipientUserId, roomId, coins, commitTimestamp }) {
+    const result = await this.repo.recordGiftContribution({
+      giftTransactionId,
+      senderUserId,
+      recipientUserId,
+      roomId,
+      coins,
+      commitTimestamp,
+    });
+
+    if (!result || result.duplicate) return null;
+
+    const snapshot = await this.repo.getMatchSnapshot(result.match.id);
 
     const scorePayload = {
-      pkId: session.pkId,
-      status: session.status,
-      participants: session.participants,
-      hostAScore: (session.participants[0]?.score || 0).toString(),
-      hostBScore: (session.participants[1]?.score || 0).toString(),
-      recentGiftCoins: val,
-      scoredUserId: session.participants[targetIndex]?.userId,
-      scoredSlot: session.participants[targetIndex]?.slot,
+      matchId: result.match.id,
+      stateVersion: result.match.stateVersion,
+      scoreA: snapshot.scoreA,
+      scoreB: snapshot.scoreB,
+      recentGift: {
+        scoredSide: result.side,
+        coins: Number(coins),
+        senderUserId,
+        recipientUserId,
+      },
+      topSupportersA: snapshot.topSupportersA,
+      topSupportersB: snapshot.topSupportersB,
     };
 
-    for (const p of session.participants) {
-      if (p.roomId) {
-        socketEmitter.emitToRoom(p.roomId, 'pk:score_updated', scorePayload);
-      }
-    }
-    socketEmitter.emitToRoom(session.primaryRoomId, 'pk:score_updated', scorePayload);
+    socketEmitter.emitToRoom(result.match.roomAId, 'pk:score_updated', scorePayload);
+    socketEmitter.emitToRoom(result.match.roomBId, 'pk:score_updated', scorePayload);
 
-    return session;
+    return result;
   }
 
   /**
-   * 8. END PK BATTLE (Authoritative Result Calculation)
+   * 11. FINISH MATCH (END BOUNDARY)
    */
-  async endPKBattle(pkId) {
-    let session = this.activeSessions.get(pkId);
-    const repo = await this.getRepo();
-
-    if (!session) {
-      const pkEvent = await repo.findPKEventById(pkId);
-      if (!pkEvent) {
-        const error = new Error('PK Battle session not found.');
-        error.status = 404;
-        throw error;
-      }
-      session = this._rehydrateSessionFromDB(pkEvent);
-    }
-
-    if (session.status === 'ENDED') {
-      return session;
-    }
-
-    if (this.endTimers.has(pkId)) {
-      clearTimeout(this.endTimers.get(pkId));
-      this.endTimers.delete(pkId);
-    }
-
-    session.status = 'ENDED';
-    session.endedAt = new Date().toISOString();
-
-    // Determine winner among all participants by highest score
-    let highestScore = -1;
-    let winnerParticipant = null;
-    let isTie = false;
-
-    for (const p of session.participants) {
-      if (p.score > highestScore) {
-        highestScore = p.score;
-        winnerParticipant = p;
-        isTie = false;
-      } else if (p.score === highestScore && highestScore > 0) {
-        isTie = true;
-      }
-    }
-
-    const winnerUserId = (!isTie && winnerParticipant && highestScore > 0) ? winnerParticipant.userId : null;
-
-    await repo.updatePKStatus(pkId, {
-      status: 'ENDED',
-      winnerHostUserId: winnerUserId,
-      endedAt: new Date(),
-      participantsJson: session.participants,
-    });
+  async finishMatch(matchId, endReason = 'NORMAL_COMPLETION') {
+    const finished = await this.repo.finishMatch({ matchId, endReason });
+    const snapshot = await this.repo.getMatchSnapshot(matchId);
 
     const endPayload = {
-      pkId: session.pkId,
-      status: 'ENDED',
-      winnerUserId,
-      winnerName: winnerParticipant ? winnerParticipant.name : null,
-      isTie,
-      participants: session.participants,
-      hostAScore: (session.participants[0]?.score || 0).toString(),
-      hostBScore: (session.participants[1]?.score || 0).toString(),
+      matchId,
+      stateVersion: finished.stateVersion,
+      status: 'FINISHED',
+      scoreA: snapshot.scoreA,
+      scoreB: snapshot.scoreB,
+      winnerHostId: snapshot.winnerHostId,
+      isDraw: snapshot.isDraw,
+      endReason: snapshot.endReason,
+      displayDurationSeconds: 10,
+      topSupportersA: snapshot.topSupportersA,
+      topSupportersB: snapshot.topSupportersB,
     };
 
-    for (const p of session.participants) {
-      if (p.roomId) {
-        socketEmitter.emitToRoom(p.roomId, 'pk:ended', endPayload);
-      }
-      socketEmitter.emitToUser(p.userId, 'pk:ended', endPayload);
-    }
-    socketEmitter.emitToRoom(session.primaryRoomId, 'pk:ended', endPayload);
+    socketEmitter.emitToRoom(finished.roomAId, 'pk:match_finished', endPayload);
+    socketEmitter.emitToRoom(finished.roomBId, 'pk:match_finished', endPayload);
 
-    return session;
+    return snapshot;
   }
 
   /**
-   * 9. GET AUTHORITATIVE PK SESSION (For Reconnect or Room Load)
+   * 12. FORFEIT MATCH (Host intentionally exits or grace timeout expires)
    */
-  async getPKSession(pkId) {
-    let session = this.activeSessions.get(pkId);
-    if (!session) {
-      const repo = await this.getRepo();
-      const pkEvent = await repo.findPKEventById(pkId);
-      if (!pkEvent) return null;
-      session = this._rehydrateSessionFromDB(pkEvent);
-      this.activeSessions.set(pkId, session);
-    }
+  async forfeitMatch(matchId, forfeitHostUserId, endReason = 'HOST_FORFEIT') {
+    const forfeited = await this.repo.forfeitMatch({ matchId, forfeitHostUserId, endReason });
+    if (!forfeited) return null;
 
-    // Calculate elapsed time from server authoritative startedAt
-    let remainingSeconds = session.durationSeconds;
-    if (session.status === 'STARTED' && session.startedAt) {
-      const elapsed = Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000);
-      remainingSeconds = Math.max(0, session.durationSeconds - elapsed);
-    } else if (session.status === 'ENDED') {
-      remainingSeconds = 0;
-    }
+    const snapshot = await this.repo.getMatchSnapshot(matchId);
 
-    return {
-      ...session,
-      remainingSeconds,
+    const payload = {
+      matchId,
+      status: 'FORFEIT',
+      winnerHostId: snapshot.winnerHostId,
+      forfeitHostUserId,
+      endReason,
     };
+
+    socketEmitter.emitToRoom(forfeited.roomAId, 'pk:match_forfeited', payload);
+    socketEmitter.emitToRoom(forfeited.roomBId, 'pk:match_forfeited', payload);
+
+    return snapshot;
   }
 
   /**
-   * 10. GET ACTIVE PK FOR ROOM
+   * 13. ABORT MATCH (Mutual disconnect, admin force stop)
    */
-  async getRoomPKStatus(roomId) {
-    for (const session of this.activeSessions.values()) {
-      if (
-        (session.status === 'CREATED' || session.status === 'READY' || session.status === 'STARTED') &&
-        (session.primaryRoomId === roomId || session.participants.some((p) => p.roomId === roomId))
-      ) {
-        return this.getPKSession(session.pkId);
-      }
-    }
+  async abortMatch(matchId, actorUserId, endReason = 'ABORTED') {
+    const aborted = await this.repo.abortMatch({ matchId, actorUserId, endReason });
+    if (!aborted) return null;
 
-    const repo = await this.getRepo();
-    const active = await repo.findActivePKForRoom(roomId);
-    if (!active) return null;
-
-    const session = this._rehydrateSessionFromDB(active);
-    this.activeSessions.set(session.pkId, session);
-    return this.getPKSession(session.pkId);
-  }
-
-  /**
-   * 11. DISCOVER AVAILABLE LIVE HOSTS (For Path A Host vs Host)
-   */
-  async getAvailablePKHosts({ excludeRoomId = null, excludeUserId = null } = {}) {
-    const repo = await this.getRepo();
-    const activeRooms = await repo.findAvailableLiveRooms({ excludeRoomId, excludeUserId });
-
-    const available = [];
-    for (const room of activeRooms) {
-      const activePK = await repo.findActivePKForRoom(room.id);
-      if (!activePK) {
-        available.push({
-          roomId: room.id,
-          roomTitle: room.title,
-          coverImageUrl: room.coverImageUrl || '',
-          category: room.category,
-          viewerCount: room.currentViewersCount,
-          host: {
-            id: room.creator.id,
-            username: room.creator.username,
-            name: room.creator.profile?.displayName || room.creator.username,
-            avatarUrl: room.creator.avatarUrl || '',
-            level: room.creator.profile?.level || 1,
-            vipLevel: room.creator.profile?.vipLevel || 0,
-          },
-        });
-      }
-    }
-
-    return available;
-  }
-
-  /**
-   * Rehydrate active session in memory from DB entity.
-   */
-  _rehydrateSessionFromDB(pkEvent) {
-    const participants = Array.isArray(pkEvent.participantsJson) && pkEvent.participantsJson.length > 0
-      ? pkEvent.participantsJson
-      : [
-          this._formatParticipant({
-            userId: pkEvent.hostAUserId,
-            name: pkEvent.roomA?.creator?.profile?.displayName || pkEvent.roomA?.creator?.username || 'Host Blue',
-            username: pkEvent.roomA?.creator?.username || 'host_blue',
-            avatarUrl: pkEvent.roomA?.creator?.avatarUrl || '',
-            roomId: pkEvent.roomAId,
-            slot: 1,
-            isHost: true,
-            isInitiator: true,
-            score: Number(pkEvent.hostAScore) || 0,
-          }),
-          ...(pkEvent.hostBUserId ? [
-            this._formatParticipant({
-              userId: pkEvent.hostBUserId,
-              name: pkEvent.roomB?.creator?.profile?.displayName || pkEvent.roomB?.creator?.username || 'Host Red',
-              username: pkEvent.roomB?.creator?.username || 'host_red',
-              avatarUrl: pkEvent.roomB?.creator?.avatarUrl || '',
-              roomId: pkEvent.roomBId,
-              slot: 2,
-              isHost: true,
-              isInitiator: false,
-              score: Number(pkEvent.hostBScore) || 0,
-            }),
-          ] : []),
-        ];
-
-    return {
-      pkId: pkEvent.id,
-      initiatorUserId: pkEvent.initiatorUserId || pkEvent.hostAUserId,
-      primaryRoomId: pkEvent.roomAId,
-      durationSeconds: pkEvent.durationSeconds || 300,
-      participants,
-      status: pkEvent.status,
-      startedAt: pkEvent.startedAt ? pkEvent.startedAt.toISOString() : null,
-      endedAt: pkEvent.endedAt ? pkEvent.endedAt.toISOString() : null,
-      inviteCode: pkEvent.inviteCode,
-      createdAt: pkEvent.createdAt ? new Date(pkEvent.createdAt).getTime() : Date.now(),
+    const payload = {
+      matchId,
+      status: 'ABORTED',
+      endReason,
+      winnerHostId: null,
+      isDraw: false,
     };
+
+    socketEmitter.emitToRoom(aborted.roomAId, 'pk:match_aborted', payload);
+    socketEmitter.emitToRoom(aborted.roomBId, 'pk:match_aborted', payload);
+
+    return payload;
   }
 
   /**
-   * List PK events for Admin oversight.
+   * 14. HOST DISCONNECT & RECONNECT GRACE TRACKING
    */
-  async listAdminPKEvents(params) {
-    const repo = await this.getRepo();
-    return repo.listPKEvents(params);
+  async handleHostDisconnect({ roomId, userId }) {
+    const active = await this.repo.findActiveOrPendingMatchForRoom(roomId);
+    if (!active || active.status !== 'ACTIVE') return;
+
+    const isHostA = active.hostAUserId === userId;
+    const isHostB = active.hostBUserId === userId;
+    if (!isHostA && !isHostB) return;
+
+    await this.repo.updateHostConnection({
+      matchId: active.id,
+      hostUserId: userId,
+      status: 'DISCONNECTED',
+      disconnectedAt: new Date(),
+    });
+
+    const side = isHostA ? 'A' : 'B';
+    const payload = {
+      matchId: active.id,
+      hostId: userId,
+      side,
+      connectionStatus: 'DISCONNECTED',
+      graceRemainingSeconds: 30,
+    };
+
+    socketEmitter.emitToRoom(active.roomAId, 'pk:host_connection_changed', payload);
+    socketEmitter.emitToRoom(active.roomBId, 'pk:host_connection_changed', payload);
+
+    // Schedule 30s disconnect grace period check
+    setTimeout(async () => {
+      const current = await this.repo.getMatchSnapshot(active.id);
+      if (!current || current.status !== 'ACTIVE') return;
+
+      const hostDisconnected = isHostA ? current.sideA.connectionStatus === 'DISCONNECTED' : current.sideB.connectionStatus === 'DISCONNECTED';
+      const opponentDisconnected = isHostA ? current.sideB.connectionStatus === 'DISCONNECTED' : current.sideA.connectionStatus === 'DISCONNECTED';
+
+      if (hostDisconnected && opponentDisconnected) {
+        // Both hosts offline after grace -> Abort without winner
+        await this.abortMatch(active.id, 'SYSTEM', 'MUTUAL_DISCONNECT');
+      } else if (hostDisconnected) {
+        // One host failed to return -> Opponent wins by forfeit
+        await this.forfeitMatch(active.id, userId, 'DISCONNECT_GRACE_EXPIRED');
+      }
+    }, 30000);
+  }
+
+  async handleHostReconnect({ roomId, userId }) {
+    const active = await this.repo.findActiveOrPendingMatchForRoom(roomId);
+    if (!active || active.status !== 'ACTIVE') return;
+
+    await this.repo.updateHostConnection({
+      matchId: active.id,
+      hostUserId: userId,
+      status: 'CONNECTED',
+      disconnectedAt: null,
+    });
+
+    const isHostA = active.hostAUserId === userId;
+    const payload = {
+      matchId: active.id,
+      hostId: userId,
+      side: isHostA ? 'A' : 'B',
+      connectionStatus: 'CONNECTED',
+    };
+
+    socketEmitter.emitToRoom(active.roomAId, 'pk:host_connection_changed', payload);
+    socketEmitter.emitToRoom(active.roomBId, 'pk:host_connection_changed', payload);
+  }
+
+  /**
+   * 15. REQUEST REMATCH
+   * Creates a fresh invitation with fresh state; never mutates finished match.
+   */
+  async requestRematch({ matchId, callerUserId }) {
+    const previous = await this.repo.getMatchSnapshot(matchId);
+    if (!previous) {
+      const err = new Error('Previous PK match not found.');
+      err.code = 'PK_MATCH_NOT_FOUND';
+      err.status = 404;
+      throw err;
+    }
+
+    const isSideA = previous.sideA.hostId === callerUserId;
+    const fromRoomId = isSideA ? previous.sideA.roomId : previous.sideB.roomId;
+    const targetRoomId = isSideA ? previous.sideB.roomId : previous.sideA.roomId;
+    const targetHostUserId = isSideA ? previous.sideB.hostId : previous.sideA.hostId;
+
+    return this.sendInvitation({
+      fromRoomId,
+      targetRoomId,
+      targetHostUserId,
+      durationSeconds: previous.durationSeconds,
+      callerUserId,
+    });
+  }
+
+  /**
+   * 16. ADMIN: FORCE STOP
+   */
+  async adminForceStop({ matchId, adminUserId, reason }) {
+    return this.abortMatch(matchId, adminUserId, `ADMIN_FORCE_STOP: ${reason}`);
+  }
+
+  /**
+   * 17. ADMIN: REVISE RESULT
+   */
+  async adminReviseResult(data) {
+    return this.repo.reviseMatchResult(data);
+  }
+
+  /**
+   * 18. ADMIN: SETTINGS & RESTRICTIONS
+   */
+  async getSettings() {
+    return this.repo.getPKSettings();
+  }
+
+  async updateSettings(data, adminUserId) {
+    return this.repo.updatePKSettings(data, adminUserId);
+  }
+
+  async listRestrictions(params) {
+    return this.repo.listRestrictions(params);
+  }
+
+  async createRestriction(data) {
+    return this.repo.createRestriction(data);
+  }
+
+  async revokeRestriction(id) {
+    return this.repo.revokeRestriction(id);
+  }
+
+  async listAdminMatches(params) {
+    return this.repo.listAdminMatches(params);
+  }
+
+  async getHistory(params) {
+    return this.repo.listPKHistory(params);
   }
 }
 

@@ -51,12 +51,24 @@ export const SOCKET_EVENTS = {
   ROOM_EMOJI_SEND: 'room:emoji_send',
   ROOM_EMOJI_RECEIVED: 'room:emoji',
 
-  // PK Battles (Phase 19)
+  // PK Battles (Phase 19 & 2.0 Redesign)
+  PK_INVITATION_RECEIVED: 'pk:invitation_received',
+  PK_INVITATION_RESPONDED: 'pk:invitation_responded',
+  PK_INVITATION_CANCELLED: 'pk:invitation_cancelled',
+  PK_INVITATION_EXPIRED: 'pk:invitation_expired',
+  PK_PREPARING: 'pk:preparing',
+  PK_READY_CHANGED: 'pk:ready_changed',
+  PK_COUNTDOWN_STARTED: 'pk:countdown_started',
+  PK_MATCH_STARTED: 'pk:match_started',
+  PK_SCORE_UPDATED: 'pk:score_updated',
+  PK_HOST_CONNECTION_CHANGED: 'pk:host_connection_changed',
+  PK_MATCH_FINISHED: 'pk:match_finished',
+  PK_MATCH_FORFEITED: 'pk:match_forfeited',
+  PK_MATCH_ABORTED: 'pk:match_aborted',
   PK_START: 'pk:start',
   PK_STARTED: 'pk:started',
   PK_ACTIVATE: 'pk:activate',
   PK_ACTIVE: 'pk:active',
-  PK_SCORE_UPDATED: 'pk:score_updated',
   PK_END: 'pk:end',
   PK_ENDED: 'pk:ended',
 

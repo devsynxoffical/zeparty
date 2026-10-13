@@ -67,6 +67,8 @@ router.use('/media', mediaRoutes);
 // Phase 19 PK Battles Routes
 router.use('/v1/admin/pk-events', adminPKRouter);
 router.use('/admin/pk-events', adminPKRouter);
+router.use('/v1/admin/pk', adminPKRouter);
+router.use('/admin/pk', adminPKRouter);
 router.use('/v1/pk', userPKRouter);
 router.use('/pk', userPKRouter);
 

@@ -227,15 +227,22 @@ enum GameRoundStatus {
 }
 
 enum PKStatus {
+  PENDING
+  PREPARING
+  COUNTDOWN
+  ACTIVE
+  FINISHED
+  REJECTED
+  EXPIRED
+  CANCELLED
+  FORFEIT
+  ABORTED
+  // Legacy compatibility states:
   CREATED
   INVITING
   READY
-  COUNTDOWN
-  ACTIVE
   STARTED
   ENDED
-  CANCELLED
-  EXPIRED
 }
 
 enum ReportStatus {
@@ -352,6 +359,8 @@ model User {
   roomSeatOccupations      RoomSeat[]
   giftTransactionsSent     GiftTransaction[]   @relation("GiftSender")
   giftTransactionsReceived GiftTransaction[]   @relation("GiftRecipient")
+  pkMatchesAsHostA         PKMatch[]           @relation("PKMatchHostA")
+  pkMatchesAsHostB         PKMatch[]           @relation("PKMatchHostB")
   userAssets               UserAsset[]
   gameTransactions         GameTransaction[]
   onlineRecharges          OnlineRecharge[]
@@ -974,6 +983,8 @@ model Room {
   giftTransactions  GiftTransaction[]
   pkEventsAsRoomA   PKEvent[]         @relation("PKRoomA")
   pkEventsAsRoomB   PKEvent[]         @relation("PKRoomB")
+  pkMatchesAsRoomA  PKMatch[]         @relation("PKMatchRoomA")
+  pkMatchesAsRoomB  PKMatch[]         @relation("PKMatchRoomB")
 
   @@index([roomType, status, isPinnedTop])
   @@index([creatorUserId])
@@ -1192,6 +1203,145 @@ model PKEvent {
   @@index([roomBId])
   @@index([initiatorUserId])
   @@index([status])
+}
+ 
+model PKMatch {
+  id                    String      @id @default(uuid())
+  roomAId               String
+  roomA                 Room        @relation("PKMatchRoomA", fields: [roomAId], references: [id])
+  roomBId               String
+  roomB                 Room        @relation("PKMatchRoomB", fields: [roomBId], references: [id])
+  hostAUserId           String
+  hostA                 User        @relation("PKMatchHostA", fields: [hostAUserId], references: [id])
+  hostBUserId           String
+  hostB                 User        @relation("PKMatchHostB", fields: [hostBUserId], references: [id])
+  roomType              RoomType    @default(LIVE_VIDEO)
+  region                String      @default("GLOBAL")
+  operatorAUserId       String
+  operatorBUserId       String?
+  status                PKStatus    @default(PENDING)
+  stateVersion          Int         @default(1)
+  durationSeconds       Int         @default(300)
+  invitationExpiresAt   DateTime?
+  preparationDeadlineAt DateTime?
+  countdownStartAt      DateTime?
+  startAt               DateTime?
+  endAt                 DateTime?
+  scoreA                BigInt      @default(0)
+  scoreB                BigInt      @default(0)
+  winnerHostId          String?
+  isDraw                Boolean     @default(false)
+  endReason             String?
+  configSnapshotJson    Json?
+  hostAConnectionStatus String      @default("CONNECTED")
+  hostBConnectionStatus String      @default("CONNECTED")
+  hostADisconnectedAt   DateTime?
+  hostBDisconnectedAt   DateTime?
+  readyA                Boolean     @default(false)
+  readyB                Boolean     @default(false)
+  mediaPreparedA        Boolean     @default(false)
+  mediaPreparedB        Boolean     @default(false)
+  originalResultJson    Json?
+  revisedResultJson     Json?
+  revisionNumber        Int         @default(0)
+  revisionReason        String?
+  revisedByAdminId      String?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  invitations           PKInvitation[]
+  contributions         PKGiftContribution[]
+  auditLogs             PKLifecycleAudit[]
+
+  @@index([roomAId])
+  @@index([roomBId])
+  @@index([hostAUserId])
+  @@index([hostBUserId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model PKInvitation {
+  id                 String    @id @default(uuid())
+  matchId            String
+  match              PKMatch   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  inviterUserId      String
+  targetRoomId       String
+  targetHostUserId   String
+  durationSeconds    Int       @default(300)
+  status             String    @default("PENDING") // PENDING, ACCEPTED, REJECTED, EXPIRED, CANCELLED
+  expiresAt          DateTime
+  respondedAt        DateTime?
+  responderUserId    String?
+  cancelReason       String?
+  createdAt          DateTime  @default(now())
+
+  @@index([matchId])
+  @@index([targetRoomId])
+  @@index([targetHostUserId])
+  @@index([status])
+}
+
+model PKGiftContribution {
+  id                 String    @id @default(uuid())
+  matchId            String
+  match              PKMatch   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  giftTransactionId  String    @unique
+  senderUserId       String
+  recipientUserId    String
+  side               String    // "A" | "B"
+  coins              BigInt
+  commitTimestamp    DateTime
+  isReversed         Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+
+  @@index([matchId, side])
+  @@index([senderUserId])
+}
+
+model PKLifecycleAudit {
+  id           String    @id @default(uuid())
+  matchId      String
+  match        PKMatch   @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  action       String
+  actorUserId  String?
+  fromStatus   String?
+  toStatus     String?
+  metadataJson Json?
+  createdAt    DateTime  @default(now())
+
+  @@index([matchId])
+  @@index([createdAt])
+}
+
+model PKSetting {
+  id                      String   @id @default("default")
+  audioPkEnabled          Boolean  @default(true)
+  videoPkEnabled          Boolean  @default(true)
+  defaultDurationSeconds  Int      @default(300)
+  allowedDurationsJson    Json     // [180, 300, 600]
+  invitationTimeoutSeconds Int     @default(30)
+  preparationTimeoutSeconds Int    @default(15)
+  reconnectGraceSeconds   Int      @default(30)
+  resultDisplaySeconds    Int      @default(10)
+  invitationRateLimit     Int      @default(5)
+  multipliersEnabled      Boolean  @default(false)
+  additionalRewardsEnabled Boolean @default(false)
+  updatedByAdminId        String?
+  updatedAt               DateTime @updatedAt
+}
+
+model PKRestriction {
+  id                  String    @id @default(uuid())
+  targetType          String    // "USER" | "ROOM"
+  targetId            String
+  reason              String
+  restrictedByAdminId String
+  expiresAt           DateTime?
+  status              String    @default("ACTIVE") // "ACTIVE" | "REVOKED"
+  createdAt           DateTime  @default(now())
+
+  @@index([targetType, targetId, status])
 }
 
 // ==========================================

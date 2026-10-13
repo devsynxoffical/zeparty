@@ -415,7 +415,14 @@ export async function sendGift(
     });
 
     try {
-      await pkService.addPKScore({ roomId, targetUserId: recipientUserId, giftCoinValue: Number(totalCoins) });
+      await pkService.recordGiftContribution({
+        giftTransactionId: result.giftTransaction.id,
+        senderUserId,
+        recipientUserId,
+        roomId,
+        coins: Number(totalCoins),
+        commitTimestamp: result.giftTransaction.createdAt,
+      });
     } catch (_) {}
   }
 
