@@ -11,10 +11,49 @@ import { withRateLimit } from './rateLimiter.socket.js';
 /**
  * Builds a safe, public room snapshot containing no sensitive admin or private fields.
  */
-export function buildRoomSnapshot(room, viewerCount) {
+export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
   if (!room) return null;
 
   const hostUserId = room.creatorUserId || room.creator?.id;
+
+  const membersList = (room.members || [])
+    .filter((m) => (m.userId || m.user?.id) !== hostUserId)
+    .map((m) => {
+      const u = m.user || {};
+      const displayName = u.profile?.displayName || u.displayName || u.username || 'User';
+      return {
+        userId: m.userId || u.id,
+        role: m.role || 'LISTENER',
+        user: {
+          id: u.id || m.userId,
+          username: u.username || displayName,
+          displayName,
+          name: displayName,
+          avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
+        },
+      };
+    });
+
+  // Merge active guest participants
+  const existingMemberIds = new Set(membersList.map((m) => m.userId));
+  for (const pres of (activePresenceUsers || [])) {
+    const pid = pres.userId || pres.id;
+    if (pid && !existingMemberIds.has(pid) && pid !== hostUserId) {
+      const guestDisplayName = pres.displayName || pres.name || pres.username || `User_${String(pid).replace('guest_', '').substring(0, 5)}`;
+      membersList.push({
+        userId: pid,
+        role: 'LISTENER',
+        user: {
+          id: pid,
+          username: guestDisplayName,
+          displayName: guestDisplayName,
+          name: guestDisplayName,
+          avatarUrl: pres.avatarUrl || null,
+        },
+      });
+      existingMemberIds.add(pid);
+    }
+  }
 
   return {
     id: room.id,
@@ -50,23 +89,7 @@ export function buildRoomSnapshot(room, viewerCount) {
         } : null,
       };
     }),
-    members: (room.members || [])
-      .filter((m) => (m.userId || m.user?.id) !== (room.creatorUserId || room.creator?.id))
-      .map((m) => {
-        const u = m.user || {};
-        const displayName = u.profile?.displayName || u.displayName || u.username || 'User';
-        return {
-          userId: m.userId || u.id,
-          role: m.role || 'LISTENER',
-          user: {
-            id: u.id || m.userId,
-            username: u.username || displayName,
-            displayName,
-            name: displayName,
-            avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
-          },
-        };
-      }),
+    members: membersList,
     createdAt: room.createdAt,
   };
 }
@@ -126,6 +149,9 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         socket.join(`room:${room.id}`);
       }
     }
+    socket.joinedRooms = socket.joinedRooms || new Set();
+    socket.joinedRooms.add(roomId);
+    socket.joinedRooms.add(room.id);
 
     // 3. Persistent RoomMember registration via authoritative Room Service
     let joinResult = null;
@@ -141,18 +167,45 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       clearHostAbsentTimer(room.id, io);
     }
 
-    // 4. Ephemeral Presence Tracking
+    const clientUser = data?.user || {};
+    const effectiveJoinedId = clientUser.id || clientUser.userId || socket.user?.id || userId;
+    const fallbackGuestName = String(effectiveJoinedId).startsWith('guest_')
+      ? `User_${String(effectiveJoinedId).replace('guest_', '').substring(0, 5)}`
+      : `User_${String(effectiveJoinedId).substring(0, 6)}`;
+    const effectiveJoinedName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || fallbackGuestName;
+    const effectiveJoinedAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
+    const effectiveJoinedVip = Boolean(clientUser.isVip || socket.user?.isVip);
+    const effectiveJoinedNoble = clientUser.nobleTitle || socket.user?.nobleTitle || null;
+    const isGuestUser = Boolean(socket.isGuest || String(effectiveJoinedId).startsWith('guest_'));
+
+    // 4. Ephemeral Presence Tracking with rich user metadata
     let isFirstSocket = true;
     try {
-      const pres = await presenceService.addSocketToRoom(room.id, userId, socket.id);
+      const pres = await presenceService.addSocketToRoom(room.id, effectiveJoinedId, socket.id, {
+        displayName: effectiveJoinedName,
+        avatarUrl: effectiveJoinedAvatar,
+        isGuest: isGuestUser,
+        joinedAt: new Date().toISOString(),
+      });
       isFirstSocket = pres?.isFirstSocket ?? true;
     } catch (_) {}
 
     // 5. Generate and Send Authoritative Room Snapshot
-    const currentCount = typeof joinResult?.currentViewersCount === 'number'
-      ? joinResult.currentViewersCount
-      : (typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 1);
-    const snapshot = buildRoomSnapshot(room, currentCount);
+    let currentCount = 0;
+    try {
+      currentCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
+    } catch (_) {
+      currentCount = typeof joinResult?.currentViewersCount === 'number'
+        ? joinResult.currentViewersCount
+        : (typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 1);
+    }
+
+    let activeUsers = [];
+    try {
+      activeUsers = await presenceService.getRoomActiveUsers(room.id);
+    } catch (_) {}
+
+    const snapshot = buildRoomSnapshot(room, currentCount, activeUsers);
     socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, {
       room: snapshot,
       ...snapshot,
@@ -164,13 +217,6 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
 
     // 6. Broadcast user joined event ONLY on genuine initial entry (not reconnects/pings)
     if (isFirstSocket) {
-      const clientUser = data?.user || {};
-      const effectiveJoinedId = clientUser.id || clientUser.userId || socket.user?.id || userId;
-      const effectiveJoinedName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || 'Viewer';
-      const effectiveJoinedAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
-      const effectiveJoinedVip = Boolean(clientUser.isVip || socket.user?.isVip);
-      const effectiveJoinedNoble = clientUser.nobleTitle || socket.user?.nobleTitle || null;
-
       const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
       const userPayload = {
         roomId: room.id,
@@ -187,6 +233,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           isVip: effectiveJoinedVip,
           nobleLevel: effectiveJoinedNoble,
           nobleTitle: effectiveJoinedNoble,
+          isGuest: isGuestUser,
         },
         viewerCount: currentCount,
         count: currentCount,
@@ -287,6 +334,9 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
     if (typeof socket.leave === 'function') {
       socket.leave(`room:${roomId}`);
     }
+    if (socket.joinedRooms) {
+      socket.joinedRooms.delete(roomId);
+    }
 
     // 2. Remove socket from presence tracker
     let isLastSocket = true;
@@ -305,9 +355,14 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
       let leaveResult = null;
       try {
         leaveResult = await roomService.leaveRoom(roomId, userId, db);
-        updatedViewerCount = leaveResult?.currentViewersCount || 0;
       } catch (leaveErr) {
         // Safe fallback
+      }
+
+      try {
+        updatedViewerCount = await presenceService.getRoomViewerCount(roomId, room?.creatorUserId);
+      } catch (_) {
+        updatedViewerCount = leaveResult?.currentViewersCount || 0;
       }
 
       const isRoomEnded = leaveResult?.status === 'ENDED';
@@ -336,14 +391,32 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
         broadcastTarget.emit('room:host_left', hostAwayPayload);
         startHostAbsentTimer(roomId, room.roomType || 'LIVE_VIDEO', userId, io);
       } else {
-        const leftPayload = { roomId, userId };
+        const leftPayload = {
+          roomId: room ? room.id : roomId,
+          clientRoomId: roomId,
+          userId,
+          id: userId,
+          viewerCount: updatedViewerCount,
+          count: updatedViewerCount,
+          currentViewersCount: updatedViewerCount,
+          user: {
+            id: userId,
+            displayName: socket.user?.displayName || socket.user?.name || (socket.isGuest ? `User_${String(userId).replace('guest_', '').substring(0, 5)}` : 'Viewer'),
+            name: socket.user?.displayName || socket.user?.name || (socket.isGuest ? `User_${String(userId).replace('guest_', '').substring(0, 5)}` : 'Viewer'),
+            username: socket.user?.username || 'user',
+            avatarUrl: socket.user?.avatarUrl || null,
+            isGuest: Boolean(socket.isGuest || String(userId).startsWith('guest_')),
+          },
+        };
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, leftPayload);
         broadcastTarget.emit('room:user_left', leftPayload);
         broadcastTarget.emit('user_left', leftPayload);
         broadcastTarget.emit('user:left', leftPayload);
+        broadcastTarget.emit('room_user_left', leftPayload);
 
         const countPayload = {
-          roomId,
+          roomId: room ? room.id : roomId,
+          clientRoomId: roomId,
           viewerCount: updatedViewerCount,
           count: updatedViewerCount,
           currentViewersCount: updatedViewerCount,
@@ -376,11 +449,34 @@ export async function onSocketDisconnect(io, socket, db) {
     const userId = socket.userId;
     if (!userId) return;
 
-    const joinedRooms = Array.from(socket.rooms || [])
-      .filter((r) => typeof r === 'string' && r.startsWith('room:'))
-      .map((r) => r.replace(/^room:/, ''));
+    // Track rooms cleaned up for this socket to ensure idempotency across 'disconnecting' and 'disconnect'
+    socket._cleanedRooms = socket._cleanedRooms || new Set();
+
+    const roomCandidates = new Set();
+    if (socket.rooms) {
+      for (const r of socket.rooms) {
+        if (typeof r === 'string' && r.startsWith('room:')) {
+          roomCandidates.add(r.replace(/^room:/, ''));
+        }
+      }
+    }
+    if (socket.joinedRooms) {
+      for (const r of socket.joinedRooms) {
+        if (typeof r === 'string') {
+          roomCandidates.add(r.replace(/^room:/, ''));
+        }
+      }
+      socket.joinedRooms.clear();
+    }
+
+    const joinedRooms = Array.from(roomCandidates);
 
     for (const roomId of joinedRooms) {
+      if (socket._cleanedRooms.has(roomId)) {
+        continue;
+      }
+      socket._cleanedRooms.add(roomId);
+
       try {
         let isLastSocket = true;
         try {
@@ -394,7 +490,12 @@ export async function onSocketDisconnect(io, socket, db) {
 
           const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
           const leaveResult = await roomService.leaveRoom(roomId, userId, db).catch(() => null);
-          const updatedViewerCount = leaveResult?.currentViewersCount || 0;
+          let updatedViewerCount = 0;
+          try {
+            updatedViewerCount = await presenceService.getRoomViewerCount(roomId, room.creatorUserId);
+          } catch (_) {
+            updatedViewerCount = leaveResult?.currentViewersCount || 0;
+          }
           const broadcastTarget = io ? io.to(`room:${roomId}`) : socket;
 
           if (isHostUser) {
@@ -416,20 +517,40 @@ export async function onSocketDisconnect(io, socket, db) {
               startHostAbsentTimer(roomId, 'LIVE_VIDEO', userId, io);
             }
           } else {
-            const leftPayload = { roomId, userId };
+            const leftPayload = {
+              roomId: room.id,
+              clientRoomId: roomId,
+              userId,
+              id: userId,
+              viewerCount: updatedViewerCount,
+              count: updatedViewerCount,
+              currentViewersCount: updatedViewerCount,
+              user: {
+                id: userId,
+                displayName: socket.user?.displayName || socket.user?.name || (socket.isGuest ? `User_${String(userId).replace('guest_', '').substring(0, 5)}` : 'Viewer'),
+                name: socket.user?.displayName || socket.user?.name || (socket.isGuest ? `User_${String(userId).replace('guest_', '').substring(0, 5)}` : 'Viewer'),
+                username: socket.user?.username || 'user',
+                avatarUrl: socket.user?.avatarUrl || null,
+                isGuest: Boolean(socket.isGuest || String(userId).startsWith('guest_')),
+              },
+            };
             broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, leftPayload);
             broadcastTarget.emit('room:user_left', leftPayload);
             broadcastTarget.emit('user_left', leftPayload);
             broadcastTarget.emit('user:left', leftPayload);
+            broadcastTarget.emit('room_user_left', leftPayload);
 
             const countPayload = {
-              roomId,
+              roomId: room.id,
+              clientRoomId: roomId,
               viewerCount: updatedViewerCount,
               count: updatedViewerCount,
               currentViewersCount: updatedViewerCount,
             };
             broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, countPayload);
             broadcastTarget.emit('room:viewer_count_changed', countPayload);
+            broadcastTarget.emit('room:viewer_count', countPayload);
+            broadcastTarget.emit('viewer_count_changed', countPayload);
           }
         }
       } catch (innerErr) {
@@ -457,17 +578,34 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    const snapshot = {
-      room,
-      host: room.creator || null,
-      seats: room.seats || [],
+    let viewerCount = 0;
+    try {
+      viewerCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
+    } catch (_) {
+      viewerCount = room.currentViewersCount || 0;
+    }
+
+    let activeUsers = [];
+    try {
+      activeUsers = await presenceService.getRoomActiveUsers(room.id);
+    } catch (_) {}
+
+    const snapshot = buildRoomSnapshot(room, viewerCount, activeUsers);
+    const responsePayload = {
+      room: snapshot,
+      ...snapshot,
+      host: snapshot.host,
+      seats: snapshot.seats || [],
+      members: snapshot.members || [],
+      currentViewersCount: viewerCount,
+      viewerCount,
       timestamp: new Date().toISOString(),
     };
 
-    socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, snapshot);
+    socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, responsePayload);
 
     if (typeof callback === 'function') {
-      return callback({ success: true, data: snapshot });
+      return callback({ success: true, data: responsePayload });
     }
   } catch (err) {
     const errorResponse = {
@@ -900,6 +1038,8 @@ export function registerRoomHandlers(io, socket) {
     withRateLimit('ROOM_ACTIVE_LIST', 15, 1000, (s, d, cb) => onRequestActiveRooms(s, d, cb))
   );
 
+  // Handle both disconnecting (before leaveAll) and disconnect (as safety fallback)
+  socket.on('disconnecting', () => onSocketDisconnect(io, socket));
   socket.on(SOCKET_EVENTS.DISCONNECT, () => onSocketDisconnect(io, socket));
 }
 

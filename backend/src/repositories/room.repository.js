@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import presenceService from '../socket/presence.service.js';
 
 export async function createRoomWithSeats(
   {
@@ -426,46 +427,58 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
     throw error;
   }
 
-  // Clean up any stale membership for this user in other rooms
-  await db.roomMember.deleteMany({
-    where: {
-      userId,
-      roomId: { not: resolvedRoomId },
-    },
-  }).catch(() => {});
+  const isGuest = Boolean(String(userId).startsWith('guest_'));
 
-  // Ensure RoomMember record exists
-  const existingMember = await db.roomMember.findUnique({
-    where: {
-      roomId_userId: {
-        roomId: resolvedRoomId,
-        userId,
-      },
-    },
-  });
-
-  if (!existingMember) {
-    await db.roomMember.create({
-      data: {
-        roomId: resolvedRoomId,
-        userId,
-      },
-    }).catch(() => {});
-  }
-
-  // If returning user is the creator/host, ensure seat 0 is reserved and assigned to them
-  if (room.creatorUserId === userId) {
+  if (!isGuest) {
+    // Clean up any stale membership for this registered user in other rooms
     try {
-      const seat0 = await db.roomSeat.findUnique({
-        where: { roomId_seatIndex: { roomId: resolvedRoomId, seatIndex: 0 } },
+      await db.roomMember.deleteMany({
+        where: {
+          userId,
+          roomId: { not: resolvedRoomId },
+        },
       });
-      if (seat0 && (!seat0.occupiedUserId || seat0.occupiedUserId === userId)) {
-        await db.roomSeat.update({
-          where: { roomId_seatIndex: { roomId: resolvedRoomId, seatIndex: 0 } },
-          data: { occupiedUserId: userId },
+    } catch (cleanErr) {
+      console.warn(`[RoomRepo] Stale room membership cleanup notice for user ${userId}:`, cleanErr.message);
+    }
+
+    // Ensure RoomMember record exists for registered user
+    try {
+      const existingMember = await db.roomMember.findUnique({
+        where: {
+          roomId_userId: {
+            roomId: resolvedRoomId,
+            userId,
+          },
+        },
+      });
+
+      if (!existingMember) {
+        await db.roomMember.create({
+          data: {
+            roomId: resolvedRoomId,
+            userId,
+          },
         });
       }
-    } catch (_) {}
+    } catch (memberErr) {
+      console.warn(`[RoomRepo] Membership registration error for user ${userId} in room ${resolvedRoomId}:`, memberErr.message);
+    }
+
+    // If returning user is the creator/host, ensure seat 0 is reserved and assigned to them
+    if (room.creatorUserId === userId) {
+      try {
+        const seat0 = await db.roomSeat.findUnique({
+          where: { roomId_seatIndex: { roomId: resolvedRoomId, seatIndex: 0 } },
+        });
+        if (seat0 && (!seat0.occupiedUserId || seat0.occupiedUserId === userId)) {
+          await db.roomSeat.update({
+            where: { roomId_seatIndex: { roomId: resolvedRoomId, seatIndex: 0 } },
+            data: { occupiedUserId: userId },
+          });
+        }
+      } catch (_) {}
+    }
   }
 
   const audienceMemberCount = await db.roomMember.count({
@@ -475,10 +488,18 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
     },
   });
 
+  let totalViewerCount = audienceMemberCount;
+  try {
+    const presenceViewerCount = await presenceService.getRoomViewerCount(resolvedRoomId, room.creatorUserId);
+    if (typeof presenceViewerCount === 'number' && presenceViewerCount >= 0) {
+      totalViewerCount = Math.max(audienceMemberCount, presenceViewerCount);
+    }
+  } catch (_) {}
+
   return await db.room.update({
     where: { id: resolvedRoomId },
     data: {
-      currentViewersCount: audienceMemberCount,
+      currentViewersCount: totalViewerCount,
     },
     include: {
       creator: {
@@ -517,32 +538,51 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
     throw error;
   }
 
-  // Release seat if user occupied one
-  await db.roomSeat.updateMany({
-    where: {
-      roomId: resolvedRoomId,
-      occupiedUserId: userId,
-    },
-    data: {
-      occupiedUserId: null,
-      isMuted: false,
-    },
-  });
+  const isGuest = Boolean(String(userId).startsWith('guest_'));
 
-  // Remove membership record
-  await db.roomMember.deleteMany({
-    where: {
-      roomId: resolvedRoomId,
-      userId,
-    },
-  });
+  // Release seat if user occupied one
+  try {
+    await db.roomSeat.updateMany({
+      where: {
+        roomId: resolvedRoomId,
+        occupiedUserId: userId,
+      },
+      data: {
+        occupiedUserId: null,
+        isMuted: false,
+      },
+    });
+  } catch (seatErr) {
+    console.warn(`[RoomRepo] Seat release notice on leave for user ${userId}:`, seatErr.message);
+  }
+
+  if (!isGuest) {
+    // Remove persistent membership record for registered user
+    try {
+      await db.roomMember.deleteMany({
+        where: {
+          roomId: resolvedRoomId,
+          userId,
+        },
+      });
+    } catch (leaveErr) {
+      console.warn(`[RoomRepo] Membership removal notice for user ${userId}:`, leaveErr.message);
+    }
+  }
 
   const totalMemberCount = await db.roomMember.count({
     where: { roomId: resolvedRoomId },
   });
 
-  // Do NOT terminate room when host leaves; keep room active so other users and speakers stay inside
-  const shouldDeleteRoom = totalMemberCount === 0;
+  // Check active presence to avoid terminating room if viewers (or guests) are still inside
+  let activePresenceCount = 0;
+  try {
+    activePresenceCount = await presenceService.getRoomActiveUserCount(resolvedRoomId);
+  } catch (_) {}
+
+  // A guest leaving is purely a viewer departure and must NEVER terminate the room.
+  // Registered members only trigger termination if no persistent members AND no active socket presence remain.
+  const shouldDeleteRoom = !isGuest && totalMemberCount === 0 && activePresenceCount === 0 && (room.creatorUserId === userId);
 
   if (shouldDeleteRoom) {
     try {
@@ -554,7 +594,9 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
           endedAt: new Date(),
         },
       });
-    } catch {}
+    } catch (closeErr) {
+      console.warn(`[RoomRepo] Failed to end empty room ${resolvedRoomId}:`, closeErr.message);
+    }
     return { id: resolvedRoomId, currentViewersCount: 0, status: 'ENDED' };
   }
 
@@ -565,10 +607,18 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
     },
   });
 
+  let totalViewerCount = audienceMemberCount;
+  try {
+    const presenceViewerCount = await presenceService.getRoomViewerCount(resolvedRoomId, room.creatorUserId);
+    if (typeof presenceViewerCount === 'number' && presenceViewerCount >= 0) {
+      totalViewerCount = Math.max(audienceMemberCount, presenceViewerCount);
+    }
+  } catch (_) {}
+
   return await db.room.update({
     where: { id: resolvedRoomId },
     data: {
-      currentViewersCount: audienceMemberCount,
+      currentViewersCount: totalViewerCount,
     },
     include: {
       creator: {

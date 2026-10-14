@@ -64,6 +64,8 @@ export async function onOccupySeat(io, socket, data, callback, db) {
     broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_OCCUPIED, payload);
     broadcastTarget.emit('room:seat_occupied', payload);
     broadcastTarget.emit('seat_occupied', payload);
+    broadcastTarget.emit('seat:occupied', payload);
+    broadcastTarget.emit('room_seat_occupied', payload);
 
     if (typeof callback === 'function') {
       return callback({
@@ -119,6 +121,7 @@ export async function onLeaveSeat(io, socket, data, callback, db) {
     broadcastTarget.emit('room:seat_released', payload);
     broadcastTarget.emit('seat_released', payload);
     broadcastTarget.emit('seat:released', payload);
+    broadcastTarget.emit('room_seat_released', payload);
 
     if (typeof callback === 'function') {
       return callback({

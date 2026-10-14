@@ -4,6 +4,7 @@ import roomRepository from '../repositories/room.repository.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
 import { clearHostAbsentTimer } from '../socket/roomTimer.manager.js';
+import presenceService from '../socket/presence.service.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -179,11 +180,24 @@ export async function getRoomDetails(roomId, db = prisma) {
 export async function joinRoom(roomId, userId, db = prisma) {
   const result = await roomRepository.joinRoomTx({ roomId, userId }, db);
   if (result) {
-    const viewerCount = typeof result.currentViewersCount === 'number' ? result.currentViewersCount : 0;
+    let viewerCount = typeof result.currentViewersCount === 'number' ? result.currentViewersCount : 0;
     try {
-      socketEmitter.emitToRoom(roomId, 'room:viewer_count_changed', { roomId, viewerCount, count: viewerCount });
-      socketEmitter.emitToRoom(roomId, 'room:viewer_count', { roomId, viewerCount, count: viewerCount });
-      socketEmitter.emitToRoom(roomId, 'viewer_count_changed', { roomId, viewerCount, count: viewerCount });
+      const presCount = await presenceService.getRoomViewerCount(result.id || roomId, result.creatorUserId);
+      if (typeof presCount === 'number' && presCount >= 0) {
+        viewerCount = Math.max(viewerCount, presCount);
+      }
+    } catch (_) {}
+
+    const payload = {
+      roomId: result.id || roomId,
+      viewerCount,
+      count: viewerCount,
+      currentViewersCount: viewerCount,
+    };
+    try {
+      socketEmitter.emitToRoom(roomId, 'room:viewer_count_changed', payload);
+      socketEmitter.emitToRoom(roomId, 'room:viewer_count', payload);
+      socketEmitter.emitToRoom(roomId, 'viewer_count_changed', payload);
     } catch (_) {}
   }
   return result;
@@ -192,11 +206,24 @@ export async function joinRoom(roomId, userId, db = prisma) {
 export async function leaveRoom(roomId, userId, db = prisma) {
   const result = await roomRepository.leaveRoomTx({ roomId, userId }, db);
   if (result) {
-    const viewerCount = typeof result.currentViewersCount === 'number' ? result.currentViewersCount : 0;
+    let viewerCount = typeof result.currentViewersCount === 'number' ? result.currentViewersCount : 0;
     try {
-      socketEmitter.emitToRoom(roomId, 'room:viewer_count_changed', { roomId, viewerCount, count: viewerCount });
-      socketEmitter.emitToRoom(roomId, 'room:viewer_count', { roomId, viewerCount, count: viewerCount });
-      socketEmitter.emitToRoom(roomId, 'viewer_count_changed', { roomId, viewerCount, count: viewerCount });
+      const presCount = await presenceService.getRoomViewerCount(result.id || roomId, result.creatorUserId);
+      if (typeof presCount === 'number' && presCount >= 0) {
+        viewerCount = presCount;
+      }
+    } catch (_) {}
+
+    const payload = {
+      roomId: result.id || roomId,
+      viewerCount,
+      count: viewerCount,
+      currentViewersCount: viewerCount,
+    };
+    try {
+      socketEmitter.emitToRoom(roomId, 'room:viewer_count_changed', payload);
+      socketEmitter.emitToRoom(roomId, 'room:viewer_count', payload);
+      socketEmitter.emitToRoom(roomId, 'viewer_count_changed', payload);
     } catch (_) {}
   }
   return result;
@@ -785,9 +812,39 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
     },
   });
 
+  // Merge active guest participants from realtime presence
+  try {
+    const activePresence = await presenceService.getRoomActiveUsers(resolvedRoomId);
+    const existingIds = new Set(formatted.map((m) => m.userId));
+    for (const p of activePresence) {
+      if (p.userId && !existingIds.has(p.userId) && p.userId !== room.creatorUserId) {
+        if (search && search.trim() !== '') {
+          const q = search.trim().toLowerCase();
+          const match = p.userId.toLowerCase().includes(q) || (p.displayName && p.displayName.toLowerCase().includes(q));
+          if (!match) continue;
+        }
+        const guestName = p.displayName || `User_${String(p.userId).replace('guest_', '').substring(0, 5)}`;
+        formatted.push({
+          id: `guest_member_${p.userId}`,
+          userId: p.userId,
+          role: 'MEMBER',
+          joinedAt: p.joinedAt || new Date().toISOString(),
+          user: {
+            id: p.userId,
+            username: guestName,
+            displayName: guestName,
+            avatarUrl: p.avatarUrl || '',
+            lastSeenAt: new Date().toISOString(),
+          },
+        });
+        existingIds.add(p.userId);
+      }
+    }
+  } catch (_) {}
+
   return {
     members: formatted,
-    totalCount: totalMembers,
+    totalCount: formatted.length,
   };
 }
 
