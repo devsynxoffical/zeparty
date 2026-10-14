@@ -294,6 +294,7 @@ export async function getUserPresence(userId, db = prisma) {
       userId: null,
       presenceStatus: 'OFFLINE',
       isOnline: false,
+      online: false,
       isInRoom: false,
       currentRoomId: null,
       currentRoomTitle: null,
@@ -301,6 +302,8 @@ export async function getUserPresence(userId, db = prisma) {
       currentRoom: null,
       inRoomAvailable: false,
       lastSeenAt: null,
+      lastActiveAt: null,
+      lastSeen: null,
       timestamp: new Date().toISOString(),
     };
   }
@@ -316,6 +319,7 @@ export async function getUserPresence(userId, db = prisma) {
         userId: uId,
         presenceStatus: 'OFFLINE',
         isOnline: false,
+        online: false,
         isInRoom: false,
         currentRoomId: null,
         currentRoomTitle: null,
@@ -323,6 +327,8 @@ export async function getUserPresence(userId, db = prisma) {
         currentRoom: null,
         inRoomAvailable: false,
         lastSeenAt,
+        lastActiveAt: lastSeenAt,
+        lastSeen: lastSeenAt,
         timestamp: new Date().toISOString(),
       };
     }
@@ -348,10 +354,12 @@ export async function getUserPresence(userId, db = prisma) {
         const inPresence = isLive && (await isUserInRoom(activeRoomId, uId));
 
         if (isLive && inPresence) {
+          const nowStr = new Date().toISOString();
           return {
             userId: uId,
             presenceStatus: 'IN_ROOM',
             isOnline: true,
+            online: true,
             isInRoom: true,
             currentRoomId: room.id,
             currentRoomTitle: room.title,
@@ -366,8 +374,10 @@ export async function getUserPresence(userId, db = prisma) {
               isHost: room.creatorUserId === uId,
             },
             inRoomAvailable: true,
-            lastSeenAt: new Date().toISOString(),
-            timestamp: new Date().toISOString(),
+            lastSeenAt: nowStr,
+            lastActiveAt: nowStr,
+            lastSeen: nowStr,
+            timestamp: nowStr,
           };
         } else {
           // Room has ended or user is no longer in room presence: clean up stale pointer
@@ -379,18 +389,22 @@ export async function getUserPresence(userId, db = prisma) {
     }
 
     // User is connected outside any active room
+    const nowOnlineStr = new Date().toISOString();
     return {
       userId: uId,
       presenceStatus: 'ONLINE',
       isOnline: true,
+      online: true,
       isInRoom: false,
       currentRoomId: null,
       currentRoomTitle: null,
       currentRoomSessionId: null,
       currentRoom: null,
       inRoomAvailable: false,
-      lastSeenAt: new Date().toISOString(),
-      timestamp: new Date().toISOString(),
+      lastSeenAt: nowOnlineStr,
+      lastActiveAt: nowOnlineStr,
+      lastSeen: nowOnlineStr,
+      timestamp: nowOnlineStr,
     };
   } catch (err) {
     console.error(`[PresenceService] Critical error checking presence for user ${uId}:`, err.message);
@@ -399,6 +413,7 @@ export async function getUserPresence(userId, db = prisma) {
       userId: uId,
       presenceStatus: 'UNKNOWN',
       isOnline: false,
+      online: false,
       isInRoom: false,
       currentRoomId: null,
       currentRoomTitle: null,
@@ -406,6 +421,8 @@ export async function getUserPresence(userId, db = prisma) {
       currentRoom: null,
       inRoomAvailable: false,
       lastSeenAt: null,
+      lastActiveAt: null,
+      lastSeen: null,
       timestamp: new Date().toISOString(),
       error: 'Presence lookup failed',
     };
