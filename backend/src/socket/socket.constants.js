@@ -33,6 +33,7 @@ export const SOCKET_EVENTS = {
   // In-Room Chat & Messaging
   ROOM_CHAT_SEND: 'room:chat_send',
   ROOM_CHAT_MESSAGE: 'room:chat_message',
+  ROOM_CHAT_RECEIVE: 'room:chat_message',
 
   // Gifting & Tipping
   ROOM_GIFT_SEND: 'room:gift_send',

@@ -239,10 +239,20 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       ? `User_${String(effectiveJoinedId).replace('guest_', '').substring(0, 5)}`
       : `User_${String(effectiveJoinedId).substring(0, 6)}`;
     const effectiveJoinedName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || fallbackGuestName;
-    const effectiveJoinedAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
+    let effectiveJoinedAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
     const effectiveJoinedVip = Boolean(clientUser.isVip || socket.user?.isVip);
     const effectiveJoinedNoble = clientUser.nobleTitle || socket.user?.nobleTitle || null;
     const isGuestUser = Boolean(socket.isGuest || String(effectiveJoinedId).startsWith('guest_'));
+
+    if (!effectiveJoinedAvatar && effectiveJoinedId && !isGuestUser) {
+      try {
+        const uRec = await (db || prisma).user.findUnique({
+          where: { id: effectiveJoinedId },
+          select: { avatarUrl: true, profile: { select: { avatarUrl: true } } },
+        });
+        effectiveJoinedAvatar = uRec?.profile?.avatarUrl || uRec?.avatarUrl || null;
+      } catch (_) {}
+    }
 
     // 4. Ephemeral Presence Tracking with rich user metadata
     let isFirstSocket = true;
@@ -283,10 +293,15 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
 
     // 6. Broadcast user joined event ONLY on genuine initial entry (not reconnects/pings)
     if (isFirstSocket) {
-      const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
+      const targetRoomIds = Array.from(new Set([String(roomId), String(room.id)]));
+      const broadcastTarget = io
+        ? io.to(targetRoomIds.map((id) => `room:${id}`))
+        : (socket.to ? socket.to(`room:${roomId}`) : socket);
+
       const userPayload = {
         roomId: room.id,
         clientRoomId: roomId,
+        room: room.id,
         userId: effectiveJoinedId,
         id: effectiveJoinedId,
         user: {
@@ -311,13 +326,10 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       broadcastTarget.emit('user:joined', userPayload);
       broadcastTarget.emit('room_user_joined', userPayload);
 
-      if (room.id !== roomId && io) {
-        io.to(`room:${room.id}`).emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
-      }
-
       const viewerPayload = {
         roomId: room.id,
         clientRoomId: roomId,
+        room: room.id,
         viewerCount: currentCount,
         count: currentCount,
         currentViewersCount: currentCount,
@@ -326,39 +338,48 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       broadcastTarget.emit('room:viewer_count', viewerPayload);
       broadcastTarget.emit('viewer_count_changed', viewerPayload);
 
-      if (room.id !== roomId && io) {
-        io.to(`room:${room.id}`).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
-      }
-
       // 7. Broadcast system chat announcement so all room participants see "[User] has joined the party"
       const chatPayload = {
         id: `sys_join_${Date.now()}_${effectiveJoinedId}`,
         roomId: room.id,
         clientRoomId: roomId,
+        room: room.id,
         userId: effectiveJoinedId,
+        senderId: effectiveJoinedId,
         sender: {
           id: effectiveJoinedId,
+          userId: effectiveJoinedId,
           username: clientUser.username || socket.user?.username || effectiveJoinedName,
           name: effectiveJoinedName,
           displayName: effectiveJoinedName,
           avatarUrl: effectiveJoinedAvatar,
           isVip: effectiveJoinedVip,
           nobleLevel: effectiveJoinedNoble,
+          nobleTitle: effectiveJoinedNoble,
+        },
+        user: {
+          id: effectiveJoinedId,
+          userId: effectiveJoinedId,
+          username: clientUser.username || socket.user?.username || effectiveJoinedName,
+          name: effectiveJoinedName,
+          displayName: effectiveJoinedName,
+          avatarUrl: effectiveJoinedAvatar,
+          isVip: effectiveJoinedVip,
+          nobleLevel: effectiveJoinedNoble,
+          nobleTitle: effectiveJoinedNoble,
         },
         text: `${effectiveJoinedName} has joined the party 🎉`,
+        message: `${effectiveJoinedName} has joined the party 🎉`,
+        content: `${effectiveJoinedName} has joined the party 🎉`,
         type: 'SYSTEM',
         isSystemMessage: true,
         timestamp: new Date().toISOString(),
       };
-      broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_RECEIVE, chatPayload);
-      broadcastTarget.emit('room:chat_message', chatPayload);
+
+      broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
       broadcastTarget.emit('room:chat', chatPayload);
       broadcastTarget.emit('chat_message', chatPayload);
-
-      if (room.id !== roomId && io) {
-        io.to(`room:${room.id}`).emit(SOCKET_EVENTS.ROOM_CHAT_RECEIVE, chatPayload);
-        io.to(`room:${room.id}`).emit('room:chat_message', chatPayload);
-      }
+      broadcastTarget.emit('room_chat_message', chatPayload);
     }
 
     // 8. Update Authoritative User Room Presence
@@ -1220,6 +1241,14 @@ export function registerRoomHandlers(io, socket) {
   );
   socket.on(
     'room_join',
+    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
+  );
+  socket.on(
+    'join_room',
+    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
+  );
+  socket.on(
+    'join:room',
     withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
   );
 
