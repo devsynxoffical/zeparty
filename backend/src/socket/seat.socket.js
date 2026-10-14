@@ -1,4 +1,8 @@
 import roomService from '../services/room.service.js';
+import roomRepository from '../repositories/room.repository.js';
+import presenceService from './presence.service.js';
+import { buildRoomSnapshot } from './room.socket.js';
+import prisma from '../config/database.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
 import { withRateLimit } from './rateLimiter.socket.js';
 
@@ -89,30 +93,89 @@ export async function onOccupySeat(io, socket, data, callback, db) {
   }
 }
 
-export async function onLeaveSeat(io, socket, data, callback, db) {
+export async function onLeaveSeat(io, socket, data, callback, db = prisma) {
   try {
     const roomId = data?.roomId;
-    const seatIndex = Number(data?.seatIndex);
+    let seatIndex = data?.seatIndex !== undefined && data?.seatIndex !== null ? Number(data.seatIndex) : NaN;
+    const userId = socket.userId;
+    const isAdmin = socket.user?.isAdmin || socket.user?.isOwner || false;
 
-    if (!roomId || isNaN(seatIndex) || seatIndex < 0 || seatIndex > 30) {
+    if (!roomId) {
       const err = {
         success: false,
-        error: { code: SOCKET_ERRORS.INVALID_SEAT_INDEX, message: 'Valid roomId and seatIndex (0-30) are required' },
+        error: { code: SOCKET_ERRORS.INVALID_ROOM_ID, message: 'Valid roomId is required' },
       };
       if (typeof callback === 'function') return callback(err);
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    const userId = socket.userId;
-    const isAdmin = socket.user?.isAdmin || socket.user?.isOwner || false;
+    // Auto-resolve seatIndex if omitted or invalid by finding which seat the user occupies in this room
+    if (isNaN(seatIndex) || seatIndex < 0) {
+      let resolvedRoomId = roomId;
+      let room = await (db || prisma).room.findUnique({ where: { id: roomId }, select: { id: true } });
+      if (!room && roomId && roomId.length <= 16) {
+        room = await (db || prisma).room.findFirst({
+          where: { id: { startsWith: roomId, mode: 'insensitive' } },
+          select: { id: true },
+        });
+      }
+      if (room) {
+        resolvedRoomId = room.id;
+      }
+
+      const occupiedSeat = await (db || prisma).roomSeat.findFirst({
+        where: {
+          roomId: resolvedRoomId,
+          occupiedUserId: userId,
+        },
+      });
+
+      if (occupiedSeat) {
+        seatIndex = occupiedSeat.seatIndex;
+      }
+    }
+
+    if (isNaN(seatIndex) || seatIndex < 0 || seatIndex > 30) {
+      // User was not occupying any seat, return clean success without error
+      const noopPayload = {
+        roomId,
+        seatIndex: null,
+        releasedByUserId: userId,
+        message: 'User is not currently occupying any microphone seat',
+      };
+      if (typeof callback === 'function') return callback({ success: true, data: noopPayload });
+      return;
+    }
 
     // Delegate to authoritative room service for seat release authorization
     const releasedSeat = await roomService.leaveSeat(roomId, seatIndex, userId, isAdmin, db);
 
+    // Fetch refreshed room snapshot so seats and audience members list are fully up to date
+    let updatedSnapshot = null;
+    let viewerCount = 0;
+    try {
+      const updatedRoom = await roomRepository.findRoomById(roomId, db || prisma);
+      if (updatedRoom) {
+        viewerCount = await presenceService.getRoomViewerCount(updatedRoom.id, updatedRoom.creatorUserId);
+        const activeUsers = await presenceService.getRoomActiveUsers(updatedRoom.id);
+        updatedSnapshot = buildRoomSnapshot(updatedRoom, viewerCount, activeUsers);
+      }
+    } catch (_) {}
+
+    const isRoomOwner = updatedSnapshot ? (updatedSnapshot.creatorUserId === userId) : false;
+
     const payload = {
-      roomId,
+      roomId: updatedSnapshot ? updatedSnapshot.id : roomId,
+      clientRoomId: roomId,
       seatIndex: releasedSeat.seatIndex,
       releasedByUserId: userId,
+      userId,
+      isOwner: isRoomOwner,
+      isHost: isRoomOwner,
+      seats: updatedSnapshot ? updatedSnapshot.seats : [],
+      members: updatedSnapshot ? updatedSnapshot.members : [],
+      viewerCount: typeof viewerCount === 'number' ? viewerCount : (updatedSnapshot?.viewerCount || 0),
+      currentViewersCount: typeof viewerCount === 'number' ? viewerCount : (updatedSnapshot?.currentViewersCount || 0),
     };
 
     // Broadcast authoritative seat released event to the entire room
@@ -122,6 +185,24 @@ export async function onLeaveSeat(io, socket, data, callback, db) {
     broadcastTarget.emit('seat_released', payload);
     broadcastTarget.emit('seat:released', payload);
     broadcastTarget.emit('room_seat_released', payload);
+    broadcastTarget.emit('room:mic_left', payload);
+    broadcastTarget.emit('mic:left', payload);
+    broadcastTarget.emit('mic_left', payload);
+    broadcastTarget.emit('room:leave_mic_success', payload);
+
+    if (updatedSnapshot?.members) {
+      broadcastTarget.emit('room:audience_updated', {
+        roomId: payload.roomId,
+        clientRoomId: roomId,
+        members: updatedSnapshot.members,
+        count: payload.viewerCount,
+      });
+      broadcastTarget.emit('room:member_list', {
+        roomId: payload.roomId,
+        clientRoomId: roomId,
+        members: updatedSnapshot.members,
+      });
+    }
 
     if (typeof callback === 'function') {
       return callback({
@@ -177,6 +258,36 @@ export function registerSeatHandlers(io, socket) {
   );
   socket.on(
     'seat:leave',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+  );
+
+  // Leave mic aliases for mobile client
+  socket.on(
+    'room:leave_mic',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+  );
+  socket.on(
+    'leave_mic',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+  );
+  socket.on(
+    'room_leave_mic',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+  );
+  socket.on(
+    'seat:leave_mic',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+  );
+  socket.on(
+    'seat_leave_mic',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+  );
+  socket.on(
+    'mic:leave',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+  );
+  socket.on(
+    'mic_leave',
     withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
 }

@@ -11,8 +11,12 @@ import {
   adminMuteRoomSchema,
   adminMuteParticipantSchema,
   adminKickUserSchema,
+  roomModerationSchema,
+  roomModerationTargetSchema,
+  roomModerationMuteSchema,
   adminUpdateDpSchema,
   roomIdParamSchema,
+  updateRoomBackgroundSchema,
 } from '../validators/room.validator.js';
 
 export async function createRoom(req, res, next) {
@@ -123,6 +127,56 @@ export async function leaveSeat(req, res, next) {
     const userId = req.auth.userId;
     const seat = await roomService.leaveSeat(id, seatIndex, userId);
 
+    return res.status(200).json({
+      success: true,
+      message: `Seat ${seatIndex} released successfully`,
+      data: seat,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function leaveMic(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const userId = req.auth.userId;
+    let seatIndex = req.body?.seatIndex !== undefined && req.body?.seatIndex !== null ? Number(req.body.seatIndex) : NaN;
+
+    if (isNaN(seatIndex) || seatIndex < 0) {
+      let resolvedRoomId = id;
+      let room = await prisma.room.findUnique({ where: { id }, select: { id: true } });
+      if (!room && id && id.length <= 16) {
+        room = await prisma.room.findFirst({
+          where: { id: { startsWith: id, mode: 'insensitive' } },
+          select: { id: true },
+        });
+      }
+      if (room) {
+        resolvedRoomId = room.id;
+      }
+
+      const occupiedSeat = await prisma.roomSeat.findFirst({
+        where: {
+          roomId: resolvedRoomId,
+          occupiedUserId: userId,
+        },
+      });
+
+      if (occupiedSeat) {
+        seatIndex = occupiedSeat.seatIndex;
+      }
+    }
+
+    if (isNaN(seatIndex) || seatIndex < 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'User is not currently occupying any microphone seat',
+        data: null,
+      });
+    }
+
+    const seat = await roomService.leaveSeat(id, seatIndex, userId);
     return res.status(200).json({
       success: true,
       message: `Seat ${seatIndex} released successfully`,
@@ -581,6 +635,143 @@ export async function getEntryBannerConfig(req, res, next) {
   }
 }
 
+export async function getRoomBackground(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await roomService.getRoomBackground(id);
+    return res.status(200).json({
+      success: true,
+      message: 'Room background retrieved successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateRoomBackground(req, res, next) {
+  try {
+    const { id } = req.params;
+    const userId = req.auth?.userId;
+    const validated = updateRoomBackgroundSchema.parse(req.body);
+    const result = await roomService.updateRoomBackground(id, userId, validated);
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function removeRoomBackground(req, res, next) {
+  try {
+    const { id } = req.params;
+    const userId = req.auth?.userId;
+    const result = await roomService.removeRoomBackground(id, userId);
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function removeUserFromMic(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId || req.user?.id;
+    const targetUserId = req.params.targetUserId || req.body.targetUserId;
+    const { reason } = req.body;
+
+    if (!targetUserId) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Target user ID is required' } });
+    }
+
+    const result = await roomService.removeRoomUserFromMic(id, actorUserId, { targetUserId, reason });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function muteUser(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId || req.user?.id;
+    const targetUserId = req.params.targetUserId || req.body.targetUserId;
+    const isMuted = req.body.isMuted !== undefined ? Boolean(req.body.isMuted) : true;
+    const { reason } = req.body;
+
+    if (!targetUserId) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Target user ID is required' } });
+    }
+
+    const result = await roomService.moderateRoomUserMute(id, actorUserId, { targetUserId, isMuted, reason });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function kickUser(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId || req.user?.id;
+    const targetUserId = req.params.targetUserId || req.body.targetUserId;
+    const { reason } = req.body;
+
+    if (!targetUserId) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Target user ID is required' } });
+    }
+
+    const result = await roomService.kickRoomUser(id, actorUserId, { targetUserId, reason });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function moderateUser(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId || req.user?.id;
+    const validated = roomModerationSchema.parse(req.body);
+
+    const result = await roomService.moderateRoomUser(id, actorUserId, validated);
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminRemoveFromMic(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { targetUserId, reason } = req.body;
+    const adminId = req.user?.id || 'admin';
+    const adminName = req.user?.username || req.user?.name || 'Admin Moderation';
+
+    if (!targetUserId) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Target user ID is required' } });
+    }
+
+    const result = await roomService.adminRemoveFromMic(id, {
+      targetUserId,
+      reason,
+      adminId,
+      adminName,
+      ipAddress: req.ip,
+    });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -589,6 +780,7 @@ export default {
   leaveRoom,
   occupySeat,
   leaveSeat,
+  leaveMic,
   closeMyRoom,
   getAdminRooms,
   getAdminRoomById,
@@ -600,12 +792,16 @@ export default {
   postAdminMuteRoom,
   postAdminMuteParticipant,
   postAdminKickUser,
+  postAdminRemoveFromMic,
   postAdminUpdateRoomDp,
   getAdminAgoraToken,
   getRoomMembers,
   updateMemberRole,
   getRoomSendingRankings,
   uploadPaidRoomTheme,
+  updateRoomBackground,
+  removeRoomBackground,
+  getRoomBackground,
   getRoomMicConfig,
   updateRoomMicConfig,
   getRoomAnnouncement,
@@ -617,4 +813,8 @@ export default {
   manageMicSeatAction,
   sendMicReaction,
   getEntryBannerConfig,
+  removeUserFromMic,
+  muteUser,
+  kickUser,
+  moderateUser,
 };

@@ -11,10 +11,14 @@ async function logAudit(
   db = prisma
 ) {
   try {
+    if (!adminId) return;
+    const adminExists = await db.admin.findUnique({ where: { id: adminId } });
+    if (!adminExists) return;
+
     await db.auditLog.create({
       data: {
-        adminId: adminId || 'SYSTEM',
-        adminName: adminName || 'System',
+        adminId,
+        adminName: adminName || adminExists.name || 'System',
         action,
         targetEntity,
         targetEntityId: targetEntityId || null,
@@ -25,12 +29,12 @@ async function logAudit(
       },
     });
   } catch (err) {
-    console.error('Failed to write audit log in room.service:', err);
+    // Non-blocking platform audit logging
   }
 }
 
 export async function createRoom(
-  { userId, title, coverImageUrl, roomType, category, isPrivate, roomPin },
+  { userId, title, coverImageUrl, backgroundImageUrl, roomType, category, isPrivate, roomPin },
   db = prisma
 ) {
   // 1. Any user can start live broadcast or audio party room freely without host registration requirement
@@ -69,6 +73,7 @@ export async function createRoom(
       creatorUserId: userId,
       title,
       coverImageUrl,
+      backgroundImageUrl: backgroundImageUrl || null,
       roomType,
       category,
       isPrivate,
@@ -171,6 +176,8 @@ export async function getRoomDetails(roomId, db = prisma) {
 
   return {
     ...room,
+    backgroundImageUrl: room.backgroundImageUrl || null,
+    background: room.backgroundImageUrl || null,
     giftsReceivedCoins: totalGiftCoins,
     totalGifts: totalGiftCoins,
     isMuted: isRoomMuted,
@@ -180,6 +187,11 @@ export async function getRoomDetails(roomId, db = prisma) {
 export async function joinRoom(roomId, userId, db = prisma) {
   const result = await roomRepository.joinRoomTx({ roomId, userId }, db);
   if (result) {
+    if (result.creatorUserId === userId) {
+      try {
+        clearHostAbsentTimer(result.id);
+      } catch (_) {}
+    }
     let viewerCount = typeof result.currentViewersCount === 'number' ? result.currentViewersCount : 0;
     try {
       const presCount = await presenceService.getRoomViewerCount(result.id || roomId, result.creatorUserId);
@@ -742,23 +754,39 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
   }
 
   const resolvedRoomId = room.id;
+  const hostSeat = await db.roomSeat.findFirst({
+    where: {
+      roomId: resolvedRoomId,
+      occupiedUserId: room.creatorUserId,
+    },
+  });
+  const hostIsOccupyingSeat = Boolean(hostSeat);
+
   const where = {
     roomId: resolvedRoomId,
-    userId: { not: room.creatorUserId },
   };
+  if (hostIsOccupyingSeat) {
+    where.userId = { not: room.creatorUserId };
+  }
+
   if (search && search.trim() !== '') {
     const q = search.trim();
-    where.AND = [
-      { userId: { not: room.creatorUserId } },
-      {
-        OR: [
-          { userId: { equals: q } },
-          { user: { username: { contains: q, mode: 'insensitive' } } },
-          { user: { profile: { displayName: { contains: q, mode: 'insensitive' } } } },
-        ],
-      },
-    ];
-    delete where.userId;
+    const searchFilter = {
+      OR: [
+        { userId: { equals: q } },
+        { user: { username: { contains: q, mode: 'insensitive' } } },
+        { user: { profile: { displayName: { contains: q, mode: 'insensitive' } } } },
+      ],
+    };
+    if (hostIsOccupyingSeat) {
+      where.AND = [
+        { userId: { not: room.creatorUserId } },
+        searchFilter,
+      ];
+      delete where.userId;
+    } else {
+      where.AND = [searchFilter];
+    }
   }
 
   const members = await db.roomMember.findMany({
@@ -784,9 +812,10 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
   });
 
   const formatted = members
-    .filter((m) => m.userId !== room.creatorUserId)
+    .filter((m) => !(hostIsOccupyingSeat && m.userId === room.creatorUserId))
     .map((m) => {
-      let role = 'MEMBER';
+      const isHost = m.userId === room.creatorUserId;
+      let role = isHost ? 'HOST' : 'MEMBER';
       if (m.role === 'ADMIN') {
         role = 'ADMIN';
       }
@@ -794,6 +823,8 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
         id: m.id,
         userId: m.userId,
         role,
+        isHost,
+        isOwner: isHost,
         joinedAt: m.joinedAt,
         user: {
           id: m.user.id,
@@ -805,19 +836,50 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
       };
     });
 
-  const totalMembers = await db.roomMember.count({
-    where: {
-      roomId: resolvedRoomId,
-      userId: { not: room.creatorUserId },
-    },
-  });
+  const existingIds = new Set(formatted.map((m) => m.userId));
+
+  // If host is NOT occupying a mic seat, show host in the audience exactly once
+  if (!hostIsOccupyingSeat && room.creatorUserId && !existingIds.has(room.creatorUserId)) {
+    try {
+      const creatorUser = await db.user.findUnique({
+        where: { id: room.creatorUserId },
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          lastLoginAt: true,
+          profile: { select: { displayName: true } },
+        },
+      });
+      if (creatorUser) {
+        formatted.unshift({
+          id: `host_member_${room.creatorUserId}`,
+          userId: room.creatorUserId,
+          role: 'HOST',
+          isHost: true,
+          isOwner: true,
+          joinedAt: new Date().toISOString(),
+          user: {
+            id: creatorUser.id,
+            username: creatorUser.username,
+            displayName: creatorUser.profile?.displayName || creatorUser.username,
+            avatarUrl: creatorUser.avatarUrl || '',
+            lastSeenAt: creatorUser.lastLoginAt,
+          },
+        });
+        existingIds.add(room.creatorUserId);
+      }
+    } catch (_) {}
+  }
+
+  const totalMembers = formatted.length;
 
   // Merge active guest participants from realtime presence
   try {
     const activePresence = await presenceService.getRoomActiveUsers(resolvedRoomId);
-    const existingIds = new Set(formatted.map((m) => m.userId));
     for (const p of activePresence) {
-      if (p.userId && !existingIds.has(p.userId) && p.userId !== room.creatorUserId) {
+      if (p.userId && !existingIds.has(p.userId)) {
+        if (p.userId === room.creatorUserId && hostIsOccupyingSeat) continue;
         if (search && search.trim() !== '') {
           const q = search.trim().toLowerCase();
           const match = p.userId.toLowerCase().includes(q) || (p.displayName && p.displayName.toLowerCase().includes(q));
@@ -1071,11 +1133,22 @@ export async function uploadPaidRoomTheme({ roomId, userId, themeUrl, themeType 
 
     const updatedRoom = await tx.room.update({
       where: { id: roomId },
-      data: { coverImageUrl: themeUrl },
+      data: { coverImageUrl: themeUrl, backgroundImageUrl: themeUrl },
     });
 
     return updatedRoom;
   });
+
+  try {
+    const payload = {
+      roomId,
+      backgroundImageUrl: themeUrl,
+      background: themeUrl,
+      updatedBy: userId,
+    };
+    socketEmitter.emitToRoom(roomId, 'room:background_updated', payload);
+    socketEmitter.emitToRoom(roomId, 'room_background_updated', payload);
+  } catch (_) {}
 
   return {
     success: true,
@@ -1184,18 +1257,23 @@ export async function controlRoomLock(roomId, { isLocked = true, accessMode = 'P
  * Module 07: Room Mic Seat Management Action Sheet
  */
 export async function manageMicSeatAction(roomId, { seatIndex = 0, action = 'LOCK', targetUserId, actorUserId }, db = prisma) {
+  const upperAction = String(action).toUpperCase();
+  if (['REMOVE_FROM_MIC', 'REMOVE_MIC', 'MUTE', 'UNMUTE', 'KICK'].includes(upperAction) && targetUserId) {
+    return await moderateRoomUser(roomId, actorUserId, { targetUserId, action: upperAction }, db);
+  }
+
   return {
     success: true,
     roomId,
     seatIndex: Number(seatIndex),
-    action: String(action).toUpperCase(),
+    action: upperAction,
     targetUserId: targetUserId || null,
     actorUserId,
     newSeatState: {
       seatIndex: Number(seatIndex),
-      isLocked: action === 'LOCK',
-      isMuted: action === 'MUTE',
-      occupiedBy: action === 'TAKE' ? actorUserId : null,
+      isLocked: upperAction === 'LOCK',
+      isMuted: upperAction === 'MUTE',
+      occupiedBy: upperAction === 'TAKE' ? actorUserId : null,
     },
   };
 }
@@ -1231,6 +1309,630 @@ export async function getEntryBannerConfig(roomId, db = prisma) {
   };
 }
 
+/**
+ * Module 02 / Issue 02: Room Background Management
+ */
+export async function updateRoomBackground(roomId, userId, { backgroundImageUrl, background }, db = prisma) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  // Ensure only the room creator/owner or system admin can modify the room background
+  if (room.creatorUserId !== userId) {
+    const error = new Error('Only the room owner can update the room background');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  // Accept backgroundImageUrl or fallback to background
+  const rawBg = backgroundImageUrl !== undefined ? backgroundImageUrl : background;
+  const targetBackground = rawBg ? String(rawBg).trim() : null;
+
+  const updatedRoom = await roomRepository.updateRoomBackgroundTx(
+    { roomId: room.id, backgroundImageUrl: targetBackground },
+    db
+  );
+
+  const payload = {
+    roomId: room.id,
+    backgroundImageUrl: updatedRoom.backgroundImageUrl || null,
+    background: updatedRoom.backgroundImageUrl || null,
+    updatedBy: userId,
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    socketEmitter.emitToRoom(room.id, 'room:background_updated', payload);
+    socketEmitter.emitToRoom(room.id, 'room_background_updated', payload);
+    socketEmitter.emitToRoom(room.id, 'room:update_background', payload);
+  } catch (_) {}
+
+  return {
+    success: true,
+    message: targetBackground ? 'Room background updated successfully' : 'Room background removed successfully',
+    roomId: room.id,
+    backgroundImageUrl: updatedRoom.backgroundImageUrl || null,
+    background: updatedRoom.backgroundImageUrl || null,
+  };
+}
+
+export async function removeRoomBackground(roomId, userId, db = prisma) {
+  return await updateRoomBackground(roomId, userId, { backgroundImageUrl: null }, db);
+}
+
+export async function getRoomBackground(roomId, db = prisma) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+    return {
+    success: true,
+    roomId: room.id,
+    backgroundImageUrl: room.backgroundImageUrl || null,
+    background: room.backgroundImageUrl || null,
+  };
+}
+
+/**
+ * =========================================================================
+ * Issue 04: Room User Moderation (Remove from Mic, Mute/Unmute, Kick from Room)
+ * =========================================================================
+ */
+
+function formatRoomSnapshot(room, viewerCount) {
+  if (!room) return null;
+  const hostUserId = room.creatorUserId;
+  const hostIsOccupyingSeat = (room.seats || []).some(
+    (s) => s.occupiedUserId === hostUserId
+  );
+
+  const membersList = (room.members || [])
+    .filter((m) => {
+      const mid = m.userId || m.user?.id;
+      if (mid === hostUserId && hostIsOccupyingSeat) return false;
+      return true;
+    })
+    .map((m) => {
+      const u = m.user || {};
+      const mid = m.userId || u.id;
+      const isHost = mid === hostUserId;
+      const displayName = u.profile?.displayName || u.displayName || u.username || (isHost ? 'Host' : 'User');
+      return {
+        userId: mid,
+        role: isHost ? 'HOST' : (m.role || 'LISTENER'),
+        isHost,
+        isOwner: isHost,
+        user: {
+          id: mid,
+          username: u.username || displayName,
+          displayName,
+          name: displayName,
+          avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
+        },
+      };
+    });
+
+  const existingMemberIds = new Set(membersList.map((m) => m.userId));
+  if (!hostIsOccupyingSeat && hostUserId && !existingMemberIds.has(hostUserId)) {
+    const hostUser = room.creator || {};
+    const hostDisplayName = hostUser.profile?.displayName || hostUser.displayName || hostUser.username || 'Host';
+    membersList.unshift({
+      userId: hostUserId,
+      role: 'HOST',
+      isHost: true,
+      isOwner: true,
+      user: {
+        id: hostUserId,
+        username: hostUser.username || hostDisplayName,
+        displayName: hostDisplayName,
+        name: hostDisplayName,
+        avatarUrl: hostUser.avatarUrl || hostUser.profile?.avatarUrl || null,
+      },
+    });
+  }
+
+  const seatsList = (room.seats || []).map((s) => ({
+    id: s.id,
+    seatIndex: s.seatIndex,
+    occupiedUserId: s.occupiedUserId,
+    isMuted: Boolean(s.isMuted),
+    isMutedByModerator: Boolean(s.isMutedByModerator),
+    isLocked: Boolean(s.isLocked),
+    user: s.occupiedUser ? {
+      id: s.occupiedUser.id,
+      username: s.occupiedUser.username,
+      displayName: s.occupiedUser.profile?.displayName || s.occupiedUser.displayName || s.occupiedUser.username,
+      avatarUrl: s.occupiedUser.avatarUrl || s.occupiedUser.profile?.avatarUrl || null,
+    } : null,
+  }));
+
+  return {
+    id: room.id,
+    roomId: room.id,
+    creatorUserId: hostUserId,
+    seats: seatsList,
+    members: membersList,
+    viewerCount: typeof viewerCount === 'number' ? viewerCount : (room.currentViewersCount || 0),
+    currentViewersCount: typeof viewerCount === 'number' ? viewerCount : (room.currentViewersCount || 0),
+  };
+}
+
+export async function validateModerationPermission(roomId, actorUserId, targetUserId, db = prisma) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const isRoomOpen = ['LIVE', 'ACTIVE', 'OPEN'].includes(room.status);
+  if (!isRoomOpen) {
+    const error = new Error('Room is not active or has ended');
+    error.statusCode = 400;
+    error.code = 'ROOM_NOT_LIVE';
+    throw error;
+  }
+
+  const isOwner = room.creatorUserId === actorUserId;
+  let isAdmin = false;
+  if (!isOwner) {
+    const actorMember = await db.roomMember.findUnique({
+      where: { roomId_userId: { roomId: room.id, userId: actorUserId } },
+    });
+    if (actorMember && (actorMember.role === 'ADMIN' || actorMember.role === 'HOST')) {
+      isAdmin = true;
+    }
+  }
+
+  if (!isOwner && !isAdmin) {
+    const error = new Error('Only the room owner or authorized room admins can perform moderation actions');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  // Room admins and other users cannot moderate or kick the room owner
+  if (targetUserId === room.creatorUserId) {
+    const error = new Error('Cannot moderate or kick the room owner');
+    error.statusCode = 403;
+    error.code = 'CANNOT_MODERATE_OWNER';
+    throw error;
+  }
+
+  // Verify target is actually in this room
+  const targetMember = await db.roomMember.findUnique({
+    where: { roomId_userId: { roomId: room.id, userId: targetUserId } },
+  });
+  const occupiedSeat = Array.isArray(room.seats) ? room.seats.find((s) => s.occupiedUserId === targetUserId) : null;
+
+  if (!targetMember && !occupiedSeat) {
+    const error = new Error('Selected user is not currently in this room');
+    error.statusCode = 404;
+    error.code = 'TARGET_NOT_IN_ROOM';
+    throw error;
+  }
+
+  return { room, isOwner, isAdmin, targetMember, occupiedSeat };
+}
+
+export async function removeRoomUserFromMic(roomId, actorUserId, { targetUserId, reason }, db = prisma) {
+  const { room, occupiedSeat, targetMember } = await validateModerationPermission(roomId, actorUserId, targetUserId, db);
+
+  if (!occupiedSeat) {
+    const error = new Error('Selected user does not occupy a microphone seat');
+    error.statusCode = 400;
+    error.code = 'USER_NOT_ON_MIC';
+    throw error;
+  }
+
+  // Atomically release the seat
+  await db.roomSeat.update({
+    where: { id: occupiedSeat.id },
+    data: {
+      occupiedUserId: null,
+      isMuted: false,
+      isMutedByModerator: false,
+    },
+  });
+
+  // Ensure target user remains in the audience as listener
+  if (!targetMember) {
+    try {
+      await db.roomMember.create({
+        data: {
+          roomId: room.id,
+          userId: targetUserId,
+          role: 'MEMBER',
+        },
+      });
+    } catch (_) {}
+  }
+
+  const updatedRoom = await roomRepository.findRoomById(room.id, db);
+  let viewerCount = updatedRoom?.currentViewersCount || 0;
+  try {
+    const presCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
+    if (typeof presCount === 'number') viewerCount = presCount;
+  } catch (_) {}
+
+  const snapshot = formatRoomSnapshot(updatedRoom, viewerCount);
+
+  const seatPayload = {
+    roomId: room.id,
+    seatIndex: occupiedSeat.seatIndex,
+    releasedByUserId: actorUserId,
+    targetUserId,
+    isModerationAction: true,
+    action: 'REMOVE_FROM_MIC',
+    seats: snapshot.seats,
+    members: snapshot.members,
+    viewerCount,
+    timestamp: new Date().toISOString(),
+  };
+
+  const notificationPayload = {
+    roomId: room.id,
+    seatIndex: occupiedSeat.seatIndex,
+    removedByUserId: actorUserId,
+    targetUserId,
+    reason: reason || 'Removed from microphone seat by room moderator',
+    timestamp: new Date().toISOString(),
+  };
+
+  // Broadcast to room
+  socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatPayload);
+  socketEmitter.emitToRoom(room.id, 'room:seat_released', seatPayload);
+  socketEmitter.emitToRoom(room.id, 'room:audience_updated', {
+    roomId: room.id,
+    members: snapshot.members,
+    count: viewerCount,
+  });
+
+  // Direct target notification
+  socketEmitter.emitToUser(targetUserId, 'room:removed_from_mic', notificationPayload);
+  socketEmitter.emitToUser(targetUserId, SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatPayload);
+  socketEmitter.emitToUser(targetUserId, 'room:seat_released', seatPayload);
+
+  await logAudit(
+    {
+      adminId: actorUserId,
+      adminName: 'Room Moderator',
+      action: 'REMOVE_FROM_MIC',
+      targetEntity: 'RoomSeat',
+      targetEntityId: occupiedSeat.id,
+      reason: `Participant ${targetUserId} removed from mic seat ${occupiedSeat.seatIndex} by moderator: ${reason || 'Action'}`,
+    },
+    db
+  );
+
+  return {
+    success: true,
+    message: 'User removed from mic successfully',
+    data: {
+      roomId: room.id,
+      targetUserId,
+      seatIndex: occupiedSeat.seatIndex,
+      seats: snapshot.seats,
+      members: snapshot.members,
+    },
+  };
+}
+
+export async function moderateRoomUserMute(roomId, actorUserId, { targetUserId, isMuted = true, reason }, db = prisma) {
+  const { room, occupiedSeat } = await validateModerationPermission(roomId, actorUserId, targetUserId, db);
+  const shouldMute = Boolean(isMuted);
+
+  if (shouldMute) {
+    const existing = await db.roomModeration.findFirst({
+      where: {
+        roomId: room.id,
+        targetUserId,
+        actionType: 'MUTE_MIC',
+      },
+    });
+    if (!existing) {
+      await db.roomModeration.create({
+        data: {
+          roomId: room.id,
+          targetUserId,
+          actionType: 'MUTE_MIC',
+          reason: reason || 'Muted by room moderator',
+        },
+      });
+    }
+  } else {
+    await db.roomModeration.deleteMany({
+      where: {
+        roomId: room.id,
+        targetUserId,
+        actionType: 'MUTE_MIC',
+      },
+    });
+  }
+
+  if (occupiedSeat) {
+    await db.roomSeat.update({
+      where: { id: occupiedSeat.id },
+      data: {
+        isMuted: shouldMute,
+        isMutedByModerator: shouldMute,
+      },
+    });
+  }
+
+  const updatedRoom = await roomRepository.findRoomById(room.id, db);
+  let viewerCount = updatedRoom?.currentViewersCount || 0;
+  try {
+    const presCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
+    if (typeof presCount === 'number') viewerCount = presCount;
+  } catch (_) {}
+
+  const snapshot = formatRoomSnapshot(updatedRoom, viewerCount);
+
+  const mutePayload = {
+    roomId: room.id,
+    targetUserId,
+    seatIndex: occupiedSeat ? occupiedSeat.seatIndex : null,
+    isMuted: shouldMute,
+    isMutedByModerator: shouldMute,
+    moderatedByUserId: actorUserId,
+    seats: snapshot.seats,
+    timestamp: new Date().toISOString(),
+  };
+
+  const eventName = shouldMute ? SOCKET_EVENTS.ROOM_USER_MUTED : 'room:user_unmuted';
+  socketEmitter.emitToRoom(room.id, eventName, mutePayload);
+  socketEmitter.emitToRoom(room.id, shouldMute ? 'room:user_muted' : 'room:user_unmuted', mutePayload);
+  socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_SEAT_UPDATED, mutePayload);
+  socketEmitter.emitToRoom(room.id, 'room:seat_updated', mutePayload);
+
+  socketEmitter.emitToUser(targetUserId, eventName, mutePayload);
+  socketEmitter.emitToUser(targetUserId, shouldMute ? 'room:user_muted' : 'room:user_unmuted', mutePayload);
+  socketEmitter.emitToUser(targetUserId, 'room:seat_updated', mutePayload);
+
+  await logAudit(
+    {
+      adminId: actorUserId,
+      adminName: 'Room Moderator',
+      action: shouldMute ? 'PARTICIPANT_MUTED' : 'PARTICIPANT_UNMUTED',
+      targetEntity: 'RoomSeat',
+      targetEntityId: occupiedSeat?.id || room.id,
+      reason: `Participant ${targetUserId} ${shouldMute ? 'muted' : 'unmuted'} by room moderator: ${reason || 'Action'}`,
+    },
+    db
+  );
+
+  return {
+    success: true,
+    message: shouldMute ? 'User muted successfully' : 'User unmuted successfully',
+    data: mutePayload,
+  };
+}
+
+export async function kickRoomUser(roomId, actorUserId, { targetUserId, reason }, db = prisma) {
+  const { room, occupiedSeat } = await validateModerationPermission(roomId, actorUserId, targetUserId, db);
+
+  await db.$transaction(async (tx) => {
+    // 1. Release any seat
+    await tx.roomSeat.updateMany({
+      where: { roomId: room.id, occupiedUserId: targetUserId },
+      data: { occupiedUserId: null, isMuted: false, isMutedByModerator: false },
+    });
+
+    // 2. Remove room membership
+    await tx.roomMember.deleteMany({
+      where: { roomId: room.id, userId: targetUserId },
+    });
+
+    // 3. Decrement viewer count if > 0
+    await tx.room.updateMany({
+      where: { id: room.id, currentViewersCount: { gt: 0 } },
+      data: { currentViewersCount: { decrement: 1 } },
+    });
+
+    // 4. Record session kick restriction
+    await tx.roomModeration.create({
+      data: {
+        roomId: room.id,
+        targetUserId,
+        actionType: 'KICK',
+        reason: reason || 'Kicked from room by moderator',
+        expiresAt: new Date(Date.now() + 86400000),
+      },
+    });
+  }, { maxWait: 15000, timeout: 20000 });
+
+  try {
+    await presenceService.leaveRoomPresence(room.id, targetUserId);
+  } catch (_) {}
+
+  const updatedRoom = await roomRepository.findRoomById(room.id, db);
+  let viewerCount = updatedRoom?.currentViewersCount || 0;
+  try {
+    const presCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
+    if (typeof presCount === 'number') viewerCount = presCount;
+  } catch (_) {}
+
+  const snapshot = formatRoomSnapshot(updatedRoom, viewerCount);
+
+  const kickPayload = {
+    roomId: room.id,
+    targetUserId,
+    kickedByUserId: actorUserId,
+    reason: reason || 'You were kicked from this room by a room moderator',
+    seats: snapshot.seats,
+    members: snapshot.members,
+    viewerCount,
+    timestamp: new Date().toISOString(),
+  };
+
+  // Broadcast to room
+  socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_USER_KICKED, kickPayload);
+  socketEmitter.emitToRoom(room.id, 'room:user_kicked', kickPayload);
+  if (occupiedSeat) {
+    const seatRelPayload = {
+      roomId: room.id,
+      seatIndex: occupiedSeat.seatIndex,
+      releasedByUserId: actorUserId,
+      targetUserId,
+      seats: snapshot.seats,
+    };
+    socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatRelPayload);
+    socketEmitter.emitToRoom(room.id, 'room:seat_released', seatRelPayload);
+  }
+  socketEmitter.emitToRoom(room.id, 'room:audience_updated', {
+    roomId: room.id,
+    members: snapshot.members,
+    count: viewerCount,
+  });
+  socketEmitter.emitToRoom(room.id, 'room:viewer_count_changed', {
+    roomId: room.id,
+    viewerCount,
+    count: viewerCount,
+  });
+
+  // Direct target notification
+  socketEmitter.emitToUser(targetUserId, SOCKET_EVENTS.ROOM_USER_KICKED, kickPayload);
+  socketEmitter.emitToUser(targetUserId, 'room:user_kicked', kickPayload);
+
+  await logAudit(
+    {
+      adminId: actorUserId,
+      adminName: 'Room Moderator',
+      action: 'PARTICIPANT_KICKED',
+      targetEntity: 'Room',
+      targetEntityId: room.id,
+      reason: `Participant ${targetUserId} kicked from room by moderator: ${reason || 'Action'}`,
+    },
+    db
+  );
+
+  return {
+    success: true,
+    message: 'User kicked from room successfully',
+    data: kickPayload,
+  };
+}
+
+export async function moderateRoomUser(roomId, actorUserId, { targetUserId, action, isMuted, reason }, db = prisma) {
+  const upperAction = String(action || '').toUpperCase();
+  if (upperAction === 'REMOVE_FROM_MIC' || upperAction === 'REMOVE_MIC') {
+    return await removeRoomUserFromMic(roomId, actorUserId, { targetUserId, reason }, db);
+  }
+  if (upperAction === 'MUTE') {
+    return await moderateRoomUserMute(roomId, actorUserId, { targetUserId, isMuted: true, reason }, db);
+  }
+  if (upperAction === 'UNMUTE') {
+    return await moderateRoomUserMute(roomId, actorUserId, { targetUserId, isMuted: false, reason }, db);
+  }
+  if (upperAction === 'KICK') {
+    return await kickRoomUser(roomId, actorUserId, { targetUserId, reason }, db);
+  }
+  if (isMuted !== undefined) {
+    return await moderateRoomUserMute(roomId, actorUserId, { targetUserId, isMuted, reason }, db);
+  }
+
+  const error = new Error('Invalid moderation action specified');
+  error.statusCode = 400;
+  error.code = 'INVALID_MODERATION_ACTION';
+  throw error;
+}
+
+export async function adminRemoveFromMic(
+  roomId,
+  { targetUserId, reason, adminId, adminName, ipAddress },
+  db = prisma
+) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const occupiedSeat = Array.isArray(room.seats) ? room.seats.find((s) => s.occupiedUserId === targetUserId) : null;
+  if (!occupiedSeat) {
+    const error = new Error('Participant does not occupy a microphone seat');
+    error.statusCode = 400;
+    error.code = 'USER_NOT_ON_MIC';
+    throw error;
+  }
+
+  await db.roomSeat.update({
+    where: { id: occupiedSeat.id },
+    data: {
+      occupiedUserId: null,
+      isMuted: false,
+      isMutedByModerator: false,
+    },
+  });
+
+  const updatedRoom = await roomRepository.findRoomById(room.id, db);
+  let viewerCount = updatedRoom?.currentViewersCount || 0;
+  try {
+    const presCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
+    if (typeof presCount === 'number') viewerCount = presCount;
+  } catch (_) {}
+
+  const snapshot = formatRoomSnapshot(updatedRoom, viewerCount);
+
+  const payload = {
+    roomId: room.id,
+    seatIndex: occupiedSeat.seatIndex,
+    releasedByUserId: adminId || 'admin',
+    targetUserId,
+    isModerationAction: true,
+    action: 'REMOVE_FROM_MIC',
+    seats: snapshot.seats,
+    members: snapshot.members,
+    viewerCount,
+    timestamp: new Date().toISOString(),
+  };
+
+  socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_SEAT_RELEASED, payload);
+  socketEmitter.emitToRoom(room.id, 'room:seat_released', payload);
+  socketEmitter.emitToRoom(room.id, 'room:audience_updated', {
+    roomId: room.id,
+    members: snapshot.members,
+    count: viewerCount,
+  });
+
+  socketEmitter.emitToUser(targetUserId, 'room:removed_from_mic', {
+    roomId: room.id,
+    seatIndex: occupiedSeat.seatIndex,
+    removedByUserId: adminId || 'admin',
+    reason: reason || 'Removed from mic by platform admin',
+    timestamp: new Date().toISOString(),
+  });
+  socketEmitter.emitToUser(targetUserId, SOCKET_EVENTS.ROOM_SEAT_RELEASED, payload);
+
+  await logAudit(
+    {
+      adminId,
+      adminName,
+      action: 'REMOVE_FROM_MIC',
+      targetEntity: 'RoomSeat',
+      targetEntityId: occupiedSeat.id,
+      reason: `Participant ${targetUserId} removed from mic seat by admin: ${reason || 'Admin action'}`,
+      ipAddress,
+    },
+    db
+  );
+
+  return { success: true, message: 'Participant removed from mic successfully', data: payload };
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -1250,11 +1952,15 @@ export default {
   adminToggleRoomMute,
   adminMuteParticipant,
   adminKickUser,
+  adminRemoveFromMic,
   adminUpdateRoomDp,
   getRoomMembers,
   updateMemberRole,
   getRoomSendingRankings,
   uploadPaidRoomTheme,
+  updateRoomBackground,
+  removeRoomBackground,
+  getRoomBackground,
   updateRoomMicConfig,
   getRoomMicConfig,
   getRoomAnnouncement,
@@ -1266,4 +1972,9 @@ export default {
   manageMicSeatAction,
   sendMicReaction,
   getEntryBannerConfig,
+  validateModerationPermission,
+  removeRoomUserFromMic,
+  moderateRoomUserMute,
+  kickRoomUser,
+  moderateRoomUser,
 };

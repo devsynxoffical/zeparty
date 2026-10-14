@@ -156,24 +156,56 @@ export async function sendGift(
   const resolvedSenderUserId = effectiveSenderId;
   const resolvedRecipientUserId = effectiveRecipientId;
 
+  // Handle self-gifting rule (Issue 03: Allow self-gifting in party rooms and live rooms)
   if (resolvedSenderUserId === resolvedRecipientUserId) {
-    const error = new Error('Users cannot send gifts to themselves');
-    error.statusCode = 400;
-    error.code = 'CANNOT_GIFT_SELF';
-    throw error;
+    if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
+      const error = new Error('Users cannot send gifts to themselves outside of live or party rooms');
+      error.statusCode = 400;
+      error.code = 'CANNOT_GIFT_SELF';
+      throw error;
+    }
+
+    // Verify room existence and valid active status
+    let targetRoom = await db.room.findUnique({
+      where: { id: roomId },
+      select: { id: true, status: true, roomType: true },
+    }).catch(() => null);
+
+    if (!targetRoom && roomId.length <= 16) {
+      targetRoom = await db.room.findFirst({
+        where: { id: { startsWith: roomId, mode: 'insensitive' } },
+        select: { id: true, status: true, roomType: true },
+      }).catch(() => null);
+    }
+
+    if (!targetRoom) {
+      const error = new Error('Self-gifting is only permitted in active party rooms and live rooms');
+      error.statusCode = 404;
+      error.code = 'ROOM_NOT_FOUND';
+      throw error;
+    }
+
+    const isRoomActive = ['LIVE', 'ACTIVE', 'OPEN'].includes(targetRoom.status);
+    if (!isRoomActive) {
+      const error = new Error('Room is not available or has ended');
+      error.statusCode = 400;
+      error.code = 'ROOM_NOT_LIVE';
+      throw error;
+    }
   }
 
   // Alias for backward compatibility throughout the function
   senderUserId = resolvedSenderUserId;
   recipientUserId = resolvedRecipientUserId;
 
-  const qty = Number(quantity) || 1;
-  if (qty < 1) {
+  const parsedQty = quantity !== undefined && quantity !== null ? Number(quantity) : 1;
+  if (isNaN(parsedQty) || parsedQty < 1 || !Number.isInteger(parsedQty)) {
     const error = new Error('Gift quantity must be at least 1');
     error.statusCode = 400;
     error.code = 'INVALID_QUANTITY';
     throw error;
   }
+  const qty = parsedQty;
 
   // 1. Load active Gift
   const gift = await giftRepository.findGiftById(giftId, db);

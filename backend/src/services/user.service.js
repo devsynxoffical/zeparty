@@ -2,6 +2,7 @@ import prisma from '../config/database.js';
 import userRepository from '../repositories/user.repository.js';
 import { resolveEffectiveCountryCode } from '../utils/geo.util.js';
 import { hashPassword } from '../utils/crypto.util.js';
+import presenceService from '../socket/presence.service.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -43,7 +44,37 @@ async function logAudit(
 }
 
 export async function listUsersForAdmin(filters, db = prisma) {
-  return await userRepository.findUsersPaginated(filters, db);
+  const result = await userRepository.findUsersPaginated(filters, db);
+  if (result && Array.isArray(result.users)) {
+    const enrichedUsers = await Promise.all(
+      result.users.map(async (u) => {
+        try {
+          const pres = await presenceService.getUserPresence(u.id, db);
+          return {
+            ...u,
+            presenceStatus: pres.presenceStatus,
+            currentRoomId: pres.currentRoomId,
+            currentRoomTitle: pres.currentRoomTitle,
+            isOnline: Boolean(pres.isOnline),
+            isInRoom: Boolean(pres.isInRoom),
+          };
+        } catch (_) {
+          return {
+            ...u,
+            presenceStatus: 'OFFLINE',
+            currentRoomId: null,
+            isOnline: false,
+            isInRoom: false,
+          };
+        }
+      })
+    );
+    return {
+      ...result,
+      users: enrichedUsers,
+    };
+  }
+  return result;
 }
 
 export async function getUserDetailsForAdmin(userId, db = prisma) {
@@ -54,8 +85,26 @@ export async function getUserDetailsForAdmin(userId, db = prisma) {
     error.code = 'USER_NOT_FOUND';
     throw error;
   }
+
+  let presence = null;
+  try {
+    presence = await presenceService.getUserPresence(userId, db);
+  } catch (_) {}
+
   return {
     ...user,
+    presenceStatus: presence?.presenceStatus || 'OFFLINE',
+    currentRoomId: presence?.currentRoomId || null,
+    currentRoomTitle: presence?.currentRoomTitle || null,
+    currentRoom: presence?.currentRoom || null,
+    presence: presence || {
+      userId,
+      presenceStatus: 'OFFLINE',
+      isOnline: false,
+      isInRoom: false,
+      currentRoomId: null,
+      currentRoomTitle: null,
+    },
     wallet: user.wallet
       ? {
           ...user.wallet,
@@ -115,74 +164,13 @@ export async function updateUserStatusByAdmin(
 export async function getActiveRoomForUser(userId, db = prisma) {
   if (!userId) return null;
   try {
-    // 1. Check if user is creator/host of an active LIVE room
-    const hostRoom = await db.room.findFirst({
-      where: {
-        creatorUserId: userId,
-        status: 'LIVE',
-      },
-      select: {
-        id: true,
-        title: true,
-        roomType: true,
-        coverImageUrl: true,
-        currentViewersCount: true,
-        status: true,
-        creatorUserId: true,
-      },
-    });
-
-    if (hostRoom) {
-      return {
-        id: hostRoom.id,
-        title: hostRoom.title,
-        roomType: hostRoom.roomType,
-        coverImageUrl: hostRoom.coverImageUrl,
-        currentViewersCount: hostRoom.currentViewersCount || 1,
-        status: hostRoom.status,
-        isHost: true,
-      };
-    }
-
-    // 2. Check if user is actively occupying an on-stage speaker seat in a LIVE room
-    const seatOccupation = await db.roomSeat.findFirst({
-      where: {
-        occupiedUserId: userId,
-        room: { status: 'LIVE' },
-      },
-      select: {
-        roomId: true,
-        seatIndex: true,
-        room: {
-          select: {
-            id: true,
-            title: true,
-            roomType: true,
-            coverImageUrl: true,
-            currentViewersCount: true,
-            status: true,
-            creatorUserId: true,
-          },
-        },
-      },
-    });
-
-    if (seatOccupation && seatOccupation.room) {
-      return {
-        id: seatOccupation.room.id,
-        title: seatOccupation.room.title,
-        roomType: seatOccupation.room.roomType,
-        coverImageUrl: seatOccupation.room.coverImageUrl,
-        currentViewersCount: seatOccupation.room.currentViewersCount || 1,
-        status: seatOccupation.room.status,
-        isHost: seatOccupation.room.creatorUserId === userId,
-        seatIndex: seatOccupation.seatIndex,
-      };
+    const presence = await presenceService.getUserPresence(userId, db);
+    if (presence && presence.presenceStatus === 'IN_ROOM' && presence.currentRoom) {
+      return presence.currentRoom;
     }
   } catch (e) {
     console.error('Error fetching active room for user:', e.message);
   }
-
   return null;
 }
 
@@ -263,6 +251,8 @@ export async function getSelfProfile(userId, db = prisma) {
     else if (user.profile?.nobleRank) avatarFrame = `assets/nobles/${user.profile.nobleRank.toLowerCase()}_frame.webp`;
   }
 
+  const presence = await presenceService.getUserPresence(userId, db);
+
   return {
     ...user,
     avatarFrame,
@@ -280,9 +270,18 @@ export async function getSelfProfile(userId, db = prisma) {
     })),
     isHost,
     hostApplicationStatus: hostAppStatus,
-    isLive: Boolean(activeRoom),
-    liveRoomId: activeRoom ? activeRoom.id : null,
-    currentRoom: activeRoom,
+    presenceStatus: presence.presenceStatus,
+    currentRoomId: presence.currentRoomId,
+    currentRoomTitle: presence.currentRoomTitle,
+    currentRoomSessionId: presence.currentRoomSessionId,
+    inRoomAvailable: Boolean(presence.inRoomAvailable),
+    isOnline: Boolean(presence.isOnline),
+    isInRoom: Boolean(presence.isInRoom),
+    lastSeenAt: presence.lastSeenAt,
+    presence,
+    isLive: Boolean(presence.isInRoom),
+    liveRoomId: presence.currentRoomId || null,
+    currentRoom: presence.currentRoom,
   };
 }
 
@@ -364,6 +363,13 @@ export async function getPublicProfile(userId, db = prisma) {
     else if (publicUser.profile?.nobleRank) avatarFrame = `assets/nobles/${publicUser.profile.nobleRank.toLowerCase()}_frame.webp`;
   }
 
+  const isHost = publicUser.userType === 'HOST' || (publicUser.hostProfile && publicUser.hostProfile.hostStatus === 'ACTIVE');
+  const hostAppStatus = (publicUser.hostProfile && publicUser.hostProfile.hostStatus === 'ACTIVE')
+    ? 'approved'
+    : (publicUser.hostProfile?.hostStatus?.toLowerCase() || 'none');
+
+  const presence = await presenceService.getUserPresence(userId, db);
+
   return {
     ...publicUser,
     avatarFrame,
@@ -372,9 +378,20 @@ export async function getPublicProfile(userId, db = prisma) {
     equippedRide,
     equippedTheme,
     customTitles,
-    isLive: Boolean(activeRoom),
-    liveRoomId: activeRoom ? activeRoom.id : null,
-    currentRoom: activeRoom,
+    isHost,
+    hostApplicationStatus: hostAppStatus,
+    presenceStatus: presence.presenceStatus,
+    currentRoomId: presence.currentRoomId,
+    currentRoomTitle: presence.currentRoomTitle,
+    currentRoomSessionId: presence.currentRoomSessionId,
+    inRoomAvailable: Boolean(presence.inRoomAvailable),
+    isOnline: Boolean(presence.isOnline),
+    isInRoom: Boolean(presence.isInRoom),
+    lastSeenAt: presence.lastSeenAt,
+    presence,
+    isLive: Boolean(presence.isInRoom),
+    liveRoomId: presence.currentRoomId || null,
+    currentRoom: presence.currentRoom,
   };
 }
 
@@ -1070,6 +1087,8 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
     throw error;
   }
 
+  const presence = await presenceService.getUserPresence(targetUserId, db);
+
   return {
     user: {
       id: user.id,
@@ -1080,7 +1099,23 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
       vipLevel: user.profile?.vipLevel || 0,
       svipLevel: user.profile?.svipLevel || 0,
       nobleRank: user.profile?.nobleRank || 'NONE',
+      presenceStatus: presence.presenceStatus,
+      currentRoomId: presence.currentRoomId,
+      currentRoomTitle: presence.currentRoomTitle,
+      inRoomAvailable: Boolean(presence.inRoomAvailable),
+      isOnline: Boolean(presence.isOnline),
+      isInRoom: Boolean(presence.isInRoom),
+      lastSeenAt: presence.lastSeenAt,
     },
+    presenceStatus: presence.presenceStatus,
+    currentRoomId: presence.currentRoomId,
+    currentRoomTitle: presence.currentRoomTitle,
+    currentRoomSessionId: presence.currentRoomSessionId,
+    inRoomAvailable: Boolean(presence.inRoomAvailable),
+    isOnline: Boolean(presence.isOnline),
+    isInRoom: Boolean(presence.isInRoom),
+    lastSeenAt: presence.lastSeenAt,
+    presence,
     levels: {
       wealth: user.profile?.level || 1,
       wealthXp: Number(user.profile?.experiencePoints || 0n),
@@ -2859,7 +2894,12 @@ export async function reconcileUserWealthXP(userId, db = prisma) {
   };
 }
 
+export async function getUserPresence(userId, db = prisma) {
+  return await presenceService.getUserPresence(userId, db);
+}
+
 export default {
+  getUserPresence,
   listUsersForAdmin,
   getUserDetailsForAdmin,
   updateUserStatusByAdmin,

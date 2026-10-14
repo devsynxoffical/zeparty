@@ -8,6 +8,7 @@ import { registerRoomHandlers } from './room.socket.js';
 import { registerSeatHandlers } from './seat.socket.js';
 import { registerGiftHandlers } from './gift.socket.js';
 import { registerPKHandlers } from './pk.socket.js';
+import presenceService from './presence.service.js';
 
 let ioInstance = null;
 
@@ -58,9 +59,22 @@ export async function initSocketServer(httpServer) {
   io.use(socketAuthMiddleware);
 
   // Connection Handler
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     // Automatically join authenticated user's private channel
     socket.join(`user:${socket.userId}`);
+
+    // Register global presence tracking for registered users
+    if (socket.userId && !socket.isGuest && !String(socket.userId).startsWith('guest_')) {
+      try {
+        const { isFirstSocket } = await presenceService.registerUserSocket(socket.userId, socket.id);
+        if (isFirstSocket) {
+          const pres = await presenceService.getUserPresence(socket.userId);
+          presenceService.broadcastPresenceChange(io, socket.userId, pres);
+        }
+      } catch (presErr) {
+        console.warn('[Socket] Presence register warning:', presErr.message);
+      }
+    }
 
     // Register domain handlers
     registerRoomHandlers(io, socket);

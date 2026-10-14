@@ -18,6 +18,8 @@ export async function getLiveRooms(params = {}) {
       hostUsername: r.creator?.username || r.hostUsername || 'host',
       hostAvatar: r.creator?.avatarUrl || r.creator?.profile?.avatarUrl || r.hostAvatar || '',
       coverImage: r.coverImageUrl || r.coverUrl || r.coverImage || '',
+      backgroundImage: r.backgroundImageUrl || r.background || '',
+      backgroundImageUrl: r.backgroundImageUrl || '',
       country: r.creator?.countryCode || r.countryCode || 'PK',
       category: r.category || (isParty ? 'Entertainment' : 'Talk Show'),
       viewers: Number(r.currentViewersCount || r.activeMembersCount || r.viewers || 0),
@@ -66,6 +68,8 @@ export async function getLiveRoomById(id) {
     hostUsername: r.creator?.username || r.hostUsername || 'host',
     hostAvatar: r.creator?.avatarUrl || r.creator?.profile?.avatarUrl || '',
     coverImage: r.coverImageUrl || r.coverUrl || r.coverImage || '',
+    backgroundImage: r.backgroundImageUrl || r.background || '',
+    backgroundImageUrl: r.backgroundImageUrl || '',
     country: r.creator?.countryCode || r.countryCode || 'PK',
     region: r.creator?.countryCode || r.countryCode || 'PK',
     category: r.category || 'General',
@@ -131,6 +135,14 @@ export async function kickParticipant(id, targetUserId, reason) {
   return res.data;
 }
 
+export async function removeFromMic(id, targetUserId, reason) {
+  const res = await apiClient.post(`/v1/admin/rooms/${id}/remove-mic`, {
+    targetUserId,
+    reason: reason || 'Participant removed from mic seat by admin',
+  });
+  return res.data;
+}
+
 export async function updateRoomCoverDp(id, coverImageUrl) {
   const res = await apiClient.post(`/v1/admin/rooms/${id}/dp`, {
     coverImageUrl,
@@ -175,6 +187,7 @@ export default {
   toggleRoomMute,
   muteParticipant,
   kickParticipant,
+  removeFromMic,
   updateRoomCoverDp,
   deleteRoomCoverDp,
   getAdminAgoraToken,

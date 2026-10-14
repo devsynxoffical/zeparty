@@ -6,6 +6,7 @@ export async function createRoomWithSeats(
     creatorUserId,
     title,
     coverImageUrl = null,
+    backgroundImageUrl = null,
     roomType = 'LIVE_VIDEO',
     category = 'CHAT',
     isPrivate = false,
@@ -44,6 +45,7 @@ export async function createRoomWithSeats(
       creatorUserId,
       title,
       coverImageUrl,
+      backgroundImageUrl,
       roomType,
       category,
       isPrivate,
@@ -234,6 +236,7 @@ export async function findActiveRooms(
         creatorUserId: true,
         title: true,
         coverImageUrl: true,
+        backgroundImageUrl: true,
         roomType: true,
         category: true,
         isPrivate: true,
@@ -419,11 +422,45 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
     throw error;
   }
 
-  const isRoomOpen = ['LIVE', 'ACTIVE', 'OPEN'].includes(room.status);
+  let isRoomOpen = ['LIVE', 'ACTIVE', 'OPEN'].includes(room.status);
   if (!isRoomOpen) {
-    const error = new Error('Room is not available or has ended');
-    error.statusCode = 400;
-    error.code = 'ROOM_NOT_LIVE';
+    // Check if the host has started a new active room session
+    if (room.creatorUserId) {
+      const activeRoom = await db.room.findFirst({
+        where: {
+          creatorUserId: room.creatorUserId,
+          status: 'LIVE',
+        },
+        select: { id: true },
+      });
+      if (activeRoom) {
+        resolvedRoomId = activeRoom.id;
+        room = await db.room.findUnique({ where: { id: resolvedRoomId } });
+        isRoomOpen = room && ['LIVE', 'ACTIVE', 'OPEN'].includes(room.status);
+      }
+    }
+
+    if (!isRoomOpen) {
+      const error = new Error('Room is not available or has ended');
+      error.statusCode = 400;
+      error.code = 'ROOM_NOT_LIVE';
+      throw error;
+    }
+  }
+
+  // Check if user was kicked from this room session
+  const activeKick = await db.roomModeration.findFirst({
+    where: {
+      roomId: resolvedRoomId,
+      targetUserId: userId,
+      actionType: 'KICK',
+    },
+  });
+
+  if (activeKick) {
+    const error = new Error('You have been kicked from this room session');
+    error.statusCode = 403;
+    error.code = 'ROOM_KICKED';
     throw error;
   }
 
@@ -465,17 +502,14 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
       console.warn(`[RoomRepo] Membership registration error for user ${userId} in room ${resolvedRoomId}:`, memberErr.message);
     }
 
-    // If returning user is the creator/host, ensure seat 0 is reserved and assigned to them
+    // If returning user is the creator/host, preserve existing seat state without forcibly re-occupying vacant seat 0
     if (room.creatorUserId === userId) {
       try {
         const seat0 = await db.roomSeat.findUnique({
           where: { roomId_seatIndex: { roomId: resolvedRoomId, seatIndex: 0 } },
         });
-        if (seat0 && (!seat0.occupiedUserId || seat0.occupiedUserId === userId)) {
-          await db.roomSeat.update({
-            where: { roomId_seatIndex: { roomId: resolvedRoomId, seatIndex: 0 } },
-            data: { occupiedUserId: userId },
-          });
+        if (seat0 && seat0.occupiedUserId === userId) {
+          // Already occupied by creator, preserve
         }
       } catch (_) {}
     }
@@ -582,7 +616,9 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
 
   // A guest leaving is purely a viewer departure and must NEVER terminate the room.
   // Registered members only trigger termination if no persistent members AND no active socket presence remain.
-  const shouldDeleteRoom = !isGuest && totalMemberCount === 0 && activePresenceCount === 0 && (room.creatorUserId === userId);
+  // Audio party rooms are governed by host absent timers with a grace period; do not auto-close prematurely here.
+  const isAudioParty = (room.roomType || '').toUpperCase().includes('AUDIO') || (room.roomType || '').toUpperCase().includes('PARTY');
+  const shouldDeleteRoom = !isAudioParty && !isGuest && totalMemberCount === 0 && activePresenceCount === 0 && (room.creatorUserId === userId);
 
   if (shouldDeleteRoom) {
     try {
@@ -594,6 +630,7 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
           endedAt: new Date(),
         },
       });
+      await presenceService.clearRoomPresence(resolvedRoomId);
     } catch (closeErr) {
       console.warn(`[RoomRepo] Failed to end empty room ${resolvedRoomId}:`, closeErr.message);
     }
@@ -728,6 +765,16 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
       throw error;
     }
 
+    // Check if user has an active moderation mute in this room
+    const activeModMute = await tx.roomModeration.findFirst({
+      where: {
+        roomId: resolvedRoomId,
+        targetUserId: userId,
+        actionType: 'MUTE_MIC',
+      },
+    });
+    const isModerationMuted = Boolean(activeModMute);
+
     const updatedSeat = await tx.roomSeat.update({
       where: {
         roomId_seatIndex: {
@@ -737,6 +784,7 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
       },
       data: {
         occupiedUserId: userId,
+        ...(isModerationMuted ? { isMuted: true, isMutedByModerator: true } : {}),
       },
       include: {
         occupiedUser: {
@@ -821,6 +869,7 @@ export async function leaveSeatTx({ roomId, seatIndex, userId, force = false }, 
       data: {
         occupiedUserId: null,
         isMuted: false,
+        isMutedByModerator: false,
       },
     });
   }, { maxWait: 15000, timeout: 20000 });
@@ -867,21 +916,14 @@ export async function closeRoomTx({ roomId, status = 'ENDED', endedAt = new Date
       where: { roomId },
     });
 
-    try {
-      await tx.room.delete({
-        where: { id: roomId },
-      });
-      return { id: roomId, status: 'ENDED', currentViewersCount: 0 };
-    } catch {
-      return await tx.room.update({
-        where: { id: roomId },
-        data: {
-          status,
-          endedAt,
-          currentViewersCount: 0,
-        },
-      });
-    }
+    return await tx.room.update({
+      where: { id: roomId },
+      data: {
+        status,
+        endedAt,
+        currentViewersCount: 0,
+      },
+    });
   });
 }
 
@@ -889,6 +931,29 @@ export async function updateRoomCoverImage({ roomId, coverImageUrl }, db = prism
   return await db.room.update({
     where: { id: roomId },
     data: { coverImageUrl },
+  });
+}
+
+export async function updateRoomBackgroundTx({ roomId, backgroundImageUrl }, db = prisma) {
+  let resolvedRoomId = roomId;
+  let room = await db.room.findUnique({ where: { id: roomId }, select: { id: true } });
+  if (!room && roomId && roomId.length <= 16) {
+    room = await db.room.findFirst({
+      where: { id: { startsWith: roomId, mode: 'insensitive' } },
+      select: { id: true },
+    });
+  }
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+  resolvedRoomId = room.id;
+
+  return await db.room.update({
+    where: { id: resolvedRoomId },
+    data: { backgroundImageUrl },
   });
 }
 
@@ -904,8 +969,27 @@ export async function updateRoomMuteStatus({ roomId, isMuted }, db = prisma) {
   });
 }
 
-export async function updateSeatMuteStatus({ roomId, seatIndex, isMuted }, db = prisma) {
+export async function updateSeatMuteStatus({ roomId, seatIndex, isMuted, isMutedByModerator, isModerator = false }, db = prisma) {
   const index = Number(seatIndex);
+
+  // If unmuting, verify if seat is under moderation mute
+  if (!isMuted && !isModerator) {
+    const existing = await db.roomSeat.findUnique({
+      where: { roomId_seatIndex: { roomId, seatIndex: index } },
+    });
+    if (existing?.isMutedByModerator) {
+      const error = new Error('Microphone is muted by room moderation and cannot be unmuted');
+      error.statusCode = 403;
+      error.code = 'CANNOT_OVERRIDE_MODERATION_MUTE';
+      throw error;
+    }
+  }
+
+  const updateData = { isMuted: Boolean(isMuted) };
+  if (isMutedByModerator !== undefined) {
+    updateData.isMutedByModerator = Boolean(isMutedByModerator);
+  }
+
   try {
     return await db.roomSeat.update({
       where: {
@@ -914,7 +998,7 @@ export async function updateSeatMuteStatus({ roomId, seatIndex, isMuted }, db = 
           seatIndex: index,
         },
       },
-      data: { isMuted: Boolean(isMuted) },
+      data: updateData,
     });
   } catch {
     return await db.roomSeat.upsert({
@@ -924,26 +1008,54 @@ export async function updateSeatMuteStatus({ roomId, seatIndex, isMuted }, db = 
           seatIndex: index,
         },
       },
-      update: { isMuted: Boolean(isMuted) },
+      update: updateData,
       create: {
         roomId,
         seatIndex: index,
         isMuted: Boolean(isMuted),
+        isMutedByModerator: Boolean(isMutedByModerator),
       },
     });
   }
 }
 
-export async function updateUserSeatMuteStatus({ roomId, userId, isMuted }, db = prisma) {
+export async function updateUserSeatMuteStatus({ roomId, userId, isMuted, isMutedByModerator, isModerator = false }, db = prisma) {
+  // Check if target is currently moderation muted
+  if (!isMuted && !isModerator) {
+    const modMute = await db.roomModeration.findFirst({
+      where: {
+        roomId,
+        targetUserId: userId,
+        actionType: 'MUTE_MIC',
+      },
+    });
+    if (modMute) {
+      const error = new Error('Microphone is muted by room moderation and cannot be unmuted');
+      error.statusCode = 403;
+      error.code = 'CANNOT_OVERRIDE_MODERATION_MUTE';
+      throw error;
+    }
+  }
+
   // Check if user occupies a seat
   const seat = await db.roomSeat.findFirst({
     where: { roomId, occupiedUserId: userId },
   });
 
   if (seat) {
+    if (!isMuted && !isModerator && seat.isMutedByModerator) {
+      const error = new Error('Microphone is muted by room moderation and cannot be unmuted');
+      error.statusCode = 403;
+      error.code = 'CANNOT_OVERRIDE_MODERATION_MUTE';
+      throw error;
+    }
+    const updateData = { isMuted: Boolean(isMuted) };
+    if (isMutedByModerator !== undefined) {
+      updateData.isMutedByModerator = Boolean(isMutedByModerator);
+    }
     return await db.roomSeat.update({
       where: { id: seat.id },
-      data: { isMuted: Boolean(isMuted) },
+      data: updateData,
     });
   }
 
@@ -954,7 +1066,7 @@ export async function updateUserSeatMuteStatus({ roomId, userId, isMuted }, db =
   });
 
   if (room && room.creatorUserId === userId) {
-    return await updateSeatMuteStatus({ roomId, seatIndex: 0, isMuted }, db);
+    return await updateSeatMuteStatus({ roomId, seatIndex: 0, isMuted, isMutedByModerator, isModerator }, db);
   }
 
   return null;
@@ -971,6 +1083,7 @@ export async function kickUserFromRoomTx({ roomId, targetUserId }, db = prisma) 
       data: {
         occupiedUserId: null,
         isMuted: false,
+        isMutedByModerator: false,
       },
     });
 
@@ -1007,6 +1120,7 @@ export default {
   pinRoom,
   closeRoomTx,
   updateRoomCoverImage,
+  updateRoomBackgroundTx,
   updateRoomMuteStatus,
   updateSeatMuteStatus,
   updateUserSeatMuteStatus,

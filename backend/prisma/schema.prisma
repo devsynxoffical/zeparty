@@ -965,6 +965,7 @@ model Room {
   creator             User         @relation("RoomCreator", fields: [creatorUserId], references: [id], onDelete: Cascade)
   title               String
   coverImageUrl       String?
+  backgroundImageUrl  String?
   roomType            RoomType     @default(LIVE_VIDEO)
   category            RoomCategory @default(CHAT)
   isPrivate           Boolean      @default(false)
@@ -998,6 +999,7 @@ model RoomSeat {
   occupiedUserId String?
   occupiedUser   User?    @relation(fields: [occupiedUserId], references: [id])
   isMuted        Boolean  @default(false)
+  isMutedByModerator Boolean @default(false)
   isLocked       Boolean  @default(false)
   updatedAt      DateTime @updatedAt
 

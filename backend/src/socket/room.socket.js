@@ -16,16 +16,32 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
 
   const hostUserId = room.creatorUserId || room.creator?.id;
 
+  // Determine if host is currently occupying a seat on stage
+  const hostIsOccupyingSeat = (room.seats || []).some(
+    (s) => (s.occupiedUserId === hostUserId || s.user?.id === hostUserId)
+  );
+
   const membersList = (room.members || [])
-    .filter((m) => (m.userId || m.user?.id) !== hostUserId)
+    .filter((m) => {
+      const mid = m.userId || m.user?.id;
+      // If host is occupying a seat, do not duplicate in audience list
+      if (mid === hostUserId && hostIsOccupyingSeat) {
+        return false;
+      }
+      return true;
+    })
     .map((m) => {
       const u = m.user || {};
-      const displayName = u.profile?.displayName || u.displayName || u.username || 'User';
+      const mid = m.userId || u.id;
+      const isHost = mid === hostUserId;
+      const displayName = u.profile?.displayName || u.displayName || u.username || (isHost ? 'Host' : 'User');
       return {
-        userId: m.userId || u.id,
-        role: m.role || 'LISTENER',
+        userId: mid,
+        role: isHost ? 'HOST' : (m.role || 'LISTENER'),
+        isHost,
+        isOwner: isHost,
         user: {
-          id: u.id || m.userId,
+          id: mid,
           username: u.username || displayName,
           displayName,
           name: displayName,
@@ -34,15 +50,42 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       };
     });
 
-  // Merge active guest participants
   const existingMemberIds = new Set(membersList.map((m) => m.userId));
+
+  // If host is NOT occupying a seat, ensure host is included in audience exactly once
+  if (!hostIsOccupyingSeat && hostUserId && !existingMemberIds.has(hostUserId)) {
+    const hostUser = room.creator || {};
+    const hostDisplayName = hostUser.profile?.displayName || hostUser.displayName || hostUser.username || 'Host';
+    membersList.unshift({
+      userId: hostUserId,
+      role: 'HOST',
+      isHost: true,
+      isOwner: true,
+      user: {
+        id: hostUserId,
+        username: hostUser.username || hostDisplayName,
+        displayName: hostDisplayName,
+        name: hostDisplayName,
+        avatarUrl: hostUser.avatarUrl || hostUser.profile?.avatarUrl || null,
+      },
+    });
+    existingMemberIds.add(hostUserId);
+  }
+
+  // Merge active guest participants
   for (const pres of (activePresenceUsers || [])) {
     const pid = pres.userId || pres.id;
-    if (pid && !existingMemberIds.has(pid) && pid !== hostUserId) {
-      const guestDisplayName = pres.displayName || pres.name || pres.username || `User_${String(pid).replace('guest_', '').substring(0, 5)}`;
+    if (pid && !existingMemberIds.has(pid)) {
+      if (pid === hostUserId && hostIsOccupyingSeat) {
+        continue;
+      }
+      const isHost = pid === hostUserId;
+      const guestDisplayName = pres.displayName || pres.name || pres.username || (isHost ? 'Host' : `User_${String(pid).replace('guest_', '').substring(0, 5)}`);
       membersList.push({
         userId: pid,
-        role: 'LISTENER',
+        role: isHost ? 'HOST' : 'LISTENER',
+        isHost,
+        isOwner: isHost,
         user: {
           id: pid,
           username: guestDisplayName,
@@ -63,6 +106,9 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     roomType: room.roomType || 'VIDEO_PARTY',
     category: room.category || 'CHATTING',
     status: room.status,
+    backgroundImageUrl: room.backgroundImageUrl || null,
+    background: room.backgroundImageUrl || null,
+    coverImageUrl: room.coverImageUrl || null,
     isPinned: Boolean(room.isPinned),
     pinPosition: room.pinPosition || null,
     currentViewersCount: typeof viewerCount === 'number' ? viewerCount : (room.currentViewersCount || 0),
@@ -129,7 +175,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     const userId = socket.userId;
 
     // 1. Authoritative Room Existence and Lifecycle Check
-    const room = await roomRepository.findRoomById(roomId, db || prisma);
+    let room = await roomRepository.findRoomById(roomId, db || prisma);
     if (!room) {
       const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_FOUND, message: 'Room not found' } };
       if (typeof callback === 'function') return callback(err);
@@ -137,9 +183,29 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     }
 
     if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
-      const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_LIVE, message: 'Room is not available or has ended' } };
-      if (typeof callback === 'function') return callback(err);
-      return socket.emit(SOCKET_EVENTS.ERROR, err);
+      // Auto-resolve to creator's active live room session if available
+      const creatorId = room.creatorUserId || room.creator?.id;
+      if (creatorId) {
+        const activeRoom = await (db || prisma).room.findFirst({
+          where: {
+            creatorUserId: creatorId,
+            status: 'LIVE',
+          },
+          select: { id: true },
+        });
+        if (activeRoom) {
+          const resolvedRoom = await roomRepository.findRoomById(activeRoom.id, db || prisma);
+          if (resolvedRoom && resolvedRoom.status && ['LIVE', 'ACTIVE', 'OPEN'].includes(resolvedRoom.status.toUpperCase())) {
+            room = resolvedRoom;
+          }
+        }
+      }
+
+      if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
+        const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_LIVE, message: 'Room is not available or has ended' } };
+        if (typeof callback === 'function') return callback(err);
+        return socket.emit(SOCKET_EVENTS.ERROR, err);
+      }
     }
 
     // 2. Immediately subscribe socket to room channel so broadcasts & chat are reliably delivered
@@ -298,6 +364,17 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       }
     }
 
+    // 8. Update Authoritative User Room Presence
+    if (userId && !socket.isGuest && !String(userId).startsWith('guest_')) {
+      try {
+        await presenceService.setUserActiveRoom(userId, room.id);
+        const pres = await presenceService.getUserPresence(userId, db || prisma);
+        if (io) {
+          presenceService.broadcastPresenceChange(io, userId, pres);
+        }
+      } catch (_) {}
+    }
+
     if (typeof callback === 'function') {
       return callback({
         success: true,
@@ -428,6 +505,17 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
       }
     }
 
+    // 4. Update Authoritative User Room Presence on Leave
+    if (userId && !socket.isGuest && !String(userId).startsWith('guest_')) {
+      try {
+        await presenceService.clearUserActiveRoom(userId, roomId);
+        const pres = await presenceService.getUserPresence(userId, db);
+        if (io) {
+          presenceService.broadcastPresenceChange(io, userId, pres);
+        }
+      } catch (_) {}
+    }
+
     if (typeof callback === 'function') {
       return callback({ success: true, message: 'Left room successfully' });
     }
@@ -489,7 +577,13 @@ export async function onSocketDisconnect(io, socket, db) {
           if (!room || room.status !== 'LIVE') continue;
 
           const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
-          const leaveResult = await roomService.leaveRoom(roomId, userId, db).catch(() => null);
+          const isAudioParty = (room.roomType || '').toUpperCase().includes('AUDIO') || (room.roomType || '').toUpperCase().includes('PARTY');
+
+          let leaveResult = null;
+          if (!isHostUser || !isAudioParty) {
+            leaveResult = await roomService.leaveRoom(roomId, userId, db).catch(() => null);
+          }
+
           let updatedViewerCount = 0;
           try {
             updatedViewerCount = await presenceService.getRoomViewerCount(roomId, room.creatorUserId);
@@ -499,7 +593,6 @@ export async function onSocketDisconnect(io, socket, db) {
           const broadcastTarget = io ? io.to(`room:${roomId}`) : socket;
 
           if (isHostUser) {
-            const isAudioParty = (room.roomType || '').toUpperCase().includes('AUDIO') || (room.roomType || '').toUpperCase().includes('PARTY');
             if (isAudioParty) {
               startHostAbsentTimer(roomId, 'AUDIO_PARTY', userId, io);
             } else {
@@ -555,6 +648,24 @@ export async function onSocketDisconnect(io, socket, db) {
         }
       } catch (innerErr) {
         console.warn(`[RoomSocket] Error handling disconnect for room ${roomId}:`, innerErr?.message);
+      }
+    }
+
+    // Authoritative global connection presence cleanup
+    if (!socket._cleanedGlobalPresence && userId) {
+      socket._cleanedGlobalPresence = true;
+      try {
+        const { isLastSocket, userId: unregUserId } = await presenceService.unregisterUserSocket(userId, socket.id);
+        const effectiveUserId = unregUserId || userId;
+        if (isLastSocket && effectiveUserId && !socket.isGuest && !String(effectiveUserId).startsWith('guest_')) {
+          await presenceService.clearUserActiveRoom(effectiveUserId);
+          const pres = await presenceService.getUserPresence(effectiveUserId, db);
+          if (io) {
+            presenceService.broadcastPresenceChange(io, effectiveUserId, pres);
+          }
+        }
+      } catch (presErr) {
+        console.warn('[RoomSocket] Warning unregistering global socket presence:', presErr?.message);
       }
     }
   } catch (err) {
@@ -850,6 +961,8 @@ export async function onKickUser(arg1, arg2, arg3, arg4, arg5) {
   try {
     const roomId = data?.roomId;
     const targetUserId = data?.targetUserId;
+    const reason = data?.reason;
+    const actorUserId = socket.userId;
 
     if (!roomId || !targetUserId) {
       const err = {
@@ -860,23 +973,122 @@ export async function onKickUser(arg1, arg2, arg3, arg4, arg5) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    const payload = {
-      roomId,
-      targetUserId,
-      kickedByUserId: socket.userId,
-      timestamp: new Date().toISOString(),
-    };
+    const result = await roomService.kickRoomUser(roomId, actorUserId, { targetUserId, reason });
 
-    const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
-    broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_KICKED, payload);
+    try {
+      await presenceService.clearUserActiveRoom(targetUserId, roomId);
+      const pres = await presenceService.getUserPresence(targetUserId);
+      if (io) {
+        presenceService.broadcastPresenceChange(io, targetUserId, pres);
+      }
+    } catch (_) {}
 
     if (typeof callback === 'function') {
-      return callback({ success: true, message: 'User kicked successfully', data: payload });
+      return callback({ success: true, message: 'User kicked successfully', data: result.data });
     }
   } catch (err) {
     const errorResponse = {
       success: false,
       error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to kick user' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onRemoveFromMic(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const targetUserId = data?.targetUserId;
+    const reason = data?.reason;
+    const actorUserId = socket.userId;
+
+    if (!roomId || !targetUserId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.VALIDATION_ERROR, message: 'roomId and targetUserId are required' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const result = await roomService.removeRoomUserFromMic(roomId, actorUserId, { targetUserId, reason });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: 'User removed from mic successfully', data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to remove user from mic' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onMuteUser(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const targetUserId = data?.targetUserId;
+    const isMuted = data?.isMuted !== undefined ? Boolean(data.isMuted) : true;
+    const reason = data?.reason;
+    const actorUserId = socket.userId;
+
+    if (!roomId || !targetUserId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.VALIDATION_ERROR, message: 'roomId and targetUserId are required' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const result = await roomService.moderateRoomUserMute(roomId, actorUserId, { targetUserId, isMuted, reason });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: isMuted ? 'User muted successfully' : 'User unmuted successfully', data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to update mute state' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onModerateUser(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const targetUserId = data?.targetUserId;
+    const action = data?.action;
+    const isMuted = data?.isMuted;
+    const reason = data?.reason;
+    const actorUserId = socket.userId;
+
+    if (!roomId || !targetUserId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.VALIDATION_ERROR, message: 'roomId and targetUserId are required' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const result = await roomService.moderateRoomUser(roomId, actorUserId, { targetUserId, action, isMuted, reason });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: result.message, data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to perform moderation' },
     };
     if (typeof callback === 'function') return callback(errorResponse);
     socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
@@ -941,7 +1153,74 @@ export async function onSendRoomLike(arg1, arg2, arg3, arg4, arg5) {
   }
 }
 
+export async function onUpdateRoomBackground(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId || data?.id;
+    const rawBackground = data?.backgroundImageUrl !== undefined ? data.backgroundImageUrl : data?.background;
+    const userId = socket.user?.id || socket.userId;
+
+    if (!roomId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.VALIDATION_ERROR, message: 'Valid roomId is required' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    if (!userId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.UNAUTHORIZED, message: 'Authentication required to update background' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const result = await roomService.updateRoomBackground(roomId, userId, {
+      backgroundImageUrl: rawBackground,
+    });
+
+    const payload = {
+      roomId: result.roomId,
+      backgroundImageUrl: result.backgroundImageUrl,
+      background: result.background,
+      updatedBy: userId,
+      timestamp: new Date().toISOString(),
+    };
+
+    const broadcastTarget = io ? io.to(`room:${result.roomId}`) : (socket.to ? socket.to(`room:${result.roomId}`) : socket);
+    broadcastTarget.emit('room:background_updated', payload);
+    broadcastTarget.emit('room_background_updated', payload);
+    broadcastTarget.emit('room:update_background', payload);
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, data: result });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to update background' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
 export function registerRoomHandlers(io, socket) {
+  socket.on(
+    'room:update_background',
+    withRateLimit('ROOM_BG', 10, 1000, (s, d, cb) => onUpdateRoomBackground(io, s, d, cb))
+  );
+  socket.on(
+    'room:change_background',
+    withRateLimit('ROOM_BG', 10, 1000, (s, d, cb) => onUpdateRoomBackground(io, s, d, cb))
+  );
+  socket.on(
+    'update_room_background',
+    withRateLimit('ROOM_BG', 10, 1000, (s, d, cb) => onUpdateRoomBackground(io, s, d, cb))
+  );
+
   socket.on(
     SOCKET_EVENTS.ROOM_JOIN,
     withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
@@ -1023,6 +1302,49 @@ export function registerRoomHandlers(io, socket) {
     SOCKET_EVENTS.ROOM_KICK_USER,
     withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onKickUser(io, s, d, cb))
   );
+  socket.on(
+    'room:kick_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onKickUser(io, s, d, cb))
+  );
+  socket.on(
+    'kick_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onKickUser(io, s, d, cb))
+  );
+
+  socket.on(
+    'room:remove_from_mic',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onRemoveFromMic(io, s, d, cb))
+  );
+  socket.on(
+    'room:remove_mic',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onRemoveFromMic(io, s, d, cb))
+  );
+  socket.on(
+    'remove_from_mic',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onRemoveFromMic(io, s, d, cb))
+  );
+
+  socket.on(
+    'room:mute_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onMuteUser(io, s, d, cb))
+  );
+  socket.on(
+    'room:mute_participant',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onMuteUser(io, s, d, cb))
+  );
+  socket.on(
+    'mute_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onMuteUser(io, s, d, cb))
+  );
+
+  socket.on(
+    'room:moderate_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onModerateUser(io, s, d, cb))
+  );
+  socket.on(
+    'moderate_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onModerateUser(io, s, d, cb))
+  );
 
   // Authoritative Active Rooms Snapshot Request for newly connected or reconnecting clients
   socket.on(
@@ -1053,6 +1375,10 @@ export default {
   onSendRoomEmoji,
   onSendRoomLike,
   onKickUser,
+  onRemoveFromMic,
+  onMuteUser,
+  onModerateUser,
+  onUpdateRoomBackground,
   onSocketDisconnect,
   registerRoomHandlers,
 };

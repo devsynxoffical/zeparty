@@ -19,6 +19,7 @@ import {
   toggleRoomMute,
   muteParticipant,
   kickParticipant,
+  removeFromMic,
   updateRoomCoverDp,
   deleteRoomCoverDp,
 } from '../../services/modules/liveRooms.service';
@@ -220,6 +221,17 @@ export function LiveRoomDetailPage() {
     refreshHistory();
   };
 
+  const handleRemoveFromMic = async (row) => {
+    try {
+      await removeFromMic(room?.id, row.id, 'Participant removed from mic seat by admin');
+      await addLog('REMOVE_FROM_MIC', row.id, 'Live Rooms', `Removed participant ${row.name} from mic seat`);
+      setParticipants((prev) => prev.map((p) => (p.id === row.id ? { ...p, micOn: false } : p)));
+    } catch (err) {
+      console.error('Failed to remove participant from mic:', err);
+    }
+    refreshHistory();
+  };
+
   const handleDeleteRoomDp = async () => {
     try {
       await deleteRoomCoverDp(room?.id);
@@ -302,6 +314,9 @@ export function LiveRoomDetailPage() {
       header: 'Actions',
       render: (row) => (
         <div className="flex gap-2">
+          <button onClick={() => handleRemoveFromMic(row)} className="text-xs text-sky-400 hover:underline">
+            Remove Mic
+          </button>
           <button onClick={() => handleMuteParticipant(row)} className={`text-xs hover:underline ${row.micOn ? 'text-amber-400' : 'text-slate-400'}`}>
             {row.micOn ? 'Mute' : 'Unmute'}
           </button>
