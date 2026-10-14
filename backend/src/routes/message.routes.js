@@ -10,6 +10,7 @@ messageRouter.use(authenticate);
 messageRouter.get('/inbox-summary', messageController.getInboxSummary);
 
 // List conversations
+messageRouter.get('/', messageController.getConversations);
 messageRouter.get('/conversations', messageController.getConversations);
 
 // Get messages in a conversation with target user

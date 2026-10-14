@@ -307,14 +307,12 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       };
 
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
-      broadcastTarget.emit('room:user_joined', userPayload);
       broadcastTarget.emit('user_joined', userPayload);
       broadcastTarget.emit('user:joined', userPayload);
       broadcastTarget.emit('room_user_joined', userPayload);
 
       if (room.id !== roomId && io) {
         io.to(`room:${room.id}`).emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
-        io.to(`room:${room.id}`).emit('room:user_joined', userPayload);
       }
 
       const viewerPayload = {
@@ -325,7 +323,6 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         currentViewersCount: currentCount,
       };
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
-      broadcastTarget.emit('room:viewer_count_changed', viewerPayload);
       broadcastTarget.emit('room:viewer_count', viewerPayload);
       broadcastTarget.emit('viewer_count_changed', viewerPayload);
 
@@ -486,7 +483,6 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
           },
         };
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, leftPayload);
-        broadcastTarget.emit('room:user_left', leftPayload);
         broadcastTarget.emit('user_left', leftPayload);
         broadcastTarget.emit('user:left', leftPayload);
         broadcastTarget.emit('room_user_left', leftPayload);
@@ -499,7 +495,6 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
           currentViewersCount: updatedViewerCount,
         };
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, countPayload);
-        broadcastTarget.emit('room:viewer_count_changed', countPayload);
         broadcastTarget.emit('room:viewer_count', countPayload);
         broadcastTarget.emit('viewer_count_changed', countPayload);
       }
@@ -628,7 +623,6 @@ export async function onSocketDisconnect(io, socket, db) {
               },
             };
             broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, leftPayload);
-            broadcastTarget.emit('room:user_left', leftPayload);
             broadcastTarget.emit('user_left', leftPayload);
             broadcastTarget.emit('user:left', leftPayload);
             broadcastTarget.emit('room_user_left', leftPayload);
@@ -641,7 +635,6 @@ export async function onSocketDisconnect(io, socket, db) {
               currentViewersCount: updatedViewerCount,
             };
             broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, countPayload);
-            broadcastTarget.emit('room:viewer_count_changed', countPayload);
             broadcastTarget.emit('room:viewer_count', countPayload);
             broadcastTarget.emit('viewer_count_changed', countPayload);
           }

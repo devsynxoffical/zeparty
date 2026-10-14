@@ -56,9 +56,11 @@ router.use('/rankings', leaderboardRouter);
 router.use('/v1/leaderboard', leaderboardRouter);
 router.use('/leaderboard', leaderboardRouter);
 
-// Direct Messaging routes
+// Direct Messaging & Conversations routes
 router.use('/v1/messages', messageRouter);
 router.use('/messages', messageRouter);
+router.use('/v1/conversations', messageRouter);
+router.use('/conversations', messageRouter);
 
 // Phase 18 Media & Storage Routes
 router.use('/v1/media', mediaRoutes);

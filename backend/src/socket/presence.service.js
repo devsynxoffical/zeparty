@@ -419,9 +419,11 @@ export function broadcastPresenceChange(io, userId, presenceData) {
   if (!io || !userId || !presenceData) return;
   const payload = {
     userId: String(userId),
+    id: String(userId),
     presenceStatus: presenceData.presenceStatus,
     status: presenceData.presenceStatus,
     isOnline: Boolean(presenceData.isOnline),
+    online: Boolean(presenceData.isOnline),
     isInRoom: Boolean(presenceData.isInRoom),
     currentRoomId: presenceData.currentRoomId || null,
     currentRoomTitle: presenceData.currentRoomTitle || null,
@@ -431,10 +433,13 @@ export function broadcastPresenceChange(io, userId, presenceData) {
     timestamp: presenceData.timestamp || new Date().toISOString(),
   };
 
-  // Broadcast to global presence listeners
+  // Broadcast to global presence listeners & open inbox sessions
   io.emit('user:presence_changed', payload);
   io.emit('presence:changed', payload);
   io.emit('user_presence_update', payload);
+  io.emit('presence_update', payload);
+  io.emit('user:presence', payload);
+  io.emit('inbox:presence_update', payload);
 
   // Deliver directly to target user's personal channel
   io.to(`user:${userId}`).emit('user:presence_changed', payload);

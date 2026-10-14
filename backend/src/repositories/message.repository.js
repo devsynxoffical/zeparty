@@ -1,5 +1,6 @@
 import prisma from '../config/database.js';
 import storageService from '../services/storage.service.js';
+import presenceService from '../socket/presence.service.js';
 
 /**
  * Get distinct conversation summaries for a user with the latest message and unread counts.
@@ -103,10 +104,43 @@ export async function getConversationsForUser(userId) {
         dob: user.dob,
         isVip: (user.profile?.vipLevel || 0) > 0,
         vipLevel: user.profile?.vipLevel ? `VIP ${user.profile.vipLevel}` : 'None',
+        isOnline: false,
+        online: false,
+        presenceStatus: 'OFFLINE',
+        isInRoom: false,
+        currentRoomId: null,
+        lastSeenAt: null,
       };
       result.push(conv);
     }
   }
+
+  // Enrich with authoritative real-time socket presence from Redis / presenceService
+  await Promise.all(
+    result.map(async (conv) => {
+      try {
+        const pres = await presenceService.getUserPresence(conv.otherUserId);
+        const isOnline = Boolean(pres?.isOnline);
+        conv.otherUser.isOnline = isOnline;
+        conv.otherUser.online = isOnline;
+        conv.otherUser.presenceStatus = pres?.presenceStatus || (isOnline ? 'ONLINE' : 'OFFLINE');
+        conv.otherUser.isInRoom = Boolean(pres?.isInRoom);
+        conv.otherUser.currentRoomId = pres?.currentRoomId || null;
+        conv.otherUser.lastSeenAt = pres?.lastSeenAt || null;
+
+        // Also assign at conversation root level for client models reading conv.isOnline
+        conv.isOnline = isOnline;
+        conv.online = isOnline;
+        conv.presenceStatus = conv.otherUser.presenceStatus;
+      } catch (_) {
+        conv.otherUser.isOnline = false;
+        conv.otherUser.online = false;
+        conv.otherUser.presenceStatus = 'OFFLINE';
+        conv.isOnline = false;
+        conv.online = false;
+      }
+    })
+  );
 
   return result;
 }

@@ -1,5 +1,6 @@
 import messageRepository from '../repositories/message.repository.js';
 import userRepository from '../repositories/user.repository.js';
+import presenceService from '../socket/presence.service.js';
 import { getIO } from '../socket/index.js';
 
 export async function getUserConversations(userId) {
@@ -9,7 +10,15 @@ export async function getUserConversations(userId) {
 export async function getConversationMessages(userId, targetUserId, options = {}) {
   // Mark messages from targetUser to user as read
   await messageRepository.markMessagesAsRead(targetUserId, userId);
-  return await messageRepository.getMessagesBetweenUsers(userId, targetUserId, options);
+  const result = await messageRepository.getMessagesBetweenUsers(userId, targetUserId, options);
+  try {
+    const presence = await presenceService.getUserPresence(targetUserId);
+    result.partnerPresence = presence;
+    result.isOnline = Boolean(presence?.isOnline);
+    result.online = Boolean(presence?.isOnline);
+    result.presenceStatus = presence?.presenceStatus || 'OFFLINE';
+  } catch (_) {}
+  return result;
 }
 
 export async function sendDirectMessage(senderId, targetUserId, { content, type = 'text', mediaUrl = null, durationSeconds = null }) {
