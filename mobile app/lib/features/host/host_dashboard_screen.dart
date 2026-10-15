@@ -7,7 +7,6 @@ import '../../providers/auth_provider.dart';
 import '../../widgets/design/gold_button.dart';
 import '../../widgets/design/premium_card.dart';
 import '../withdrawal/withdrawal_screen.dart';
-import '../wallet/diamond_exchange_screen.dart';
 
 class HostDashboardScreen extends StatefulWidget {
   const HostDashboardScreen({super.key});
@@ -48,17 +47,6 @@ class _HostDashboardScreenState extends State<HostDashboardScreen> {
             fontWeight: FontWeight.bold,
           ),
         ),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.currency_exchange_rounded, color: primary),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (c) => const DiamondExchangeScreen()),
-              );
-            },
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -176,41 +164,18 @@ class _HostDashboardScreenState extends State<HostDashboardScreen> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GoldButton(
-                          text: 'Exchange Gold Coins',
-                          height: 42,
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (c) => const DiamondExchangeScreen()),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: primary),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (c) => const WithdrawalScreen()),
-                            );
-                          },
-                          child: Text(
-                            'Transfer to Seller',
-                            style: TextStyle(color: primary, fontWeight: FontWeight.bold, fontSize: 12),
-                          ),
-                        ),
-                      ),
-                    ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: GoldButton(
+                      text: 'Transfer to Authorized Seller',
+                      height: 44,
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (c) => const WithdrawalScreen()),
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),

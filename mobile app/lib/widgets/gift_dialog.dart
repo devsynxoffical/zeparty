@@ -105,39 +105,67 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
     final auth = context.watch<AuthProvider>();
     final currentUser = auth.currentUser;
 
-    // Available room recipients
-    final roomParticipants = partyProv.participants.map((p) => p.user).toList();
-    final List<UserModel> availableRecipients = roomParticipants.isNotEmpty
-        ? roomParticipants.map((u) {
-            if (u.id == currentUser.id && currentUser.avatarUrl.isNotEmpty) {
-              return u.copyWith(avatarUrl: currentUser.avatarUrl, name: currentUser.name);
-            }
-            return u;
-          }).toList()
-        : (widget.targetReceiver != null
-            ? [
-                (widget.targetReceiver!.id == currentUser.id && currentUser.avatarUrl.isNotEmpty)
-                    ? widget.targetReceiver!.copyWith(avatarUrl: currentUser.avatarUrl, name: currentUser.name)
-                    : (widget.targetReceiver!.avatarUrl.isEmpty && currentUser.avatarUrl.isNotEmpty && (widget.targetReceiver!.name == currentUser.name || widget.targetReceiver!.name == widget.streamerName)
-                        ? widget.targetReceiver!.copyWith(avatarUrl: currentUser.avatarUrl)
-                        : widget.targetReceiver!)
-              ]
-            : [
-                (widget.streamerName == currentUser.name || widget.streamerName == currentUser.displayName || widget.streamerName.contains(currentUser.name))
-                    ? currentUser
-                    : UserModel(
-                        id: 'user_target',
-                        username: widget.streamerName,
-                        name: widget.streamerName,
-                        avatarUrl: currentUser.avatarUrl.isNotEmpty
-                            ? currentUser.avatarUrl
-                            : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-                      ),
-              ]);
+    // Available room recipients (deduplicated by stable user ID and username)
+    final Map<String, UserModel> recipientsMap = {};
+    for (final p in partyProv.participants) {
+      final u = p.user;
+      final key = u.id.trim().isNotEmpty ? u.id.trim() : u.username.trim().toLowerCase();
+      if (key.isNotEmpty && !recipientsMap.containsKey(key)) {
+        if (u.id == currentUser.id && currentUser.avatarUrl.isNotEmpty) {
+          recipientsMap[key] = u.copyWith(avatarUrl: currentUser.avatarUrl, name: currentUser.name);
+        } else {
+          recipientsMap[key] = u;
+        }
+      }
+    }
+
+    // Include explicitly passed targetReceiver if provided and not yet in map
+    if (widget.targetReceiver != null) {
+      final tr = widget.targetReceiver!;
+      final trKey = tr.id.trim().isNotEmpty ? tr.id.trim() : tr.username.trim().toLowerCase();
+      if (trKey.isNotEmpty && !recipientsMap.containsKey(trKey)) {
+        recipientsMap[trKey] = tr;
+      }
+    }
+
+    // Fallback if room participants list is empty
+    if (recipientsMap.isEmpty) {
+      final isStreamerMe = widget.streamerName.trim().toLowerCase() == currentUser.name.trim().toLowerCase() ||
+          widget.streamerName.trim().toLowerCase() == currentUser.displayName.trim().toLowerCase() ||
+          widget.streamerName.trim().toLowerCase() == currentUser.username.trim().toLowerCase();
+      if (!isStreamerMe && widget.streamerName.trim().isNotEmpty) {
+        recipientsMap['streamer'] = UserModel(
+          id: 'user_target',
+          username: widget.streamerName,
+          name: widget.streamerName,
+          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        );
+      } else {
+        recipientsMap[currentUser.id] = currentUser;
+      }
+    }
+
+    final List<UserModel> availableRecipients = recipientsMap.values.toList();
+
+    // Distinct list of other recipients (excluding self)
+    final otherRecipients = availableRecipients.where((u) =>
+      u.id != currentUser.id &&
+      (currentUser.username.isEmpty || u.username.toLowerCase() != currentUser.username.toLowerCase()) &&
+      (currentUser.name.isEmpty || u.name.toLowerCase() != currentUser.name.toLowerCase())
+    ).toList();
+
+    // Safe initial recipient selection: Auto-select non-self user if none selected
+    if (_selectedUserIds.isEmpty && !recipientIsAllSelected) {
+      if (widget.targetReceiver != null && widget.targetReceiver!.id != currentUser.id) {
+        _selectedUserIds.add(widget.targetReceiver!.id);
+      } else if (otherRecipients.isNotEmpty) {
+        _selectedUserIds.add(otherRecipients.first.id);
+      }
+    }
 
     // Active Recipients List
     final effectiveRecipients = recipientIsAllSelected
-        ? availableRecipients
+        ? otherRecipients // "All" sends to all other room members, never self
         : availableRecipients.where((u) => _selectedUserIds.contains(u.id)).toList();
 
     final recipientCount = effectiveRecipients.isNotEmpty ? effectiveRecipients.length : 1;
@@ -181,8 +209,11 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                       physics: const BouncingScrollPhysics(),
                       child: Row(
                         children: availableRecipients.map((user) {
-                          final isSelected = recipientIsAllSelected || _selectedUserIds.contains(user.id);
-                          final resolvedAvatarUrl = (user.id == currentUser.id && currentUser.avatarUrl.isNotEmpty)
+                          final isMe = user.id == currentUser.id ||
+                              (currentUser.username.isNotEmpty && user.username.toLowerCase() == currentUser.username.toLowerCase()) ||
+                              (currentUser.name.isNotEmpty && user.name.toLowerCase() == currentUser.name.toLowerCase());
+                          final isSelected = recipientIsAllSelected ? !isMe : _selectedUserIds.contains(user.id);
+                          final resolvedAvatarUrl = (isMe && currentUser.avatarUrl.isNotEmpty)
                               ? currentUser.avatarUrl
                               : (user.avatarUrl.isNotEmpty ? user.avatarUrl : (currentUser.avatarUrl.isNotEmpty ? currentUser.avatarUrl : null));
 
@@ -191,9 +222,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                               setState(() {
                                 recipientIsAllSelected = false;
                                 if (_selectedUserIds.contains(user.id)) {
-                                  if (_selectedUserIds.length > 1) {
-                                    _selectedUserIds.remove(user.id);
-                                  }
+                                  _selectedUserIds.remove(user.id);
                                 } else {
                                   _selectedUserIds.add(user.id);
                                 }
@@ -203,35 +232,57 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                               padding: const EdgeInsets.only(right: 10),
                               child: Column(
                                 children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(2),
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: isSelected ? const Color(0xFF00E676) : Colors.transparent,
-                                        width: 2,
+                                  Stack(
+                                    clipBehavior: Clip.none,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(2),
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: isSelected
+                                                ? (isMe ? const Color(0xFFB388FF) : const Color(0xFF00E676))
+                                                : Colors.transparent,
+                                            width: 2,
+                                          ),
+                                          boxShadow: isSelected
+                                              ? [BoxShadow(color: isMe ? const Color(0xFFB388FF) : const Color(0xFF00E676), blurRadius: 6)]
+                                              : null,
+                                        ),
+                                        child: UserAvatar(
+                                          imageUrl: resolvedAvatarUrl,
+                                          name: user.name,
+                                          radius: 18,
+                                        ),
                                       ),
-                                      boxShadow: isSelected
-                                          ? [const BoxShadow(color: Color(0xFF00E676), blurRadius: 6)]
-                                          : null,
-                                    ),
-                                    child: UserAvatar(
-                                      imageUrl: resolvedAvatarUrl,
-                                      name: user.name,
-                                      radius: 18,
-                                    ),
+                                      if (isMe)
+                                        Positioned(
+                                          bottom: -2,
+                                          right: -2,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: Colors.orange.shade800,
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: const Text('You', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                   const SizedBox(height: 2),
                                   SizedBox(
                                     width: 44,
                                     child: Text(
-                                      user.name,
+                                      isMe ? '${user.name}\n(You)' : user.name,
                                       style: TextStyle(
                                         fontSize: 9,
-                                        color: isSelected ? const Color(0xFF00E676) : AppColors.getTextSecondary(isDark),
+                                        color: isSelected
+                                            ? (isMe ? const Color(0xFFB388FF) : const Color(0xFF00E676))
+                                            : AppColors.getTextSecondary(isDark),
                                         fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                       ),
-                                      maxLines: 1,
+                                      maxLines: isMe ? 2 : 1,
                                       overflow: TextOverflow.ellipsis,
                                       textAlign: TextAlign.center,
                                     ),
@@ -253,11 +304,13 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                       setState(() {
                         recipientIsAllSelected = !recipientIsAllSelected;
                         if (recipientIsAllSelected) {
-                          _selectedUserIds = availableRecipients.map((u) => u.id).toSet();
-                        } else if (widget.targetReceiver != null) {
+                          _selectedUserIds = otherRecipients.map((u) => u.id).toSet();
+                        } else if (widget.targetReceiver != null && widget.targetReceiver!.id != currentUser.id) {
                           _selectedUserIds = {widget.targetReceiver!.id};
-                        } else if (availableRecipients.isNotEmpty) {
-                          _selectedUserIds = {availableRecipients.first.id};
+                        } else if (otherRecipients.isNotEmpty) {
+                          _selectedUserIds = {otherRecipients.first.id};
+                        } else {
+                          _selectedUserIds = {};
                         }
                       });
                     },
@@ -291,7 +344,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
 
               const SizedBox(height: 10),
 
-              // Authoritative Coins Balance & Recharge Link
+              // Authoritative Coins Balance & Recharge Link & Clear Selected Recipient Display
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -310,9 +363,41 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                       ),
                     ],
                   ),
-                  Text(
-                    'Selected: $recipientCount recipient${recipientCount > 1 ? 's' : ''}',
-                    style: const TextStyle(color: Colors.grey, fontSize: 11),
+                  Flexible(
+                    child: effectiveRecipients.isEmpty
+                        ? const Text(
+                            '⚠️ Select a recipient',
+                            style: TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : (recipientIsAllSelected || effectiveRecipients.length > 1
+                            ? Text(
+                                'Send to: All (${effectiveRecipients.length})',
+                                style: const TextStyle(color: Color(0xFF00E676), fontSize: 11, fontWeight: FontWeight.bold),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              )
+                            : Builder(
+                                builder: (_) {
+                                  final single = effectiveRecipients.first;
+                                  final isSingleMe = single.id == currentUser.id ||
+                                      (currentUser.username.isNotEmpty && single.username.toLowerCase() == currentUser.username.toLowerCase()) ||
+                                      (currentUser.name.isNotEmpty && single.name.toLowerCase() == currentUser.name.toLowerCase());
+                                  return Text(
+                                    isSingleMe
+                                        ? 'Send to: ${single.name} (You)'
+                                        : 'Send to: ${single.name}',
+                                    style: TextStyle(
+                                      color: isSingleMe ? const Color(0xFFB388FF) : const Color(0xFF00E676),
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  );
+                                },
+                              )),
                   ),
                 ],
               ),
@@ -419,14 +504,33 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                       elevation: 4,
                     ),
-                    onPressed: selectedGift == null || effectiveRecipients.isEmpty || liveGiftProv.isSending
+                    onPressed: selectedGift == null || liveGiftProv.isSending
                         ? null
                         : () async {
                             final auth = context.read<AuthProvider>();
                             final liveProv = context.read<LiveProvider>();
                             final partyLiveProv = context.read<LivePartyProvider>();
+                            final messenger = ScaffoldMessenger.of(context);
+                            final nav = Navigator.of(context);
 
-                            if (wallet.coins < totalPrice) {
+                            // 1. Recipient selection check
+                            if (effectiveRecipients.isEmpty) {
+                              messenger.showSnackBar(
+                                const SnackBar(
+                                  content: Text('⚠️ Please select a recipient first.'),
+                                  backgroundColor: Colors.orange,
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                              return;
+                            }
+
+                            // 2. Allow all effective recipients (including self-gifting)
+                            final validRecipients = effectiveRecipients;
+
+                            // 3. Balance verification for valid recipients
+                            final effectiveTotalPrice = _calculateTotalPrice(currentGiftPrice, validRecipients.length);
+                            if (wallet.coins < effectiveTotalPrice) {
                               showDialog(
                                 context: context,
                                 builder: (dlgCtx) => AlertDialog(
@@ -440,7 +544,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                                     ],
                                   ),
                                   content: Text(
-                                    'You need $totalPrice 🪙 to send this gift. You currently have ${wallet.coins} 🪙. Would you like to recharge now?',
+                                    'You need $effectiveTotalPrice 🪙 to send this gift. You currently have ${wallet.coins} 🪙. Would you like to recharge now?',
                                     style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
                                   ),
                                   actions: [
@@ -468,7 +572,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                             int totalSuccess = 0;
                             final roomId = liveProv.activeRoom?.id ?? partyLiveProv.activeRoom?.id ?? '';
 
-                            for (final targetUser in effectiveRecipients) {
+                            for (final targetUser in validRecipients) {
                               final success = await liveGiftProv.sendGift(
                                 walletProvider: wallet,
                                 gift: selectedGift!,
@@ -476,6 +580,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                                 receiver: targetUser,
                                 roomId: roomId,
                                 quantity: quantity,
+                                authProvider: auth,
                               );
 
                               if (success) {
@@ -497,8 +602,8 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                             if (totalSuccess > 0) {
                               widget.onGiftSent?.call(selectedGift!);
                               if (mounted) {
-                                Navigator.pop(context);
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                nav.pop();
+                                messenger.showSnackBar(
                                   SnackBar(
                                     content: Text('🎁 Sent $quantity × ${selectedGift!.name} to $totalSuccess recipient(s)!'),
                                     backgroundColor: Colors.green[800],
@@ -507,9 +612,10 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                                 );
                               }
                             } else if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              final cleanError = liveGiftProv.lastError ?? 'Failed to send gift. Please check connection.';
+                              messenger.showSnackBar(
                                 SnackBar(
-                                  content: Text(liveGiftProv.lastError ?? 'Failed to send gift. Please check connection.'),
+                                  content: Text(cleanError),
                                   backgroundColor: Colors.red[800],
                                   behavior: SnackBarBehavior.floating,
                                 ),

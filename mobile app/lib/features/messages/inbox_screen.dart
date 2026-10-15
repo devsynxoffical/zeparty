@@ -169,7 +169,7 @@ class _InboxScreenState extends State<InboxScreen> {
               onChanged: _onSearchChanged,
               style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 13),
               decoration: InputDecoration(
-                hintText: 'Search users by name, @username, or phone...',
+                hintText: 'Search users by name or ID...',
                 hintStyle: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
                 prefixIcon: const Icon(Icons.search_rounded, color: Colors.grey),
                 suffixIcon: _searchQuery.isNotEmpty
@@ -365,7 +365,7 @@ class _InboxScreenState extends State<InboxScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Try searching by username, display name, or phone number',
+              'Try searching by display name or numeric ID',
               style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(isDark)),
             ),
           ],
@@ -396,18 +396,19 @@ class _InboxScreenState extends State<InboxScreen> {
               children: [
                 Flexible(
                   child: Text(
-                    user.name.isNotEmpty ? user.name : user.username,
+                    user.name.isNotEmpty ? user.name : (user.id.isNotEmpty ? 'User ${user.id}' : 'User'),
                     style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.getTextPrimary(isDark)),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 4),
-                if (user.username.isNotEmpty)
+                if (user.id.isNotEmpty) ...[
+                  const SizedBox(width: 6),
                   Text(
-                    '@${user.username}',
+                    'ID: ${user.id}',
                     style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark)),
                   ),
+                ],
               ],
             ),
             subtitle: Text(

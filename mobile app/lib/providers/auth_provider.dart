@@ -41,6 +41,12 @@ class AuthProvider extends ChangeNotifier {
   Future<void> get initFuture => _initFuture;
   String? get errorMessage => _errorMessage;
 
+  void mockSetCurrentUser(UserModel user) {
+    _currentUser = user;
+    _isAuthenticated = true;
+    notifyListeners();
+  }
+
   AuthProvider() {
     _initFuture = _restoreSession();
     _initModerationListeners();
@@ -85,6 +91,42 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Credits sender Wealth XP upon eligible gift transaction and persists progression
+  void addWealthXp(int xpIncrement) {
+    if (xpIncrement > 0) {
+      final user = _currentUser ?? UserModel.empty;
+      final currentXp = user.wealthXp;
+      final newWealthXp = currentXp + xpIncrement;
+      final newLevel = newWealthXp ~/ 10000;
+      _currentUser = user.copyWith(
+        wealthXp: newWealthXp,
+        wealthLevel: newLevel,
+      );
+      if (_currentUser!.id.isNotEmpty) {
+        _saveUserLocalSession(_currentUser!);
+      }
+      notifyListeners();
+    }
+  }
+
+  /// Credits recipient Charm XP upon receiving gifts and persists progression
+  void addCharmXp(int xpIncrement) {
+    if (xpIncrement > 0) {
+      final user = _currentUser ?? UserModel.empty;
+      final currentXp = user.charmXp;
+      final newCharmXp = currentXp + xpIncrement;
+      final newLevel = newCharmXp ~/ 10000;
+      _currentUser = user.copyWith(
+        charmXp: newCharmXp,
+        charmLevel: newLevel,
+      );
+      if (_currentUser!.id.isNotEmpty) {
+        _saveUserLocalSession(_currentUser!);
+      }
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
     _authStateSubscription?.cancel();
@@ -100,8 +142,8 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _saveUserLocalSession(UserModel user) async {
     try {
-      if (user.id.isEmpty) {
-        debugPrint('[AuthProvider] Refusing to persist empty user session');
+      if (user.id.isEmpty || user.id.startsWith('dev-admin') || user.username.startsWith('admin_shadow')) {
+        debugPrint('[AuthProvider] Refusing to persist invalid or admin shadow user session');
         return;
       }
       final prefs = await SharedPreferences.getInstance();
@@ -156,10 +198,12 @@ class AuthProvider extends ChangeNotifier {
         try {
           final Map<String, dynamic> map = jsonDecode(userJsonStr);
           final restored = UserModel.fromJson(map);
-          if (restored.id.isNotEmpty) {
+          if (restored.id.isNotEmpty && !restored.id.startsWith('dev-admin') && !restored.username.startsWith('admin_shadow')) {
             _currentUser = restored;
             _isAuthenticated = true;
             _isGuest = false;
+          } else {
+            await prefs.remove(_userSessionKey);
           }
         } catch (e) {
           debugPrint('[AuthProvider] Restoring stored session failed: $e');
@@ -200,6 +244,19 @@ class AuthProvider extends ChangeNotifier {
       final remoteUser = await _authRepository
           .getCurrentUser()
           .timeout(const Duration(seconds: 4));
+
+      // Guard: Discard internal development/admin shadow accounts or mismatched user records
+      if (remoteUser.id.startsWith('dev-admin') ||
+          remoteUser.username.startsWith('admin_shadow') ||
+          remoteUser.name.startsWith('admin_shadow')) {
+        debugPrint('[AuthProvider] Rejecting unexpected shadow admin profile returned by server: ${remoteUser.id}');
+        return _currentUser;
+      }
+
+      if (_currentUser != null && _currentUser!.id.isNotEmpty && remoteUser.id != _currentUser!.id) {
+        debugPrint('[AuthProvider] Rejecting mismatched profile ID ${remoteUser.id} (authenticated user: ${_currentUser?.id})');
+        return _currentUser;
+      }
 
       // Remote user from backend database is authoritative, but preserve equipped outfit fields if empty
       final String effectiveFrame = (remoteUser.avatarFrame.isNotEmpty && remoteUser.avatarFrame != 'none')
@@ -559,10 +616,7 @@ class AuthProvider extends ChangeNotifier {
       if (!isTechId) {
         cleanName = rawGoogleName;
       } else {
-        final emailPart = cleanEmail.contains('@') ? cleanEmail.split('@').first : cleanEmail;
-        cleanName = emailPart.isNotEmpty
-            ? (emailPart[0].toUpperCase() + emailPart.substring(1))
-            : 'ZeParty Member';
+        cleanName = 'ZeParty Member';
       }
 
       if (cleanName.length > 25) {

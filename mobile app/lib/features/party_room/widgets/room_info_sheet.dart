@@ -598,52 +598,9 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
             ),
           ),
           
-          const SizedBox(height: 24),
-          
-          // Share Section
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [primaryColor.withValues(alpha: 0.1), Colors.transparent],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Flexible(
-                  child: Text(
-                    'Share & Win Coins!',
-                    style: TextStyle(color: textColor, fontWeight: FontWeight.w800, fontSize: 13),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: primaryColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text('3 Chances', style: TextStyle(color: primaryColor, fontSize: 10, fontWeight: FontWeight.bold)),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildShareAction(Icons.phone_android, 'Feedback', textColor, secondaryColor),
-              _buildShareAction(Icons.chat_bubble_outline_rounded, 'Message', textColor, secondaryColor),
-              _buildShareAction(Icons.save_alt_rounded, 'Save', textColor, secondaryColor),
-              _buildShareNetworkGroup(),
-            ],
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+
+
 
           // CR 36 Side-by-Side Follow & Join Bottom Actions
           _buildFollowAndJoinSection(textColor, primaryColor),
@@ -775,80 +732,7 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
     );
   }
 
-  Widget _buildShareAction(IconData icon, String label, Color textColor, Color secondaryColor) {
-    return GestureDetector(
-      onTap: () => RoomShareService.shareRoom(context, roomId: widget.room.id, roomTitle: widget.room.title),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: secondaryColor.withValues(alpha: 0.05),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: textColor, size: 22),
-          ),
-          const SizedBox(height: 6),
-          Text(label, style: TextStyle(color: textColor, fontSize: 10, fontWeight: FontWeight.w600)),
-        ],
-      ),
-    );
-  }
 
-  Widget _buildShareNetworkGroup() {
-    return GestureDetector(
-      onTap: () => RoomShareService.shareRoom(context, roomId: widget.room.id, roomTitle: widget.room.title),
-      child: Column(
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Row(
-                children: [
-                  _buildSocialIcon(Colors.blue, Icons.facebook),
-                  _buildSocialIcon(Colors.green, Icons.wechat),
-                  _buildSocialIcon(Colors.pink, Icons.camera_alt),
-                ],
-              ),
-              Positioned(
-                top: -12,
-                right: -10,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.amber,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.monetization_on, color: Colors.white, size: 12),
-                      SizedBox(width: 2),
-                      Text('X100', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text('Click to Share', style: TextStyle(color: Colors.redAccent.withValues(alpha: 0.8), fontSize: 11, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSocialIcon(Color color, IconData icon) {
-    return Container(
-      margin: const EdgeInsets.only(right: 4),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
-      child: Icon(icon, color: Colors.white, size: 16),
-    );
-  }
 
   Widget _buildMemberTab(Color textColor, Color secondaryColor) {
     final livePartyProv = Provider.of<LivePartyProvider>(context);

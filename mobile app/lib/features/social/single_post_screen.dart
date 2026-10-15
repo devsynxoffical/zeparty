@@ -43,7 +43,7 @@ class SinglePostScreen extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '@${post.author.username}',
+                      'ID: ${post.author.id}',
                       style: TextStyle(
                         fontSize: 13,
                         color: AppColors.getTextSecondary(isDark),

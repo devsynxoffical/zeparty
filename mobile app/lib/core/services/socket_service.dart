@@ -34,6 +34,9 @@ class SocketService {
   final _roomEmojiController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomSnapshotController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomRoleUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomMicInviteController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomMicInviteResponseController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomFeedClearedController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Social realtime event streams
   final _postCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -112,6 +115,9 @@ class SocketService {
   Stream<Map<String, dynamic>> get onRoomEmoji => _roomEmojiController.stream;
   Stream<Map<String, dynamic>> get onRoomSnapshot => _roomSnapshotController.stream;
   Stream<Map<String, dynamic>> get onRoomRoleUpdated => _roomRoleUpdatedController.stream;
+  Stream<Map<String, dynamic>> get onRoomMicInvite => _roomMicInviteController.stream;
+  Stream<Map<String, dynamic>> get onRoomMicInviteResponse => _roomMicInviteResponseController.stream;
+  Stream<Map<String, dynamic>> get onRoomFeedCleared => _roomFeedClearedController.stream;
 
   // Stream aliases for backwards compatibility
   Stream<Map<String, dynamic>> get roomCreatedStream => onRoomCreated;
@@ -438,6 +444,28 @@ class SocketService {
     _socket!.on('room:role_updated', (data) {
       if (data != null) _roomRoleUpdatedController.add(safeMap(data));
     });
+    _socket!.on('room:mic_invite', (data) {
+      if (data != null) _roomMicInviteController.add(safeMap(data));
+    });
+    _socket!.on('room_mic_invite', (data) {
+      if (data != null) _roomMicInviteController.add(safeMap(data));
+    });
+    void handleFeedCleared(dynamic data) {
+      final map = data != null ? safeMap(data) : <String, dynamic>{'roomId': _currentRoomId};
+      _roomFeedClearedController.add(map);
+    }
+    _socket!.off('room:feed_cleared');
+    _socket!.on('room:feed_cleared', handleFeedCleared);
+    _socket!.off('party:clear_screen');
+    _socket!.on('party:clear_screen', handleFeedCleared);
+    _socket!.off('room:clear_screen');
+    _socket!.on('room:clear_screen', handleFeedCleared);
+    _socket!.on('room:mic_invite_response', (data) {
+      if (data != null) _roomMicInviteResponseController.add(safeMap(data));
+    });
+    _socket!.on('room_mic_invite_response', (data) {
+      if (data != null) _roomMicInviteResponseController.add(safeMap(data));
+    });
 
     // Social Events
     _socket!.on('post:created', (data) {
@@ -726,6 +754,46 @@ class SocketService {
     }
   }
 
+  /// Realtime Mic Invitation methods
+  void sendMicInvite({
+    required String roomId,
+    required String targetUserId,
+    required Map<String, dynamic> inviter,
+    required Map<String, dynamic> targetUser,
+    String? invitationId,
+    String? roomTitle,
+  }) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('room:mic_invite', {
+        'id': invitationId ?? 'inv_${DateTime.now().millisecondsSinceEpoch}_$targetUserId',
+        'roomId': roomId,
+        if (roomTitle != null) 'roomTitle': roomTitle,
+        'targetUserId': targetUserId,
+        'inviter': inviter,
+        'targetUser': targetUser,
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+    }
+  }
+
+  void respondMicInvite({
+    required String roomId,
+    required String invitationId,
+    required String targetUserId,
+    required bool accepted,
+    String? reason,
+  }) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('room:mic_invite_response', {
+        'id': invitationId,
+        'roomId': roomId,
+        'targetUserId': targetUserId,
+        'accepted': accepted,
+        if (reason != null) 'reason': reason,
+      });
+    }
+  }
+
   /// Broadcast user joined event to room participants
   void sendUserJoined({
     required String roomId,
@@ -739,6 +807,14 @@ class SocketService {
         if (viewerCount != null) 'viewerCount': viewerCount,
       });
     }
+  }
+
+  /// Clear room lower feed broadcast
+  void clearRoomFeed(String roomId) {
+    emit('party:clear_screen', {
+      'roomId': roomId,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
   }
 
   /// Generic emit helper for real-time events

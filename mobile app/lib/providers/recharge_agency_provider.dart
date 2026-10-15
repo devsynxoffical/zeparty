@@ -7,9 +7,9 @@ class RechargeAgencyProvider extends ChangeNotifier {
   int _totalCoinsRecharged = 0;
   int _todaysRechargeTotal = 0;
   final int _dailyLimit = 0;
-  final String _sellerId = '';
-  final String _sellerName = 'Coin Reseller Agency';
-  final String _countryCode = 'GLOBAL';
+  String _sellerId = '';
+  String _sellerName = 'Coin Reseller Agency';
+  String _countryCode = 'GLOBAL';
 
   final List<SavedCustomerModel> _savedCustomers = [];
   final List<SellerRechargeTransactionModel> _transactions = [];
@@ -30,6 +30,46 @@ class RechargeAgencyProvider extends ChangeNotifier {
 
   RechargeAgencyProvider() {
     // Clean initial state
+  }
+
+  /// Synchronize authoritative seller details from current authenticated account
+  void syncForSeller({
+    required String sellerId,
+    required String sellerName,
+    required String countryCode,
+    int? initialCoins,
+  }) {
+    // If switching seller accounts, reset transaction history to prevent leakage
+    if (_sellerId.isNotEmpty && _sellerId != sellerId) {
+      _transactions.clear();
+      _savedCustomers.clear();
+      _auditLogs.clear();
+      _totalCoinsRecharged = 0;
+      _todaysRechargeTotal = 0;
+      _availableCoins = 0;
+    }
+
+    _sellerId = sellerId;
+    _sellerName = sellerName;
+    _countryCode = countryCode;
+    if (initialCoins != null && initialCoins >= 0) {
+      _availableCoins = initialCoins;
+    }
+    notifyListeners();
+  }
+
+  /// Reset provider state completely on logout or account switch
+  void reset() {
+    _availableCoins = 0;
+    _totalCoinsRecharged = 0;
+    _todaysRechargeTotal = 0;
+    _sellerId = '';
+    _sellerName = 'Coin Reseller Agency';
+    _countryCode = 'GLOBAL';
+    _savedCustomers.clear();
+    _transactions.clear();
+    _auditLogs.clear();
+    notifyListeners();
   }
 
   // Atomic User Verification

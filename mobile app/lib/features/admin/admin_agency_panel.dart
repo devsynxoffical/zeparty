@@ -439,38 +439,51 @@ class _AdminAgencyPanelState extends State<AdminAgencyPanel> {
 
   void _showEditSellerDialog(BuildContext context, CoinSellerModel? seller) {
     final nameCtrl = TextEditingController(text: seller?.name);
-    final stockCtrl = TextEditingController(text: seller?.stockCoins.toString() ?? '0');
+    final userIdCtrl = TextEditingController(text: seller?.userId ?? '3122996');
+    final countryCtrl = TextEditingController(text: seller?.region ?? 'Pakistan');
+    final stockCtrl = TextEditingController(text: seller?.stockCoins.toString() ?? '1000000');
     final provider = context.read<CoinAgencyProvider>();
 
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
-        title: Text(seller == null ? 'New Seller' : 'Edit Seller'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name')),
-            TextField(controller: stockCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Stock Coins')),
-          ],
+        title: Text(seller == null ? 'Register New Coin Seller' : 'Edit Seller'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Seller Display Name')),
+              TextField(controller: userIdCtrl, decoration: const InputDecoration(labelText: 'ZeParty Numeric User ID')),
+              TextField(controller: countryCtrl, decoration: const InputDecoration(labelText: 'Assigned Country (e.g. Pakistan)')),
+              TextField(controller: stockCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Stock Coins')),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () {
               final newStock = int.tryParse(stockCtrl.text) ?? 0;
+              final country = countryCtrl.text.trim().isNotEmpty ? countryCtrl.text.trim() : 'Pakistan';
+              final userId = userIdCtrl.text.trim().isNotEmpty ? userIdCtrl.text.trim() : 'USR_${DateTime.now().millisecondsSinceEpoch % 10000}';
               if (seller != null) {
-                provider.updateSeller(seller.copyWith(name: nameCtrl.text, stockCoins: newStock));
+                provider.updateSeller(seller.copyWith(
+                  name: nameCtrl.text.trim(),
+                  userId: userId,
+                  region: country,
+                  stockCoins: newStock,
+                ));
               } else {
                 provider.addSeller(CoinSellerModel(
                   id: 'seller_${DateTime.now().millisecondsSinceEpoch}',
-                  userId: 'USR_NEW',
-                  name: nameCtrl.text,
-                  avatarUrl: 'https://i.pravatar.cc/150',
-                  region: 'Global',
-                  type: SellerType.standard,
-                  status: SellerStatus.pending,
-                  isVisible: false,
-                  paymentMethods: ['Visa'],
+                  userId: userId,
+                  name: nameCtrl.text.trim(),
+                  avatarUrl: 'https://i.pravatar.cc/150?u=$userId',
+                  region: country,
+                  type: SellerType.verified,
+                  status: SellerStatus.approved,
+                  isVisible: true,
+                  paymentMethods: ['Easypaisa', 'JazzCash', 'Bank Transfer', 'Visa'],
                   stockCoins: newStock,
                 ));
               }

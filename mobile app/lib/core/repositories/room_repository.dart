@@ -177,4 +177,14 @@ class RoomRepository {
     final response = await _apiClient.get('/v1/rooms/$roomId/rankings', queryParameters: {'period': period});
     return response.data?['data'] as Map<String, dynamic>? ?? {};
   }
+
+  /// Clear lower room feed (Owner or Room Admin only)
+  Future<void> clearRoomFeed(String roomId) async {
+    try {
+      await _apiClient.post('/v1/rooms/$roomId/clear-feed', data: {
+        'clearedAt': DateTime.now().toIso8601String(),
+      });
+    } catch (_) {}
+  }
 }
+

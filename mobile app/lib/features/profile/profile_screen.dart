@@ -45,6 +45,7 @@ import '../bd_center/bd_center_dashboard_screen.dart';
 import '../../providers/agency_provider.dart';
 import '../../providers/live_host_provider.dart';
 import '../../providers/live_party_provider.dart';
+import '../../providers/recharge_agency_provider.dart';
 import '../party_room/live_party_room_screen.dart';
 
 
@@ -61,6 +62,17 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthProvider>();
+      if (auth.currentUser.id.isNotEmpty) {
+        context.read<WalletProvider>().syncWithUser(auth.currentUser);
+      }
+    });
+  }
+
   Future<void> _pickProfileImage(ImageSource source) async {
     try {
       final picker = ImagePicker();
@@ -196,32 +208,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: AppColors.getBackground(isDark),
       body: SafeArea(
         bottom: false,
-        child: isGuest 
-            ? _buildGuestView(isDark) 
-            : SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 20),
-                      _buildProfileHeader(user, isDark, primary),
-                      const SizedBox(height: 24),
-                      _buildUserStatistics(user, isDark),
-                      const SizedBox(height: 24),
-                      _buildWalletRow(user, wallet, isDark, primary),
-                      const SizedBox(height: 24),
-                      _buildFeatureGrid(context, user, isDark),
-                      const SizedBox(height: 24),
-                      _buildIdentityAchievements(user, isDark),
-                      const SizedBox(height: 24),
-                      _buildProfileOptions(context, user, isDark, primary),
-                      const SizedBox(height: 115),
-                    ],
-                  ),
+        child: (auth.isLoading && user.id.isEmpty)
+            ? Center(
+                child: CircularProgressIndicator(
+                  color: primary,
                 ),
-              ),
+              )
+            : isGuest 
+                ? _buildGuestView(isDark) 
+                : RefreshIndicator(
+                    onRefresh: () async {
+                      final auth = context.read<AuthProvider>();
+                      final wallet = context.read<WalletProvider>();
+                      await auth.refreshCurrentUser();
+                      await wallet.fetchWallet();
+                    },
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 20),
+                            _buildProfileHeader(user, isDark, primary),
+                            const SizedBox(height: 24),
+                            _buildUserStatistics(user, isDark),
+                            const SizedBox(height: 24),
+                            _buildWalletRow(user, wallet, isDark, primary),
+                            const SizedBox(height: 24),
+                            _buildFeatureGrid(context, user, isDark),
+                            const SizedBox(height: 24),
+                            _buildIdentityAchievements(user, isDark),
+                            const SizedBox(height: 24),
+                            _buildProfileOptions(context, user, isDark, primary),
+                            const SizedBox(height: 115),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
       ),
     );
   }
@@ -393,13 +419,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   spacing: 6,
                   runSpacing: 4,
                   children: [
-                    Text(
-                      user.displayName,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: NobleBadgeHelper.getColoredNicknameColor(
-                          NobleBadgeHelper.getTierFromTitle(user.nobleTitle),
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width * 0.45,
+                      ),
+                      child: Text(
+                        user.displayName.isNotEmpty ? user.displayName : 'User ${user.id}',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: NobleBadgeHelper.getColoredNicknameColor(
+                            NobleBadgeHelper.getTierFromTitle(user.nobleTitle),
+                          ),
                         ),
                       ),
                     ),
@@ -491,15 +524,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       },
                       child: Icon(Icons.copy_rounded, size: 12, color: AppColors.getTextSecondary(isDark)),
                     ),
-                    Text('•', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark))),
-                    Text(
-                      '@${user.username.isNotEmpty ? user.username : user.name}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.getTextSecondary(isDark),
-                      ),
-                    ),
                     if (user.isVip)
                       Icon(Icons.workspace_premium_rounded, size: 13, color: AppColors.primary),
                   ],
@@ -507,7 +531,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 5),
                 OnlineStatusBadge(
                   isOnline: user.isOnline,
-                  lastSeen: user.isOnline ? null : 'Online 3h ago',
+                  isInRoom: user.isInRoom,
+                  presenceStatus: user.presenceStatus,
+                  lastSeen: user.isOnline ? null : user.lastActiveText,
                 ),
               ],
             ),
@@ -619,6 +645,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildWalletRow(UserModel user, WalletProvider wallet, bool isDark, Color primary) {
+    final effectiveCoins = wallet.wallet != null ? wallet.coins : user.coins;
+    final effectiveDiamonds = wallet.wallet != null ? wallet.diamonds : user.diamonds;
+
     return Row(
       children: [
         Expanded(
@@ -643,7 +672,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          AppFormatters.formatNumber(wallet.coins),
+                          AppFormatters.formatNumber(effectiveCoins),
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -689,7 +718,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          AppFormatters.formatNumber(user.diamonds),
+                          AppFormatters.formatNumber(effectiveDiamonds),
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -726,7 +755,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final hasLiveHostAccess = user.hasLiveHostAccess || user.isHost || user.role == UserRole.host || liveHostProv.activeLiveHost != null || liveHostApp?.status == 'Approved';
 
     final isBdAuthorized = user.role == UserRole.bd || user.role == UserRole.admin;
-    final isSellerAuthorized = user.role == UserRole.seller || user.role == UserRole.admin;
+    final isSellerAuthorized = user.isSeller ||
+        user.role == UserRole.seller ||
+        user.role == UserRole.admin ||
+        user.badge.toLowerCase().contains('seller') ||
+        user.customTitles.any((t) => t.toLowerCase().contains('seller'));
     final isMerchantAuthorized = user.role == UserRole.admin;
     final isAdminAuthorized = user.role == UserRole.admin;
 
@@ -826,7 +859,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'title': 'Recharge Agency',
           'imagePath': 'assets/images/coin_ze.png',
           'badge': 'SELLER',
-          'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const RechargeAgencyScreen())),
+          'onTap': () {
+            final rechargeProv = context.read<RechargeAgencyProvider>();
+            final wallet = context.read<WalletProvider>();
+            rechargeProv.syncForSeller(
+              sellerId: user.id,
+              sellerName: user.displayName.isNotEmpty ? '${user.displayName} Recharge Agency' : 'Coin Reseller Agency',
+              countryCode: user.region.isNotEmpty ? user.region : 'GLOBAL',
+              initialCoins: user.sellerBalance > 0 ? user.sellerBalance : wallet.sellerBalance,
+            );
+            Navigator.push(context, MaterialPageRoute(builder: (c) => const RechargeAgencyScreen()));
+          },
         },
       if (isMerchantAuthorized)
         {

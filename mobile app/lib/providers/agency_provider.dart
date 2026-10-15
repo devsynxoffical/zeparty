@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/api_client.dart';
 import '../models/agency_model.dart';
 import '../models/agency_member_model.dart';
 import '../models/agency_wallet_ledger_model.dart';
 import '../models/agency_invitation_model.dart';
 import '../models/audio_host_model.dart';
+import '../models/agency_application_model.dart';
 
 class AgencyHostRequest {
   final String id;
@@ -31,6 +34,8 @@ class AgencyHostRequest {
 class AgencyProvider extends ChangeNotifier {
   final ApiClient _apiClient = ApiClient.instance;
 
+  static const String _agencyApplicationKey = 'zeparty_user_agency_application_v1';
+
   AgencyModel? _userAgency;
   final List<AgencyMemberModel> _members = [];
   final List<AudioHostModel> _audioHosts = [];
@@ -38,6 +43,9 @@ class AgencyProvider extends ChangeNotifier {
   final List<AgencyInvitationModel> _invitations = [];
   final List<Map<String, dynamic>> _auditLogs = [];
   final List<AgencyHostRequest> _hostRequests = [];
+
+  AgencyApplicationModel? _myApplication;
+  final List<AgencyApplicationModel> _adminApplicationQueue = [];
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -51,6 +59,8 @@ class AgencyProvider extends ChangeNotifier {
   List<AgencyInvitationModel> get invitations => List.unmodifiable(_invitations);
   List<Map<String, dynamic>> get auditLogs => List.unmodifiable(_auditLogs);
   List<AgencyHostRequest> get hostRequests => List.unmodifiable(_hostRequests);
+  AgencyApplicationModel? get myApplication => _myApplication;
+  List<AgencyApplicationModel> get adminApplicationQueue => List.unmodifiable(_adminApplicationQueue);
 
   List<AgencyModel> get allAgencies {
     final list = List<AgencyModel>.from(_allAgencies);
@@ -88,6 +98,155 @@ class AgencyProvider extends ChangeNotifier {
         notifyListeners();
       }
     } catch (_) {}
+  }
+
+  /// Load persisted user agency application to ensure status survives restart or refresh
+  Future<void> loadSavedApplication() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_agencyApplicationKey);
+      if (raw != null && raw.isNotEmpty) {
+        _myApplication = AgencyApplicationModel.fromJson(jsonDecode(raw));
+        if (!_adminApplicationQueue.any((a) => a.id == _myApplication!.id)) {
+          _adminApplicationQueue.insert(0, _myApplication!);
+        }
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  /// Submit agency creation application for administrative review
+  /// Requires all fields and 5 distinct external host IDs
+  /// Does NOT activate agency or open Agency Center immediately
+  Future<bool> submitAgencyApplication({
+    required String applicantUserId,
+    required String applicantZePartyId,
+    required String applicantName,
+    required String applicantAvatar,
+    required String agencyName,
+    required String description,
+    required String phoneNumber,
+    required List<String> externalHostIds,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    // Enforce 5 distinct host IDs
+    final cleanHostIds = externalHostIds.map((id) => id.trim()).where((id) => id.isNotEmpty).toList();
+    if (cleanHostIds.length != 5 || cleanHostIds.toSet().length != 5) {
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+
+    final newApp = AgencyApplicationModel(
+      id: 'app_${DateTime.now().millisecondsSinceEpoch}',
+      applicantUserId: applicantUserId,
+      applicantZePartyId: applicantZePartyId,
+      applicantName: applicantName,
+      applicantAvatar: applicantAvatar,
+      agencyName: agencyName.trim(),
+      description: description.trim(),
+      phoneNumber: phoneNumber.trim(),
+      externalHostIds: cleanHostIds,
+      status: 'Pending',
+      submittedAt: DateTime.now(),
+    );
+
+    try {
+      await _apiClient.post('/v1/agencies/apply', data: newApp.toJson());
+    } catch (_) {}
+
+    _myApplication = newApp;
+    _adminApplicationQueue.removeWhere((a) => a.id == newApp.id);
+    _adminApplicationQueue.insert(0, newApp);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_agencyApplicationKey, jsonEncode(newApp.toJson()));
+    } catch (_) {}
+
+    _isLoading = false;
+    notifyListeners();
+    return true;
+  }
+
+  /// Admin approval: Activates the agency and assigns applicant as agency owner
+  Future<bool> approveAgencyApplication({
+    required String applicationId,
+    required String adminUserId,
+  }) async {
+    AgencyApplicationModel? target = (_myApplication?.id == applicationId)
+        ? _myApplication
+        : _adminApplicationQueue.where((a) => a.id == applicationId).firstOrNull;
+
+    if (target == null) return false;
+
+    final approved = target.copyWith(
+      status: 'Approved',
+      reviewedAt: DateTime.now(),
+      reviewedByAdminId: adminUserId,
+    );
+
+    final idx = _adminApplicationQueue.indexWhere((a) => a.id == applicationId);
+    if (idx != -1) {
+      _adminApplicationQueue[idx] = approved;
+    }
+
+    if (_myApplication?.id == applicationId) {
+      _myApplication = approved;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_agencyApplicationKey, jsonEncode(approved.toJson()));
+      } catch (_) {}
+
+      // Activate agency and grant Agency Owner privileges
+      registerAgency(
+        name: approved.agencyName,
+        description: approved.description,
+        ownerUserId: approved.applicantUserId,
+        ownerName: approved.applicantName,
+      );
+    }
+
+    notifyListeners();
+    return true;
+  }
+
+  /// Admin rejection: Leaves agency inactive and preserves rejection reason
+  Future<bool> rejectAgencyApplication({
+    required String applicationId,
+    required String adminUserId,
+    required String rejectionReason,
+  }) async {
+    AgencyApplicationModel? target = (_myApplication?.id == applicationId)
+        ? _myApplication
+        : _adminApplicationQueue.where((a) => a.id == applicationId).firstOrNull;
+
+    if (target == null) return false;
+
+    final rejected = target.copyWith(
+      status: 'Rejected',
+      rejectionReason: rejectionReason,
+      reviewedAt: DateTime.now(),
+      reviewedByAdminId: adminUserId,
+    );
+
+    final idx = _adminApplicationQueue.indexWhere((a) => a.id == applicationId);
+    if (idx != -1) {
+      _adminApplicationQueue[idx] = rejected;
+    }
+
+    if (_myApplication?.id == applicationId) {
+      _myApplication = rejected;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_agencyApplicationKey, jsonEncode(rejected.toJson()));
+      } catch (_) {}
+    }
+
+    notifyListeners();
+    return true;
   }
 
   AgencyHostRequest? getHostRequestForUser(String userId) {
@@ -175,6 +334,7 @@ class AgencyProvider extends ChangeNotifier {
   }
 
   AgencyProvider() {
+    loadSavedApplication();
     fetchMyAgency();
     fetchAllAgencies();
   }

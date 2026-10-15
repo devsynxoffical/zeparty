@@ -272,20 +272,22 @@ class _UserListSheetState extends State<UserListSheet> {
                                         title: Text(
                                           u.displayName.isNotEmpty
                                               ? u.displayName
-                                              : (u.name.isNotEmpty ? u.name : u.username),
+                                              : (u.name.isNotEmpty ? u.name : (u.id.isNotEmpty ? 'User ${u.id}' : 'User')),
                                           style: TextStyle(
                                             color: AppColors.getTextPrimary(isDark),
                                             fontWeight: FontWeight.bold,
                                             fontSize: 14,
                                           ),
                                         ),
-                                        subtitle: Text(
-                                          '@${u.username}',
-                                          style: TextStyle(
-                                            color: AppColors.getTextSecondary(isDark),
-                                            fontSize: 11,
-                                          ),
-                                        ),
+                                        subtitle: u.id.isNotEmpty
+                                            ? Text(
+                                                'ID: ${u.id}',
+                                                style: TextStyle(
+                                                  color: AppColors.getTextSecondary(isDark),
+                                                  fontSize: 11,
+                                                ),
+                                              )
+                                            : null,
                                         trailing: isMe
                                             ? const SizedBox.shrink()
                                             : OutlinedButton(

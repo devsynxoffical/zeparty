@@ -77,7 +77,7 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
         name.toLowerCase().contains('profile');
 
     String effectiveAsset = rawImageUrl;
-    if (rawImageUrl.startsWith('assets/')) {
+    if (rawImageUrl.startsWith('assets/') || rawImageUrl.startsWith('http://') || rawImageUrl.startsWith('https://')) {
       effectiveAsset = rawImageUrl;
     } else {
       final framePath = NobleBadgeHelper.getFrameAsset(name) ??
@@ -95,12 +95,6 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
       } else {
         effectiveAsset = framePath ?? badgePath ?? tagPath ?? rawImageUrl;
       }
-    }
-
-    if (effectiveAsset.isEmpty || (!effectiveAsset.startsWith('assets/') && !effectiveAsset.startsWith('http'))) {
-      effectiveAsset = NobleBadgeHelper.getFrameAsset(name) ??
-          NobleBadgeHelper.getFrameAsset(displayName) ??
-          (name.toLowerCase().contains('merchant') ? 'assets/roles/marchent_frame.webp' : rawImageUrl);
     }
 
     showGeneralDialog(
@@ -473,22 +467,17 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
     final type = (item.asset?.assetType ?? '').toUpperCase();
     final cat = (item.asset?.categoryId ?? '').toUpperCase();
 
-    // Priority 1: Check if imageUrl is valid local asset
-    String? localAsset;
-    if (imageUrl.startsWith('assets/')) {
-      localAsset = imageUrl;
-    } else {
-      // Look up fallback from NobleBadgeHelper
+    // Priority 1: Check if imageUrl is already a valid local asset or URL
+    String finalAssetPath = imageUrl;
+    if (finalAssetPath.isEmpty || (!finalAssetPath.startsWith('assets/') && !finalAssetPath.startsWith('http'))) {
       if (type.contains('BADGE') || cat.contains('BADGE')) {
-        localAsset = NobleBadgeHelper.getBadgeAsset(name);
+        finalAssetPath = NobleBadgeHelper.getBadgeAsset(name) ?? imageUrl;
       } else if (type.contains('FRAME') || cat.contains('FRAME')) {
-        localAsset = NobleBadgeHelper.getFrameAsset(name);
+        finalAssetPath = NobleBadgeHelper.getFrameAsset(name) ?? imageUrl;
       } else if (type.contains('TAG')) {
-        localAsset = NobleBadgeHelper.getTagAsset(name);
+        finalAssetPath = NobleBadgeHelper.getTagAsset(name) ?? imageUrl;
       }
     }
-
-    final finalAssetPath = localAsset ?? imageUrl;
 
     if (finalAssetPath.startsWith('assets/')) {
       return Image.asset(
@@ -496,13 +485,7 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
         width: 58,
         height: 58,
         fit: BoxFit.contain,
-        errorBuilder: (c, e, s) {
-          final fallback = NobleBadgeHelper.getFrameAsset(name) ?? NobleBadgeHelper.getBadgeAsset(name);
-          if (fallback != null && fallback != finalAssetPath) {
-            return Image.asset(fallback, width: 58, height: 58, fit: BoxFit.contain, errorBuilder: (_, _, _) => const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold));
-          }
-          return const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold);
-        },
+        errorBuilder: (c, e, s) => const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold),
       );
     } else if (finalAssetPath.startsWith('http://') || finalAssetPath.startsWith('https://')) {
       return Image.network(
@@ -510,13 +493,7 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
         width: 58,
         height: 58,
         fit: BoxFit.contain,
-        errorBuilder: (c, e, s) {
-          final fallback = NobleBadgeHelper.getFrameAsset(name) ?? NobleBadgeHelper.getBadgeAsset(name);
-          if (fallback != null) {
-            return Image.asset(fallback, width: 58, height: 58, fit: BoxFit.contain, errorBuilder: (_, _, _) => const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold));
-          }
-          return const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold);
-        },
+        errorBuilder: (c, e, s) => const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold),
       );
     }
 

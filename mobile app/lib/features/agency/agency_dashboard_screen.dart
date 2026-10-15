@@ -238,7 +238,7 @@ class AgencyDashboardScreen extends StatelessWidget {
               children: [
                 Text(host.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 const SizedBox(height: 2),
-                Text('@${host.username}', style: Theme.of(context).textTheme.bodySmall),
+                Text('ID: ${host.id}', style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: 6),
                 Row(
                   children: [

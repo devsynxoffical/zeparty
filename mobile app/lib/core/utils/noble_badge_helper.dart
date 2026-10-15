@@ -25,8 +25,8 @@ class NobleBadgeHelper {
     if (lower.contains('prince')) return NobleTier.prince;
     if (lower.contains('duke')) return NobleTier.duke;
     if (lower.contains('marquis')) return NobleTier.marquis;
-    if (lower.contains('count') || lower.contains('earl')) return NobleTier.earl;
     if (lower.contains('viscount')) return NobleTier.viscount;
+    if (lower.contains('count') || lower.contains('earl')) return NobleTier.earl;
     if (lower.contains('baron') || lower.contains('knight')) return NobleTier.knight;
     return NobleTier.none;
   }
@@ -40,8 +40,8 @@ class NobleBadgeHelper {
     if (lower.contains('king') || lower.contains('prince')) return 'assets/nobles/king_badge.webp';
     if (lower.contains('duke')) return 'assets/nobles/duke_badge.webp';
     if (lower.contains('marquis')) return 'assets/nobles/marquis_badge.webp';
-    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_badge.webp';
     if (lower.contains('viscount')) return 'assets/nobles/viscount_badge.webp';
+    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_badge.webp';
     if (lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/baron_badge.webp';
 
     // SVIP Badges (Accurate exact mapping for all 1-16 tiers using authentic dedicated webp assets)
@@ -97,8 +97,8 @@ class NobleBadgeHelper {
     if (lower.contains('king')) return 'assets/nobles/king_frame.webp';
     if (lower.contains('duke')) return 'assets/nobles/duke_frame.webp';
     if (lower.contains('marquis')) return 'assets/nobles/marquis_frame.webp';
-    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_frame.webp';
     if (lower.contains('viscount')) return 'assets/nobles/viscount_frame.webp';
+    if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_frame.webp';
     if (lower.contains('baron')) return 'assets/nobles/baron_frame.webp';
 
     // SVIP Frames
@@ -206,8 +206,8 @@ class NobleBadgeHelper {
     if (lower.contains('king')) return 'assets/nobles/king_card.webp';
     if (lower.contains('duke')) return 'assets/nobles/tier-5-duke_profilecard.webp';
     if (lower.contains('marquis')) return 'assets/nobles/tier-4-marquis_profilecard.webp';
+    if (lower.contains('viscount')) return 'assets/nobles/viscount_card.webp';
     if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_card.webp';
-    if (lower.contains('viscount')) return 'assets/nobles/viscount_badge.webp';
     if (lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/viscount_badge.webp';
 
     // SVIP Cards

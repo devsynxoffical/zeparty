@@ -30,6 +30,9 @@ class LiveHostProvider extends ChangeNotifier {
         final data = res.data['data'];
         final rawStatus = (data['hostStatus'] ?? data['status'])?.toString().toUpperCase();
         if (rawStatus == 'ACTIVE' || rawStatus == 'APPROVED') {
+          final liveMins = (data['dailyLiveMinutes'] ?? data['verifiedMinutesToday'] ?? data['streamingMinutes'] ?? 0) as int;
+          final isTodayValid = liveMins >= LiveHostPolicy.requiredLiveHostDailyMinutes;
+          final validDays = (data['completedValidDays'] ?? data['validDays'] ?? (isTodayValid ? 1 : 0)) as int;
           _activeLiveHost = LiveHostModel(
             liveHostId: data['id'] ?? 'lh_$userId',
             userId: userId,
@@ -41,6 +44,12 @@ class LiveHostProvider extends ChangeNotifier {
                 ? (DateTime.tryParse(data['createdAt'].toString()) ?? DateTime.now())
                 : DateTime.now(),
             currentLevel: data['hostLevel'] ?? 1,
+            dailyLiveMinutes: liveMins,
+            isTodayValid: isTodayValid,
+            completedValidDays: validDays,
+            achievedDiamonds: data['achievedDiamonds'] ?? 0,
+            pendingSalaryUsd: ((data['pendingSalaryUsd'] ?? 0) as num).toDouble(),
+            availableSalaryUsd: ((data['availableSalaryUsd'] ?? 0) as num).toDouble(),
           );
           notifyListeners();
         }
@@ -179,25 +188,10 @@ class LiveHostProvider extends ChangeNotifier {
     }
   }
 
-  // Record 1 Verified Hour Daily Streaming Time
+  // Deprecated: Manual simulation removed per production audit requirements.
+  // Verified streaming minutes are tracked by the server during real live broadcasts.
   void addLiveStreamingMinutes(int minutes) {
-    if (_activeLiveHost == null) return;
-
-    final newMins = _activeLiveHost!.dailyLiveMinutes + minutes;
-    final isNowValid = newMins >= LiveHostPolicy.requiredLiveHostDailyMinutes;
-
-    int newValidDays = _activeLiveHost!.completedValidDays;
-    if (!_activeLiveHost!.isTodayValid && isNowValid) {
-      newValidDays += 1;
-    }
-
-    _activeLiveHost = _activeLiveHost!.copyWith(
-      dailyLiveMinutes: newMins,
-      isTodayValid: isNowValid,
-      completedValidDays: newValidDays,
-    );
-
-    notifyListeners();
+    debugPrint('[LiveHostProvider] Manual simulation disabled. Attendance tracked via server sessions.');
   }
 
   // Direct Live Host Platform Salary Withdrawal

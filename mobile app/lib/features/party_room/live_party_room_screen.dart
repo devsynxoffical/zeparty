@@ -94,7 +94,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   late final String _roomEntrySessionId;
   RoomEntryBannerItem? _currentMountBanner;
   StreamSubscription? _partyRoomClosedSub;
+  StreamSubscription? _kickedSub;
+  StreamSubscription? _micInviteSub;
   bool _isPartyEndedDialogShown = false;
+  bool _isConnectionErrorDialogShown = false;
+  bool _isMicInviteDialogShown = false;
 
   void _handlePartyRoomEnded([String? reason]) {
     if (_isPartyEndedDialogShown || !mounted) return;
@@ -151,31 +155,99 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     );
   }
 
+  void _handleConnectionError(VoidCallback onRetry) {
+    if (_isConnectionErrorDialogShown || _isPartyEndedDialogShown || !mounted) return;
+    _isConnectionErrorDialogShown = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B2E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.wifi_off_rounded, color: Colors.orangeAccent, size: 26),
+            SizedBox(width: 10),
+            Text('Connection Error', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: const Text(
+          'Failed to connect to the party room. Please check your internet connection and try again.',
+          style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                    foregroundColor: Colors.white70,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () {
+                    _isConnectionErrorDialogShown = false;
+                    Navigator.pop(ctx);
+                    if (mounted) Navigator.pop(context);
+                  },
+                  child: const Text('Back to Discover', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFB524E4),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () {
+                    _isConnectionErrorDialogShown = false;
+                    Navigator.pop(ctx);
+                    onRetry();
+                  },
+                  child: const Text('Retry', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
     _roomEntrySessionId = 'session_${widget.room.id}_${DateTime.now().millisecondsSinceEpoch}';
     _requestMicPermission();
 
-    final initialStatus = widget.room.status.toUpperCase();
-    if (initialStatus == 'ENDED' || initialStatus == 'CLOSED') {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _handlePartyRoomEnded('This party room is not available or has ended.');
-        }
-      });
-      return;
-    }
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
       final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
-      if (partyProv.activeRoom?.id != widget.room.id) {
+
+      void attemptRoomEntry() {
+        if (!mounted) return;
         partyProv.joinParty(widget.room, user).then((success) {
           if (!success && mounted) {
-            _handlePartyRoomEnded('This party room is not available or has ended.');
+            if (partyProv.lastJoinFailureReason == 'ROOM_NOT_AVAILABLE') {
+              _handlePartyRoomEnded('This party room is not available or has ended.');
+            } else {
+              _handleConnectionError(attemptRoomEntry);
+            }
           }
         });
+      }
+
+      if (partyProv.activeRoom?.id != widget.room.id) {
+        attemptRoomEntry();
       } else {
         partyProv.ensureSocketSubscribed(user, roomId: widget.room.id);
       }
@@ -198,6 +270,26 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           );
         }
       });
+
+      _kickedSub?.cancel();
+      _kickedSub = partyProv.onKicked.listen((reason) {
+        if (mounted) {
+          Navigator.of(context).pop();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('🚫 Removed from room by moderation: $reason'),
+              backgroundColor: Colors.red[800],
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      });
+
+      _micInviteSub?.cancel();
+      _micInviteSub = partyProv.onIncomingMicInvite.listen((data) {
+        if (!mounted) return;
+        _showIncomingMicInvitePrompt(data);
+      });
       
       // Mock SVIP entry for demonstration
       if (user.isVip) {
@@ -219,10 +311,153 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   @override
   void dispose() {
     _partyRoomClosedSub?.cancel();
+    _kickedSub?.cancel();
+    _micInviteSub?.cancel();
     _chatController.dispose();
     _chatScrollController.dispose();
     super.dispose();
   }
+
+  void _showIncomingMicInvitePrompt(Map<String, dynamic> data) {
+    if (_isMicInviteDialogShown || !mounted) return;
+    _isMicInviteDialogShown = true;
+
+    final inviteId = data['id']?.toString() ?? '';
+    final inviterMap = data['inviter'] is Map ? Map<String, dynamic>.from(data['inviter'] as Map) : <String, dynamic>{};
+    final inviterName = inviterMap['name']?.toString() ?? inviterMap['displayName']?.toString() ?? 'Host';
+    final roomName = data['roomTitle']?.toString() ?? widget.room.title;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dContext) => PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          _isMicInviteDialogShown = false;
+          Navigator.pop(dContext);
+          final provider = Provider.of<LivePartyProvider>(context, listen: false);
+          provider.respondToMicInvitation(
+            invitationId: inviteId,
+            accept: false,
+            reason: 'Dismissed by viewer',
+          );
+        },
+        child: AlertDialog(
+        backgroundColor: const Color(0xFF1E1B2E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(colors: [Color(0xFFFF9100), Color(0xFFFF6D00)]),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.mic_rounded, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Mic Invitation',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          '$inviterName invited you to take a mic seat in "$roomName". Would you like to join and speak?',
+          style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+        ),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                    foregroundColor: Colors.white70,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () {
+                    _isMicInviteDialogShown = false;
+                    Navigator.pop(dContext);
+                    final provider = Provider.of<LivePartyProvider>(context, listen: false);
+                    provider.respondToMicInvitation(
+                      invitationId: inviteId,
+                      accept: false,
+                      reason: 'Declined by viewer',
+                    );
+                  },
+                  child: const Text('Decline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF9100),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: () async {
+                    _isMicInviteDialogShown = false;
+                    Navigator.pop(dContext);
+
+                    // Check mic permission first
+                    final permStatus = await Permission.microphone.request();
+                    if (!permStatus.isGranted) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Microphone permission is required to speak on the mic.'),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                      }
+                      if (mounted) {
+                        final provider = Provider.of<LivePartyProvider>(context, listen: false);
+                        await provider.respondToMicInvitation(
+                          invitationId: inviteId,
+                          accept: false,
+                          reason: 'Microphone permission denied',
+                        );
+                      }
+                      return;
+                    }
+
+                    if (mounted) {
+                      final provider = Provider.of<LivePartyProvider>(context, listen: false);
+                      final error = await provider.respondToMicInvitation(
+                        invitationId: inviteId,
+                        accept: true,
+                      );
+                      if (error != null && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(error),
+                            backgroundColor: Colors.orangeAccent,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Accept', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   void _leaveRoom() {
     final provider = Provider.of<LivePartyProvider>(context, listen: false);
@@ -299,10 +534,15 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       return;
     }
 
-    if (partyProv.isRoomMuted) {
+    final myParticipant = partyProv.participants.where((p) => (p.user.id == user.id || p.user.username == user.username)).firstOrNull;
+    final mySeatNumber = myParticipant?.seatNumber;
+    final isMySeatMuted = mySeatNumber != null && partyProv.isSeatMuted(mySeatNumber);
+    final isPersonallyMuted = myParticipant?.micStatus == MicStatus.muted || isMySeatMuted;
+
+    if (partyProv.isRoomMuted || isPersonallyMuted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('⚠️ Room microphone is currently locked by admin moderation.'),
+          content: Text('⚠️ Your microphone has been muted by moderation and cannot be toggled.'),
           duration: Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
         ),
@@ -339,13 +579,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     }
   }
 
-  void _openGiftDialog() {
+  void _openGiftDialog({UserModel? targetReceiver}) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (_) => GiftDialog(
         streamerName: widget.room.host.name,
+        targetReceiver: targetReceiver,
         onGiftSent: (gift) {
           _giftOverlayKey.currentState?.playGiftAnimation(gift);
           final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
@@ -753,11 +994,12 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                       Expanded(
                                         child: Builder(
                                           builder: (_) {
-                                            final audienceCount = provider.participants.where((p) =>
-                                              p.role != ParticipantRole.host &&
-                                              p.user.id != activeRoom.host.id &&
-                                              p.user.id != activeRoom.creatorUserId
-                                            ).length;
+                                            final audienceCount = provider.participants
+                                                .where((p) => p.seatNumber == null)
+                                                .map((p) => p.user.id)
+                                                .where((id) => id.isNotEmpty)
+                                                .toSet()
+                                                .length;
                                             final headerViewerCount = math.max(activeRoom.viewerCount, audienceCount);
                                             return Text(
                                               'ID:${activeRoom.id.length > 6 ? activeRoom.id.substring(0, 6) : activeRoom.id} • 👥 $headerViewerCount',
@@ -894,11 +1136,21 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   }
 
   Widget _buildAudienceRow(LivePartyProvider provider, bool canManage, bool isDark) {
-    final audience = provider.participants.where((p) =>
-      p.role != ParticipantRole.host &&
-      p.user.id != (provider.activeRoom?.host.id ?? widget.room.host.id) &&
-      p.user.id != (provider.activeRoom?.creatorUserId ?? widget.room.creatorUserId)
-    ).toList();
+    final seenIds = <String>{};
+    final audience = <PartyParticipantModel>[];
+    for (final p in provider.participants) {
+      if (p.seatNumber == null) {
+        final id = p.user.id;
+        if (id.isNotEmpty) {
+          if (!seenIds.contains(id)) {
+            seenIds.add(id);
+            audience.add(p);
+          }
+        } else {
+          audience.add(p);
+        }
+      }
+    }
     final viewerCount = math.max(provider.activeRoom?.viewerCount ?? 0, audience.length);
 
     return Container(
@@ -916,6 +1168,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 roomTitle: provider.activeRoom?.title ?? widget.room.title,
                 isDark: isDark,
                 isHost: canManage,
+                partyProvider: provider,
               );
             },
             child: Container(
@@ -2005,6 +2258,16 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           },
                           imageAsset: 'assets/images/party_tool_lockroom.png',
                         ),
+                        _buildRoomToolBtn(
+                          Icons.cleaning_services_rounded,
+                          'Clear Screen',
+                          Colors.tealAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            _handleClearScreen(provider);
+                          },
+                          imageAsset: 'assets/images/party_tool_clear_screen.png',
+                        ),
                       ],
                     ],
                   ),
@@ -2013,6 +2276,44 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _handleClearScreen(LivePartyProvider provider) {
+    final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+    final isHost = widget.room.host.id == currentUser.id ||
+        widget.room.creatorUserId == currentUser.id ||
+        (currentUser.username.isNotEmpty && widget.room.host.username.toLowerCase() == currentUser.username.toLowerCase());
+    final isAdmin = currentUser.role == UserRole.admin || currentUser.id == 'admin';
+    final isMod = provider.participants.any((p) => p.user.id == currentUser.id && p.role == ParticipantRole.moderator);
+    final canManage = isHost || isAdmin || isMod;
+
+    if (!canManage) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Only room owner or admin can clear the room feed.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+    provider.broadcastClearScreen();
+
+    // Clear local transient banners and overlays
+    if (mounted) {
+      setState(() {
+        _currentMountBanner = null;
+      });
+      _giftOverlayKey.currentState?.clearAnimation();
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('🧹 Lower room feed cleared successfully'),
+        backgroundColor: Colors.teal,
+        duration: Duration(seconds: 2),
       ),
     );
   }
@@ -2094,7 +2395,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 }),
                 _buildActionBtn(Icons.redeem_rounded, 'Gift', isDark, () {
                   Navigator.pop(ctx);
-                  _openGiftDialog();
+                  _openGiftDialog(targetReceiver: p.user);
                 }),
               ],
             ),
@@ -3649,7 +3950,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                               ],
                             ),
                             subtitle: Text(
-                              onSeat ? 'Seat ${p.seatNumber! + 1} • @${p.user.username}' : 'Audience • @${p.user.username}',
+                              onSeat ? 'Seat ${p.seatNumber! + 1} • ID: ${p.user.id}' : 'Audience • ID: ${p.user.id}',
                               style: const TextStyle(color: Colors.white60, fontSize: 11),
                             ),
                             trailing: Row(

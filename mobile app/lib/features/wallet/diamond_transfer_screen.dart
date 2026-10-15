@@ -13,6 +13,8 @@ import '../../providers/auth_provider.dart';
 import '../../providers/live_host_provider.dart';
 import '../../providers/wallet_details_provider.dart';
 import '../../providers/wallet_provider.dart';
+import '../../providers/coin_agency_provider.dart';
+import '../../models/coin_seller_model.dart';
 
 class ReceiverAccount {
   final String id;
@@ -91,26 +93,6 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
 
   final List<ReceiverAccount> _allReceivers = const [
     ReceiverAccount(
-      id: 'seller_8801',
-      linkedUserId: 'user_1002',
-      name: 'Sophia Rose Liquidity',
-      avatarUrl: 'https://i.pravatar.cc/150?img=32',
-      type: 'Coin Seller',
-      country: 'United States',
-      flag: '🇺🇸',
-      ratePerDiamond: 1.00,
-    ),
-    ReceiverAccount(
-      id: 'seller_8802',
-      linkedUserId: 'user_1003',
-      name: 'Alex Rivera Exchange',
-      avatarUrl: 'https://i.pravatar.cc/150?img=11',
-      type: 'Coin Seller',
-      country: 'United Kingdom',
-      flag: '🇬🇧',
-      ratePerDiamond: 1.00,
-    ),
-    ReceiverAccount(
       id: 'merch_9901',
       linkedUserId: 'user_5001',
       name: 'ZeParty Global Merchant Desk',
@@ -140,6 +122,18 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
     TransferPackage(diamonds: 100000, usdPayout: 8.0, feeDiamonds: 0),
     TransferPackage(diamonds: 500000, usdPayout: 40.0, feeDiamonds: 0),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthProvider>();
+      final userCountry = auth.currentUser.region.isNotEmpty ? auth.currentUser.region : 'Pakistan';
+      final coinAgency = context.read<CoinAgencyProvider>();
+      coinAgency.setUserCountry(userCountry);
+      coinAgency.fetchSellers(country: userCountry);
+    });
+  }
 
   @override
   void dispose() {
@@ -201,6 +195,34 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
 
   List<ReceiverAccount> get _filteredReceivers {
     final targetType = _selectedReceiverType == 'Coin Sellers' ? 'Coin Seller' : 'Merchant';
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final userCountry = auth.currentUser.region.isNotEmpty ? auth.currentUser.region : 'Pakistan';
+
+    if (targetType == 'Coin Seller') {
+      final coinAgency = Provider.of<CoinAgencyProvider>(context);
+      final sellers = coinAgency.getSellersForCountry(userCountry);
+      return sellers.map((s) => ReceiverAccount(
+        id: s.id,
+        linkedUserId: s.userId,
+        name: s.name,
+        avatarUrl: s.avatarUrl,
+        type: 'Coin Seller',
+        country: s.region,
+        flag: CoinAgencyProvider.isCountryMatch(s.region, 'pakistan') ? '🇵🇰' : '🌐',
+        ratePerDiamond: 1.00,
+        isApproved: s.status == SellerStatus.approved,
+        isTransferEnabled: s.isVisible,
+        supportedService: s.paymentMethods.join(' • '),
+      )).where((r) {
+        if (_searchQuery.trim().isEmpty) return true;
+        final q = _searchQuery.toLowerCase();
+        return r.name.toLowerCase().contains(q) ||
+            r.id.toLowerCase().contains(q) ||
+            r.linkedUserId.toLowerCase().contains(q) ||
+            r.country.toLowerCase().contains(q);
+      }).toList();
+    }
+
     return _allReceivers.where((r) {
       if (r.type != targetType) return false;
       if (!r.isApproved || !r.isTransferEnabled) return false; // Filter unapproved/disabled
@@ -594,15 +616,32 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
 
             SizedBox(
               height: 155.h,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: _filteredReceivers.length,
-                itemBuilder: (ctx, idx) {
-                  final rec = _filteredReceivers[idx];
-                  final isSel = _selectedReceiver?.id == rec.id;
-                  return _buildReceiverCard(rec, isSel, isDark);
-                },
-              ),
+              child: _filteredReceivers.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Text(
+                          _selectedReceiverType == 'Coin Sellers'
+                              ? 'No authorized coin sellers available in your country'
+                              : 'No approved merchants found.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: AppColors.getTextSecondary(isDark),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _filteredReceivers.length,
+                      itemBuilder: (ctx, idx) {
+                        final rec = _filteredReceivers[idx];
+                        final isSel = _selectedReceiver?.id == rec.id;
+                        return _buildReceiverCard(rec, isSel, isDark);
+                      },
+                    ),
             ),
             const SizedBox(height: 20),
 

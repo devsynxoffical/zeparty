@@ -1,71 +1,103 @@
 import 'package:flutter/foundation.dart';
 import '../models/coin_seller_model.dart';
+import '../core/services/api_client.dart';
 
 class CoinAgencyProvider with ChangeNotifier {
-  final List<CoinSellerModel> _sellers = [
-    const CoinSellerModel(
-      id: 'seller_1',
-      userId: 'user_1001',
-      name: 'Global Coins Ltd',
-      avatarUrl: 'https://i.pravatar.cc/150?img=1',
-      region: 'Global',
-      type: SellerType.official,
-      status: SellerStatus.approved,
-      isVisible: true,
-      paymentMethods: ['Google Play', 'Apple Pay', 'Visa', 'Mastercard'],
-      stockCoins: 10000000,
-    ),
-    const CoinSellerModel(
-      id: 'seller_2',
-      userId: 'user_1002',
-      name: 'Middle East Topup',
-      avatarUrl: 'https://i.pravatar.cc/150?img=2',
-      region: 'Middle East',
-      type: SellerType.verified,
-      status: SellerStatus.approved,
-      isVisible: true,
-      paymentMethods: ['Visa', 'Mastercard', 'STC Pay'],
-      stockCoins: 500000,
-    ),
-    const CoinSellerModel(
-      id: 'seller_3',
-      userId: 'user_1003',
-      name: 'Asia Swift Recharge',
-      avatarUrl: 'https://i.pravatar.cc/150?img=3',
-      region: 'Asia',
-      type: SellerType.standard,
-      status: SellerStatus.approved,
-      isVisible: true,
-      paymentMethods: ['WeChat Pay', 'Alipay', 'Visa'],
-      stockCoins: 250000,
-    ),
-  ];
+  final List<CoinSellerModel> _sellers = [];
+  bool _isLoading = false;
 
-  List<CoinSellerModel> get sellers => _sellers;
+  List<CoinSellerModel> get sellers => List.unmodifiable(_sellers);
   List<CoinSellerModel> get approvedSellers => _sellers.where((s) => s.status == SellerStatus.approved && s.isVisible).toList();
+  bool get isLoading => _isLoading;
 
   String _searchQuery = '';
-  String _selectedRegion = 'All';
+  String? _currentUserCountry;
 
   String get searchQuery => _searchQuery;
-  String get selectedRegion => _selectedRegion;
+  String? get currentUserCountry => _currentUserCountry;
 
   void setSearchQuery(String query) {
     _searchQuery = query;
     notifyListeners();
   }
 
-  void setRegionFilter(String region) {
-    _selectedRegion = region;
+  void setUserCountry(String? country) {
+    _currentUserCountry = country;
     notifyListeners();
   }
 
-  List<CoinSellerModel> get filteredSellers {
+  /// Country equivalence matcher (normalizes names and codes, e.g. Pakistan, PK)
+  static bool isCountryMatch(String? sellerRegion, String? userCountry) {
+    if (sellerRegion == null || userCountry == null) return false;
+    final s = sellerRegion.trim().toLowerCase();
+    final u = userCountry.trim().toLowerCase();
+    if (s.isEmpty || u.isEmpty) return false;
+    if (s == u) return true;
+
+    // Normalizations for Pakistan
+    if ((s == 'pakistan' || s == 'pk') && (u == 'pakistan' || u == 'pk')) return true;
+
+    // Normalizations for US, UK, UAE
+    if ((s == 'united states' || s == 'usa' || s == 'us') && (u == 'united states' || u == 'usa' || u == 'us')) return true;
+    if ((s == 'united kingdom' || s == 'uk' || s == 'gb') && (u == 'united kingdom' || u == 'uk' || u == 'gb')) return true;
+    if ((s == 'uae' || s == 'united arab emirates' || s == 'ae') && (u == 'uae' || u == 'united arab emirates' || u == 'ae')) return true;
+
+    return s.contains(u) || u.contains(s);
+  }
+
+  /// Returns approved sellers strictly filtered by the user's registered country
+  List<CoinSellerModel> getSellersForCountry(String? userCountry) {
+    final country = userCountry ?? _currentUserCountry;
+    final query = _searchQuery.trim().toLowerCase();
+
     return approvedSellers.where((s) {
-      final matchesSearch = s.name.toLowerCase().contains(_searchQuery.toLowerCase()) || s.id.toLowerCase().contains(_searchQuery.toLowerCase());
-      final matchesRegion = _selectedRegion == 'All' || s.region == _selectedRegion;
-      return matchesSearch && matchesRegion;
+      // Must match user country strictly
+      if (!isCountryMatch(s.region, country)) {
+        return false;
+      }
+
+      // Filter by search query if present
+      if (query.isNotEmpty) {
+        final matchesName = s.name.toLowerCase().contains(query);
+        final matchesId = s.id.toLowerCase().contains(query) || s.userId.toLowerCase().contains(query);
+        if (!matchesName && !matchesId) return false;
+      }
+
+      return true;
     }).toList();
+  }
+
+  List<CoinSellerModel> get filteredSellers => getSellersForCountry(_currentUserCountry);
+
+  /// Fetch registered and approved coin sellers from backend API
+  Future<void> fetchSellers({String? country}) async {
+    _isLoading = true;
+    if (country != null && country.isNotEmpty) {
+      _currentUserCountry = country;
+    }
+    notifyListeners();
+
+    try {
+      final queryParams = <String, dynamic>{};
+      if (_currentUserCountry != null && _currentUserCountry!.isNotEmpty) {
+        queryParams['country'] = _currentUserCountry;
+      }
+      final res = await ApiClient.instance.get('/v1/agency/sellers', queryParameters: queryParams);
+      if (res.statusCode == 200 && res.data['data'] != null) {
+        final list = res.data['data'] as List;
+        _sellers.clear();
+        for (final item in list) {
+          if (item is Map<String, dynamic>) {
+            _sellers.add(CoinSellerModel.fromJson(item));
+          }
+        }
+      }
+    } catch (_) {
+      // Per Module 29 requirements: Never repopulate sample/mock sellers on error or empty response
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   void addSeller(CoinSellerModel seller) {

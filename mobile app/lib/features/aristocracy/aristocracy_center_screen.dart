@@ -54,7 +54,7 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
       'badgeAsset': 'assets/nobles/viscount_badge.webp',
       'frameAsset': 'assets/nobles/viscount_frame.webp',
       'privileges': [
-        {'name': 'Profile Card', 'asset': 'assets/nobles/viscount_badge.webp', 'type': 'image'},
+        {'name': 'Profile Card', 'asset': 'assets/nobles/viscount_card.webp', 'type': 'image'},
         {'name': 'Frame', 'asset': 'assets/nobles/viscount_frame.webp', 'type': 'image'},
         {'name': 'Activate Effect', 'asset': 'assets/nobles/viscount_activate.webp', 'type': 'image'},
         {'name': 'Identify Badge', 'asset': 'assets/nobles/viscount_badge.webp', 'type': 'image'},

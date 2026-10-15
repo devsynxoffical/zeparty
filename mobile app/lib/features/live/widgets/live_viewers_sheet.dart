@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../models/user_model.dart';
+import '../../../../models/party_participant_model.dart';
 import '../../../../providers/auth_provider.dart';
+import '../../../../providers/live_party_provider.dart';
 import '../../profile/user_profile_details_screen.dart';
 
 class LiveViewersSheet extends StatefulWidget {
@@ -13,6 +15,7 @@ class LiveViewersSheet extends StatefulWidget {
   final bool isDark;
   final bool isHost;
   final Function(UserModel viewer)? onMakeCoHost;
+  final LivePartyProvider? partyProvider;
 
   const LiveViewersSheet({
     super.key,
@@ -22,6 +25,7 @@ class LiveViewersSheet extends StatefulWidget {
     required this.isDark,
     this.isHost = false,
     this.onMakeCoHost,
+    this.partyProvider,
   });
 
   static Future<void> show(
@@ -32,6 +36,7 @@ class LiveViewersSheet extends StatefulWidget {
     required bool isDark,
     bool isHost = false,
     Function(UserModel viewer)? onMakeCoHost,
+    LivePartyProvider? partyProvider,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -44,6 +49,7 @@ class LiveViewersSheet extends StatefulWidget {
         isDark: isDark,
         isHost: isHost,
         onMakeCoHost: onMakeCoHost,
+        partyProvider: partyProvider,
       ),
     );
   }
@@ -277,7 +283,7 @@ class _LiveViewersSheetState extends State<LiveViewersSheet> {
                           children: [
                             Flexible(
                               child: Text(
-                                viewer.name.isNotEmpty ? viewer.name : viewer.username,
+                                viewer.name.isNotEmpty ? viewer.name : (viewer.id.isNotEmpty ? 'User ${viewer.id}' : 'User'),
                                 style: TextStyle(
                                   color: textColor,
                                   fontWeight: FontWeight.bold,
@@ -295,7 +301,7 @@ class _LiveViewersSheetState extends State<LiveViewersSheet> {
                           ],
                         ),
                         subtitle: Text(
-                          'ID:${viewer.id.length > 8 ? viewer.id.substring(0, 8) : viewer.id} • @${viewer.username}',
+                          'ID: ${viewer.id}',
                           style: TextStyle(color: subtextColor, fontSize: 11),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -348,48 +354,167 @@ class _LiveViewersSheetState extends State<LiveViewersSheet> {
                                 final isMe = auth.currentUser.id == viewer.id;
                                 if (isMe) return const SizedBox.shrink();
 
-                                return GestureDetector(
-                                  onTap: () {
-                                    auth.toggleFollow(viewer.id);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          isFollowing
-                                              ? 'Unfollowed ${viewer.name}'
-                                              : '✔ Following ${viewer.name}!',
+                                // Resolve LivePartyProvider if available
+                                LivePartyProvider? partyProv = widget.partyProvider;
+                                if (partyProv == null) {
+                                  try {
+                                    partyProv = Provider.of<LivePartyProvider>(context, listen: true);
+                                  } catch (_) {}
+                                }
+
+                                bool canInvite = false;
+                                bool isTargetOnMic = false;
+                                bool isPending = false;
+
+                                if (partyProv != null) {
+                                  final isOwner = partyProv.isHost ||
+                                      partyProv.activeRoom?.host.id == auth.currentUser.id ||
+                                      partyProv.activeRoom?.creatorUserId == auth.currentUser.id;
+                                  final isAdmin = partyProv.participants.any((p) => p.user.id == auth.currentUser.id && p.role == ParticipantRole.moderator);
+                                  canInvite = widget.isHost || isOwner || isAdmin;
+                                  isTargetOnMic = partyProv.participants.any((p) => p.user.id == viewer.id && p.seatNumber != null);
+                                  isPending = partyProv.isInvitePending(viewer.id);
+                                }
+
+                                return Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // Invite to Mic Action (authorized room owner/admins only, excluded for self & users on mic)
+                                    if (canInvite && !isTargetOnMic) ...[
+                                      if (isPending) ...[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                          margin: const EdgeInsets.only(right: 6),
+                                          decoration: BoxDecoration(
+                                            color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.06),
+                                            borderRadius: BorderRadius.circular(14),
+                                            border: Border.all(color: Colors.amber.withValues(alpha: 0.6)),
+                                          ),
+                                          child: const Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              SizedBox(
+                                                width: 10,
+                                                height: 10,
+                                                child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.amber),
+                                              ),
+                                              SizedBox(width: 4),
+                                              Text(
+                                                'Pending',
+                                                style: TextStyle(
+                                                  color: Colors.amber,
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                        duration: const Duration(seconds: 1),
-                                      ),
-                                    );
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                    decoration: BoxDecoration(
-                                      color: isFollowing
-                                          ? (isDark ? Colors.white12 : Colors.black12)
-                                          : primary,
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          isFollowing ? Icons.check_rounded : Icons.add_rounded,
-                                          color: isFollowing ? textColor : Colors.black,
-                                          size: 14,
-                                        ),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          isFollowing ? 'Following' : 'Follow',
-                                          style: TextStyle(
-                                            color: isFollowing ? textColor : Colors.black,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
+                                      ] else ...[
+                                        GestureDetector(
+                                          onTap: () async {
+                                            if (partyProv == null) return;
+                                            final err = await partyProv.sendMicInvitation(
+                                              targetUser: viewer,
+                                              inviter: auth.currentUser,
+                                            );
+                                            if (err != null) {
+                                              if (context.mounted) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text(err), backgroundColor: Colors.orangeAccent),
+                                                );
+                                              }
+                                            } else {
+                                              if (context.mounted) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text('Mic invitation sent to ${viewer.name}'),
+                                                    duration: const Duration(seconds: 2),
+                                                  ),
+                                                );
+                                              }
+                                            }
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                                            margin: const EdgeInsets.only(right: 6),
+                                            decoration: BoxDecoration(
+                                              gradient: const LinearGradient(
+                                                colors: [Color(0xFFFF9100), Color(0xFFFF6D00)],
+                                              ),
+                                              borderRadius: BorderRadius.circular(14),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: const Color(0xFFFF9100).withValues(alpha: 0.3),
+                                                  blurRadius: 6,
+                                                ),
+                                              ],
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.mic_none_rounded, color: Colors.white, size: 14),
+                                                SizedBox(width: 3),
+                                                Text(
+                                                  'Invite to Mic',
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ],
+                                    ],
+
+                                    // Follow / Following Action
+                                    GestureDetector(
+                                      onTap: () {
+                                        auth.toggleFollow(viewer.id);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              isFollowing
+                                                  ? 'Unfollowed ${viewer.name}'
+                                                  : '✔ Following ${viewer.name}!',
+                                            ),
+                                            duration: const Duration(seconds: 1),
+                                          ),
+                                        );
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                        decoration: BoxDecoration(
+                                          color: isFollowing
+                                              ? (isDark ? Colors.white12 : Colors.black12)
+                                              : primary,
+                                          borderRadius: BorderRadius.circular(14),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              isFollowing ? Icons.check_rounded : Icons.add_rounded,
+                                              color: isFollowing ? textColor : Colors.black,
+                                              size: 14,
+                                            ),
+                                            const SizedBox(width: 3),
+                                            Text(
+                                              isFollowing ? 'Following' : 'Follow',
+                                              style: TextStyle(
+                                                color: isFollowing ? textColor : Colors.black,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 );
                               },
                             ),

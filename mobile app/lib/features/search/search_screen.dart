@@ -330,7 +330,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
             },
             style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Search by User ID, username, room ID, host...',
+              hintText: 'Search by User ID, name, room ID, host...',
               hintStyle: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
               prefixIcon: Icon(Icons.search_rounded, size: 20, color: AppColors.getPrimary(isDark)),
               suffixIcon: _searchController.text.isNotEmpty
@@ -547,7 +547,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
                       ],
                     ),
                     subtitle: Text(
-                      '@${creator.username}',
+                      'ID: ${creator.id}',
                       style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
                     ),
                     trailing: isMe
@@ -660,7 +660,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
               ],
             ),
             subtitle: Text(
-              '@${user.username} • ${AppFormatters.formatNumber(user.followers)} followers',
+              'ID: ${user.id} • ${AppFormatters.formatNumber(user.followers)} followers',
               style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
             ),
             trailing: isMe

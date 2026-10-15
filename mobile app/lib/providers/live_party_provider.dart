@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/services/agora_rtc_service.dart';
 import '../core/services/socket_service.dart';
 import '../core/repositories/room_repository.dart';
+import '../core/repositories/backend_repository.dart';
 import '../models/live_room_model.dart';
 import '../models/party_participant_model.dart';
 import '../models/party_message_model.dart';
@@ -28,12 +29,16 @@ class LivePartyProvider extends ChangeNotifier {
   List<PartyMessageModel> get messages => _messages;
 
   final Set<String> _announcedJoinedUserIds = {};
+  final Map<String, int> _recentSystemMessages = {};
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
+
+  String? _lastJoinFailureReason;
+  String? get lastJoinFailureReason => _lastJoinFailureReason;
 
   // Stream Subscriptions
   StreamSubscription? _speakerSub;
@@ -51,9 +56,28 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketRoomMutedSub;
   StreamSubscription? _socketRoomUserMutedSub;
   StreamSubscription? _socketRoleUpdatedSub;
+  StreamSubscription? _socketMicInviteSub;
+  StreamSubscription? _socketMicInviteResponseSub;
+  StreamSubscription? _socketFeedClearedSub;
+
+  DateTime? _feedClearedAt;
+  DateTime? get feedClearedAt => _feedClearedAt;
+
+  final _incomingMicInviteController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onIncomingMicInvite => _incomingMicInviteController.stream;
+
+  // Active outgoing pending invitations: targetUserId -> invitation map
+  final Map<String, Map<String, dynamic>> _pendingOutgoingInvites = {};
 
   final _roomClosedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onRoomClosed => _roomClosedController.stream;
+
+  bool _wasKicked = false;
+  bool get wasKicked => _wasKicked;
+  String? _kickReason;
+  String? get kickReason => _kickReason;
+  final _kickedController = StreamController<String>.broadcast();
+  Stream<String> get onKicked => _kickedController.stream;
 
   bool get isHost {
     final room = _activeRoom;
@@ -222,6 +246,7 @@ class LivePartyProvider extends ChangeNotifier {
   }
 
   void ensureSocketSubscribed(UserModel user, {String? roomId}) {
+    _currentUser = user;
     final targetId = _activeRoom?.id ?? _initialRoomId ?? roomId;
     if (targetId != null && targetId.isNotEmpty) {
       _socketService.joinRoom(targetId, user: user.toJson());
@@ -251,13 +276,37 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
 
     if (room.status.toUpperCase() == 'ENDED' || room.status.toUpperCase() == 'CLOSED') {
+      // Attempt to resolve current active session if the owner restarted the room
+      try {
+        final creatorId = room.creatorUserId;
+        final hostId = (creatorId != null && creatorId.isNotEmpty) ? creatorId : room.host.id;
+        final hostUsername = room.host.username.isNotEmpty ? room.host.username : null;
+        final activeRooms = await _roomRepository.getActiveRooms(limit: 50);
+        LiveRoomModel? currentActive;
+        for (final r in activeRooms) {
+          final rHostId = r.creatorUserId ?? r.host.id;
+          final matchesHostId = hostId.isNotEmpty && (rHostId == hostId || r.host.id == hostId);
+          final matchesUsername = hostUsername != null && hostUsername.isNotEmpty && r.host.username.toLowerCase() == hostUsername.toLowerCase();
+          if (matchesHostId || matchesUsername) {
+            currentActive = r;
+            break;
+          }
+        }
+        if (currentActive != null && currentActive.id != room.id) {
+          debugPrint('[LivePartyProvider] Replaced ended room ${room.id} with current active session ${currentActive.id}');
+          return await joinParty(currentActive, currentUser, password: password);
+        }
+      } catch (_) {}
+
       _errorMessage = 'ROOM_NOT_AVAILABLE';
+      _lastJoinFailureReason = 'ROOM_NOT_AVAILABLE';
       _isLoading = false;
       _roomClosedController.add({
         'roomId': room.id,
         'status': 'ENDED',
         'reason': 'ROOM_NOT_AVAILABLE',
       });
+      BackendRepository.instance.removeLiveRoom(room.id);
       notifyListeners();
       return false;
     }
@@ -282,33 +331,83 @@ class LivePartyProvider extends ChangeNotifier {
         _socketService.joinRoom(_activeRoom!.id, user: currentUser.toJson());
       }
 
-      // Add Host and self to participants
-      if (isHost) {
-        _participants.add(PartyParticipantModel(
-          user: currentUser.copyWith(
-            avatarUrl: currentUser.avatarUrl.isNotEmpty ? currentUser.avatarUrl : room.host.avatarUrl,
-            name: currentUser.name,
-          ),
-          role: ParticipantRole.host,
-          seatNumber: 0,
-          joinedAt: DateTime.now(),
-        ));
-      } else {
-        // Place room host on Seat 0
-        _participants.add(PartyParticipantModel(
-          user: room.host,
-          role: ParticipantRole.host,
-          seatNumber: 0,
-          joinedAt: room.startTime,
-        ));
+      // Re-fetch authoritative room details with seats state
+      try {
+        final details = await _roomRepository.getRoomDetails(room.id);
+        _activeRoom = details;
+      } catch (_) {}
 
-        // Add current user as listener
-        _participants.add(PartyParticipantModel(
-          user: currentUser,
-          role: ParticipantRole.listener,
-          seatNumber: null,
-          joinedAt: DateTime.now(),
-        ));
+      final hostUserId = _activeRoom?.creatorUserId ?? _activeRoom?.host.id ?? room.host.id;
+      final hostUserModel = isHost
+          ? currentUser.copyWith(
+              avatarUrl: currentUser.avatarUrl.isNotEmpty ? currentUser.avatarUrl : room.host.avatarUrl,
+              name: currentUser.name,
+            )
+          : room.host;
+
+      // Determine real seat positions from authoritative seats
+      final seatsList = _activeRoom?.seats;
+      int? hostSeatIndex;
+      final seatedUsers = <int, UserModel>{};
+
+      if (seatsList != null && seatsList.isNotEmpty) {
+        for (final sRaw in seatsList) {
+          if (sRaw is! Map) continue;
+          final sMap = Map<String, dynamic>.from(sRaw);
+          final sIdx = (sMap['seatIndex'] is num) ? (sMap['seatIndex'] as num).toInt() : int.tryParse(sMap['seatIndex']?.toString() ?? '');
+          if (sIdx == null) continue;
+          final occUserRaw = sMap['occupiedUser'] ?? sMap['user'];
+          final occUserId = sMap['occupiedUserId']?.toString() ?? sMap['userId']?.toString() ?? (occUserRaw is Map ? occUserRaw['id']?.toString() : null);
+
+          if (occUserId != null && occUserId.isNotEmpty) {
+            final isHostOcc = occUserId == hostUserId || (isHost && occUserId == currentUser.id);
+            if (isHostOcc) {
+              hostSeatIndex = sIdx;
+            } else if (occUserRaw is Map) {
+              seatedUsers[sIdx] = UserModel.fromJson(Map<String, dynamic>.from(occUserRaw));
+            } else {
+              seatedUsers[sIdx] = UserModel(id: occUserId, name: 'Speaker ${sIdx + 1}', username: 'speaker_$sIdx', avatarUrl: '');
+            }
+          }
+        }
+      } else {
+        // If room was just created and no seat array returned, default host to seat 0
+        hostSeatIndex = 0;
+      }
+
+      // Add Host participant
+      _participants.add(PartyParticipantModel(
+        user: hostUserModel,
+        role: ParticipantRole.host,
+        seatNumber: hostSeatIndex,
+        joinedAt: room.startTime,
+        micStatus: hostSeatIndex != null ? MicStatus.on : MicStatus.muted,
+      ));
+
+      // Add any other seated speakers
+      seatedUsers.forEach((sIdx, seatedUser) {
+        if (seatedUser.id != hostUserModel.id) {
+          _participants.add(PartyParticipantModel(
+            user: seatedUser,
+            role: ParticipantRole.speaker,
+            seatNumber: sIdx,
+            joinedAt: DateTime.now(),
+            micStatus: MicStatus.on,
+          ));
+        }
+      });
+
+      // If current user is not host and not seated, add as listener
+      if (!isHost) {
+        final selfAlreadySeated = seatedUsers.values.any((u) => u.id == currentUser.id);
+        if (!selfAlreadySeated) {
+          _participants.add(PartyParticipantModel(
+            user: currentUser,
+            role: ParticipantRole.listener,
+            seatNumber: null,
+            joinedAt: DateTime.now(),
+          ));
+        }
       }
 
       // Fetch existing room members/viewers from backend
@@ -351,7 +450,10 @@ class LivePartyProvider extends ChangeNotifier {
         debugPrint('[LivePartyProvider] Fetch members notice: $err');
       }
 
+      _deduplicateParticipants();
+
       // 3. Acquire short-lived Agora RTC token from backend
+      final isSelfSeated = _participants.any((p) => p.user.id == currentUser.id && p.seatNumber != null);
       final agoraData = await _roomRepository.getAgoraToken(room.id);
       if (agoraData['token'] != null) {
         final token = agoraData['token'] as String;
@@ -364,7 +466,7 @@ class LivePartyProvider extends ChangeNotifier {
           token,
           channelName,
           uid,
-          isHost: isHost,
+          isHost: isSelfSeated,
           isVideo: false,
         );
       }
@@ -422,14 +524,39 @@ class LivePartyProvider extends ChangeNotifier {
           errLower.contains('closed');
 
       if (isUnavailable) {
+        // Attempt to resolve current active session of the room owner
+        try {
+          final creatorId = room.creatorUserId;
+          final hostId = (creatorId != null && creatorId.isNotEmpty) ? creatorId : room.host.id;
+          final hostUsername = room.host.username.isNotEmpty ? room.host.username : null;
+          final activeRooms = await _roomRepository.getActiveRooms(limit: 50);
+          LiveRoomModel? currentActive;
+          for (final r in activeRooms) {
+            final rHostId = r.creatorUserId ?? r.host.id;
+            final matchesHostId = hostId.isNotEmpty && (rHostId == hostId || r.host.id == hostId);
+            final matchesUsername = hostUsername != null && hostUsername.isNotEmpty && r.host.username.toLowerCase() == hostUsername.toLowerCase();
+            if (matchesHostId || matchesUsername) {
+              currentActive = r;
+              break;
+            }
+          }
+          if (currentActive != null && currentActive.id != room.id) {
+            debugPrint('[LivePartyProvider] Resolved stale room ${room.id} to active session ${currentActive.id}');
+            return await joinParty(currentActive, currentUser, password: password);
+          }
+        } catch (_) {}
+
         _errorMessage = 'ROOM_NOT_AVAILABLE';
+        _lastJoinFailureReason = 'ROOM_NOT_AVAILABLE';
         _roomClosedController.add({
           'roomId': room.id,
           'status': 'ENDED',
           'reason': 'ROOM_NOT_AVAILABLE',
         });
+        BackendRepository.instance.removeLiveRoom(room.id);
         return false;
       }
+      _lastJoinFailureReason = 'CONNECTION_ERROR';
       sendSystemMessage('⚠️ Room connection alert: ${_errorMessage ?? "Unknown error"}');
       return false;
     } finally {
@@ -441,6 +568,7 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketRoomSnapshotSub;
 
   void _setupSocketSubscriptions(UserModel currentUser) {
+    _currentUser = currentUser;
     // 1. Room Snapshot Subscription (Authoritative Seat & Participant State)
     _socketRoomSnapshotSub?.cancel();
     _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
@@ -455,37 +583,56 @@ class LivePartyProvider extends ChangeNotifier {
           if (seatRaw is! Map) continue;
           final seatMap = Map<String, dynamic>.from(seatRaw);
           final seatIndex = (seatMap['seatIndex'] is num) ? (seatMap['seatIndex'] as num).toInt() : int.tryParse(seatMap['seatIndex']?.toString() ?? '');
-          final userRaw = seatMap['user'];
-          if (seatIndex != null && userRaw is Map) {
-            final userMap = Map<String, dynamic>.from(userRaw);
-            final userObj = UserModel(
-              id: userMap['id']?.toString() ?? '',
-              username: userMap['username']?.toString() ?? 'User',
-              name: userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'User',
-              avatarUrl: userMap['avatarUrl']?.toString() ?? '',
-            );
-            if (userObj.id.isNotEmpty) {
-              final isSeatHost = seatIndex == 0 || (_activeRoom != null && _activeRoom!.host.id == userObj.id);
-              final existingIdx = _participants.indexWhere((p) => p.user.id == userObj.id || p.seatNumber == seatIndex);
-              if (existingIdx != -1) {
-                _participants[existingIdx] = _participants[existingIdx].copyWith(
-                  user: userObj,
-                  seatNumber: seatIndex,
-                  role: isSeatHost ? ParticipantRole.host : ParticipantRole.speaker,
-                  micStatus: seatMap['isMuted'] == true ? MicStatus.muted : MicStatus.on,
+          final userRaw = seatMap['user'] ?? seatMap['occupiedUser'];
+          if (seatIndex != null) {
+            if (userRaw is Map && userRaw['id'] != null && userRaw['id'].toString().isNotEmpty) {
+              final userMap = Map<String, dynamic>.from(userRaw);
+              final userObj = UserModel(
+                id: userMap['id']?.toString() ?? '',
+                username: userMap['username']?.toString() ?? 'User',
+                name: userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'User',
+                avatarUrl: userMap['avatarUrl']?.toString() ?? '',
+              );
+              if (userObj.id.isNotEmpty) {
+                final isSeatHost = (_activeRoom != null && (_activeRoom!.host.id == userObj.id || _activeRoom!.creatorUserId == userObj.id)) ||
+                    (isHost && _currentUser?.id == userObj.id);
+                final existingIdx = _participants.indexWhere((p) => p.user.id == userObj.id || p.seatNumber == seatIndex);
+                if (existingIdx != -1) {
+                  _participants[existingIdx] = _participants[existingIdx].copyWith(
+                    user: userObj,
+                    seatNumber: seatIndex,
+                    role: isSeatHost ? ParticipantRole.host : ParticipantRole.speaker,
+                    micStatus: seatMap['isMuted'] == true ? MicStatus.muted : MicStatus.on,
+                  );
+                } else {
+                  _participants.add(PartyParticipantModel(
+                    user: userObj,
+                    role: isSeatHost ? ParticipantRole.host : ParticipantRole.speaker,
+                    seatNumber: seatIndex,
+                    micStatus: seatMap['isMuted'] == true ? MicStatus.muted : MicStatus.on,
+                    joinedAt: DateTime.now(),
+                  ));
+                }
+              }
+            } else {
+              // Authoritative vacant seat: vacate any participant currently marked with this seatIndex
+              final emptySeatOccupant = _participants.indexWhere((p) => p.seatNumber == seatIndex);
+              if (emptySeatOccupant != -1) {
+                final occupant = _participants[emptySeatOccupant];
+                final isHostOccupant = occupant.role == ParticipantRole.host ||
+                    occupant.user.id == _activeRoom?.host.id ||
+                    occupant.user.id == _activeRoom?.creatorUserId ||
+                    (isHost && occupant.user.id == _currentUser?.id);
+                _participants[emptySeatOccupant] = occupant.copyWith(
+                  clearSeat: true,
+                  role: isHostOccupant ? ParticipantRole.host : ParticipantRole.listener,
+                  micStatus: MicStatus.muted,
                 );
-              } else {
-                _participants.add(PartyParticipantModel(
-                  user: userObj,
-                  role: isSeatHost ? ParticipantRole.host : ParticipantRole.speaker,
-                  seatNumber: seatIndex,
-                  micStatus: seatMap['isMuted'] == true ? MicStatus.muted : MicStatus.on,
-                  joinedAt: DateTime.now(),
-                ));
               }
             }
           }
         }
+        _deduplicateParticipants();
         // Process existing members/viewers in snapshot
         final membersList = data['members'] is List
             ? (data['members'] as List)
@@ -605,6 +752,7 @@ class LivePartyProvider extends ChangeNotifier {
       final leftUserId = data['userId']?.toString() ?? data['id']?.toString();
       if (leftUserId != null) {
         _announcedJoinedUserIds.remove(leftUserId);
+        _pendingOutgoingInvites.remove(leftUserId);
         _participants.removeWhere((p) => p.user.id == leftUserId);
         final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
         final parsedViewerCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
@@ -648,6 +796,18 @@ class LivePartyProvider extends ChangeNotifier {
               occupantUser.id == _activeRoom?.creatorUserId ||
               (isHost && occupantUser.id == currentUser.id) ||
               (_activeRoom != null && _activeRoom!.host.username.isNotEmpty && occupantUser.username.isNotEmpty && occupantUser.username.toLowerCase() == _activeRoom!.host.username.toLowerCase());
+
+          // Detect previous seat occupied by this user to determine if it is a join or a move
+          int? previousSeat;
+          for (final p in _participants) {
+            final isMatch = p.user.id == occupantUser.id ||
+                (occupantUser.username.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == occupantUser.username.toLowerCase());
+            if (isMatch && p.seatNumber != null) {
+              previousSeat = p.seatNumber;
+              break;
+            }
+          }
+          final bool isUnchangedSeat = (previousSeat == seatIndex);
 
           // 1. Proactively vacate ANY previous seat held by occupantUser elsewhere
           for (int i = 0; i < _participants.length; i++) {
@@ -697,11 +857,20 @@ class LivePartyProvider extends ChangeNotifier {
             ));
           }
 
+          _pendingOutgoingInvites.remove(occupantUser.id);
+
           if (occupantUser.id == currentUser.id) {
             _agoraService.switchRole(isHost: true);
           }
 
-          sendSystemMessage('🎙️ ${occupantUser.name} took Mic ${seatIndex + 1}.');
+          // Only announce if the seat state actually changed (ignore pings, refreshes, duplicate socket packets)
+          if (!isUnchangedSeat) {
+            if (previousSeat != null) {
+              sendSystemMessage('🎙️ ${occupantUser.name} moved to Mic ${seatIndex + 1}.');
+            } else {
+              sendSystemMessage('🎙️ ${occupantUser.name} took Mic ${seatIndex + 1}.');
+            }
+          }
           notifyListeners();
         }
       } catch (e) {
@@ -715,45 +884,46 @@ class LivePartyProvider extends ChangeNotifier {
       try {
         final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
         final userId = data['userId']?.toString() ?? data['releasedByUserId']?.toString();
+        int pIdx = -1;
         if (seatIndex != null) {
-          final pIdx = _participants.indexWhere((p) => p.seatNumber == seatIndex);
-          if (pIdx != -1) {
-            final occupant = _participants[pIdx];
-            final isHostOccupant = occupant.role == ParticipantRole.host ||
-                occupant.user.id == _activeRoom?.host.id ||
-                occupant.user.id == _activeRoom?.creatorUserId ||
-                (isHost && occupant.user.id == currentUser.id);
+          pIdx = _participants.indexWhere((p) => p.seatNumber == seatIndex);
+        }
+        if (pIdx == -1 && userId != null) {
+          pIdx = _participants.indexWhere((p) => p.user.id == userId);
+        }
 
-            _participants[pIdx] = occupant.copyWith(
-              clearSeat: true,
-              role: isHostOccupant ? ParticipantRole.host : ParticipantRole.listener,
-              micStatus: MicStatus.muted,
-            );
+        if (pIdx != -1) {
+          final occupant = _participants[pIdx];
+          final isHostOccupant = occupant.role == ParticipantRole.host ||
+              occupant.user.id == _activeRoom?.host.id ||
+              occupant.user.id == _activeRoom?.creatorUserId ||
+              (isHost && occupant.user.id == currentUser.id);
 
-            if (occupant.user.id == currentUser.id) {
-              _agoraService.switchRole(isHost: false);
-            }
-            sendSystemMessage('🚫 ${occupant.user.name} released Mic ${seatIndex + 1}.');
+          _participants[pIdx] = occupant.copyWith(
+            clearSeat: true,
+            role: isHostOccupant ? ParticipantRole.host : ParticipantRole.listener,
+            micStatus: MicStatus.muted,
+          );
+
+          if (occupant.user.id == currentUser.id) {
+            _agoraService.muteLocalAudio(true);
+            _agoraService.switchRole(isHost: false);
           }
-        } else if (userId != null) {
-          final pIdx = _participants.indexWhere((p) => p.user.id == userId);
-          if (pIdx != -1) {
-            final occupant = _participants[pIdx];
-            final isHostOccupant = occupant.role == ParticipantRole.host ||
-                occupant.user.id == _activeRoom?.host.id ||
-                occupant.user.id == _activeRoom?.creatorUserId ||
-                (isHost && occupant.user.id == currentUser.id);
-
-            _participants[pIdx] = occupant.copyWith(
-              clearSeat: true,
-              role: isHostOccupant ? ParticipantRole.host : ParticipantRole.listener,
-              micStatus: MicStatus.muted,
-            );
-            if (userId == currentUser.id) {
-              _agoraService.switchRole(isHost: false);
+          final sNum = seatIndex != null ? seatIndex + 1 : (occupant.seatNumber != null ? occupant.seatNumber! + 1 : 1);
+          sendSystemMessage('🎙️ ${occupant.user.name} left Mic $sNum and moved to the audience.');
+        } else if (seatIndex != null) {
+          // Vacate any participant marked on seatIndex
+          for (int i = 0; i < _participants.length; i++) {
+            if (_participants[i].seatNumber == seatIndex) {
+              _participants[i] = _participants[i].copyWith(
+                clearSeat: true,
+                role: _participants[i].role == ParticipantRole.host ? ParticipantRole.host : ParticipantRole.listener,
+                micStatus: MicStatus.muted,
+              );
             }
           }
         }
+        _deduplicateParticipants();
         notifyListeners();
       } catch (e) {
         debugPrint('[LivePartyProvider] SeatReleased error: $e');
@@ -850,6 +1020,15 @@ class LivePartyProvider extends ChangeNotifier {
         final text = (data['text'] ?? data['message'] ?? data['content'] ?? data['msg'] ?? '').toString().trim();
         if (text.isEmpty) return;
 
+        // Message dropped if created before room feed clear boundary
+        final createdAtRaw = data['createdAt'] ?? data['timestamp'];
+        if (_feedClearedAt != null && createdAtRaw != null) {
+          final msgTime = DateTime.tryParse(createdAtRaw.toString());
+          if (msgTime != null && msgTime.isBefore(_feedClearedAt!)) {
+            return;
+          }
+        }
+
         final msgId = (data['id'] ?? data['_id'] ?? '').toString();
         final clientMsgId = data['clientMessageId']?.toString();
 
@@ -941,13 +1120,24 @@ class LivePartyProvider extends ChangeNotifier {
       final isHostMe = isHost && (_activeRoom?.creatorUserId == currentUser.id || _activeRoom?.host.id == currentUser.id);
 
       if (isMe || isHostMe) {
+        _wasKicked = true;
+        _kickReason = reason;
+        _kickedController.add(reason);
         sendSystemMessage('🚫 You have been removed from this room by moderation: $reason');
         leaveParty();
+        notifyListeners();
       } else if (targetUserId != null) {
         final kickedIdx = _participants.indexWhere((p) => p.user.id == targetUserId || p.user.username == targetUserId);
         if (kickedIdx != -1) {
-          final kickedName = _participants[kickedIdx].user.name;
+          final kicked = _participants[kickedIdx];
+          final kickedName = kicked.user.name;
+          final kickedSeat = kicked.seatNumber;
+          if (kickedSeat != null) {
+            _mutedSeatIndices.remove(kickedSeat);
+            _lockedSeatIndices.remove(kickedSeat);
+          }
           _participants.removeAt(kickedIdx);
+          _deduplicateParticipants();
           sendSystemMessage('🚫 $kickedName was removed from the room by moderation.');
           notifyListeners();
         }
@@ -1050,6 +1240,102 @@ class LivePartyProvider extends ChangeNotifier {
         }
       }
     });
+
+    // 15. Mic Invitation Realtime Events (Change 13)
+    _socketMicInviteSub?.cancel();
+    _socketMicInviteSub = _socketService.onRoomMicInvite.listen((data) {
+      final roomId = data['roomId']?.toString();
+      final canonicalRoomId = data['canonicalRoomId']?.toString();
+
+      // Flexible room match to prevent ID format or canonical alias divergence drops
+      final isMatchingRoom = _activeRoom == null ||
+          roomId == null ||
+          roomId == _activeRoom!.id ||
+          canonicalRoomId == _activeRoom!.id ||
+          _activeRoom!.agoraChannelName == roomId ||
+          _initialRoomId == roomId ||
+          _activeRoom!.id.contains(roomId) ||
+          (canonicalRoomId != null && _activeRoom!.id.contains(canonicalRoomId));
+
+      if (!isMatchingRoom) return;
+
+      final targetUserId = data['targetUserId']?.toString();
+      final inviteId = data['id']?.toString() ?? 'inv_${DateTime.now().millisecondsSinceEpoch}';
+
+      if (targetUserId != null) {
+        _pendingOutgoingInvites[targetUserId] = {
+          'id': inviteId,
+          'roomId': roomId ?? _activeRoom?.id,
+          'targetUserId': targetUserId,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        };
+        notifyListeners();
+      }
+
+      // Normalized target comparison to support numeric IDs, string IDs, and prefixed IDs
+      final currentId = _currentUser?.id?.toString() ?? '';
+      final isSelfTarget = currentId.isNotEmpty && targetUserId != null && (
+        targetUserId == currentId ||
+        targetUserId.toLowerCase() == currentId.toLowerCase() ||
+        targetUserId.replaceAll('user_', '') == currentId.replaceAll('user_', '')
+      );
+
+      if (isSelfTarget) {
+        _incomingMicInviteController.add(Map<String, dynamic>.from(data));
+      }
+    });
+
+    _socketMicInviteResponseSub?.cancel();
+    _socketMicInviteResponseSub = _socketService.onRoomMicInviteResponse.listen((data) {
+      final roomId = data['roomId']?.toString();
+      final canonicalRoomId = data['canonicalRoomId']?.toString();
+
+      final isMatchingRoom = _activeRoom == null ||
+          roomId == null ||
+          roomId == _activeRoom!.id ||
+          canonicalRoomId == _activeRoom!.id ||
+          _activeRoom!.agoraChannelName == roomId ||
+          _initialRoomId == roomId ||
+          _activeRoom!.id.contains(roomId) ||
+          (canonicalRoomId != null && _activeRoom!.id.contains(canonicalRoomId));
+
+      if (!isMatchingRoom) return;
+
+      final targetUserId = data['targetUserId']?.toString();
+      if (targetUserId != null) {
+        _pendingOutgoingInvites.remove(targetUserId);
+        _pendingOutgoingInvites.remove(targetUserId.replaceAll('user_', ''));
+        _pendingOutgoingInvites.remove('user_$targetUserId');
+        notifyListeners();
+      }
+    });
+
+    // 16. Room Feed Cleared Stream (Clear Screen action)
+    _socketFeedClearedSub?.cancel();
+    _socketFeedClearedSub = _socketService.onRoomFeedCleared.listen((data) {
+      final incomingRoomId = (data['roomId'] ?? '').toString().trim().toLowerCase();
+      final currentRoomId = (_activeRoom?.id ?? _initialRoomId ?? '').trim().toLowerCase();
+      if (incomingRoomId.isEmpty || incomingRoomId == currentRoomId) {
+        clearRoomFeed();
+      }
+    });
+  }
+
+  /// Clears the room's lower feed messages and records clear timestamp
+  void clearRoomFeed() {
+    _feedClearedAt = DateTime.now();
+    _messages.clear();
+    notifyListeners();
+  }
+
+  /// Broadcasts Clear Screen event to all room participants via socket and backend
+  void broadcastClearScreen() {
+    clearRoomFeed();
+    final roomId = _activeRoom?.id ?? _initialRoomId;
+    if (roomId != null) {
+      _socketService.clearRoomFeed(roomId);
+      _roomRepository.clearRoomFeed(roomId);
+    }
   }
 
   void dismissWarning() {
@@ -1116,6 +1402,11 @@ class LivePartyProvider extends ChangeNotifier {
     _socketRoomMutedSub?.cancel();
     _socketRoomUserMutedSub?.cancel();
     _socketRoleUpdatedSub?.cancel();
+    _socketMicInviteSub?.cancel();
+    _socketMicInviteResponseSub?.cancel();
+    _socketFeedClearedSub?.cancel();
+    _pendingOutgoingInvites.clear();
+    _feedClearedAt = null;
     _pkTimer?.cancel();
 
     _activeRoom = null;
@@ -1256,6 +1547,178 @@ class LivePartyProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Deduplicate participants so each user is represented exactly once across all seats and lists
+  void _deduplicateParticipants() {
+    final unique = <PartyParticipantModel>[];
+    for (final p in _participants) {
+      final id = p.user.id.trim();
+      final username = p.user.username.trim().toLowerCase();
+      final name = p.user.name.trim().toLowerCase();
+
+      final existingIdx = unique.indexWhere((u) {
+        if (id.isNotEmpty && u.user.id.trim() == id) return true;
+        if (username.isNotEmpty && u.user.username.trim().toLowerCase() == username) return true;
+        if (name.isNotEmpty && u.user.name.trim().toLowerCase() == name) return true;
+        return false;
+      });
+
+      if (existingIdx == -1) {
+        unique.add(p);
+      } else {
+        final existing = unique[existingIdx];
+        if (existing.seatNumber == null && p.seatNumber != null) {
+          unique[existingIdx] = p;
+        } else if (existing.seatNumber != null && p.seatNumber != null && existing.seatNumber != p.seatNumber) {
+          // If both have different seats, keep the most recent seated entry
+          unique[existingIdx] = p;
+        } else if (p.user.id.isNotEmpty && !p.user.id.startsWith('host_') && existing.user.id.startsWith('host_')) {
+          unique[existingIdx] = p;
+        }
+      }
+    }
+    _participants.clear();
+    _participants.addAll(unique);
+  }
+
+  /// Reconcile and synchronize seats state with backend server
+  Future<void> syncSeatsWithServer() async {
+    if (_activeRoom == null) return;
+    try {
+      final updatedRoom = await _roomRepository.getRoomDetails(_activeRoom!.id);
+      _activeRoom = updatedRoom;
+      if (updatedRoom.seats != null && updatedRoom.seats!.isNotEmpty) {
+        for (final seatRaw in updatedRoom.seats!) {
+          if (seatRaw is! Map) continue;
+          final sMap = Map<String, dynamic>.from(seatRaw);
+          final sIdx = (sMap['seatIndex'] is num) ? (sMap['seatIndex'] as num).toInt() : int.tryParse(sMap['seatIndex']?.toString() ?? '');
+          if (sIdx == null) continue;
+          final userRaw = sMap['occupiedUser'] ?? sMap['user'];
+          if (userRaw == null || (userRaw is Map && (userRaw['id'] == null || userRaw['id'].toString().isEmpty))) {
+            final occIdx = _participants.indexWhere((p) => p.seatNumber == sIdx);
+            if (occIdx != -1) {
+              final occ = _participants[occIdx];
+              final isHostOcc = occ.role == ParticipantRole.host ||
+                  occ.user.id == _activeRoom?.host.id ||
+                  occ.user.id == _activeRoom?.creatorUserId;
+              _participants[occIdx] = occ.copyWith(
+                clearSeat: true,
+                role: isHostOcc ? ParticipantRole.host : ParticipantRole.listener,
+                micStatus: MicStatus.muted,
+              );
+            }
+          }
+        }
+        _deduplicateParticipants();
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[LivePartyProvider] syncSeatsWithServer notice: $e');
+    }
+  }
+
+  /// Room owner / participant Leave Mic action
+  /// Releases the user's current seat and moves the user into the audience as a listener.
+  /// Stops microphone audio transmission, keeps room open, preserves owner role and management permissions.
+  Future<String?> leaveMicSeat({int? seatIndex, UserModel? user}) async {
+    if (_activeRoom == null) return 'No active room';
+    final targetUser = user ?? _currentUser;
+    if (targetUser == null) return 'No active user';
+
+    // 1. Resolve which seat the target user is currently occupying
+    int targetSeatIndex = seatIndex ?? -1;
+    if (targetSeatIndex < 0) {
+      final p = _participants.where((p) =>
+        p.user.id == targetUser.id ||
+        (targetUser.username.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == targetUser.username.toLowerCase())
+      ).firstOrNull;
+      if (p != null && p.seatNumber != null) {
+        targetSeatIndex = p.seatNumber!;
+      }
+    }
+
+    if (targetSeatIndex < 0) {
+      final p0 = _participants.where((p) => p.seatNumber == 0).firstOrNull;
+      if (p0 != null && (p0.user.id == targetUser.id || isHost)) {
+        targetSeatIndex = 0;
+      }
+    }
+
+    if (targetSeatIndex < 0) {
+      return 'Not currently occupying a microphone seat';
+    }
+
+    try {
+      // 2. Authoritative backend REST release
+      await _roomRepository.leaveSeat(_activeRoom!.id, targetSeatIndex);
+
+      // 3. Broadcast release via socket
+      _socketService.leaveSeat(_activeRoom!.id, targetSeatIndex);
+
+      // 4. Update local state immediately
+      final isHostUser = isHost ||
+          targetUser.id == _activeRoom?.host.id ||
+          targetUser.id == _activeRoom?.creatorUserId;
+
+      final pIdx = _participants.indexWhere((p) =>
+        p.seatNumber == targetSeatIndex ||
+        p.user.id == targetUser.id
+      );
+
+      if (pIdx != -1) {
+        final currentP = _participants[pIdx];
+        _participants[pIdx] = currentP.copyWith(
+          clearSeat: true,
+          role: isHostUser ? ParticipantRole.host : ParticipantRole.listener,
+          micStatus: MicStatus.muted,
+        );
+      } else {
+        _participants.add(PartyParticipantModel(
+          user: targetUser,
+          role: isHostUser ? ParticipantRole.host : ParticipantRole.listener,
+          seatNumber: null,
+          micStatus: MicStatus.muted,
+          joinedAt: DateTime.now(),
+        ));
+      }
+
+      // Proactively clear any other participant marked on targetSeatIndex
+      for (int i = 0; i < _participants.length; i++) {
+        if (_participants[i].seatNumber == targetSeatIndex) {
+          _participants[i] = _participants[i].copyWith(
+            clearSeat: true,
+            role: (_participants[i].role == ParticipantRole.host || isHostUser) ? ParticipantRole.host : ParticipantRole.listener,
+            micStatus: MicStatus.muted,
+          );
+        }
+      }
+
+      _deduplicateParticipants();
+
+      // 5. Stop local audio transmission and switch Agora role to audience
+      if (targetUser.id == _currentUser?.id) {
+        _agoraService.muteLocalAudio(true);
+        await _agoraService.switchRole(isHost: false);
+      }
+
+      _logMicAudit(
+        seatIndex: targetSeatIndex,
+        actorId: targetUser.id,
+        actorRole: _getRoleString(targetUser.id),
+        targetId: targetUser.id,
+        action: 'LEAVE_MIC',
+        previousState: 'Mic ${targetSeatIndex + 1}',
+        newState: 'Audience',
+      );
+
+      sendSystemMessage('🎙️ ${targetUser.name} left Mic ${targetSeatIndex + 1} and moved to the audience.');
+      notifyListeners();
+      return null;
+    } catch (e) {
+      debugPrint('[LivePartyProvider] leaveMicSeat error: $e');
+      return e.toString();
+    }
+  }
+
   Future<void> clearMicSeat(int seatIndex, {required UserModel actor}) async {
     if (_activeRoom == null) return;
     final occupant = _participants.where((p) => p.seatNumber == seatIndex).firstOrNull;
@@ -1280,8 +1743,11 @@ class LivePartyProvider extends ChangeNotifier {
         }
 
         if (occupant.user.id == _currentUser?.id) {
+          _agoraService.muteLocalAudio(true);
           await _agoraService.switchRole(isHost: false);
         }
+
+        _deduplicateParticipants();
 
         _logMicAudit(
           seatIndex: seatIndex,
@@ -1395,6 +1861,122 @@ class LivePartyProvider extends ChangeNotifier {
     return inviteId;
   }
 
+  bool isInvitePending(String userId) {
+    final invite = _pendingOutgoingInvites[userId];
+    if (invite == null) return false;
+    final ts = invite['timestamp'] as int? ?? 0;
+    if (DateTime.now().millisecondsSinceEpoch - ts > 30000) {
+      _pendingOutgoingInvites.remove(userId);
+      return false;
+    }
+    return true;
+  }
+
+  int? getFirstAvailableMicSeat() {
+    final capacity = _activeRoom?.seatCapacity ?? 8;
+    for (int i = 1; i < capacity; i++) {
+      if (isSeatLocked(i)) continue;
+      final isOccupied = _participants.any((p) => p.seatNumber == i);
+      if (!isOccupied) return i;
+    }
+    return null;
+  }
+
+  Future<String?> sendMicInvitation({
+    required UserModel targetUser,
+    required UserModel inviter,
+  }) async {
+    if (_activeRoom == null) return 'No active room.';
+
+    // Check if target is already on mic
+    final isOnMic = _participants.any((p) => p.user.id == targetUser.id && p.seatNumber != null);
+    if (isOnMic) {
+      return '${targetUser.name} is already on a mic.';
+    }
+
+    // Check if duplicate invitation pending
+    if (isInvitePending(targetUser.id)) {
+      return 'Invitation is already pending for ${targetUser.name}.';
+    }
+
+    // Check if room has an available seat
+    final availableSeat = getFirstAvailableMicSeat();
+    if (availableSeat == null) {
+      return 'No available mic seats in this room.';
+    }
+
+    final inviteId = 'inv_${DateTime.now().millisecondsSinceEpoch}_${targetUser.id}';
+    _pendingOutgoingInvites[targetUser.id] = {
+      'id': inviteId,
+      'roomId': _activeRoom!.id,
+      'seatIndex': availableSeat,
+      'inviter': inviter.toJson(),
+      'targetUser': targetUser.toJson(),
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+    notifyListeners();
+
+    // Auto-expire after 30 seconds
+    Timer(const Duration(seconds: 30), () {
+      if (_pendingOutgoingInvites.containsKey(targetUser.id)) {
+        _pendingOutgoingInvites.remove(targetUser.id);
+        notifyListeners();
+      }
+    });
+
+    _socketService.sendMicInvite(
+      roomId: _activeRoom!.id,
+      roomTitle: _activeRoom!.title,
+      targetUserId: targetUser.id,
+      invitationId: inviteId,
+      inviter: inviter.toJson(),
+      targetUser: targetUser.toJson(),
+    );
+
+    _logMicAudit(
+      seatIndex: availableSeat,
+      actorId: inviter.id,
+      actorRole: _getRoleString(inviter.id),
+      targetId: targetUser.id,
+      action: 'INVITE_MIC',
+      previousState: 'Audience',
+      newState: 'Invited (Mic ${availableSeat + 1})',
+    );
+
+    sendSystemMessage('📩 Invited ${targetUser.name} to join the mic.');
+    return null;
+  }
+
+  Future<String?> respondToMicInvitation({
+    required String invitationId,
+    required bool accept,
+    String? reason,
+  }) async {
+    if (_activeRoom == null || _currentUser == null) return 'No active room.';
+
+    _socketService.respondMicInvite(
+      roomId: _activeRoom!.id,
+      invitationId: invitationId,
+      targetUserId: _currentUser!.id,
+      accepted: accept,
+      reason: reason,
+    );
+
+    if (!accept) {
+      return null;
+    }
+
+    // On acceptance: validate room presence, ensure available mic seat exists
+    final availableSeat = getFirstAvailableMicSeat();
+    if (availableSeat == null) {
+      return 'Sorry, all mic seats are currently full.';
+    }
+
+    // Assign seat once
+    final err = await takeMicSeat(availableSeat, _currentUser!);
+    return err;
+  }
+
   void _logMicAudit({
     required int seatIndex,
     required String actorId,
@@ -1452,8 +2034,18 @@ class LivePartyProvider extends ChangeNotifier {
 
   // ── Chat & Messages ────────────────────────────────────────────────────────
   void sendSystemMessage(String text) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _recentSystemMessages.removeWhere((_, time) => now - time > 5000);
+    if (_recentSystemMessages.containsKey(text)) {
+      final prevTime = _recentSystemMessages[text]!;
+      if (now - prevTime < 3000) {
+        return; // Suppress duplicate message within 3 seconds
+      }
+    }
+    _recentSystemMessages[text] = now;
+
     _messages.add(PartyMessageModel(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      id: now.toString(),
       sender: const UserModel(
         id: 'system',
         username: 'system',
@@ -1773,14 +2365,30 @@ class LivePartyProvider extends ChangeNotifier {
   }
 
   void removeParticipant(String userId) {
-    final idx = _participants.indexWhere((p) => p.user.id == userId);
+    final idx = _participants.indexWhere((p) => p.user.id == userId || p.user.username == userId);
     if (idx != -1) {
-      final targetName = _participants[idx].user.name;
+      final target = _participants[idx];
+      final targetName = target.user.name;
+      final targetSeat = target.seatNumber;
+
+      if (targetSeat != null) {
+        _mutedSeatIndices.remove(targetSeat);
+        _lockedSeatIndices.remove(targetSeat);
+        if (_activeRoom != null) {
+          try {
+            _roomRepository.leaveSeat(_activeRoom!.id, targetSeat);
+            _socketService.leaveSeat(_activeRoom!.id, targetSeat);
+          } catch (_) {}
+        }
+      }
+
       _participants.removeAt(idx);
+      _deduplicateParticipants();
+
       if (_activeRoom != null) {
         _socketService.kickUserFromRoom(
           roomId: _activeRoom!.id,
-          targetUserId: userId,
+          targetUserId: target.user.id,
         );
       }
       sendSystemMessage('🚫 $targetName was kicked out of the room.');

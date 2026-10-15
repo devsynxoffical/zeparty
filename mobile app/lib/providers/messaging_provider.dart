@@ -417,6 +417,7 @@ class MessagingProvider extends ChangeNotifier {
       // Check if user is in _chatUsers, if not add if sender info exists
       if (!_chatUsers.any((u) => u.id == otherUserId) && data['sender'] is Map) {
         final senderMap = Map<String, dynamic>.from(data['sender'] as Map);
+        final isSenderOnline = senderMap['isOnline'] == true || senderMap['online'] == true;
         _chatUsers.insert(
           0,
           UserModel(
@@ -424,6 +425,7 @@ class MessagingProvider extends ChangeNotifier {
             username: senderMap['username']?.toString() ?? 'user_$otherUserId',
             name: senderMap['displayName']?.toString() ?? senderMap['name']?.toString() ?? 'ZeParty User',
             avatarUrl: senderMap['avatarUrl']?.toString() ?? '',
+            isOnline: isSenderOnline,
           ),
         );
       } else if (_chatUsers.any((u) => u.id == otherUserId)) {
@@ -494,6 +496,7 @@ class MessagingProvider extends ChangeNotifier {
         final otherUserId = map['otherUserId']?.toString() ?? otherUserMap?['id']?.toString() ?? '';
         if (otherUserId.isEmpty) continue;
 
+        final isUserOnline = otherUserMap?['isOnline'] == true || otherUserMap?['online'] == true;
         final userModel = UserModel(
           id: otherUserId,
           username: otherUserMap?['username']?.toString() ?? 'user_$otherUserId',
@@ -501,6 +504,7 @@ class MessagingProvider extends ChangeNotifier {
           avatarUrl: otherUserMap?['avatarUrl']?.toString() ?? '',
           bio: otherUserMap?['bio']?.toString() ?? '',
           gender: otherUserMap?['gender']?.toString() ?? 'Not Specified',
+          isOnline: isUserOnline,
         );
         users.add(userModel);
 
@@ -598,6 +602,7 @@ class MessagingProvider extends ChangeNotifier {
           username: 'user_$receiverId',
           name: 'ZeParty User',
           avatarUrl: '',
+          isOnline: false,
         ),
       );
     } else {

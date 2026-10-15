@@ -308,13 +308,68 @@ class UserAvatarWithStatus extends StatelessWidget {
 /// Compact online status badge widget for use inline.
 class OnlineStatusBadge extends StatelessWidget {
   final bool isOnline;
+  final bool isInRoom;
+  final String? presenceStatus;
   final String? lastSeen;
+  final VoidCallback? onInRoomTap;
 
-  const OnlineStatusBadge({super.key, required this.isOnline, this.lastSeen});
+  const OnlineStatusBadge({
+    super.key,
+    required this.isOnline,
+    this.isInRoom = false,
+    this.presenceStatus,
+    this.lastSeen,
+    this.onInRoomTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final effectiveInRoom = isInRoom || presenceStatus == 'IN_ROOM';
+    final effectiveOnline = isOnline || presenceStatus == 'ONLINE' || effectiveInRoom;
+
+    // State 1: In Room (Gradient badge with sensors icon, tappable if callback provided)
+    if (effectiveInRoom) {
+      return GestureDetector(
+        onTap: onInRoomTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF8E24AA), Color(0xFFD81B60)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.8), width: 1.0),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.pinkAccent.withValues(alpha: 0.35),
+                blurRadius: 6,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.sensors_rounded, size: 10, color: Colors.white),
+              SizedBox(width: 3),
+              Text(
+                'In Room',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // State 2: Online (Green dot) or State 3: Offline (Grey dot with lastActive / Offline text)
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -322,20 +377,20 @@ class OnlineStatusBadge extends StatelessWidget {
           width: 8,
           height: 8,
           decoration: BoxDecoration(
-            color: isOnline ? const Color(0xFF22C55E) : const Color(0xFF6B7280),
+            color: effectiveOnline ? const Color(0xFF22C55E) : const Color(0xFF6B7280),
             shape: BoxShape.circle,
-            boxShadow: isOnline
+            boxShadow: effectiveOnline
                 ? [BoxShadow(color: const Color(0xFF22C55E).withValues(alpha: 0.5), blurRadius: 4)]
                 : null,
           ),
         ),
         const SizedBox(width: 5),
         Text(
-          isOnline ? 'Online' : (lastSeen ?? 'Offline'),
+          effectiveOnline ? 'Online' : (lastSeen ?? 'Offline'),
           style: TextStyle(
             fontSize: 11,
-            color: isOnline ? const Color(0xFF22C55E) : AppColors.getTextSecondary(isDark),
-            fontWeight: isOnline ? FontWeight.bold : FontWeight.normal,
+            color: effectiveOnline ? const Color(0xFF22C55E) : AppColors.getTextSecondary(isDark),
+            fontWeight: effectiveOnline ? FontWeight.bold : FontWeight.normal,
           ),
         ),
       ],
