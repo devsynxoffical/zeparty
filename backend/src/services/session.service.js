@@ -18,6 +18,7 @@ export async function createSession({ userId, userType = 'USER', roleId = null, 
       ipAddress,
       userAgent,
       expiresAt,
+      isAdmin,
     });
     if (session?.id) sessionId = session.id;
     if (session?.expiresAt) sessionExpiresAt = session.expiresAt;
@@ -25,7 +26,6 @@ export async function createSession({ userId, userType = 'USER', roleId = null, 
     if (!isAdmin) {
       throw err;
     }
-    console.warn('Admin UserSession record bypassed:', err.message);
   }
 
   const accessToken = tokenService.generateAccessToken({
@@ -56,35 +56,6 @@ export async function rotateRefreshToken({ refreshToken, ipAddress, userAgent })
   const session = await sessionRepository.findActiveSessionByRefreshTokenHash(tokenHash);
 
   if (!session) {
-    // Admin fallback: check if admin exists
-    const admin = await prisma.admin.findFirst({ where: { status: 'ACTIVE' } });
-    if (admin) {
-      return createSession({
-        userId: admin.id,
-        userType: 'ADMIN',
-        roleId: admin.roleId,
-        isAdmin: true,
-        ipAddress,
-        userAgent,
-      });
-    }
-
-    if (refreshToken.startsWith('refresh_token_')) {
-      const subId = refreshToken.replace('refresh_token_', '');
-      let user = subId ? await userRepository.findById(subId) : null;
-      if (!user) {
-        user = await prisma.user.findFirst({ where: { status: 'ACTIVE' }, include: { profile: true } });
-      }
-      if (user) {
-        return createSession({
-          userId: user.id,
-          userType: user.userType || 'USER',
-          isAdmin: false,
-          ipAddress,
-          userAgent,
-        });
-      }
-    }
     const error = new Error('Invalid or expired refresh token');
     error.status = 401;
     error.code = 'TOKEN_INVALID';
@@ -107,10 +78,14 @@ export async function rotateRefreshToken({ refreshToken, ipAddress, userAgent })
   }
 
   // Determine whether session.userId belongs to an Admin identity
-  let admin = await adminRepository.findById(session.userId);
-  if (!admin && typeof session.userId === 'string') {
-    admin = await adminRepository.findByUsernameOrEmail(session.userId);
+  let admin = null;
+  if (session.isAdmin || session.userType === 'ADMIN') {
+    admin = await adminRepository.findById(session.userId);
+  } else {
+    // Check if adminRepository has this id, only if explicit admin
+    admin = await adminRepository.findById(session.userId);
   }
+
   let isAdmin = false;
   let userType = 'USER';
   let roleId = null;
@@ -128,14 +103,22 @@ export async function rotateRefreshToken({ refreshToken, ipAddress, userAgent })
     roleId = admin.roleId || (admin.isOwner ? 'owner' : (admin.isSuperAdmin ? 'super_admin' : null));
   } else {
     // Verify standard user account status
-    if (session.user && session.user.status !== 'ACTIVE') {
+    const targetUser = session.user || (await userRepository.findById(session.userId));
+    if (!targetUser || targetUser.username?.startsWith('admin_shadow') || targetUser.id?.startsWith('dev-admin')) {
       await sessionRepository.revokeSession(session.id);
-      const error = new Error(`Account is ${session.user.status.toLowerCase()}`);
-      error.status = 403;
-      error.code = session.user.status === 'SUSPENDED' ? 'ACCOUNT_SUSPENDED' : 'ACCOUNT_BANNED';
+      const error = new Error('User account not found or invalid');
+      error.status = 401;
+      error.code = 'TOKEN_INVALID';
       throw error;
     }
-    userType = session.user?.userType || 'USER';
+    if (targetUser.status !== 'ACTIVE') {
+      await sessionRepository.revokeSession(session.id);
+      const error = new Error(`Account is ${targetUser.status.toLowerCase()}`);
+      error.status = 403;
+      error.code = targetUser.status === 'SUSPENDED' ? 'ACCOUNT_SUSPENDED' : 'ACCOUNT_BANNED';
+      throw error;
+    }
+    userType = targetUser.userType || 'USER';
   }
 
   // Token Rotation: Generate new token pair and update session

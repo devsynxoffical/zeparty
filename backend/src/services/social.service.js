@@ -797,8 +797,15 @@ export async function getFollowing(userId, { viewerUserId = null, page = 1, limi
 // ============================================================
 
 export async function getSocialProfile(targetUserId, viewerUserId = null, db = prisma) {
+  if (!targetUserId || (typeof targetUserId === 'string' && (targetUserId.startsWith('dev-admin') || targetUserId.startsWith('admin_shadow')))) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
   const user = await socialRepository.findSocialProfile(targetUserId, db);
-  if (!user) {
+  if (!user || user.userType === 'ADMIN' || (typeof user.username === 'string' && user.username.startsWith('admin_shadow'))) {
     const error = new Error('User not found');
     error.statusCode = 404;
     error.code = 'USER_NOT_FOUND';

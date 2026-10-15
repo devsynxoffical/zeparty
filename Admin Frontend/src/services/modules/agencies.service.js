@@ -103,9 +103,29 @@ export async function transferHostAgency(hostId, fromAgencyId, toAgencyId, reaso
   return res.data;
 }
 
-export async function getAgencyMembers(agencyId, params = {}) {
-  const res = await apiClient.get(`/v1/admin/agencies/${agencyId}/members`, { params });
-  return res.data?.data || [];
+export async function getAgencyApplications(params = {}) {
+  try {
+    const res = await apiClient.get('/v1/admin/agencies/applications', { params });
+    return res.data?.data || [];
+  } catch (err) {
+    console.warn('Failed to fetch agency applications:', err.message);
+    return [];
+  }
+}
+
+export async function getAgencyApplicationById(id) {
+  const res = await apiClient.get(`/v1/admin/agencies/applications/${id}`);
+  return res.data?.data;
+}
+
+export async function approveAgencyApplication(id) {
+  const res = await apiClient.post(`/v1/admin/agencies/applications/${id}/approve`);
+  return res.data;
+}
+
+export async function rejectAgencyApplication(id, reason) {
+  const res = await apiClient.post(`/v1/admin/agencies/applications/${id}/reject`, { reason });
+  return res.data;
 }
 
 export default {
@@ -118,4 +138,8 @@ export default {
   rejectAgency,
   transferHostAgency,
   getAgencyMembers,
+  getAgencyApplications,
+  getAgencyApplicationById,
+  approveAgencyApplication,
+  rejectAgencyApplication,
 };

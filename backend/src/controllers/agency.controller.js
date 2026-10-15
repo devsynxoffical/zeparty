@@ -6,6 +6,9 @@ import {
   updateAgencySchema,
   transferHostSchema,
   queryAgenciesSchema,
+  submitAgencyApplicationSchema,
+  rejectAgencyApplicationSchema,
+  queryAgencyApplicationsSchema,
 } from '../validators/agency.validator.js';
 
 export async function getPublicAgencies(req, res, next) {
@@ -219,7 +222,7 @@ export async function getMyAgency(req, res, next) {
   }
 }
 
-export async function applyRegisterAgency(req, res, next) {
+export async function submitAgencyApplication(req, res, next) {
   try {
     const userId = req.auth?.userId;
     if (!userId) {
@@ -230,42 +233,141 @@ export async function applyRegisterAgency(req, res, next) {
       });
     }
 
-    const agencyName = req.body.agencyName || req.body.name;
-    const { description, agencyType } = req.body;
-    if (!agencyName || agencyName.trim().length < 2) {
-      return res.status(400).json({
-        success: false,
-        message: 'Agency name must be at least 2 characters.',
-        error: { code: 'INVALID_AGENCY_NAME' },
-      });
-    }
+    const validatedData = submitAgencyApplicationSchema.parse(req.body);
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
 
-    const existing = await agencyRepository.findAgencyByOwnerUserId(userId);
-    if (existing) {
-      return res.status(200).json({
-        success: true,
-        message: 'You already own an active agency.',
-        data: existing,
-      });
-    }
-
-    const agencyCode = `AG_${Math.floor(100000 + Math.random() * 900000)}`;
-
-    const agency = await agencyRepository.createAgency({
-      agencyName: agencyName.trim(),
-      agencyCode,
-      agencyType: 'AUDIO_AGENCY',
-      ownerUserId: userId,
-      commissionRate: 20.0,
-      status: 'ACTIVE',
-    });
+    const application = await agencyService.submitAgencyApplication(
+      validatedData,
+      { userId, ipAddress }
+    );
 
     return res.status(201).json({
       success: true,
-      message: 'Agency registered successfully.',
-      data: agency,
+      message: 'Agency application submitted successfully and is pending administrative review.',
+      data: application,
     });
   } catch (err) {
+    if (err.name === 'ZodError') {
+      return res.status(400).json({
+        success: false,
+        message: err.errors?.[0]?.message || 'Validation error in agency application',
+        error: {
+          code: 'VALIDATION_ERROR',
+          details: err.errors,
+        },
+      });
+    }
+    next(err);
+  }
+}
+
+// Backwards compatibility alias for existing mobile route POST /v1/agencies/apply
+export async function applyRegisterAgency(req, res, next) {
+  return await submitAgencyApplication(req, res, next);
+}
+
+export async function getMyAgencyApplication(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const application = await agencyService.getMyAgencyApplication(userId);
+    return res.status(200).json({
+      success: true,
+      data: application || null,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAgencyApplications(req, res, next) {
+  try {
+    const validatedQuery = queryAgencyApplicationsSchema.parse(req.query);
+    const result = await agencyService.getAgencyApplications(validatedQuery);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Agency applications retrieved successfully',
+      data: result.applications,
+      pagination: result.pagination,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAgencyApplicationById(req, res, next) {
+  try {
+    const { id } = req.params;
+    const application = await agencyService.getAgencyApplicationById(id);
+
+    return res.status(200).json({
+      success: true,
+      data: application,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function approveAgencyApplication(req, res, next) {
+  try {
+    const { id } = req.params;
+    const adminId = req.auth?.userId || req.admin?.id;
+    const adminName = req.admin?.name || req.auth?.role || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await agencyService.approveAgencyApplication(id, {
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Agency application approved successfully. Agency activated and owner assigned.',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function rejectAgencyApplication(req, res, next) {
+  try {
+    const { id } = req.params;
+    const validatedData = rejectAgencyApplicationSchema.parse(req.body);
+    const adminId = req.auth?.userId || req.admin?.id;
+    const adminName = req.admin?.name || req.auth?.role || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const updated = await agencyService.rejectAgencyApplication(id, {
+      reason: validatedData.reason,
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Agency application rejected.',
+      data: updated,
+    });
+  } catch (err) {
+    if (err.name === 'ZodError') {
+      return res.status(400).json({
+        success: false,
+        message: err.errors?.[0]?.message || 'Validation error in rejection reason',
+        error: { code: 'VALIDATION_ERROR', details: err.errors },
+      });
+    }
     next(err);
   }
 }
@@ -357,6 +459,12 @@ export default {
   joinAgency,
   getMyAgency,
   applyRegisterAgency,
+  submitAgencyApplication,
+  getMyAgencyApplication,
+  getAgencyApplications,
+  getAgencyApplicationById,
+  approveAgencyApplication,
+  rejectAgencyApplication,
   getAgencies,
   createAgency,
   getAgencyById,

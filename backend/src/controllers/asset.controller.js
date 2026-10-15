@@ -22,6 +22,22 @@ export async function getAdminAssets(req, res, next) {
   }
 }
 
+export async function getAdminSpecialAssets(req, res, next) {
+  try {
+    const validatedQuery = queryAssetsSchema.parse({ ...req.query, classification: 'SPECIAL' });
+    const result = await assetRepository.findAssets(validatedQuery);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Special and restricted assets retrieved successfully',
+      data: result.assets.map(serializeAsset),
+      pagination: result.pagination,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function createAsset(req, res, next) {
   try {
     const validatedData = createAssetSchema.parse(req.body);
@@ -160,6 +176,7 @@ export async function unequipAsset(req, res, next) {
 
 export default {
   getAdminAssets,
+  getAdminSpecialAssets,
   createAsset,
   getAssetById,
   updateAsset,

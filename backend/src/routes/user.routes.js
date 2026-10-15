@@ -37,6 +37,7 @@ adminUserRouter.post('/:id/assign-parent-bo', requirePermission('view_users'), u
 adminUserRouter.get('/props/catalog', requirePermission('view_users'), userController.getAdminPropsCatalog);
 adminUserRouter.get('/nobles/catalog', requirePermission('view_users'), userController.getAdminNoblesCatalog);
 adminUserRouter.post('/:id/props/grant', requirePermission('view_users'), userController.postAdminGrantProp);
+adminUserRouter.post('/:id/grant-prop', requirePermission('view_users'), userController.postAdminGrantProp);
 adminUserRouter.post('/:id/props/revoke', requirePermission('view_users'), userController.postAdminRevokeProp);
 adminUserRouter.post('/:id/props/reset', requirePermission('view_users'), userController.postAdminResetProps);
 adminUserRouter.post('/:id/assign-special-id', requirePermission('view_users'), userController.postAdminAssignSpecialId);

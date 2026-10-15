@@ -28,6 +28,10 @@ export const queryStoreCatalogSchema = z.object({
     .union([z.string(), z.number()])
     .transform((val) => Number(val))
     .optional(),
+  includeSpecial: z
+    .union([z.boolean(), z.string()])
+    .transform((val) => (typeof val === 'string' ? val.toLowerCase() === 'true' : Boolean(val)))
+    .optional(),
   search: z.string().optional().default(''),
 });
 

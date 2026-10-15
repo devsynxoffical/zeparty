@@ -3,6 +3,10 @@ import userRepository from '../repositories/user.repository.js';
 import { resolveEffectiveCountryCode } from '../utils/geo.util.js';
 import { hashPassword } from '../utils/crypto.util.js';
 import presenceService from '../socket/presence.service.js';
+import {
+  isRestrictedSpecialAsset,
+  isPublicStoreItem,
+} from '../utils/assetClassification.util.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -175,8 +179,15 @@ export async function getActiveRoomForUser(userId, db = prisma) {
 }
 
 export async function getSelfProfile(userId, db = prisma) {
+  if (!userId || (typeof userId === 'string' && (userId.startsWith('dev-admin') || userId.startsWith('admin_shadow')))) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
   const user = await userRepository.findById(userId, db);
-  if (!user) {
+  if (!user || user.userType === 'ADMIN' || (typeof user.username === 'string' && user.username.startsWith('admin_shadow'))) {
     const error = new Error('User not found');
     error.statusCode = 404;
     error.code = 'USER_NOT_FOUND';
@@ -277,8 +288,13 @@ export async function getSelfProfile(userId, db = prisma) {
     lastSeen: effectiveLastActiveAt,
   } : user.profile;
 
+  const publicId = /^[1-9]\d{6}$/.test(user.id) ? user.id : (user.username && /^\d+$/.test(user.username) ? user.username : user.id);
+  const { passwordHash: _, ...userSafe } = user;
+
   return {
-    ...user,
+    ...userSafe,
+    publicId,
+    zePartyId: publicId,
     profile: profileWithPresence,
     avatarFrame,
     equippedFrame: avatarFrame,
@@ -327,8 +343,15 @@ export async function updateSelfProfile(userId, profileData, db = prisma) {
 }
 
 export async function getPublicProfile(userId, db = prisma) {
+  if (!userId || (typeof userId === 'string' && (userId.startsWith('dev-admin') || userId.startsWith('admin_shadow')))) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
   const publicUser = await userRepository.findPublicProfileById(userId, db);
-  if (!publicUser) {
+  if (!publicUser || publicUser.userType === 'ADMIN' || (typeof publicUser.username === 'string' && publicUser.username.startsWith('admin_shadow'))) {
     const error = new Error('User not found');
     error.statusCode = 404;
     error.code = 'USER_NOT_FOUND';
@@ -423,8 +446,12 @@ export async function getPublicProfile(userId, db = prisma) {
     lastSeen: effectiveLastActiveAt,
   } : publicUser.profile;
 
+  const publicId = /^[1-9]\d{6}$/.test(publicUser.id) ? publicUser.id : (publicUser.username && /^\d+$/.test(publicUser.username) ? publicUser.username : publicUser.id);
+
   return {
     ...publicUser,
+    publicId,
+    zePartyId: publicId,
     profile: profileWithPresence,
     avatarFrame,
     equippedFrame: avatarFrame,
@@ -1821,17 +1848,22 @@ export async function assignUserParentBOByAdmin(
 
 export async function grantUserPropByAdmin(
   userId,
-  { propType, propId, propName, duration = 'PERMANENT', vipLevel = 1, iconUrl, reason },
+  { propType, itemType, propId, itemId, propName, itemName, duration = 'PERMANENT', durationDays, vipLevel = 1, iconUrl, reason },
   { adminId, adminName, ipAddress },
   db = prisma
 ) {
+  const effectiveType = propType || itemType || 'SPECIAL';
+  const effectiveId = propId || itemId || `${effectiveType.toLowerCase()}_${Date.now()}`;
+  const effectiveName = propName || itemName || `${effectiveType} Special Grant`;
+  const effectiveDuration = durationDays !== undefined ? durationDays : duration;
+
   return await grantUniqueItemToUser(
     userId,
     {
-      itemType: propType,
-      itemId: propId || `${propType.toLowerCase()}_${Date.now()}`,
-      itemName: propName || `${propType} Special Grant`,
-      duration,
+      itemType: effectiveType,
+      itemId: effectiveId,
+      itemName: effectiveName,
+      duration: effectiveDuration,
       iconUrl,
       reason,
       adminId,
@@ -1844,15 +1876,15 @@ export async function grantUserPropByAdmin(
 
 export async function revokeUserPropByAdmin(
   userId,
-  { propType, propId, reason },
+  { propType, itemType, propId, itemId, reason },
   { adminId, adminName, ipAddress },
   db = prisma
 ) {
   return await revokeUniqueItemFromUser(
     userId,
     {
-      itemType: propType,
-      itemId: propId,
+      itemType: propType || itemType,
+      itemId: propId || itemId,
       reason,
       adminId,
       adminName,
@@ -2743,17 +2775,24 @@ export async function getPropsCatalog(category, db = prisma) {
   return {
     category: normCategory,
     assetType: prismaAssetType,
-    items: assets.map(a => ({
-      id: a.id,
-      itemId: a.id,
-      name: a.name,
-      thumbnailUrl: a.thumbnailUrl,
-      staticFileUrl: a.staticFileUrl,
-      animationFileUrl: a.animationFileUrl,
-      priceCoins: a.priceCoins ? a.priceCoins.toString() : '0',
-      validDays: a.validDays || 30,
-      isActive: a.isActive,
-    })),
+    items: assets.map(a => {
+      const isSpecial = isRestrictedSpecialAsset(a);
+      const isPublic = isPublicStoreItem(a);
+      return {
+        id: a.id,
+        itemId: a.id,
+        name: a.name,
+        thumbnailUrl: a.thumbnailUrl,
+        staticFileUrl: a.staticFileUrl,
+        animationFileUrl: a.animationFileUrl,
+        priceCoins: a.priceCoins ? a.priceCoins.toString() : '0',
+        validDays: a.validDays || 30,
+        isSpecial,
+        isPublic,
+        classification: isSpecial ? 'SPECIAL' : 'PUBLIC',
+        isActive: a.isActive,
+      };
+    }),
   };
 }
 

@@ -440,6 +440,348 @@ export async function withdrawAgencyCommission({ agencyId, userId, amountUSD, re
   });
 }
 
+// ==========================================
+// CHANGE 17: Agency Application Workflow
+// ==========================================
+
+export async function submitAgencyApplication(data, { userId, ipAddress } = {}, db = prisma) {
+  if (!userId) {
+    const error = new Error('Authentication required');
+    error.statusCode = 401;
+    error.code = 'UNAUTHORIZED';
+    throw error;
+  }
+
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    include: { profile: true },
+  });
+  if (!user) {
+    const error = new Error('Applicant user account not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
+  // Authoritative numeric public ZeParty ID resolution
+  const applicantZePartyId = /^[1-9]\d{6}$/.test(user.id)
+    ? user.id
+    : (user.username && /^\d+$/.test(user.username) ? user.username : user.id);
+
+  // Check if applicant already owns an active agency
+  const existingAgency = await agencyRepository.findAgencyByOwnerUserId(userId, db);
+  if (existingAgency) {
+    const error = new Error('You already own an active agency.');
+    error.statusCode = 409;
+    error.code = 'ALREADY_AGENCY_OWNER';
+    throw error;
+  }
+
+  // Check if applicant has an existing pending application
+  const existingPending = await agencyRepository.findPendingAgencyApplicationByApplicantId(userId, db);
+  if (existingPending) {
+    const error = new Error('You already have a pending agency application under review.');
+    error.statusCode = 409;
+    error.code = 'PENDING_APPLICATION_EXISTS';
+    error.data = existingPending;
+    throw error;
+  }
+
+  try {
+    const application = await agencyRepository.createAgencyApplication(
+      {
+        applicantId: userId,
+        applicantZePartyId,
+        agencyName: data.agencyName,
+        description: data.description,
+        phoneNumber: data.phoneNumber,
+        hostRef1: data.hostRef1,
+        hostRef2: data.hostRef2,
+        hostRef3: data.hostRef3,
+        hostRef4: data.hostRef4,
+        hostRef5: data.hostRef5,
+      },
+      db
+    );
+
+    await logAudit(
+      {
+        adminId: userId,
+        adminName: user.profile?.displayName || user.username || 'Applicant',
+        action: 'AGENCY_APPLICATION_SUBMITTED',
+        targetEntity: 'AgencyApplication',
+        targetEntityId: application.id,
+        afterStateJson: {
+          agencyName: application.agencyName,
+          applicantId: application.applicantId,
+          applicantZePartyId: application.applicantZePartyId,
+          phoneNumber: application.phoneNumber,
+          hostRef1: application.hostRef1,
+          hostRef2: application.hostRef2,
+          hostRef3: application.hostRef3,
+          hostRef4: application.hostRef4,
+          hostRef5: application.hostRef5,
+          status: 'PENDING',
+        },
+        reason: 'User submitted new agency onboarding application',
+        ipAddress,
+      },
+      db
+    );
+
+    return application;
+  } catch (err) {
+    // Catch database-level unique constraint violation (duplicate pending application under concurrency)
+    if (err.code === 'P2002' || err.message?.includes('AgencyApplication_applicantId_pending_idx') || err.message?.includes('duplicate key')) {
+      const error = new Error('You already have a pending agency application under review.');
+      error.statusCode = 409;
+      error.code = 'PENDING_APPLICATION_EXISTS';
+      throw error;
+    }
+    throw err;
+  }
+}
+
+export async function getMyAgencyApplication(userId, db = prisma) {
+  if (!userId) {
+    const error = new Error('Authentication required');
+    error.statusCode = 401;
+    error.code = 'UNAUTHORIZED';
+    throw error;
+  }
+  return await agencyRepository.findLatestAgencyApplicationByApplicantId(userId, db);
+}
+
+export async function getAgencyApplications(query, db = prisma) {
+  return await agencyRepository.findAgencyApplications(query, db);
+}
+
+export async function getAgencyApplicationById(applicationId, db = prisma) {
+  const application = await agencyRepository.findAgencyApplicationById(applicationId, db);
+  if (!application) {
+    const error = new Error('Agency application not found');
+    error.statusCode = 404;
+    error.code = 'APPLICATION_NOT_FOUND';
+    throw error;
+  }
+  return application;
+}
+
+export async function approveAgencyApplication(
+  applicationId,
+  { adminId, adminName, ipAddress } = {},
+  db = prisma
+) {
+  return await db.$transaction(async (tx) => {
+    const application = await tx.agencyApplication.findUnique({
+      where: { id: applicationId },
+      include: {
+        applicant: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            phone: true,
+            userType: true,
+            profile: true,
+          },
+        },
+      },
+    });
+
+    if (!application) {
+      const error = new Error('Agency application not found');
+      error.statusCode = 404;
+      error.code = 'APPLICATION_NOT_FOUND';
+      throw error;
+    }
+
+    if (application.status !== 'PENDING') {
+      const error = new Error(
+        `Application is not in PENDING state (current status: ${application.status})`
+      );
+      error.statusCode = 409;
+      error.code = 'APPLICATION_NOT_PENDING';
+      throw error;
+    }
+
+    // Check if applicant already owns an agency
+    let agency = await tx.agency.findFirst({
+      where: { ownerUserId: application.applicantId },
+    });
+
+    if (!agency) {
+      // Generate a collision-free agency code
+      let agencyCode;
+      while (true) {
+        agencyCode = `AG_${Math.floor(100000 + Math.random() * 900000)}`;
+        const exists = await tx.agency.findUnique({ where: { agencyCode }, select: { id: true } });
+        if (!exists) break;
+      }
+
+      agency = await tx.agency.create({
+        data: {
+          agencyName: application.agencyName,
+          agencyCode,
+          agencyType: 'AUDIO_AGENCY',
+          ownerUserId: application.applicantId,
+          commissionRate: 20.0,
+          status: 'ACTIVE',
+        },
+      });
+    } else if (agency.status !== 'ACTIVE') {
+      agency = await tx.agency.update({
+        where: { id: agency.id },
+        data: { status: 'ACTIVE' },
+      });
+    }
+
+    // Grant Agency Owner privilege to applicant
+    if (application.applicant && application.applicant.userType !== 'AGENCY_OWNER') {
+      await tx.user.update({
+        where: { id: application.applicantId },
+        data: { userType: 'AGENCY_OWNER' },
+      });
+    }
+
+    // Update application state
+    const updatedApplication = await tx.agencyApplication.update({
+      where: { id: applicationId },
+      data: {
+        status: 'APPROVED',
+        reviewedByAdminId: adminId || 'SYSTEM_ADMIN',
+        reviewedAt: new Date(),
+        createdAgencyId: agency.id,
+      },
+      include: {
+        applicant: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            userType: true,
+            profile: true,
+          },
+        },
+        createdAgency: true,
+      },
+    });
+
+    // Audit log
+    await logAudit(
+      {
+        adminId,
+        adminName,
+        action: 'AGENCY_APPLICATION_APPROVED',
+        targetEntity: 'AgencyApplication',
+        targetEntityId: applicationId,
+        beforeStateJson: { status: 'PENDING' },
+        afterStateJson: {
+          status: 'APPROVED',
+          createdAgencyId: agency.id,
+          agencyCode: agency.agencyCode,
+          ownerUserId: application.applicantId,
+        },
+        reason: 'Authorized administrator approved agency application',
+        ipAddress,
+      },
+      tx
+    );
+
+    return {
+      application: updatedApplication,
+      agency,
+    };
+  }, { maxWait: 15000, timeout: 30000 });
+}
+
+export async function rejectAgencyApplication(
+  applicationId,
+  { reason, adminId, adminName, ipAddress } = {},
+  db = prisma
+) {
+  if (!reason || reason.trim().length < 3) {
+    const error = new Error('Rejection reason is required (minimum 3 characters)');
+    error.statusCode = 400;
+    error.code = 'INVALID_REJECTION_REASON';
+    throw error;
+  }
+
+  return await db.$transaction(async (tx) => {
+    const application = await tx.agencyApplication.findUnique({
+      where: { id: applicationId },
+      include: {
+        applicant: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            profile: true,
+          },
+        },
+      },
+    });
+
+    if (!application) {
+      const error = new Error('Agency application not found');
+      error.statusCode = 404;
+      error.code = 'APPLICATION_NOT_FOUND';
+      throw error;
+    }
+
+    if (application.status !== 'PENDING') {
+      const error = new Error(
+        `Application is not in PENDING state (current status: ${application.status})`
+      );
+      error.statusCode = 409;
+      error.code = 'APPLICATION_NOT_PENDING';
+      throw error;
+    }
+
+    const updatedApplication = await tx.agencyApplication.update({
+      where: { id: applicationId },
+      data: {
+        status: 'REJECTED',
+        rejectionReason: reason.trim(),
+        reviewedByAdminId: adminId || 'SYSTEM_ADMIN',
+        reviewedAt: new Date(),
+      },
+      include: {
+        applicant: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            profile: true,
+          },
+        },
+        createdAgency: true,
+      },
+    });
+
+    await logAudit(
+      {
+        adminId,
+        adminName,
+        action: 'AGENCY_APPLICATION_REJECTED',
+        targetEntity: 'AgencyApplication',
+        targetEntityId: applicationId,
+        beforeStateJson: { status: 'PENDING' },
+        afterStateJson: {
+          status: 'REJECTED',
+          rejectionReason: reason.trim(),
+          reviewedByAdminId: adminId,
+        },
+        reason: reason.trim(),
+        ipAddress,
+      },
+      tx
+    );
+
+    return updatedApplication;
+  }, { maxWait: 15000, timeout: 30000 });
+}
+
 export default {
   createAgency,
   updateAgency,
@@ -448,5 +790,11 @@ export default {
   transferHostBetweenAgencies,
   getAgencyWallet,
   withdrawAgencyCommission,
+  submitAgencyApplication,
+  getMyAgencyApplication,
+  getAgencyApplications,
+  getAgencyApplicationById,
+  approveAgencyApplication,
+  rejectAgencyApplication,
 };
 

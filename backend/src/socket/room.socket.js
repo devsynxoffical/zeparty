@@ -249,9 +249,9 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       try {
         const uRec = await (db || prisma).user.findUnique({
           where: { id: effectiveJoinedId },
-          select: { avatarUrl: true, profile: { select: { avatarUrl: true } } },
+          select: { avatarUrl: true },
         });
-        effectiveJoinedAvatar = uRec?.profile?.avatarUrl || uRec?.avatarUrl || null;
+        effectiveJoinedAvatar = uRec?.avatarUrl || null;
       } catch (_) {}
     }
 

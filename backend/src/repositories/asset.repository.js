@@ -1,4 +1,9 @@
 import prisma from '../config/database.js';
+import {
+  getPrismaRestrictedAssetWhereClauses,
+  isPublicStoreItem,
+  isRestrictedSpecialAsset,
+} from '../utils/assetClassification.util.js';
 
 export async function findAssets(
   {
@@ -10,6 +15,7 @@ export async function findAssets(
     isVipExclusive,
     isActive,
     search = '',
+    classification = 'ALL',
   },
   db = prisma
 ) {
@@ -23,6 +29,13 @@ export async function findAssets(
 
   if (search) {
     where.name = { contains: search, mode: 'insensitive' };
+  }
+
+  const normalizedClassification = String(classification || 'ALL').toUpperCase();
+  if (normalizedClassification === 'PUBLIC') {
+    where.NOT = getPrismaRestrictedAssetWhereClauses();
+  } else if (normalizedClassification === 'SPECIAL' || normalizedClassification === 'RESTRICTED') {
+    where.OR = getPrismaRestrictedAssetWhereClauses();
   }
 
   const skip = (page - 1) * limit;
@@ -88,12 +101,25 @@ export async function updateAsset(id, data, db = prisma) {
 }
 
 export async function findStoreCatalog(
-  { page = 1, limit = 20, assetType, roomAvailability, isVipExclusive, minVipLevel, search = '' },
+  {
+    page = 1,
+    limit = 20,
+    assetType,
+    roomAvailability,
+    isVipExclusive,
+    minVipLevel,
+    search = '',
+    includeSpecial = false,
+  },
   db = prisma
 ) {
   const where = {
     isActive: true,
   };
+
+  if (!includeSpecial) {
+    where.NOT = getPrismaRestrictedAssetWhereClauses();
+  }
 
   if (assetType) where.assetType = assetType;
   if (roomAvailability) where.roomAvailability = roomAvailability;
@@ -118,8 +144,11 @@ export async function findStoreCatalog(
     }),
   ]);
 
+  // Strict defense-in-depth: If not including special, enforce isPublicStoreItem
+  const finalAssets = includeSpecial ? assets : assets.filter(isPublicStoreItem);
+
   return {
-    assets,
+    assets: finalAssets,
     pagination: {
       page,
       limit,
@@ -136,3 +165,4 @@ export default {
   updateAsset,
   findStoreCatalog,
 };
+

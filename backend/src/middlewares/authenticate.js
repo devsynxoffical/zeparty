@@ -2,7 +2,6 @@ import tokenService from '../services/token.service.js';
 import sessionRepository from '../repositories/session.repository.js';
 import userRepository from '../repositories/user.repository.js';
 import adminRepository from '../repositories/admin.repository.js';
-import deviceRepository from '../repositories/device.repository.js';
 
 export async function authenticate(req, res, next) {
   try {
@@ -24,12 +23,11 @@ export async function authenticate(req, res, next) {
       });
     }
 
-    // Verify JWT or Fallback Session Token
+    // Verify JWT access token strictly against secret and claims
     let decoded = null;
     try {
       decoded = tokenService.verifyAccessToken(token);
     } catch (jwtErr) {
-      // If token expired, return standard TOKEN_EXPIRED error so client can refresh
       if (jwtErr.name === 'TokenExpiredError' || jwtErr.code === 'TOKEN_EXPIRED') {
         return res.status(401).json({
           success: false,
@@ -37,107 +35,96 @@ export async function authenticate(req, res, next) {
           error: { code: 'TOKEN_EXPIRED' },
         });
       }
-
-      // Fallback for session tokens / local mobile app authentication / non-JWT tokens
-      const unverified = tokenService.decodeToken(token);
-      const subId = unverified?.sub || (token.startsWith('session_token_') ? token.replace('session_token_', '') : token);
-      
-      if (subId) {
-        // First check if subId belongs to an Admin
-        let admin = await adminRepository.findById(subId);
-        if (!admin && subId.includes('@')) {
-          admin = await adminRepository.findByUsernameOrEmail(subId);
-        }
-        if (!admin) {
-          admin = await adminRepository.findByUsernameOrEmail(subId);
-        }
-        if (admin) {
-          if (admin.status !== 'ACTIVE') {
-            return res.status(403).json({
-              success: false,
-              message: 'Admin account is inactive or suspended',
-              error: { code: 'ACCOUNT_SUSPENDED' },
-            });
-          }
-          req.admin = admin;
-          req.auth = {
-            userId: admin.id,
-            sessionId: unverified?.sessionId || 'fallback_admin_session',
-            userType: 'ADMIN',
-            isAdmin: true,
-            isOwner: Boolean(admin.isOwner),
-            isSuperAdmin: Boolean(admin.isSuperAdmin),
-            roleId: admin.roleId,
-          };
-          req.session = { id: unverified?.sessionId || 'fallback_admin_session', userId: admin.id };
-          return next();
-        }
-
-        // Check if subId belongs to a User
-        let user = null;
-        if (/^[1-9]\d{6}$/.test(subId)) {
-          user = await userRepository.findById(subId);
-        } else if (subId.includes('@')) {
-          user = await userRepository.findByEmail(subId.trim().toLowerCase());
-        } else {
-          user = await userRepository.findById(subId);
-          if (!user && !subId.startsWith('google_') && !subId.startsWith('user_')) {
-            user = await userRepository.findByUsername(subId);
-          }
-        }
-
-        if (user) {
-          req.user = user;
-          req.auth = {
-            userId: user.id,
-            sessionId: unverified?.sessionId || 'fallback_session',
-            userType: user.userType || 'USER',
-            isAdmin: false,
-          };
-          req.session = { id: unverified?.sessionId || 'fallback_session', userId: user.id };
-          return next();
-        }
-      }
-
-      throw jwtErr;
+      return res.status(401).json({
+        success: false,
+        message: jwtErr.message || 'Invalid or expired authentication token',
+        error: { code: jwtErr.code || 'TOKEN_INVALID' },
+      });
     }
 
-    // Resolve Identity: Admin or User
     const subIdentifier = decoded.sub || decoded.userId || decoded.adminId;
-    const hasAdminClaim = Boolean(
-      decoded.isAdmin ||
-      decoded.userType === 'ADMIN' ||
-      decoded.role === 'ADMIN' ||
-      decoded.roleId ||
-      subIdentifier === 'dev-owner-001' ||
-      subIdentifier === 'dev-admin-main-001' ||
-      subIdentifier === 'owner' ||
-      subIdentifier === 'admin' ||
-      (typeof subIdentifier === 'string' && subIdentifier.includes('@zeparty.app'))
+    if (!subIdentifier) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token subject identifier missing',
+        error: { code: 'TOKEN_INVALID' },
+      });
+    }
+
+    // Determine target route domain and token domain
+    const isAdminRoute = Boolean(
+      req.baseUrl?.includes('admin') ||
+      req.originalUrl?.includes('/admin') ||
+      req.path?.includes('admin')
     );
 
-    let admin = null;
-    if (hasAdminClaim || req.baseUrl?.includes('admin') || req.path?.includes('admin')) {
-      admin = await adminRepository.findById(subIdentifier);
-      if (!admin && typeof subIdentifier === 'string') {
-        admin = await adminRepository.findByUsernameOrEmail(subIdentifier);
+    const isTokenAdmin = Boolean(
+      decoded.isAdmin === true ||
+      decoded.userType === 'ADMIN' ||
+      decoded.aud === 'zeparty-admin'
+    );
+
+    // Purpose & Audience Separation Enforcement:
+    // 1. Mobile user tokens cannot access admin endpoints
+    if (isAdminRoute && !isTokenAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: administrative privileges required',
+        error: { code: 'FORBIDDEN' },
+      });
+    }
+
+    // 2. Admin tokens cannot access mobile user-only endpoints
+    const isAuthEndpoint = Boolean(
+      req.baseUrl?.includes('auth') ||
+      req.originalUrl?.includes('/auth/me') ||
+      req.originalUrl?.includes('/auth/logout')
+    );
+
+    if (!isAdminRoute && !isAuthEndpoint && isTokenAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin accounts cannot access mobile user endpoints',
+        error: { code: 'FORBIDDEN' },
+      });
+    }
+
+    // 3. Reject mismatched audience claims
+    if (decoded.aud) {
+      if (decoded.aud === 'zeparty-admin' && !isTokenAdmin) {
+        return res.status(401).json({
+          success: false,
+          message: 'Token audience does not match account privileges',
+          error: { code: 'TOKEN_INVALID' },
+        });
       }
-      if (!admin) {
-        admin = await prisma.admin.findFirst({
-          where: {
-            OR: [
-              { id: String(subIdentifier) },
-              { username: String(subIdentifier) },
-              { email: String(subIdentifier) },
-              { isOwner: true },
-            ],
-            status: 'ACTIVE',
-          },
+      if (decoded.aud === 'zeparty-mobile' && isTokenAdmin) {
+        return res.status(401).json({
+          success: false,
+          message: 'Token audience does not match account privileges',
+          error: { code: 'TOKEN_INVALID' },
         });
       }
     }
 
-    if (admin) {
+    // ==========================================
+    // RESOLUTION A: Administrative Identity
+    // ==========================================
+    if (isTokenAdmin) {
+      let admin = await adminRepository.findById(subIdentifier);
+      if (!admin && typeof subIdentifier === 'string') {
+        admin = await adminRepository.findByUsernameOrEmail(subIdentifier);
+      }
+
+      // Security requirement: NEVER use { isOwner: true } or synthetic dev-owner fallback!
+      if (!admin) {
+        return res.status(401).json({
+          success: false,
+          message: 'Administrative account not found',
+          error: { code: 'UNAUTHORIZED' },
+        });
+      }
+
       if (admin.status !== 'ACTIVE') {
         return res.status(403).json({
           success: false,
@@ -155,36 +142,15 @@ export async function authenticate(req, res, next) {
         isOwner: Boolean(admin.isOwner),
         isSuperAdmin: Boolean(admin.isSuperAdmin || admin.isOwner),
         roleId: admin.roleId || (admin.isOwner ? 'owner' : 'super_admin'),
+        audience: decoded.aud || 'zeparty-admin',
       };
       req.session = { id: decoded.sessionId || 'admin_session', userId: admin.id };
       return next();
     }
 
-    // Fallback if token had explicit admin claims but DB record was missing
-    if (hasAdminClaim) {
-      req.admin = {
-        id: String(subIdentifier || 'dev-owner-001'),
-        name: 'Administrator',
-        username: 'owner',
-        email: 'owner@zeparty.app',
-        isOwner: true,
-        isSuperAdmin: true,
-        status: 'ACTIVE',
-      };
-      req.auth = {
-        userId: String(subIdentifier || 'dev-owner-001'),
-        sessionId: decoded.sessionId || 'admin_session',
-        userType: 'ADMIN',
-        isAdmin: true,
-        isOwner: true,
-        isSuperAdmin: true,
-        roleId: decoded.roleId || 'super_admin',
-      };
-      req.session = { id: decoded.sessionId || 'admin_session', userId: req.auth.userId };
-      return next();
-    }
-
-    // Regular User Resolution
+    // ==========================================
+    // RESOLUTION B: Mobile User Identity
+    // ==========================================
     let user = null;
     if (/^[1-9]\d{6}$/.test(String(subIdentifier))) {
       user = await userRepository.findById(String(subIdentifier));
@@ -196,7 +162,9 @@ export async function authenticate(req, res, next) {
         user = await userRepository.findByUsername(subIdentifier);
       }
     }
-    if (!user) {
+
+    // Reject nonexistent accounts or synthetic shadow user records
+    if (!user || user.userType === 'ADMIN' || user.username?.startsWith('admin_shadow') || user.id?.startsWith('dev-admin')) {
       return res.status(401).json({
         success: false,
         message: 'Authenticated user account not found',
@@ -218,10 +186,11 @@ export async function authenticate(req, res, next) {
       sessionId: decoded.sessionId || 'active_session',
       userType: user.userType || 'USER',
       isAdmin: false,
+      audience: decoded.aud || 'zeparty-mobile',
     };
     req.session = { id: decoded.sessionId || 'active_session', userId: user.id };
 
-    next();
+    return next();
   } catch (err) {
     if (err.status) {
       return res.status(err.status).json({
@@ -252,35 +221,26 @@ export async function optionalAuthenticate(req, res, next) {
     try {
       decoded = tokenService.verifyAccessToken(token);
     } catch {
-      decoded = tokenService.decodeToken(token);
-    }
-
-    if (!decoded) {
       return next();
     }
 
-    const subIdentifier = decoded.sub || decoded.userId || decoded.adminId || (typeof token === 'string' && token.startsWith('session_token_') ? token.replace('session_token_', '') : null);
-    if (!subIdentifier) {
-      return next();
-    }
+    if (!decoded) return next();
 
-    const hasAdminClaim = Boolean(
-      decoded.isAdmin ||
+    const subIdentifier = decoded.sub || decoded.userId || decoded.adminId;
+    if (!subIdentifier) return next();
+
+    const isTokenAdmin = Boolean(
+      decoded.isAdmin === true ||
       decoded.userType === 'ADMIN' ||
-      decoded.role === 'ADMIN' ||
-      decoded.roleId ||
-      subIdentifier === 'dev-owner-001' ||
-      subIdentifier === 'dev-admin-main-001' ||
-      subIdentifier === 'owner' ||
-      subIdentifier === 'admin'
+      decoded.aud === 'zeparty-admin'
     );
 
-    if (hasAdminClaim) {
+    if (isTokenAdmin) {
       let admin = await adminRepository.findById(subIdentifier);
-      if (!admin) {
+      if (!admin && typeof subIdentifier === 'string') {
         admin = await adminRepository.findByUsernameOrEmail(subIdentifier);
       }
-      if (admin && admin.status !== 'SUSPENDED' && admin.status !== 'BANNED') {
+      if (admin && admin.status === 'ACTIVE') {
         req.admin = admin;
         req.auth = {
           userId: admin.id,
@@ -288,17 +248,11 @@ export async function optionalAuthenticate(req, res, next) {
           userType: 'ADMIN',
           isAdmin: true,
           isOwner: Boolean(admin.isOwner),
-          isSuperAdmin: Boolean(admin.isSuperAdmin),
+          isSuperAdmin: Boolean(admin.isSuperAdmin || admin.isOwner),
           roleId: admin.roleId,
+          audience: decoded.aud || 'zeparty-admin',
         };
         req.session = { id: decoded.sessionId || 'admin_session', userId: admin.id };
-      } else {
-        req.auth = {
-          userId: String(subIdentifier),
-          sessionId: decoded.sessionId || 'admin_session',
-          userType: 'ADMIN',
-          isAdmin: true,
-        };
       }
       return next();
     }
@@ -319,24 +273,16 @@ export async function optionalAuthenticate(req, res, next) {
       user = await userRepository.findByFirebaseUid(subIdentifier);
     }
 
-    if (user) {
-      if (user.status !== 'SUSPENDED' && user.status !== 'BANNED') {
-        req.user = user;
-        req.auth = {
-          userId: user.id,
-          sessionId: decoded.sessionId || 'active_session',
-          userType: user.userType || 'USER',
-          isAdmin: false,
-        };
-        req.session = { id: decoded.sessionId || 'active_session', userId: user.id };
-      }
-    } else if (subIdentifier) {
+    if (user && user.status === 'ACTIVE' && user.userType !== 'ADMIN' && !user.username?.startsWith('admin_shadow') && !user.id?.startsWith('dev-admin')) {
+      req.user = user;
       req.auth = {
-        userId: String(subIdentifier),
+        userId: user.id,
         sessionId: decoded.sessionId || 'active_session',
-        userType: decoded.userType || 'USER',
+        userType: user.userType || 'USER',
         isAdmin: false,
+        audience: decoded.aud || 'zeparty-mobile',
       };
+      req.session = { id: decoded.sessionId || 'active_session', userId: user.id };
     }
 
     return next();

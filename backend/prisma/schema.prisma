@@ -57,6 +57,12 @@ enum AgencyStatus {
   SUSPENDED
 }
 
+enum AgencyApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum BDTier {
   BRONZE
   SILVER
@@ -348,6 +354,7 @@ model User {
   wallet                   Wallet?
   hostProfile              HostProfile?
   hostApplications         HostApplication[]
+  agencyApplications       AgencyApplication[] @relation("UserAgencyApplications")
   ownedAgencies            Agency[]            @relation("AgencyOwner")
   agencyMemberships        AgencyMember[]
   managedBDCenters         BDCenter[]          @relation("BDManager")
@@ -720,8 +727,9 @@ model Agency {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  hosts   HostProfile[]
-  members AgencyMember[]
+  hosts              HostProfile[]
+  members            AgencyMember[]
+  agencyApplications AgencyApplication[] @relation("CreatedAgencyApplication")
 
   @@index([status])
 }
@@ -738,6 +746,33 @@ model AgencyMember {
 
   @@unique([agencyId, userId])
   @@index([userId])
+}
+
+model AgencyApplication {
+  id                 String                  @id @default(uuid())
+  applicantId        String
+  applicant          User                    @relation("UserAgencyApplications", fields: [applicantId], references: [id], onDelete: Cascade)
+  applicantZePartyId String
+  agencyName         String
+  description        String
+  phoneNumber        String
+  hostRef1           String
+  hostRef2           String
+  hostRef3           String
+  hostRef4           String
+  hostRef5           String
+  status             AgencyApplicationStatus @default(PENDING)
+  rejectionReason    String?
+  reviewedByAdminId  String?
+  reviewedAt         DateTime?
+  createdAgencyId    String?
+  createdAgency      Agency?                 @relation("CreatedAgencyApplication", fields: [createdAgencyId], references: [id], onDelete: SetNull)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@index([applicantId])
+  @@index([status])
+  @@index([applicantZePartyId])
 }
 
 model BDCenter {

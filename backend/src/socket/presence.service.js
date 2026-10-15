@@ -466,6 +466,10 @@ export function broadcastPresenceChange(io, userId, presenceData) {
 export async function addSocketToRoom(roomId, userId, socketId, userInfo = null) {
   if (!roomId || !userId || !socketId) return { isFirstSocket: false, activeUserCount: 0 };
 
+  try {
+    await setUserActiveRoom(userId, roomId);
+  } catch (_) {}
+
   const redisKey = `presence:room:${roomId}:user:${userId}`;
   const roomUsersKey = `presence:room:${roomId}:users`;
   const infoKey = `presence:room:${roomId}:user_info:${userId}`;
@@ -562,6 +566,9 @@ export async function removeSocketFromRoom(roomId, userId, socketId) {
         await redisClient.del(redisKey);
         await redisClient.del(infoKey);
         await redisClient.sRem(roomUsersKey, userId);
+        try {
+          await clearUserActiveRoom(userId, roomId);
+        } catch (_) {}
       }
 
       const activeUserCount = await redisClient.sCard(roomUsersKey);
@@ -590,6 +597,9 @@ export async function removeSocketFromRoom(roomId, userId, socketId) {
 
   if (isLast) {
     userMap.delete(userId);
+    try {
+      await clearUserActiveRoom(userId, roomId);
+    } catch (_) {}
   }
   if (userMap.size === 0) {
     memoryRoomUsers.delete(roomId);

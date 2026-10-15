@@ -221,7 +221,7 @@ export async function deleteUser(id, reason = '') {
 
 export async function getPropsCatalog(category) {
   const res = await apiClient.get('/v1/admin/users/props/catalog', { params: { category } });
-  return res.data?.data || [];
+  return res.data?.data || res.data?.items || [];
 }
 
 export async function grantPropToUser(userId, payload) {

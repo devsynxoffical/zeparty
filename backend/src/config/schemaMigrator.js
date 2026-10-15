@@ -317,6 +317,53 @@ export async function ensureDatabaseSchema(db = prisma) {
     console.warn('User ID auto-migration note:', err.message);
   }
 
+  // 8.1 CHANGE 17 - Ensure AgencyApplicationStatus enum and AgencyApplication table exist
+  try {
+    await db.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'AgencyApplicationStatus') THEN
+          CREATE TYPE "AgencyApplicationStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+        END IF;
+      END
+      $$;
+    `);
+
+    await db.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "AgencyApplication" (
+        "id" TEXT PRIMARY KEY,
+        "applicantId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+        "applicantZePartyId" TEXT NOT NULL,
+        "agencyName" TEXT NOT NULL,
+        "description" TEXT NOT NULL,
+        "phoneNumber" TEXT NOT NULL,
+        "hostRef1" TEXT NOT NULL,
+        "hostRef2" TEXT NOT NULL,
+        "hostRef3" TEXT NOT NULL,
+        "hostRef4" TEXT NOT NULL,
+        "hostRef5" TEXT NOT NULL,
+        "status" "AgencyApplicationStatus" NOT NULL DEFAULT 'PENDING',
+        "rejectionReason" TEXT,
+        "reviewedByAdminId" TEXT,
+        "reviewedAt" TIMESTAMP(3),
+        "createdAgencyId" TEXT REFERENCES "Agency"("id") ON DELETE SET NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AgencyApplication_applicantId_idx" ON "AgencyApplication"("applicantId");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AgencyApplication_status_idx" ON "AgencyApplication"("status");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "AgencyApplication_applicantZePartyId_idx" ON "AgencyApplication"("applicantZePartyId");`);
+    await db.$executeRawUnsafe(`
+      CREATE UNIQUE INDEX IF NOT EXISTS "AgencyApplication_applicantId_pending_idx" 
+      ON "AgencyApplication"("applicantId") 
+      WHERE "status" = 'PENDING';
+    `);
+  } catch (err) {
+    console.warn('AgencyApplication DDL note:', err.message);
+  }
+
   // 9. Ensure Super Admin and Owner accounts exist and are ACTIVE
   try {
     const adminCount = await db.admin.count();

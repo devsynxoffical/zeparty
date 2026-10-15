@@ -49,6 +49,8 @@ import { Globe } from 'lucide-react';
 
 const CATEGORIES = [
   { id: 'ALL', label: 'All Assets' },
+  { id: 'SPECIAL_RESTRICTED', label: '⭐ Special / Privileged Assets' },
+  { id: 'PUBLIC_STORE', label: '🛒 Public Store Items' },
   { id: 'GIFTS', label: 'Gifts' },
   { id: 'VIP_SVIP_FRAMES', label: 'VIP/SVIP Frames' },
   { id: 'TAGS', label: 'Tags' },
@@ -459,7 +461,15 @@ export function AssetsPage() {
 
   const filteredAssets = useMemo(() => {
     return assets.filter((item) => {
-      const matchCat = activeCategory === 'ALL' || item.category === activeCategory;
+      let matchCat = true;
+      if (activeCategory === 'SPECIAL_RESTRICTED') {
+        matchCat = item.isSpecial === true;
+      } else if (activeCategory === 'PUBLIC_STORE') {
+        matchCat = item.isSpecial !== true;
+      } else if (activeCategory !== 'ALL') {
+        matchCat = item.category === activeCategory;
+      }
+
       const matchStatus = statusFilter === 'ALL' || item.status === statusFilter.toLowerCase();
       const q = search.toLowerCase();
       const matchSearch =
@@ -492,6 +502,15 @@ export function AssetsPage() {
               <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-medium border border-slate-700">
                 {row.category}
               </span>
+              {row.isSpecial ? (
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[9px] font-bold border border-amber-500/30">
+                  Special / Restricted
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[9px] font-medium border border-emerald-500/30">
+                  Public Store
+                </span>
+              )}
               <Badge variant="purple" className="text-[9px] font-mono"><Globe className="h-2.5 w-2.5 mr-0.5 inline" /> {row.scope || 'GLOBAL'}</Badge>
             </div>
           </div>

@@ -122,18 +122,24 @@ export const assignParentBOSchema = z.object({
 });
 
 export const grantPropSchema = z.object({
-  propType: z.enum(['AVATAR_FRAME', 'RIDE', 'VIP', 'CHAT_BUBBLE', 'BADGE', 'SPECIAL_ID']),
+  propType: z.string().trim().optional(),
+  itemType: z.string().trim().optional(),
   propId: z.string().trim().optional(),
+  itemId: z.string().trim().optional(),
   propName: z.string().trim().optional(),
+  itemName: z.string().trim().optional(),
   duration: z.union([z.string(), z.number()]).default('PERMANENT').optional(),
+  durationDays: z.union([z.string(), z.number()]).optional(),
   vipLevel: z.coerce.number().int().min(0).max(10).optional(),
   iconUrl: z.string().max(1000).optional(),
   reason: z.string().trim().max(500).optional(),
 });
 
 export const revokePropSchema = z.object({
-  propType: z.enum(['AVATAR_FRAME', 'RIDE', 'VIP', 'CHAT_BUBBLE', 'BADGE', 'SPECIAL_ID']),
+  propType: z.string().trim().optional(),
+  itemType: z.string().trim().optional(),
   propId: z.string().trim().optional(),
+  itemId: z.string().trim().optional(),
   reason: z.string().trim().max(500).optional(),
 });
 

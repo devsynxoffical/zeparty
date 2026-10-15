@@ -147,6 +147,11 @@ export const queryAssetsSchema = z.object({
     .union([z.boolean(), z.string()])
     .transform((val) => (typeof val === 'string' ? val.toLowerCase() === 'true' : Boolean(val)))
     .optional(),
+  classification: z
+    .string()
+    .transform((val) => val.toUpperCase())
+    .optional()
+    .default('ALL'),
   search: z.string().optional().default(''),
 });
 

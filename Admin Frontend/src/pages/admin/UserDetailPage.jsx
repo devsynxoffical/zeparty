@@ -1399,12 +1399,15 @@ export function UserDetailPage() {
                                 <p className="text-[10px] text-slate-400 font-mono">ID: {item.id} · Type: {item.type || selectedProp}</p>
                               </div>
                             </div>
-                            <div className="text-right">
+                            <div className="text-right flex items-center gap-1.5">
+                              {item.isSpecial ? (
+                                <Badge variant="warning" className="text-[9px]">Special Asset</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[9px]">Store Item</Badge>
+                              )}
                               {isSelected ? (
                                 <Badge variant="success">Selected</Badge>
-                              ) : (
-                                <Badge variant="outline">{item.rarity || 'Store Item'}</Badge>
-                              )}
+                              ) : null}
                             </div>
                           </div>
                         );

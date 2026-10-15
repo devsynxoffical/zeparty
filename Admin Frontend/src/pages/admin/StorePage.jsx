@@ -204,7 +204,14 @@ export function StorePage() {
 
   const filteredItems = useMemo(() => {
     return items.filter(i => {
-      const matchCat = categoryFilter === 'ALL' || i.category === categoryFilter;
+      let matchCat = true;
+      if (categoryFilter === 'SPECIAL_RESTRICTED') {
+        matchCat = i.isSpecial === true;
+      } else if (categoryFilter === 'PUBLIC_STORE') {
+        matchCat = i.isSpecial !== true;
+      } else if (categoryFilter !== 'ALL') {
+        matchCat = i.category === categoryFilter;
+      }
       const matchSearch = search === '' || i.name.toLowerCase().includes(search.toLowerCase());
       return matchCat && matchSearch;
     });
@@ -259,13 +266,26 @@ export function StorePage() {
   const columns = [
     { key: 'item', header: 'Item Details', render: (row) => (
       <div className="flex items-center gap-3">
-        <div className="h-10 w-10 bg-slate-800 rounded-lg border border-slate-700 flex flex-shrink-0 items-center justify-center">
-          <ImageIcon className="h-5 w-5 text-slate-500" />
+        <div className="h-10 w-10 bg-slate-800 rounded-lg border border-slate-700 flex flex-shrink-0 items-center justify-center overflow-hidden">
+          {row.thumbnail ? (
+            <img src={row.thumbnail} alt={row.name} className="h-full w-full object-cover" />
+          ) : (
+            <ImageIcon className="h-5 w-5 text-slate-500" />
+          )}
         </div>
         <div>
           <p className="font-bold text-white text-sm">{row.name}</p>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-xs text-slate-500">{row.id}</span>
+            <span className="text-xs text-slate-500 font-mono">{row.id}</span>
+            {row.isSpecial ? (
+              <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 text-[9px] font-bold border border-amber-500/30">
+                Special / Restricted
+              </span>
+            ) : (
+              <span className="px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 text-[9px] font-medium border border-emerald-500/30">
+                Public Store
+              </span>
+            )}
             {row.featured && <Badge variant="warning" className="text-[9px] py-0">Featured</Badge>}
             <Badge variant="purple" className="text-[9px] font-mono"><Globe className="h-2.5 w-2.5 mr-0.5 inline" /> {row.scope}</Badge>
           </div>
@@ -344,17 +364,25 @@ export function StorePage() {
           containerClassName="flex-1"
         />
         <div className="flex gap-1 flex-wrap">
-          {['ALL', 'Outfits', 'Cars', 'Frames', 'Effects'].map(cat => (
+          {[
+            { id: 'ALL', label: 'All' },
+            { id: 'PUBLIC_STORE', label: '🛒 Public Store' },
+            { id: 'SPECIAL_RESTRICTED', label: '⭐ Special / Restricted' },
+            { id: 'Cars', label: 'Cars' },
+            { id: 'Frames', label: 'Frames' },
+            { id: 'Effects', label: 'Effects' },
+            { id: 'Outfits', label: 'Outfits' },
+          ].map(cat => (
             <button
-              key={cat}
-              onClick={() => setCategoryFilter(cat)}
+              key={cat.id}
+              onClick={() => setCategoryFilter(cat.id)}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
-                categoryFilter === cat
+                categoryFilter === cat.id
                   ? 'bg-gold-500/20 border-gold-500/50 text-gold-400'
                   : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
               }`}
             >
-              {cat}
+              {cat.label}
             </button>
           ))}
         </div>

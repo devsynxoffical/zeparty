@@ -7,8 +7,9 @@ import { generateRandomToken, hashToken } from '../utils/crypto.util.js';
  */
 export function generateAccessToken(payload) {
   const isAdmin = Boolean(payload.isAdmin || payload.userType === 'ADMIN');
+  const audience = payload.audience || (isAdmin ? 'zeparty-admin' : 'zeparty-mobile');
   const claims = {
-    sub: payload.userId || payload.adminId,
+    sub: String(payload.userId || payload.adminId),
     sessionId: payload.sessionId,
     userType: payload.userType || (isAdmin ? 'ADMIN' : 'USER'),
     roleId: payload.roleId || null,
@@ -17,6 +18,8 @@ export function generateAccessToken(payload) {
 
   return jwt.sign(claims, env.JWT_SECRET, {
     expiresIn: env.JWT_EXPIRES_IN,
+    audience,
+    issuer: 'zeparty-api',
   });
 }
 
@@ -34,9 +37,19 @@ export function decodeToken(token) {
 /**
  * Verify access token claims against env JWT_SECRET.
  */
-export function verifyAccessToken(token) {
+export function verifyAccessToken(token, options = {}) {
   try {
-    return jwt.verify(token, env.JWT_SECRET);
+    const decoded = jwt.verify(token, env.JWT_SECRET, options);
+    // If audience claim exists, validate that it belongs to an expected domain
+    if (decoded && decoded.aud) {
+      if (decoded.aud !== 'zeparty-admin' && decoded.aud !== 'zeparty-mobile') {
+        const error = new Error('Invalid token audience');
+        error.status = 401;
+        error.code = 'TOKEN_INVALID';
+        throw error;
+      }
+    }
+    return decoded;
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
       const error = new Error('Access token has expired');
@@ -44,9 +57,9 @@ export function verifyAccessToken(token) {
       error.code = 'TOKEN_EXPIRED';
       throw error;
     }
-    const error = new Error('Invalid authentication token');
+    const error = new Error(err.message || 'Invalid authentication token');
     error.status = 401;
-    error.code = 'TOKEN_INVALID';
+    error.code = err.code || 'TOKEN_INVALID';
     throw error;
   }
 }

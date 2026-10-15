@@ -236,6 +236,15 @@ export async function deleteSelfAccount(req, res, next) {
 
 export async function getMe(req, res, next) {
   try {
+    // Defense in depth: mobile own-profile endpoint MUST reject administrative identities
+    if (req.auth?.isAdmin || req.auth?.userType === 'ADMIN' || req.auth?.audience === 'zeparty-admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin accounts cannot access the mobile user profile endpoint',
+        error: { code: 'FORBIDDEN' },
+      });
+    }
+
     const userId = req.auth?.userId;
     if (!userId) {
       return res.status(401).json({
@@ -244,6 +253,16 @@ export async function getMe(req, res, next) {
         error: { code: 'UNAUTHORIZED' },
       });
     }
+
+    // Supplementary safeguard: reject any synthetic shadow or admin identifier
+    if (typeof userId === 'string' && (userId.startsWith('dev-admin') || userId.startsWith('admin_shadow'))) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied: invalid user profile account',
+        error: { code: 'FORBIDDEN' },
+      });
+    }
+
     const user = await userService.getSelfProfile(userId);
     return res.status(200).json({
       success: true,
@@ -1195,7 +1214,7 @@ export async function getAdminPropsCatalog(req, res, next) {
   try {
     const { category } = req.query;
     const result = await userService.getPropsCatalog(category);
-    return res.status(200).json({ success: true, ...result });
+    return res.status(200).json({ success: true, ...result, data: result.items });
   } catch (err) {
     next(err);
   }

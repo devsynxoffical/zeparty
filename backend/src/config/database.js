@@ -11,7 +11,10 @@ const getPrismaLogLevels = () => {
   return ['error'];
 };
 
-const dbUrl = process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL || env.DATABASE_URL;
+let dbUrl = process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL || env.DATABASE_URL;
+if (dbUrl && dbUrl.includes('sslmode=no-verify')) {
+  dbUrl = dbUrl.replace('sslmode=no-verify', 'sslmode=disable');
+}
 
 const prisma = new PrismaClient({
   datasources: {

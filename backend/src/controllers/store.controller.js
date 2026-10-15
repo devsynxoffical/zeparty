@@ -5,7 +5,7 @@ import { queryStoreCatalogSchema } from '../validators/store.validator.js';
 export async function getAdminStoreCatalog(req, res, next) {
   try {
     const validatedQuery = queryStoreCatalogSchema.parse(req.query);
-    const result = await storeService.getStoreCatalog(validatedQuery);
+    const result = await storeService.getAdminStoreCatalog(validatedQuery);
 
     return res.status(200).json({
       success: true,

@@ -258,6 +258,218 @@ export async function findAgencyByOwnerUserId(ownerUserId, db = prisma) {
   });
 }
 
+// ==========================================
+// CHANGE 17: Agency Application Methods
+// ==========================================
+
+export async function createAgencyApplication(data, db = prisma) {
+  return await db.agencyApplication.create({
+    data: {
+      applicantId: data.applicantId,
+      applicantZePartyId: data.applicantZePartyId,
+      agencyName: data.agencyName,
+      description: data.description,
+      phoneNumber: data.phoneNumber,
+      hostRef1: data.hostRef1,
+      hostRef2: data.hostRef2,
+      hostRef3: data.hostRef3,
+      hostRef4: data.hostRef4,
+      hostRef5: data.hostRef5,
+      status: 'PENDING',
+    },
+    include: {
+      applicant: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true,
+          userType: true,
+          profile: {
+            select: {
+              displayName: true,
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+export async function findPendingAgencyApplicationByApplicantId(applicantId, db = prisma) {
+  if (!applicantId) return null;
+  return await db.agencyApplication.findFirst({
+    where: {
+      applicantId,
+      status: 'PENDING',
+    },
+    include: {
+      applicant: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true,
+          profile: {
+            select: {
+              displayName: true,
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+export async function findLatestAgencyApplicationByApplicantId(applicantId, db = prisma) {
+  if (!applicantId) return null;
+  return await db.agencyApplication.findFirst({
+    where: { applicantId },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      applicant: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true,
+          profile: {
+            select: {
+              displayName: true,
+            },
+          },
+        },
+      },
+      createdAgency: {
+        select: {
+          id: true,
+          agencyName: true,
+          agencyCode: true,
+          status: true,
+        },
+      },
+    },
+  });
+}
+
+export async function findAgencyApplicationById(id, db = prisma) {
+  if (!id) return null;
+  return await db.agencyApplication.findUnique({
+    where: { id },
+    include: {
+      applicant: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true,
+          userType: true,
+          profile: {
+            select: {
+              displayName: true,
+            },
+          },
+        },
+      },
+      createdAgency: {
+        select: {
+          id: true,
+          agencyName: true,
+          agencyCode: true,
+          status: true,
+        },
+      },
+    },
+  });
+}
+
+export async function findAgencyApplications(
+  { page = 1, limit = 20, search = '', status },
+  db = prisma
+) {
+  const where = {};
+  if (status && status !== 'ALL') {
+    where.status = status;
+  }
+
+  if (search && search.trim().length > 0) {
+    const q = search.trim();
+    where.OR = [
+      { agencyName: { contains: q, mode: 'insensitive' } },
+      { applicantZePartyId: { contains: q, mode: 'insensitive' } },
+      { applicant: { username: { contains: q, mode: 'insensitive' } } },
+    ];
+  }
+
+  const skip = (page - 1) * limit;
+  const [applications, totalCount] = await Promise.all([
+    db.agencyApplication.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        applicant: {
+          select: {
+            id: true,
+            username: true,
+            email: true,
+            phone: true,
+            userType: true,
+            profile: {
+              select: {
+                displayName: true,
+              },
+            },
+          },
+        },
+        createdAgency: {
+          select: {
+            id: true,
+            agencyName: true,
+            agencyCode: true,
+            status: true,
+          },
+        },
+      },
+    }),
+    db.agencyApplication.count({ where }),
+  ]);
+
+  return {
+    applications,
+    pagination: {
+      page,
+      limit,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit) || 1,
+    },
+  };
+}
+
+export async function updateAgencyApplication(id, data, db = prisma) {
+  return await db.agencyApplication.update({
+    where: { id },
+    data,
+    include: {
+      applicant: {
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          userType: true,
+          profile: {
+            select: {
+              displayName: true,
+            },
+          },
+        },
+      },
+      createdAgency: true,
+    },
+  });
+}
+
 export default {
   findAgencyById,
   findAgencyByCode,
@@ -270,5 +482,11 @@ export default {
   addMember,
   removeMember,
   transferHostMembership,
+  createAgencyApplication,
+  findPendingAgencyApplicationByApplicantId,
+  findLatestAgencyApplicationByApplicantId,
+  findAgencyApplicationById,
+  findAgencyApplications,
+  updateAgencyApplication,
 };
 

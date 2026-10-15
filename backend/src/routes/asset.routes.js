@@ -7,6 +7,7 @@ export const adminAssetRouter = express.Router();
 adminAssetRouter.use(authenticate);
 
 adminAssetRouter.get('/', requirePermission('view_store'), assetController.getAdminAssets);
+adminAssetRouter.get('/special', requirePermission('view_store'), assetController.getAdminSpecialAssets);
 adminAssetRouter.post('/', requirePermission('manage_store'), assetController.createAsset);
 adminAssetRouter.get('/:id', requirePermission('view_store'), assetController.getAssetById);
 adminAssetRouter.put('/:id', requirePermission('manage_store'), assetController.updateAsset);

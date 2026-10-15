@@ -1,6 +1,10 @@
 import prisma from '../config/database.js';
 import assetRepository from '../repositories/asset.repository.js';
 import userAssetRepository from '../repositories/userAsset.repository.js';
+import {
+  isRestrictedSpecialAsset,
+  isPublicStoreItem,
+} from '../utils/assetClassification.util.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   if (!adminId) return;
@@ -34,6 +38,8 @@ export function serializeAsset(asset) {
   else if (rawType === 'BADGE') category = 'Badges';
 
   const imageUrl = asset.thumbnailUrl || asset.staticFileUrl || asset.animationFileUrl || '';
+  const isSpecial = isRestrictedSpecialAsset(asset);
+  const isPublic = isPublicStoreItem(asset);
 
   return {
     ...asset,
@@ -51,6 +57,9 @@ export function serializeAsset(asset) {
     isVipExclusive: Boolean(asset.isVipExclusive),
     minVipLevelRequired: asset.minVipLevelRequired || 0,
     roomAvailability: asset.roomAvailability || 'BOTH',
+    isSpecial,
+    isPublic,
+    classification: isSpecial ? 'SPECIAL' : 'PUBLIC',
     isActive: Boolean(asset.isActive),
   };
 }

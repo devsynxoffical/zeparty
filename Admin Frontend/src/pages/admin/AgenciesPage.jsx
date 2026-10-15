@@ -21,7 +21,10 @@ import {
   updateAgency,
   approveAgency,
   rejectAgency,
-  transferHostAgency
+  transferHostAgency,
+  getAgencyApplications,
+  approveAgencyApplication,
+  rejectAgencyApplication,
 } from '../../services/modules/agencies.service';
 import { formatDate, formatNumber, formatCurrency } from '../../utils/format';
 import { CountryFlag } from '../../components/ui/CountryFlag';
@@ -64,11 +67,13 @@ export function AgenciesPage() {
   const [commissionModal, setCommissionModal] = useState({ open: false, agency: null, commission: '' });
   const [settlementModal, setSettlementModal] = useState({ open: false, agency: null, settlementMethod: '', taxId: '' });
   const [rosterModal, setRosterModal] = useState({ open: false, agency: null, hostId: '' });
+  const [rejectModal, setRejectModal] = useState({ open: false, application: null, reason: '' });
+  const [selectedAppModal, setSelectedAppModal] = useState(null);
   const [feedback, setFeedback] = useState(null);
 
   const fetchAgenciesData = () => {
     setIsLoading(true);
-    Promise.allSettled([getActiveAgencies(), getAgencies()])
+    Promise.allSettled([getActiveAgencies(), getAgencyApplications()])
       .then(([activeRes, appsRes]) => {
         if (activeRes.status === 'fulfilled') {
           setAgencies(activeRes.value || []);
@@ -96,33 +101,51 @@ export function AgenciesPage() {
   const activeCategory = 'AUDIO_AGENCY';
 
   const handleApprove = async (id) => {
-    await approveAgency(id);
-    fetchAgenciesData();
-    await logAdminAction({
-      action: 'AGENCY_APPLICATION_APPROVED',
-      module: 'Agencies',
-      targetType: 'agency',
-      targetId: id,
-      targetName: `Agency ${id}`,
-      reason: 'Approved agency onboarding application',
-      riskLevel: 'HIGH',
-    });
-    showFeedback(`Agency application ${id} approved.`);
+    try {
+      await approveAgencyApplication(id);
+      fetchAgenciesData();
+      await logAdminAction({
+        action: 'AGENCY_APPLICATION_APPROVED',
+        module: 'Agencies',
+        targetType: 'agency_application',
+        targetId: id,
+        targetName: `Application ${id}`,
+        reason: 'Approved agency onboarding application',
+        riskLevel: 'HIGH',
+      });
+      showFeedback(`Agency application approved. Agency activated and applicant assigned as owner.`);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to approve agency application');
+    }
   };
 
-  const handleReject = async (id) => {
-    await rejectAgency(id, 'Document verification failed.');
-    fetchAgenciesData();
-    await logAdminAction({
-      action: 'AGENCY_APPLICATION_REJECTED',
-      module: 'Agencies',
-      targetType: 'agency',
-      targetId: id,
-      targetName: `Agency ${id}`,
-      reason: 'Rejected agency onboarding application',
-      riskLevel: 'MEDIUM',
-    });
-    showFeedback(`Agency application ${id} rejected.`);
+  const handleOpenReject = (app) => {
+    setRejectModal({ open: true, application: app, reason: '' });
+  };
+
+  const handleExecuteReject = async () => {
+    if (!rejectModal.application || !rejectModal.reason || rejectModal.reason.trim().length < 3) {
+      showFeedback('Please provide a valid rejection reason (minimum 3 characters)');
+      return;
+    }
+    const { application, reason } = rejectModal;
+    try {
+      await rejectAgencyApplication(application.id, reason.trim());
+      fetchAgenciesData();
+      await logAdminAction({
+        action: 'AGENCY_APPLICATION_REJECTED',
+        module: 'Agencies',
+        targetType: 'agency_application',
+        targetId: application.id,
+        targetName: application.agencyName,
+        reason: reason.trim(),
+        riskLevel: 'MEDIUM',
+      });
+      showFeedback(`Agency application "${application.agencyName}" was rejected.`);
+      setRejectModal({ open: false, application: null, reason: '' });
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to reject agency application');
+    }
   };
 
   const handleExecuteTransfer = async (e) => {
@@ -252,15 +275,20 @@ export function AgenciesPage() {
   const filteredApps = useMemo(() => {
     const q = search.toLowerCase();
     return applications.filter((a) => {
-      const matchType = a.agencyType === activeCategory;
-      const matchStatus = statusFilter === 'all' || a.status === statusFilter;
+      const matchStatus =
+        statusFilter === 'all' ||
+        String(a.status || '').toLowerCase() === statusFilter.toLowerCase();
       const matchSearch =
         !q ||
-        a.id.toLowerCase().includes(q) ||
-        a.agencyName.toLowerCase().includes(q);
-      return matchType && matchStatus && matchSearch;
+        (a.id && a.id.toLowerCase().includes(q)) ||
+        (a.agencyName && a.agencyName.toLowerCase().includes(q)) ||
+        (a.applicantZePartyId && a.applicantZePartyId.toLowerCase().includes(q)) ||
+        (a.phoneNumber && a.phoneNumber.toLowerCase().includes(q)) ||
+        (a.applicant?.username && a.applicant.username.toLowerCase().includes(q)) ||
+        (a.applicant?.profile?.displayName && a.applicant.profile.displayName.toLowerCase().includes(q));
+      return matchStatus && matchSearch;
     });
-  }, [applications, activeCategory, statusFilter, search]);
+  }, [applications, statusFilter, search]);
 
   const activeColumns = [
     {
@@ -375,29 +403,38 @@ export function AgenciesPage() {
       render: (row) => (
         <div>
           <p className="text-sm font-bold text-white">{row.agencyName}</p>
-          <p className="text-xs text-slate-400">Contact: {row.contactName} · {row.contactEmail}</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            @{row.applicant?.username || '—'} · ZeParty ID:{' '}
+            <span className="text-sky-400 font-mono">{row.applicantZePartyId || '—'}</span>
+          </p>
+          {row.applicant?.profile?.displayName && (
+            <p className="text-xs text-slate-500">{row.applicant.profile.displayName}</p>
+          )}
         </div>
       ),
     },
     {
-      key: 'hostsCount',
-      header: 'Proposed Talent Roster',
-      render: (row) => <span className="text-xs text-sky-400 font-bold">{row.hostsCount} Creators</span>,
+      key: 'phone',
+      header: 'Phone',
+      render: (row) => <span className="text-xs font-mono text-slate-300">{row.phoneNumber || '—'}</span>,
     },
     {
-      key: 'country',
-      header: 'Country',
+      key: 'hostRefs',
+      header: 'External Host IDs',
       render: (row) => (
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-          <CountryFlag code={row.country} className="w-3.5 h-2.5 object-cover rounded-sm shrink-0" />
-          <span>{getCountryShortName(row.country)}</span>
+        <div className="flex flex-col gap-0.5">
+          {[row.hostRef1, row.hostRef2, row.hostRef3, row.hostRef4, row.hostRef5].map((ref, i) => (
+            <span key={i} className="text-xs font-mono text-cyan-400 truncate max-w-[120px]" title={ref}>
+              {ref ? `${i + 1}: ${ref}` : `${i + 1}: —`}
+            </span>
+          ))}
         </div>
       ),
     },
     {
       key: 'submittedAt',
       header: 'Submitted',
-      render: (row) => <span className="text-xs text-slate-400">{formatDate(row.submittedAt)}</span>,
+      render: (row) => <span className="text-xs text-slate-400">{formatDate(row.createdAt || row.submittedAt)}</span>,
     },
     {
       key: 'status',
@@ -408,17 +445,27 @@ export function AgenciesPage() {
       key: 'actions',
       header: 'Actions',
       render: (row) =>
-        row.status === 'pending' ? (
-          <div className="flex gap-2">
-            <Button variant="primary" size="xs" onClick={() => handleApprove(row.id)}>
+        row.status === 'PENDING' ? (
+          <div className="flex gap-2 flex-wrap">
+            <Button variant="primary" size="xs" onClick={() => setSelectedAppModal(row)}>
+              View
+            </Button>
+            <Button variant="success" size="xs" onClick={() => handleApprove(row.id)}>
               Approve
             </Button>
-            <Button variant="danger" size="xs" onClick={() => handleReject(row.id)}>
+            <Button variant="danger" size="xs" onClick={() => handleOpenReject(row)}>
               Reject
             </Button>
           </div>
         ) : (
-          <span className="text-xs text-slate-500 capitalize">{row.status}</span>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="xs" onClick={() => setSelectedAppModal(row)}>
+              View
+            </Button>
+            <span className={`text-xs font-semibold capitalize ${row.status === 'APPROVED' ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {row.status}
+            </span>
+          </div>
         ),
     },
   ];
@@ -723,6 +770,127 @@ export function AgenciesPage() {
               </Button>
               <Button variant="primary" size="sm" onClick={() => handleRosterAction('add')}>
                 Bind to Agency
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Application Detail Modal */}
+      {selectedAppModal && (
+        <Modal
+          isOpen={true}
+          onClose={() => setSelectedAppModal(null)}
+          title={`Application Details: ${selectedAppModal.agencyName}`}
+          size="lg"
+        >
+          <div className="space-y-4 text-sm text-slate-300">
+            <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-slate-500 uppercase font-bold mb-0.5">Agency Name</p>
+                <p className="font-semibold text-white">{selectedAppModal.agencyName}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 uppercase font-bold mb-0.5">ZeParty ID</p>
+                <p className="font-mono text-sky-400">{selectedAppModal.applicantZePartyId || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 uppercase font-bold mb-0.5">Applicant Username</p>
+                <p>@{selectedAppModal.applicant?.username || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 uppercase font-bold mb-0.5">Phone Number</p>
+                <p className="font-mono">{selectedAppModal.phoneNumber || '—'}</p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-xs text-slate-500 uppercase font-bold mb-0.5">Invitation / Motivation</p>
+                <p className="text-slate-300 whitespace-pre-line">{selectedAppModal.description || '—'}</p>
+              </div>
+              <div className="col-span-2">
+                <p className="text-xs text-slate-500 uppercase font-bold mb-1">External Host Reference IDs</p>
+                <div className="flex flex-wrap gap-2">
+                  {[selectedAppModal.hostRef1, selectedAppModal.hostRef2, selectedAppModal.hostRef3, selectedAppModal.hostRef4, selectedAppModal.hostRef5]
+                    .filter(Boolean)
+                    .map((ref, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-cyan-900/30 border border-cyan-700/40 text-cyan-400 text-xs font-mono rounded">
+                        {ref}
+                      </span>
+                    ))}
+                  {![selectedAppModal.hostRef1, selectedAppModal.hostRef2, selectedAppModal.hostRef3, selectedAppModal.hostRef4, selectedAppModal.hostRef5].some(Boolean) && (
+                    <span className="text-slate-500 text-xs">None provided</span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 uppercase font-bold mb-0.5">Status</p>
+                <StatusBadge status={selectedAppModal.status} />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 uppercase font-bold mb-0.5">Submitted At</p>
+                <p className="text-slate-400 text-xs">{formatDate(selectedAppModal.createdAt)}</p>
+              </div>
+              {selectedAppModal.reviewedAt && (
+                <>
+                  <div>
+                    <p className="text-xs text-slate-500 uppercase font-bold mb-0.5">Reviewed At</p>
+                    <p className="text-slate-400 text-xs">{formatDate(selectedAppModal.reviewedAt)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-500 uppercase font-bold mb-0.5">Reviewed By</p>
+                    <p className="text-slate-400">{selectedAppModal.reviewedBy || '—'}</p>
+                  </div>
+                </>
+              )}
+              {selectedAppModal.rejectionReason && (
+                <div className="col-span-2">
+                  <p className="text-xs text-rose-500 uppercase font-bold mb-0.5">Rejection Reason</p>
+                  <p className="text-rose-300">{selectedAppModal.rejectionReason}</p>
+                </div>
+              )}
+            </div>
+            {selectedAppModal.status === 'PENDING' && (
+              <div className="flex gap-2 justify-end pt-1">
+                <Button variant="success" size="sm" onClick={() => { handleApprove(selectedAppModal.id); setSelectedAppModal(null); }}>
+                  Approve Application
+                </Button>
+                <Button variant="danger" size="sm" onClick={() => { handleOpenReject(selectedAppModal); setSelectedAppModal(null); }}>
+                  Reject Application
+                </Button>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Reject Application Modal */}
+      {rejectModal.open && (
+        <Modal
+          isOpen={true}
+          onClose={() => setRejectModal({ open: false, application: null, reason: '' })}
+          title={`Reject Application: ${rejectModal.application?.agencyName}`}
+          size="sm"
+        >
+          <div className="space-y-4 text-sm text-slate-300">
+            <p className="text-xs text-slate-400">
+              The rejection reason will be stored in the application record and can be referenced by the applicant in future contact.
+            </p>
+            <Input
+              label="Rejection Reason *"
+              value={rejectModal.reason}
+              onChange={(e) => setRejectModal({ ...rejectModal, reason: e.target.value })}
+              placeholder="e.g. Insufficient host roster, incomplete information..."
+            />
+            <div className="flex gap-2 justify-end pt-1">
+              <Button variant="ghost" size="sm" onClick={() => setRejectModal({ open: false, application: null, reason: '' })}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleExecuteReject}
+                disabled={!rejectModal.reason || rejectModal.reason.trim().length < 3}
+              >
+                Confirm Rejection
               </Button>
             </div>
           </div>

@@ -5,6 +5,10 @@ import walletRepository from '../repositories/wallet.repository.js';
 import ledgerService from './ledger.service.js';
 import { serializeAsset, serializeUserAsset } from './asset.service.js';
 import { generateReference } from '../utils/reference.util.js';
+import {
+  isRestrictedSpecialAsset,
+  isPublicStoreItem,
+} from '../utils/assetClassification.util.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   if (!adminId) return;
@@ -28,7 +32,15 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
 }
 
 export async function getStoreCatalog(query, db = prisma) {
-  const result = await assetRepository.findStoreCatalog(query, db);
+  const result = await assetRepository.findStoreCatalog({ ...query, includeSpecial: false }, db);
+  return {
+    assets: result.assets.map(serializeAsset),
+    pagination: result.pagination,
+  };
+}
+
+export async function getAdminStoreCatalog(query, db = prisma) {
+  const result = await assetRepository.findStoreCatalog({ ...query, includeSpecial: true }, db);
   return {
     assets: result.assets.map(serializeAsset),
     pagination: result.pagination,
@@ -36,7 +48,7 @@ export async function getStoreCatalog(query, db = prisma) {
 }
 
 export async function getVipStoreCatalog(query, db = prisma) {
-  const result = await assetRepository.findStoreCatalog({ ...query, isVipExclusive: true }, db);
+  const result = await assetRepository.findStoreCatalog({ ...query, isVipExclusive: true, includeSpecial: false }, db);
   return {
     assets: result.assets.map(serializeAsset),
     pagination: result.pagination,
@@ -50,6 +62,14 @@ export async function purchaseAsset({ userId, assetId }, { ipAddress } = {}, db 
     const error = new Error('Asset is not available for purchase or does not exist');
     error.statusCode = 404;
     error.code = 'ASSET_NOT_ACTIVE';
+    throw error;
+  }
+
+  // 1.1 Strict Server-Side Validation: Disallow purchase of restricted / special / privileged assets
+  if (isRestrictedSpecialAsset(asset) || !isPublicStoreItem(asset)) {
+    const error = new Error('This asset is a restricted special item and cannot be purchased through the public store');
+    error.statusCode = 403;
+    error.code = 'RESTRICTED_ASSET_NOT_PURCHASABLE';
     throw error;
   }
 
@@ -178,6 +198,14 @@ export async function sendAsset({ senderUserId, recipientUserId, assetId }, { ip
     throw error;
   }
 
+  // Strict Server-Side Validation: Ensure asset is not restricted
+  if (isRestrictedSpecialAsset(asset) || !isPublicStoreItem(asset)) {
+    const error = new Error('This asset is a restricted special item and cannot be gifted through the public store');
+    error.statusCode = 403;
+    error.code = 'RESTRICTED_ASSET_NOT_PURCHASABLE';
+    throw error;
+  }
+
   const [senderWallet, recipientUser] = await Promise.all([
     walletRepository.findByUserId(senderUserId, db),
     prisma.user.findUnique({ where: { id: recipientUserId }, select: { id: true, username: true } }),
@@ -262,6 +290,7 @@ export async function sendAsset({ senderUserId, recipientUserId, assetId }, { ip
 
 export default {
   getStoreCatalog,
+  getAdminStoreCatalog,
   getVipStoreCatalog,
   purchaseAsset,
   sendAsset,
