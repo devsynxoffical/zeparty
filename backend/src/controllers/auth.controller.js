@@ -1,6 +1,7 @@
 import authService from '../services/auth.service.js';
 import tokenService from '../services/token.service.js';
 import { calculateEffectivePermissions } from '../services/effectivePermissions.service.js';
+import presenceService from '../socket/presence.service.js';
 import {
   requestOtpSchema,
   verifyOtpSchema,
@@ -116,6 +117,19 @@ export async function logout(req, res, next) {
     }
 
     const result = await authService.logout({ sessionId, refreshToken });
+
+    const logoutUserId = req.auth?.userId || result?.userId;
+    if (logoutUserId) {
+      try {
+        await presenceService.clearUserPresence(logoutUserId);
+        const pres = await presenceService.getUserPresence(logoutUserId);
+        const { getIO } = await import('../socket/index.js');
+        const io = getIO();
+        if (io) {
+          presenceService.broadcastPresenceChange(io, logoutUserId, pres);
+        }
+      } catch (_) {}
+    }
 
     return res.status(200).json({
       success: true,

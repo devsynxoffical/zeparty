@@ -1,22 +1,95 @@
 import apiClient from '../api.js';
 
-export async function getPKEvents(params = {}) {
-  const res = await apiClient.get('/v1/admin/pk-events', { params });
-  if (res.data && res.data.success && Array.isArray(res.data.data)) {
-    return res.data.data;
+/**
+ * 1. Matches: Live Monitor & History
+ */
+export async function getAdminMatches(params = {}) {
+  const res = await apiClient.get('/v1/admin/pk/matches', { params });
+  if (res.data?.success) {
+    return {
+      matches: res.data.data || [],
+      meta: res.data.meta || { total: 0, page: 1, limit: 20 },
+    };
   }
-  return [];
+  return { matches: [], meta: { total: 0, page: 1, limit: 20 } };
+}
+
+/**
+ * 2. Force Stop Match (Audited & Confirmed)
+ */
+export async function forceStopMatch(id, reason) {
+  const res = await apiClient.post(`/v1/admin/pk/matches/${id}/force-stop`, { reason });
+  return res.data;
+}
+
+/**
+ * 3. PK System Settings
+ */
+export async function getPKSettings() {
+  const res = await apiClient.get('/v1/admin/pk/settings');
+  return res.data?.data || null;
+}
+
+export async function updatePKSettings(data) {
+  const res = await apiClient.put('/v1/admin/pk/settings', data);
+  return res.data?.data || null;
+}
+
+/**
+ * 4. PK Restrictions
+ */
+export async function getPKRestrictions(params = {}) {
+  const res = await apiClient.get('/v1/admin/pk/restrictions', { params });
+  if (res.data?.success) {
+    return {
+      restrictions: res.data.data || [],
+      meta: res.data.meta || { total: 0, page: 1, limit: 20 },
+    };
+  }
+  return { restrictions: [], meta: { total: 0, page: 1, limit: 20 } };
+}
+
+export async function createPKRestriction(data) {
+  const res = await apiClient.post('/v1/admin/pk/restrictions', data);
+  return res.data?.data || null;
+}
+
+export async function revokePKRestriction(id) {
+  const res = await apiClient.delete(`/v1/admin/pk/restrictions/${id}`);
+  return res.data?.data || null;
+}
+
+/**
+ * 5. Audited Result Revision
+ */
+export async function reviseMatchResult(id, data) {
+  const res = await apiClient.post(`/v1/admin/pk/matches/${id}/revise-result`, data);
+  return res.data?.data || null;
+}
+
+/**
+ * 6. Match Snapshot & Supporter Details
+ */
+export async function getMatchDetails(id) {
+  const res = await apiClient.get(`/v1/pk/matches/${id}`);
+  return res.data?.data || null;
+}
+
+// ── BACKWARD-COMPATIBLE ALIASES ────────────────────────────────
+export async function getPKEvents(params = {}) {
+  const { matches } = await getAdminMatches(params);
+  return matches;
 }
 
 export async function getPKStats() {
   try {
-    const events = await getPKEvents();
-    const active = events.filter((e) => e.status === 'ACTIVE' || e.status === 'COUNTDOWN');
+    const { matches } = await getAdminMatches({ limit: 100 });
+    const active = matches.filter((m) => m.status === 'ACTIVE' || m.status === 'COUNTDOWN' || m.status === 'PREPARING');
     return {
       activeBattles: active.length,
-      totalDiamondsPooled: events.reduce((sum, e) => sum + (Number(e.team1Score || 0) + Number(e.team2Score || 0)), 0),
-      totalPKEvents: events.length,
-      totalViewers: events.reduce((sum, e) => sum + (Number(e.viewerCount || 0)), 0),
+      totalDiamondsPooled: matches.reduce((sum, m) => sum + (Number(m.scoreA || 0) + Number(m.scoreB || 0)), 0),
+      totalPKEvents: matches.length,
+      totalViewers: 0,
     };
   } catch {
     return {
@@ -32,13 +105,17 @@ export async function getPKLeaderboard() {
   return [];
 }
 
-export async function createPKEvent(eventData) {
-  const res = await apiClient.post('/v1/admin/pk-events/start', eventData);
-  return res.data?.data;
-}
-
-export async function updatePKEvent(id, updateData) {
-  const res = await apiClient.post(`/v1/admin/pk-events/${id}/end`, updateData);
-  return res.data?.data;
-}
-
+export default {
+  getAdminMatches,
+  forceStopMatch,
+  getPKSettings,
+  updatePKSettings,
+  getPKRestrictions,
+  createPKRestriction,
+  revokePKRestriction,
+  reviseMatchResult,
+  getMatchDetails,
+  getPKEvents,
+  getPKStats,
+  getPKLeaderboard,
+};

@@ -156,20 +156,56 @@ export async function sendGift(
   const resolvedSenderUserId = effectiveSenderId;
   const resolvedRecipientUserId = effectiveRecipientId;
 
-  // Self-gifting is permitted (e.g. self-boosting, celebration, level progress)
-  const isSelfGift = resolvedSenderUserId === resolvedRecipientUserId;
+  // Handle self-gifting rule (Issue 03: Allow self-gifting in party rooms and live rooms)
+  if (resolvedSenderUserId === resolvedRecipientUserId) {
+    if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
+      const error = new Error('Users cannot send gifts to themselves outside of live or party rooms');
+      error.statusCode = 400;
+      error.code = 'CANNOT_GIFT_SELF';
+      throw error;
+    }
+
+    // Verify room existence and valid active status
+    let targetRoom = await db.room.findUnique({
+      where: { id: roomId },
+      select: { id: true, status: true, roomType: true },
+    }).catch(() => null);
+
+    if (!targetRoom && roomId.length <= 16) {
+      targetRoom = await db.room.findFirst({
+        where: { id: { startsWith: roomId, mode: 'insensitive' } },
+        select: { id: true, status: true, roomType: true },
+      }).catch(() => null);
+    }
+
+    if (!targetRoom) {
+      const error = new Error('Self-gifting is only permitted in active party rooms and live rooms');
+      error.statusCode = 404;
+      error.code = 'ROOM_NOT_FOUND';
+      throw error;
+    }
+
+    const isRoomActive = ['LIVE', 'ACTIVE', 'OPEN'].includes(targetRoom.status);
+    if (!isRoomActive) {
+      const error = new Error('Room is not available or has ended');
+      error.statusCode = 400;
+      error.code = 'ROOM_NOT_LIVE';
+      throw error;
+    }
+  }
 
   // Alias for backward compatibility throughout the function
   senderUserId = resolvedSenderUserId;
   recipientUserId = resolvedRecipientUserId;
 
-  const qty = Number(quantity) || 1;
-  if (qty < 1) {
+  const parsedQty = quantity !== undefined && quantity !== null ? Number(quantity) : 1;
+  if (isNaN(parsedQty) || parsedQty < 1 || !Number.isInteger(parsedQty)) {
     const error = new Error('Gift quantity must be at least 1');
     error.statusCode = 400;
     error.code = 'INVALID_QUANTITY';
     throw error;
   }
+  const qty = parsedQty;
 
   // 1. Load active Gift
   const gift = await giftRepository.findGiftById(giftId, db);
@@ -264,28 +300,18 @@ export async function sendGift(
     }
 
     // b. Build multi-account operations for ledger posting
-    const operations = [];
-
-    if (senderWallet.id === hostWallet.id) {
-      operations.push({
+    const operations = [
+      {
         walletId: senderWallet.id,
         coinDelta: -totalCoins,
+        diamondDelta: 0n,
+      },
+      {
+        walletId: hostWallet.id,
+        coinDelta: 0n,
         diamondDelta: hostDiamonds,
-      });
-    } else {
-      operations.push(
-        {
-          walletId: senderWallet.id,
-          coinDelta: -totalCoins,
-          diamondDelta: 0n,
-        },
-        {
-          walletId: hostWallet.id,
-          coinDelta: 0n,
-          diamondDelta: hostDiamonds,
-        }
-      );
-    }
+      },
+    ];
 
     if (agencyCoins > 0n && agencyOwnerWallet) {
       operations.push({
@@ -296,16 +322,11 @@ export async function sendGift(
     }
 
     if (roomCoins > 0n && roomOwnerWallet) {
-      const existingOp = operations.find((o) => o.walletId === roomOwnerWallet.id);
-      if (existingOp) {
-        existingOp.coinDelta = (existingOp.coinDelta || 0n) + roomCoins;
-      } else {
-        operations.push({
-          walletId: roomOwnerWallet.id,
-          coinDelta: roomCoins,
-          diamondDelta: 0n,
-        });
-      }
+      operations.push({
+        walletId: roomOwnerWallet.id,
+        coinDelta: roomCoins,
+        diamondDelta: 0n,
+      });
     }
 
     // d. Post double-entry ledger transaction
@@ -335,51 +356,32 @@ export async function sendGift(
     // Approved ZeParty Level Policy: starting at Lv. 1, 10,000 XP per level
     const newWealthLevel = Math.max(1, Math.floor(Number(newXp) / 10000) + 1);
 
-    if (senderUserId === recipientUserId) {
-      await tx.userProfile.upsert({
-        where: { userId: senderUserId },
-        update: {
-          experiencePoints: newXp,
-          totalSpentCoins: { increment: coinsSpent },
-          totalEarnedDiamonds: { increment: hostDiamonds },
-          level: newWealthLevel,
-        },
-        create: {
-          userId: senderUserId,
-          experiencePoints: newXp,
-          totalSpentCoins: coinsSpent,
-          totalEarnedDiamonds: hostDiamonds,
-          level: newWealthLevel,
-        },
-      });
-    } else {
-      await tx.userProfile.upsert({
-        where: { userId: senderUserId },
-        update: {
-          experiencePoints: newXp,
-          totalSpentCoins: { increment: coinsSpent },
-          level: newWealthLevel,
-        },
-        create: {
-          userId: senderUserId,
-          experiencePoints: newXp,
-          totalSpentCoins: coinsSpent,
-          level: newWealthLevel,
-        },
-      });
+    await tx.userProfile.upsert({
+      where: { userId: senderUserId },
+      update: {
+        experiencePoints: newXp,
+        totalSpentCoins: { increment: coinsSpent },
+        level: newWealthLevel,
+      },
+      create: {
+        userId: senderUserId,
+        experiencePoints: newXp,
+        totalSpentCoins: coinsSpent,
+        level: newWealthLevel,
+      },
+    });
 
-      // g. Update recipient's total earned diamonds
-      await tx.userProfile.upsert({
-        where: { userId: recipientUserId },
-        update: {
-          totalEarnedDiamonds: { increment: hostDiamonds },
-        },
-        create: {
-          userId: recipientUserId,
-          totalEarnedDiamonds: hostDiamonds,
-        },
-      });
-    }
+    // g. Update recipient's total earned diamonds
+    await tx.userProfile.upsert({
+      where: { userId: recipientUserId },
+      update: {
+        totalEarnedDiamonds: { increment: hostDiamonds },
+      },
+      create: {
+        userId: recipientUserId,
+        totalEarnedDiamonds: hostDiamonds,
+      },
+    });
 
     // h. Create GiftTransaction record
     const giftTx = await giftRepository.createGiftTransaction(
@@ -445,7 +447,14 @@ export async function sendGift(
     });
 
     try {
-      await pkService.addPKScore({ roomId, targetUserId: recipientUserId, giftCoinValue: Number(totalCoins) });
+      await pkService.recordGiftContribution({
+        giftTransactionId: result.giftTransaction.id,
+        senderUserId,
+        recipientUserId,
+        roomId,
+        coins: Number(totalCoins),
+        commitTimestamp: result.giftTransaction.createdAt,
+      });
     } catch (_) {}
   }
 

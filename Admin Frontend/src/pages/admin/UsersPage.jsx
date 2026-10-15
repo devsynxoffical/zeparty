@@ -1218,6 +1218,24 @@ export function UsersPage() {
       render: (row) => (
         <div>
           <StatusBadge status={row.status} />
+          <div className="mt-1 flex items-center gap-1 text-[11px]">
+            {row.presenceStatus === 'IN_ROOM' ? (
+              <span className="inline-flex items-center gap-1 text-purple-400 font-medium" title={row.currentRoomTitle || 'In Active Party Room'}>
+                <span className="h-1.5 w-1.5 rounded-full bg-purple-400 animate-pulse" />
+                <span>In Room</span>
+              </span>
+            ) : row.presenceStatus === 'ONLINE' ? (
+              <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                <span>Online</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-slate-500">
+                <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
+                <span>Offline</span>
+              </span>
+            )}
+          </div>
           {row.status === 'deleted' && row.scheduledPermanentDeletionAt && (
             <div className="mt-1 flex items-center gap-1 text-[11px] text-red-400 font-medium">
               <Clock className="h-3 w-3" />

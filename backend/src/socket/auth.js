@@ -47,13 +47,9 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
       userId = clientUser.id || clientUser.userId;
     }
 
-    if (!userId) {
-      userId = 'guest_' + (socket.id || Math.random().toString(36).substring(2, 9));
-    }
-
     // Look up user to verify active account status
-    let user;
-    if (userId && !String(userId).startsWith('guest_')) {
+    let user = null;
+    if (userId && !String(userId).startsWith('guest_') && token !== 'guest_anonymous') {
       if (customUserLookup) {
         if (typeof customUserLookup.findById === 'function') {
           user = await customUserLookup.findById(userId).catch(() => null);
@@ -67,6 +63,16 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
       } else {
         user = await (userRepository.findById ? userRepository.findById(userId) : userRepository.findUserById(userId)).catch(() => null);
       }
+    }
+
+    const isGuest = !user && Boolean(
+      String(userId).startsWith('guest_') ||
+      token === 'guest_anonymous' ||
+      (!token && !decoded?.sub && !decoded?.userId && !decoded?.id)
+    );
+
+    if (isGuest && !String(userId).startsWith('guest_')) {
+      userId = 'guest_' + (userId || socket.id || Math.random().toString(36).substring(2, 9));
     }
 
     if (!user) {
@@ -109,6 +115,7 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
     const effectiveName = user.profile?.displayName || user.name || user.username || 'User';
 
     // Attach authenticated identity to socket
+    socket.isGuest = isGuest;
     socket.user = {
       id: user.id,
       userId: user.id,
@@ -124,6 +131,7 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
       isAdmin: decoded.isAdmin || false,
       isOwner: decoded.isOwner || false,
       role: user.userType || decoded.role || null,
+      isGuest,
     };
 
     socket.userId = user.id;

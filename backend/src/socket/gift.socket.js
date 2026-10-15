@@ -21,9 +21,7 @@ export async function onSendGift(io, socket, data, callback) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    const senderUserId = socket.userId;
-
-    // Self-gifting is permitted (e.g. self-boosting, celebration)
+    const senderUserId = socket.userId || socket.user?.id;
 
     // Execute Phase 3 Authoritative Financial Gifting Transaction (wallet lock, split, ledger posting)
     const result = await giftService.sendGift(
@@ -48,10 +46,10 @@ export async function onSendGift(io, socket, data, callback) {
       roomId,
       transactionId,
       sender: {
-        id: socket.user.id,
-        username: socket.user.username,
-        displayName: socket.user.displayName,
-        avatarUrl: socket.user.avatarUrl,
+        id: socket.user?.id || senderUserId,
+        username: socket.user?.username || 'user',
+        displayName: socket.user?.displayName || socket.user?.name || socket.user?.username || 'User',
+        avatarUrl: socket.user?.avatarUrl || null,
       },
       recipientUserId,
       gift: {
@@ -66,6 +64,9 @@ export async function onSendGift(io, socket, data, callback) {
 
     // Broadcast realtime event to the entire room strictly AFTER DB transaction commits
     io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_GIFT_SENT, broadcastPayload);
+    io.to(`room:${roomId}`).emit('room:gift_sent', broadcastPayload);
+    io.to(`room:${roomId}`).emit('room_gift_sent', broadcastPayload);
+    io.to(`room:${roomId}`).emit('gift:sent', broadcastPayload);
 
     if (typeof callback === 'function') {
       return callback({

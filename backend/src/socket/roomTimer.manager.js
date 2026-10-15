@@ -25,49 +25,26 @@ export async function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
     viewerCount = Number(room?.currentViewersCount || 0);
   } catch {}
 
-  // If no viewers in the room, end immediately
-  if (viewerCount <= 0) {
-    try {
-      console.log(`[RoomTimerManager] 0 viewers in room ${roomId}. Closing immediately.`);
-      await roomRepository.closeRoomTx({
-        roomId,
-        status: 'ENDED',
-        endedAt: new Date(),
-      }).catch(() => null);
+  const isAudioParty = (roomType || '').toUpperCase().includes('AUDIO') || (roomType || '').toUpperCase().includes('PARTY');
 
-      const closePayload = {
-        roomId,
-        status: 'ENDED',
-        reason: 'HOST_LEFT_NO_VIEWERS',
-        message: 'The broadcast has ended.',
-      };
-
-      if (io) {
-        io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_CLOSED, closePayload);
-        io.to(`room:${roomId}`).emit('room:closed', closePayload);
-        io.to(`room:${roomId}`).emit('stream:ended', closePayload);
-        io.emit('room:deleted', { roomId });
-      } else {
-        socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, closePayload);
-        socketEmitter.emitToRoom(roomId, 'room:closed', closePayload);
-        socketEmitter.broadcastGlobal('room:deleted', { roomId });
-      }
-    } catch (err) {
-      console.error(`[RoomTimerManager] Error closing empty room ${roomId}:`, err);
-    }
-    return;
-  }
-
-  // Viewers exist: keep active for 15 minutes, then auto-close
-  const durationMs = 15 * 60 * 1000; // 15 minutes
+  // DO NOT close immediately on 0 viewers!
+  // Give hosts a 3-minute grace period (180,000 ms) to reconnect or resume app
+  // If viewers exist, keep active for 15 minutes (900,000 ms)
+  const durationMs = (viewerCount <= 0) ? (3 * 60 * 1000) : (15 * 60 * 1000);
   const autoEndSeconds = Math.round(durationMs / 1000);
 
-  console.log(`[RoomTimerManager] Starting 15-min host absent timer for room ${roomId} (${viewerCount} viewers remaining)`);
+  console.log(`[RoomTimerManager] Starting ${autoEndSeconds}s host absent timer for room ${roomId} (viewers: ${viewerCount})`);
 
   const timer = setTimeout(async () => {
     try {
-      console.log(`[RoomTimerManager] 15-min host absent timer expired for room ${roomId}. Auto-closing room in DB.`);
+      console.log(`[RoomTimerManager] Host absent timer expired for room ${roomId}. Auto-closing in DB.`);
       hostAbsentTimers.delete(roomId);
+
+      // Verify room is still LIVE before closing
+      const currentRoom = await roomRepository.findRoomById(roomId).catch(() => null);
+      if (!currentRoom || currentRoom.status !== 'LIVE') {
+        return;
+      }
 
       // Close room in database
       await roomRepository.closeRoomTx({
@@ -81,7 +58,7 @@ export async function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
         roomId,
         status: 'ENDED',
         reason: 'HOST_ABSENT_TIMEOUT',
-        message: 'Broadcast has ended (15-minute host absence timeout).',
+        message: isAudioParty ? 'Party ended because the host was absent.' : 'Broadcast has ended (host absence timeout).',
       };
 
       if (io) {
@@ -102,7 +79,7 @@ export async function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
 
   hostAbsentTimers.set(roomId, {
     timer,
-    type: 'ROOM',
+    type: roomType || 'AUDIO_PARTY',
     hostUserId,
     startedAt: Date.now(),
     durationMs,
@@ -116,7 +93,7 @@ export async function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
     hostAbsent: true,
     autoEndSeconds,
     message: isAudioParty
-      ? 'Host has stepped out. Room will automatically end in 2 minutes if host does not return.'
+      ? 'Host has stepped out. Room will automatically end if host does not return.'
       : 'Live broadcast ended by host.',
   };
 
@@ -156,8 +133,16 @@ export function isHostAbsent(roomId) {
   return hostAbsentTimers.has(roomId);
 }
 
+/**
+ * Returns info on the active host absent timer for testing and status checks.
+ */
+export function getHostAbsentTimerInfo(roomId) {
+  return hostAbsentTimers.get(roomId) || null;
+}
+
 export default {
   startHostAbsentTimer,
   clearHostAbsentTimer,
   isHostAbsent,
+  getHostAbsentTimerInfo,
 };

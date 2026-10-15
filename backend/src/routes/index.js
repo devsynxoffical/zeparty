@@ -56,9 +56,11 @@ router.use('/rankings', leaderboardRouter);
 router.use('/v1/leaderboard', leaderboardRouter);
 router.use('/leaderboard', leaderboardRouter);
 
-// Direct Messaging routes
+// Direct Messaging & Conversations routes
 router.use('/v1/messages', messageRouter);
 router.use('/messages', messageRouter);
+router.use('/v1/conversations', messageRouter);
+router.use('/conversations', messageRouter);
 
 // Phase 18 Media & Storage Routes
 router.use('/v1/media', mediaRoutes);
@@ -67,6 +69,8 @@ router.use('/media', mediaRoutes);
 // Phase 19 PK Battles Routes
 router.use('/v1/admin/pk-events', adminPKRouter);
 router.use('/admin/pk-events', adminPKRouter);
+router.use('/v1/admin/pk', adminPKRouter);
+router.use('/admin/pk', adminPKRouter);
 router.use('/v1/pk', userPKRouter);
 router.use('/pk', userPKRouter);
 

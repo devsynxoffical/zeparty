@@ -9,15 +9,21 @@ export async function ensureDatabaseSchema(db = prisma) {
 
   // 1. Ensure PKStatus enum values
   const pkEnums = [
+    'PENDING',
+    'PREPARING',
+    'COUNTDOWN',
+    'ACTIVE',
+    'FINISHED',
+    'REJECTED',
+    'EXPIRED',
+    'CANCELLED',
+    'FORFEIT',
+    'ABORTED',
     'CREATED',
     'INVITING',
     'READY',
-    'COUNTDOWN',
-    'ACTIVE',
     'STARTED',
     'ENDED',
-    'CANCELLED',
-    'EXPIRED',
   ];
   for (const val of pkEnums) {
     try {
@@ -82,6 +88,140 @@ export async function ensureDatabaseSchema(db = prisma) {
     try {
       await db.$executeRawUnsafe(ddl);
     } catch {}
+  }
+
+  // 4.1 Ensure Redesigned PK Match System Tables & Indexes exist
+  const pkRedesignTables = [
+    `CREATE TABLE IF NOT EXISTS "PKMatch" (
+      "id" TEXT PRIMARY KEY,
+      "roomAId" TEXT NOT NULL,
+      "roomBId" TEXT NOT NULL,
+      "hostAUserId" TEXT NOT NULL,
+      "hostBUserId" TEXT NOT NULL,
+      "roomType" "RoomType" NOT NULL DEFAULT 'LIVE_VIDEO',
+      "region" TEXT NOT NULL DEFAULT 'GLOBAL',
+      "operatorAUserId" TEXT NOT NULL,
+      "operatorBUserId" TEXT,
+      "status" "PKStatus" NOT NULL DEFAULT 'PENDING',
+      "stateVersion" INTEGER NOT NULL DEFAULT 1,
+      "durationSeconds" INTEGER NOT NULL DEFAULT 300,
+      "invitationExpiresAt" TIMESTAMP(3),
+      "preparationDeadlineAt" TIMESTAMP(3),
+      "countdownStartAt" TIMESTAMP(3),
+      "startAt" TIMESTAMP(3),
+      "endAt" TIMESTAMP(3),
+      "scoreA" BIGINT NOT NULL DEFAULT 0,
+      "scoreB" BIGINT NOT NULL DEFAULT 0,
+      "winnerHostId" TEXT,
+      "isDraw" BOOLEAN NOT NULL DEFAULT false,
+      "endReason" TEXT,
+      "configSnapshotJson" JSONB,
+      "hostAConnectionStatus" TEXT NOT NULL DEFAULT 'CONNECTED',
+      "hostBConnectionStatus" TEXT NOT NULL DEFAULT 'CONNECTED',
+      "hostADisconnectedAt" TIMESTAMP(3),
+      "hostBDisconnectedAt" TIMESTAMP(3),
+      "readyA" BOOLEAN NOT NULL DEFAULT false,
+      "readyB" BOOLEAN NOT NULL DEFAULT false,
+      "mediaPreparedA" BOOLEAN NOT NULL DEFAULT false,
+      "mediaPreparedB" BOOLEAN NOT NULL DEFAULT false,
+      "originalResultJson" JSONB,
+      "revisedResultJson" JSONB,
+      "revisionNumber" INTEGER NOT NULL DEFAULT 0,
+      "revisionReason" TEXT,
+      "revisedByAdminId" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS "PKMatch_roomAId_idx" ON "PKMatch"("roomAId");`,
+    `CREATE INDEX IF NOT EXISTS "PKMatch_roomBId_idx" ON "PKMatch"("roomBId");`,
+    `CREATE INDEX IF NOT EXISTS "PKMatch_hostAUserId_idx" ON "PKMatch"("hostAUserId");`,
+    `CREATE INDEX IF NOT EXISTS "PKMatch_hostBUserId_idx" ON "PKMatch"("hostBUserId");`,
+    `CREATE INDEX IF NOT EXISTS "PKMatch_status_idx" ON "PKMatch"("status");`,
+    `CREATE INDEX IF NOT EXISTS "PKMatch_createdAt_idx" ON "PKMatch"("createdAt");`,
+
+    `CREATE TABLE IF NOT EXISTS "PKInvitation" (
+      "id" TEXT PRIMARY KEY,
+      "matchId" TEXT NOT NULL,
+      "inviterUserId" TEXT NOT NULL,
+      "targetRoomId" TEXT NOT NULL,
+      "targetHostUserId" TEXT NOT NULL,
+      "durationSeconds" INTEGER NOT NULL DEFAULT 300,
+      "status" TEXT NOT NULL DEFAULT 'PENDING',
+      "expiresAt" TIMESTAMP(3) NOT NULL,
+      "respondedAt" TIMESTAMP(3),
+      "responderUserId" TEXT,
+      "cancelReason" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS "PKInvitation_matchId_idx" ON "PKInvitation"("matchId");`,
+    `CREATE INDEX IF NOT EXISTS "PKInvitation_targetRoomId_idx" ON "PKInvitation"("targetRoomId");`,
+    `CREATE INDEX IF NOT EXISTS "PKInvitation_targetHostUserId_idx" ON "PKInvitation"("targetHostUserId");`,
+    `CREATE INDEX IF NOT EXISTS "PKInvitation_status_idx" ON "PKInvitation"("status");`,
+
+    `CREATE TABLE IF NOT EXISTS "PKGiftContribution" (
+      "id" TEXT PRIMARY KEY,
+      "matchId" TEXT NOT NULL,
+      "giftTransactionId" TEXT NOT NULL UNIQUE,
+      "senderUserId" TEXT NOT NULL,
+      "recipientUserId" TEXT NOT NULL,
+      "side" TEXT NOT NULL,
+      "coins" BIGINT NOT NULL,
+      "commitTimestamp" TIMESTAMP(3) NOT NULL,
+      "isReversed" BOOLEAN NOT NULL DEFAULT false,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS "PKGiftContribution_matchId_side_idx" ON "PKGiftContribution"("matchId", "side");`,
+    `CREATE INDEX IF NOT EXISTS "PKGiftContribution_senderUserId_idx" ON "PKGiftContribution"("senderUserId");`,
+
+    `CREATE TABLE IF NOT EXISTS "PKLifecycleAudit" (
+      "id" TEXT PRIMARY KEY,
+      "matchId" TEXT NOT NULL,
+      "action" TEXT NOT NULL,
+      "actorUserId" TEXT,
+      "fromStatus" TEXT,
+      "toStatus" TEXT,
+      "metadataJson" JSONB,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS "PKLifecycleAudit_matchId_idx" ON "PKLifecycleAudit"("matchId");`,
+    `CREATE INDEX IF NOT EXISTS "PKLifecycleAudit_createdAt_idx" ON "PKLifecycleAudit"("createdAt");`,
+
+    `CREATE TABLE IF NOT EXISTS "PKSetting" (
+      "id" TEXT PRIMARY KEY DEFAULT 'default',
+      "audioPkEnabled" BOOLEAN NOT NULL DEFAULT true,
+      "videoPkEnabled" BOOLEAN NOT NULL DEFAULT true,
+      "defaultDurationSeconds" INTEGER NOT NULL DEFAULT 300,
+      "allowedDurationsJson" JSONB NOT NULL DEFAULT '[180, 300, 600]'::jsonb,
+      "invitationTimeoutSeconds" INTEGER NOT NULL DEFAULT 30,
+      "preparationTimeoutSeconds" INTEGER NOT NULL DEFAULT 15,
+      "reconnectGraceSeconds" INTEGER NOT NULL DEFAULT 30,
+      "resultDisplaySeconds" INTEGER NOT NULL DEFAULT 10,
+      "invitationRateLimit" INTEGER NOT NULL DEFAULT 5,
+      "multipliersEnabled" BOOLEAN NOT NULL DEFAULT false,
+      "additionalRewardsEnabled" BOOLEAN NOT NULL DEFAULT false,
+      "updatedByAdminId" TEXT,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+
+    `CREATE TABLE IF NOT EXISTS "PKRestriction" (
+      "id" TEXT PRIMARY KEY,
+      "targetType" TEXT NOT NULL,
+      "targetId" TEXT NOT NULL,
+      "reason" TEXT NOT NULL,
+      "restrictedByAdminId" TEXT NOT NULL,
+      "expiresAt" TIMESTAMP(3),
+      "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS "PKRestriction_targetType_targetId_status_idx" ON "PKRestriction"("targetType", "targetId", "status");`,
+  ];
+
+  for (const ddl of pkRedesignTables) {
+    try {
+      await db.$executeRawUnsafe(ddl);
+    } catch (err) {
+      console.warn('PKRedesign DDL note:', err.message);
+    }
   }
 
   // 5. Ensure User table columns

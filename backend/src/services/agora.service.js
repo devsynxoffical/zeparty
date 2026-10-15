@@ -84,10 +84,36 @@ export async function issueRoomAgoraToken({ roomId, userId }, db = prisma) {
     throw error;
   }
 
+  // Check if user was kicked from this room session
+  const isKicked = await db.roomModeration.findFirst({
+    where: {
+      roomId: room.id,
+      targetUserId: userId,
+      actionType: 'KICK',
+    },
+  });
+  if (isKicked) {
+    const error = new Error('You have been kicked from this room session');
+    error.statusCode = 403;
+    error.status = 403;
+    error.code = 'ROOM_KICKED';
+    throw error;
+  }
+
+  // Check if user is muted by moderation in this room
+  const isModMuted = await db.roomModeration.findFirst({
+    where: {
+      roomId: room.id,
+      targetUserId: userId,
+      actionType: 'MUTE_MIC',
+    },
+  });
+
   // 3. Derive user role in room from authoritative database state
   const isHost = room.creatorUserId === userId;
   const isOccupant = Array.isArray(room.seats) && room.seats.some((s) => s.userId === userId || s.occupiedUserId === userId);
-  const role = isHost || isOccupant ? AGORA_ROLES.BROADCASTER : AGORA_ROLES.AUDIENCE;
+  // If user is moderation muted, role is strictly AUDIENCE (SUBSCRIBER) to forbid audio publication
+  const role = (isHost || (isOccupant && !isModMuted)) ? AGORA_ROLES.BROADCASTER : AGORA_ROLES.AUDIENCE;
 
   // 4. Derive integer UID
   const uid = deriveAgoraUid(userId);

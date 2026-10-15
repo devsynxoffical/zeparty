@@ -1,6 +1,7 @@
 import roomRepository from '../repositories/room.repository.js';
 import userRepository from '../repositories/user.repository.js';
 import roomService from '../services/room.service.js';
+import micInviteService from '../services/micInvite.service.js';
 import presenceService from './presence.service.js';
 import prisma from '../config/database.js';
 import { startHostAbsentTimer, clearHostAbsentTimer } from './roomTimer.manager.js';
@@ -11,10 +12,92 @@ import { withRateLimit } from './rateLimiter.socket.js';
 /**
  * Builds a safe, public room snapshot containing no sensitive admin or private fields.
  */
-export function buildRoomSnapshot(room, viewerCount) {
+export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
   if (!room) return null;
 
   const hostUserId = room.creatorUserId || room.creator?.id;
+
+  // Determine if host is currently occupying a seat on stage
+  const hostIsOccupyingSeat = (room.seats || []).some(
+    (s) => (s.occupiedUserId === hostUserId || s.user?.id === hostUserId)
+  );
+
+  const membersList = (room.members || [])
+    .filter((m) => {
+      const mid = m.userId || m.user?.id;
+      // If host is occupying a seat, do not duplicate in audience list
+      if (mid === hostUserId && hostIsOccupyingSeat) {
+        return false;
+      }
+      return true;
+    })
+    .map((m) => {
+      const u = m.user || {};
+      const mid = m.userId || u.id;
+      const isHost = mid === hostUserId;
+      const displayName = u.profile?.displayName || u.displayName || u.username || (isHost ? 'Host' : 'User');
+      return {
+        userId: mid,
+        role: isHost ? 'HOST' : (m.role || 'LISTENER'),
+        isHost,
+        isOwner: isHost,
+        user: {
+          id: mid,
+          username: u.username || displayName,
+          displayName,
+          name: displayName,
+          avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
+        },
+      };
+    });
+
+  const existingMemberIds = new Set(membersList.map((m) => m.userId));
+
+  // If host is NOT occupying a seat, ensure host is included in audience exactly once
+  if (!hostIsOccupyingSeat && hostUserId && !existingMemberIds.has(hostUserId)) {
+    const hostUser = room.creator || {};
+    const hostDisplayName = hostUser.profile?.displayName || hostUser.displayName || hostUser.username || 'Host';
+    membersList.unshift({
+      userId: hostUserId,
+      role: 'HOST',
+      isHost: true,
+      isOwner: true,
+      user: {
+        id: hostUserId,
+        username: hostUser.username || hostDisplayName,
+        displayName: hostDisplayName,
+        name: hostDisplayName,
+        avatarUrl: hostUser.avatarUrl || hostUser.profile?.avatarUrl || null,
+      },
+    });
+    existingMemberIds.add(hostUserId);
+  }
+
+  // Merge active guest participants
+  for (const pres of (activePresenceUsers || [])) {
+    const pid = pres.userId || pres.id;
+    if (pid && !existingMemberIds.has(pid)) {
+      if (pid === hostUserId && hostIsOccupyingSeat) {
+        continue;
+      }
+      const isHost = pid === hostUserId;
+      const guestDisplayName = pres.displayName || pres.name || pres.username || (isHost ? 'Host' : `User_${String(pid).replace('guest_', '').substring(0, 5)}`);
+      membersList.push({
+        userId: pid,
+        role: isHost ? 'HOST' : 'LISTENER',
+        isHost,
+        isOwner: isHost,
+        user: {
+          id: pid,
+          username: guestDisplayName,
+          displayName: guestDisplayName,
+          name: guestDisplayName,
+          avatarUrl: pres.avatarUrl || null,
+        },
+      });
+      existingMemberIds.add(pid);
+    }
+  }
 
   return {
     id: room.id,
@@ -24,6 +107,9 @@ export function buildRoomSnapshot(room, viewerCount) {
     roomType: room.roomType || 'VIDEO_PARTY',
     category: room.category || 'CHATTING',
     status: room.status,
+    backgroundImageUrl: room.backgroundImageUrl || null,
+    background: room.backgroundImageUrl || null,
+    coverImageUrl: room.coverImageUrl || null,
     isPinned: Boolean(room.isPinned),
     pinPosition: room.pinPosition || null,
     currentViewersCount: typeof viewerCount === 'number' ? viewerCount : (room.currentViewersCount || 0),
@@ -50,23 +136,7 @@ export function buildRoomSnapshot(room, viewerCount) {
         } : null,
       };
     }),
-    members: (room.members || [])
-      .filter((m) => (m.userId || m.user?.id) !== (room.creatorUserId || room.creator?.id))
-      .map((m) => {
-        const u = m.user || {};
-        const displayName = u.profile?.displayName || u.displayName || u.username || 'User';
-        return {
-          userId: m.userId || u.id,
-          role: m.role || 'LISTENER',
-          user: {
-            id: u.id || m.userId,
-            username: u.username || displayName,
-            displayName,
-            name: displayName,
-            avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
-          },
-        };
-      }),
+    members: membersList,
     createdAt: room.createdAt,
   };
 }
@@ -106,7 +176,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     const userId = socket.userId;
 
     // 1. Authoritative Room Existence and Lifecycle Check
-    const room = await roomRepository.findRoomById(roomId, db || prisma);
+    let room = await roomRepository.findRoomById(roomId, db || prisma);
     if (!room) {
       const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_FOUND, message: 'Room not found' } };
       if (typeof callback === 'function') return callback(err);
@@ -114,9 +184,29 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     }
 
     if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
-      const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_LIVE, message: 'Room is not available or has ended' } };
-      if (typeof callback === 'function') return callback(err);
-      return socket.emit(SOCKET_EVENTS.ERROR, err);
+      // Auto-resolve to creator's active live room session if available
+      const creatorId = room.creatorUserId || room.creator?.id;
+      if (creatorId) {
+        const activeRoom = await (db || prisma).room.findFirst({
+          where: {
+            creatorUserId: creatorId,
+            status: 'LIVE',
+          },
+          select: { id: true },
+        });
+        if (activeRoom) {
+          const resolvedRoom = await roomRepository.findRoomById(activeRoom.id, db || prisma);
+          if (resolvedRoom && resolvedRoom.status && ['LIVE', 'ACTIVE', 'OPEN'].includes(resolvedRoom.status.toUpperCase())) {
+            room = resolvedRoom;
+          }
+        }
+      }
+
+      if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
+        const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_LIVE, message: 'Room is not available or has ended' } };
+        if (typeof callback === 'function') return callback(err);
+        return socket.emit(SOCKET_EVENTS.ERROR, err);
+      }
     }
 
     // 2. Immediately subscribe socket to room channel so broadcasts & chat are reliably delivered
@@ -126,6 +216,9 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         socket.join(`room:${room.id}`);
       }
     }
+    socket.joinedRooms = socket.joinedRooms || new Set();
+    socket.joinedRooms.add(roomId);
+    socket.joinedRooms.add(room.id);
 
     // 3. Persistent RoomMember registration via authoritative Room Service
     let joinResult = null;
@@ -141,18 +234,55 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       clearHostAbsentTimer(room.id, io);
     }
 
-    // 4. Ephemeral Presence Tracking
+    const clientUser = data?.user || {};
+    const effectiveJoinedId = clientUser.id || clientUser.userId || socket.user?.id || userId;
+    const fallbackGuestName = String(effectiveJoinedId).startsWith('guest_')
+      ? `User_${String(effectiveJoinedId).replace('guest_', '').substring(0, 5)}`
+      : `User_${String(effectiveJoinedId).substring(0, 6)}`;
+    const effectiveJoinedName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || fallbackGuestName;
+    let effectiveJoinedAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
+    const effectiveJoinedVip = Boolean(clientUser.isVip || socket.user?.isVip);
+    const effectiveJoinedNoble = clientUser.nobleTitle || socket.user?.nobleTitle || null;
+    const isGuestUser = Boolean(socket.isGuest || String(effectiveJoinedId).startsWith('guest_'));
+
+    if (!effectiveJoinedAvatar && effectiveJoinedId && !isGuestUser) {
+      try {
+        const uRec = await (db || prisma).user.findUnique({
+          where: { id: effectiveJoinedId },
+          select: { avatarUrl: true, profile: { select: { avatarUrl: true } } },
+        });
+        effectiveJoinedAvatar = uRec?.profile?.avatarUrl || uRec?.avatarUrl || null;
+      } catch (_) {}
+    }
+
+    // 4. Ephemeral Presence Tracking with rich user metadata
     let isFirstSocket = true;
     try {
-      const pres = await presenceService.addSocketToRoom(room.id, userId, socket.id);
+      const pres = await presenceService.addSocketToRoom(room.id, effectiveJoinedId, socket.id, {
+        displayName: effectiveJoinedName,
+        avatarUrl: effectiveJoinedAvatar,
+        isGuest: isGuestUser,
+        joinedAt: new Date().toISOString(),
+      });
       isFirstSocket = pres?.isFirstSocket ?? true;
     } catch (_) {}
 
     // 5. Generate and Send Authoritative Room Snapshot
-    const currentCount = typeof joinResult?.currentViewersCount === 'number'
-      ? joinResult.currentViewersCount
-      : (typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 1);
-    const snapshot = buildRoomSnapshot(room, currentCount);
+    let currentCount = 0;
+    try {
+      currentCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
+    } catch (_) {
+      currentCount = typeof joinResult?.currentViewersCount === 'number'
+        ? joinResult.currentViewersCount
+        : (typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 1);
+    }
+
+    let activeUsers = [];
+    try {
+      activeUsers = await presenceService.getRoomActiveUsers(room.id);
+    } catch (_) {}
+
+    const snapshot = buildRoomSnapshot(room, currentCount, activeUsers);
     socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, {
       room: snapshot,
       ...snapshot,
@@ -164,17 +294,15 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
 
     // 6. Broadcast user joined event ONLY on genuine initial entry (not reconnects/pings)
     if (isFirstSocket) {
-      const clientUser = data?.user || {};
-      const effectiveJoinedId = clientUser.id || clientUser.userId || socket.user?.id || userId;
-      const effectiveJoinedName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || 'Viewer';
-      const effectiveJoinedAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
-      const effectiveJoinedVip = Boolean(clientUser.isVip || socket.user?.isVip);
-      const effectiveJoinedNoble = clientUser.nobleTitle || socket.user?.nobleTitle || null;
+      const targetRoomIds = Array.from(new Set([String(roomId), String(room.id)]));
+      const broadcastTarget = io
+        ? io.to(targetRoomIds.map((id) => `room:${id}`))
+        : (socket.to ? socket.to(`room:${roomId}`) : socket);
 
-      const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
       const userPayload = {
         roomId: room.id,
         clientRoomId: roomId,
+        room: room.id,
         userId: effectiveJoinedId,
         id: effectiveJoinedId,
         user: {
@@ -187,6 +315,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           isVip: effectiveJoinedVip,
           nobleLevel: effectiveJoinedNoble,
           nobleTitle: effectiveJoinedNoble,
+          isGuest: isGuestUser,
         },
         viewerCount: currentCount,
         count: currentCount,
@@ -194,61 +323,75 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       };
 
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
-      broadcastTarget.emit('room:user_joined', userPayload);
       broadcastTarget.emit('user_joined', userPayload);
       broadcastTarget.emit('user:joined', userPayload);
       broadcastTarget.emit('room_user_joined', userPayload);
 
-      if (room.id !== roomId && io) {
-        io.to(`room:${room.id}`).emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
-        io.to(`room:${room.id}`).emit('room:user_joined', userPayload);
-      }
-
       const viewerPayload = {
         roomId: room.id,
         clientRoomId: roomId,
+        room: room.id,
         viewerCount: currentCount,
         count: currentCount,
         currentViewersCount: currentCount,
       };
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
-      broadcastTarget.emit('room:viewer_count_changed', viewerPayload);
       broadcastTarget.emit('room:viewer_count', viewerPayload);
       broadcastTarget.emit('viewer_count_changed', viewerPayload);
-
-      if (room.id !== roomId && io) {
-        io.to(`room:${room.id}`).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
-      }
 
       // 7. Broadcast system chat announcement so all room participants see "[User] has joined the party"
       const chatPayload = {
         id: `sys_join_${Date.now()}_${effectiveJoinedId}`,
         roomId: room.id,
         clientRoomId: roomId,
+        room: room.id,
         userId: effectiveJoinedId,
+        senderId: effectiveJoinedId,
         sender: {
           id: effectiveJoinedId,
+          userId: effectiveJoinedId,
           username: clientUser.username || socket.user?.username || effectiveJoinedName,
           name: effectiveJoinedName,
           displayName: effectiveJoinedName,
           avatarUrl: effectiveJoinedAvatar,
           isVip: effectiveJoinedVip,
           nobleLevel: effectiveJoinedNoble,
+          nobleTitle: effectiveJoinedNoble,
+        },
+        user: {
+          id: effectiveJoinedId,
+          userId: effectiveJoinedId,
+          username: clientUser.username || socket.user?.username || effectiveJoinedName,
+          name: effectiveJoinedName,
+          displayName: effectiveJoinedName,
+          avatarUrl: effectiveJoinedAvatar,
+          isVip: effectiveJoinedVip,
+          nobleLevel: effectiveJoinedNoble,
+          nobleTitle: effectiveJoinedNoble,
         },
         text: `${effectiveJoinedName} has joined the party 🎉`,
+        message: `${effectiveJoinedName} has joined the party 🎉`,
+        content: `${effectiveJoinedName} has joined the party 🎉`,
         type: 'SYSTEM',
         isSystemMessage: true,
         timestamp: new Date().toISOString(),
       };
-      broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_RECEIVE, chatPayload);
-      broadcastTarget.emit('room:chat_message', chatPayload);
+
+      broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
       broadcastTarget.emit('room:chat', chatPayload);
       broadcastTarget.emit('chat_message', chatPayload);
+      broadcastTarget.emit('room_chat_message', chatPayload);
+    }
 
-      if (room.id !== roomId && io) {
-        io.to(`room:${room.id}`).emit(SOCKET_EVENTS.ROOM_CHAT_RECEIVE, chatPayload);
-        io.to(`room:${room.id}`).emit('room:chat_message', chatPayload);
-      }
+    // 8. Update Authoritative User Room Presence
+    if (userId && !socket.isGuest && !String(userId).startsWith('guest_')) {
+      try {
+        await presenceService.setUserActiveRoom(userId, room.id);
+        const pres = await presenceService.getUserPresence(userId, db || prisma);
+        if (io) {
+          presenceService.broadcastPresenceChange(io, userId, pres);
+        }
+      } catch (_) {}
     }
 
     if (typeof callback === 'function') {
@@ -287,6 +430,9 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
     if (typeof socket.leave === 'function') {
       socket.leave(`room:${roomId}`);
     }
+    if (socket.joinedRooms) {
+      socket.joinedRooms.delete(roomId);
+    }
 
     // 2. Remove socket from presence tracker
     let isLastSocket = true;
@@ -305,9 +451,14 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
       let leaveResult = null;
       try {
         leaveResult = await roomService.leaveRoom(roomId, userId, db);
-        updatedViewerCount = leaveResult?.currentViewersCount || 0;
       } catch (leaveErr) {
         // Safe fallback
+      }
+
+      try {
+        updatedViewerCount = await presenceService.getRoomViewerCount(roomId, room?.creatorUserId);
+      } catch (_) {
+        updatedViewerCount = leaveResult?.currentViewersCount || 0;
       }
 
       const isRoomEnded = leaveResult?.status === 'ENDED';
@@ -336,23 +487,55 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
         broadcastTarget.emit('room:host_left', hostAwayPayload);
         startHostAbsentTimer(roomId, room.roomType || 'LIVE_VIDEO', userId, io);
       } else {
-        const leftPayload = { roomId, userId };
+        const leftPayload = {
+          roomId: room ? room.id : roomId,
+          clientRoomId: roomId,
+          userId,
+          id: userId,
+          viewerCount: updatedViewerCount,
+          count: updatedViewerCount,
+          currentViewersCount: updatedViewerCount,
+          user: {
+            id: userId,
+            displayName: socket.user?.displayName || socket.user?.name || (socket.isGuest ? `User_${String(userId).replace('guest_', '').substring(0, 5)}` : 'Viewer'),
+            name: socket.user?.displayName || socket.user?.name || (socket.isGuest ? `User_${String(userId).replace('guest_', '').substring(0, 5)}` : 'Viewer'),
+            username: socket.user?.username || 'user',
+            avatarUrl: socket.user?.avatarUrl || null,
+            isGuest: Boolean(socket.isGuest || String(userId).startsWith('guest_')),
+          },
+        };
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, leftPayload);
-        broadcastTarget.emit('room:user_left', leftPayload);
         broadcastTarget.emit('user_left', leftPayload);
         broadcastTarget.emit('user:left', leftPayload);
+        broadcastTarget.emit('room_user_left', leftPayload);
 
         const countPayload = {
-          roomId,
+          roomId: room ? room.id : roomId,
+          clientRoomId: roomId,
           viewerCount: updatedViewerCount,
           count: updatedViewerCount,
           currentViewersCount: updatedViewerCount,
         };
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, countPayload);
-        broadcastTarget.emit('room:viewer_count_changed', countPayload);
         broadcastTarget.emit('room:viewer_count', countPayload);
         broadcastTarget.emit('viewer_count_changed', countPayload);
       }
+    }
+
+    // 4. Update Authoritative User Room Presence on Leave & Clear Pending Mic Invites
+    if (userId) {
+      try {
+        await micInviteService.clearPendingInvitesForUser(roomId, userId);
+      } catch (_) {}
+    }
+    if (userId && !socket.isGuest && !String(userId).startsWith('guest_')) {
+      try {
+        await presenceService.clearUserActiveRoom(userId, roomId);
+        const pres = await presenceService.getUserPresence(userId, db);
+        if (io) {
+          presenceService.broadcastPresenceChange(io, userId, pres);
+        }
+      } catch (_) {}
     }
 
     if (typeof callback === 'function') {
@@ -376,11 +559,34 @@ export async function onSocketDisconnect(io, socket, db) {
     const userId = socket.userId;
     if (!userId) return;
 
-    const joinedRooms = Array.from(socket.rooms || [])
-      .filter((r) => typeof r === 'string' && r.startsWith('room:'))
-      .map((r) => r.replace(/^room:/, ''));
+    // Track rooms cleaned up for this socket to ensure idempotency across 'disconnecting' and 'disconnect'
+    socket._cleanedRooms = socket._cleanedRooms || new Set();
+
+    const roomCandidates = new Set();
+    if (socket.rooms) {
+      for (const r of socket.rooms) {
+        if (typeof r === 'string' && r.startsWith('room:')) {
+          roomCandidates.add(r.replace(/^room:/, ''));
+        }
+      }
+    }
+    if (socket.joinedRooms) {
+      for (const r of socket.joinedRooms) {
+        if (typeof r === 'string') {
+          roomCandidates.add(r.replace(/^room:/, ''));
+        }
+      }
+      socket.joinedRooms.clear();
+    }
+
+    const joinedRooms = Array.from(roomCandidates);
 
     for (const roomId of joinedRooms) {
+      if (socket._cleanedRooms.has(roomId)) {
+        continue;
+      }
+      socket._cleanedRooms.add(roomId);
+
       try {
         let isLastSocket = true;
         try {
@@ -393,12 +599,22 @@ export async function onSocketDisconnect(io, socket, db) {
           if (!room || room.status !== 'LIVE') continue;
 
           const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
-          const leaveResult = await roomService.leaveRoom(roomId, userId, db).catch(() => null);
-          const updatedViewerCount = leaveResult?.currentViewersCount || 0;
+          const isAudioParty = (room.roomType || '').toUpperCase().includes('AUDIO') || (room.roomType || '').toUpperCase().includes('PARTY');
+
+          let leaveResult = null;
+          if (!isHostUser || !isAudioParty) {
+            leaveResult = await roomService.leaveRoom(roomId, userId, db).catch(() => null);
+          }
+
+          let updatedViewerCount = 0;
+          try {
+            updatedViewerCount = await presenceService.getRoomViewerCount(roomId, room.creatorUserId);
+          } catch (_) {
+            updatedViewerCount = leaveResult?.currentViewersCount || 0;
+          }
           const broadcastTarget = io ? io.to(`room:${roomId}`) : socket;
 
           if (isHostUser) {
-            const isAudioParty = (room.roomType || '').toUpperCase().includes('AUDIO') || (room.roomType || '').toUpperCase().includes('PARTY');
             if (isAudioParty) {
               startHostAbsentTimer(roomId, 'AUDIO_PARTY', userId, io);
             } else {
@@ -416,24 +632,65 @@ export async function onSocketDisconnect(io, socket, db) {
               startHostAbsentTimer(roomId, 'LIVE_VIDEO', userId, io);
             }
           } else {
-            const leftPayload = { roomId, userId };
+            const leftPayload = {
+              roomId: room.id,
+              clientRoomId: roomId,
+              userId,
+              id: userId,
+              viewerCount: updatedViewerCount,
+              count: updatedViewerCount,
+              currentViewersCount: updatedViewerCount,
+              user: {
+                id: userId,
+                displayName: socket.user?.displayName || socket.user?.name || (socket.isGuest ? `User_${String(userId).replace('guest_', '').substring(0, 5)}` : 'Viewer'),
+                name: socket.user?.displayName || socket.user?.name || (socket.isGuest ? `User_${String(userId).replace('guest_', '').substring(0, 5)}` : 'Viewer'),
+                username: socket.user?.username || 'user',
+                avatarUrl: socket.user?.avatarUrl || null,
+                isGuest: Boolean(socket.isGuest || String(userId).startsWith('guest_')),
+              },
+            };
             broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, leftPayload);
-            broadcastTarget.emit('room:user_left', leftPayload);
             broadcastTarget.emit('user_left', leftPayload);
             broadcastTarget.emit('user:left', leftPayload);
+            broadcastTarget.emit('room_user_left', leftPayload);
 
             const countPayload = {
-              roomId,
+              roomId: room.id,
+              clientRoomId: roomId,
               viewerCount: updatedViewerCount,
               count: updatedViewerCount,
               currentViewersCount: updatedViewerCount,
             };
             broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, countPayload);
-            broadcastTarget.emit('room:viewer_count_changed', countPayload);
+            broadcastTarget.emit('room:viewer_count', countPayload);
+            broadcastTarget.emit('viewer_count_changed', countPayload);
+          }
+          if (userId) {
+            try {
+              await micInviteService.clearPendingInvitesForUser(roomId, userId);
+            } catch (_) {}
           }
         }
       } catch (innerErr) {
         console.warn(`[RoomSocket] Error handling disconnect for room ${roomId}:`, innerErr?.message);
+      }
+    }
+
+    // Authoritative global connection presence cleanup
+    if (!socket._cleanedGlobalPresence && userId) {
+      socket._cleanedGlobalPresence = true;
+      try {
+        const { isLastSocket, userId: unregUserId } = await presenceService.unregisterUserSocket(userId, socket.id);
+        const effectiveUserId = unregUserId || userId;
+        if (isLastSocket && effectiveUserId && !socket.isGuest && !String(effectiveUserId).startsWith('guest_')) {
+          await presenceService.clearUserActiveRoom(effectiveUserId);
+          const pres = await presenceService.getUserPresence(effectiveUserId, db);
+          if (io) {
+            presenceService.broadcastPresenceChange(io, effectiveUserId, pres);
+          }
+        }
+      } catch (presErr) {
+        console.warn('[RoomSocket] Warning unregistering global socket presence:', presErr?.message);
       }
     }
   } catch (err) {
@@ -457,17 +714,34 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    const snapshot = {
-      room,
-      host: room.creator || null,
-      seats: room.seats || [],
+    let viewerCount = 0;
+    try {
+      viewerCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
+    } catch (_) {
+      viewerCount = room.currentViewersCount || 0;
+    }
+
+    let activeUsers = [];
+    try {
+      activeUsers = await presenceService.getRoomActiveUsers(room.id);
+    } catch (_) {}
+
+    const snapshot = buildRoomSnapshot(room, viewerCount, activeUsers);
+    const responsePayload = {
+      room: snapshot,
+      ...snapshot,
+      host: snapshot.host,
+      seats: snapshot.seats || [],
+      members: snapshot.members || [],
+      currentViewersCount: viewerCount,
+      viewerCount,
       timestamp: new Date().toISOString(),
     };
 
-    socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, snapshot);
+    socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, responsePayload);
 
     if (typeof callback === 'function') {
-      return callback({ success: true, data: snapshot });
+      return callback({ success: true, data: responsePayload });
     }
   } catch (err) {
     const errorResponse = {
@@ -712,6 +986,8 @@ export async function onKickUser(arg1, arg2, arg3, arg4, arg5) {
   try {
     const roomId = data?.roomId;
     const targetUserId = data?.targetUserId;
+    const reason = data?.reason;
+    const actorUserId = socket.userId;
 
     if (!roomId || !targetUserId) {
       const err = {
@@ -722,23 +998,234 @@ export async function onKickUser(arg1, arg2, arg3, arg4, arg5) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    const payload = {
-      roomId,
-      targetUserId,
-      kickedByUserId: socket.userId,
-      timestamp: new Date().toISOString(),
-    };
+    const result = await roomService.kickRoomUser(roomId, actorUserId, { targetUserId, reason });
 
-    const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
-    broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_KICKED, payload);
+    try {
+      await presenceService.clearUserActiveRoom(targetUserId, roomId);
+      const pres = await presenceService.getUserPresence(targetUserId);
+      if (io) {
+        presenceService.broadcastPresenceChange(io, targetUserId, pres);
+      }
+    } catch (_) {}
 
     if (typeof callback === 'function') {
-      return callback({ success: true, message: 'User kicked successfully', data: payload });
+      return callback({ success: true, message: 'User kicked successfully', data: result.data });
     }
   } catch (err) {
     const errorResponse = {
       success: false,
       error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to kick user' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onRemoveFromMic(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const targetUserId = data?.targetUserId;
+    const reason = data?.reason;
+    const actorUserId = socket.userId;
+
+    if (!roomId || !targetUserId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.VALIDATION_ERROR, message: 'roomId and targetUserId are required' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const result = await roomService.removeRoomUserFromMic(roomId, actorUserId, { targetUserId, reason });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: 'User removed from mic successfully', data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to remove user from mic' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onMuteUser(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const targetUserId = data?.targetUserId;
+    const isMuted = data?.isMuted !== undefined ? Boolean(data.isMuted) : true;
+    const reason = data?.reason;
+    const actorUserId = socket.userId;
+
+    if (!roomId || !targetUserId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.VALIDATION_ERROR, message: 'roomId and targetUserId are required' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const result = await roomService.moderateRoomUserMute(roomId, actorUserId, { targetUserId, isMuted, reason });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: isMuted ? 'User muted successfully' : 'User unmuted successfully', data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to update mute state' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onModerateUser(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const targetUserId = data?.targetUserId;
+    const action = data?.action;
+    const isMuted = data?.isMuted;
+    const reason = data?.reason;
+    const actorUserId = socket.userId;
+
+    if (!roomId || !targetUserId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.VALIDATION_ERROR, message: 'roomId and targetUserId are required' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const result = await roomService.moderateRoomUser(roomId, actorUserId, { targetUserId, action, isMuted, reason });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: result.message, data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to perform moderation' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Change 13: Live Viewers Mic Invitation Handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function onInviteToMic(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const targetUserId = data?.targetUserId;
+    const seatIndex = data?.seatIndex !== undefined && data?.seatIndex !== null ? Number(data.seatIndex) : null;
+    const actorUserId = socket.userId;
+
+    const result = await micInviteService.createMicInvite({
+      roomId,
+      actorUserId,
+      targetUserId,
+      seatIndex,
+    });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: 'Invitation to mic sent successfully', data: result });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to send invitation to mic' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onAcceptMicInvite(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const invitationId = data?.invitationId;
+    const userId = socket.userId;
+
+    const result = await micInviteService.acceptMicInvite({
+      roomId,
+      invitationId,
+      userId,
+    });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: 'Joined mic successfully', data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to accept mic invitation' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onDeclineMicInvite(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const invitationId = data?.invitationId;
+    const reason = data?.reason || (data?.isPermissionDenied ? 'PERMISSION_DENIED' : 'DECLINED_BY_USER');
+    const userId = socket.userId;
+
+    const result = await micInviteService.declineMicInvite({
+      roomId,
+      invitationId,
+      userId,
+      reason,
+    });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: result.message, data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to decline mic invitation' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onCancelMicInvite(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const invitationId = data?.invitationId;
+    const actorUserId = socket.userId;
+
+    const result = await micInviteService.cancelMicInvite({
+      roomId,
+      invitationId,
+      actorUserId,
+    });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: result.message, data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to cancel mic invitation' },
     };
     if (typeof callback === 'function') return callback(errorResponse);
     socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
@@ -803,13 +1290,88 @@ export async function onSendRoomLike(arg1, arg2, arg3, arg4, arg5) {
   }
 }
 
+export async function onUpdateRoomBackground(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId || data?.id;
+    const rawBackground = data?.backgroundImageUrl !== undefined ? data.backgroundImageUrl : data?.background;
+    const userId = socket.user?.id || socket.userId;
+
+    if (!roomId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.VALIDATION_ERROR, message: 'Valid roomId is required' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    if (!userId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.UNAUTHORIZED, message: 'Authentication required to update background' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const result = await roomService.updateRoomBackground(roomId, userId, {
+      backgroundImageUrl: rawBackground,
+    });
+
+    const payload = {
+      roomId: result.roomId,
+      backgroundImageUrl: result.backgroundImageUrl,
+      background: result.background,
+      updatedBy: userId,
+      timestamp: new Date().toISOString(),
+    };
+
+    const broadcastTarget = io ? io.to(`room:${result.roomId}`) : (socket.to ? socket.to(`room:${result.roomId}`) : socket);
+    broadcastTarget.emit('room:background_updated', payload);
+    broadcastTarget.emit('room_background_updated', payload);
+    broadcastTarget.emit('room:update_background', payload);
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, data: result });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to update background' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
 export function registerRoomHandlers(io, socket) {
+  socket.on(
+    'room:update_background',
+    withRateLimit('ROOM_BG', 10, 1000, (s, d, cb) => onUpdateRoomBackground(io, s, d, cb))
+  );
+  socket.on(
+    'room:change_background',
+    withRateLimit('ROOM_BG', 10, 1000, (s, d, cb) => onUpdateRoomBackground(io, s, d, cb))
+  );
+  socket.on(
+    'update_room_background',
+    withRateLimit('ROOM_BG', 10, 1000, (s, d, cb) => onUpdateRoomBackground(io, s, d, cb))
+  );
+
   socket.on(
     SOCKET_EVENTS.ROOM_JOIN,
     withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
   );
   socket.on(
     'room_join',
+    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
+  );
+  socket.on(
+    'join_room',
+    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
+  );
+  socket.on(
+    'join:room',
     withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
   );
 
@@ -884,6 +1446,49 @@ export function registerRoomHandlers(io, socket) {
   socket.on(
     SOCKET_EVENTS.ROOM_KICK_USER,
     withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onKickUser(io, s, d, cb))
+  );
+  socket.on(
+    'room:kick_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onKickUser(io, s, d, cb))
+  );
+  socket.on(
+    'kick_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onKickUser(io, s, d, cb))
+  );
+
+  socket.on(
+    'room:remove_from_mic',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onRemoveFromMic(io, s, d, cb))
+  );
+  socket.on(
+    'room:remove_mic',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onRemoveFromMic(io, s, d, cb))
+  );
+  socket.on(
+    'remove_from_mic',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onRemoveFromMic(io, s, d, cb))
+  );
+
+  socket.on(
+    'room:mute_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onMuteUser(io, s, d, cb))
+  );
+  socket.on(
+    'room:mute_participant',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onMuteUser(io, s, d, cb))
+  );
+  socket.on(
+    'mute_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onMuteUser(io, s, d, cb))
+  );
+
+  socket.on(
+    'room:moderate_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onModerateUser(io, s, d, cb))
+  );
+  socket.on(
+    'moderate_user',
+    withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onModerateUser(io, s, d, cb))
   );
 
   // Real-time Room Mic Invitations (Change 13: Direct User Delivery & Robust Room Routing)
@@ -1020,6 +1625,85 @@ export function registerRoomHandlers(io, socket) {
     withRateLimit('ROOM_ACTIVE_LIST', 15, 1000, (s, d, cb) => onRequestActiveRooms(s, d, cb))
   );
 
+  // Change 13: Mic Invitations from Live Viewers
+  socket.on(
+    SOCKET_EVENTS.MIC_INVITATION_SEND,
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+  socket.on(
+    'room:mic_invite',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+  socket.on(
+    'room:invite_to_mic',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+  socket.on(
+    'room:invite_mic',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+  socket.on(
+    'invite_to_mic',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+  socket.on(
+    'invite_mic',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+
+  socket.on(
+    SOCKET_EVENTS.MIC_INVITATION_ACCEPT,
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onAcceptMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'room:mic_invite_accept',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onAcceptMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'accept_mic_invite',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onAcceptMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'mic_invite_accept',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onAcceptMicInvite(io, s, d, cb))
+  );
+
+  socket.on(
+    SOCKET_EVENTS.MIC_INVITATION_DECLINE,
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onDeclineMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'room:mic_invite_decline',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onDeclineMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'decline_mic_invite',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onDeclineMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'mic_invite_decline',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onDeclineMicInvite(io, s, d, cb))
+  );
+
+  socket.on(
+    SOCKET_EVENTS.MIC_INVITATION_CANCEL,
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onCancelMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'room:mic_invite_cancel',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onCancelMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'cancel_mic_invite',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onCancelMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'mic_invite_cancel',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onCancelMicInvite(io, s, d, cb))
+  );
+
+  // Handle both disconnecting (before leaveAll) and disconnect (as safety fallback)
+  socket.on('disconnecting', () => onSocketDisconnect(io, socket));
   socket.on(SOCKET_EVENTS.DISCONNECT, () => onSocketDisconnect(io, socket));
 }
 
@@ -1033,6 +1717,14 @@ export default {
   onSendRoomEmoji,
   onSendRoomLike,
   onKickUser,
+  onRemoveFromMic,
+  onMuteUser,
+  onModerateUser,
+  onInviteToMic,
+  onAcceptMicInvite,
+  onDeclineMicInvite,
+  onCancelMicInvite,
+  onUpdateRoomBackground,
   onSocketDisconnect,
   registerRoomHandlers,
 };

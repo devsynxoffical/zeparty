@@ -613,6 +613,28 @@ export function UserDetailPage() {
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
                 <h1 className="text-2xl font-bold text-white">{user.displayName}</h1>
                 <StatusBadge status={user.status} />
+                {/* Real-time Authoritative Presence Indicator */}
+                {user.presenceStatus === 'IN_ROOM' ? (
+                  <Badge variant="purple" className="flex items-center gap-1.5 px-2.5 py-0.5">
+                    <span className="h-2 w-2 rounded-full bg-purple-400 animate-pulse" />
+                    <span>In Room: {user.currentRoomTitle || user.presence?.currentRoomTitle || user.currentRoomId || 'Party Room'}</span>
+                  </Badge>
+                ) : user.presenceStatus === 'ONLINE' ? (
+                  <Badge variant="success" className="flex items-center gap-1.5 px-2.5 py-0.5">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                    <span>Online</span>
+                  </Badge>
+                ) : user.presenceStatus === 'UNKNOWN' ? (
+                  <Badge variant="neutral" className="flex items-center gap-1.5 px-2.5 py-0.5 text-slate-400">
+                    <span className="h-2 w-2 rounded-full bg-amber-400/60" />
+                    <span>Status Unknown</span>
+                  </Badge>
+                ) : (
+                  <Badge variant="neutral" className="flex items-center gap-1.5 px-2.5 py-0.5 text-slate-400">
+                    <span className="h-2 w-2 rounded-full bg-slate-500" />
+                    <span>Offline</span>
+                  </Badge>
+                )}
                 {user.nobleRank && <Badge variant="purple">👑 {user.nobleRank}</Badge>}
                 <Badge variant="warning">💎 Wealth Lv. {user.wealthLevel || 1}</Badge>
                 <Badge variant="info">💖 Charm Lv. {user.charmLevel || 1}</Badge>

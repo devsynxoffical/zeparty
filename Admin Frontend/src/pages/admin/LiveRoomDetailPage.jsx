@@ -19,6 +19,8 @@ import {
   toggleRoomMute,
   muteParticipant,
   kickParticipant,
+  removeFromMic,
+  inviteToMic,
   updateRoomCoverDp,
   deleteRoomCoverDp,
 } from '../../services/modules/liveRooms.service';
@@ -220,6 +222,29 @@ export function LiveRoomDetailPage() {
     refreshHistory();
   };
 
+  const handleRemoveFromMic = async (row) => {
+    try {
+      await removeFromMic(room?.id, row.id, 'Participant removed from mic seat by admin');
+      await addLog('REMOVE_FROM_MIC', row.id, 'Live Rooms', `Removed participant ${row.name} from mic seat`);
+      setParticipants((prev) => prev.map((p) => (p.id === row.id ? { ...p, micOn: false } : p)));
+    } catch (err) {
+      console.error('Failed to remove participant from mic:', err);
+    }
+    refreshHistory();
+  };
+
+  const handleInviteToMic = async (row) => {
+    try {
+      await inviteToMic(room?.id, row.id);
+      await addLog('INVITE_TO_MIC', row.id, 'Live Rooms', `Invited viewer ${row.name} to microphone seat`);
+      alert(`Invitation to mic sent to ${row.name}`);
+    } catch (err) {
+      console.error('Failed to invite viewer to mic:', err);
+      alert(err.response?.data?.message || err.message || 'Failed to send mic invitation');
+    }
+    refreshHistory();
+  };
+
   const handleDeleteRoomDp = async () => {
     try {
       await deleteRoomCoverDp(room?.id);
@@ -301,7 +326,19 @@ export function LiveRoomDetailPage() {
       key: 'actions',
       header: 'Actions',
       render: (row) => (
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          {row.micOn ? (
+            <button onClick={() => handleRemoveFromMic(row)} className="text-xs text-sky-400 hover:underline">
+              Remove Mic
+            </button>
+          ) : (
+            <button
+              onClick={() => handleInviteToMic(row)}
+              className="text-xs text-emerald-400 hover:underline font-medium"
+            >
+              Invite to Mic
+            </button>
+          )}
           <button onClick={() => handleMuteParticipant(row)} className={`text-xs hover:underline ${row.micOn ? 'text-amber-400' : 'text-slate-400'}`}>
             {row.micOn ? 'Mute' : 'Unmute'}
           </button>

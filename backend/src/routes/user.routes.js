@@ -18,6 +18,7 @@ adminUserRouter.post('/grant-unique', requirePermission('view_users'), userContr
 adminUserRouter.post('/revoke-unique', requirePermission('view_users'), userController.postAdminRevokeUniqueItem);
 
 // User Details & Admin Controls
+adminUserRouter.get('/:id/presence', requirePermission('view_users'), userController.getUserPresence);
 adminUserRouter.get('/:id/details', requirePermission('view_users'), userController.getAdminUserDetails);
 adminUserRouter.put('/:id/bank-info', requirePermission('view_users'), userController.putAdminUserBankInfo);
 adminUserRouter.patch('/:id/bank-info', requirePermission('view_users'), userController.putAdminUserBankInfo);
@@ -114,6 +115,7 @@ userProfileRouter.get('/:id/following', optionalAuthenticate, socialController.g
 userProfileRouter.post('/:id/block', authenticate, socialController.postBlock);
 userProfileRouter.delete('/:id/block', authenticate, socialController.deleteBlock);
 
+userProfileRouter.get('/:id/presence', optionalAuthenticate, userController.getUserPresence);
 userProfileRouter.get('/:id', authenticate, userController.getPublicUserById);
 
 export default {

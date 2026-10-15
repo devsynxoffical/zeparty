@@ -33,6 +33,7 @@ export const SOCKET_EVENTS = {
   // In-Room Chat & Messaging
   ROOM_CHAT_SEND: 'room:chat_send',
   ROOM_CHAT_MESSAGE: 'room:chat_message',
+  ROOM_CHAT_RECEIVE: 'room:chat_message',
 
   // Gifting & Tipping
   ROOM_GIFT_SEND: 'room:gift_send',
@@ -51,14 +52,36 @@ export const SOCKET_EVENTS = {
   ROOM_EMOJI_SEND: 'room:emoji_send',
   ROOM_EMOJI_RECEIVED: 'room:emoji',
 
-  // PK Battles (Phase 19)
+  // PK Battles (Phase 19 & 2.0 Redesign)
+  PK_INVITATION_RECEIVED: 'pk:invitation_received',
+  PK_INVITATION_RESPONDED: 'pk:invitation_responded',
+  PK_INVITATION_CANCELLED: 'pk:invitation_cancelled',
+  PK_INVITATION_EXPIRED: 'pk:invitation_expired',
+  PK_PREPARING: 'pk:preparing',
+  PK_READY_CHANGED: 'pk:ready_changed',
+  PK_COUNTDOWN_STARTED: 'pk:countdown_started',
+  PK_MATCH_STARTED: 'pk:match_started',
+  PK_SCORE_UPDATED: 'pk:score_updated',
+  PK_HOST_CONNECTION_CHANGED: 'pk:host_connection_changed',
+  PK_MATCH_FINISHED: 'pk:match_finished',
+  PK_MATCH_FORFEITED: 'pk:match_forfeited',
+  PK_MATCH_ABORTED: 'pk:match_aborted',
   PK_START: 'pk:start',
   PK_STARTED: 'pk:started',
   PK_ACTIVATE: 'pk:activate',
   PK_ACTIVE: 'pk:active',
-  PK_SCORE_UPDATED: 'pk:score_updated',
   PK_END: 'pk:end',
   PK_ENDED: 'pk:ended',
+
+  // Mic Invitations (Change 13: Room Live Viewers)
+  MIC_INVITATION_SEND: 'room:mic_invite',
+  MIC_INVITATION_RECEIVED: 'room:mic_invitation',
+  MIC_INVITATION_ACCEPT: 'room:accept_mic_invite',
+  MIC_INVITATION_ACCEPTED: 'room:mic_invite_accepted',
+  MIC_INVITATION_DECLINE: 'room:decline_mic_invite',
+  MIC_INVITATION_DECLINED: 'room:mic_invite_declined',
+  MIC_INVITATION_CANCEL: 'room:cancel_mic_invite',
+  MIC_INVITATION_CANCELLED: 'room:mic_invite_cancelled',
 
   // Settlements & Payroll
   SETTLEMENT_CREATED: 'settlement:created',
@@ -112,6 +135,15 @@ export const SOCKET_ERRORS = {
   VALIDATION_ERROR: 'VALIDATION_ERROR',
   INSUFFICIENT_FUNDS: 'INSUFFICIENT_FUNDS',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  PENDING_INVITE_EXISTS: 'PENDING_INVITE_EXISTS',
+  INVITATION_EXPIRED: 'INVITATION_EXPIRED',
+  INVITATION_NOT_FOUND: 'INVITATION_NOT_FOUND',
+  ROOM_FULL: 'ROOM_FULL',
+  NO_AVAILABLE_SEATS: 'NO_AVAILABLE_SEATS',
+  ALREADY_ON_MIC: 'ALREADY_ON_MIC',
+  CANNOT_INVITE_SELF: 'CANNOT_INVITE_SELF',
+  CANNOT_INVITE_OWNER: 'CANNOT_INVITE_OWNER',
+  TARGET_NOT_IN_ROOM: 'TARGET_NOT_IN_ROOM',
 };
 
 export default {

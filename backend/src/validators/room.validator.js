@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const createRoomSchema = z.object({
   title: z.string().trim().min(1, 'Title is required').max(100),
   coverImageUrl: z.string().max(1000).optional().or(z.literal('')),
+  backgroundImageUrl: z.string().max(2000).optional().nullable().or(z.literal('')),
   roomType: z.preprocess((val) => {
     if (typeof val === 'string') {
       const u = val.toUpperCase().trim();
@@ -22,6 +23,11 @@ export const createRoomSchema = z.object({
   }, z.enum(['MUSIC', 'CHAT', 'GAMING']).default('CHAT')),
   isPrivate: z.boolean().default(false),
   roomPin: z.string().max(10).optional().or(z.literal('')),
+});
+
+export const updateRoomBackgroundSchema = z.object({
+  backgroundImageUrl: z.string().max(2000).optional().nullable().or(z.literal('')),
+  background: z.string().max(2000).optional().nullable().or(z.literal('')),
 });
 
 export const queryActiveRoomsSchema = z.object({
@@ -107,6 +113,24 @@ export const adminKickUserSchema = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
+export const roomModerationSchema = z.object({
+  targetUserId: z.string().min(1, 'Target user ID is required'),
+  action: z.enum(['REMOVE_FROM_MIC', 'REMOVE_MIC', 'MUTE', 'UNMUTE', 'KICK']).optional(),
+  isMuted: z.boolean().optional(),
+  reason: z.string().trim().max(500).optional(),
+});
+
+export const roomModerationTargetSchema = z.object({
+  targetUserId: z.string().min(1, 'Target user ID is required'),
+  reason: z.string().trim().max(500).optional(),
+});
+
+export const roomModerationMuteSchema = z.object({
+  targetUserId: z.string().min(1, 'Target user ID is required'),
+  isMuted: z.boolean().default(true),
+  reason: z.string().trim().max(500).optional(),
+});
+
 export const adminUpdateDpSchema = z.object({
   coverImageUrl: z.string().max(1000).nullable().optional().or(z.literal('')),
 });
@@ -126,6 +150,9 @@ export default {
   adminMuteRoomSchema,
   adminMuteParticipantSchema,
   adminKickUserSchema,
+  roomModerationSchema,
+  roomModerationTargetSchema,
+  roomModerationMuteSchema,
   adminUpdateDpSchema,
   roomIdParamSchema,
 };
