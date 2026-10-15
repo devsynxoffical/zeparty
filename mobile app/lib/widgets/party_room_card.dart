@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/theme_provider.dart';
 import '../models/live_room_model.dart';
+import '../core/services/room_lock_manager.dart';
 import '../providers/game_provider.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -69,7 +70,6 @@ class PartyRoomCard extends StatelessWidget {
                     ),
                   ),
 
-                  // Approved Corner Badges Only (No center dark gradient or center avatar overlay)
                   Positioned(
                     top: 8.h,
                     left: 8.w,
@@ -91,6 +91,36 @@ class PartyRoomCard extends StatelessWidget {
                       ),
                     ),
                   ),
+
+                  // Room Lock Badge (Outside listing)
+                  if (RoomLockManager.instance.isRoomLocked(room.id) || room.isPrivate || room.roomMode == 'Lock mode')
+                    Positioned(
+                      top: 32.h,
+                      left: 8.w,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(6.r),
+                          border: Border.all(color: Colors.cyanAccent, width: 0.8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.lock_rounded, size: 9.sp, color: Colors.cyanAccent),
+                            SizedBox(width: 2.w),
+                            Text(
+                              'Locked',
+                              style: TextStyle(
+                                color: Colors.cyanAccent,
+                                fontSize: 8.sp,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
 
                   Positioned(
                     top: 8.h,

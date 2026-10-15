@@ -8,6 +8,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../core/services/media_upload_service.dart';
 import '../../core/services/room_share_service.dart';
 import 'package:provider/provider.dart';
+import '../../core/services/room_lock_manager.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../models/live_room_model.dart';
 import '../../models/user_model.dart';
@@ -234,6 +235,15 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
       final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+
+      final lockState = RoomLockManager.instance.getRoomState(widget.room.id);
+      if (lockState.isLocked) {
+        partyProv.configureRoomLock(
+          isLocked: lockState.isLocked,
+          mode: lockState.lockMode,
+          pin: lockState.pinCode,
+        );
+      }
 
       void attemptRoomEntry() {
         if (!mounted) return;
@@ -1021,6 +1031,28 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                           },
                                         ),
                                       ),
+                                      if (provider.isRoomLocked) ...[
+                                        const SizedBox(width: 4),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                          decoration: BoxDecoration(
+                                            color: Colors.cyan.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.6), width: 0.8),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.lock_rounded, color: Colors.cyanAccent, size: 9),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                'Locked (${provider.roomLockMode})',
+                                                style: const TextStyle(color: Colors.cyanAccent, fontSize: 8, fontWeight: FontWeight.bold),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ],
@@ -4140,8 +4172,9 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   // ── Module 06: Lock Room Access Control Dialog ──
   void _showLockRoomControlDialog(BuildContext context) {
     final provider = context.read<LivePartyProvider>();
-    final pinCtrl = TextEditingController(text: provider.roomPinCode);
-    String selectedMode = provider.roomLockMode;
+    bool isLockedStatus = RoomLockManager.instance.isRoomLocked(widget.room.id) || provider.isRoomLocked;
+    String selectedMode = RoomLockManager.instance.getRoomLockMode(widget.room.id);
+    final pinCtrl = TextEditingController(text: RoomLockManager.instance.getRoomPin(widget.room.id));
 
     showDialog(
       context: context,
@@ -4151,7 +4184,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
             children: [
-              Icon(provider.isRoomLocked ? Icons.lock_rounded : Icons.lock_open_rounded, color: Colors.cyanAccent),
+              Icon(isLockedStatus ? Icons.lock_rounded : Icons.lock_open_rounded, color: Colors.cyanAccent),
               const SizedBox(width: 8),
               const Text('Room Lock Settings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
             ],
@@ -4165,64 +4198,124 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 children: [
                   const Text('Lock Room Status', style: TextStyle(color: Colors.white, fontSize: 14)),
                   Switch(
-                    value: provider.isRoomLocked,
+                    value: isLockedStatus,
                     activeThumbColor: Colors.cyanAccent,
                     onChanged: (val) {
-                      provider.configureRoomLock(isLocked: val, mode: selectedMode, pin: pinCtrl.text);
-                      setState(() {});
+                      setState(() {
+                        isLockedStatus = val;
+                      });
                     },
                   ),
                 ],
               ),
               const SizedBox(height: 12),
               const Text('Access Protection Mode:', style: TextStyle(color: Colors.white70, fontSize: 12)),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: ['PIN', 'Approval'].map((mode) {
-                  final isSel = selectedMode == mode;
-                  return ChoiceChip(
-                    label: Text(mode, style: TextStyle(color: isSel ? Colors.black : Colors.white)),
-                    selected: isSel,
-                    selectedColor: Colors.cyanAccent,
-                    onSelected: (val) {
-                      if (val) {
-                        setState(() {
-                          selectedMode = mode;
-                        });
-                      }
-                    },
-                  );
-                }).toList(),
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => selectedMode = 'PIN'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: selectedMode == 'PIN' ? Colors.cyanAccent : Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Center(
+                          child: Text(
+                            selectedMode == 'PIN' ? '✓ PIN' : 'PIN',
+                            style: TextStyle(
+                              color: selectedMode == 'PIN' ? Colors.black : Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => selectedMode = 'Approval'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: selectedMode == 'Approval' ? Colors.cyanAccent : Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Center(
+                          child: Text(
+                            selectedMode == 'Approval' ? '✓ Approval' : 'Approval',
+                            style: TextStyle(
+                              color: selectedMode == 'Approval' ? Colors.black : Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               if (selectedMode == 'PIN') ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 TextField(
                   controller: pinCtrl,
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  style: const TextStyle(color: Colors.white, letterSpacing: 4, fontWeight: FontWeight.bold),
                   decoration: InputDecoration(
+                    counterText: '',
                     labelText: '4-Digit Password / PIN',
                     labelStyle: const TextStyle(color: Colors.white70),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.06),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.cyanAccent, width: 1.5),
+                    ),
                   ),
-                  style: const TextStyle(color: Colors.white),
                 ),
               ],
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(d), child: const Text('Close', style: TextStyle(color: Colors.white60))),
+            TextButton(
+              onPressed: () => Navigator.pop(d),
+              child: const Text('Close', style: TextStyle(color: Colors.white60)),
+            ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.cyanAccent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
               onPressed: () {
-                provider.configureRoomLock(
-                  isLocked: true,
+                final pin = pinCtrl.text.trim().isEmpty ? '1234' : pinCtrl.text.trim();
+                RoomLockManager.instance.saveLockSettings(
+                  roomId: widget.room.id,
+                  isLocked: isLockedStatus,
                   mode: selectedMode,
-                  pin: pinCtrl.text.trim().isEmpty ? '1234' : pinCtrl.text.trim(),
+                  pin: pin,
+                );
+                provider.configureRoomLock(
+                  isLocked: isLockedStatus,
+                  mode: selectedMode,
+                  pin: pin,
                 );
                 Navigator.pop(d);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('🔒 Room access configured successfully!'), backgroundColor: Colors.green),
+                  SnackBar(
+                    content: Text(
+                      isLockedStatus
+                          ? '🔒 Room locked ($selectedMode mode) successfully!'
+                          : '🔓 Room is now unlocked!',
+                    ),
+                    backgroundColor: Colors.green,
+                  ),
                 );
               },
               child: const Text('Save Lock Settings', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
