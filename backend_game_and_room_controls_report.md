@@ -193,3 +193,78 @@ Room locking persists in database and is enforced whenever any user attempts ent
      - If `lockMode == "approval"`:
        - User sends `room:request_entry`. Server notifies owner/admins via push/socket.
        - Owner accepts `room:approve_entry`: Server admits user.
+
+---
+
+## 6. Item 01 — Real-Time Room Event Broadcasting (Gifts & Chat Messages)
+### Overview
+When gifts or chat messages are sent in a party room, all participants (sender, recipient, host, and all other room members) must receive the event in real-time on their device feed without needing to refresh or rejoin.
+
+### Real-Time Gift Event Contract
+1. **Trigger**:
+   - When a gift transaction is authorized and ledger-posted via `POST /api/gifts/send` or realtime client emission `room:gift_send`.
+   - **Important**: Only confirmed, successful gifts must be broadcast. Failed or rejected transactions must never emit to the room.
+2. **Authoritative Socket Broadcast**:
+   - Emit `room:gift_sent` (supported aliases: `gift:sent`, `room:gift`) to the room socket room `room:${roomId}`.
+   - **Payload Specification**:
+     ```json
+     {
+       "transactionId": "tx_1729012345678_user123",
+       "id": "tx_1729012345678_user123",
+       "roomId": "room_123",
+       "giftId": "gift_magic_wand",
+       "giftName": "Magic Wand",
+       "giftIcon": "🪄",
+       "quantity": 1,
+       "sender": {
+         "id": "user_alexa",
+         "name": "Alexa",
+         "username": "alexa",
+         "avatarUrl": "https://..."
+       },
+       "senderUserId": "user_alexa",
+       "senderName": "Alexa",
+       "senderAvatar": "https://...",
+       "receiver": {
+         "id": "user_javis",
+         "name": "Javis",
+         "username": "javis",
+         "avatarUrl": "https://..."
+       },
+       "receiverUserId": "user_javis",
+       "receiverName": "Javis",
+       "receiverAvatar": "https://...",
+       "timestamp": "2026-10-15T10:30:00.000Z"
+     }
+     ```
+3. **Idempotency & Deduplication**:
+   - Every broadcast must include a stable `transactionId` (or `id`).
+   - Clients track processed `transactionId`s to prevent duplicate feed entries on reconnect or alias reflection.
+
+### Real-Time Chat Message Contract
+1. **Socket Broadcast**:
+   - Server listens for `room:chat_send` and immediately broadcasts `room:chat_message` to the room room channel.
+   - **Payload Specification**:
+     ```json
+     {
+       "id": "msg_1729012345678_user_alexa",
+       "clientMessageId": "msg_1729012345678_user_alexa",
+       "roomId": "room_123",
+       "text": "hi",
+       "type": "text",
+       "sender": {
+         "id": "user_alexa",
+         "name": "Alexa",
+         "username": "alexa",
+         "avatarUrl": "https://..."
+       },
+       "senderUserId": "user_alexa",
+       "senderName": "Alexa",
+       "createdAt": "2026-10-15T10:30:05.000Z"
+     }
+     ```
+2. **Room History Window on Reconnect / Initial Join**:
+   - In `room:snapshot` (or `GET /api/rooms/:id/snapshot`):
+     - Include `messages`: array of the last 50 room events (chat messages, gift activities, system announcements) ordered by `createdAt ASC`.
+     - When rejoining or recovering from brief disconnects, clients merge recent events by `id`, ensuring zero missing messages and zero duplicate entries.
+

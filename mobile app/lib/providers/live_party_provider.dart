@@ -951,37 +951,61 @@ class LivePartyProvider extends ChangeNotifier {
         if (_processedGiftTxIds.contains(txId)) return;
         _processedGiftTxIds.add(txId);
 
+        final inGiftRoomId = (data['roomId'] ?? data['room'] ?? '').toString().trim();
+        if (inGiftRoomId.isNotEmpty) {
+          String norm(String s) => s.toLowerCase().replaceAll('room:', '').trim();
+          final inNorm = norm(inGiftRoomId);
+          final currentNorm = norm(_activeRoom?.id ?? _initialRoomId ?? '');
+          final initialNorm = norm(_initialRoomId ?? '');
+          final validNormIds = <String>{
+            if (currentNorm.isNotEmpty) currentNorm,
+            if (initialNorm.isNotEmpty) initialNorm,
+          };
+          if (validNormIds.isNotEmpty) {
+            final matches = validNormIds.contains(inNorm) ||
+                validNormIds.any((id) => inNorm.contains(id) || id.contains(inNorm));
+            if (!matches) return;
+          }
+        }
+
         final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender'] as Map) : <String, dynamic>{};
         final receiverMap = data['receiver'] is Map ? Map<String, dynamic>.from(data['receiver'] as Map) : <String, dynamic>{};
 
         final sender = UserModel(
           id: data['senderUserId']?.toString() ?? senderMap['id']?.toString() ?? '',
-          username: data['senderName']?.toString() ?? senderMap['name']?.toString() ?? 'User',
-          name: data['senderName']?.toString() ?? senderMap['name']?.toString() ?? 'User',
+          username: data['senderName']?.toString() ?? senderMap['name']?.toString() ?? senderMap['username']?.toString() ?? 'User',
+          name: data['senderName']?.toString() ?? senderMap['name']?.toString() ?? senderMap['displayName']?.toString() ?? 'User',
           avatarUrl: data['senderAvatar']?.toString() ?? senderMap['avatarUrl']?.toString() ?? '',
         );
         final receiver = UserModel(
           id: data['receiverUserId']?.toString() ?? receiverMap['id']?.toString() ?? '',
-          username: data['receiverName']?.toString() ?? receiverMap['name']?.toString() ?? 'Host',
-          name: data['receiverName']?.toString() ?? receiverMap['name']?.toString() ?? 'Host',
-          avatarUrl: '',
+          username: data['receiverName']?.toString() ?? receiverMap['name']?.toString() ?? receiverMap['username']?.toString() ?? 'Host',
+          name: data['receiverName']?.toString() ?? receiverMap['name']?.toString() ?? receiverMap['displayName']?.toString() ?? 'Host',
+          avatarUrl: receiverMap['avatarUrl']?.toString() ?? '',
         );
+
+        final giftName = data['giftName']?.toString() ?? 'Gift';
+        final giftIcon = data['giftIcon']?.toString() ?? '🎁';
+        final quantity = (data['quantity'] is num) ? (data['quantity'] as num).toInt() : int.tryParse(data['quantity']?.toString() ?? '') ?? 1;
 
         final giftMsg = PartyMessageModel(
           id: 'gift_$txId',
           sender: sender,
           receiver: receiver,
-          text: '${sender.name} sent ${data['quantity'] ?? 1} × ${data['giftName'] ?? 'Gift'} 🎁',
+          text: '${sender.name} sent $quantity × $giftName $giftIcon to ${receiver.name}',
           timestamp: DateTime.now(),
           isGiftMessage: true,
           giftId: data['giftId']?.toString() ?? '',
-          giftName: data['giftName']?.toString() ?? 'Gift',
-          giftIcon: data['giftIcon']?.toString() ?? '🎁',
-          quantity: (data['quantity'] is num) ? (data['quantity'] as num).toInt() : 1,
+          giftName: giftName,
+          giftIcon: giftIcon,
+          quantity: quantity,
           transactionId: txId,
           serverTimestamp: DateTime.now(),
         );
         _messages.add(giftMsg);
+        if (_messages.length > 100) {
+          _messages.removeAt(0);
+        }
         notifyListeners();
       } catch (e) {
         debugPrint('[LivePartyProvider] GiftSent error: $e');
@@ -994,20 +1018,23 @@ class LivePartyProvider extends ChangeNotifier {
       try {
         final incomingRoomId = (data['roomId'] ?? '').toString().trim();
         final incomingClientRoomId = (data['clientRoomId'] ?? data['room'] ?? '').toString().trim();
-        final currentRoomId = (_activeRoom?.id ?? _initialRoomId ?? '').trim().toLowerCase();
-        final fallbackInitialId = (_initialRoomId ?? '').trim().toLowerCase();
-        final inRoomId = incomingRoomId.toLowerCase();
-        final inClientRoomId = incomingClientRoomId.toLowerCase();
+        String norm(String s) => s.toLowerCase().replaceAll('room:', '').trim();
+        final inNorm = norm(incomingRoomId);
+        final inClientNorm = norm(incomingClientRoomId);
+        final currentNorm = norm(_activeRoom?.id ?? _initialRoomId ?? '');
+        final initialNorm = norm(_initialRoomId ?? '');
 
-        final validRoomIds = <String>{
-          if (currentRoomId.isNotEmpty) currentRoomId,
-          if (fallbackInitialId.isNotEmpty) fallbackInitialId,
+        final validNormIds = <String>{
+          if (currentNorm.isNotEmpty) currentNorm,
+          if (initialNorm.isNotEmpty) initialNorm,
+          if (_activeRoom?.agoraChannelName != null && _activeRoom!.agoraChannelName!.isNotEmpty)
+            norm(_activeRoom!.agoraChannelName!),
         };
 
-        if (validRoomIds.isNotEmpty) {
-          final match = (inRoomId.isNotEmpty && validRoomIds.contains(inRoomId)) ||
-              (inClientRoomId.isNotEmpty && validRoomIds.contains(inClientRoomId)) ||
-              (inRoomId.isEmpty && inClientRoomId.isEmpty);
+        if (validNormIds.isNotEmpty && inNorm.isNotEmpty) {
+          final match = validNormIds.contains(inNorm) ||
+              (inClientNorm.isNotEmpty && validNormIds.contains(inClientNorm)) ||
+              validNormIds.any((id) => inNorm.contains(id) || id.contains(inNorm));
           if (!match) return;
         }
 
@@ -1273,7 +1300,7 @@ class LivePartyProvider extends ChangeNotifier {
       }
 
       // Normalized target comparison to support numeric IDs, string IDs, and prefixed IDs
-      final currentId = _currentUser?.id?.toString() ?? '';
+      final currentId = _currentUser?.id ?? '';
       final isSelfTarget = currentId.isNotEmpty && targetUserId != null && (
         targetUserId == currentId ||
         targetUserId.toLowerCase() == currentId.toLowerCase() ||
@@ -2496,7 +2523,27 @@ class LivePartyProvider extends ChangeNotifier {
       serverTimestamp: DateTime.now(),
     );
     _messages.add(giftMsg);
+    if (_messages.length > 100) {
+      _messages.removeAt(0);
+    }
     notifyListeners();
+
+    // Broadcast room gift event to all connected devices in this room
+    final targetRoomId = (_activeRoom?.id.isNotEmpty == true)
+        ? _activeRoom!.id
+        : (_initialRoomId ?? '');
+    if (targetRoomId.isNotEmpty) {
+      _socketService.sendRoomGift(
+        roomId: targetRoomId,
+        giftId: giftId ?? '',
+        giftName: giftName,
+        giftIcon: giftIcon,
+        quantity: quantity,
+        sender: sender.toJson(),
+        receiver: receiver.toJson(),
+        transactionId: txId,
+      );
+    }
   }
 
   void kickFromSeat(String userId) {

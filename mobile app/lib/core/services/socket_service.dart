@@ -407,6 +407,39 @@ class SocketService {
     _socket!.off('chat');
     _socket!.on('chat', handleChatMessage);
 
+    // Authoritative Room Gift Event Listeners with deduplication
+    final Map<String, int> recentGifts = {};
+    void handleGiftSent(dynamic data) {
+      if (data != null) {
+        final map = safeMap(data);
+        final txId = (map['transactionId'] ?? map['id'] ?? map['_id'] ?? '').toString();
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (txId.isNotEmpty && recentGifts.containsKey(txId)) {
+          if (now - recentGifts[txId]! < 5000) {
+            return; // Deduplicate alias emissions within 5s
+          }
+        }
+        if (txId.isNotEmpty) {
+          recentGifts[txId] = now;
+        }
+        _giftSentController.add(map);
+      }
+    }
+    _socket!.off('room:gift_sent');
+    _socket!.on('room:gift_sent', handleGiftSent);
+    _socket!.off('room_gift_sent');
+    _socket!.on('room_gift_sent', handleGiftSent);
+    _socket!.off('gift:sent');
+    _socket!.on('gift:sent', handleGiftSent);
+    _socket!.off('gift_sent');
+    _socket!.on('gift_sent', handleGiftSent);
+    _socket!.off('room:gift');
+    _socket!.on('room:gift', handleGiftSent);
+    _socket!.off('room_gift');
+    _socket!.on('room_gift', handleGiftSent);
+    _socket!.off('live:gift');
+    _socket!.on('live:gift', handleGiftSent);
+
     _socket!.on('room:user_kicked', (data) {
       if (data != null) _userKickedController.add(safeMap(data));
     });
@@ -700,12 +733,71 @@ class SocketService {
 
     if (_socket != null && _socket!.connected) {
       _socket!.emit('room:chat_send', payload);
+      _socket!.emit('room_chat_send', payload);
+      _socket!.emit('room:chat', payload);
+      _socket!.emit('chat:send', payload);
       debugPrint('[SocketService] Sent room:chat_send for room:$roomId (msgId: $effectiveId)');
     } else {
       connect(user: sender).then((_) {
         if (_socket != null && _socket!.connected) {
           _socket!.emit('room:chat_send', payload);
+          _socket!.emit('room_chat_send', payload);
+          _socket!.emit('room:chat', payload);
+          _socket!.emit('chat:send', payload);
           debugPrint('[SocketService] Sent room:chat_send after connect for room:$roomId (msgId: $effectiveId)');
+        }
+      });
+    }
+  }
+
+  /// Broadcast a gift sent event in a live party or streaming room
+  void sendRoomGift({
+    required String roomId,
+    required String giftId,
+    required String giftName,
+    required String giftIcon,
+    required int quantity,
+    required Map<String, dynamic> sender,
+    required Map<String, dynamic> receiver,
+    String? transactionId,
+  }) {
+    final effectiveTxId = (transactionId != null && transactionId.isNotEmpty)
+        ? transactionId
+        : 'tx_${DateTime.now().millisecondsSinceEpoch}_${(sender['id'] ?? sender['userId'] ?? 'anon')}';
+
+    final payload = {
+      'transactionId': effectiveTxId,
+      'id': effectiveTxId,
+      'roomId': roomId,
+      'giftId': giftId,
+      'giftName': giftName,
+      'giftIcon': giftIcon,
+      'quantity': quantity,
+      'sender': sender,
+      'senderUserId': sender['id'] ?? sender['_id'] ?? sender['userId'],
+      'senderName': sender['name'] ?? sender['username'] ?? 'User',
+      'senderAvatar': sender['avatarUrl'] ?? sender['avatar'] ?? '',
+      'receiver': receiver,
+      'receiverUserId': receiver['id'] ?? receiver['_id'] ?? receiver['userId'],
+      'receiverName': receiver['name'] ?? receiver['username'] ?? 'Host',
+      'receiverAvatar': receiver['avatarUrl'] ?? receiver['avatar'] ?? '',
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('room:gift_send', payload);
+      _socket!.emit('room_gift_send', payload);
+      _socket!.emit('gift:send', payload);
+      _socket!.emit('room:gift_sent', payload);
+      debugPrint('[SocketService] Sent room:gift_send for room:$roomId (txId: $effectiveTxId)');
+    } else {
+      connect(user: sender).then((_) {
+        if (_socket != null && _socket!.connected) {
+          _socket!.emit('room:gift_send', payload);
+          _socket!.emit('room_gift_send', payload);
+          _socket!.emit('gift:send', payload);
+          _socket!.emit('room:gift_sent', payload);
+          debugPrint('[SocketService] Sent room:gift_send after connect for room:$roomId (txId: $effectiveTxId)');
         }
       });
     }
