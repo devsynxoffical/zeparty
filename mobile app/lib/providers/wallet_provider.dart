@@ -291,6 +291,15 @@ class WalletProvider extends ChangeNotifier {
     fetchWallet();
   }
 
+  bool spendCoins(int amount, String title) {
+    if (amount <= 0) return false;
+    _wallet ??= const WalletModel(id: 'local', userId: 'local', coinBalance: 10000, diamondBalance: 5000);
+    if ((_wallet?.coinBalance ?? 0) < amount) return false;
+    _wallet = _wallet!.copyWith(coinBalance: (_wallet!.coinBalance - amount).clamp(0, 999999999));
+    notifyListeners();
+    return true;
+  }
+
   void rechargeCoins(int coinAmount, double priceUSD) {
     fetchWallet();
   }

@@ -36,6 +36,7 @@ import 'widgets/room_entry_mount_banner.dart';
 import 'widgets/effects_settings_sheet.dart';
 import 'widgets/mic_seat_management_sheet.dart';
 import 'widgets/elimination_wheel_sheet.dart';
+import 'widgets/lucky_bag_sheet.dart';
 import 'widgets/in_room_profile_card_sheet.dart';
 import 'widgets/expanded_message_panel.dart';
 import '../../widgets/multi_role_seat_grid.dart';
@@ -700,6 +701,12 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
           // Overlays
           const HighValueAnnouncementOverlay(),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 60,
+            left: 0,
+            right: 0,
+            child: const WorldLuckyBagBanner(),
+          ),
 
           // Main Layout
           SafeArea(
@@ -761,6 +768,13 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 _buildBottomBar(canManage, isHost, provider, isDark),
               ],
             ),
+          ),
+
+          // Right-side Floating Action Shortcut (Lucky Bag)
+          Positioned(
+            right: 12,
+            bottom: MediaQuery.of(context).padding.bottom + 120 + MediaQuery.of(context).viewInsets.bottom,
+            child: LuckyBagFloatingWidget(roomId: widget.room.id),
           ),
 
           // Right-side Floating Action Shortcut (Game Lobby)
@@ -4118,71 +4132,9 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     EliminationWheelSheet.show(context);
   }
 
-  // ── Module 06: Lucky Bag Control Dialog ──
+  // ── Module 06: Lucky Bag Control (Normal & World Modes) ──
   void _showLuckyBagControlDialog(BuildContext context) {
-    final provider = context.read<LivePartyProvider>();
-    final coinsCtrl = TextEditingController(text: '1000');
-    final claimsCtrl = TextEditingController(text: '10');
-
-    showDialog(
-      context: context,
-      builder: (d) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1B2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.card_giftcard_rounded, color: Colors.orangeAccent),
-            SizedBox(width: 8),
-            Text('Create Lucky Bag', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: coinsCtrl,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Total Coin Amount 🪙',
-                labelStyle: const TextStyle(color: Colors.white70),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              style: const TextStyle(color: Colors.white),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: claimsCtrl,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Number of Claims / Users 👥',
-                labelStyle: const TextStyle(color: Colors.white70),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              style: const TextStyle(color: Colors.white),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel', style: TextStyle(color: Colors.white60))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent),
-            onPressed: () {
-              final coins = int.tryParse(coinsCtrl.text.trim()) ?? 1000;
-              final claims = int.tryParse(claimsCtrl.text.trim()) ?? 10;
-              final bagId = 'bag_${DateTime.now().millisecondsSinceEpoch}';
-              final err = provider.createLuckyBag(id: bagId, totalCoins: coins, totalClaims: claims);
-              if (err == null) {
-                Navigator.pop(d);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('💰 Lucky Bag of $coins Coins launched for $claims users!'), backgroundColor: Colors.green),
-                );
-              }
-            },
-            child: const Text('Launch Lucky Bag', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
+    LuckyBagCreateSheet.show(context, roomId: widget.room.id, roomTitle: widget.room.title);
   }
 
   // ── Module 06: Lock Room Access Control Dialog ──
