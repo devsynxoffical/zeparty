@@ -1,6 +1,7 @@
 import roomRepository from '../repositories/room.repository.js';
 import userRepository from '../repositories/user.repository.js';
 import roomService from '../services/room.service.js';
+import micInviteService from '../services/micInvite.service.js';
 import presenceService from './presence.service.js';
 import prisma from '../config/database.js';
 import { startHostAbsentTimer, clearHostAbsentTimer } from './roomTimer.manager.js';
@@ -521,7 +522,12 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
       }
     }
 
-    // 4. Update Authoritative User Room Presence on Leave
+    // 4. Update Authoritative User Room Presence on Leave & Clear Pending Mic Invites
+    if (userId) {
+      try {
+        await micInviteService.clearPendingInvitesForUser(roomId, userId);
+      } catch (_) {}
+    }
     if (userId && !socket.isGuest && !String(userId).startsWith('guest_')) {
       try {
         await presenceService.clearUserActiveRoom(userId, roomId);
@@ -658,6 +664,11 @@ export async function onSocketDisconnect(io, socket, db) {
             broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, countPayload);
             broadcastTarget.emit('room:viewer_count', countPayload);
             broadcastTarget.emit('viewer_count_changed', countPayload);
+          }
+          if (userId) {
+            try {
+              await micInviteService.clearPendingInvitesForUser(roomId, userId);
+            } catch (_) {}
           }
         }
       } catch (innerErr) {
@@ -1109,6 +1120,118 @@ export async function onModerateUser(arg1, arg2, arg3, arg4, arg5) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Change 13: Live Viewers Mic Invitation Handlers
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function onInviteToMic(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const targetUserId = data?.targetUserId;
+    const seatIndex = data?.seatIndex !== undefined && data?.seatIndex !== null ? Number(data.seatIndex) : null;
+    const actorUserId = socket.userId;
+
+    const result = await micInviteService.createMicInvite({
+      roomId,
+      actorUserId,
+      targetUserId,
+      seatIndex,
+    });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: 'Invitation to mic sent successfully', data: result });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to send invitation to mic' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onAcceptMicInvite(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const invitationId = data?.invitationId;
+    const userId = socket.userId;
+
+    const result = await micInviteService.acceptMicInvite({
+      roomId,
+      invitationId,
+      userId,
+    });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: 'Joined mic successfully', data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to accept mic invitation' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onDeclineMicInvite(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const invitationId = data?.invitationId;
+    const reason = data?.reason || (data?.isPermissionDenied ? 'PERMISSION_DENIED' : 'DECLINED_BY_USER');
+    const userId = socket.userId;
+
+    const result = await micInviteService.declineMicInvite({
+      roomId,
+      invitationId,
+      userId,
+      reason,
+    });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: result.message, data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to decline mic invitation' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onCancelMicInvite(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const invitationId = data?.invitationId;
+    const actorUserId = socket.userId;
+
+    const result = await micInviteService.cancelMicInvite({
+      roomId,
+      invitationId,
+      actorUserId,
+    });
+
+    if (typeof callback === 'function') {
+      return callback({ success: true, message: result.message, data: result.data });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to cancel mic invitation' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
 export async function onSendRoomLike(arg1, arg2, arg3, arg4, arg5) {
   const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
   try {
@@ -1382,6 +1505,83 @@ export function registerRoomHandlers(io, socket) {
     withRateLimit('ROOM_ACTIVE_LIST', 15, 1000, (s, d, cb) => onRequestActiveRooms(s, d, cb))
   );
 
+  // Change 13: Mic Invitations from Live Viewers
+  socket.on(
+    SOCKET_EVENTS.MIC_INVITATION_SEND,
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+  socket.on(
+    'room:mic_invite',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+  socket.on(
+    'room:invite_to_mic',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+  socket.on(
+    'room:invite_mic',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+  socket.on(
+    'invite_to_mic',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+  socket.on(
+    'invite_mic',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onInviteToMic(io, s, d, cb))
+  );
+
+  socket.on(
+    SOCKET_EVENTS.MIC_INVITATION_ACCEPT,
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onAcceptMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'room:mic_invite_accept',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onAcceptMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'accept_mic_invite',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onAcceptMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'mic_invite_accept',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onAcceptMicInvite(io, s, d, cb))
+  );
+
+  socket.on(
+    SOCKET_EVENTS.MIC_INVITATION_DECLINE,
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onDeclineMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'room:mic_invite_decline',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onDeclineMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'decline_mic_invite',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onDeclineMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'mic_invite_decline',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onDeclineMicInvite(io, s, d, cb))
+  );
+
+  socket.on(
+    SOCKET_EVENTS.MIC_INVITATION_CANCEL,
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onCancelMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'room:mic_invite_cancel',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onCancelMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'cancel_mic_invite',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onCancelMicInvite(io, s, d, cb))
+  );
+  socket.on(
+    'mic_invite_cancel',
+    withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onCancelMicInvite(io, s, d, cb))
+  );
+
   // Handle both disconnecting (before leaveAll) and disconnect (as safety fallback)
   socket.on('disconnecting', () => onSocketDisconnect(io, socket));
   socket.on(SOCKET_EVENTS.DISCONNECT, () => onSocketDisconnect(io, socket));
@@ -1400,6 +1600,10 @@ export default {
   onRemoveFromMic,
   onMuteUser,
   onModerateUser,
+  onInviteToMic,
+  onAcceptMicInvite,
+  onDeclineMicInvite,
+  onCancelMicInvite,
   onUpdateRoomBackground,
   onSocketDisconnect,
   registerRoomHandlers,

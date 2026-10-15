@@ -20,6 +20,7 @@ import {
   muteParticipant,
   kickParticipant,
   removeFromMic,
+  inviteToMic,
   updateRoomCoverDp,
   deleteRoomCoverDp,
 } from '../../services/modules/liveRooms.service';
@@ -232,6 +233,18 @@ export function LiveRoomDetailPage() {
     refreshHistory();
   };
 
+  const handleInviteToMic = async (row) => {
+    try {
+      await inviteToMic(room?.id, row.id);
+      await addLog('INVITE_TO_MIC', row.id, 'Live Rooms', `Invited viewer ${row.name} to microphone seat`);
+      alert(`Invitation to mic sent to ${row.name}`);
+    } catch (err) {
+      console.error('Failed to invite viewer to mic:', err);
+      alert(err.response?.data?.message || err.message || 'Failed to send mic invitation');
+    }
+    refreshHistory();
+  };
+
   const handleDeleteRoomDp = async () => {
     try {
       await deleteRoomCoverDp(room?.id);
@@ -313,10 +326,19 @@ export function LiveRoomDetailPage() {
       key: 'actions',
       header: 'Actions',
       render: (row) => (
-        <div className="flex gap-2">
-          <button onClick={() => handleRemoveFromMic(row)} className="text-xs text-sky-400 hover:underline">
-            Remove Mic
-          </button>
+        <div className="flex gap-2 items-center">
+          {row.micOn ? (
+            <button onClick={() => handleRemoveFromMic(row)} className="text-xs text-sky-400 hover:underline">
+              Remove Mic
+            </button>
+          ) : (
+            <button
+              onClick={() => handleInviteToMic(row)}
+              className="text-xs text-emerald-400 hover:underline font-medium"
+            >
+              Invite to Mic
+            </button>
+          )}
           <button onClick={() => handleMuteParticipant(row)} className={`text-xs hover:underline ${row.micOn ? 'text-amber-400' : 'text-slate-400'}`}>
             {row.micOn ? 'Mute' : 'Unmute'}
           </button>

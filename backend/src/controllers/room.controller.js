@@ -772,6 +772,122 @@ export async function postAdminRemoveFromMic(req, res, next) {
   }
 }
 
+export async function inviteViewerToMic(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { targetUserId, seatIndex } = req.body;
+    const actorUserId = req.auth?.userId || req.user?.id;
+
+    const result = await roomService.createMicInvite({
+      roomId: id,
+      actorUserId,
+      targetUserId,
+      seatIndex: seatIndex !== undefined && seatIndex !== null ? Number(seatIndex) : null,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Invitation to mic sent successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function acceptMicInvite(req, res, next) {
+  try {
+    const { id, invitationId } = req.params;
+    const userId = req.auth?.userId || req.user?.id;
+
+    const result = await roomService.acceptMicInvite({
+      roomId: id,
+      invitationId,
+      userId,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function declineMicInvite(req, res, next) {
+  try {
+    const { id, invitationId } = req.params;
+    const { reason } = req.body;
+    const userId = req.auth?.userId || req.user?.id;
+
+    const result = await roomService.declineMicInvite({
+      roomId: id,
+      invitationId,
+      userId,
+      reason: reason || 'DECLINED_BY_USER',
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function cancelMicInvite(req, res, next) {
+  try {
+    const { id, invitationId } = req.params;
+    const actorUserId = req.auth?.userId || req.user?.id;
+
+    const result = await roomService.cancelMicInvite({
+      roomId: id,
+      invitationId,
+      actorUserId,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRoomViewers(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { search } = req.query;
+    const result = await roomService.getRoomMembers(id, { search });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Room viewers retrieved successfully',
+      data: result.members,
+      totalCount: result.totalCount,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function adminInviteViewerToMic(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { targetUserId, seatIndex } = req.body;
+    const adminId = req.user?.id || 'admin';
+
+    const result = await roomService.createMicInvite({
+      roomId: id,
+      actorUserId: adminId,
+      targetUserId,
+      seatIndex: seatIndex !== undefined && seatIndex !== null ? Number(seatIndex) : null,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Admin invitation to mic sent successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -817,4 +933,10 @@ export default {
   muteUser,
   kickUser,
   moderateUser,
+  inviteViewerToMic,
+  acceptMicInvite,
+  declineMicInvite,
+  cancelMicInvite,
+  getRoomViewers,
+  adminInviteViewerToMic,
 };

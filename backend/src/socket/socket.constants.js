@@ -73,6 +73,16 @@ export const SOCKET_EVENTS = {
   PK_END: 'pk:end',
   PK_ENDED: 'pk:ended',
 
+  // Mic Invitations (Change 13: Room Live Viewers)
+  MIC_INVITATION_SEND: 'room:mic_invite',
+  MIC_INVITATION_RECEIVED: 'room:mic_invitation',
+  MIC_INVITATION_ACCEPT: 'room:accept_mic_invite',
+  MIC_INVITATION_ACCEPTED: 'room:mic_invite_accepted',
+  MIC_INVITATION_DECLINE: 'room:decline_mic_invite',
+  MIC_INVITATION_DECLINED: 'room:mic_invite_declined',
+  MIC_INVITATION_CANCEL: 'room:cancel_mic_invite',
+  MIC_INVITATION_CANCELLED: 'room:mic_invite_cancelled',
+
   // Settlements & Payroll
   SETTLEMENT_CREATED: 'settlement:created',
   SETTLEMENT_CALCULATED: 'settlement:calculated',
@@ -125,6 +135,15 @@ export const SOCKET_ERRORS = {
   VALIDATION_ERROR: 'VALIDATION_ERROR',
   INSUFFICIENT_FUNDS: 'INSUFFICIENT_FUNDS',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+  PENDING_INVITE_EXISTS: 'PENDING_INVITE_EXISTS',
+  INVITATION_EXPIRED: 'INVITATION_EXPIRED',
+  INVITATION_NOT_FOUND: 'INVITATION_NOT_FOUND',
+  ROOM_FULL: 'ROOM_FULL',
+  NO_AVAILABLE_SEATS: 'NO_AVAILABLE_SEATS',
+  ALREADY_ON_MIC: 'ALREADY_ON_MIC',
+  CANNOT_INVITE_SELF: 'CANNOT_INVITE_SELF',
+  CANNOT_INVITE_OWNER: 'CANNOT_INVITE_OWNER',
+  TARGET_NOT_IN_ROOM: 'TARGET_NOT_IN_ROOM',
 };
 
 export default {

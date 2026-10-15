@@ -5,6 +5,7 @@ import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
 import { clearHostAbsentTimer } from '../socket/roomTimer.manager.js';
 import presenceService from '../socket/presence.service.js';
+import micInviteService from './micInvite.service.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -268,6 +269,7 @@ export async function closeMyRoom(roomId, userId, db = prisma) {
   }
 
   clearHostAbsentTimer(roomId);
+  micInviteService.clearAllInvitesForRoom(roomId);
   const closedRoom = await roomRepository.closeRoomTx({ roomId, status: 'ENDED' }, db);
 
   socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, {
@@ -904,9 +906,11 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
     }
   } catch (_) {}
 
+  const decorated = await micInviteService.decorateMembersWithMicInviteStatus(resolvedRoomId, formatted, db);
+
   return {
-    members: formatted,
-    totalCount: formatted.length,
+    members: decorated,
+    totalCount: decorated.length,
   };
 }
 
@@ -1977,4 +1981,9 @@ export default {
   moderateRoomUserMute,
   kickRoomUser,
   moderateRoomUser,
+  createMicInvite: micInviteService.createMicInvite,
+  acceptMicInvite: micInviteService.acceptMicInvite,
+  declineMicInvite: micInviteService.declineMicInvite,
+  cancelMicInvite: micInviteService.cancelMicInvite,
+  getActiveInviteForUser: micInviteService.getActiveInviteForUser,
 };

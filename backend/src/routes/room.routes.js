@@ -19,6 +19,7 @@ userRoomRouter.post('/:id/seats/:seatIndex/leave', authenticate, roomController.
 userRoomRouter.post('/:id/leave-mic', authenticate, roomController.leaveMic);
 userRoomRouter.post('/:id/seats/leave', authenticate, roomController.leaveMic);
 userRoomRouter.get('/:id/members', roomController.getRoomMembers);
+userRoomRouter.get('/:id/viewers', roomController.getRoomViewers);
 userRoomRouter.put('/:id/members/:targetUserId/role', authenticate, roomController.updateMemberRole);
 userRoomRouter.get('/:id/rankings', roomController.getRoomSendingRankings);
 userRoomRouter.post('/:id/agora-token', authenticate, agoraController.getAgoraToken);
@@ -61,6 +62,18 @@ userRoomRouter.post('/:id/members/:targetUserId/kick', authenticate, roomControl
 // Module 31: Room Entry Banner Config
 userRoomRouter.get('/:id/entry-banner-config', roomController.getEntryBannerConfig);
 
+// Change 13: Invite to Mic from Live Viewers
+userRoomRouter.post('/:id/mic/invite', authenticate, roomController.inviteViewerToMic);
+userRoomRouter.post('/:id/invite-mic', authenticate, roomController.inviteViewerToMic);
+userRoomRouter.post('/:id/mic/invitations/:invitationId/accept', authenticate, roomController.acceptMicInvite);
+userRoomRouter.post('/:id/mic/invite/:invitationId/accept', authenticate, roomController.acceptMicInvite);
+userRoomRouter.post('/:id/mic/invite/accept', authenticate, roomController.acceptMicInvite);
+userRoomRouter.post('/:id/mic/invitations/:invitationId/decline', authenticate, roomController.declineMicInvite);
+userRoomRouter.post('/:id/mic/invite/:invitationId/decline', authenticate, roomController.declineMicInvite);
+userRoomRouter.post('/:id/mic/invite/decline', authenticate, roomController.declineMicInvite);
+userRoomRouter.delete('/:id/mic/invitations/:invitationId', authenticate, roomController.cancelMicInvite);
+userRoomRouter.delete('/:id/mic/invite/:invitationId', authenticate, roomController.cancelMicInvite);
+
 // Admin Live Room Management Routes
 adminRoomRouter.use(authenticate);
 adminRoomRouter.get('/pinned-positions', requirePermission('view_live_rooms'), roomController.getAdminPinnedPositions);
@@ -88,6 +101,8 @@ adminRoomRouter.delete('/:id/dp', requirePermission('moderation_actions'), (req,
   req.body = { ...req.body, coverImageUrl: null };
   roomController.postAdminUpdateRoomDp(req, res, next);
 });
+adminRoomRouter.post('/:id/invite-mic', requirePermission('moderation_actions'), roomController.adminInviteViewerToMic);
+adminRoomRouter.post('/:id/mic/invite', requirePermission('moderation_actions'), roomController.adminInviteViewerToMic);
 
 
 export default {

@@ -177,6 +177,14 @@ export async function banRoom(id, reason) {
   return res.data;
 }
 
+export async function inviteToMic(id, targetUserId, seatIndex = null) {
+  const res = await apiClient.post(`/v1/admin/rooms/${id}/invite-mic`, {
+    targetUserId,
+    seatIndex,
+  });
+  return res.data;
+}
+
 export default {
   getLiveRooms,
   getLiveRoomById,
@@ -188,6 +196,7 @@ export default {
   muteParticipant,
   kickParticipant,
   removeFromMic,
+  inviteToMic,
   updateRoomCoverDp,
   deleteRoomCoverDp,
   getAdminAgoraToken,
