@@ -18,24 +18,25 @@ class StoreProvider extends ChangeNotifier {
 
   final Set<String> _pendingPurchaseKeys = {};
 
-  List<String> get categories => ['All', 'Cars', 'Frame', 'Special card', 'Bubble', 'Background', 'Badges'];
+  List<String> get categories => ['All', 'Cars', 'Frame', 'Special card', 'Bubble', 'Background'];
 
   StoreProvider() {
     fetchStoreItems();
   }
 
   List<StoreItemModel> getItemsByCategory(String categoryId) {
+    final nonRestricted = _items.where((item) => !StoreRepository.isRestrictedSpecialRoleAsset(item)).toList();
     if (categoryId == 'All' || categoryId.isEmpty) {
-      return _items;
+      return nonRestricted;
     }
 
     final target = categoryId.trim().toLowerCase();
 
-    return _items.where((item) {
+    return nonRestricted.where((item) {
       final cat = item.categoryId.trim().toLowerCase();
       final type = item.assetType.trim().toLowerCase();
 
-      // Flexible fuzzy matching for categories and backend assetType enums
+      // Flexible matching for categories and backend assetType enums
       if (target == 'cars' || target == 'car') {
         return cat.contains('car') || type.contains('car') || type.contains('mount');
       }
@@ -50,9 +51,6 @@ class StoreProvider extends ChangeNotifier {
       }
       if (target == 'background' || target == 'backgrounds') {
         return cat.contains('background') || cat.contains('theme') || type.contains('background') || type.contains('theme');
-      }
-      if (target == 'badges' || target == 'badge') {
-        return cat.contains('badge') || type.contains('badge');
       }
 
       return cat == target || type == target;
@@ -70,7 +68,8 @@ class StoreProvider extends ChangeNotifier {
         assetType: assetType,
         isVipExclusive: isVipExclusive,
       );
-      _items = fetchedItems;
+      // Strictly enforce that public store items NEVER contain special status or role assets
+      _items = fetchedItems.where((i) => !StoreRepository.isRestrictedSpecialRoleAsset(i)).toList();
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -83,6 +82,13 @@ class StoreProvider extends ChangeNotifier {
 
   /// Purchase an item using the wallet provider and backend API
   Future<bool> purchaseItem(StoreItemModel item, WalletProvider wallet) async {
+    if (StoreRepository.isRestrictedSpecialRoleAsset(item)) {
+      _isLoading = false;
+      _errorMessage = 'Special status and role assets cannot be purchased from the store.';
+      notifyListeners();
+      return false;
+    }
+
     final idempotencyKey = PerformanceUtils.generateIdempotencyKey('buy_${item.id}');
     if (_pendingPurchaseKeys.contains(idempotencyKey)) {
       return false;

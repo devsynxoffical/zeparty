@@ -6,7 +6,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../core/utils/formatters.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/country_picker_sheet.dart';
 import '../../widgets/user_avatar.dart';
@@ -20,7 +19,6 @@ class EditProfileScreen extends StatefulWidget {
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _nameController;
-  late TextEditingController _usernameController;
   late TextEditingController _bioController;
   late TextEditingController _regionController;
 
@@ -31,7 +29,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _isSaving = false;
 
   late String _initialName;
-  late String _initialUsername;
   late String _initialBio;
   late String _initialRegion;
   late String _initialGender;
@@ -75,15 +72,11 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (isTechId) {
       if (user.username.isNotEmpty && !user.username.startsWith('user_') && user.username.length < 20) {
         rawName = user.username[0].toUpperCase() + user.username.substring(1);
-      } else if (user.email != null && user.email!.contains('@')) {
-        final part = user.email!.split('@').first;
-        rawName = part.isNotEmpty ? (part[0].toUpperCase() + part.substring(1)) : 'ZeParty Member';
       } else {
         rawName = 'ZeParty Member';
       }
     }
     _initialName = rawName.length > 25 ? rawName.substring(0, 25).trim() : rawName;
-    _initialUsername = user.username;
     _initialBio = user.bio;
     String initialCountryStr = user.region.trim();
     if (initialCountryStr.isEmpty || initialCountryStr == 'Global' || initialCountryStr == 'United States') {
@@ -95,7 +88,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _initialGender = user.gender.isEmpty ? 'Not Specified' : user.gender;
 
     _nameController = TextEditingController(text: _initialName);
-    _usernameController = TextEditingController(text: _initialUsername);
     _bioController = TextEditingController(text: _initialBio);
     _regionController = TextEditingController(text: _initialRegion);
     _selectedGender = _initialGender;
@@ -104,7 +96,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _selectedTags.addAll(['Music 🎵', 'Streaming 🎙️']);
 
     _nameController.addListener(_onFieldChanged);
-    _usernameController.addListener(_onFieldChanged);
     _bioController.addListener(_onFieldChanged);
     _regionController.addListener(_onFieldChanged);
   }
@@ -137,7 +128,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _usernameController.dispose();
     _bioController.dispose();
     _regionController.dispose();
     super.dispose();
@@ -145,7 +135,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   bool get _hasChanges {
     return _nameController.text.trim() != _initialName.trim() ||
-        _usernameController.text.trim() != _initialUsername.trim() ||
         _bioController.text.trim() != _initialBio.trim() ||
         _regionController.text.trim() != _initialRegion.trim() ||
         _selectedGender != _initialGender ||
@@ -347,7 +336,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!_hasChanges || _isSaving) return;
 
     final name = _nameController.text.trim();
-    final username = _usernameController.text.trim();
     final bio = _bioController.text.trim();
     final region = _regionController.text.trim();
 
@@ -361,13 +349,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       return;
     }
 
-    if (_containsProhibitedWords(name) || _containsProhibitedWords(username) || _containsProhibitedWords(bio)) {
+    if (_containsProhibitedWords(name) || _containsProhibitedWords(bio)) {
       showDialog(
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Security & Title Filter Alert'),
           content: const Text(
-            'Your proposed Name, Username, or Bio contains prohibited terms or reserved Admin titles ("admin", "official", "support", etc.). Please choose a different title.',
+            'Your proposed Name or Bio contains prohibited terms or reserved Admin titles ("admin", "official", "support", etc.). Please choose a different title.',
           ),
           actions: [
             TextButton(
@@ -387,7 +375,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final user = auth.currentUser;
     final success = await auth.updateProfile(
       name: name,
-      username: username.isNotEmpty ? username : null,
+      username: null,
       bio: bio,
       gender: _selectedGender,
       region: region.isEmpty ? '🇵🇰 Pakistan' : region,
@@ -701,22 +689,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Username (@handle)
-              TextField(
-                controller: _usernameController,
-                maxLength: 30,
-                inputFormatters: [
-                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9_.]')),
-                ],
-                decoration: InputDecoration(
-                  labelText: 'Username (Handle)',
-                  prefixText: '@',
-                  prefixIcon: const Icon(Icons.alternate_email_rounded),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                  helperText: 'Unique handle for tags, mentions, and search',
-                ),
-              ),
-              const SizedBox(height: 12),
+
 
               // Personal Note / Bio
               TextField(

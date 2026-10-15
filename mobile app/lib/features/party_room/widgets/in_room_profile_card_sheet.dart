@@ -52,6 +52,8 @@ class InRoomProfileCardSheet extends StatefulWidget {
 }
 
 class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
+  bool _isLeavingMic = false;
+
   @override
   Widget build(BuildContext context) {
     final liveProvider = context.watch<LivePartyProvider>();
@@ -64,6 +66,76 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
         (user.username.isNotEmpty &&
             currentUser.username.isNotEmpty &&
             user.username.toLowerCase() == currentUser.username.toLowerCase());
+
+    final activeRoom = liveProvider.activeRoom;
+
+    // 1. Current Viewer permissions
+    final isCurrentViewerOwner = liveProvider.isHost ||
+        (activeRoom != null && (
+          activeRoom.host.id == currentUser.id ||
+          activeRoom.creatorUserId == currentUser.id ||
+          (activeRoom.host.username.isNotEmpty &&
+              currentUser.username.isNotEmpty &&
+              activeRoom.host.username.toLowerCase() == currentUser.username.toLowerCase())
+        ));
+
+    final isCurrentViewerAdmin = isCurrentViewerOwner ||
+        widget.canManage ||
+        liveProvider.isAdmin(currentUser.id) ||
+        liveProvider.participants.any((p) =>
+          (p.user.id == currentUser.id ||
+           (currentUser.username.isNotEmpty &&
+            p.user.username.isNotEmpty &&
+            p.user.username.toLowerCase() == currentUser.username.toLowerCase())) &&
+          p.role == ParticipantRole.moderator
+        );
+
+    // 2. Target User details & seat
+    final targetParticipant = liveProvider.participants.where((p) =>
+      p.user.id == user.id ||
+      (user.username.isNotEmpty &&
+       p.user.username.isNotEmpty &&
+       p.user.username.toLowerCase() == user.username.toLowerCase())
+    ).firstOrNull ?? widget.participant;
+
+    final targetSeatNumber = targetParticipant.seatNumber ??
+        (widget.participant.seatNumber != null && widget.participant.user.id == user.id
+            ? widget.participant.seatNumber
+            : null);
+
+    final isTargetOnMic = targetSeatNumber != null;
+    final isTargetMuted = targetParticipant.micStatus == MicStatus.muted ||
+        (targetSeatNumber != null && liveProvider.isSeatMuted(targetSeatNumber));
+
+    // Target User owner status
+    final isTargetRoomOwner = (activeRoom != null && (
+          activeRoom.host.id == user.id ||
+          activeRoom.creatorUserId == user.id ||
+          (activeRoom.host.username.isNotEmpty &&
+              user.username.isNotEmpty &&
+              activeRoom.host.username.toLowerCase() == user.username.toLowerCase())
+        )) ||
+        targetParticipant.role == ParticipantRole.host;
+
+    // Room admins must NOT be able to remove, mute, or kick the room owner!
+    final canModerateTarget = !isMe &&
+        isCurrentViewerAdmin &&
+        (!isTargetRoomOwner || isCurrentViewerOwner);
+
+    // Current viewer's own seat (for Leave Mic button)
+    final selfParticipantInProvider = liveProvider.participants.where((p) =>
+      p.user.id == currentUser.id ||
+      (currentUser.username.isNotEmpty &&
+       p.user.username.isNotEmpty &&
+       p.user.username.toLowerCase() == currentUser.username.toLowerCase())
+    ).firstOrNull;
+
+    final currentSeatNumber = selfParticipantInProvider?.seatNumber ??
+        (widget.participant.seatNumber != null && widget.participant.user.id == currentUser.id
+            ? widget.participant.seatNumber
+            : null);
+
+    final isOccupyingSeat = currentSeatNumber != null;
 
     // Resolve SVIP Level & Status (Show ONLY if active/assigned)
     final isSvipActive = user.isVip || user.svipLevel > 0;
@@ -89,49 +161,56 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     final giftWallCount = user.likesReceived > 0 ? user.likesReceived.clamp(0, 23) : 0;
     final outfitCount = user.customTitles.length;
 
-    return DraggableScrollableSheet(
-      initialChildSize: 0.78,
-      minChildSize: 0.50,
-      maxChildSize: 0.94,
-      builder: (ctx, scrollController) => Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF141024),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          boxShadow: [
-            BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
-          ],
-        ),
-        child: Column(
-          children: [
-            // Top Bar with 3-dot overflow menu & grabber bar
-            Padding(
-              padding: const EdgeInsets.only(top: 8, left: 12, right: 12, bottom: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.more_horiz_rounded, color: Colors.white70, size: 24),
-                    tooltip: 'More Options',
-                    onPressed: () => _showOverflowMenu(context, user, isMe),
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF141024),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: [
+          BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.58,
+          ),
+          child: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Top Bar with 3-dot overflow menu & grabber bar
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 12, right: 12, bottom: 2),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.more_horiz_rounded, color: Colors.white70, size: 22),
+                        tooltip: 'More Options',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => _showOverflowMenu(context, user, isMe),
+                      ),
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(width: 24), // Spacer to balance 3-dot menu
+                    ],
                   ),
-                  Container(
-                    width: 44,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  ),
-                  const SizedBox(width: 48), // Spacer to balance 3-dot menu
-                ],
-              ),
-            ),
+                ),
 
-            Expanded(
-              child: ListView(
-                controller: scrollController,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                   // 1. Identity Header Section (Avatar, Name, Gender/Age, ID, Country, Bio)
                   Center(
                     child: Column(
@@ -151,8 +230,8 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                             alignment: Alignment.center,
                             children: [
                               Container(
-                                width: 84,
-                                height: 84,
+                                width: 66,
+                                height: 66,
                                 decoration: const BoxDecoration(
                                   shape: BoxShape.circle,
                                   gradient: SweepGradient(
@@ -167,7 +246,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                               ),
                               UserAvatar(
                                 imageUrl: user.avatarUrl,
-                                radius: 38,
+                                radius: 30,
                                 showVipFrame: user.isVip,
                                 frameAsset: NobleBadgeHelper.getFrameAsset(
                                   user.nobleTitle ??
@@ -179,7 +258,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 6),
 
                         // Name, Gender/Age badge, Home icon
                         Row(
@@ -189,7 +268,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                               child: Text(
                                 user.displayName,
                                 style: TextStyle(
-                                  fontSize: 18,
+                                  fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                   color: NobleBadgeHelper.getColoredNicknameColor(
                                     NobleBadgeHelper.getTierFromTitle(user.nobleTitle),
@@ -310,14 +389,14 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
 
                   // 2. ONE COMPACT ROW OF 4 LEVEL BADGES (Sending, Receiving, Game, Account)
                   Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
                     decoration: BoxDecoration(
                       color: widget.isDark ? const Color(0xFF1E1A33) : const Color(0xFFF2EFFC),
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: Colors.white12),
                     ),
                     child: Row(
@@ -359,7 +438,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                     ),
                   ),
 
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 8),
 
                   // 3. SVIP (ONLY if active/assigned) & Quick Action Pills
                   Row(
@@ -368,54 +447,54 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                       // Show SVIP ONLY if active; otherwise show nothing (leave no empty slot)
                       if (isSvipActive) ...[
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
                               colors: [Color(0xFF8D5B00), Color(0xFFFFC107), Color(0xFF8D5B00)],
                             ),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: Colors.amberAccent, width: 0.8),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.workspace_premium_rounded, size: 14, color: Colors.black),
+                              const Icon(Icons.workspace_premium_rounded, size: 12, color: Colors.black),
                               const SizedBox(width: 4),
                               Text(
                                 'SVIP $svipLevelNumber',
                                 style: const TextStyle(
                                   color: Colors.black,
-                                  fontSize: 11,
+                                  fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                       ],
 
                       // Gift Wall Button (Real user data)
                       GestureDetector(
                         onTap: () => _showGiftWallModal(context, user),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [Colors.teal.shade700, Colors.tealAccent.shade400],
                             ),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(10),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.card_giftcard_rounded, size: 13, color: Colors.black),
+                              const Icon(Icons.card_giftcard_rounded, size: 12, color: Colors.black),
                               const SizedBox(width: 4),
                               Text(
                                 'Gift Wall $giftWallCount/23',
                                 style: const TextStyle(
                                   color: Colors.black,
-                                  fontSize: 11,
+                                  fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -423,27 +502,27 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
 
                       // Outfit Button (Real user data)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: [Colors.red.shade700, Colors.orangeAccent.shade400],
                           ),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.checkroom_rounded, size: 13, color: Colors.white),
+                            const Icon(Icons.checkroom_rounded, size: 12, color: Colors.white),
                             const SizedBox(width: 4),
                             Text(
                               'Outfit $outfitCount/1954',
                               style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -453,14 +532,14 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                     ],
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
 
                   // 4. Medals Section (Real counts, 0 artwork when 0 assigned)
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: widget.isDark ? const Color(0xFF1B162E) : const Color(0xFFF7F5FE),
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: Colors.white10),
                     ),
                     child: Row(
@@ -525,63 +604,61 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
 
-                  // 5. Send Gift Section
-                  if (!isMe) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Send gift',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.getTextPrimary(widget.isDark),
+                  // 5. Send Gift Section (Available for other users & self-gifting)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        isMe ? 'Send gift to yourself' : 'Send gift',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.getTextPrimary(widget.isDark),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: Colors.transparent,
+                            isScrollControlled: true,
+                            builder: (_) => GiftDialog(targetReceiver: user, streamerName: user.name),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.purpleAccent.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.card_giftcard_rounded, size: 12, color: Colors.purpleAccent),
+                              SizedBox(width: 2),
+                              Icon(Icons.chevron_right_rounded, size: 12, color: Colors.purpleAccent),
+                            ],
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () {
-                            showModalBottomSheet(
-                              context: context,
-                              backgroundColor: Colors.transparent,
-                              isScrollControlled: true,
-                              builder: (_) => GiftDialog(targetReceiver: user, streamerName: user.name),
-                            );
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.purpleAccent.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.card_giftcard_rounded, size: 13, color: Colors.purpleAccent),
-                                SizedBox(width: 2),
-                                Icon(Icons.chevron_right_rounded, size: 13, color: Colors.purpleAccent),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        _quickGiftItem(context, '🌹', 'Free', 'x9', user),
-                        const SizedBox(width: 8),
-                        _quickGiftItem(context, '💎', 'Free', 'x68', user),
-                        const SizedBox(width: 8),
-                        _quickGiftItem(context, '🫶', '600', 'Coins', user),
-                        const SizedBox(width: 8),
-                        _quickGiftItem(context, '🍹', '100', 'Coins', user),
-                        const SizedBox(width: 8),
-                        _quickGiftItem(context, '🌹', '5', 'Coins', user),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      _quickGiftItem(context, '🌹', 'Free', 'x9', user),
+                      const SizedBox(width: 6),
+                      _quickGiftItem(context, '💎', 'Free', 'x68', user),
+                      const SizedBox(width: 6),
+                      _quickGiftItem(context, '🫶', '600', 'Coins', user),
+                      const SizedBox(width: 6),
+                      _quickGiftItem(context, '🍹', '100', 'Coins', user),
+                      const SizedBox(width: 6),
+                      _quickGiftItem(context, '🌹', '5', 'Coins', user),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
 
                   // 6. Subtitle & Bottom Action Bar (No text labels under @ and Chat icons!)
                   if (!isMe) ...[
@@ -591,12 +668,12 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                             ? 'muted in mic seat'
                             : 'invite to join the room for free',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 10,
                           color: Colors.grey.shade400,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
                     Row(
                       children: [
                         // Follow Button (Vibrant Purple Pill Button)
@@ -617,14 +694,14 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                                   );
                                 },
                                 child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 11),
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
                                   decoration: BoxDecoration(
                                     gradient: const LinearGradient(
                                       colors: [Color(0xFF8E24AA), Color(0xFFD81B60)],
                                     ),
-                                    borderRadius: BorderRadius.circular(24),
+                                    borderRadius: BorderRadius.circular(20),
                                     boxShadow: const [
-                                      BoxShadow(color: Colors.purpleAccent, blurRadius: 10, spreadRadius: -2),
+                                      BoxShadow(color: Colors.purpleAccent, blurRadius: 8, spreadRadius: -2),
                                     ],
                                   ),
                                   child: Row(
@@ -632,15 +709,15 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                                     children: [
                                       Icon(
                                         isFollowing ? Icons.check : Icons.person_add_alt_1_rounded,
-                                        size: 18,
+                                        size: 16,
                                         color: Colors.white,
                                       ),
-                                      const SizedBox(width: 6),
+                                      const SizedBox(width: 5),
                                       Text(
                                         isFollowing ? 'Following' : 'Follow',
                                         style: const TextStyle(
                                           color: Colors.white,
-                                          fontSize: 13,
+                                          fontSize: 12,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
@@ -651,9 +728,9 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                             },
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 8),
 
-                        // @ Mention icon button (NO text label below!)
+                        // @ Mention icon button
                         _buildCircularActionButton(
                           icon: Icons.alternate_email_rounded,
                           onTap: () {
@@ -664,9 +741,9 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                             );
                           },
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
 
-                        // Chat icon button (NO text label below!)
+                        // Chat icon button
                         _buildCircularActionButton(
                           icon: Icons.chat_bubble_rounded,
                           onTap: () {
@@ -674,29 +751,202 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                             Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(user: user)));
                           },
                         ),
+                      ],
+                    ),
 
-                        // Mic Action for Owner / Moderator
-                        if (widget.canManage) ...[
-                          const SizedBox(width: 10),
-                          _buildCircularActionButton(
-                            icon: widget.participant.isMuted
-                                ? Icons.mic_off_rounded
-                                : Icons.mic_rounded,
-                            iconColor: widget.participant.isMuted
-                                ? Colors.redAccent
-                                : Colors.greenAccent,
-                            onTap: () {
-                              if (widget.participant.isMuted) {
-                                liveProvider.unmuteParticipant(user.id);
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${user.name} mic unmuted')));
-                              } else {
-                                liveProvider.muteParticipant(user.id);
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${user.name} mic muted')));
-                              }
-                              Navigator.pop(context);
-                            },
+                    // Moderation Action Area (Remove from Mic, Mute, Kick from Room)
+                    if (canModerateTarget) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: widget.isDark ? const Color(0xFF1E1738) : const Color(0xFFF3EDFA),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: widget.isDark ? Colors.white12 : Colors.black12,
                           ),
-                        ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.admin_panel_settings_rounded, size: 14, color: Colors.purpleAccent),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      'ROOM MODERATION CONTROLS',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: 0.5,
+                                        color: AppColors.getTextSecondary(widget.isDark),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                if (isTargetOnMic)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.greenAccent.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(5),
+                                    ),
+                                    child: Text(
+                                      'Mic ${targetSeatNumber + 1}',
+                                      style: const TextStyle(fontSize: 8.5, color: Colors.greenAccent, fontWeight: FontWeight.bold),
+                                    ),
+                                  )
+                                else
+                                  Text(
+                                    'In Audience',
+                                    style: TextStyle(fontSize: 9, color: Colors.grey.shade400, fontStyle: FontStyle.italic),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                // 1. Remove from Mic (Only active while occupying a mic seat)
+                                Expanded(
+                                  child: _buildModerationActionButton(
+                                    icon: Icons.mic_off_rounded,
+                                    label: 'Remove Mic',
+                                    color: isTargetOnMic ? const Color(0xFFFF9100) : Colors.grey.shade600,
+                                    isEnabled: isTargetOnMic,
+                                    onTap: isTargetOnMic
+                                        ? () => _handleRemoveFromMic(context, liveProvider, user, targetSeatNumber)
+                                        : null,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+
+                                // 2. Mute / Unmute
+                                Expanded(
+                                  child: _buildModerationActionButton(
+                                    icon: isTargetMuted ? Icons.mic_rounded : Icons.volume_off_rounded,
+                                    label: isTargetMuted ? 'Unmute' : 'Mute',
+                                    color: isTargetMuted ? const Color(0xFF00E676) : const Color(0xFFFFD600),
+                                    isEnabled: true,
+                                    onTap: () => _handleToggleMute(context, liveProvider, user, isTargetMuted),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+
+                                // 3. Kick from Room
+                                Expanded(
+                                  child: _buildModerationActionButton(
+                                    icon: Icons.person_remove_rounded,
+                                    label: 'Kick Room',
+                                    color: const Color(0xFFFF334B),
+                                    isEnabled: true,
+                                    onTap: () => _handleKickFromRoom(context, liveProvider, user),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+
+                  // 7. Leave Mic Action Bar (Shown when user occupies a microphone seat)
+                  if (isMe && isOccupyingSeat) ...[
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        // Clearly labeled Leave Mic button in bottom action area
+                        Expanded(
+                          flex: 3,
+                          child: GestureDetector(
+                            key: const Key('leave_mic_button'),
+                            onTap: _isLeavingMic
+                                ? null
+                                : () => _handleLeaveMic(context, liveProvider, currentUser, currentSeatNumber),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFFE53935), Color(0xFFD81B60)],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                borderRadius: BorderRadius.circular(24),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.redAccent.withValues(alpha: 0.35),
+                                    blurRadius: 10,
+                                    spreadRadius: -1,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (_isLeavingMic) ...[
+                                    const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Leaving...',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ] else ...[
+                                    const Icon(
+                                      Icons.mic_off_rounded,
+                                      size: 18,
+                                      color: Colors.white,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Leave Mic',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+
+                        // Mic Mute / Unmute Circular Toggle Button
+                        _buildCircularActionButton(
+                          icon: liveProvider.isLocalMicMuted
+                              ? Icons.mic_off_rounded
+                              : Icons.mic_rounded,
+                          iconColor: liveProvider.isLocalMicMuted
+                              ? Colors.redAccent
+                              : Colors.greenAccent,
+                          onTap: () {
+                            final isMuted = liveProvider.toggleLocalMic();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(isMuted ? 'Mic muted 🔇' : 'Mic unmuted 🎙️'),
+                                duration: const Duration(seconds: 1),
+                              ),
+                            );
+                          },
+                        ),
                       ],
                     ),
                   ],
@@ -707,6 +957,167 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
             ),
           ],
         ),
+      ),
+    ),
+  ),
+);
+  }
+
+  /// Moderation Action Button
+  Widget _buildModerationActionButton({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required bool isEnabled,
+    VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: isEnabled ? onTap : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+        decoration: BoxDecoration(
+          color: isEnabled ? color.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isEnabled ? color.withValues(alpha: 0.45) : Colors.white10,
+            width: 1.1,
+          ),
+          boxShadow: isEnabled
+              ? [
+                  BoxShadow(
+                    color: color.withValues(alpha: 0.15),
+                    blurRadius: 6,
+                    spreadRadius: -2,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 17,
+              color: isEnabled ? color : Colors.grey.shade600,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: isEnabled ? color : Colors.grey.shade600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _handleRemoveFromMic(
+    BuildContext context,
+    LivePartyProvider liveProvider,
+    UserModel user,
+    int seatIndex,
+  ) {
+    liveProvider.kickFromSeat(user.id);
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Removed ${user.name} from mic ${seatIndex + 1} to audience.'),
+        backgroundColor: Colors.orange.shade800,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _handleToggleMute(
+    BuildContext context,
+    LivePartyProvider liveProvider,
+    UserModel user,
+    bool isCurrentlyMuted,
+  ) {
+    if (isCurrentlyMuted) {
+      liveProvider.unmuteParticipant(user.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unmuted ${user.name}\'s microphone.'),
+          backgroundColor: Colors.green.shade800,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } else {
+      liveProvider.muteParticipant(user.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Muted ${user.name}\'s microphone for everyone.'),
+          backgroundColor: Colors.orange.shade800,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+    Navigator.pop(context);
+  }
+
+  void _handleKickFromRoom(
+    BuildContext context,
+    LivePartyProvider liveProvider,
+    UserModel user,
+  ) {
+    showDialog(
+      context: context,
+      builder: (dlgCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF1B162E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+            const SizedBox(width: 8),
+            Text(
+              'Kick from Room',
+              style: TextStyle(
+                color: AppColors.getTextPrimary(widget.isDark),
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to kick ${user.name} from the room?\n\nThey will be disconnected from the audio and removed from any microphone seat.',
+          style: TextStyle(color: Colors.grey.shade300, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dlgCtx),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey.shade400)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () {
+              Navigator.pop(dlgCtx);
+              Navigator.pop(context);
+              liveProvider.removeParticipant(user.id);
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('🚫 ${user.name} was kicked from the room.'),
+                  backgroundColor: Colors.red.shade900,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            },
+            child: const Text('Kick User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }
@@ -720,15 +1131,72 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 44,
-        height: 44,
+        width: 36,
+        height: 36,
         decoration: BoxDecoration(
           color: widget.isDark ? const Color(0xFF2A2444) : Colors.grey.shade200,
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, size: 20, color: iconColor),
+        child: Icon(icon, size: 18, color: iconColor),
       ),
     );
+  }
+
+  /// Handle Leave Mic action cleanly
+  Future<void> _handleLeaveMic(
+    BuildContext context,
+    LivePartyProvider liveProvider,
+    UserModel currentUser,
+    int? currentSeatNumber,
+  ) async {
+    if (_isLeavingMic) return;
+    setState(() => _isLeavingMic = true);
+
+    try {
+      final error = await liveProvider.leaveMicSeat(
+        seatIndex: currentSeatNumber,
+        user: currentUser,
+      );
+
+      if (!mounted) return;
+
+      if (error != null) {
+        // If action fails, show error and sync displayed state with server
+        await liveProvider.syncSeatsWithServer();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Failed to leave mic: $error'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      } else {
+        Navigator.pop(context); // Close profile panel sheet
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Left microphone seat. You are now in the audience 🎧'),
+            backgroundColor: Color(0xFF8E24AA),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        await liveProvider.syncSeatsWithServer();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ Error: $e'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLeavingMic = false);
+      }
+    }
   }
 
   /// Compact Level Badge Item
@@ -740,10 +1208,10 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     required Color accentColor,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.black26,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: accentColor.withValues(alpha: 0.3)),
       ),
       child: Row(
@@ -751,16 +1219,16 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
         children: [
           Image.asset(
             assetPath,
-            width: 18,
-            height: 18,
-            errorBuilder: (_, __, ___) => Icon(fallbackIcon, size: 14, color: accentColor),
+            width: 15,
+            height: 15,
+            errorBuilder: (context, error, stackTrace) => Icon(fallbackIcon, size: 12, color: accentColor),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 3),
           Text(
             'Lv. $level',
             style: TextStyle(
               color: accentColor,
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -781,6 +1249,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
         onTap: () {
           final liveProvider = context.read<LivePartyProvider>();
           final authUser = context.read<AuthProvider>().currentUser;
+          final isSelf = targetUser.id == authUser.id;
           liveProvider.sendGiftActivityMessage(
             sender: authUser,
             receiver: targetUser,
@@ -791,25 +1260,29 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
             transactionId: 'tx_${DateTime.now().millisecondsSinceEpoch}',
           );
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Sent $emoji gift to ${targetUser.name} 🎁')),
+            SnackBar(
+              content: Text(
+                isSelf ? 'Sent $emoji gift to yourself 🎁' : 'Sent $emoji gift to ${targetUser.name} 🎁',
+              ),
+            ),
           );
         },
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.symmetric(vertical: 5),
           decoration: BoxDecoration(
             color: widget.isDark ? const Color(0xFF221C3B) : const Color(0xFFF3EFFF),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(color: Colors.purple.withValues(alpha: 0.2)),
           ),
           child: Column(
             children: [
-              Text(emoji, style: const TextStyle(fontSize: 20)),
+              Text(emoji, style: const TextStyle(fontSize: 16)),
               const SizedBox(height: 2),
               Text(
                 tagText,
                 style: const TextStyle(
                   color: Colors.amber,
-                  fontSize: 9,
+                  fontSize: 8,
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -817,7 +1290,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                 subText,
                 style: const TextStyle(
                   color: Colors.grey,
-                  fontSize: 8,
+                  fontSize: 7.5,
                 ),
               ),
             ],

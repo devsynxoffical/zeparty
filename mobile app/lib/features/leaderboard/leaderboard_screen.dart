@@ -463,7 +463,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
                         children: [
                           Flexible(
                             child: Text(
-                              '@${entry.user.username}',
+                              'ID: ${entry.user.id}',
                               style: TextStyle(
                                 color: AppColors.getTextSecondary(isDark),
                                 fontSize: 11,

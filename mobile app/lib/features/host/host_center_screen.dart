@@ -485,36 +485,19 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                                   Text('\$${usdProv.audioHostAvailableBalance.toStringAsFixed(2)} USD', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22)),
                                 ],
                               ),
-                              Row(
-                                children: [
-                                  OutlinedButton.icon(
-                                    icon: const Icon(Icons.swap_horiz_rounded, size: 16),
-                                    label: const Text('Transfer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.white,
-                                      side: const BorderSide(color: Colors.white54),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                    ),
-                                    onPressed: () {
-                                      Navigator.push(context, MaterialPageRoute(builder: (_) => const DiamondTransferScreen()));
-                                    },
-                                  ),
-                                  const SizedBox(width: 8),
-                                  ElevatedButton.icon(
-                                    icon: const Icon(Icons.account_balance_wallet_rounded, size: 16),
-                                    label: const Text('Withdraw', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.amber,
-                                      foregroundColor: Colors.black,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                    ),
-                                    onPressed: () {
-                                      _showHostWithdrawalDialog(context, usdProv, audioHost.userName, authUser.id, audioHost.agencyName);
-                                    },
-                                  ),
-                                ],
+                              // Transfer Action Button (Withdraw removed per Change 19)
+                              OutlinedButton.icon(
+                                icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                                label: const Text('Transfer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: const BorderSide(color: Colors.white70, width: 1.5),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                ),
+                                onPressed: () {
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const DiamondTransferScreen()));
+                                },
                               ),
                             ],
                           ),
@@ -584,6 +567,7 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
     );
   }
 
+  // ignore: unused_element
   void _showHostWithdrawalDialog(BuildContext context, UsdBalanceProvider usdProv, String hostName, String hostId, String agencyName) {
     String recipientType = 'Coin Seller'; // 'Coin Seller' or 'Merchant'
     SellerMerchantRecipient? selectedRecipient = usdProv.coinSellers.first;

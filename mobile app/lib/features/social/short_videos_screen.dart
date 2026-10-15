@@ -269,8 +269,8 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
                                   SnackBar(
                                     content: Text(
                                       !isFollowing
-                                          ? '✔ Following @${video.creator.username}!'
-                                          : 'Unfollowed @${video.creator.username}',
+                                          ? '✔ Following ${video.creator.displayName}!'
+                                          : 'Unfollowed ${video.creator.displayName}',
                                     ),
                                     duration: const Duration(seconds: 1),
                                   ),
@@ -387,7 +387,7 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
                             onGiftSent: (gift) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('🎁 Sent ${gift.name} to @${video.creator.username}!'),
+                                  content: Text('🎁 Sent ${gift.name} to ${video.creator.displayName}!'),
                                   backgroundColor: AppColors.success,
                                 ),
                               );
@@ -449,7 +449,7 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
                   );
                 },
                 child: Text(
-                  '@${video.creator.username}',
+                  video.creator.displayName,
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,

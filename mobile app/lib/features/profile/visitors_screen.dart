@@ -274,7 +274,9 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
                           children: [
                             Flexible(
                               child: Text(
-                                u.displayName.isNotEmpty ? u.displayName : (u.name.isNotEmpty ? u.name : u.username),
+                                u.displayName.isNotEmpty
+                                    ? u.displayName
+                                    : (u.name.isNotEmpty ? u.name : (u.id.isNotEmpty ? 'User ${u.id}' : 'User')),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
@@ -304,7 +306,7 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '@${u.username} • ${_formatTimeAgo(rec.visitedAt)}',
+                          'ID: ${u.id} • ${_formatTimeAgo(rec.visitedAt)}',
                           style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark)),
                         ),
                       ],

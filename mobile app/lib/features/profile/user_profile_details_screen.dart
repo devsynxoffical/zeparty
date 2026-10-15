@@ -14,6 +14,8 @@ import '../../models/medal_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/svip_provider.dart';
 import '../../providers/social_provider.dart';
+import '../../providers/live_party_provider.dart';
+import '../../providers/live_provider.dart';
 import '../party_room/live_party_room_screen.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/user_list_sheet.dart';
@@ -21,6 +23,7 @@ import '../../widgets/full_screen_image_viewer.dart';
 import '../../widgets/gift_dialog.dart';
 
 import '../../core/repositories/social_repository.dart';
+import '../../core/repositories/room_repository.dart';
 import '../../core/services/api_client.dart';
 import '../../models/live_room_model.dart';
 import '../live/live_room_screen.dart';
@@ -149,14 +152,30 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         final isFollowing = profileData['isFollowing'] == true;
         final fCount = profileData['followersCount'] is int ? profileData['followersCount'] as int : user.followers;
         final followingCount = profileData['followingCount'] is int ? profileData['followingCount'] as int : user.following;
-        final isLiveVal = profileData['isLive'] == true;
-        final liveRoomIdVal = profileData['liveRoomId']?.toString();
+
+        final isLiveVal = profileData['isLive'] == true ||
+            profileData['isInRoom'] == true ||
+            (profileData['currentRoom'] != null &&
+                profileData['currentRoom'] is Map &&
+                (profileData['currentRoom']['id'] != null || profileData['currentRoom']['roomId'] != null)) ||
+            (profileData['currentRoomId'] != null && profileData['currentRoomId'].toString().isNotEmpty) ||
+            (profileData['liveRoomId'] != null && profileData['liveRoomId'].toString().isNotEmpty);
+
+        final liveRoomIdVal = profileData['liveRoomId']?.toString() ??
+            profileData['currentRoomId']?.toString() ??
+            (profileData['currentRoom'] is Map
+                ? (profileData['currentRoom']['id']?.toString() ?? profileData['currentRoom']['roomId']?.toString())
+                : null);
+
+        final isOnlineVal = profileData['isOnline'] == true || profileData['online'] == true || isLiveVal;
+
         user = user.copyWith(
           followers: fCount,
           following: followingCount,
           isPrivate: profileData['isPrivate'] == true,
           isLive: isLiveVal,
           liveRoomId: isLiveVal ? liveRoomIdVal : null,
+          isOnline: isOnlineVal,
         );
         if (isFollowing && !auth.isFollowing(user.id)) {
           auth.syncFollowingList();
@@ -175,7 +194,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     final effectiveRoomId = roomId ?? _user?.liveRoomId;
     if (effectiveRoomId == null || effectiveRoomId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No active room found for this user.')),
+        const SnackBar(
+          content: Text('No active room found for this user.'),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
       return;
     }
@@ -184,7 +207,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (c) => const Center(child: CircularProgressIndicator(color: Colors.purpleAccent)),
+        builder: (c) => const Center(
+          child: CircularProgressIndicator(color: Colors.purpleAccent),
+        ),
       );
 
       LiveRoomModel? targetRoom;
@@ -198,19 +223,43 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         debugPrint('[UserProfile] Error fetching room details: $e');
       }
 
-      if (context.mounted) Navigator.pop(context); // pop loading
+      if (!mounted) return;
+      Navigator.pop(context); // pop loading dialog
 
-      targetRoom ??= LiveRoomModel(
-        id: effectiveRoomId,
-        title: '${_user?.displayName ?? 'User'}\'s Room',
-        host: _user ?? UserModel.empty,
-        coverUrl: _user?.avatarUrl ?? '',
-        viewerCount: 1,
-        startTime: DateTime.now(),
-        roomType: 'AUDIO_PARTY',
-        category: 'party',
-        status: 'LIVE',
-      );
+      // Validate room status
+      if (targetRoom == null || targetRoom.status.toUpperCase() != 'LIVE') {
+        try {
+          final activeRooms = await RoomRepository.instance.getActiveRooms(limit: 50);
+          final currentActive = activeRooms.where((r) =>
+            r.creatorUserId == _user!.id || r.host.id == _user!.id ||
+            (_user!.username.isNotEmpty && r.host.username.toLowerCase() == _user!.username.toLowerCase())
+          ).firstOrNull;
+          if (currentActive != null) {
+            targetRoom = currentActive;
+            if (mounted) {
+              setState(() {
+                _user = _user?.copyWith(isLive: true, liveRoomId: currentActive.id);
+              });
+            }
+          }
+        } catch (_) {}
+      }
+
+      if (targetRoom == null || targetRoom.status.toUpperCase() != 'LIVE') {
+        if (mounted) {
+          setState(() {
+            _user = _user?.copyWith(isLive: false, liveRoomId: null);
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('This room is no longer active or has ended.'),
+              backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
 
       final isVoiceParty = targetRoom.roomType == 'AUDIO_PARTY' ||
           targetRoom.roomType == 'AUDIO' ||
@@ -237,10 +286,150 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to open room: $e')),
+          SnackBar(
+            content: Text('Failed to open room: $e'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
         );
       }
     }
+  }
+
+  /// Interactive Presence Status Area: In Room (tappable), Online (green), Offline (inactive)
+  Widget _buildProfilePresenceBadge(
+    BuildContext context,
+    UserModel user,
+    LivePartyProvider livePartyProv,
+    LiveProvider liveProv,
+    AuthProvider auth,
+  ) {
+    final isMe = user.id == auth.currentUser.id;
+
+    // 1. Determine active room connection
+    String? activeRoomId = user.liveRoomId ?? user.currentRoomId;
+    bool isInActiveRoom = (user.isLive || user.isInRoom || user.presenceStatus == 'IN_ROOM') && activeRoomId != null && activeRoomId.isNotEmpty;
+
+    // Real-time synchronization with active room on device (minimized room or participant list)
+    if (isMe) {
+      if (livePartyProv.activeRoom != null) {
+        isInActiveRoom = true;
+        activeRoomId = livePartyProv.activeRoom!.id;
+      } else if (liveProv.activeRoom != null) {
+        isInActiveRoom = true;
+        activeRoomId = liveProv.activeRoom!.id;
+      } else {
+        isInActiveRoom = false;
+        activeRoomId = null;
+      }
+    } else {
+      if (livePartyProv.activeRoom != null &&
+          livePartyProv.participants.any((p) => p.user.id == user.id)) {
+        isInActiveRoom = true;
+        activeRoomId = livePartyProv.activeRoom!.id;
+      }
+    }
+
+    final bool isOnline = user.isOnline || isInActiveRoom || isMe;
+
+    // State 1: In Room (tappable to join active room)
+    if (isInActiveRoom && activeRoomId != null && activeRoomId.isNotEmpty) {
+      return GestureDetector(
+        key: const Key('profile_in_room_badge'),
+        onTap: () => _openUserActiveRoom(context, activeRoomId),
+        child: Container(
+          margin: const EdgeInsets.only(right: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF8E24AA), Color(0xFFD81B60)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.8), width: 1.0),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.pinkAccent.withValues(alpha: 0.35),
+                blurRadius: 8,
+                spreadRadius: -1,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.sensors_rounded, size: 12, color: Colors.white),
+              const SizedBox(width: 4),
+              const Text(
+                'In Room',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const SizedBox(width: 3),
+              const Icon(Icons.arrow_forward_ios_rounded, size: 9, color: Colors.white70),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // State 2: Online outside a room
+    if (isOnline) {
+      return Container(
+        margin: const EdgeInsets.only(right: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white24, width: 0.8),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 4,
+              backgroundColor: Color(0xFF00FF88),
+            ),
+            SizedBox(width: 5),
+            Text(
+              'Online',
+              style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // State 3: Offline (inactive grey indicator, no green badge, no In Room link)
+    return Container(
+      margin: const EdgeInsets.only(right: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12, width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CircleAvatar(
+            radius: 4,
+            backgroundColor: Colors.grey.shade500,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            user.lastActiveText,
+            style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
   }
 
   // Diagram C & Section 12: Three-Dot Safety Menu (REPORT â†’ BLOCK â†’ CANCEL)
@@ -431,6 +620,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final livePartyProv = context.watch<LivePartyProvider>();
+    final liveProv = context.watch<LiveProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryText = AppColors.getTextPrimary(isDark);
     final svip = context.watch<SVIPProvider>();
@@ -470,12 +661,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 )
               : Stack(
                   children: [
-                    // Scrollable Diagram B Hierarchy
-                    SingleChildScrollView(
-                      physics: const BouncingScrollPhysics(),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                    // Scrollable Diagram B Hierarchy with pull-to-refresh
+                    RefreshIndicator(
+                      onRefresh: _loadUser,
+                      color: Colors.purpleAccent,
+                      child: SingleChildScrollView(
+                        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
                           // 1. TOP BAR & COVER + IDENTITY
                           _buildCoverAndIdentityHeader(context, isDark, svip, isFollowing),
 
@@ -535,6 +729,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         ],
                       ),
                     ),
+                  ),
 
                     // Top Floating Navigation Bar (Safe Area Compliant)
                     SafeArea(
@@ -571,32 +766,22 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                   onPressed: () => _showOverflowMenu(context, isOtherUser, isDark, auth),
                                 ),
                                 const SizedBox(height: 2),
-                                if (_user != null) ...[
-
-                                  // 2. Online / Last Active Status Badge cleanly below 3-dot overflow menu
+                                if (_isLoading && _user == null) ...[
                                   Container(
                                     margin: const EdgeInsets.only(right: 6),
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.55),
+                                      color: Colors.black.withValues(alpha: 0.35),
                                       borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: Colors.white24, width: 0.8),
                                     ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 4,
-                                          backgroundColor: _user!.isOnline ? const Color(0xFF00FF88) : Colors.grey,
-                                        ),
-                                        const SizedBox(width: 5),
-                                        Text(
-                                          _user!.isOnline ? 'Online' : _user!.lastActiveText,
-                                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                                        ),
-                                      ],
+                                    child: const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white38),
                                     ),
                                   ),
+                                ] else if (_user != null) ...[
+                                  _buildProfilePresenceBadge(context, _user!, livePartyProv, liveProv, auth),
                                 ],
                               ],
                             ),
@@ -1840,6 +2025,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   }
 
   Widget _buildBadgeModalItem(String name, String badgeAsset, String? frameAsset, Color accentColor, {bool isUnlocked = false}) {
+    final resolvedAsset = NobleBadgeHelper.getBadgeAsset(name) ?? badgeAsset;
     return Container(
       width: 100,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
@@ -1859,7 +2045,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               Opacity(
                 opacity: isUnlocked ? 1.0 : 0.45,
                 child: Image.asset(
-                  badgeAsset,
+                  resolvedAsset,
                   height: 36,
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => Icon(Icons.shield_rounded, color: accentColor, size: 32),

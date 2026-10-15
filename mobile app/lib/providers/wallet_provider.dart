@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/user_model.dart';
 import '../models/wallet_model.dart';
 import '../models/transaction_model.dart';
 import '../models/recharge_plan_model.dart';
@@ -16,6 +19,7 @@ class WalletProvider extends ChangeNotifier {
 
   bool _isLoading = false;
   String? _errorMessage;
+  String? _activeUserId;
   final Set<String> _processedIdempotencyKeys = {};
 
   WalletModel? get wallet => _wallet;
@@ -38,18 +42,86 @@ class WalletProvider extends ChangeNotifier {
     fetchLedger();
   }
 
+  /// Synchronize authoritative wallet state with current authenticated user
+  Future<void> syncWithUser(UserModel user) async {
+    if (user.id.isEmpty) {
+      clearWallet();
+      return;
+    }
+
+    if (_activeUserId != user.id) {
+      _activeUserId = user.id;
+      _errorMessage = null;
+
+      // 1. Try restoring isolated local cache for this specific user
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedJson = prefs.getString('zeparty_wallet_cache_${user.id}');
+        if (cachedJson != null && cachedJson.isNotEmpty) {
+          final map = jsonDecode(cachedJson) as Map<String, dynamic>;
+          _wallet = WalletModel.fromJson(map);
+        } else {
+          // Fallback to user authoritative balance snapshot until remote fetch completes
+          _wallet = WalletModel(
+            id: user.id,
+            userId: user.id,
+            coinBalance: user.coins,
+            diamondBalance: user.diamonds,
+          );
+        }
+      } catch (_) {
+        _wallet = WalletModel(
+          id: user.id,
+          userId: user.id,
+          coinBalance: user.coins,
+          diamondBalance: user.diamonds,
+        );
+      }
+      notifyListeners();
+    }
+
+    // Always fetch latest authoritative balance from backend
+    fetchWallet();
+  }
+
+  /// Clear or isolate cached balance data on account switches / logout
+  void clearWallet() {
+    _wallet = null;
+    _activeUserId = null;
+    _errorMessage = null;
+    _isLoading = false;
+    _transactions.clear();
+    _plans.clear();
+    notifyListeners();
+  }
+
   /// Fetch user's authoritative wallet balance from backend
   Future<void> fetchWallet() async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
     try {
       final w = await _repository.fetchWallet();
       _wallet = w;
+      _activeUserId = w.userId;
       _errorMessage = null;
+      _isLoading = false;
+
+      // Persist isolated cache per user account
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('zeparty_wallet_cache_${w.userId}', jsonEncode(w.toJson()));
+      } catch (_) {}
+
       notifyListeners();
     } on ApiException catch (e) {
+      _isLoading = false;
       _errorMessage = e.message;
       notifyListeners();
     } catch (e) {
-      _errorMessage = 'Failed to load wallet balance';
+      _isLoading = false;
+      _errorMessage = 'Failed to load authoritative wallet balance';
       notifyListeners();
     }
   }
@@ -205,17 +277,11 @@ class WalletProvider extends ChangeNotifier {
     return true;
   }
 
+  /// Prohibited per Item 21: Diamonds are for display within ZeParty only.
+  /// Conversion between Diamonds and Coins in either direction is strictly prohibited.
   bool exchangeDiamondsToCoins(int diamondsAmount, int coinsAmount) {
-    if (diamondsAmount <= 0 || diamonds < diamondsAmount) return false;
-    if (_wallet != null) {
-      _wallet = _wallet!.copyWith(
-        diamondBalance: max(0, _wallet!.diamondBalance - diamondsAmount),
-        coinBalance: _wallet!.coinBalance + coinsAmount,
-      );
-      notifyListeners();
-    }
-    fetchWallet();
-    return true;
+    debugPrint('[WalletProvider] Coin/Diamond exchange is prohibited on ZeParty.');
+    return false;
   }
 
   void earnCoins(int amount, String title, {String? referenceId}) {

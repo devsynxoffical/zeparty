@@ -65,7 +65,19 @@ class UserModel {
   final bool isPrivate;
   final DateTime? lastActiveAt;
 
+  bool get isInRoom => (isLive && liveRoomId != null && liveRoomId!.isNotEmpty) || (status == 'IN_ROOM');
+  String? get currentRoomId => liveRoomId;
+  bool get online => isOnline;
+  Map<String, dynamic>? get currentRoom => (liveRoomId != null && liveRoomId!.isNotEmpty) ? {'id': liveRoomId} : null;
+
+  String get presenceStatus {
+    if (isInRoom) return 'IN_ROOM';
+    if (isOnline) return 'ONLINE';
+    return 'OFFLINE';
+  }
+
   String get lastActiveText {
+    if (isInRoom) return 'In Room';
     if (isOnline) return 'Online';
     if (lastActiveAt != null) {
       final diff = DateTime.now().difference(lastActiveAt!);
@@ -73,9 +85,8 @@ class UserModel {
       if (diff.inMinutes < 60) return 'Active ${diff.inMinutes}m ago';
       if (diff.inHours < 24) return 'Active ${diff.inHours}h ago';
       if (diff.inDays < 30) return 'Active ${diff.inDays}d ago';
-      return 'Offline';
     }
-    return 'Active 2h ago';
+    return 'Offline';
   }
 
   int get svipLevel {
@@ -163,7 +174,7 @@ class UserModel {
     this.isBd = false,
     this.agencyName,
     this.sellerBalance = 0,
-    this.isOnline = true,
+    this.isOnline = false,
     this.isLive = false,
     this.liveRoomId,
     this.avatarFrame = '',
@@ -220,19 +231,10 @@ class UserModel {
 
   /// Effective display name
   String get displayName {
-    if (name.isNotEmpty && name != 'null' && name != 'undefined') {
+    if (name.isNotEmpty && name != 'null' && name != 'undefined' && !name.contains('@') && !name.startsWith('user_') && !name.startsWith('google_')) {
       return name;
     }
-    if (username.isNotEmpty && username != 'null' && username != 'undefined') {
-      return username;
-    }
-    if (email != null && email!.contains('@')) {
-      final handle = email!.split('@').first.trim();
-      if (handle.isNotEmpty) {
-        return handle[0].toUpperCase() + handle.substring(1);
-      }
-    }
-    return 'ZeParty Member';
+    return id.isNotEmpty ? 'User $id' : 'ZeParty Member';
   }
 
   /// Effective cover image URL fallback
@@ -253,15 +255,15 @@ class UserModel {
 
     String username = rawUsername.isNotEmpty
         ? rawUsername
-        : (email != null && email.contains('@') ? email.split('@').first.toLowerCase() : (id.isNotEmpty ? 'user_${id.substring(0, id.length > 8 ? 8 : id.length)}' : 'user'));
+        : (id.isNotEmpty ? 'user_$id' : 'user');
 
     String name = rawDisplayName.isNotEmpty
         ? rawDisplayName
         : (rawDisplayNameFallback.isNotEmpty
             ? rawDisplayNameFallback
-            : (rawName.isNotEmpty
+            : (rawName.isNotEmpty && !rawName.contains('@')
                 ? rawName
-                : (rawUsername.isNotEmpty ? rawUsername : 'ZeParty Member')));
+                : (id.isNotEmpty ? 'User $id' : 'ZeParty Member')));
 
     final phone = json['phone']?.toString();
     final avatarUrl = profile['avatarUrl']?.toString() ?? json['avatarUrl']?.toString() ?? profile['avatar']?.toString() ?? json['avatar']?.toString() ?? '';
@@ -298,6 +300,31 @@ class UserModel {
     if (userType == 'ADMIN' || rawRole == 'admin') role = UserRole.admin;
 
     final bool effectiveIsHost = isHostStatusActive || isUserTypeHost || role == UserRole.host;
+
+    // Detect Coins Seller from authoritative fields, secondary roles, permissions, or assigned badges
+    final List<dynamic> rawRolesList = (json['roles'] is List) ? json['roles'] as List : [];
+    final bool hasSellerInRoles = rawRolesList.any((r) {
+      final s = r.toString().toUpperCase();
+      return s == 'SELLER' || s == 'COINS_SELLER' || s == 'COIN_SELLER' || s == 'MERCHANT_SELLER';
+    });
+    final rawBadgeStr = (json['badge']?.toString() ?? '').toLowerCase();
+    final List<dynamic> rawBadgesList = (json['badges'] is List) ? json['badges'] as List : [];
+    final bool hasSellerBadge = rawBadgeStr.contains('seller') ||
+        rawBadgeStr.contains('coins_saller') ||
+        rawBadgesList.any((b) => b.toString().toLowerCase().contains('seller'));
+    final List<dynamic> rawTitlesList = (json['customTitles'] is List) ? json['customTitles'] as List : [];
+    final bool hasSellerTitle = rawTitlesList.any((t) => t.toString().toLowerCase().contains('seller'));
+
+    final bool isSellerActive = json['isSeller'] == true ||
+        json['isCoinsSeller'] == true ||
+        json['hasSellerPortal'] == true ||
+        userType == 'SELLER' ||
+        rawRole == 'seller' ||
+        hasSellerInRoles ||
+        hasSellerBadge ||
+        hasSellerTitle ||
+        role == UserRole.seller ||
+        sellerBalance > 0;
     String hostAppStatus = 'none';
     if (hostRawStatus != null && hostRawStatus.isNotEmpty) {
       hostAppStatus = hostRawStatus.toLowerCase();
@@ -337,12 +364,18 @@ class UserModel {
       vipLevel: isVipUser ? (json['vipLevel']?.toString() ?? 'VIP 1') : 'None',
       isHost: effectiveIsHost,
       isAgency: role == UserRole.agency,
-      isSeller: role == UserRole.seller || sellerBalance > 0,
+      isSeller: isSellerActive,
       isBd: role == UserRole.bd,
       agencyName: json['agencyName']?.toString(),
       sellerBalance: sellerBalance,
-      isOnline: json['isOnline'] ?? true,
-      isLive: json['isLive'] == true ||
+      isOnline: json['presenceStatus']?.toString().toUpperCase() == 'ONLINE' ||
+          json['presenceStatus']?.toString().toUpperCase() == 'IN_ROOM' ||
+          json['isOnline'] == true ||
+          json['online'] == true ||
+          json['isInRoom'] == true ||
+          (json['isLive'] == true && (json['liveRoomId'] != null || json['currentRoomId'] != null)),
+      isLive: json['presenceStatus']?.toString().toUpperCase() == 'IN_ROOM' ||
+          json['isLive'] == true ||
           json['isInRoom'] == true ||
           (json['liveRoomId'] != null && json['liveRoomId'].toString().isNotEmpty) ||
           (json['currentRoomId'] != null && json['currentRoomId'].toString().isNotEmpty) ||
@@ -378,7 +411,15 @@ class UserModel {
       isPrivate: json['isPrivate'] == true || profile['isPrivate'] == true,
       lastActiveAt: json['lastActiveAt'] != null
           ? DateTime.tryParse(json['lastActiveAt'].toString())
-          : (json['lastSeen'] != null ? DateTime.tryParse(json['lastSeen'].toString()) : null),
+          : (json['lastSeen'] != null
+              ? DateTime.tryParse(json['lastSeen'].toString())
+              : (json['lastSeenAt'] != null
+                  ? DateTime.tryParse(json['lastSeenAt'].toString())
+                  : (json['lastLoginAt'] != null
+                      ? DateTime.tryParse(json['lastLoginAt'].toString())
+                      : (profile['lastActiveAt'] != null
+                          ? DateTime.tryParse(profile['lastActiveAt'].toString())
+                          : null)))),
       customTitles: json['customTitles'] != null ? List<String>.from(json['customTitles']) : [],
     );
   }
@@ -485,8 +526,13 @@ class UserModel {
       'agencyName': agencyName,
       'sellerBalance': sellerBalance,
       'isOnline': isOnline,
+      'online': isOnline,
       'isLive': isLive,
+      'isInRoom': isInRoom,
+      'presenceStatus': presenceStatus,
       'liveRoomId': liveRoomId,
+      'currentRoomId': currentRoomId,
+      'currentRoom': currentRoom,
       'avatarFrame': avatarFrame,
       'badge': badge,
       'referralCode': referralCode,
@@ -496,8 +542,13 @@ class UserModel {
       'hostApplicationStatus': hostApplicationStatus,
       'hostRejectionReason': hostRejectionReason,
       'wealthLevel': wealthLevel,
+      'wealthXp': wealthXp,
       'charmLevel': charmLevel,
+      'charmXp': charmXp,
+      'gameLevel': gameLevel,
+      'gameXp': gameXp,
       'accountLevel': accountLevel,
+      'accountXp': accountXp,
       'likesReceived': likesReceived,
       'isCountryLocked': isCountryLocked,
       'isPrivate': isPrivate,

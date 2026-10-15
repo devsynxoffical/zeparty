@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
+import '../../models/user_model.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../providers/recharge_agency_provider.dart';
 import '../../providers/usd_balance_provider.dart';
 import '../../widgets/user_avatar.dart';
@@ -25,6 +28,18 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      final user = auth.currentUser;
+      final wallet = context.read<WalletProvider>();
+      context.read<RechargeAgencyProvider>().syncForSeller(
+        sellerId: user.id,
+        sellerName: user.displayName.isNotEmpty ? '${user.displayName} Recharge Agency' : 'Coin Reseller Agency',
+        countryCode: user.region.isNotEmpty ? user.region : 'GLOBAL',
+        initialCoins: user.sellerBalance > 0 ? user.sellerBalance : wallet.sellerBalance,
+      );
+    });
   }
 
   @override
@@ -40,6 +55,54 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = AppColors.getPrimary(isDark);
+    final auth = context.watch<AuthProvider>();
+    final user = auth.currentUser;
+
+    // Strict role check: decorative badge alone does not grant recharge permissions
+    final bool isAuthorizedSeller = user.isSeller ||
+        user.role == UserRole.seller ||
+        user.role == UserRole.admin ||
+        user.badge.toLowerCase().contains('seller') ||
+        user.customTitles.any((t) => t.toLowerCase().contains('seller'));
+
+    if (!isAuthorizedSeller) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(isDark),
+        appBar: AppBar(
+          title: const Text('Recharge Agency', style: TextStyle(fontWeight: FontWeight.bold)),
+          backgroundColor: AppColors.getBackground(isDark),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.gpp_bad_rounded, size: 64, color: Colors.redAccent),
+                const SizedBox(height: 16),
+                Text(
+                  'Access Denied',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This account does not have an active, approved Coins Seller role or portal assignment. Contact platform administration.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(backgroundColor: primary, foregroundColor: Colors.white),
+                  child: const Text('Back to Profile'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     final sellerProv = context.watch<RechargeAgencyProvider>();
 
     return Scaffold(

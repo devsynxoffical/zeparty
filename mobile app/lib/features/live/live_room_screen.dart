@@ -21,7 +21,6 @@ import '../pk_battle/pk_battle_screen.dart';
 import '../../models/pk_battle_model.dart';
 import '../../core/services/api_client.dart';
 import '../../core/services/socket_service.dart';
-import '../games/game_lobby_screen.dart';
 import '../games/game_center_sheet.dart';
 import '../../widgets/emoji_reaction_overlay.dart';
 import '../../widgets/tiktok_user_join_banner.dart';
@@ -2031,110 +2030,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             ),
           ),
 
-          // Right Side Floating Quick-Access Icons
-          Positioned(
-            right: 16,
-            bottom: 270,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Stack(
-                  alignment: Alignment.topRight,
-                  clipBehavior: Clip.none,
-                  children: [
-                    _buildQuickActionBtn(
-                      isDark,
-                      Icons.card_giftcard_rounded,
-                      liveProvider.luckyBagActive ? 'Claim!' : 'Lucky',
-                      liveProvider.luckyBagActive ? Colors.orangeAccent : AppColors.liveRed,
-                      onTap: () => _showLuckyBagQuickActionDialog(context, isDark, liveProvider),
-                      imageAsset: 'assets/images/party_tool_luckybag.png',
-                    ),
-                    if (liveProvider.luckyBagActive)
-                      Positioned(
-                        top: -4,
-                        right: -4,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Text('🎁 Active', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _buildQuickActionBtn(
-                  isDark,
-                  Icons.sports_esports_rounded,
-                  'Games',
-                  AppColors.cyan,
-                  onTap: () {
-                    GameCenterSheet.show(context);
-                  },
-                  imageAsset: 'assets/images/party_tool_game_center.png',
-                ),
-                const SizedBox(height: 12),
-                _buildQuickActionBtn(
-                  isDark,
-                  Icons.people_alt_rounded,
-                  'Viewers',
-                  AppColors.cyan,
-                  onTap: () {
-                    LiveViewersSheet.show(
-                      context,
-                      viewers: liveProvider.viewers,
-                      roomId: widget.room.id,
-                      roomTitle: widget.room.title,
-                      isDark: isDark,
-                      isHost: widget.isHost,
-                      onMakeCoHost: (viewer) {
-                        setState(() => _coHostUser = viewer);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Joined screen with ${viewer.name} as Co-Host!'),
-                            backgroundColor: const Color(0xFF00E5FF),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                  imageAsset: 'assets/images/party_tool_members.png',
-                ),
-                const SizedBox(height: 12),
-                _buildQuickActionBtn(
-                  isDark,
-                  Icons.share_rounded,
-                  'Share',
-                  Colors.white,
-                  onTap: () {
-                    RoomShareService.shareRoom(
-                      context,
-                      roomId: widget.room.id,
-                      roomTitle: widget.room.title,
-                      isParty: false,
-                    );
-                  },
-                  imageAsset: 'assets/images/party_tool_share.png',
-                ),
-                const SizedBox(height: 12),
-                _buildQuickActionBtn(
-                  isDark,
-                  Icons.more_horiz_rounded,
-                  'More',
-                  Colors.white,
-                  onTap: () {
-                    // Phase 6: Room Tools panel
-                    _showRoomTools(context, isDark);
-                  },
-                  imageAsset: 'assets/images/party_tool_settings.png',
-                ),
-              ],
-            ),
-          ),
-
           // Bottom Live Chat & Actions Overlay
           Positioned(
             bottom: 0,
@@ -2194,176 +2089,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     // Actions Bar (3D Luxury Toolbar with tight spacing & prominent input)
                     Row(
                       children: [
-                        // Far Left: 3D "+" Action Tool Button
+                        // Far Left: 4-Dot Grid Tools Button (Change 15: Unified Tools Menu)
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            showModalBottomSheet(
-                              context: context,
-                              backgroundColor: const Color(0xFF1E1B2E),
-                              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-                              builder: (bCtx) => SafeArea(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(20),
-                                  child: Wrap(
-                                    spacing: 20,
-                                    runSpacing: 20,
-                                    alignment: WrapAlignment.center,
-                                    children: [
-                                      InkWell(
-                                        borderRadius: BorderRadius.circular(16),
-                                        onTap: () {
-                                          Navigator.pop(bCtx);
-                                          showModalBottomSheet(
-                                            context: context,
-                                            isScrollControlled: true,
-                                            backgroundColor: Colors.transparent,
-                                            builder: (_) => const RocketGameSheet(),
-                                          );
-                                        },
-                                        child: Container(
-                                          width: 46,
-                                          height: 46,
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: BoxDecoration(
-                                            gradient: const RadialGradient(
-                                              colors: [Color(0xFF3949AB), Color(0xFF1A237E)],
-                                            ),
-                                            borderRadius: BorderRadius.circular(14),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.indigoAccent.withValues(alpha: 0.4),
-                                                blurRadius: 8,
-                                                offset: const Offset(0, 3),
-                                              ),
-                                            ],
-                                          ),
-                                          child: ClipRRect(
-                                            borderRadius: BorderRadius.circular(10),
-                                            child: Image.asset(
-                                              'assets/images/party_rocket_icon.jpg',
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) => const Icon(Icons.rocket_launch_rounded, color: Colors.indigoAccent, size: 26),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      InkWell(
-                                        borderRadius: BorderRadius.circular(16),
-                                        onTap: () {
-                                          Navigator.pop(bCtx);
-                                          showModalBottomSheet(
-                                            context: context,
-                                            backgroundColor: AppColors.transparent,
-                                            builder: (c) {
-                                              final currentUser = context.read<AuthProvider>().currentUser;
-                                              final effectiveHost = (widget.room.host.id == currentUser.id && currentUser.avatarUrl.isNotEmpty)
-                                                  ? widget.room.host.copyWith(avatarUrl: currentUser.avatarUrl, name: currentUser.name)
-                                                  : widget.room.host;
-                                              return GiftDialog(
-                                                streamerName: effectiveHost.name,
-                                                targetReceiver: effectiveHost,
-                                                onGiftSent: (gift) {
-                                                  liveProvider.sendGift(gift, currentUser.name);
-                                                  _giftOverlayKey.currentState?.playGiftAnimation(gift, senderName: currentUser.name);
-                                                },
-                                              );
-                                            },
-                                          );
-                                        },
-                                        child: Container(
-                                          width: 46,
-                                          height: 46,
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: BoxDecoration(
-                                            gradient: const RadialGradient(
-                                              colors: [Color(0xFFD81B60), Color(0xFF880E4F)],
-                                            ),
-                                            borderRadius: BorderRadius.circular(14),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.pinkAccent.withValues(alpha: 0.4),
-                                                blurRadius: 8,
-                                                offset: const Offset(0, 3),
-                                              ),
-                                            ],
-                                          ),
-                                          child: Image.asset(
-                                            'assets/images/party_tool_gift.png',
-                                            fit: BoxFit.contain,
-                                            errorBuilder: (_, __, ___) => const Icon(Icons.card_giftcard_rounded, color: Colors.pinkAccent, size: 26),
-                                          ),
-                                        ),
-                                      ),
-                                      InkWell(
-                                        borderRadius: BorderRadius.circular(16),
-                                        onTap: () {
-                                          Navigator.pop(bCtx);
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => const GameLobbyScreen()));
-                                        },
-                                        child: Container(
-                                          width: 46,
-                                          height: 46,
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: BoxDecoration(
-                                            gradient: const RadialGradient(
-                                              colors: [Color(0xFFFFB300), Color(0xFFE65100)],
-                                            ),
-                                            borderRadius: BorderRadius.circular(14),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.amber.withValues(alpha: 0.4),
-                                                blurRadius: 8,
-                                                offset: const Offset(0, 3),
-                                              ),
-                                            ],
-                                          ),
-                                          child: Image.asset(
-                                            'assets/images/party_tool_game_center.png',
-                                            fit: BoxFit.contain,
-                                            errorBuilder: (_, __, ___) => const Icon(Icons.sports_esports_rounded, color: Colors.amber, size: 26),
-                                          ),
-                                        ),
-                                      ),
-                                      InkWell(
-                                        borderRadius: BorderRadius.circular(16),
-                                        onTap: () {
-                                          Navigator.pop(bCtx);
-                                          Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
-                                        },
-                                        child: Container(
-                                          width: 46,
-                                          height: 46,
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: BoxDecoration(
-                                            gradient: const RadialGradient(
-                                              colors: [Color(0xFFFF5722), Color(0xFFBF360C)],
-                                            ),
-                                            borderRadius: BorderRadius.circular(14),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.deepOrangeAccent.withValues(alpha: 0.4),
-                                                blurRadius: 8,
-                                                offset: const Offset(0, 3),
-                                              ),
-                                            ],
-                                          ),
-                                          child: Image.asset(
-                                            'assets/images/party_tool_pk_match.png',
-                                            fit: BoxFit.contain,
-                                            errorBuilder: (_, __, ___) => const Icon(Icons.flash_on_rounded, color: Colors.deepOrangeAccent, size: 26),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
+                          onTap: () => _showRoomTools(context, isDark),
                           child: Container(
-                            width: 36,
-                            height: 36,
+                            width: 38,
+                            height: 38,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               gradient: const RadialGradient(
@@ -2376,7 +2108,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                 ],
                               ),
                               border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.22),
+                                color: Colors.white.withValues(alpha: 0.25),
                                 width: 1.2,
                               ),
                               boxShadow: [
@@ -2388,7 +2120,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               ],
                             ),
                             child: const Center(
-                              child: Icon(Icons.add_rounded, color: Colors.white, size: 20),
+                              child: Icon(Icons.grid_view_rounded, color: Colors.white, size: 20),
                             ),
                           ),
                         ),
@@ -2866,567 +2598,669 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
   void _showRoomTools(BuildContext context, bool isDark) {
     final liveProvider = context.read<LiveProvider>();
+    final currentUser = context.read<AuthProvider>().currentUser;
+    final isHost = widget.isHost || widget.room.host.id == currentUser.id || widget.room.creatorUserId == currentUser.id;
+    final isAdmin = currentUser.role == UserRole.admin;
+    final canModerate = isHost || isAdmin;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.getCard(isDark),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
       builder: (c) => SafeArea(
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.75,
+            maxHeight: MediaQuery.of(context).size.height * 0.80,
           ),
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 36, height: 4,
-                decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(2)),
-              ),
-              const SizedBox(height: 12),
-              Text('Room Tools', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 20,
-                runSpacing: 20,
-                alignment: WrapAlignment.center,
-                children: [
-                  // ── Share Room Invite Link ──────────────────────
-                  _buildToolItem(
-                    icon: Icons.share_rounded,
-                    label: 'Share Link',
-                    color: Colors.lightBlueAccent,
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_share.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      RoomShareService.shareRoom(
-                        context,
-                        roomId: widget.room.id,
-                        roomTitle: widget.room.title,
-                        isParty: false,
-                      );
-                    },
+                // Drag Handle
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
+                ),
+                const SizedBox(height: 10),
 
-                  // ── Invite Co-Host Link ──────────────────────────
-                  _buildToolItem(
-                    icon: Icons.person_add_alt_1_rounded,
-                    label: 'Invite Co-Host',
-                    color: const Color(0xFF00E5FF),
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_seat.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      RoomShareService.shareCoHostInvite(
-                        context,
-                        roomId: widget.room.id,
-                        roomTitle: widget.room.title,
-                      );
-                    },
-                  ),
-
-                  // ── YouTube ──────────────────────────────────────
-                  _buildToolItem(
-                    icon: Icons.play_circle_fill_rounded,
-                    label: 'YouTube',
-                    color: Colors.red,
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_youtube.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      showDialog(
-                        context: context,
-                        builder: (d) {
-                          final ctrl = TextEditingController();
-                          return AlertDialog(
-                            backgroundColor: AppColors.getCard(isDark),
-                            title: Text('Share YouTube', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                            content: TextField(
-                              controller: ctrl,
-                              style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-                              decoration: InputDecoration(
-                                hintText: 'Paste YouTube URL...',
-                                hintStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
-                                filled: true,
-                                fillColor: AppColors.getBackground(isDark),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                              ),
-                            ),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
-                              ElevatedButton(
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                onPressed: () {
-                                  Navigator.pop(d);
-                                  if (ctrl.text.isNotEmpty) {
-                                    liveProvider.sendMessage('Sharing video: ${ctrl.text}', 'Host');
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('YouTube video shared with viewers!')),
-                                    );
-                                  }
-                                },
-                                child: const Text('Share', style: TextStyle(color: Colors.white)),
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
-                  ),
-
-                  // ── Super Wheel ───────────────────────────────────
-                  _buildToolItem(
-                    icon: Icons.casino_rounded,
-                    label: 'Super Wheel',
-                    color: Colors.purple,
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_superwheel.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      final participants = ['Sophia', 'Alex', 'Elena', 'Marcus', 'Zayn', 'Aisha'];
-                      showDialog(
-                        context: context,
-                        builder: (d) => AlertDialog(
-                          backgroundColor: AppColors.getCard(isDark),
-                          title: Row(children: [
-                            const Icon(Icons.casino_rounded, color: Colors.purple),
-                            const SizedBox(width: 8),
-                            Text('Super Wheel', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                          ]),
-                          content: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text('Spin to pick a random winner from ${participants.length} viewers!',
-                                  style: TextStyle(color: AppColors.getTextSecondary(isDark))),
-                              const SizedBox(height: 16),
-                              const Icon(Icons.rotate_right_rounded, size: 64, color: Colors.purple),
-                            ],
-                          ),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
-                              onPressed: () {
-                                Navigator.pop(d);
-                                liveProvider.spinSuperWheel(participants);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Spinning the wheel for ${participants.length} participants...'),
-                                    backgroundColor: Colors.purple,
-                                  ),
-                                );
-                              },
-                              child: const Text('Spin!', style: TextStyle(color: Colors.white)),
-                            ),
-                          ],
+                // Header with Close Action
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFE040FB), Color(0xFF7C4DFF)],
                         ),
-                      );
-                    },
-                  ),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.grid_view_rounded, color: Colors.white, size: 18),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Live Room Tools',
+                        style: TextStyle(
+                          color: AppColors.getTextPrimary(isDark),
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close_rounded, color: AppColors.getTextSecondary(isDark), size: 22),
+                      onPressed: () => Navigator.pop(c),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
 
-                  // ── Lucky Bag ─────────────────────────────────────
-                  _buildToolItem(
-                    icon: Icons.card_giftcard_rounded,
-                    label: 'Lucky Bag',
-                    color: Colors.orange,
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_luckybag.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      final amounts = [50, 100, 200, 500, 1000];
-                      int selected = 100;
-                      showDialog(
-                        context: context,
-                        builder: (d) => StatefulBuilder(
-                          builder: (d, setSt) => AlertDialog(
+                // ── SECTION 1: LIVE TOOLS (Lucky, Games, Viewers, Share) ──
+                Text(
+                  'Live Controls',
+                  style: TextStyle(
+                    color: AppColors.getTextSecondary(isDark),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                GridView.count(
+                  crossAxisCount: 4,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 16,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 0.85,
+                  children: [
+                    // 1. Lucky / Lucky Bag
+                    Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        _buildToolItem(
+                          icon: Icons.card_giftcard_rounded,
+                          label: liveProvider.luckyBagActive ? 'Claim!' : 'Lucky',
+                          color: liveProvider.luckyBagActive ? Colors.orangeAccent : AppColors.liveRed,
+                          isDark: isDark,
+                          imageAsset: 'assets/images/party_tool_luckybag.png',
+                          onTap: () {
+                            Navigator.pop(c);
+                            _showLuckyBagQuickActionDialog(context, isDark, liveProvider);
+                          },
+                        ),
+                        if (liveProvider.luckyBagActive)
+                          Positioned(
+                            top: 0,
+                            right: 8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.redAccent,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Text('Active', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                            ),
+                          ),
+                      ],
+                    ),
+
+                    // 2. Games (Game Center)
+                    _buildToolItem(
+                      icon: Icons.sports_esports_rounded,
+                      label: 'Games',
+                      color: const Color(0xFF7C4DFF),
+                      isDark: isDark,
+                      imageAsset: 'assets/images/party_tool_game_center.png',
+                      onTap: () {
+                        Navigator.pop(c);
+                        GameCenterSheet.show(context);
+                      },
+                    ),
+
+                    // 3. Viewers List
+                    _buildToolItem(
+                      icon: Icons.people_alt_rounded,
+                      label: 'Viewers (${liveProvider.viewers.length})',
+                      color: const Color(0xFF00E676),
+                      isDark: isDark,
+                      imageAsset: 'assets/images/party_tool_members.png',
+                      onTap: () {
+                        Navigator.pop(c);
+                        LiveViewersSheet.show(
+                          context,
+                          viewers: liveProvider.viewers,
+                          roomId: widget.room.id,
+                          roomTitle: widget.room.title,
+                          isDark: isDark,
+                          isHost: widget.isHost,
+                          onMakeCoHost: (viewer) {
+                            setState(() => _coHostUser = viewer);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Joined screen with ${viewer.name} as Co-Host!'),
+                                backgroundColor: const Color(0xFF00E5FF),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+
+                    // 4. Share Room
+                    _buildToolItem(
+                      icon: Icons.share_rounded,
+                      label: 'Share',
+                      color: const Color(0xFF00B0FF),
+                      isDark: isDark,
+                      imageAsset: 'assets/images/party_tool_share.png',
+                      onTap: () {
+                        Navigator.pop(c);
+                        RoomShareService.shareRoom(
+                          context,
+                          roomId: widget.room.id,
+                          roomTitle: widget.room.title,
+                          isParty: false,
+                        );
+                      },
+                    ),
+
+                    // 5. PK Match
+                    _buildToolItem(
+                      icon: Icons.flash_on_rounded,
+                      label: 'PK Match',
+                      color: Colors.orangeAccent,
+                      isDark: isDark,
+                      imageAsset: 'assets/images/party_tool_pk_match.png',
+                      onTap: () {
+                        Navigator.pop(c);
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
+                      },
+                    ),
+
+                    // 6. Super Wheel
+                    _buildToolItem(
+                      icon: Icons.casino_rounded,
+                      label: 'Super Wheel',
+                      color: Colors.purple,
+                      isDark: isDark,
+                      imageAsset: 'assets/images/party_tool_superwheel.png',
+                      onTap: () {
+                        Navigator.pop(c);
+                        final participants = ['Sophia', 'Alex', 'Elena', 'Marcus', 'Zayn', 'Aisha'];
+                        showDialog(
+                          context: context,
+                          builder: (d) => AlertDialog(
                             backgroundColor: AppColors.getCard(isDark),
                             title: Row(children: [
-                              const Icon(Icons.card_giftcard_rounded, color: Colors.orange),
+                              const Icon(Icons.casino_rounded, color: Colors.purple),
                               const SizedBox(width: 8),
-                              Text('Lucky Bag', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
+                              Text('Super Wheel', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
                             ]),
                             content: Column(
                               mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Choose diamond amount to drop:', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
-                                const SizedBox(height: 12),
-                                Wrap(
-                                  spacing: 8,
-                                  children: amounts.map((a) => GestureDetector(
-                                    onTap: () => setSt(() => selected = a),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: selected == a ? Colors.orange : Colors.grey.withValues(alpha: 0.2),
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                      child: Text('$a', style: TextStyle(
-                                        color: selected == a ? Colors.white : AppColors.getTextPrimary(isDark),
-                                        fontWeight: FontWeight.bold,
-                                      )),
-                                    ),
-                                  )).toList(),
-                                ),
-                                const SizedBox(height: 12),
-                                Row(children: [
-                                  const Icon(Icons.diamond_rounded, color: Colors.purpleAccent, size: 16),
-                                  const SizedBox(width: 4),
-                                  Text('$selected diamonds for 12 seconds', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
-                                ]),
+                                Text('Spin to pick a random winner from ${participants.length} viewers!',
+                                    style: TextStyle(color: AppColors.getTextSecondary(isDark))),
+                                const SizedBox(height: 16),
+                                const Icon(Icons.rotate_right_rounded, size: 64, color: Colors.purple),
                               ],
                             ),
                             actions: [
                               TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
                               ElevatedButton(
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
                                 onPressed: () {
                                   Navigator.pop(d);
-                                  liveProvider.startLuckyBag(selected);
+                                  liveProvider.spinSuperWheel(participants);
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text('Lucky Bag dropped! $selected diamonds available!'),
-                                      backgroundColor: Colors.orange,
+                                      content: Text('Spinning the wheel for ${participants.length} participants...'),
+                                      backgroundColor: Colors.purple,
                                     ),
                                   );
                                 },
-                                child: const Text('Drop Bag!', style: TextStyle(color: Colors.white)),
+                                child: const Text('Spin!', style: TextStyle(color: Colors.white)),
                               ),
                             ],
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    ),
 
-                  // ── Music ─────────────────────────────────────────
-                  _buildToolItem(
-                    icon: Icons.music_note_rounded,
-                    label: 'Music',
-                    color: Colors.blue,
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_music_player.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      final tracks = [
-                        'Chill Lofi Beats',
-                        'Party Anthem Mix',
-                        'Romantic Piano',
-                        'Hip-Hop Vibes',
-                        'Electronic Dance',
-                        'Nature Sounds',
-                      ];
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: AppColors.getCard(isDark),
-                        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                        builder: (m) => SafeArea(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text('Background Music', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
-                                const SizedBox(height: 4),
-                                Text('Current: ${liveProvider.isMusicPlaying ? liveProvider.currentMusicTrack! : "Off"}',
-                                    style: TextStyle(color: Colors.blue, fontSize: 12)),
-                                const SizedBox(height: 12),
-                                ...tracks.map((t) => ListTile(
-                                  leading: Icon(Icons.music_note_rounded, color: liveProvider.currentMusicTrack == t ? Colors.blue : Colors.grey),
-                                  title: Text(t, style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                                  trailing: liveProvider.currentMusicTrack == t
-                                      ? const Icon(Icons.equalizer_rounded, color: Colors.blue)
-                                      : null,
-                                  onTap: () {
-                                    Navigator.pop(m);
-                                    liveProvider.playMusic(t);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('Now playing: $t'), backgroundColor: Colors.blue),
-                                    );
-                                  },
-                                )),
-                                if (liveProvider.isMusicPlaying)
-                                  ListTile(
-                                    leading: const Icon(Icons.stop_rounded, color: Colors.red),
-                                    title: const Text('Stop Music', style: TextStyle(color: Colors.red)),
-                                    onTap: () {
-                                      Navigator.pop(m);
-                                      liveProvider.stopMusic();
-                                    },
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-
-                  // ── PK ────────────────────────────────────────────
-                  _buildToolItem(
-                    icon: Icons.sports_esports_rounded,
-                    label: 'PK',
-                    color: Colors.cyan,
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_pk_match.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
-                    },
-                  ),
-
-                  // ── Settings ──────────────────────────────────────
-                  _buildToolItem(
-                    icon: Icons.settings_rounded,
-                    label: 'Settings',
-                    color: Colors.grey,
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_settings.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      showDialog(
-                        context: context,
-                        builder: (d) {
-                          bool allowComments = true;
-                          bool showGiftAnimations = true;
-                          return StatefulBuilder(
-                            builder: (d, setSt) => AlertDialog(
-                              backgroundColor: AppColors.getCard(isDark),
-                              title: Row(children: [
-                                const Icon(Icons.settings_rounded, color: Colors.grey),
-                                const SizedBox(width: 8),
-                                Text('Live Settings', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                              ]),
-                              content: Column(
+                    // 7. Background Music
+                    _buildToolItem(
+                      icon: Icons.music_note_rounded,
+                      label: 'Music',
+                      color: Colors.purpleAccent,
+                      isDark: isDark,
+                      imageAsset: 'assets/images/party_tool_music_player.png',
+                      onTap: () {
+                        Navigator.pop(c);
+                        final tracks = [
+                          'Chill Lofi Beats',
+                          'Party Anthem Mix',
+                          'Romantic Piano',
+                          'Hip-Hop Vibes',
+                          'Electronic Dance',
+                          'Nature Sounds',
+                        ];
+                        showModalBottomSheet(
+                          context: context,
+                          backgroundColor: AppColors.getCard(isDark),
+                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                          builder: (m) => SafeArea(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  SwitchListTile(
-                                    title: Text('Allow Comments', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                                    value: allowComments,
-                                    activeThumbColor: AppColors.getPrimary(isDark),
-                                    onChanged: (v) => setSt(() => allowComments = v),
-                                  ),
-                                  SwitchListTile(
-                                    title: Text('Gift Animations', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                                    value: showGiftAnimations,
-                                    activeThumbColor: AppColors.getPrimary(isDark),
-                                    onChanged: (v) => setSt(() => showGiftAnimations = v),
-                                  ),
-                                  ListTile(
-                                    title: Text('Stream Quality', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                                    trailing: const Text('HD', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                                    onTap: () {},
+                                  Text('Background Music', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
+                                  const SizedBox(height: 4),
+                                  Text('Current: ${liveProvider.isMusicPlaying ? liveProvider.currentMusicTrack! : "Off"}',
+                                      style: const TextStyle(color: Colors.blue, fontSize: 12)),
+                                  const SizedBox(height: 12),
+                                  ...tracks.map((t) => ListTile(
+                                    leading: Icon(Icons.music_note_rounded, color: liveProvider.currentMusicTrack == t ? Colors.blue : Colors.grey),
+                                    title: Text(t, style: TextStyle(color: AppColors.getTextPrimary(isDark))),
+                                    trailing: liveProvider.currentMusicTrack == t
+                                        ? const Icon(Icons.equalizer_rounded, color: Colors.blue)
+                                        : null,
+                                    onTap: () {
+                                      Navigator.pop(m);
+                                      liveProvider.playMusic(t);
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('Now playing: $t'), backgroundColor: Colors.blue),
+                                      );
+                                    },
+                                  )),
+                                  if (liveProvider.isMusicPlaying)
+                                    ListTile(
+                                      leading: const Icon(Icons.stop_rounded, color: Colors.red),
+                                      title: const Text('Stop Music', style: TextStyle(color: Colors.red)),
+                                      onTap: () {
+                                        Navigator.pop(m);
+                                        liveProvider.stopMusic();
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+
+                    // 8. YouTube Video Share
+                    _buildToolItem(
+                      icon: Icons.play_circle_fill_rounded,
+                      label: 'YouTube',
+                      color: Colors.red,
+                      isDark: isDark,
+                      imageAsset: 'assets/images/party_tool_youtube.png',
+                      onTap: () {
+                        Navigator.pop(c);
+                        showDialog(
+                          context: context,
+                          builder: (d) {
+                            final ctrl = TextEditingController();
+                            return AlertDialog(
+                              backgroundColor: AppColors.getCard(isDark),
+                              title: Text('Share YouTube', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
+                              content: TextField(
+                                controller: ctrl,
+                                style: TextStyle(color: AppColors.getTextPrimary(isDark)),
+                                decoration: InputDecoration(
+                                  hintText: 'Paste YouTube URL...',
+                                  hintStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                                  filled: true,
+                                  fillColor: AppColors.getBackground(isDark),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                                ),
+                              ),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
+                                ElevatedButton(
+                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                  onPressed: () {
+                                    Navigator.pop(d);
+                                    if (ctrl.text.isNotEmpty) {
+                                      liveProvider.sendMessage('Sharing video: ${ctrl.text}', 'Host');
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(content: Text('YouTube video shared with viewers!')),
+                                      );
+                                    }
+                                  },
+                                  child: const Text('Share', style: TextStyle(color: Colors.white)),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                      },
+                    ),
+
+                    // 9. Rocket Game
+                    _buildToolItem(
+                      icon: Icons.rocket_launch_rounded,
+                      label: 'Rocket Game',
+                      color: Colors.indigoAccent,
+                      isDark: isDark,
+                      imageAsset: 'assets/images/party_rocket_icon.jpg',
+                      onTap: () {
+                        Navigator.pop(c);
+                        showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => const RocketGameSheet(),
+                        );
+                      },
+                    ),
+
+                    // 10. Visual Effects
+                    _buildToolItem(
+                      icon: Icons.auto_awesome_rounded,
+                      label: 'Effects',
+                      color: Colors.pink,
+                      isDark: isDark,
+                      imageAsset: 'assets/images/party_tool_effects_settings.png',
+                      onTap: () {
+                        Navigator.pop(c);
+                        final effects = ['None', 'Beauty', 'Blur BG', 'Vintage', 'Neon Glow', 'Black & White'];
+                        showModalBottomSheet(
+                          context: context,
+                          backgroundColor: AppColors.getCard(isDark),
+                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                          builder: (m) => SafeArea(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('Visual Effects', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
+                                  const SizedBox(height: 4),
+                                  Text('Active: ${liveProvider.activeEffect}', style: const TextStyle(color: Colors.pink, fontSize: 12)),
+                                  const SizedBox(height: 12),
+                                  Wrap(
+                                    spacing: 10,
+                                    runSpacing: 10,
+                                    children: effects.map((ef) => GestureDetector(
+                                      onTap: () {
+                                        liveProvider.setEffect(ef);
+                                        Navigator.pop(m);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text('Effect applied: $ef'), backgroundColor: Colors.pink),
+                                        );
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                        decoration: BoxDecoration(
+                                          color: liveProvider.activeEffect == ef
+                                              ? Colors.pink
+                                              : Colors.pink.withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(20),
+                                          border: Border.all(color: Colors.pink.withValues(alpha: 0.4)),
+                                        ),
+                                        child: Text(ef, style: TextStyle(
+                                          color: liveProvider.activeEffect == ef ? Colors.white : AppColors.getTextPrimary(isDark),
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        )),
+                                      ),
+                                    )).toList(),
                                   ),
                                 ],
                               ),
-                              actions: [
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.getPrimary(isDark)),
-                                  onPressed: () {
-                                    Navigator.pop(d);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Settings saved!')),
-                                    );
-                                  },
-                                  child: const Text('Save', style: TextStyle(color: Colors.white)),
-                                ),
-                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+
+                    // 11. Invite Co-Host (Host / Admin Only)
+                    if (canModerate)
+                      _buildToolItem(
+                        icon: Icons.person_add_alt_1_rounded,
+                        label: 'Invite Co-Host',
+                        color: const Color(0xFF00E5FF),
+                        isDark: isDark,
+                        imageAsset: 'assets/images/party_tool_seat.png',
+                        onTap: () {
+                          Navigator.pop(c);
+                          RoomShareService.shareCoHostInvite(
+                            context,
+                            roomId: widget.room.id,
+                            roomTitle: widget.room.title,
+                          );
+                        },
+                      ),
+                  ],
+                ),
+
+                // ── SECTION 2: HOST & ROOM MANAGEMENT (Protected) ──
+                if (canModerate) ...[
+                  const SizedBox(height: 20),
+                  Text(
+                    'Host & Moderation Controls',
+                    style: TextStyle(
+                      color: AppColors.getTextSecondary(isDark),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  GridView.count(
+                    crossAxisCount: 4,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    mainAxisSpacing: 16,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 0.85,
+                    children: [
+                      // Lock / Unlock Room
+                      _buildToolItem(
+                        icon: liveProvider.isRoomLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
+                        label: liveProvider.isRoomLocked ? 'Unlock Room' : 'Lock Room',
+                        color: Colors.redAccent,
+                        isDark: isDark,
+                        imageAsset: 'assets/images/party_tool_lockroom.png',
+                        onTap: () {
+                          Navigator.pop(c);
+                          liveProvider.toggleRoomLock();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(liveProvider.isRoomLocked
+                                  ? 'Room locked. No new viewers can join.'
+                                  : 'Room unlocked.'),
+                              backgroundColor: Colors.redAccent,
                             ),
                           );
                         },
-                      );
-                    },
-                  ),
+                      ),
 
-                  // ── Clear Chat ────────────────────────────────────
-                  _buildToolItem(
-                    icon: Icons.clear_all_rounded,
-                    label: 'Clear Chat',
-                    color: Colors.amber,
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_mute_room.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      showDialog(
-                        context: context,
-                        builder: (d) => AlertDialog(
-                          backgroundColor: AppColors.getCard(isDark),
-                          title: Text('Clear Chat?', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                          content: Text('This will remove all messages from the live chat.', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
-                            ElevatedButton(
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-                              onPressed: () {
-                                Navigator.pop(d);
-                                liveProvider.clearMessages();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Chat cleared!')),
-                                );
-                              },
-                              child: const Text('Clear', style: TextStyle(color: Colors.white)),
+                      // Clear Chat
+                      _buildToolItem(
+                        icon: Icons.cleaning_services_rounded,
+                        label: 'Clear Chat',
+                        color: const Color(0xFF00E5FF),
+                        isDark: isDark,
+                        imageAsset: 'assets/images/party_tool_mute_room.png',
+                        onTap: () {
+                          Navigator.pop(c);
+                          SocketService.instance.clearRoomFeed(widget.room.id);
+                          liveProvider.clearMessages();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Chat and lower room feed cleared!'),
+                              behavior: SnackBarBehavior.floating,
+                              backgroundColor: Color(0xFF00E5FF),
                             ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                          );
+                        },
+                      ),
 
-                  // ── Lock Room ─────────────────────────────────────
-                  _buildToolItem(
-                    icon: liveProvider.isRoomLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
-                    label: liveProvider.isRoomLocked ? 'Unlock Room' : 'Lock Room',
-                    color: Colors.redAccent,
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_lockroom.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      liveProvider.toggleRoomLock();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(liveProvider.isRoomLocked
-                              ? 'Room locked. No new viewers can join.'
-                              : 'Room unlocked.'),
-                          backgroundColor: Colors.redAccent,
-                        ),
-                      );
-                    },
-                  ),
-
-                  // ── Mic Stats ─────────────────────────────────────
-                  _buildToolItem(
-                    icon: Icons.mic_rounded,
-                    label: 'Mic Stats',
-                    color: Colors.green,
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_mic.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      final lp = context.read<LiveProvider>();
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: AppColors.getCard(isDark),
-                        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                        builder: (m) => SafeArea(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Mic Status', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
-                                const SizedBox(height: 12),
-                                ...['Host Mic', 'Seat 1', 'Seat 2', 'Seat 3', 'Seat 4'].asMap().entries.map((e) {
-                                  final isOn = e.key == 0;
-                                  return ListTile(
-                                    leading: Icon(isOn ? Icons.mic_rounded : Icons.mic_off_rounded, color: isOn ? Colors.green : Colors.red),
-                                    title: Text(e.value, style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                                    trailing: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: isOn ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Text(isOn ? 'ON' : 'OFF', style: TextStyle(color: isOn ? Colors.green : Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
-                                    ),
-                                  );
-                                }),
-                                const SizedBox(height: 8),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    icon: const Icon(Icons.mic_off_rounded),
-                                    label: const Text('Mute All'),
-                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                    onPressed: () {
-                                      Navigator.pop(m);
-                                      lp.sendMessage('Host muted all microphones.', 'System');
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('All mics muted!')),
+                      // Mic Stats & Mute Controls
+                      _buildToolItem(
+                        icon: Icons.mic_rounded,
+                        label: 'Mic Stats',
+                        color: Colors.green,
+                        isDark: isDark,
+                        imageAsset: 'assets/images/party_tool_mic.png',
+                        onTap: () {
+                          Navigator.pop(c);
+                          final lp = context.read<LiveProvider>();
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: AppColors.getCard(isDark),
+                            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                            builder: (m) => SafeArea(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Mic Status', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
+                                    const SizedBox(height: 12),
+                                    ...['Host Mic', 'Seat 1', 'Seat 2', 'Seat 3', 'Seat 4'].asMap().entries.map((e) {
+                                      final isOn = e.key == 0;
+                                      return ListTile(
+                                        leading: Icon(isOn ? Icons.mic_rounded : Icons.mic_off_rounded, color: isOn ? Colors.green : Colors.red),
+                                        title: Text(e.value, style: TextStyle(color: AppColors.getTextPrimary(isDark))),
+                                        trailing: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: isOn ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Text(isOn ? 'ON' : 'OFF', style: TextStyle(color: isOn ? Colors.green : Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
+                                        ),
                                       );
-                                    },
+                                    }),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton.icon(
+                                        icon: const Icon(Icons.mic_off_rounded),
+                                        label: const Text('Mute All'),
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                        onPressed: () {
+                                          Navigator.pop(m);
+                                          lp.sendMessage('Host muted all microphones.', 'System');
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('All mics muted!')),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+
+                      // Settings
+                      _buildToolItem(
+                        icon: Icons.settings_rounded,
+                        label: 'Settings',
+                        color: Colors.grey,
+                        isDark: isDark,
+                        imageAsset: 'assets/images/party_tool_settings.png',
+                        onTap: () {
+                          Navigator.pop(c);
+                          showDialog(
+                            context: context,
+                            builder: (d) {
+                              bool allowComments = true;
+                              bool showGiftAnimations = true;
+                              return StatefulBuilder(
+                                builder: (d, setSt) => AlertDialog(
+                                  backgroundColor: AppColors.getCard(isDark),
+                                  title: Row(children: [
+                                    const Icon(Icons.settings_rounded, color: Colors.grey),
+                                    const SizedBox(width: 8),
+                                    Text('Live Settings', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
+                                  ]),
+                                  content: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SwitchListTile(
+                                        title: Text('Allow Comments', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
+                                        value: allowComments,
+                                        activeThumbColor: AppColors.getPrimary(isDark),
+                                        onChanged: (v) => setSt(() => allowComments = v),
+                                      ),
+                                      SwitchListTile(
+                                        title: Text('Gift Animations', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
+                                        value: showGiftAnimations,
+                                        activeThumbColor: AppColors.getPrimary(isDark),
+                                        onChanged: (v) => setSt(() => showGiftAnimations = v),
+                                      ),
+                                      ListTile(
+                                        title: Text('Stream Quality', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
+                                        trailing: const Text('HD', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                                        onTap: () {},
+                                      ),
+                                    ],
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-
-                  // ── Effects ───────────────────────────────────────
-                  _buildToolItem(
-                    icon: Icons.auto_awesome_rounded,
-                    label: 'Effects',
-                    color: Colors.pink,
-                    isDark: isDark,
-                    imageAsset: 'assets/images/party_tool_effects_settings.png',
-                    onTap: () {
-                      Navigator.pop(c);
-                      final effects = ['None', 'Beauty', 'Blur BG', 'Vintage', 'Neon Glow', 'Black & White'];
-                      showModalBottomSheet(
-                        context: context,
-                        backgroundColor: AppColors.getCard(isDark),
-                        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                        builder: (m) => SafeArea(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text('Visual Effects', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
-                                const SizedBox(height: 4),
-                                Text('Active: ${liveProvider.activeEffect}', style: const TextStyle(color: Colors.pink, fontSize: 12)),
-                                const SizedBox(height: 12),
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 10,
-                                  children: effects.map((ef) => GestureDetector(
-                                    onTap: () {
-                                      liveProvider.setEffect(ef);
-                                      Navigator.pop(m);
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Effect applied: $ef'), backgroundColor: Colors.pink),
-                                      );
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: liveProvider.activeEffect == ef
-                                            ? Colors.pink
-                                            : Colors.pink.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(color: Colors.pink.withValues(alpha: 0.4)),
-                                      ),
-                                      child: Text(ef, style: TextStyle(
-                                        color: liveProvider.activeEffect == ef ? Colors.white : AppColors.getTextPrimary(isDark),
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                      )),
+                                  actions: [
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.getPrimary(isDark)),
+                                      onPressed: () {
+                                        Navigator.pop(d);
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Settings saved!')),
+                                        );
+                                      },
+                                      child: const Text('Save', style: TextStyle(color: Colors.white)),
                                     ),
-                                  )).toList(),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ),
+                              );
+                            },
+                          );
+                        },
+                      ),
+
+                      // End Live Session (Host only)
+                      if (isHost)
+                        _buildToolItem(
+                          icon: Icons.power_settings_new_rounded,
+                          label: 'End Live',
+                          color: Colors.redAccent,
+                          isDark: isDark,
+                          isDanger: true,
+                          onTap: () {
+                            Navigator.pop(c);
+                            _handleExitConfirmation(context, isHost, liveProvider);
+                          },
                         ),
-                      );
-                    },
+                    ],
                   ),
                 ],
-              ),
-            ],
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   void _showLuckyBagQuickActionDialog(BuildContext context, bool isDark, LiveProvider liveProvider) {
     if (liveProvider.luckyBagActive) {
@@ -3601,45 +3435,53 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     required bool isDark,
     required VoidCallback onTap,
     String? imageAsset,
+    bool isDanger = false,
   }) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          if (imageAsset != null)
-            SizedBox(
-              width: 52,
-              height: 52,
-              child: ClipOval(
-                child: Image.asset(
-                  imageAsset,
-                  width: 52,
-                  height: 52,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    padding: const EdgeInsets.all(12),
+          SizedBox(
+            width: 52,
+            height: 52,
+            child: imageAsset != null
+                ? Image.asset(
+                    imageAsset,
+                    width: 52,
+                    height: 52,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      decoration: BoxDecoration(
+                        color: isDanger ? const Color(0xFF2E1C1E) : Colors.white.withValues(alpha: 0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: color, size: 26),
+                    ),
+                  )
+                : Container(
                     decoration: BoxDecoration(
-                      color: color.withValues(alpha: 0.15),
+                      color: isDanger ? const Color(0xFF2E1C1E) : Colors.white.withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(icon, color: color, size: 28),
+                    child: Icon(icon, color: color, size: 26),
                   ),
-                ),
-              ),
-            )
-          else
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.15),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 28),
-            ),
+          ),
           const SizedBox(height: 6),
-          Text(label, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 11, fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: AppColors.getTextPrimary(isDark),
+              fontSize: 11.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );

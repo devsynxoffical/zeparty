@@ -25,6 +25,7 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
   late Animation<double> _scaleAnimation;
   late Animation<double> _opacityAnimation;
   StreamSubscription? _giftSub;
+  StreamSubscription? _clearFeedSub;
 
   @override
   void initState() {
@@ -73,6 +74,20 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
         debugPrint('[GiftAnimationOverlay] Error parsing gift event: $e');
       }
     });
+
+    _clearFeedSub = SocketService.instance.onRoomFeedCleared.listen((_) {
+      clearAnimation();
+    });
+  }
+
+  void clearAnimation() {
+    if (!mounted) return;
+    _animController.stop();
+    setState(() {
+      _currentGift = null;
+      _giftSenderName = '';
+      _giftQuantity = 1;
+    });
   }
 
   void playGiftAnimation(GiftModel gift, {String senderName = '', int quantity = 1}) {
@@ -96,6 +111,7 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
   @override
   void dispose() {
     _giftSub?.cancel();
+    _clearFeedSub?.cancel();
     _animController.dispose();
     super.dispose();
   }

@@ -119,7 +119,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               subtitle: Text(
-                                '@${u.username.isNotEmpty ? u.username : u.id}',
+                                'ID: ${u.id}',
                                 style: const TextStyle(fontSize: 11, color: Colors.grey),
                               ),
                               trailing: ElevatedButton(

@@ -114,51 +114,63 @@ class BackpackProvider extends ChangeNotifier {
     StoreItemModel? asset = ua.asset;
     final assetId = ua.assetId.toLowerCase().trim();
 
-    if (asset == null || asset.imageUrl.isEmpty || asset.name.isEmpty) {
-      final catalogMatch = StoreRepository.defaultStoreCatalog.firstWhere(
-        (item) =>
-            item.id.toLowerCase().trim() == assetId ||
-            (asset != null && item.id.toLowerCase().trim() == asset.id.toLowerCase().trim()) ||
-            (asset != null && item.name.toLowerCase().trim() == asset.name.toLowerCase().trim()),
-        orElse: () => StoreItemModel(
-          id: ua.assetId.isNotEmpty ? ua.assetId : ua.id,
-          name: asset?.name.isNotEmpty == true ? asset!.name : 'Store Item',
-          categoryId: asset?.categoryId.isNotEmpty == true ? asset!.categoryId : 'Frame',
-          assetType: asset?.assetType.isNotEmpty == true ? asset!.assetType : 'AVATAR_FRAME',
-          imageUrl: asset?.imageUrl.isNotEmpty == true ? asset!.imageUrl : 'assets/store/ZP-134_avatar-frames_frame.webp',
-          priceCoins: asset?.priceCoins ?? 50000,
-          durationDays: asset?.durationDays ?? 30,
-        ),
-      );
+    // 1. Check for exact stable catalog ID match in defaultStoreCatalog or adminSpecialRoleAssets
+    StoreItemModel? catalogMatch;
+    for (final item in StoreRepository.defaultStoreCatalog) {
+      if (item.id.toLowerCase().trim() == assetId ||
+          (asset != null && item.id.toLowerCase().trim() == asset.id.toLowerCase().trim())) {
+        catalogMatch = item;
+        break;
+      }
+    }
+    if (catalogMatch == null) {
+      for (final item in StoreRepository.adminSpecialRoleAssets) {
+        if (item.id.toLowerCase().trim() == assetId ||
+            (asset != null && item.id.toLowerCase().trim() == asset.id.toLowerCase().trim())) {
+          catalogMatch = item;
+          break;
+        }
+      }
+    }
 
-      final candidateName = (asset?.name.isNotEmpty == true) ? asset!.name : catalogMatch.name;
-      String resolvedImage = (asset?.imageUrl.isNotEmpty == true) ? asset!.imageUrl : catalogMatch.imageUrl;
+    if (catalogMatch != null) {
+      // Enforce the approved catalog item's exact artwork and details
+      asset = StoreItemModel(
+        id: catalogMatch.id,
+        name: catalogMatch.name,
+        categoryId: (asset != null && asset.categoryId.isNotEmpty) ? asset.categoryId : catalogMatch.categoryId,
+        assetType: (asset != null && asset.assetType.isNotEmpty) ? asset.assetType : catalogMatch.assetType,
+        imageUrl: catalogMatch.imageUrl,
+        assetUrl: catalogMatch.assetUrl,
+        priceCoins: (asset != null && asset.priceCoins > 0) ? asset.priceCoins : catalogMatch.priceCoins,
+        durationDays: (asset != null && asset.durationDays > 0) ? asset.durationDays : catalogMatch.durationDays,
+      );
+    } else if (asset != null &&
+        (asset.imageUrl.startsWith('assets/') ||
+            asset.imageUrl.startsWith('http://') ||
+            asset.imageUrl.startsWith('https://'))) {
+      // Preserve existing valid asset/remote URL
+      asset = asset;
+    } else {
+      // Only resolve via NobleBadgeHelper if asset image is completely empty or unresolved
+      final candidateName = asset?.name ?? '';
+      String resolvedImage = asset?.imageUrl ?? '';
       if (resolvedImage.isEmpty || (!resolvedImage.startsWith('assets/') && !resolvedImage.startsWith('http'))) {
         final localFrame = NobleBadgeHelper.getFrameAsset(candidateName) ?? NobleBadgeHelper.getFrameAsset(assetId);
         final localBadge = NobleBadgeHelper.getBadgeAsset(candidateName) ?? NobleBadgeHelper.getBadgeAsset(assetId);
         final localTag = NobleBadgeHelper.getTagAsset(candidateName);
-        resolvedImage = localFrame ?? localBadge ?? localTag ?? catalogMatch.imageUrl;
+        resolvedImage = localFrame ?? localBadge ?? localTag ?? 'assets/store/ZP-134_avatar-frames_frame.webp';
       }
 
       asset = StoreItemModel(
-        id: catalogMatch.id,
-        name: candidateName,
-        categoryId: (asset?.categoryId.isNotEmpty == true) ? asset!.categoryId : catalogMatch.categoryId,
-        assetType: (asset?.assetType.isNotEmpty == true) ? asset!.assetType : catalogMatch.assetType,
-        imageUrl: resolvedImage.isNotEmpty ? resolvedImage : catalogMatch.imageUrl,
-        priceCoins: (asset != null && asset.priceCoins > 0) ? asset.priceCoins : catalogMatch.priceCoins,
-        durationDays: (asset != null && asset.durationDays > 0) ? asset.durationDays : catalogMatch.durationDays,
+        id: ua.assetId.isNotEmpty ? ua.assetId : ua.id,
+        name: candidateName.isNotEmpty ? candidateName : 'Store Item',
+        categoryId: (asset?.categoryId.isNotEmpty == true) ? asset!.categoryId : 'Frame',
+        assetType: (asset?.assetType.isNotEmpty == true) ? asset!.assetType : 'AVATAR_FRAME',
+        imageUrl: resolvedImage,
+        priceCoins: asset?.priceCoins ?? 50000,
+        durationDays: asset?.durationDays ?? 30,
       );
-    } else {
-      if (!asset.imageUrl.startsWith('assets/') && !asset.imageUrl.startsWith('http')) {
-        final localFrame = NobleBadgeHelper.getFrameAsset(asset.name) ?? NobleBadgeHelper.getFrameAsset(asset.imageUrl) ?? NobleBadgeHelper.getFrameAsset(assetId);
-        final localBadge = NobleBadgeHelper.getBadgeAsset(asset.name) ?? NobleBadgeHelper.getBadgeAsset(asset.imageUrl);
-        final localTag = NobleBadgeHelper.getTagAsset(asset.name);
-        final resolved = localFrame ?? localBadge ?? localTag;
-        if (resolved != null) {
-          asset = asset.copyWith(imageUrl: resolved);
-        }
-      }
     }
 
     return ua.copyWith(asset: asset);
@@ -248,20 +260,25 @@ class BackpackProvider extends ChangeNotifier {
 
       if (type.contains('FRAME') || cat.contains('FRAME') || assetName.toLowerCase().contains('frame') || assetName.toLowerCase().contains('merchant')) {
         String frameAsset = assetImage;
-        final resolved = NobleBadgeHelper.getFrameAsset(assetName) ??
-            NobleBadgeHelper.getFrameAsset(assetImage);
-        if (resolved != null) {
-          frameAsset = resolved;
-        } else if (frameAsset.isEmpty) {
-          frameAsset = NobleBadgeHelper.getFrameAsset(assetName) ?? assetName;
+        // Only use NobleBadgeHelper fallback if assetImage is NOT already an approved asset/URL path
+        if (!frameAsset.startsWith('assets/') && !frameAsset.startsWith('http://') && !frameAsset.startsWith('https://')) {
+          final resolved = NobleBadgeHelper.getFrameAsset(assetName) ??
+              NobleBadgeHelper.getFrameAsset(assetImage);
+          if (resolved != null) {
+            frameAsset = resolved;
+          } else if (frameAsset.isEmpty) {
+            frameAsset = NobleBadgeHelper.getFrameAsset(assetName) ?? assetName;
+          }
         }
         onAvatarFrameChanged?.call(frameAsset);
       } else if (type.contains('BADGE') || cat.contains('BADGE') || assetName.toLowerCase().contains('badge')) {
         String badgeAsset = assetImage;
-        final resolved = NobleBadgeHelper.getBadgeAsset(assetName) ??
-            NobleBadgeHelper.getBadgeAsset(assetImage);
-        if (resolved != null) {
-          badgeAsset = resolved;
+        if (!badgeAsset.startsWith('assets/') && !badgeAsset.startsWith('http://') && !badgeAsset.startsWith('https://')) {
+          final resolved = NobleBadgeHelper.getBadgeAsset(assetName) ??
+              NobleBadgeHelper.getBadgeAsset(assetImage);
+          if (resolved != null) {
+            badgeAsset = resolved;
+          }
         }
         onBadgeChanged?.call(badgeAsset);
       }

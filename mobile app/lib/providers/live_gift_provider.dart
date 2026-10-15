@@ -4,8 +4,10 @@ import '../models/gift_model.dart';
 import '../models/live_gift_event_model.dart';
 import '../models/user_model.dart';
 import '../core/repositories/gift_repository.dart';
+import '../core/services/api_client.dart';
 import '../core/services/socket_service.dart';
 import '../core/utils/performance_utils.dart';
+import 'auth_provider.dart';
 import 'wallet_provider.dart';
 
 class LiveGiftProvider extends ChangeNotifier {
@@ -111,7 +113,7 @@ class LiveGiftProvider extends ChangeNotifier {
   }
 
   /// Send gift to backend atomically, with server-side validation, ledger posting,
-  /// host diamond reward, Socket.IO emission, and wallet reconciliation.
+  /// host diamond reward, Socket.IO emission, wallet reconciliation, and Wealth XP progression.
   Future<bool> sendGift({
     required WalletProvider walletProvider,
     required GiftModel gift,
@@ -119,6 +121,7 @@ class LiveGiftProvider extends ChangeNotifier {
     required UserModel receiver,
     required String roomId,
     int quantity = 1,
+    AuthProvider? authProvider,
   }) async {
     final unitPrice = gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice;
     final totalCost = unitPrice * quantity;
@@ -159,6 +162,11 @@ class LiveGiftProvider extends ChangeNotifier {
       // Authoritative server balance reconciliation
       walletProvider.fetchWallet();
 
+      // Credit sender Wealth XP according to approved spending-to-XP rules (1 coin spent = 1 Wealth XP)
+      if (authProvider != null && totalCost > 0) {
+        authProvider.addWealthXp(totalCost);
+      }
+
       // Trigger local animation & combo aggregation
       _enqueueLocalComboEvent(
         txId: txId.isNotEmpty ? txId : idempotencyKey,
@@ -171,10 +179,21 @@ class LiveGiftProvider extends ChangeNotifier {
 
       notifyListeners();
       return true;
+    } on ApiException catch (e) {
+      _isSending = false;
+      _activeSendingIdempotencyKeys.remove(idempotencyKey);
+      _lastError = e.message;
+      debugPrint('[LiveGiftProvider] sendGift ApiException (${e.code}): ${e.message}');
+
+      // Reconcile wallet just in case
+      walletProvider.fetchWallet();
+      notifyListeners();
+      return false;
     } catch (e) {
       _isSending = false;
       _activeSendingIdempotencyKeys.remove(idempotencyKey);
-      _lastError = e.toString();
+      final rawErr = e.toString();
+      _lastError = rawErr.replaceFirst('Exception: ', '').replaceFirst('ApiException: ', '');
       debugPrint('[LiveGiftProvider] sendGift error: $e');
 
       // Reconcile wallet just in case

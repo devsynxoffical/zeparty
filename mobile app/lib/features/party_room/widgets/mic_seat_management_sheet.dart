@@ -447,7 +447,7 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
                       child: ListTile(
                         leading: UserAvatar(imageUrl: p.user.avatarUrl, radius: 18),
                         title: Text(p.user.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                        subtitle: Text('@${p.user.username}', style: const TextStyle(color: Colors.white60, fontSize: 11)),
+                        subtitle: Text('ID: ${p.user.id}', style: const TextStyle(color: Colors.white60, fontSize: 11)),
                         trailing: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.blueAccent,

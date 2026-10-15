@@ -8,8 +8,24 @@ import '../live/create_live_room_screen.dart';
 import '../settings/support_center_screen.dart';
 import '../wallet/diamond_transfer_screen.dart';
 
-class LiveHostCenterScreen extends StatelessWidget {
+class LiveHostCenterScreen extends StatefulWidget {
   const LiveHostCenterScreen({super.key});
+
+  @override
+  State<LiveHostCenterScreen> createState() => _LiveHostCenterScreenState();
+}
+
+class _LiveHostCenterScreenState extends State<LiveHostCenterScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final user = context.read<AuthProvider>().currentUser;
+      if (user != null) {
+        context.read<LiveHostProvider>().fetchHostProfile(user.id);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -239,23 +255,12 @@ class LiveHostCenterScreen extends StatelessWidget {
                         Expanded(
                           child: Text(
                             liveHost.isTodayValid
-                                ? 'Today Status: VALID (${liveHost.dailyLiveMinutes} mins streaming completed)'
+                                ? 'Today Status: VALID (${liveHost.dailyLiveMinutes} mins streaming)'
                                 : 'Today Status: IN PROGRESS (${liveHost.dailyLiveMinutes} / 60 mins)',
                             style: TextStyle(color: liveHost.isTodayValid ? Colors.greenAccent : Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12),
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 14),
-
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.add_alarm_rounded),
-                      label: const Text('Simulate +15 Mins Live Stream'),
-                      style: ElevatedButton.styleFrom(backgroundColor: primary, foregroundColor: Colors.white),
-                      onPressed: () {
-                        liveHostProv.addLiveStreamingMinutes(15);
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('📹 15 mins live streaming time added!'), backgroundColor: Colors.green));
-                      },
                     ),
                   ],
                 ),

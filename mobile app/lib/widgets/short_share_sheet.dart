@@ -77,7 +77,7 @@ class _ShortShareSheetState extends State<ShortShareSheet> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('🎉 Sent Short to @${friend.username.isNotEmpty ? friend.username : friend.displayName}!'),
+            content: Text('🎉 Sent Short to ${friend.displayName}!'),
             backgroundColor: AppColors.success,
             duration: const Duration(seconds: 2),
           ),
