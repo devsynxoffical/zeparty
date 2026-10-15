@@ -2678,7 +2678,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  isHostSeat ? 'Host' : 'Seat ${index + 1}',
+                                  isHostSeat
+                                      ? 'Host'
+                                      : index == 1
+                                          ? 'Co-Host'
+                                          : 'Mic ${index - 1}',
                                   style: TextStyle(
                                     color: isHostSeat ? Colors.amber : (isLocked ? Colors.redAccent : Colors.white70),
                                     fontSize: 10,

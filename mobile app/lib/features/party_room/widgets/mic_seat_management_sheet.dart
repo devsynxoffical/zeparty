@@ -62,7 +62,11 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
     final isHost = provider.activeRoom?.host.id == authUser.id || provider.activeRoom?.creatorUserId == authUser.id;
     final isModerator = provider.participants.any((p) => p.user.id == authUser.id && p.role == ParticipantRole.moderator);
     final canManageSeats = isHost || isModerator || authUser.role == UserRole.admin;
-    final micLabel = micIndex == 0 ? 'Host Mic' : 'Mic ${micIndex + 1}';
+    final micLabel = micIndex == 0
+        ? 'Host Mic'
+        : micIndex == 1
+            ? 'Co-Host Mic'
+            : 'Mic ${micIndex - 1}';
 
     return Container(
       decoration: const BoxDecoration(
@@ -423,7 +427,10 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
           children: [
             const Icon(Icons.person_add_alt_1_rounded, color: Colors.blueAccent),
             const SizedBox(width: 8),
-            Text('Invite to Mic ${widget.micIndex + 1}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            Text(
+              'Invite to ${widget.micIndex == 0 ? "Host Mic" : widget.micIndex == 1 ? "Co-Host Mic" : "Mic ${widget.micIndex - 1}"}',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
           ],
         ),
         content: SizedBox(
@@ -459,7 +466,7 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
                             if (inviteId != null) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('📩 Invitation sent to ${p.user.name} for Mic ${widget.micIndex + 1}!'),
+                                  content: Text('📩 Invitation sent to ${p.user.name} for ${widget.micIndex == 0 ? "Host Mic" : widget.micIndex == 1 ? "Co-Host Mic" : "Mic ${widget.micIndex - 1}"}!'),
                                   backgroundColor: Colors.green,
                                 ),
                               );
