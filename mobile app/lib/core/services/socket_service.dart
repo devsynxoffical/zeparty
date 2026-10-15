@@ -37,6 +37,10 @@ class SocketService {
   final _roomMicInviteController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomMicInviteResponseController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomFeedClearedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomDetailsUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomSeatLockedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomLayoutUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomSendingTotalController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Social realtime event streams
   final _postCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -118,6 +122,10 @@ class SocketService {
   Stream<Map<String, dynamic>> get onRoomMicInvite => _roomMicInviteController.stream;
   Stream<Map<String, dynamic>> get onRoomMicInviteResponse => _roomMicInviteResponseController.stream;
   Stream<Map<String, dynamic>> get onRoomFeedCleared => _roomFeedClearedController.stream;
+  Stream<Map<String, dynamic>> get onRoomDetailsUpdated => _roomDetailsUpdatedController.stream;
+  Stream<Map<String, dynamic>> get onSeatLocked => _roomSeatLockedController.stream;
+  Stream<Map<String, dynamic>> get onRoomLayoutUpdated => _roomLayoutUpdatedController.stream;
+  Stream<Map<String, dynamic>> get onRoomSendingTotalUpdated => _roomSendingTotalController.stream;
 
   // Stream aliases for backwards compatibility
   Stream<Map<String, dynamic>> get roomCreatedStream => onRoomCreated;
@@ -499,6 +507,44 @@ class SocketService {
     _socket!.on('room_mic_invite_response', (data) {
       if (data != null) _roomMicInviteResponseController.add(safeMap(data));
     });
+
+    // Room Profile & Details Sync (Item 09)
+    void handleDetailsUpdated(dynamic data) {
+      if (data != null) _roomDetailsUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('room:details_updated');
+    _socket!.on('room:details_updated', handleDetailsUpdated);
+    _socket!.off('room:update_details');
+    _socket!.on('room:update_details', handleDetailsUpdated);
+
+    // Mic Seat Locking Sync (Item 04 & 07, Mic 7 & 8)
+    void handleSeatLocked(dynamic data) {
+      if (data != null) _roomSeatLockedController.add(safeMap(data));
+    }
+    _socket!.off('room:seat_locked_status');
+    _socket!.on('room:seat_locked_status', handleSeatLocked);
+    _socket!.off('room:seat_locked');
+    _socket!.on('room:seat_locked', handleSeatLocked);
+    _socket!.off('room:lock_seat');
+    _socket!.on('room:lock_seat', handleSeatLocked);
+
+    // Room Seat Count & Layout Sync (Item 11)
+    void handleLayoutUpdated(dynamic data) {
+      if (data != null) _roomLayoutUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('room:layout_updated');
+    _socket!.on('room:layout_updated', handleLayoutUpdated);
+    _socket!.off('room:update_layout');
+    _socket!.on('room:update_layout', handleLayoutUpdated);
+
+    // Room Sending Coin Total Sync (Item 08)
+    void handleSendingTotalUpdated(dynamic data) {
+      if (data != null) _roomSendingTotalController.add(safeMap(data));
+    }
+    _socket!.off('room:sending_total_updated');
+    _socket!.on('room:sending_total_updated', handleSendingTotalUpdated);
+    _socket!.off('room:sending_total');
+    _socket!.on('room:sending_total', handleSendingTotalUpdated);
 
     // Social Events
     _socket!.on('post:created', (data) {
@@ -907,6 +953,55 @@ class SocketService {
       'roomId': roomId,
       'timestamp': DateTime.now().toIso8601String(),
     });
+  }
+
+  /// Broadcast Room Title & Cover Updates (Item 09)
+  void emitRoomDetailsUpdate(String roomId, {String? title, String? coverUrl}) {
+    final payload = {
+      'roomId': roomId,
+      if (title != null) 'title': title,
+      if (coverUrl != null) 'coverUrl': coverUrl,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    emit('room:update_details', payload);
+    emit('room:details_updated', payload);
+  }
+
+  /// Broadcast Mic Seat Locking State (Item 04 & 07, Mic 7 & 8)
+  void emitRoomSeatLock(String roomId, int seatIndex, bool isLocked) {
+    final payload = {
+      'roomId': roomId,
+      'seatIndex': seatIndex,
+      'isLocked': isLocked,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    emit('room:lock_seat', payload);
+    emit('room:seat_locked_status', payload);
+  }
+
+  /// Broadcast Room Capacity & Layout Updates (Item 11)
+  void emitRoomLayoutUpdate(String roomId, int capacity, String roomType) {
+    final payload = {
+      'roomId': roomId,
+      'capacity': capacity,
+      'seatCapacity': capacity,
+      'roomType': roomType,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    emit('room:update_layout', payload);
+    emit('room:layout_updated', payload);
+  }
+
+  /// Broadcast Room Sending Coin Total Updates (Item 08)
+  void emitRoomSendingTotal(String roomId, num totalCoins) {
+    final payload = {
+      'roomId': roomId,
+      'period': 'daily',
+      'totalCoins': totalCoins,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    emit('room:sending_total_updated', payload);
+    emit('room:sending_total', payload);
   }
 
   /// Generic emit helper for real-time events

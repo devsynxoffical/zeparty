@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/theme_provider.dart';
 import '../models/live_room_model.dart';
 import '../core/services/room_lock_manager.dart';
+import '../core/services/room_config_manager.dart';
 import '../providers/game_provider.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -23,14 +25,18 @@ class PartyRoomCard extends StatelessWidget {
     final cardColor = AppColors.getCard(isDark);
     final borderColor = AppColors.getBorder(isDark);
 
-    final totalSeats = (room.viewerCount % 3 == 0) ? 4 : 8;
-    final occupiedSeats = (room.viewerCount % totalSeats) + 1;
-    final effectiveDp = gameProvider.getEffectiveRoomDp(
-      room.id,
-      room.coverUrl,
-      room.host.region,
-      hostAvatarUrl: room.host.avatarUrl,
-    );
+    final effectiveRoom = RoomConfigManager.instance.applyOverrides(room);
+    final totalSeats = (effectiveRoom.viewerCount % 3 == 0) ? 4 : 8;
+    final occupiedSeats = (effectiveRoom.viewerCount % totalSeats) + 1;
+    final customCover = RoomConfigManager.instance.getCustomCover(effectiveRoom.id);
+    final effectiveDp = (customCover != null && customCover.isNotEmpty)
+        ? customCover
+        : gameProvider.getEffectiveRoomDp(
+            effectiveRoom.id,
+            effectiveRoom.coverUrl,
+            effectiveRoom.host.region,
+            hostAvatarUrl: effectiveRoom.host.avatarUrl,
+          );
 
     return GestureDetector(
       onTap: onTap,
@@ -58,15 +64,34 @@ class PartyRoomCard extends StatelessWidget {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.vertical(top: Radius.circular(16.r)),
-                    child: Image.network(
-                      effectiveDp,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Image.network(
-                        room.host.avatarUrl.isNotEmpty
-                            ? room.host.avatarUrl
-                            : gameProvider.globalDefaultRoomDp,
-                        fit: BoxFit.cover,
-                      ),
+                    child: Builder(
+                      builder: (context) {
+                        if (effectiveDp.startsWith('http')) {
+                          return Image.network(
+                            effectiveDp,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Image.network(
+                              effectiveRoom.host.avatarUrl.isNotEmpty
+                                  ? effectiveRoom.host.avatarUrl
+                                  : gameProvider.globalDefaultRoomDp,
+                              fit: BoxFit.cover,
+                            ),
+                          );
+                        } else if (effectiveDp.startsWith('assets')) {
+                          return Image.asset(effectiveDp, fit: BoxFit.cover);
+                        } else {
+                          final f = File(effectiveDp);
+                          if (f.existsSync()) {
+                            return Image.file(f, fit: BoxFit.cover);
+                          }
+                          return Image.network(
+                            effectiveRoom.host.avatarUrl.isNotEmpty
+                                ? effectiveRoom.host.avatarUrl
+                                : gameProvider.globalDefaultRoomDp,
+                            fit: BoxFit.cover,
+                          );
+                        }
+                      },
                     ),
                   ),
 
@@ -160,7 +185,7 @@ class PartyRoomCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    room.title,
+                    effectiveRoom.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

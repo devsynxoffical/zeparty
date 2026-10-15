@@ -9,6 +9,7 @@ import '../../core/services/media_upload_service.dart';
 import '../../core/services/room_share_service.dart';
 import 'package:provider/provider.dart';
 import '../../core/services/room_lock_manager.dart';
+import '../../core/services/room_config_manager.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../models/live_room_model.dart';
 import '../../models/user_model.dart';
@@ -62,6 +63,7 @@ class LivePartyRoomScreen extends StatefulWidget {
 class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
+  final FocusNode _chatFocusNode = FocusNode();
   bool _isMicMuted = false;
   final GlobalKey<GiftAnimationOverlayState> _giftOverlayKey = GlobalKey<GiftAnimationOverlayState>();
   String _activeChatFilter = 'All';
@@ -327,6 +329,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     _micInviteSub?.cancel();
     _chatController.dispose();
     _chatScrollController.dispose();
+    _chatFocusNode.dispose();
     super.dispose();
   }
 
@@ -585,6 +588,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   }
 
   void _openGiftDialog({UserModel? targetReceiver}) {
+    // Unfocus and dismiss keyboard before opening gift panel (Item 10)
+    FocusScope.of(context).unfocus();
+    _chatFocusNode.unfocus();
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -610,7 +617,13 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           }
         },
       ),
-    );
+    ).then((_) {
+      // Prevent focus from leaking or returning to chat input on modal dismissal (Item 10)
+      if (mounted) {
+        FocusScope.of(context).unfocus();
+        _chatFocusNode.unfocus();
+      }
+    });
   }
 
   @override
@@ -944,7 +957,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 Flexible(
                   child: GestureDetector(
                     onTap: () {
-                      final activeRoom = provider.activeRoom ?? widget.room;
+                      final activeRoom = RoomConfigManager.instance.applyOverrides(provider.activeRoom ?? widget.room);
                       showModalBottomSheet(
                         context: context,
                         isScrollControlled: true,
@@ -959,7 +972,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                     },
                     child: Builder(
                       builder: (context) {
-                        final activeRoom = provider.activeRoom ?? widget.room;
+                        final activeRoom = RoomConfigManager.instance.applyOverrides(provider.activeRoom ?? widget.room);
                         return Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -1126,11 +1139,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           const SizedBox(width: 3),
                           Text(
                             () {
-                              final activeRoom = provider.activeRoom ?? widget.room;
-                              final pts = activeRoom.host.diamonds;
-                              if (pts >= 1000000) return '${(pts / 1000000).toStringAsFixed(1)}M';
-                              if (pts >= 1000) return '${(pts / 1000).toStringAsFixed(1)}K';
-                              return '$pts';
+                              final total = provider.roomSendingTotal;
+                              if (total >= 1000000) return '${(total / 1000000).toStringAsFixed(1)}M';
+                              if (total >= 1000) return '${(total / 1000).toStringAsFixed(1)}K';
+                              return total > 0 ? '$total' : '0';
                             }(),
                             style: const TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
                           ),
@@ -1724,9 +1736,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       Expanded(
                         child: TextField(
                           controller: _chatController,
+                          focusNode: _chatFocusNode,
                           style: const TextStyle(color: Colors.white, fontSize: 13.5),
                           cursorColor: Colors.pinkAccent,
-                          readOnly: false,
+                          readOnly: true,
                           onTap: () {
                             ExpandedMessagePanel.show(
                               context,
@@ -2653,8 +2666,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
 
   void _showSeatLockDialog(BuildContext context, LivePartyProvider provider) {
-    final activeRoom = provider.activeRoom ?? widget.room;
-    final totalSeats = activeRoom.seatCapacity;
+    final activeRoom = RoomConfigManager.instance.applyOverrides(provider.activeRoom ?? widget.room);
+    final totalSeats = [10, 15, 20, 30].contains(activeRoom.seatCapacity) ? activeRoom.seatCapacity : 10;
 
     showModalBottomSheet(
       context: context,
@@ -2693,6 +2706,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       itemBuilder: (context, index) {
                         final isLocked = provider.isSeatLocked(index);
                         final isHostSeat = index == 0;
+                        final isCoHostSeat = index == 1;
 
                         return GestureDetector(
                           onTap: isHostSeat
@@ -2727,7 +2741,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                 Text(
                                   isHostSeat
                                       ? 'Host'
-                                      : index == 1
+                                      : isCoHostSeat
                                           ? 'Co-Host'
                                           : 'Mic ${index - 1}',
                                   style: TextStyle(

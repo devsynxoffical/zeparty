@@ -3,8 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../core/repositories/backend_repository.dart';
 import '../../core/services/media_upload_service.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/theme_provider.dart';
+import '../../core/services/room_config_manager.dart';
 import '../../models/live_room_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/live_party_provider.dart';
@@ -42,7 +41,7 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    final r = widget.room;
+    final r = RoomConfigManager.instance.applyOverrides(widget.room);
     _nameController = TextEditingController(text: r.title);
     _announcementController = TextEditingController(text: r.announcement);
     _feeController = TextEditingController(text: r.membershipFee.toString());
@@ -325,7 +324,7 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
                                 width: 70,
                                 height: 70,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Container(
+                                errorBuilder: (context, error, stackTrace) => Container(
                                   width: 70,
                                   height: 70,
                                   color: Colors.purple.shade900,

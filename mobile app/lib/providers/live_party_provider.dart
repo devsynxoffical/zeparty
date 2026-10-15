@@ -8,6 +8,7 @@ import '../models/live_room_model.dart';
 import '../models/party_participant_model.dart';
 import '../models/party_message_model.dart';
 import '../models/user_model.dart';
+import '../core/services/room_config_manager.dart';
 
 class LivePartyProvider extends ChangeNotifier {
   final AgoraRtcService _agoraService = AgoraRtcService();
@@ -59,6 +60,10 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketMicInviteSub;
   StreamSubscription? _socketMicInviteResponseSub;
   StreamSubscription? _socketFeedClearedSub;
+  StreamSubscription? _socketDetailsUpdatedSub;
+  StreamSubscription? _socketSeatLockedSub;
+  StreamSubscription? _socketLayoutUpdatedSub;
+  StreamSubscription? _socketSendingTotalSub;
 
   DateTime? _feedClearedAt;
   DateTime? get feedClearedAt => _feedClearedAt;
@@ -215,6 +220,17 @@ class LivePartyProvider extends ChangeNotifier {
   final Set<int> _lockedSeatIndices = {};
   Set<int> get lockedSeatIndices => _lockedSeatIndices;
 
+  num _roomSendingTotal = 0;
+  num get roomSendingTotal => _roomSendingTotal;
+  void setRoomSendingTotal(num total) {
+    _roomSendingTotal = total;
+    if (_activeRoom != null) {
+      RoomConfigManager.instance.saveRoomSendingTotal(_activeRoom!.id, total);
+      _socketService.emitRoomSendingTotal(_activeRoom!.id, total);
+    }
+    notifyListeners();
+  }
+
   void toggleGiftEffects(bool value) {
     _giftEffectsEnabled = value;
     notifyListeners();
@@ -336,6 +352,23 @@ class LivePartyProvider extends ChangeNotifier {
         final details = await _roomRepository.getRoomDetails(room.id);
         _activeRoom = details;
       } catch (_) {}
+
+      // Apply persistent room configuration overrides (Item 09, 11, 04, 08)
+      if (_activeRoom != null) {
+        _activeRoom = RoomConfigManager.instance.applyOverrides(_activeRoom!);
+        _lockedSeatIndices.addAll(RoomConfigManager.instance.getLockedSeats(_activeRoom!.id));
+        _roomSendingTotal = RoomConfigManager.instance.getRoomSendingTotal(_activeRoom!.id);
+
+        // Synchronize Daily sending total with backend rankings
+        RoomRepository.instance.getRoomSendingRankings(_activeRoom!.id, period: 'daily').then((res) {
+          final serverDailyTotal = (res['periodTotalCoins'] as num?) ?? 0;
+          if (serverDailyTotal > 0) {
+            _roomSendingTotal = serverDailyTotal;
+            RoomConfigManager.instance.saveRoomSendingTotal(_activeRoom!.id, serverDailyTotal);
+            notifyListeners();
+          }
+        }).catchError((_) {});
+      }
 
       final hostUserId = _activeRoom?.creatorUserId ?? _activeRoom?.host.id ?? room.host.id;
       final hostUserModel = isHost
@@ -1006,6 +1039,14 @@ class LivePartyProvider extends ChangeNotifier {
         if (_messages.length > 100) {
           _messages.removeAt(0);
         }
+
+        // Synchronize Room Sending Coin Total (Item 08)
+        final coinAmount = (data['coinAmount'] ?? data['coins'] ?? data['cost'] ?? data['totalCoins'] ?? (quantity * (data['price'] ?? 100))) as num;
+        _roomSendingTotal += coinAmount;
+        if (_activeRoom != null) {
+          RoomConfigManager.instance.saveRoomSendingTotal(_activeRoom!.id, _roomSendingTotal);
+        }
+
         notifyListeners();
       } catch (e) {
         debugPrint('[LivePartyProvider] GiftSent error: $e');
@@ -1346,6 +1387,88 @@ class LivePartyProvider extends ChangeNotifier {
         clearRoomFeed();
       }
     });
+
+    // 17. Room Details & DP Update Stream (Item 09)
+    _socketDetailsUpdatedSub?.cancel();
+    _socketDetailsUpdatedSub = _socketService.onRoomDetailsUpdated.listen((data) {
+      final rId = data['roomId']?.toString();
+      final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
+      if (rId == null || rId == currentId) {
+        final title = data['title']?.toString();
+        final cover = data['coverUrl']?.toString();
+        if (_activeRoom != null) {
+          _activeRoom = _activeRoom!.copyWith(
+            title: title ?? _activeRoom!.title,
+            coverUrl: cover ?? _activeRoom!.coverUrl,
+          );
+        }
+        if (currentId.isNotEmpty) {
+          RoomConfigManager.instance.saveRoomProfile(currentId, title: title, coverUrl: cover);
+        }
+        notifyListeners();
+      }
+    });
+
+    // 18. Mic Seat Locked Status Stream (Item 04 & 07, Mic 7 & 8)
+    _socketSeatLockedSub?.cancel();
+    _socketSeatLockedSub = _socketService.onSeatLocked.listen((data) {
+      final rId = data['roomId']?.toString();
+      final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
+      if (rId == null || rId == currentId) {
+        final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
+        final isLocked = data['isLocked'] == true || data['locked'] == true;
+        if (seatIndex != null) {
+          if (isLocked) {
+            _lockedSeatIndices.add(seatIndex);
+          } else {
+            _lockedSeatIndices.remove(seatIndex);
+          }
+          if (currentId.isNotEmpty) {
+            RoomConfigManager.instance.setSeatLocked(currentId, seatIndex, isLocked);
+          }
+          notifyListeners();
+        }
+      }
+    });
+
+    // 19. Room Seat Count & Layout Stream (Item 11)
+    _socketLayoutUpdatedSub?.cancel();
+    _socketLayoutUpdatedSub = _socketService.onRoomLayoutUpdated.listen((data) {
+      final rId = data['roomId']?.toString();
+      final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
+      if (rId == null || rId == currentId) {
+        final capacityRaw = data['capacity'] ?? data['seatCapacity'];
+        final capacity = (capacityRaw is num) ? capacityRaw.toInt() : int.tryParse(capacityRaw?.toString() ?? '');
+        final roomType = data['roomType']?.toString();
+        if (_activeRoom != null && capacity != null) {
+          _activeRoom = _activeRoom!.copyWith(
+            seatCapacity: capacity,
+            roomType: roomType ?? _activeRoom!.roomType,
+          );
+        }
+        if (currentId.isNotEmpty && capacity != null) {
+          RoomConfigManager.instance.saveRoomLayout(currentId, capacity: capacity, roomType: roomType ?? _activeRoom?.roomType ?? 'NORMAL');
+        }
+        notifyListeners();
+      }
+    });
+
+    // 20. Room Sending Coin Total Stream (Item 08)
+    _socketSendingTotalSub?.cancel();
+    _socketSendingTotalSub = _socketService.onRoomSendingTotalUpdated.listen((data) {
+      final rId = data['roomId']?.toString();
+      final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
+      if (rId == null || rId == currentId) {
+        final total = (data['totalCoins'] is num) ? (data['totalCoins'] as num) : num.tryParse(data['totalCoins']?.toString() ?? '') ?? 0;
+        if (total > _roomSendingTotal) {
+          _roomSendingTotal = total;
+          if (currentId.isNotEmpty) {
+            RoomConfigManager.instance.saveRoomSendingTotal(currentId, total);
+          }
+          notifyListeners();
+        }
+      }
+    });
   }
 
   /// Clears the room's lower feed messages and records clear timestamp
@@ -1432,6 +1555,10 @@ class LivePartyProvider extends ChangeNotifier {
     _socketMicInviteSub?.cancel();
     _socketMicInviteResponseSub?.cancel();
     _socketFeedClearedSub?.cancel();
+    _socketDetailsUpdatedSub?.cancel();
+    _socketSeatLockedSub?.cancel();
+    _socketLayoutUpdatedSub?.cancel();
+    _socketSendingTotalSub?.cancel();
     _pendingOutgoingInvites.clear();
     _feedClearedAt = null;
     _pkTimer?.cancel();
@@ -1458,8 +1585,9 @@ class LivePartyProvider extends ChangeNotifier {
 
   // ── Seat Management ────────────────────────────────────────────────────────
   Future<String?> takeMicSeat(int seatIndex, UserModel actor) async {
+    final seatLabel = seatIndex == 0 ? 'Host Mic' : (seatIndex == 1 ? 'Co-Host Mic' : 'Mic ${seatIndex - 1}');
     if (isSeatLocked(seatIndex)) {
-      return 'Mic ${seatIndex + 1} is locked.';
+      return '$seatLabel is locked.';
     }
     if (_activeRoom == null) return 'No active room.';
 
@@ -1468,13 +1596,13 @@ class LivePartyProvider extends ChangeNotifier {
         (_currentUser?.id == _activeRoom?.host.id) ||
         isHost;
     if (seatIndex == 0 && !isHostActor) {
-      return 'Seat 1 is reserved exclusively for the host.';
+      return 'Host Mic is reserved exclusively for the host.';
     }
 
     // Check if target seat is already occupied by someone else
     final occupant = _participants.where((p) => p.seatNumber == seatIndex).firstOrNull;
     if (occupant != null && occupant.user.id != actor.id) {
-      return 'Mic ${seatIndex + 1} is already occupied by ${occupant.user.name}.';
+      return '$seatLabel is already occupied by ${occupant.user.name}.';
     }
 
     // Clean up any old Guest placeholder entries
@@ -1809,6 +1937,14 @@ class LivePartyProvider extends ChangeNotifier {
       _lockedSeatIndices.remove(seatIndex);
     }
 
+    final roomId = _activeRoom?.id ?? _initialRoomId ?? '';
+    if (roomId.isNotEmpty) {
+      RoomConfigManager.instance.setSeatLocked(roomId, seatIndex, lock);
+      _socketService.emitRoomSeatLock(roomId, seatIndex, lock);
+    }
+
+    final seatLabel = seatIndex == 0 ? 'Host Mic' : (seatIndex == 1 ? 'Co-Host Mic' : 'Mic ${seatIndex - 1}');
+
     _logMicAudit(
       seatIndex: seatIndex,
       actorId: actor.id,
@@ -1819,7 +1955,7 @@ class LivePartyProvider extends ChangeNotifier {
       newState: lock ? 'Locked' : 'Unlocked',
     );
 
-    sendSystemMessage(lock ? '🔒 Mic ${seatIndex + 1} locked.' : '🔓 Mic ${seatIndex + 1} unlocked.');
+    sendSystemMessage(lock ? '🔒 $seatLabel locked.' : '🔓 $seatLabel unlocked.');
     notifyListeners();
   }
 
@@ -2342,6 +2478,8 @@ class LivePartyProvider extends ChangeNotifier {
         roomType: roomType,
         seatCapacity: capacity,
       );
+      RoomConfigManager.instance.saveRoomLayout(_activeRoom!.id, capacity: capacity, roomType: roomType);
+      _socketService.emitRoomLayoutUpdate(_activeRoom!.id, capacity, roomType);
       sendSystemMessage('⚙️ Room mode changed to $roomType ($capacity seats).');
       notifyListeners();
     }
@@ -2427,6 +2565,9 @@ class LivePartyProvider extends ChangeNotifier {
     final locked = isSeatLocked(index);
     if (_currentUser != null) {
       lockMicSeat(index, !locked, actor: _currentUser!);
+    } else {
+      final actor = _activeRoom?.host ?? UserModel(id: 'host', username: 'host', name: 'Host', avatarUrl: '');
+      lockMicSeat(index, !locked, actor: actor);
     }
   }
 
@@ -2439,14 +2580,35 @@ class LivePartyProvider extends ChangeNotifier {
     int? capacity,
   }) {
     if (_activeRoom != null) {
+      final updatedCover = coverUrl ?? _activeRoom!.coverUrl;
+      final updatedTitle = title ?? _activeRoom!.title;
+      final updatedCapacity = capacity ?? _activeRoom!.seatCapacity;
+      final updatedRoomType = roomType ?? _activeRoom!.roomType;
+
       _activeRoom = _activeRoom!.copyWith(
-        coverUrl: coverUrl ?? _activeRoom!.coverUrl,
-        title: title ?? _activeRoom!.title,
+        coverUrl: updatedCover,
+        title: updatedTitle,
         category: category ?? _activeRoom!.category,
         nobleTitle: nobleTitle ?? _activeRoom!.nobleTitle,
-        roomType: roomType ?? _activeRoom!.roomType,
-        seatCapacity: capacity ?? _activeRoom!.seatCapacity,
+        roomType: updatedRoomType,
+        seatCapacity: updatedCapacity,
       );
+
+      // Persist durable room overrides across rejoining & app restarts (Item 09 & 11)
+      RoomConfigManager.instance.saveRoomProfile(_activeRoom!.id, title: updatedTitle, coverUrl: updatedCover);
+      RoomConfigManager.instance.saveRoomLayout(_activeRoom!.id, capacity: updatedCapacity, roomType: updatedRoomType);
+
+      // Save into BackendRepository for offline caching
+      BackendRepository.instance.addLiveRoom(_activeRoom!);
+
+      // Broadcast to other phones connected to the room via Socket
+      if (title != null || coverUrl != null) {
+        _socketService.emitRoomDetailsUpdate(_activeRoom!.id, title: updatedTitle, coverUrl: updatedCover);
+      }
+      if (capacity != null || roomType != null) {
+        _socketService.emitRoomLayoutUpdate(_activeRoom!.id, updatedCapacity, updatedRoomType);
+      }
+
       sendSystemMessage('✏️ Room details updated.');
       notifyListeners();
     }
@@ -2526,6 +2688,15 @@ class LivePartyProvider extends ChangeNotifier {
     if (_messages.length > 100) {
       _messages.removeAt(0);
     }
+
+    // Synchronize Room Sending Coin Total (Item 08)
+    final coinAmount = (quantity * 100);
+    _roomSendingTotal += coinAmount;
+    if (_activeRoom != null) {
+      RoomConfigManager.instance.saveRoomSendingTotal(_activeRoom!.id, _roomSendingTotal);
+      _socketService.emitRoomSendingTotal(_activeRoom!.id, _roomSendingTotal);
+    }
+
     notifyListeners();
 
     // Broadcast room gift event to all connected devices in this room
