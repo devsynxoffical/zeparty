@@ -551,13 +551,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     }
     setState(() => _isMicMuted = !_isMicMuted);
     partyProv.muteLocalMic(_isMicMuted);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_isMicMuted ? 'Microphone Muted 🔇' : 'Microphone Active 🎙️'),
-        duration: const Duration(seconds: 1),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   void _sendChatMessage() {
@@ -1774,13 +1767,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
                     provider.toggleSpeakerOutput();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(provider.isSpeakerMuted ? 'Room Audio Off 🔇' : 'Room Audio On 🔊'),
-                        duration: const Duration(seconds: 1),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
                   },
                   child: Container(
                     width: 38,
@@ -3774,14 +3760,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
     final provider = Provider.of<LivePartyProvider>(context, listen: false);
     provider.sendMessage(user, actionText);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Sound Effect: $actionText'),
-        backgroundColor: Colors.purpleAccent,
-        duration: const Duration(milliseconds: 900),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   Widget _buildRoomToolBtn(
