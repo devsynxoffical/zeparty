@@ -453,21 +453,6 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
     }).catch(() => {});
   }
 
-  // If returning user is the creator/host, ensure seat 0 is reserved and assigned to them
-  if (room.creatorUserId === userId) {
-    try {
-      const seat0 = await db.roomSeat.findUnique({
-        where: { roomId_seatIndex: { roomId: resolvedRoomId, seatIndex: 0 } },
-      });
-      if (seat0 && (!seat0.occupiedUserId || seat0.occupiedUserId === userId)) {
-        await db.roomSeat.update({
-          where: { roomId_seatIndex: { roomId: resolvedRoomId, seatIndex: 0 } },
-          data: { occupiedUserId: userId },
-        });
-      }
-    } catch (_) {}
-  }
-
   const audienceMemberCount = await db.roomMember.count({
     where: {
       roomId: resolvedRoomId,
@@ -489,6 +474,19 @@ export async function joinRoomTx({ roomId, userId }, db = prisma) {
           countryCode: true,
           region: true,
           profile: true,
+        },
+      },
+      seats: {
+        orderBy: { seatIndex: 'asc' },
+        include: {
+          occupiedUser: {
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              profile: true,
+            },
+          },
         },
       },
     },

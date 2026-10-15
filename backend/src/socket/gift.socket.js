@@ -23,14 +23,7 @@ export async function onSendGift(io, socket, data, callback) {
 
     const senderUserId = socket.userId;
 
-    if (senderUserId === recipientUserId) {
-      const err = {
-        success: false,
-        error: { code: 'CANNOT_GIFT_SELF', message: 'Users cannot send gifts to themselves' },
-      };
-      if (typeof callback === 'function') return callback(err);
-      return socket.emit(SOCKET_EVENTS.ERROR, err);
-    }
+    // Self-gifting is permitted (e.g. self-boosting, celebration)
 
     // Execute Phase 3 Authoritative Financial Gifting Transaction (wallet lock, split, ledger posting)
     const result = await giftService.sendGift(

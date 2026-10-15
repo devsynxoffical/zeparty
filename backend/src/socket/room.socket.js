@@ -886,6 +886,126 @@ export function registerRoomHandlers(io, socket) {
     withRateLimit('ROOM_MOD', 5, 1000, (s, d, cb) => onKickUser(io, s, d, cb))
   );
 
+  // Real-time Room Mic Invitations (Change 13: Direct User Delivery & Robust Room Routing)
+  const handleMicInvite = async (data, callback) => {
+    try {
+      const roomId = data?.roomId;
+      const targetUserId = data?.targetUserId ? String(data.targetUserId) : null;
+      if (!roomId || !targetUserId) {
+        if (typeof callback === 'function') callback({ success: false, message: 'roomId and targetUserId required' });
+        return;
+      }
+
+      // Check room and authorization
+      const room = await roomRepository.findRoomById(roomId).catch(() => null);
+      const isOwner = room && (room.creatorUserId === socket.userId || room.creator?.id === socket.userId);
+      const isAdmin = socket.user?.isAdmin || socket.user?.role === 'ADMIN' || socket.user?.role === 'MODERATOR';
+
+      // Permission check: only owner or authorized admin can invite viewers to mic
+      if (room && !isOwner && !isAdmin) {
+        const errMsg = 'Only room owner and authorized admins can invite viewers to mic.';
+        socket.emit(SOCKET_EVENTS.ERROR, { code: SOCKET_ERRORS.PERMISSION_DENIED || 'PERMISSION_DENIED', message: errMsg });
+        if (typeof callback === 'function') callback({ success: false, message: errMsg });
+        return;
+      }
+
+      // Check seat capacity if authoritative seats are available
+      if (room?.seats && Array.isArray(room.seats)) {
+        const hasAvailableSeat = room.seats.some((s) => !s.occupiedUserId && !s.isLocked);
+        if (!hasAvailableSeat) {
+          const errMsg = 'No available mic seats in this room.';
+          socket.emit(SOCKET_EVENTS.ERROR, { code: 'ROOM_FULL', message: errMsg });
+          if (typeof callback === 'function') callback({ success: false, message: errMsg });
+          return;
+        }
+      }
+
+      const canonicalRoomId = room?.id || roomId;
+      const inviterUser = data.inviter || (socket.user ? {
+        id: socket.userId,
+        name: socket.user.displayName || socket.user.name || socket.user.username || 'Host',
+        username: socket.user.username,
+        avatarUrl: socket.user.avatarUrl,
+      } : { id: socket.userId, name: 'Host' });
+
+      const payload = {
+        id: data.id || `inv_${Date.now()}_${targetUserId}`,
+        roomId: roomId,
+        canonicalRoomId: canonicalRoomId,
+        roomTitle: data.roomTitle || room?.title || 'Party Room',
+        targetUserId: targetUserId,
+        inviterUserId: socket.userId,
+        inviter: inviterUser,
+        targetUser: data.targetUser || { id: targetUserId },
+        seatIndex: data.seatIndex,
+        createdAt: data.createdAt || new Date().toISOString(),
+      };
+
+      // 1. Broadcast to room channel by both input roomId and canonical roomId
+      io.to(`room:${roomId}`).emit('room:mic_invite', payload);
+      io.to(`room:${roomId}`).emit('room_mic_invite', payload);
+      if (canonicalRoomId !== roomId) {
+        io.to(`room:${canonicalRoomId}`).emit('room:mic_invite', payload);
+        io.to(`room:${canonicalRoomId}`).emit('room_mic_invite', payload);
+      }
+
+      // 2. CRITICAL: Direct delivery to target user's private channel user:${targetUserId}
+      io.to(`user:${targetUserId}`).emit('room:mic_invite', payload);
+      io.to(`user:${targetUserId}`).emit('room_mic_invite', payload);
+
+      if (typeof callback === 'function') {
+        callback({ success: true, invitation: payload });
+      }
+    } catch (err) {
+      console.warn('[RoomSocket] handleMicInvite error:', err.message);
+    }
+  };
+
+  socket.on('room:mic_invite', handleMicInvite);
+  socket.on('room_mic_invite', handleMicInvite);
+
+  const handleMicInviteResponse = async (data, callback) => {
+    try {
+      const roomId = data?.roomId;
+      const targetUserId = data?.targetUserId ? String(data.targetUserId) : socket.userId;
+      if (!roomId) return;
+
+      const room = await roomRepository.findRoomById(roomId).catch(() => null);
+      const canonicalRoomId = room?.id || roomId;
+
+      const payload = {
+        ...data,
+        roomId,
+        canonicalRoomId,
+        targetUserId,
+      };
+
+      // 1. Broadcast to room channels
+      io.to(`room:${roomId}`).emit('room:mic_invite_response', payload);
+      io.to(`room:${roomId}`).emit('room_mic_invite_response', payload);
+      if (canonicalRoomId !== roomId) {
+        io.to(`room:${canonicalRoomId}`).emit('room:mic_invite_response', payload);
+        io.to(`room:${canonicalRoomId}`).emit('room_mic_invite_response', payload);
+      }
+
+      // 2. Direct delivery to inviter if specified to clear Pending state immediately
+      const inviterId = data?.inviterUserId || data?.inviter?.id;
+      if (inviterId) {
+        io.to(`user:${inviterId}`).emit('room:mic_invite_response', payload);
+        io.to(`user:${inviterId}`).emit('room_mic_invite_response', payload);
+      }
+
+      if (typeof callback === 'function') {
+        callback({ success: true });
+      }
+    } catch (err) {
+      console.warn('[RoomSocket] handleMicInviteResponse error:', err.message);
+    }
+  };
+
+  socket.on('room:mic_invite_response', handleMicInviteResponse);
+  socket.on('room_mic_invite_response', handleMicInviteResponse);
+
   // Authoritative Active Rooms Snapshot Request for newly connected or reconnecting clients
   socket.on(
     'rooms:get_active',
