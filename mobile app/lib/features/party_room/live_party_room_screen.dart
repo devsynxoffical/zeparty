@@ -35,6 +35,7 @@ import 'widgets/room_entry_announcement_banner.dart';
 import 'widgets/room_entry_mount_banner.dart';
 import 'widgets/effects_settings_sheet.dart';
 import 'widgets/mic_seat_management_sheet.dart';
+import 'widgets/elimination_wheel_sheet.dart';
 import 'widgets/in_room_profile_card_sheet.dart';
 import 'widgets/expanded_message_panel.dart';
 import '../../widgets/multi_role_seat_grid.dart';
@@ -2216,7 +2217,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                         ),
                         _buildRoomToolBtn(
                           Icons.casino_rounded,
-                          'Super Wheel',
+                          'Lucky Wheel',
                           Colors.amberAccent,
                           () {
                             Navigator.pop(ctx);
@@ -4112,65 +4113,9 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     );
   }
 
-  // ── Module 06: Super Wheel Control Dialog ──
+  // ── Module 06: Lucky Wheel (Participant Elimination) ──
   void _showSuperWheelControlDialog(BuildContext context) {
-    final provider = context.read<LivePartyProvider>();
-
-    showDialog(
-      context: context,
-      builder: (d) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1B2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.casino_rounded, color: Colors.amberAccent),
-            SizedBox(width: 8),
-            Text('Super Wheel Game Control', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Spin the Super Wheel for all room members! Results & rewards are server-calculated.', style: TextStyle(color: Colors.white70, fontSize: 12)),
-            const SizedBox(height: 16),
-            if (provider.lastSuperWheelResult != null) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.amber, width: 1),
-                ),
-                child: Column(
-                  children: [
-                    const Text('Last Winner Result:', style: TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text('${provider.lastSuperWheelResult!['prize']['name']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Close', style: TextStyle(color: Colors.white60))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-            onPressed: () {
-              final authUser = context.read<AuthProvider>().currentUser;
-              final sessionId = 'spin_${DateTime.now().millisecondsSinceEpoch}';
-              final res = provider.spinSuperWheelServer(userId: authUser.id, sessionId: sessionId, costCoins: 100);
-              Navigator.pop(d);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('🎉 Super Wheel Spun! Winner won: ${res['prize']['name']}'), backgroundColor: Colors.green),
-              );
-            },
-            child: const Text('Spin Super Wheel 🎰', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
+    EliminationWheelSheet.show(context);
   }
 
   // ── Module 06: Lucky Bag Control Dialog ──
