@@ -110,6 +110,15 @@ export async function getConversationsForUser(userId) {
         isInRoom: false,
         currentRoomId: null,
         lastSeenAt: null,
+        profile: {
+          ...(user.profile || {}),
+          isOnline: false,
+          online: false,
+          presenceStatus: 'OFFLINE',
+          isInRoom: false,
+          currentRoomId: null,
+          lastSeenAt: null,
+        },
       };
       result.push(conv);
     }
@@ -128,6 +137,16 @@ export async function getConversationsForUser(userId) {
         conv.otherUser.currentRoomId = pres?.currentRoomId || null;
         conv.otherUser.lastSeenAt = pres?.lastSeenAt || null;
 
+        conv.otherUser.profile = {
+          ...(conv.otherUser.profile || {}),
+          isOnline,
+          online: isOnline,
+          presenceStatus: conv.otherUser.presenceStatus,
+          isInRoom: Boolean(pres?.isInRoom),
+          currentRoomId: pres?.currentRoomId || null,
+          lastSeenAt: pres?.lastSeenAt || null,
+        };
+
         // Also assign at conversation root level for client models reading conv.isOnline
         conv.isOnline = isOnline;
         conv.online = isOnline;
@@ -136,6 +155,11 @@ export async function getConversationsForUser(userId) {
         conv.otherUser.isOnline = false;
         conv.otherUser.online = false;
         conv.otherUser.presenceStatus = 'OFFLINE';
+        if (conv.otherUser.profile) {
+          conv.otherUser.profile.isOnline = false;
+          conv.otherUser.profile.online = false;
+          conv.otherUser.profile.presenceStatus = 'OFFLINE';
+        }
         conv.isOnline = false;
         conv.online = false;
       }

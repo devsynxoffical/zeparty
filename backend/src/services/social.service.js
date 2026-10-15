@@ -6,6 +6,7 @@ import storageService from './storage.service.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
 import * as notificationService from './notification.service.js';
+import presenceService from '../socket/presence.service.js';
 
 /**
  * Social & Engagement Service
@@ -827,6 +828,34 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
   const isPrivate = Boolean(user.profile?.isPrivate);
   const canViewPosts = !isPrivate || isFollowing || viewerUserId === targetUserId;
 
+  let presence = null;
+  try {
+    presence = await presenceService.getUserPresence(targetUserId, db);
+  } catch (_) {
+    presence = {
+      userId: targetUserId,
+      presenceStatus: 'OFFLINE',
+      isOnline: false,
+      online: false,
+      isInRoom: false,
+      currentRoomId: null,
+      currentRoomTitle: null,
+      currentRoomSessionId: null,
+      currentRoom: null,
+      inRoomAvailable: false,
+      lastSeenAt: null,
+      lastActiveAt: '1970-01-01T00:00:00.000Z',
+      lastSeen: '1970-01-01T00:00:00.000Z',
+    };
+  }
+
+  const isOnline = Boolean(presence?.isOnline);
+  const isInRoom = Boolean(presence?.isInRoom);
+  const roomId = presence?.currentRoomId || null;
+  const effectiveLastActiveAt = isOnline
+    ? (presence?.lastActiveAt || new Date().toISOString())
+    : (presence?.lastActiveAt || '1970-01-01T00:00:00.000Z');
+
   return {
     id: user.id,
     username: user.username,
@@ -846,6 +875,23 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     isBlocked: isBlockedByViewer,
     canViewPosts,
     createdAt: user.createdAt,
+    // Real-time server presence fields (Bug 05)
+    isLive: isInRoom,
+    isInRoom,
+    liveRoomId: roomId,
+    currentRoomId: roomId,
+    roomId,
+    currentRoomTitle: presence?.currentRoomTitle || null,
+    currentRoomSessionId: presence?.currentRoomSessionId || null,
+    currentRoom: presence?.currentRoom || null,
+    inRoomAvailable: Boolean(presence?.inRoomAvailable),
+    isOnline,
+    online: isOnline,
+    presenceStatus: presence?.presenceStatus || (isOnline ? (isInRoom ? 'IN_ROOM' : 'ONLINE') : 'OFFLINE'),
+    lastSeenAt: presence?.lastSeenAt || null,
+    lastActiveAt: effectiveLastActiveAt,
+    lastSeen: effectiveLastActiveAt,
+    presence,
   };
 }
 

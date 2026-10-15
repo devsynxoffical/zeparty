@@ -253,8 +253,33 @@ export async function getSelfProfile(userId, db = prisma) {
 
   const presence = await presenceService.getUserPresence(userId, db);
 
+  const isOnline = Boolean(presence.isOnline);
+  const isInRoom = Boolean(presence.isInRoom);
+  const effectiveLastActiveAt = isOnline
+    ? (presence.lastActiveAt || new Date().toISOString())
+    : (presence.lastActiveAt || '1970-01-01T00:00:00.000Z');
+
+  const profileWithPresence = user.profile ? {
+    ...user.profile,
+    presenceStatus: presence.presenceStatus,
+    currentRoomId: presence.currentRoomId,
+    currentRoomTitle: presence.currentRoomTitle,
+    inRoomAvailable: Boolean(presence.inRoomAvailable),
+    isOnline,
+    online: isOnline,
+    isInRoom,
+    isLive: isInRoom,
+    liveRoomId: presence.currentRoomId || null,
+    roomId: presence.currentRoomId || null,
+    currentRoom: presence.currentRoom,
+    lastSeenAt: presence.lastSeenAt,
+    lastActiveAt: effectiveLastActiveAt,
+    lastSeen: effectiveLastActiveAt,
+  } : user.profile;
+
   return {
     ...user,
+    profile: profileWithPresence,
     avatarFrame,
     equippedFrame: avatarFrame,
     equippedBubble,
@@ -275,14 +300,14 @@ export async function getSelfProfile(userId, db = prisma) {
     currentRoomTitle: presence.currentRoomTitle,
     currentRoomSessionId: presence.currentRoomSessionId,
     inRoomAvailable: Boolean(presence.inRoomAvailable),
-    isOnline: Boolean(presence.isOnline),
-    online: Boolean(presence.isOnline),
-    isInRoom: Boolean(presence.isInRoom),
+    isOnline,
+    online: isOnline,
+    isInRoom,
     lastSeenAt: presence.lastSeenAt,
-    lastActiveAt: presence.lastActiveAt || presence.lastSeenAt,
-    lastSeen: presence.lastSeen || presence.lastSeenAt,
+    lastActiveAt: effectiveLastActiveAt,
+    lastSeen: effectiveLastActiveAt,
     presence,
-    isLive: Boolean(presence.isInRoom),
+    isLive: isInRoom,
     liveRoomId: presence.currentRoomId || null,
     roomId: presence.currentRoomId || null,
     currentRoom: presence.currentRoom,
@@ -374,8 +399,33 @@ export async function getPublicProfile(userId, db = prisma) {
 
   const presence = await presenceService.getUserPresence(userId, db);
 
+  const isOnline = Boolean(presence.isOnline);
+  const isInRoom = Boolean(presence.isInRoom);
+  const effectiveLastActiveAt = isOnline
+    ? (presence.lastActiveAt || new Date().toISOString())
+    : (presence.lastActiveAt || '1970-01-01T00:00:00.000Z');
+
+  const profileWithPresence = publicUser.profile ? {
+    ...publicUser.profile,
+    presenceStatus: presence.presenceStatus,
+    currentRoomId: presence.currentRoomId,
+    currentRoomTitle: presence.currentRoomTitle,
+    inRoomAvailable: Boolean(presence.inRoomAvailable),
+    isOnline,
+    online: isOnline,
+    isInRoom,
+    isLive: isInRoom,
+    liveRoomId: presence.currentRoomId || null,
+    roomId: presence.currentRoomId || null,
+    currentRoom: presence.currentRoom,
+    lastSeenAt: presence.lastSeenAt,
+    lastActiveAt: effectiveLastActiveAt,
+    lastSeen: effectiveLastActiveAt,
+  } : publicUser.profile;
+
   return {
     ...publicUser,
+    profile: profileWithPresence,
     avatarFrame,
     equippedFrame: avatarFrame,
     equippedBubble,
@@ -389,14 +439,14 @@ export async function getPublicProfile(userId, db = prisma) {
     currentRoomTitle: presence.currentRoomTitle,
     currentRoomSessionId: presence.currentRoomSessionId,
     inRoomAvailable: Boolean(presence.inRoomAvailable),
-    isOnline: Boolean(presence.isOnline),
-    online: Boolean(presence.isOnline),
-    isInRoom: Boolean(presence.isInRoom),
+    isOnline,
+    online: isOnline,
+    isInRoom,
     lastSeenAt: presence.lastSeenAt,
-    lastActiveAt: presence.lastActiveAt || presence.lastSeenAt,
-    lastSeen: presence.lastSeen || presence.lastSeenAt,
+    lastActiveAt: effectiveLastActiveAt,
+    lastSeen: effectiveLastActiveAt,
     presence,
-    isLive: Boolean(presence.isInRoom),
+    isLive: isInRoom,
     liveRoomId: presence.currentRoomId || null,
     roomId: presence.currentRoomId || null,
     currentRoom: presence.currentRoom,

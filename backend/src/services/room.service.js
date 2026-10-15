@@ -158,13 +158,55 @@ export async function cleanupStaleRooms(db = prisma) {
 }
 
 export async function getRoomDetails(roomId, db = prisma) {
-  const room = await roomRepository.findRoomById(roomId, db);
+  let room = await roomRepository.findRoomById(roomId, db);
+
+  // If room is ended or not live, check if host has restarted and has an active LIVE room session
+  const isRoomLive = room && ['LIVE', 'ACTIVE', 'OPEN'].includes(String(room.status).toUpperCase());
+  if (!isRoomLive && room && room.creatorUserId) {
+    const activeRoom = await db.room.findFirst({
+      where: {
+        creatorUserId: room.creatorUserId,
+        status: 'LIVE',
+      },
+      select: { id: true },
+    });
+    if (activeRoom) {
+      const freshRoom = await roomRepository.findRoomById(activeRoom.id, db);
+      if (freshRoom) {
+        room = freshRoom;
+      }
+    }
+  }
+
+  // If room wasn't found by ID, check if roomId is a host's userId who has an active LIVE room
+  if (!room && roomId) {
+    const activeRoomByUser = await db.room.findFirst({
+      where: {
+        creatorUserId: roomId,
+        status: 'LIVE',
+      },
+      select: { id: true },
+    });
+    if (activeRoomByUser) {
+      room = await roomRepository.findRoomById(activeRoomByUser.id, db);
+    }
+  }
+
   if (!room) {
     const error = new Error('Room not found');
     error.statusCode = 404;
     error.code = 'ROOM_NOT_FOUND';
     throw error;
   }
+
+  // Calculate real-time viewer count
+  let viewerCount = typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 0;
+  try {
+    const presCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
+    if (typeof presCount === 'number' && presCount >= 0) {
+      viewerCount = Math.max(viewerCount, presCount);
+    }
+  } catch (_) {}
 
   // Calculate gift coin total from transactions if present
   let totalGiftCoins = 0;
@@ -177,6 +219,9 @@ export async function getRoomDetails(roomId, db = prisma) {
 
   return {
     ...room,
+    currentViewersCount: viewerCount,
+    viewerCount,
+    count: viewerCount,
     backgroundImageUrl: room.backgroundImageUrl || null,
     background: room.backgroundImageUrl || null,
     giftsReceivedCoins: totalGiftCoins,
