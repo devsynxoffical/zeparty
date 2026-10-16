@@ -391,6 +391,7 @@ model User {
   restrictions             Restriction[]       @relation("UserRestrictions")
   settlementRecords        SettlementRecord[]  @relation("UserSettlementRecords")
   settlementAdjustments    SettlementAdjustment[] @relation("UserSettlementAdjustments")
+  milestoneClaims          UserMilestoneClaim[]   @relation("UserMilestoneClaims")
 
   @@index([status])
   @@index([countryCode])
@@ -1837,6 +1838,50 @@ model SettlementAdjustment {
   createdAt          DateTime                 @default(now())
 
   @@index([settlementRecordId])
+  @@index([userId])
+}
+
+// ==========================================
+// RECHARGE REWARDS & MILESTONE CLAIMS (CHANGE 22)
+// ==========================================
+
+model RechargeRewardEvent {
+  id          String               @id @default(uuid())
+  code        String               @unique
+  title       String
+  description String?
+  currency    String               @default("USD")
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean              @default(true)
+  milestones  Json
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  claims      UserMilestoneClaim[]
+
+  @@index([code])
+  @@index([isActive])
+  @@index([startDate, endDate])
+}
+
+model UserMilestoneClaim {
+  id                String              @id @default(uuid())
+  userId            String
+  user              User                @relation("UserMilestoneClaims", fields: [userId], references: [id], onDelete: Cascade)
+  eventId           String
+  event             RechargeRewardEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  milestoneLevel    Int
+  thresholdUSD      Decimal             @db.Decimal(10, 2)
+  bonusCoins        BigInt              @default(0)
+  bonusDiamonds     BigInt              @default(0)
+  specialRewardName String?
+  specialRewardIcon String?
+  claimedAt         DateTime            @default(now())
+  txReference       String?
+
+  @@unique([userId, eventId, milestoneLevel])
+  @@index([userId, eventId])
   @@index([userId])
 }
 

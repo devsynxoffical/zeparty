@@ -78,4 +78,12 @@ router.post(
   }
 );
 
+import rechargeRewardController from '../controllers/rechargeReward.controller.js';
+
+// ---- Recharge Rewards & Milestones (Change 22) ----
+router.get('/rewards/current', authenticate, rechargeRewardController.getCurrentEvent);
+router.get('/rewards', authenticate, rechargeRewardController.getCurrentEvent);
+router.post('/rewards/claim', authenticate, idempotencyMiddleware, rechargeRewardController.claimMilestone);
+router.get('/rewards/history', authenticate, rechargeRewardController.getClaimHistory);
+
 export default router;

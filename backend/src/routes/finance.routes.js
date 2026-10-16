@@ -69,4 +69,10 @@ router.post(
   financeController.rejectCoinRefund
 );
 
+// Recharge Rewards Events Management (Change 22)
+import rechargeRewardController from '../controllers/rechargeReward.controller.js';
+router.get('/recharge/rewards/events', requirePermission('view_recharge_plans'), rechargeRewardController.getAdminEvents);
+router.post('/recharge/rewards/events', requirePermission('manage_recharge_plans'), rechargeRewardController.postAdminEvent);
+router.patch('/recharge/rewards/events/:id/toggle', requirePermission('manage_recharge_plans'), rechargeRewardController.patchAdminToggleEvent);
+
 export default router;

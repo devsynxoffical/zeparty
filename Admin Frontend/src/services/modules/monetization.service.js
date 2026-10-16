@@ -158,6 +158,21 @@ export async function resolveChargeback(id, payload) {
   return res.data;
 }
 
+export async function getRechargeRewardEvents() {
+  const res = await apiClient.get('/v1/finance/recharge/rewards/events');
+  return res.data?.data || [];
+}
+
+export async function createOrUpdateRechargeRewardEvent(data) {
+  const res = await apiClient.post('/v1/finance/recharge/rewards/events', data);
+  return res.data;
+}
+
+export async function toggleRechargeRewardEvent(id, isActive) {
+  const res = await apiClient.patch(`/v1/finance/recharge/rewards/events/${id}/toggle`, { isActive });
+  return res.data;
+}
+
 export default {
   getRechargePlans,
   createRechargePlan,
@@ -175,4 +190,7 @@ export default {
   rejectCoinRefund,
   getChargebacks,
   resolveChargeback,
+  getRechargeRewardEvents,
+  createOrUpdateRechargeRewardEvent,
+  toggleRechargeRewardEvent,
 };

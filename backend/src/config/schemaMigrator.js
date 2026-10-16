@@ -415,6 +415,130 @@ export async function ensureDatabaseSchema(db = prisma) {
     console.warn('Admin bootstrap auto-check note:', err.message);
   }
 
+  // 10. Ensure Recharge Rewards & Milestone Claim Tables (Change 22)
+  const rechargeRewardsTables = [
+    `CREATE TABLE IF NOT EXISTS "RechargeRewardEvent" (
+      "id" TEXT PRIMARY KEY,
+      "code" TEXT UNIQUE NOT NULL,
+      "title" TEXT NOT NULL,
+      "description" TEXT,
+      "currency" TEXT NOT NULL DEFAULT 'USD',
+      "startDate" TIMESTAMP(3) NOT NULL,
+      "endDate" TIMESTAMP(3) NOT NULL,
+      "isActive" BOOLEAN NOT NULL DEFAULT true,
+      "milestones" JSONB NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS "RechargeRewardEvent_code_idx" ON "RechargeRewardEvent"("code");`,
+    `CREATE INDEX IF NOT EXISTS "RechargeRewardEvent_isActive_idx" ON "RechargeRewardEvent"("isActive");`,
+    `CREATE INDEX IF NOT EXISTS "RechargeRewardEvent_dates_idx" ON "RechargeRewardEvent"("startDate", "endDate");`,
+
+    `CREATE TABLE IF NOT EXISTS "UserMilestoneClaim" (
+      "id" TEXT PRIMARY KEY,
+      "userId" TEXT NOT NULL,
+      "eventId" TEXT NOT NULL,
+      "milestoneLevel" INTEGER NOT NULL,
+      "thresholdUSD" DECIMAL(10, 2) NOT NULL,
+      "bonusCoins" BIGINT NOT NULL DEFAULT 0,
+      "bonusDiamonds" BIGINT NOT NULL DEFAULT 0,
+      "specialRewardName" TEXT,
+      "specialRewardIcon" TEXT,
+      "claimedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "txReference" TEXT,
+      CONSTRAINT "UserMilestoneClaim_unique_claim" UNIQUE ("userId", "eventId", "milestoneLevel"),
+      CONSTRAINT "UserMilestoneClaim_event_fkey" FOREIGN KEY ("eventId") REFERENCES "RechargeRewardEvent"("id") ON DELETE CASCADE
+    );`,
+    `CREATE INDEX IF NOT EXISTS "UserMilestoneClaim_userId_eventId_idx" ON "UserMilestoneClaim"("userId", "eventId");`,
+    `CREATE INDEX IF NOT EXISTS "UserMilestoneClaim_userId_idx" ON "UserMilestoneClaim"("userId");`,
+  ];
+
+  for (const ddl of rechargeRewardsTables) {
+    try {
+      await db.$executeRawUnsafe(ddl);
+    } catch (err) {
+      console.warn('RechargeRewards DDL note:', err.message);
+    }
+  }
+
+  // 10.1 Bootstrap Default Active Recharge Fiesta Event if none exists
+  try {
+    const existingEvent = await db.rechargeRewardEvent.findFirst();
+    if (!existingEvent) {
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth();
+      const startDate = new Date(Date.UTC(currentYear, currentMonth, 1, 0, 0, 0));
+      const endDate = new Date(Date.UTC(currentYear, currentMonth + 1, 0, 23, 59, 59));
+
+      await db.rechargeRewardEvent.create({
+        data: {
+          id: `evt_grand_fiesta_${currentYear}_${currentMonth + 1}`,
+          code: 'GRAND_RECHARGE_FIESTA',
+          title: 'ZeParty Grand Recharge Fiesta',
+          description: 'Recharge cumulative dollar amounts during the event window to unlock limited luxury animated assets and coin rebates!',
+          currency: 'USD',
+          startDate,
+          endDate,
+          isActive: true,
+          milestones: [
+            {
+              level: 1,
+              thresholdUSD: 10.0,
+              bonusCoins: 1000,
+              bonusDiamonds: 500,
+              specialRewardName: 'Bronze VIP Entry Badge (7 Days)',
+              specialRewardIcon: '🥉',
+            },
+            {
+              level: 2,
+              thresholdUSD: 50.0,
+              bonusCoins: 6000,
+              bonusDiamonds: 3000,
+              specialRewardName: 'Neon Gold Chat Bubble (15 Days)',
+              specialRewardIcon: '💬',
+            },
+            {
+              level: 3,
+              thresholdUSD: 100.0,
+              bonusCoins: 15000,
+              bonusDiamonds: 8000,
+              specialRewardName: 'Cyber Ride Vehicle (30 Days)',
+              specialRewardIcon: '🏎️',
+            },
+            {
+              level: 4,
+              thresholdUSD: 300.0,
+              bonusCoins: 50000,
+              bonusDiamonds: 25000,
+              specialRewardName: 'Golden Phoenix Avatar Frame',
+              specialRewardIcon: '👑',
+            },
+            {
+              level: 5,
+              thresholdUSD: 1000.0,
+              bonusCoins: 200000,
+              bonusDiamonds: 100000,
+              specialRewardName: 'Custom Vanity ID + Room Spotlight',
+              specialRewardIcon: '💎',
+            },
+            {
+              level: 6,
+              thresholdUSD: 3000.0,
+              bonusCoins: 750000,
+              bonusDiamonds: 400000,
+              specialRewardName: 'Emperor Royal Broadcast Halo (Permanent)',
+              specialRewardIcon: '🌟',
+            },
+          ],
+        },
+      });
+      console.log('✅ Default ZeParty Grand Recharge Fiesta event bootstrapped successfully');
+    }
+  } catch (err) {
+    console.warn('RechargeRewards event bootstrap note:', err.message);
+  }
+
   console.log('✅ Database schema and platform analytics verified and synchronized successfully');
 }
 
