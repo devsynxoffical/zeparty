@@ -2,6 +2,7 @@ import prisma from '../config/database.js';
 import userRepository from '../repositories/user.repository.js';
 import { resolveEffectiveCountryCode } from '../utils/geo.util.js';
 import { hashPassword } from '../utils/crypto.util.js';
+import { sanitizeFinancial } from '../utils/bigint.util.js';
 import presenceService from '../socket/presence.service.js';
 import {
   isRestrictedSpecialAsset,
@@ -290,12 +291,20 @@ export async function getSelfProfile(userId, db = prisma) {
 
   const publicId = /^[1-9]\d{6}$/.test(user.id) ? user.id : (user.username && /^\d+$/.test(user.username) ? user.username : user.id);
   const { passwordHash: _, ...userSafe } = user;
+  const sanitizedUserSafe = sanitizeFinancial(userSafe);
+
+  const coinBalanceNum = user.wallet?.coinBalance != null ? Number(user.wallet.coinBalance) : 0;
+  const diamondBalanceNum = user.wallet?.diamondBalance != null ? Number(user.wallet.diamondBalance) : 0;
 
   return {
-    ...userSafe,
+    ...sanitizedUserSafe,
+    coins: coinBalanceNum,
+    diamonds: diamondBalanceNum,
+    coinBalance: coinBalanceNum,
+    diamondBalance: diamondBalanceNum,
     publicId,
     zePartyId: publicId,
-    profile: profileWithPresence,
+    profile: profileWithPresence ? sanitizeFinancial(profileWithPresence) : profileWithPresence,
     avatarFrame,
     equippedFrame: avatarFrame,
     equippedBubble,

@@ -19,6 +19,8 @@ export async function getWallet(userId) {
   const sanitized = sanitizeFinancial(wallet);
   return {
     ...sanitized,
+    coins: Number(wallet.coinBalance || 0),
+    diamonds: Number(wallet.diamondBalance || 0),
     walletNotice: 'IMPORTANT NOTE: Withdrawals, transfers, and exchanges are available only on the 1st and 15th of each month.',
     dateRestrictionNotice: 'IMPORTANT NOTE: Withdrawals, transfers, and exchanges are available only on the 1st and 15th of each month.',
     holdingPeriodDays: 15,

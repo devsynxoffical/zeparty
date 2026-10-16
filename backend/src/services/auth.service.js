@@ -262,8 +262,14 @@ export async function adminLogin({ usernameOrEmail, password, ipAddress, userAge
 function sanitizeUser(user) {
   if (!user) return null;
   const { passwordHash, ...safeUser } = user;
+  const coinBal = safeUser.wallet?.coinBalance != null ? Number(safeUser.wallet.coinBalance) : 0;
+  const diamondBal = safeUser.wallet?.diamondBalance != null ? Number(safeUser.wallet.diamondBalance) : 0;
   return {
     ...safeUser,
+    coins: coinBal,
+    diamonds: diamondBal,
+    coinBalance: coinBal,
+    diamondBalance: diamondBal,
     profile: safeUser.profile
       ? {
           ...safeUser.profile,
