@@ -16,6 +16,21 @@ export async function getAdminExchangeTransferControl(req, res, next) {
 export async function postAdminPreviewCalculation(req, res, next) {
   try {
     const { type, amount, countryCode } = req.body;
+    const normalizedType = String(type || '').toUpperCase();
+    if (
+      normalizedType === 'EXCHANGE' ||
+      normalizedType === 'COINS_TO_DIAMONDS' ||
+      normalizedType === 'DIAMONDS_TO_COINS'
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Coin and Diamond exchange is strictly prohibited. Diamonds are for display within ZeParty only.',
+        error: {
+          code: 'EXCHANGE_PROHIBITED',
+        },
+      });
+    }
+
     const preview = await exchangeTransferService.previewRateCalculation({ type, amount, countryCode });
     return res.status(200).json({
       success: true,
@@ -23,6 +38,13 @@ export async function postAdminPreviewCalculation(req, res, next) {
       data: preview,
     });
   } catch (err) {
+    if (err.code === 'EXCHANGE_PROHIBITED' || err.statusCode === 400) {
+      return res.status(400).json({
+        success: false,
+        message: err.message,
+        error: { code: err.code || 'EXCHANGE_PROHIBITED' },
+      });
+    }
     next(err);
   }
 }
@@ -114,7 +136,24 @@ export async function postUserExecuteConversion(req, res, next) {
     if (!numAmount || numAmount <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'Valid amount is required for exchange',
+        message: 'Valid amount is required for conversion',
+      });
+    }
+
+    const normalizedType = String(type || '').toUpperCase();
+    if (
+      normalizedType === 'EXCHANGE' ||
+      normalizedType === 'COINS_TO_DIAMONDS' ||
+      normalizedType === 'DIAMONDS_TO_COINS' ||
+      normalizedType.includes('COIN') ||
+      normalizedType.includes('DIAMOND')
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Coin and Diamond exchange is strictly prohibited. Diamonds are for display within ZeParty only.',
+        error: {
+          code: 'EXCHANGE_PROHIBITED',
+        },
       });
     }
 
@@ -122,10 +161,17 @@ export async function postUserExecuteConversion(req, res, next) {
     
     return res.status(200).json({
       success: true,
-      message: `Conversion calculation processed successfully for ${numAmount} ${type === 'COINS_TO_DIAMONDS' ? 'Coins' : 'Diamonds'}`,
+      message: `Conversion calculation processed successfully for ${numAmount}`,
       data: result,
     });
   } catch (err) {
+    if (err.code === 'EXCHANGE_PROHIBITED' || err.statusCode === 400) {
+      return res.status(400).json({
+        success: false,
+        message: err.message,
+        error: { code: err.code || 'EXCHANGE_PROHIBITED' },
+      });
+    }
     next(err);
   }
 }

@@ -510,19 +510,7 @@ export function EconomySettingsPage() {
   };
 
   const handleToggleExchangeStatus = async () => {
-    const next = !isExchangeDisabled;
-    setIsExchangeDisabled(next);
-    try {
-      if (next) {
-        await disableEconomyConfig('EXCHANGE_RATES', 'Admin switched off exchange system (15-day countdown active)');
-        showToast('🛑 Exchange rates turned OFF worldwide. 15-day auto-return countdown started.');
-      } else {
-        await restoreEconomyConfig('EXCHANGE_RATES');
-        showToast('✅ Exchange rates manually restored to ACTIVE worldwide.');
-      }
-    } catch (err) {
-      console.warn('API error toggling exchange:', err.message);
-    }
+    showToast('🛑 Coin ↔ Diamond direct exchange is permanently prohibited per ZeParty policy. Direct conversion cannot be re-enabled.');
   };
 
   const handleOpenCreateDraft = () => {
@@ -1391,22 +1379,15 @@ export function EconomySettingsPage() {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-800 pb-3">
               <div>
                 <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                  <ArrowRightLeft className="h-4 w-4 text-gold-400" /> Admin-Controlled Currency Exchange Rates
+                  <ArrowRightLeft className="h-4 w-4 text-gold-400" /> Platform Fiat & Payout Exchange Rates
                 </h2>
-                <p className="text-xs text-slate-400 mt-0.5">Enforced server-side for real-time wallet conversions. Turning OFF starts a 15-day worldwide auto-return countdown.</p>
+                <p className="text-xs text-slate-400 mt-0.5">Top-up and host payout rates. Note: Direct Coin ↔ Diamond exchange is permanently prohibited server-side.</p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={handleToggleExchangeStatus}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                    isExchangeDisabled
-                      ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
-                      : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                  }`}
-                >
-                  {isExchangeDisabled ? '🛑 Exchange OFF (15-Day Auto Return)' : '✅ Exchange System ACTIVE'}
-                </button>
+                <span className="px-3 py-1.5 rounded-lg text-xs font-bold border bg-rose-500/20 text-rose-400 border-rose-500/40 flex items-center gap-1.5">
+                  🛑 Coin ↔ Diamond Exchange Prohibited
+                </span>
                 <Button variant="outline" size="sm" onClick={handleOpenCreateDraft}>
                   <Plus className="h-4 w-4 mr-1 text-gold-400" /> Create Rate Draft
                 </Button>

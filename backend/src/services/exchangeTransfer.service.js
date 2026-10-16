@@ -42,10 +42,10 @@ const FIFTEEN_DAYS_MS = 15 * 24 * 60 * 60 * 1000;
 // Master In-Memory & Database-Backed State
 let configState = {
   version: 'v1.0.0',
-  exchangeStatus: 'ON', // 'ON' | 'OFF'
+  exchangeStatus: 'PROHIBITED', // Coins ↔ Diamonds exchange is strictly prohibited per Bug 21 product rule
   exchangeOffAt: null,
   exchangeAutoEnableAt: null,
-  globalExchangeRate: 1.0, // 1 Diamond -> 1 Coin (or custom multiplier)
+  globalExchangeRate: 0, // Prohibited
   
   transferStatus: 'ON', // 'ON' | 'OFF'
   transferOffAt: null,
@@ -62,10 +62,10 @@ let configState = {
       id: 'ov_pk',
       countryCode: 'PK',
       countryName: 'Pakistan',
-      exchangeRate: 1.0,
+      exchangeRate: 0,
       transferRate: 0.0001,
       fee: 0.0,
-      exchangeStatus: 'ON',
+      exchangeStatus: 'PROHIBITED',
       transferStatus: 'ON',
       eligibleSellersOnly: true,
       requireCountryMatch: true,
@@ -76,10 +76,10 @@ let configState = {
       id: 'ov_sa',
       countryCode: 'SA',
       countryName: 'Saudi Arabia',
-      exchangeRate: 1.0,
+      exchangeRate: 0,
       transferRate: 0.000105,
       fee: 0.0,
-      exchangeStatus: 'ON',
+      exchangeStatus: 'PROHIBITED',
       transferStatus: 'ON',
       eligibleSellersOnly: true,
       requireCountryMatch: true,
@@ -90,10 +90,10 @@ let configState = {
       id: 'ov_ae',
       countryCode: 'AE',
       countryName: 'United Arab Emirates',
-      exchangeRate: 1.0,
+      exchangeRate: 0,
       transferRate: 0.000102,
       fee: 0.0,
-      exchangeStatus: 'ON',
+      exchangeStatus: 'PROHIBITED',
       transferStatus: 'ON',
       eligibleSellersOnly: true,
       requireCountryMatch: true,
@@ -118,16 +118,7 @@ export function checkAutoReturn() {
   const now = Date.now();
   let changed = false;
 
-  // Auto-Return Exchange if 15 days elapsed
-  if (configState.exchangeStatus === 'OFF' && configState.exchangeAutoEnableAt) {
-    if (now >= new Date(configState.exchangeAutoEnableAt).getTime()) {
-      configState.exchangeStatus = 'ON';
-      configState.exchangeOffAt = null;
-      configState.exchangeAutoEnableAt = null;
-      changed = true;
-      console.log('🔄 [ExchangeTransfer] Exchange automatically restored to ON after 15 complete days.');
-    }
-  }
+  // Note: Coin ↔ Diamond Exchange is permanently PROHIBITED. No auto-return exists for exchange.
 
   // Auto-Return Diamond Transfer if 15 days elapsed
   if (configState.transferStatus === 'OFF' && configState.transferAutoEnableAt) {
@@ -147,12 +138,6 @@ export async function getAdminControlState() {
   checkAutoReturn();
 
   const now = Date.now();
-  
-  // Calculate remaining countdowns in milliseconds & formatted strings
-  let exchangeRemainingMs = 0;
-  if (configState.exchangeStatus === 'OFF' && configState.exchangeAutoEnableAt) {
-    exchangeRemainingMs = Math.max(0, new Date(configState.exchangeAutoEnableAt).getTime() - now);
-  }
 
   let transferRemainingMs = 0;
   if (configState.transferStatus === 'OFF' && configState.transferAutoEnableAt) {
@@ -162,11 +147,12 @@ export async function getAdminControlState() {
   return {
     ...configState,
     exchangeCountdown: {
-      isOff: configState.exchangeStatus === 'OFF',
-      offAt: configState.exchangeOffAt,
-      autoEnableAt: configState.exchangeAutoEnableAt,
-      remainingMs: exchangeRemainingMs,
-      remainingDays: (exchangeRemainingMs / (24 * 60 * 60 * 1000)).toFixed(2),
+      isOff: true,
+      prohibited: true,
+      offAt: null,
+      autoEnableAt: null,
+      remainingMs: 0,
+      remainingDays: '0.00',
     },
     transferCountdown: {
       isOff: configState.transferStatus === 'OFF',
@@ -188,10 +174,23 @@ export async function previewRateCalculation({ type = 'EXCHANGE', amount = 1000,
     throw error;
   }
 
+  const normalizedType = String(type || '').toUpperCase();
+  if (
+    normalizedType === 'EXCHANGE' ||
+    normalizedType === 'COINS_TO_DIAMONDS' ||
+    normalizedType === 'DIAMONDS_TO_COINS' ||
+    normalizedType.includes('COIN')
+  ) {
+    const error = new Error('Coin and Diamond exchange is strictly prohibited. Diamonds are for display within ZeParty only.');
+    error.statusCode = 400;
+    error.code = 'EXCHANGE_PROHIBITED';
+    throw error;
+  }
+
   const normalizedCountry = (countryCode || 'GLOBAL').toUpperCase();
   
-  // Check Worldwide Master Status
-  const isWorldwideOff = type === 'EXCHANGE' ? configState.exchangeStatus === 'OFF' : configState.transferStatus === 'OFF';
+  // Check Worldwide Master Status for Transfer
+  const isWorldwideOff = configState.transferStatus === 'OFF';
   
   // Resolve Country Override
   const override = configState.countryOverrides.find(
@@ -203,25 +202,15 @@ export async function previewRateCalculation({ type = 'EXCHANGE', amount = 1000,
   let appliedScope = 'GLOBAL';
   let appliedRuleId = 'GLOBAL_DEFAULT';
 
-  if (type === 'EXCHANGE') {
-    if (override && override.exchangeRate > 0) {
-      activeRate = Number(override.exchangeRate);
-      appliedScope = override.countryCode;
-      appliedRuleId = override.id;
-    } else {
-      activeRate = Number(configState.globalExchangeRate);
-    }
+  // TRANSFER
+  if (override && override.transferRate > 0) {
+    activeRate = Number(override.transferRate);
+    activeFee = Number(override.fee || 0);
+    appliedScope = override.countryCode;
+    appliedRuleId = override.id;
   } else {
-    // TRANSFER
-    if (override && override.transferRate > 0) {
-      activeRate = Number(override.transferRate);
-      activeFee = Number(override.fee || 0);
-      appliedScope = override.countryCode;
-      appliedRuleId = override.id;
-    } else {
-      activeRate = Number(configState.globalTransferRate);
-      activeFee = Number(configState.globalTransferFee || 0);
-    }
+    activeRate = Number(configState.globalTransferRate);
+    activeFee = Number(configState.globalTransferFee || 0);
   }
 
   const rawConverted = numAmount * activeRate;
@@ -238,26 +227,29 @@ export async function previewRateCalculation({ type = 'EXCHANGE', amount = 1000,
     appliedRuleId,
     isWorldwideOff,
     isFeatureAvailable: !isWorldwideOff,
-    payoutUnit: type === 'EXCHANGE' ? 'COINS' : 'USD_VALUE',
+    payoutUnit: 'USD_VALUE',
   };
 }
 
 export async function publishConfiguration(updates, { adminId, adminName, ipAddress } = {}) {
   checkAutoReturn();
 
+  // Strictly disallow enabling Coin <-> Diamond exchange
+  if (updates.exchangeStatus === 'ON') {
+    const error = new Error('Activating Coin and Diamond exchange is prohibited. Diamonds are for display within ZeParty only.');
+    error.statusCode = 400;
+    error.code = 'EXCHANGE_PROHIBITED';
+    throw error;
+  }
+
   const beforeState = JSON.parse(JSON.stringify(configState));
   const now = new Date();
 
-  // Validate Exchange Rate
-  if (updates.globalExchangeRate !== undefined) {
-    const rate = Number(updates.globalExchangeRate);
-    if (isNaN(rate) || rate <= 0) {
-      const error = new Error('Exchange rate must be a valid positive number');
-      error.statusCode = 400;
-      throw error;
-    }
-    configState.globalExchangeRate = rate;
-  }
+  // Exchange is permanently prohibited
+  configState.exchangeStatus = 'PROHIBITED';
+  configState.globalExchangeRate = 0;
+  configState.exchangeOffAt = null;
+  configState.exchangeAutoEnableAt = null;
 
   // Validate Transfer Rate
   if (updates.globalTransferRate !== undefined) {
@@ -272,20 +264,6 @@ export async function publishConfiguration(updates, { adminId, adminName, ipAddr
 
   if (updates.globalTransferFee !== undefined) {
     configState.globalTransferFee = Math.max(0, Number(updates.globalTransferFee));
-  }
-
-  // Handle Exchange ON/OFF with 15-day rule
-  if (updates.exchangeStatus !== undefined) {
-    const newStatus = updates.exchangeStatus === 'OFF' ? 'OFF' : 'ON';
-    if (newStatus === 'OFF' && configState.exchangeStatus !== 'OFF') {
-      configState.exchangeStatus = 'OFF';
-      configState.exchangeOffAt = now.toISOString();
-      configState.exchangeAutoEnableAt = new Date(now.getTime() + FIFTEEN_DAYS_MS).toISOString();
-    } else if (newStatus === 'ON') {
-      configState.exchangeStatus = 'ON';
-      configState.exchangeOffAt = null;
-      configState.exchangeAutoEnableAt = null;
-    }
   }
 
   // Handle Diamond Transfer ON/OFF with 15-day rule
@@ -320,10 +298,10 @@ export async function publishConfiguration(updates, { adminId, adminName, ipAddr
       id: ov.id || `ov_${(ov.countryCode || 'XX').toLowerCase()}_${Date.now()}`,
       countryCode: (ov.countryCode || 'XX').toUpperCase(),
       countryName: ov.countryName || ov.countryCode,
-      exchangeRate: Number(ov.exchangeRate) || configState.globalExchangeRate,
+      exchangeRate: 0,
       transferRate: Number(ov.transferRate) || configState.globalTransferRate,
       fee: Number(ov.fee || 0),
-      exchangeStatus: ov.exchangeStatus || 'ON',
+      exchangeStatus: 'PROHIBITED',
       transferStatus: ov.transferStatus || 'ON',
       eligibleSellersOnly: ov.eligibleSellersOnly !== undefined ? Boolean(ov.eligibleSellersOnly) : true,
       requireCountryMatch: ov.requireCountryMatch !== undefined ? Boolean(ov.requireCountryMatch) : false,
@@ -356,7 +334,7 @@ export async function publishConfiguration(updates, { adminId, adminName, ipAddr
     targetEntityId: configState.version,
     beforeStateJson: beforeState,
     afterStateJson: configState,
-    reason: updates.reason || 'Published new exchange & diamond transfer rates and 15-day availability settings',
+    reason: updates.reason || 'Published new diamond transfer rates and settings',
     ipAddress,
   });
 
@@ -365,21 +343,34 @@ export async function publishConfiguration(updates, { adminId, adminName, ipAddr
 
 export async function rollbackConfiguration(targetVersion, { adminId, adminName, ipAddress, reason } = {}) {
   const entry = configState.history.find((h) => h.version === targetVersion);
-  if (!entry || !entry.snapshot) {
+  if (!entry) {
     const error = new Error(`Configuration version ${targetVersion} not found for rollback`);
     error.statusCode = 404;
     throw error;
   }
 
+  const snapshot = entry.snapshot || {
+    globalTransferRate: 0.0001,
+    globalTransferFee: 0.0,
+    transferStatus: 'ON',
+    countryOverrides: configState.countryOverrides,
+  };
+
   const beforeState = JSON.parse(JSON.stringify(configState));
   
-  // Restore snapshot properties
-  configState.globalExchangeRate = entry.snapshot.globalExchangeRate;
-  configState.globalTransferRate = entry.snapshot.globalTransferRate;
-  configState.globalTransferFee = entry.snapshot.globalTransferFee;
-  configState.exchangeStatus = entry.snapshot.exchangeStatus;
-  configState.transferStatus = entry.snapshot.transferStatus;
-  configState.countryOverrides = entry.snapshot.countryOverrides;
+  // Restore snapshot properties but strictly enforce exchange prohibition
+  configState.globalExchangeRate = 0;
+  configState.globalTransferRate = snapshot.globalTransferRate;
+  configState.globalTransferFee = snapshot.globalTransferFee;
+  configState.exchangeStatus = 'PROHIBITED';
+  configState.exchangeOffAt = null;
+  configState.exchangeAutoEnableAt = null;
+  configState.transferStatus = snapshot.transferStatus;
+  configState.countryOverrides = (snapshot.countryOverrides || []).map((ov) => ({
+    ...ov,
+    exchangeRate: 0,
+    exchangeStatus: 'PROHIBITED',
+  }));
   
   // Version bump
   const verParts = (configState.version || 'v1.0.0').replace('v', '').split('.').map(Number);
@@ -417,8 +408,7 @@ export async function getUserExchangeTransferStatus({ userCountryCode = 'GLOBAL'
 
   const normalizedCountry = (userCountryCode || 'GLOBAL').toUpperCase();
   
-  // Worldwide Master Check
-  const isExchangeWorldwideOff = configState.exchangeStatus === 'OFF';
+  // Worldwide Master Check for Transfer
   const isTransferWorldwideOff = configState.transferStatus === 'OFF';
 
   // Country Override
@@ -426,20 +416,19 @@ export async function getUserExchangeTransferStatus({ userCountryCode = 'GLOBAL'
     (ov) => ov.countryCode.toUpperCase() === normalizedCountry && ov.status === 'ACTIVE'
   );
 
-  const exchangeAvailable = !isExchangeWorldwideOff && (!override || override.exchangeStatus === 'ON');
   const transferAvailable = !isTransferWorldwideOff && (!override || override.transferStatus === 'ON');
-
-  const exchangeRate = (override && override.exchangeRate > 0) ? override.exchangeRate : configState.globalExchangeRate;
   const transferRate = (override && override.transferRate > 0) ? override.transferRate : configState.globalTransferRate;
   const transferFee = (override && override.fee !== undefined) ? override.fee : configState.globalTransferFee;
 
   return {
     exchange: {
-      isAvailable: exchangeAvailable,
-      rate: exchangeRate,
-      unit: 'Gold Coins per 1 Diamond',
-      minDiamonds: 40000,
-      hiddenWorldwide: isExchangeWorldwideOff,
+      isAvailable: false,
+      rate: 0,
+      unit: 'N/A',
+      minDiamonds: 0,
+      hiddenWorldwide: true,
+      prohibited: true,
+      message: 'Coin and Diamond exchange is strictly prohibited. Diamonds are for display within ZeParty only.',
     },
     transfer: {
       isAvailable: transferAvailable,

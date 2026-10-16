@@ -78,20 +78,11 @@ export async function adjustBalance(req, res, next) {
 }
 
 export async function exchangeDiamonds(req, res, next) {
-  try {
-    const userId = req.auth.userId;
-    const { diamondAmount } = req.body;
-    const ipAddress = req.ip || req.headers['x-forwarded-for'];
-
-    const result = await walletService.exchangeDiamondsToCoins(
-      { userId, diamondAmount },
-      { ipAddress }
-    );
-
-    return res.status(200).json(result);
-  } catch (err) {
-    next(err);
-  }
+  return res.status(400).json({
+    success: false,
+    message: 'Coin and Diamond exchange is strictly prohibited. Diamonds are for display within ZeParty only.',
+    error: { code: 'EXCHANGE_PROHIBITED' },
+  });
 }
 
 export async function transferDiamonds(req, res, next) {

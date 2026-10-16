@@ -21,8 +21,8 @@ export async function getWallet(userId) {
     ...sanitized,
     coins: Number(wallet.coinBalance || 0),
     diamonds: Number(wallet.diamondBalance || 0),
-    walletNotice: 'IMPORTANT NOTE: Withdrawals, transfers, and exchanges are available only on the 1st and 15th of each month.',
-    dateRestrictionNotice: 'IMPORTANT NOTE: Withdrawals, transfers, and exchanges are available only on the 1st and 15th of each month.',
+    walletNotice: 'IMPORTANT NOTE: Withdrawals and transfers are available only on the 1st and 15th of each month.',
+    dateRestrictionNotice: 'IMPORTANT NOTE: Withdrawals and transfers are available only on the 1st and 15th of each month.',
     holdingPeriodDays: 15,
     minDaysUnmutedRequired: 10,
     dailyUnmutedHoursRequired: 2.0,
@@ -175,84 +175,15 @@ export async function adjustBalance({
 }
 
 /**
- * Exchange Diamonds to Gold Coins with 40,000 Diamonds minimum.
+ * Exchange Diamonds to Gold Coins is strictly prohibited per Bug 21 product rule.
+ * Diamonds are for display within ZeParty only.
  */
-export async function exchangeDiamondsToCoins({ userId, diamondAmount }, { ipAddress } = {}) {
-  const diamonds = Number(diamondAmount);
-  if (!diamonds || isNaN(diamonds) || diamonds < 40000) {
-    const error = new Error('Minimum 40,000 Diamonds required for exchange.');
-    error.status = 400;
-    error.code = 'MINIMUM_DIAMONDS_REQUIRED';
-    throw error;
-  }
-
-  const wallet = await walletRepository.findByUserId(userId);
-  if (!wallet) {
-    const error = new Error('Wallet not found');
-    error.status = 404;
-    throw error;
-  }
-
-  const currentDiamonds = Number(wallet.diamondBalance || 0n);
-  if (currentDiamonds < diamonds) {
-    const error = new Error(`Insufficient Diamonds. You have ${currentDiamonds.toLocaleString()} Diamonds.`);
-    error.status = 400;
-    error.code = 'INSUFFICIENT_DIAMONDS';
-    throw error;
-  }
-
-  // Conversion rate: 0.255 coins per diamond (2M -> 510K)
-  const coinsToCredit = Math.floor(diamonds * 0.255);
-
-  const updatedWallet = await prisma.$transaction(async (tx) => {
-    // Deduct diamonds
-    const w = await tx.wallet.update({
-      where: { id: wallet.id },
-      data: {
-        diamondBalance: { decrement: BigInt(diamonds) },
-        coinBalance: { increment: BigInt(coinsToCredit) },
-      },
-    });
-
-    // Record ledger entries
-    await tx.ledgerEntry.create({
-      data: {
-        walletId: wallet.id,
-        asset: 'DIAMOND',
-        direction: 'DEBIT',
-        amount: BigInt(diamonds),
-        balanceAfter: w.diamondBalance,
-        type: 'DIAMOND_EXCHANGE_DEBIT',
-        referenceId: `EX_${Date.now()}`,
-        metadata: { exchangedCoins: coinsToCredit, ipAddress },
-      },
-    });
-
-    await tx.ledgerEntry.create({
-      data: {
-        walletId: wallet.id,
-        asset: 'COIN',
-        direction: 'CREDIT',
-        amount: BigInt(coinsToCredit),
-        balanceAfter: w.coinBalance,
-        type: 'DIAMOND_EXCHANGE_CREDIT',
-        referenceId: `EX_${Date.now()}`,
-        metadata: { deductedDiamonds: diamonds, ipAddress },
-      },
-    });
-
-    return w;
-  });
-
-  return {
-    success: true,
-    message: `Successfully exchanged ${diamonds.toLocaleString()} Diamonds for ${coinsToCredit.toLocaleString()} Gold Coins.`,
-    data: {
-      deductedDiamonds: diamonds,
-      creditedCoins: coinsToCredit,
-      wallet: sanitizeFinancial(updatedWallet),
-    },
-  };
+export async function exchangeDiamondsToCoins({ userId, diamondAmount } = {}, { ipAddress } = {}) {
+  const error = new Error('Coin and Diamond exchange is strictly prohibited. Diamonds are for display within ZeParty only.');
+  error.status = 400;
+  error.statusCode = 400;
+  error.code = 'EXCHANGE_PROHIBITED';
+  throw error;
 }
 
 /**
@@ -460,7 +391,7 @@ export async function getTransferReceivers({ country = 'GLOBAL', type = 'ALL' } 
     tabs: ['COIN_SELLERS', 'MERCHANTS'],
     coinSellers,
     merchants,
-    dateNotice: 'IMPORTANT NOTE: Withdrawals, transfers, and exchanges are available only on the 1st and 15th of each month.',
+    dateNotice: 'IMPORTANT NOTE: Withdrawals and transfers are available only on the 1st and 15th of each month.',
   };
 }
 
