@@ -542,8 +542,9 @@ class LivePartyProvider extends ChangeNotifier {
           ? currentUser.displayName
           : (currentUser.name.isNotEmpty ? currentUser.name : currentUser.username);
       _announcedJoinedUserIds.add(currentUser.id);
+      if (currentUser.username.isNotEmpty) _announcedJoinedUserIds.add(currentUser.username.toLowerCase());
+      if (displayName.isNotEmpty) _announcedJoinedUserIds.add(displayName.toLowerCase());
       sendSystemMessage('👋 Welcome to ${room.title}! Please follow community guidelines.');
-      sendSystemMessage('🎉 $displayName has joined the party! 🔥');
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -755,13 +756,19 @@ class LivePartyProvider extends ChangeNotifier {
           }
         }
 
-        // Announce join in room chat
-        final announceKey = joinedUserId ?? displayName;
-        if (!_announcedJoinedUserIds.contains(announceKey)) {
+        // Announce join in room chat (only if not already announced)
+        final announceKey = (joinedUserId ?? displayName).toLowerCase();
+        final nameKey = displayName.toLowerCase();
+        final usernameKey = uUsername.toLowerCase();
+        final alreadyAnnounced = _announcedJoinedUserIds.contains(announceKey) ||
+            _announcedJoinedUserIds.contains(nameKey) ||
+            (usernameKey.isNotEmpty && _announcedJoinedUserIds.contains(usernameKey));
+
+        if (!alreadyAnnounced) {
           _announcedJoinedUserIds.add(announceKey);
-          if (isSelf) {
-            sendSystemMessage('🎉 Welcome $displayName to the party! 🔥');
-          } else {
+          _announcedJoinedUserIds.add(nameKey);
+          if (usernameKey.isNotEmpty) _announcedJoinedUserIds.add(usernameKey);
+          if (!isSelf) {
             sendSystemMessage('🎉 $displayName has joined the party! 🔥');
           }
         }
@@ -1139,12 +1146,25 @@ class LivePartyProvider extends ChangeNotifier {
           }
         }
 
+        final isJoinAnnouncement = text.contains('has joined the party') ||
+            text.contains('joined the party') ||
+            text.contains('entered the room');
+
+        if (isJoinAnnouncement) {
+          final alreadyShown = _messages.any((m) =>
+              m.isSystemMessage &&
+              (m.text.contains(senderName) || (senderUsername.isNotEmpty && m.text.contains(senderUsername))) &&
+              (m.text.contains('joined') || m.text.contains('entered') || m.text.contains('Welcome')) &&
+              DateTime.now().difference(m.timestamp).inSeconds < 6);
+          if (alreadyShown) {
+            return; // Suppress duplicate join message
+          }
+        }
+
         final isSystem = data['isSystemMessage'] == true ||
             data['type']?.toString().toUpperCase() == 'SYSTEM' ||
             senderId == 'system' ||
-            text.contains('has joined the party') ||
-            text.contains('joined the party') ||
-            text.contains('entered the room');
+            isJoinAnnouncement;
 
         final sender = UserModel(
           id: senderId.isNotEmpty ? senderId : (isSystem ? 'system' : 'user_${DateTime.now().millisecondsSinceEpoch}'),
@@ -2206,6 +2226,17 @@ class LivePartyProvider extends ChangeNotifier {
       }
     }
     _recentSystemMessages[text] = now;
+
+    final isJoinMsg = text.contains('joined the party') || text.contains('to the party') || text.contains('entered the room');
+    if (isJoinMsg) {
+      final duplicateJoin = _messages.any((m) =>
+          m.isSystemMessage &&
+          (m.text.contains('joined the party') || m.text.contains('to the party') || m.text.contains('entered the room')) &&
+          DateTime.now().difference(m.timestamp).inSeconds < 6);
+      if (duplicateJoin) {
+        return;
+      }
+    }
 
     _messages.add(PartyMessageModel(
       id: now.toString(),

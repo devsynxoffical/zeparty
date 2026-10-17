@@ -26,8 +26,17 @@ class PartyRoomCard extends StatelessWidget {
     final borderColor = AppColors.getBorder(isDark);
 
     final effectiveRoom = RoomConfigManager.instance.applyOverrides(room);
-    final totalSeats = (effectiveRoom.viewerCount % 3 == 0) ? 4 : 8;
-    final occupiedSeats = (effectiveRoom.viewerCount % totalSeats) + 1;
+    final totalSeats = effectiveRoom.seatCapacity > 0 ? effectiveRoom.seatCapacity : 8;
+    int occupiedSeats = 0;
+    if (effectiveRoom.seats != null && effectiveRoom.seats!.isNotEmpty) {
+      occupiedSeats = effectiveRoom.seats!.where((s) {
+        if (s == null) return false;
+        if (s is Map) return s['user'] != null;
+        return true;
+      }).length;
+    } else {
+      occupiedSeats = effectiveRoom.viewerCount > 0 ? effectiveRoom.viewerCount.clamp(1, totalSeats) : 1;
+    }
     final customCover = RoomConfigManager.instance.getCustomCover(effectiveRoom.id);
     final effectiveDp = (customCover != null && customCover.isNotEmpty)
         ? customCover

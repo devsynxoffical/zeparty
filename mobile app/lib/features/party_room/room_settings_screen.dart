@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/repositories/backend_repository.dart';
 import '../../core/services/media_upload_service.dart';
 import '../../core/services/room_config_manager.dart';
+import '../../core/theme/app_colors.dart';
 import '../../models/live_room_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/live_party_provider.dart';
@@ -167,9 +168,10 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
   }
 
   void _openKickOutList() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1B2E),
+      backgroundColor: isDark ? const Color(0xFF1E1B2E) : AppColors.getCard(isDark),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -183,19 +185,29 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('🚫 Kick-out / Banned List', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  Text(
+                    '🚫 Kick-out / Banned List',
+                    style: TextStyle(
+                      color: AppColors.getTextPrimary(isDark),
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white54),
+                    icon: Icon(Icons.close, color: AppColors.getTextSecondary(isDark)),
                     onPressed: () => Navigator.pop(ctx),
                   ),
                 ],
               ),
               const SizedBox(height: 12),
               if (_bannedUserIds.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 30),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 30),
                   child: Center(
-                    child: Text('No users have been kicked out of this room.', style: TextStyle(color: Colors.white54)),
+                    child: Text(
+                      'No users have been kicked out of this room.',
+                      style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                    ),
                   ),
                 )
               else
@@ -207,15 +219,24 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF2A2640),
+                          color: isDark ? const Color(0xFF2A2640) : AppColors.getSurface(isDark),
                           borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDark ? Colors.transparent : AppColors.getBorder(isDark),
+                          ),
                         ),
                         child: ListTile(
                           leading: const CircleAvatar(
                             backgroundColor: Colors.redAccent,
                             child: Icon(Icons.person_off, color: Colors.white, size: 20),
                           ),
-                          title: Text('User ID: $userId', style: const TextStyle(color: Colors.white, fontSize: 14)),
+                          title: Text(
+                            'User ID: $userId',
+                            style: TextStyle(
+                              color: AppColors.getTextPrimary(isDark),
+                              fontSize: 14,
+                            ),
+                          ),
                           trailing: ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.green,
@@ -247,6 +268,7 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final authProv = Provider.of<AuthProvider>(context);
     final partyProv = Provider.of<LivePartyProvider>(context);
     final currentUser = authProv.currentUser;
@@ -257,11 +279,18 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
     final canChangeMode = isHost || (isAdmin && widget.room.allowAdminChangeMode);
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D0B18),
+      backgroundColor: AppColors.getBackground(isDark),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1E1B2E),
+        backgroundColor: isDark ? const Color(0xFF1E1B2E) : AppColors.getCard(isDark),
+        iconTheme: IconThemeData(color: AppColors.getTextPrimary(isDark)),
         elevation: 0,
-        title: const Text('Room Settings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text(
+          'Room Settings',
+          style: TextStyle(
+            color: AppColors.getTextPrimary(isDark),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         actions: [
           if (canEdit)
             TextButton(
@@ -302,12 +331,15 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
               ),
 
             // ── Section 1: Identity & Appearance ──
-            _buildSectionHeader('Identity & Appearance', Icons.palette_outlined),
+            _buildSectionHeader('Identity & Appearance', Icons.palette_outlined, isDark),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E1B2E),
+                color: isDark ? const Color(0xFF1E1B2E) : AppColors.getCard(isDark),
                 borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? Colors.transparent : AppColors.getBorder(isDark),
+                ),
               ),
               child: Column(
                 children: [
@@ -353,29 +385,38 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Room Cover Photo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                            Text(
+                              'Room Cover Photo',
+                              style: TextStyle(
+                                color: AppColors.getTextPrimary(isDark),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                             const SizedBox(height: 4),
                             Text(
                               canEdit ? 'Tap thumbnail to change (Free Gallery Upload)' : 'Cover photo',
-                              style: const TextStyle(color: Colors.white54, fontSize: 12),
+                              style: TextStyle(
+                                color: AppColors.getTextSecondary(isDark),
+                                fontSize: 12,
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ],
                   ),
-                  const Divider(color: Colors.white10, height: 24),
+                  Divider(color: isDark ? Colors.white10 : AppColors.getBorder(isDark), height: 24),
 
                   // Room Name
                   TextField(
                     controller: _nameController,
                     enabled: canEdit,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: AppColors.getTextPrimary(isDark)),
+                    decoration: InputDecoration(
                       labelText: 'Room Name',
-                      labelStyle: TextStyle(color: Colors.white60),
-                      focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.pinkAccent)),
-                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                      labelStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                      focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.pinkAccent)),
+                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: isDark ? Colors.white24 : AppColors.getBorder(isDark))),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -385,12 +426,12 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
                     controller: _announcementController,
                     enabled: canEdit,
                     maxLines: 2,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
+                    style: TextStyle(color: AppColors.getTextPrimary(isDark)),
+                    decoration: InputDecoration(
                       labelText: 'Room Announcement / Notice',
-                      labelStyle: TextStyle(color: Colors.white60),
-                      focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.pinkAccent)),
-                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
+                      labelStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                      focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: Colors.pinkAccent)),
+                      enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: isDark ? Colors.white24 : AppColors.getBorder(isDark))),
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -399,14 +440,14 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Room Theme', style: TextStyle(color: Colors.white, fontSize: 14)),
+                      Text('Room Theme', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 14)),
                       DropdownButton<String>(
                         value: ['Default Dark', 'Neon Vibes', 'Cyberpunk', 'Luxury Gold', 'Royal Purple'].contains(_roomTheme) ? _roomTheme : 'Default Dark',
-                        dropdownColor: const Color(0xFF2A2640),
+                        dropdownColor: isDark ? const Color(0xFF2A2640) : AppColors.getCard(isDark),
                         style: const TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold),
                         underline: const SizedBox(),
                         items: ['Default Dark', 'Neon Vibes', 'Cyberpunk', 'Luxury Gold', 'Royal Purple']
-                            .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                            .map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(color: Colors.pinkAccent))))
                             .toList(),
                         onChanged: canEdit ? (val) => setState(() => _roomTheme = val!) : null,
                       ),
@@ -419,24 +460,39 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
             const SizedBox(height: 24),
 
             // ── Section 2: Membership & Mode ──
-            _buildSectionHeader('Membership & Mode', Icons.meeting_room_outlined),
+            _buildSectionHeader('Membership & Mode', Icons.meeting_room_outlined, isDark),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E1B2E),
+                color: isDark ? const Color(0xFF1E1B2E) : AppColors.getCard(isDark),
                 borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? Colors.transparent : AppColors.getBorder(isDark),
+                ),
               ),
               child: Column(
                 children: [
                   // Membership Fee
                   Row(
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Membership Fee (Coins)', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                            Text('Set to 0 for Free entry', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                            Text(
+                              'Membership Fee (Coins)',
+                              style: TextStyle(
+                                color: AppColors.getTextPrimary(isDark),
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Set to 0 for Free entry',
+                              style: TextStyle(
+                                color: AppColors.getTextSecondary(isDark),
+                                fontSize: 12,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -451,47 +507,58 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
                           decoration: InputDecoration(
                             isDense: true,
                             contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            fillColor: const Color(0xFF2A2640),
+                            fillColor: isDark ? const Color(0xFF2A2640) : AppColors.getSurface(isDark),
                             filled: true,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(
+                                color: isDark ? Colors.transparent : AppColors.getBorder(isDark),
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide(
+                                color: isDark ? Colors.transparent : AppColors.getBorder(isDark),
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ],
                   ),
-                  const Divider(color: Colors.white10, height: 24),
+                  Divider(color: isDark ? Colors.white10 : AppColors.getBorder(isDark), height: 24),
 
                   // Room Mode
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Room Mode', style: TextStyle(color: Colors.white, fontSize: 14)),
+                      Text('Room Mode', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 14)),
                       DropdownButton<String>(
                         value: ['Friend mode', 'Public mode', 'Lock mode'].contains(_roomMode) ? _roomMode : 'Friend mode',
-                        dropdownColor: const Color(0xFF2A2640),
+                        dropdownColor: isDark ? const Color(0xFF2A2640) : AppColors.getCard(isDark),
                         style: const TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold),
                         underline: const SizedBox(),
                         items: ['Friend mode', 'Public mode', 'Lock mode']
-                            .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+                            .map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(color: Colors.cyanAccent))))
                             .toList(),
                         onChanged: canChangeMode ? (val) => setState(() => _roomMode = val!) : null,
                       ),
                     ],
                   ),
-                  const Divider(color: Colors.white10, height: 24),
+                  Divider(color: isDark ? Colors.white10 : AppColors.getBorder(isDark), height: 24),
 
                   // Mic Seat Capacity
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Number of Mics / Seats', style: TextStyle(color: Colors.white, fontSize: 14)),
+                      Text('Number of Mics / Seats', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 14)),
                       DropdownButton<int>(
                         value: [8, 10, 12, 15, 20].contains(_seatCapacity) ? _seatCapacity : 10,
-                        dropdownColor: const Color(0xFF2A2640),
+                        dropdownColor: isDark ? const Color(0xFF2A2640) : AppColors.getCard(isDark),
                         style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold),
                         underline: const SizedBox(),
                         items: [8, 10, 12, 15, 20]
-                            .map((c) => DropdownMenuItem(value: c, child: Text('$c Seats')))
+                            .map((c) => DropdownMenuItem(value: c, child: Text('$c Seats', style: const TextStyle(color: Colors.amber))))
                             .toList(),
                         onChanged: canEdit ? (val) => setState(() => _seatCapacity = val!) : null,
                       ),
@@ -504,25 +571,28 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
             const SizedBox(height: 24),
 
             // ── Section 3: Behavior Toggles ──
-            _buildSectionHeader('Behavior Toggles', Icons.tune_rounded),
+            _buildSectionHeader('Behavior Toggles', Icons.tune_rounded, isDark),
             Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF1E1B2E),
+                color: isDark ? const Color(0xFF1E1B2E) : AppColors.getCard(isDark),
                 borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? Colors.transparent : AppColors.getBorder(isDark),
+                ),
               ),
               child: Column(
                 children: [
-                  _buildToggleRow('Guests taking mic', 'Allow ordinary guests to take open mic seats', _allowGuestMic, (v) => setState(() => _allowGuestMic = v), canEdit),
-                  const Divider(color: Colors.white10, height: 1),
-                  _buildToggleRow('Historical room messages', 'Allow members to view chat history prior to joining', _allowHistoryMessages, (v) => setState(() => _allowHistoryMessages = v), canEdit),
-                  const Divider(color: Colors.white10, height: 1),
-                  _buildToggleRow('Under-mic emoji sending', 'Allow seat occupants to trigger floating emojis', _allowUnderMicEmoji, (v) => setState(() => _allowUnderMicEmoji = v), canEdit),
-                  const Divider(color: Colors.white10, height: 1),
-                  _buildToggleRow('Under-mic dice sending', 'Allow seat occupants to roll game dice', _allowUnderMicDice, (v) => setState(() => _allowUnderMicDice = v), canEdit),
-                  const Divider(color: Colors.white10, height: 1),
-                  _buildToggleRow('Admins edit room settings', 'Permit appointed admins to change title/announcement', _allowAdminEditSettings, (v) => setState(() => _allowAdminEditSettings = v), isHost),
-                  const Divider(color: Colors.white10, height: 1),
-                  _buildToggleRow('Admins change room mode', 'Permit appointed admins to switch Public/Friend/Lock mode', _allowAdminChangeMode, (v) => setState(() => _allowAdminChangeMode = v), isHost),
+                  _buildToggleRow('Guests taking mic', 'Allow ordinary guests to take open mic seats', _allowGuestMic, (v) => setState(() => _allowGuestMic = v), canEdit, isDark),
+                  Divider(color: isDark ? Colors.white10 : AppColors.getBorder(isDark), height: 1),
+                  _buildToggleRow('Historical room messages', 'Allow members to view chat history prior to joining', _allowHistoryMessages, (v) => setState(() => _allowHistoryMessages = v), canEdit, isDark),
+                  Divider(color: isDark ? Colors.white10 : AppColors.getBorder(isDark), height: 1),
+                  _buildToggleRow('Under-mic emoji sending', 'Allow seat occupants to trigger floating emojis', _allowUnderMicEmoji, (v) => setState(() => _allowUnderMicEmoji = v), canEdit, isDark),
+                  Divider(color: isDark ? Colors.white10 : AppColors.getBorder(isDark), height: 1),
+                  _buildToggleRow('Under-mic dice sending', 'Allow seat occupants to roll game dice', _allowUnderMicDice, (v) => setState(() => _allowUnderMicDice = v), canEdit, isDark),
+                  Divider(color: isDark ? Colors.white10 : AppColors.getBorder(isDark), height: 1),
+                  _buildToggleRow('Admins edit room settings', 'Permit appointed admins to change title/announcement', _allowAdminEditSettings, (v) => setState(() => _allowAdminEditSettings = v), isHost, isDark),
+                  Divider(color: isDark ? Colors.white10 : AppColors.getBorder(isDark), height: 1),
+                  _buildToggleRow('Admins change room mode', 'Permit appointed admins to switch Public/Friend/Lock mode', _allowAdminChangeMode, (v) => setState(() => _allowAdminChangeMode = v), isHost, isDark),
                 ],
               ),
             ),
@@ -530,12 +600,15 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
             const SizedBox(height: 24),
 
             // ── Section 4: Effects & Moderation ──
-            _buildSectionHeader('Effects & Moderation', Icons.security_rounded),
+            _buildSectionHeader('Effects & Moderation', Icons.security_rounded, isDark),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E1B2E),
+                color: isDark ? const Color(0xFF1E1B2E) : AppColors.getCard(isDark),
                 borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDark ? Colors.transparent : AppColors.getBorder(isDark),
+                ),
               ),
               child: Column(
                 children: [
@@ -543,28 +616,41 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Close Room Effects', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
-                            Text('Animation played when host closes the party', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                            Text(
+                              'Close Room Effects',
+                              style: TextStyle(
+                                color: AppColors.getTextPrimary(isDark),
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            Text(
+                              'Animation played when host closes the party',
+                              style: TextStyle(
+                                color: AppColors.getTextSecondary(isDark),
+                                fontSize: 11,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                       DropdownButton<String>(
                         value: ['Standard', 'Fade Out', 'Diamond Burst', 'VIP Galaxy Explosion'].contains(_closeRoomEffect) ? _closeRoomEffect : 'Standard',
-                        dropdownColor: const Color(0xFF2A2640),
+                        dropdownColor: isDark ? const Color(0xFF2A2640) : AppColors.getCard(isDark),
                         style: const TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.bold),
                         underline: const SizedBox(),
                         items: ['Standard', 'Fade Out', 'Diamond Burst', 'VIP Galaxy Explosion']
-                            .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+                            .map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(color: Colors.purpleAccent))))
                             .toList(),
                         onChanged: canEdit ? (val) => setState(() => _closeRoomEffect = val!) : null,
                       ),
                     ],
                   ),
-                  const Divider(color: Colors.white10, height: 24),
+                  Divider(color: isDark ? Colors.white10 : AppColors.getBorder(isDark), height: 24),
 
                   // Kick-out List
                   ListTile(
@@ -574,9 +660,21 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
                       decoration: const BoxDecoration(color: Color(0xFF3D1E2A), shape: BoxShape.circle),
                       child: const Icon(Icons.person_off_rounded, color: Colors.redAccent),
                     ),
-                    title: const Text('Kick-out List', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                    subtitle: Text('Manage ${_bannedUserIds.length} removed users', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                    trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+                    title: Text(
+                      'Kick-out List',
+                      style: TextStyle(
+                        color: AppColors.getTextPrimary(isDark),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Manage ${_bannedUserIds.length} removed users',
+                      style: TextStyle(
+                        color: AppColors.getTextSecondary(isDark),
+                        fontSize: 12,
+                      ),
+                    ),
+                    trailing: Icon(Icons.arrow_forward_ios, color: AppColors.getTextSecondary(isDark), size: 14),
                     onTap: _openKickOutList,
                   ),
                 ],
@@ -589,7 +687,7 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
     );
   }
 
-  Widget _buildSectionHeader(String title, IconData icon) {
+  Widget _buildSectionHeader(String title, IconData icon, bool isDark) {
     return Padding(
       padding: const EdgeInsets.only(left: 4, bottom: 8),
       child: Row(
@@ -598,20 +696,37 @@ class _RoomSettingsScreenState extends State<RoomSettingsScreen> {
           const SizedBox(width: 8),
           Text(
             title,
-            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: AppColors.getTextPrimary(isDark),
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildToggleRow(String title, String subtitle, bool value, ValueChanged<bool> onChanged, bool enabled) {
+  Widget _buildToggleRow(String title, String subtitle, bool value, ValueChanged<bool> onChanged, bool enabled, bool isDark) {
     return SwitchListTile(
       value: value,
       onChanged: enabled ? onChanged : null,
       activeThumbColor: Colors.pinkAccent,
-      title: Text(title, style: TextStyle(color: enabled ? Colors.white : Colors.white38, fontSize: 14, fontWeight: FontWeight.w600)),
-      subtitle: Text(subtitle, style: TextStyle(color: enabled ? Colors.white54 : Colors.white24, fontSize: 11)),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: enabled ? AppColors.getTextPrimary(isDark) : AppColors.getMuted(isDark),
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          color: enabled ? AppColors.getTextSecondary(isDark) : AppColors.getMuted(isDark),
+          fontSize: 11,
+        ),
+      ),
     );
   }
 }

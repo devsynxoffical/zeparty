@@ -136,9 +136,11 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
       ),
     ];
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1B2E),
+      backgroundColor: AppColors.getCard(isDark),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => SafeArea(
         child: Padding(
@@ -155,15 +157,15 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Select Card for ${targetUser.name}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                        const Text('Target user remains attached to invitation flow', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                        Text('Select Card for ${targetUser.name}', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text('Target user remains attached to invitation flow', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 11)),
                       ],
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
-              const Divider(color: Colors.white24),
+              Divider(color: isDark ? Colors.white24 : AppColors.lightBorder),
               Expanded(
                 child: ListView.builder(
                   shrinkWrap: true,
@@ -171,7 +173,7 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
                   itemBuilder: (c, i) {
                     final card = cards[i];
                     return Card(
-                      color: Colors.white.withValues(alpha: 0.08),
+                      color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFF8FAFC),
                       margin: const EdgeInsets.only(bottom: 10),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       child: ListTile(
@@ -180,8 +182,8 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
                           decoration: BoxDecoration(color: Colors.purple.withValues(alpha: 0.3), shape: BoxShape.circle),
                           child: const Icon(Icons.favorite_rounded, color: Colors.pinkAccent),
                         ),
-                        title: Text(card.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                        subtitle: Text('${card.benefits}\nMax Limit: ${card.maxCount} ${card.type}', style: const TextStyle(color: Colors.white60, fontSize: 11)),
+                        title: Text(card.name, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold)),
+                        subtitle: Text('${card.benefits}\nMax Limit: ${card.maxCount} ${card.type}', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 11)),
                         isThreeLine: true,
                         trailing: ElevatedButton(
                           style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
@@ -204,16 +206,18 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
   }
 
   void _showRelationshipStoreDialog(BuildContext context, UserModel targetUser, RelationshipCardModel card) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     showDialog(
       context: context,
       builder: (d) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1B2E),
+        backgroundColor: AppColors.getCard(isDark),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            const Icon(Icons.storefront_rounded, color: Colors.amberAccent),
+            Icon(Icons.storefront_rounded, color: isDark ? Colors.amberAccent : Colors.amber.shade800),
             const SizedBox(width: 8),
-            Text('Purchase ${card.type} Card', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+            Text('Purchase ${card.type} Card', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
           ],
         ),
         content: Column(
@@ -223,7 +227,7 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.purple.withValues(alpha: 0.2),
+                color: isDark ? Colors.purple.withValues(alpha: 0.2) : const Color(0xFFFDF4FF),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.purpleAccent.withValues(alpha: 0.4)),
               ),
@@ -237,27 +241,27 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
                       Expanded(
                         child: Text(
                           'Target: ${targetUser.name}',
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                          style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text('Card Name: ${card.name}', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
-                  Text('Price: ${card.coinPrice} Coins 🪙', style: const TextStyle(color: Colors.white, fontSize: 12)),
-                  Text('Refund Policy: ${card.refundPolicy}', style: const TextStyle(color: Colors.white60, fontSize: 10)),
+                  Text('Price: ${card.coinPrice} Coins 🪙', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 12)),
+                  Text('Refund Policy: ${card.refundPolicy}', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 10)),
                 ],
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               '⚠️ Purchase alone does NOT activate relationship. An invitation will be sent to the target user. Upon acceptance, the relationship becomes active.',
-              style: TextStyle(color: Colors.amberAccent, fontSize: 11, fontStyle: FontStyle.italic),
+              style: TextStyle(color: isDark ? Colors.amberAccent : Colors.amber.shade900, fontSize: 11, fontStyle: FontStyle.italic),
             ),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel', style: TextStyle(color: Colors.white60))),
+          TextButton(onPressed: () => Navigator.pop(d), child: Text('Cancel', style: TextStyle(color: AppColors.getTextSecondary(isDark)))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent),
             onPressed: () {

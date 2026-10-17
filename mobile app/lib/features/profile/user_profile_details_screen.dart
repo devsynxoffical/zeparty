@@ -1366,12 +1366,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 children: [
                   Flexible(
                     child: Text(
-                      _user!.name,
+                      _user!.name.isNotEmpty
+                          ? _user!.name
+                          : (_user!.displayName.isNotEmpty ? _user!.displayName : 'User ${_user!.id}'),
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
                         color: NobleBadgeHelper.getColoredNicknameColor(
                           NobleBadgeHelper.getTierFromTitle(_user!.nobleTitle),
+                          isDark: isDark,
                         ),
                         letterSpacing: 0.2,
                       ),

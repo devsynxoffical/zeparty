@@ -17,6 +17,7 @@ import '../../widgets/gift_dialog.dart';
 import '../../widgets/gift_animation_overlay.dart';
 import '../../widgets/report_sheet.dart';
 import '../../core/services/media_upload_service.dart';
+import '../../core/repositories/social_repository.dart';
 import '../profile/user_profile_details_screen.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -36,6 +37,7 @@ class _ChatScreenState extends State<ChatScreen> {
   XFile? _selectedImage;
   bool _hasText = false;
   Timer? _typingDebounce;
+  UserModel? _latestUser;
 
   final AudioRecorder _audioRecorder = AudioRecorder();
   bool _isRecording = false;
@@ -46,8 +48,22 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       context.read<MessagingProvider>().loadMessagesForUser(widget.user.id);
+      try {
+        final profileRes = await SocialRepository.instance.getSocialProfile(widget.user.id);
+        final profileData = profileRes['data'] is Map<String, dynamic> ? profileRes['data'] as Map<String, dynamic> : profileRes;
+        final isOnlineVal = profileData['isOnline'] == true || profileData['online'] == true;
+        final isLiveVal = profileData['isLive'] == true || profileData['isInRoom'] == true;
+        if (mounted) {
+          setState(() {
+            _latestUser = widget.user.copyWith(
+              isOnline: isOnlineVal,
+              isLive: isLiveVal,
+            );
+          });
+        }
+      } catch (_) {}
     });
 
     _msgController.addListener(_onTextChanged);
@@ -286,35 +302,51 @@ class _ChatScreenState extends State<ChatScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (isTargetTyping)
-                      const Text(
-                        'typing...',
-                        style: TextStyle(fontSize: 10, color: Color(0xFF00E5FF), fontWeight: FontWeight.bold),
-                      )
-                    else if (widget.user.isLive)
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                              decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(4)),
-                              child: const Text('🔴 LIVE', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
+                    Builder(
+                      builder: (context) {
+                        final activeUser = messaging.chatUsers.where((u) => u.id == widget.user.id).firstOrNull ?? _latestUser ?? widget.user;
+                        final bool isOnline = activeUser.isOnline;
+
+                        if (isTargetTyping) {
+                          return const Text(
+                            'typing...',
+                            style: TextStyle(fontSize: 10, color: Color(0xFF00E5FF), fontWeight: FontWeight.bold),
+                          );
+                        } else if (activeUser.isLive) {
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(color: Colors.redAccent, borderRadius: BorderRadius.circular(4)),
+                                  child: const Text('🔴 LIVE', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.bold)),
+                                ),
+                                const SizedBox(width: 4),
+                                const Text('Streaming now', style: TextStyle(fontSize: 10, color: Colors.redAccent), maxLines: 1, overflow: TextOverflow.ellipsis),
+                              ],
                             ),
-                            const SizedBox(width: 4),
-                            const Text('Streaming now', style: TextStyle(fontSize: 10, color: Colors.redAccent), maxLines: 1, overflow: TextOverflow.ellipsis),
-                          ],
-                        ),
-                      )
-                    else
-                      const Row(
-                        children: [
-                          Icon(Icons.circle, color: AppColors.success, size: 8),
-                          SizedBox(width: 4),
-                          Text('Online • ZeParty', style: TextStyle(fontSize: 10, color: AppColors.success)),
-                        ],
-                      ),
+                          );
+                        } else if (isOnline) {
+                          return const Row(
+                            children: [
+                              Icon(Icons.circle, color: AppColors.success, size: 8),
+                              SizedBox(width: 4),
+                              Text('Online • ZeParty', style: TextStyle(fontSize: 10, color: AppColors.success)),
+                            ],
+                          );
+                        } else {
+                          return Row(
+                            children: [
+                              Icon(Icons.circle, color: Colors.grey.shade500, size: 8),
+                              const SizedBox(width: 4),
+                              Text('Offline • ZeParty', style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
+                            ],
+                          );
+                        }
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -345,19 +377,18 @@ class _ChatScreenState extends State<ChatScreen> {
                   MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: widget.user.id)),
                 );
               } else if (val == 'Block User') {
+                final sm = ScaffoldMessenger.of(context);
                 try {
                   await context.read<AuthProvider>().blockUser(widget.user.id);
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('🚫 ${widget.user.name} has been blocked.')),
-                    );
-                  }
+                  if (!mounted) return;
+                  sm.showSnackBar(
+                    SnackBar(content: Text('🚫 ${widget.user.name} has been blocked.')),
+                  );
                 } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to block: $e')),
-                    );
-                  }
+                  if (!mounted) return;
+                  sm.showSnackBar(
+                    SnackBar(content: Text('Failed to block: $e')),
+                  );
                 }
               } else if (val == 'Report Account') {
                 ReportSheet.show(
@@ -610,7 +641,8 @@ class _ChatScreenState extends State<ChatScreen> {
                               if (_selectedImage != null) {
                                 final localFile = _selectedImage!;
                                 setState(() => _selectedImage = null);
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                final sm = ScaffoldMessenger.of(context);
+                                sm.showSnackBar(
                                   const SnackBar(content: Text('Uploading photo...'), duration: Duration(seconds: 1)),
                                 );
                                 MediaUploadService.instance.uploadFile(
@@ -628,7 +660,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   _scrollToBottom();
                                 }).catchError((err) {
                                   if (!mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
+                                  sm.showSnackBar(
                                     SnackBar(content: Text('❌ Photo upload failed: $err'), backgroundColor: Colors.redAccent),
                                   );
                                 });

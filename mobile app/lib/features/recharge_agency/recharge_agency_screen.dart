@@ -337,8 +337,8 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
                   margin: const EdgeInsets.only(bottom: 10),
                   child: ListTile(
                     leading: const Icon(Icons.contact_phone_rounded, color: Colors.blueAccent),
-                    title: Text(c.recipientName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('Linked ID: ${c.linkedUserId} • ${c.contactNumber} • ${c.label}', style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                    title: Text(c.recipientName, style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
+                    subtitle: Text('Linked ID: ${c.linkedUserId} • ${c.contactNumber} • ${c.label}', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark))),
                     trailing: IconButton(
                       icon: const Icon(Icons.flash_on_rounded, color: Colors.greenAccent),
                       tooltip: 'Select & Recharge',
@@ -374,14 +374,14 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
           margin: const EdgeInsets.only(bottom: 10),
           child: ListTile(
             leading: UserAvatar(imageUrl: tx.recipientAvatarUrl, radius: 18),
-            title: Text('Recharged ${tx.coins} Coins', style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('To: ${tx.recipientName} (${tx.recipientUserId})\nTx ID: ${tx.transactionId}', style: const TextStyle(fontSize: 11, color: Colors.white60)),
+            title: Text('Recharged ${tx.coins} Coins', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
+            subtitle: Text('To: ${tx.recipientName} (${tx.recipientUserId})\nTx ID: ${tx.transactionId}', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark))),
             trailing: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(tx.status, style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 11)),
-                Text('${tx.timestamp.hour}:${tx.timestamp.minute}', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                Text('${tx.timestamp.hour}:${tx.timestamp.minute}', style: TextStyle(fontSize: 10, color: AppColors.getMuted(isDark))),
               ],
             ),
           ),
@@ -395,26 +395,27 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
     final uidCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     final labelCtrl = TextEditingController(text: 'Regular Customer');
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     showDialog(
       context: context,
       builder: (d) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1B2E),
-        title: const Text('Add Saved Customer Number', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        backgroundColor: AppColors.getCard(isDark),
+        title: Text('Add Saved Customer Number', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(controller: nameCtrl, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(labelText: 'Customer Name', labelStyle: TextStyle(color: Colors.white70))),
+            TextField(controller: nameCtrl, style: TextStyle(color: AppColors.getTextPrimary(isDark)), decoration: InputDecoration(labelText: 'Customer Name', labelStyle: TextStyle(color: AppColors.getTextSecondary(isDark)))),
             const SizedBox(height: 10),
-            TextField(controller: uidCtrl, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(labelText: 'Linked User ID (e.g. user_1002)', labelStyle: TextStyle(color: Colors.white70))),
+            TextField(controller: uidCtrl, style: TextStyle(color: AppColors.getTextPrimary(isDark)), decoration: InputDecoration(labelText: 'Linked User ID (e.g. user_1002)', labelStyle: TextStyle(color: AppColors.getTextSecondary(isDark)))),
             const SizedBox(height: 10),
-            TextField(controller: phoneCtrl, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(labelText: 'Mobile / WhatsApp Number', labelStyle: TextStyle(color: Colors.white70))),
+            TextField(controller: phoneCtrl, style: TextStyle(color: AppColors.getTextPrimary(isDark)), decoration: InputDecoration(labelText: 'Mobile / WhatsApp Number', labelStyle: TextStyle(color: AppColors.getTextSecondary(isDark)))),
             const SizedBox(height: 10),
-            TextField(controller: labelCtrl, style: const TextStyle(color: Colors.white), decoration: const InputDecoration(labelText: 'Label', labelStyle: TextStyle(color: Colors.white70))),
+            TextField(controller: labelCtrl, style: TextStyle(color: AppColors.getTextPrimary(isDark)), decoration: InputDecoration(labelText: 'Label', labelStyle: TextStyle(color: AppColors.getTextSecondary(isDark)))),
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel', style: TextStyle(color: Colors.white60))),
+          TextButton(onPressed: () => Navigator.pop(d), child: Text('Cancel', style: TextStyle(color: AppColors.getTextSecondary(isDark)))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
             onPressed: () {
@@ -592,9 +593,10 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
                 TextField(
                   controller: usdController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: AppColors.getTextPrimary(isDark)),
                   decoration: InputDecoration(
                     labelText: 'USD Amount',
+                    labelStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
                     prefixText: '\$ ',
                     suffixText: 'USD',
                     hintText: 'Available: \$${usdProv.sellerAvailableUsd.toStringAsFixed(2)}',
@@ -603,11 +605,11 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
                   onChanged: (v) => setDlgState(() {}),
                 ),
                 const SizedBox(height: 14),
-                Text('Coins to be credited: $calculatedCoins 🪙', style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 14)),
+                Text('Coins to be credited: $calculatedCoins 🪙', style: TextStyle(color: isDark ? Colors.greenAccent : Colors.green.shade700, fontWeight: FontWeight.bold, fontSize: 14)),
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: TextStyle(color: AppColors.getTextSecondary(isDark)))),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.amber.shade800, foregroundColor: Colors.white),
                 onPressed: () {
@@ -652,16 +654,16 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Select Recipient (Coin Seller or Merchant)', style: TextStyle(fontSize: 11, color: Colors.white70)),
+                Text('Select Recipient (Coin Seller or Merchant)', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark))),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<SellerMerchantRecipient>(
-                  value: selectedRecipient,
-                  dropdownColor: const Color(0xFF1E1B2E),
-                  style: const TextStyle(color: Colors.white),
+                  initialValue: selectedRecipient,
+                  dropdownColor: AppColors.getCard(isDark),
+                  style: TextStyle(color: AppColors.getTextPrimary(isDark)),
                   decoration: const InputDecoration(border: OutlineInputBorder()),
                   items: [...usdProv.coinSellers, ...usdProv.merchants].map((r) => DropdownMenuItem(
                     value: r,
-                    child: Text('${r.name} (${r.type})', style: const TextStyle(fontSize: 12)),
+                    child: Text('${r.name} (${r.type})', style: TextStyle(fontSize: 12, color: AppColors.getTextPrimary(isDark))),
                   )).toList(),
                   onChanged: (v) => setDlgState(() => selectedRecipient = v),
                 ),
@@ -669,9 +671,10 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
                 TextField(
                   controller: amountController,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: AppColors.getTextPrimary(isDark)),
                   decoration: InputDecoration(
                     labelText: 'USD Amount to Transfer',
+                    labelStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
                     prefixText: '\$ ',
                     hintText: 'Available: \$${usdProv.sellerAvailableUsd.toStringAsFixed(2)}',
                     border: const OutlineInputBorder(),
@@ -680,7 +683,7 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
               ],
             ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: TextStyle(color: AppColors.getTextSecondary(isDark)))),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white),
                 onPressed: () {

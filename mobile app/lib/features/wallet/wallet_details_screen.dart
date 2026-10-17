@@ -348,7 +348,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
   void _showTransactionReceiptBottomSheet(BuildContext context, CategorizedTransactionModel tx, bool isDark) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1B182B),
+      backgroundColor: AppColors.getCard(isDark),
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (b) => DraggableScrollableSheet(
@@ -364,26 +364,30 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Transaction Receipt',
-                  style: TextStyle(color: Colors.amberAccent, fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    color: isDark ? Colors.amberAccent : Colors.amber.shade900,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white70),
+                  icon: Icon(Icons.close, color: isDark ? Colors.white70 : AppColors.darkNavy),
                   onPressed: () => Navigator.pop(b),
                 ),
               ],
             ),
-            const Divider(color: Colors.white24),
+            Divider(color: isDark ? Colors.white24 : AppColors.lightBorder),
             const SizedBox(height: 10),
 
             // Main Receipt Banner
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF25213B),
+                color: isDark ? const Color(0xFF25213B) : const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                border: Border.all(color: isDark ? Colors.amber.withValues(alpha: 0.3) : AppColors.lightBorder),
               ),
               child: Column(
                 children: [
@@ -392,13 +396,15 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
-                      color: tx.direction == TransactionDirection.credit ? Colors.greenAccent : Colors.redAccent,
+                      color: tx.direction == TransactionDirection.credit
+                          ? (isDark ? Colors.greenAccent : Colors.green.shade700)
+                          : Colors.redAccent,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Status: ${tx.status}',
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    style: TextStyle(color: isDark ? Colors.white70 : AppColors.lightTextSecondary, fontSize: 12),
                   ),
                 ],
               ),
@@ -406,38 +412,38 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
             const SizedBox(height: 16),
 
             // Read-Only Server Authoritative Fields
-            _receiptRow('Transaction ID', tx.transactionId),
-            _receiptRow('Type', tx.category),
-            _receiptRow('Status', tx.status),
-            _receiptRow('Amount', tx.signedAmountString),
-            _receiptRow('Fee', '${tx.fee} ${tx.currency}'),
-            _receiptRow('Sender / Source', '${tx.senderName} (${tx.senderId})'),
-            _receiptRow('Recipient / Destination', '${tx.receiverName} (${tx.receiverId})'),
-            _receiptRow('Balance Before', '${tx.balanceBefore}'),
-            _receiptRow('Balance After', '${tx.balanceAfter}'),
-            _receiptRow('Server Date', tx.formattedDate),
-            _receiptRow('Server Time', tx.formattedTime),
-            _receiptRow('Timezone', tx.timezone),
-            _receiptRow('Reference / Note', tx.reason),
+            _receiptRow('Transaction ID', tx.transactionId, isDark),
+            _receiptRow('Type', tx.category, isDark),
+            _receiptRow('Status', tx.status, isDark),
+            _receiptRow('Amount', tx.signedAmountString, isDark),
+            _receiptRow('Fee', '${tx.fee} ${tx.currency}', isDark),
+            _receiptRow('Sender / Source', '${tx.senderName} (${tx.senderId})', isDark),
+            _receiptRow('Recipient / Destination', '${tx.receiverName} (${tx.receiverId})', isDark),
+            _receiptRow('Balance Before', '${tx.balanceBefore}', isDark),
+            _receiptRow('Balance After', '${tx.balanceAfter}', isDark),
+            _receiptRow('Server Date', tx.formattedDate, isDark),
+            _receiptRow('Server Time', tx.formattedTime, isDark),
+            _receiptRow('Timezone', tx.timezone, isDark),
+            _receiptRow('Reference / Note', tx.reason, isDark),
 
             // Additional Category Specific Fields
-            if (tx.failureReason != null) _receiptRow('Failure Reason', tx.failureReason!, isAlert: true),
-            if (tx.reversalReason != null) _receiptRow('Reversal Reason', tx.reversalReason!, isAlert: true),
+            if (tx.failureReason != null) _receiptRow('Failure Reason', tx.failureReason!, isDark, isAlert: true),
+            if (tx.reversalReason != null) _receiptRow('Reversal Reason', tx.reversalReason!, isDark, isAlert: true),
 
             if (tx.exchangeRate != null) ...[
-              const Divider(color: Colors.white24),
-              _receiptRow('Input Amount', '${tx.inputAmount} ${tx.inputCurrency}'),
-              _receiptRow('Output Amount', '${tx.outputAmount} ${tx.outputCurrency}'),
-              _receiptRow('Exchange Rate', '${tx.exchangeRate}'),
-              _receiptRow('Config Version', tx.configVersion ?? 'v1.0'),
+              Divider(color: isDark ? Colors.white24 : AppColors.lightBorder),
+              _receiptRow('Input Amount', '${tx.inputAmount} ${tx.inputCurrency}', isDark),
+              _receiptRow('Output Amount', '${tx.outputAmount} ${tx.outputCurrency}', isDark),
+              _receiptRow('Exchange Rate', '${tx.exchangeRate}', isDark),
+              _receiptRow('Config Version', tx.configVersion ?? 'v1.0', isDark),
             ],
 
             if (tx.settlementType != null) ...[
-              const Divider(color: Colors.white24),
-              _receiptRow('Settlement Type', tx.settlementType!),
-              _receiptRow('Target Period Cycle', tx.targetCycle ?? 'Current Cycle'),
-              _receiptRow('Earning Source', tx.earningSource ?? 'Platform Operations'),
-              _receiptRow('Settlement Reference', tx.settlementRef ?? 'N/A'),
+              Divider(color: isDark ? Colors.white24 : AppColors.lightBorder),
+              _receiptRow('Settlement Type', tx.settlementType!, isDark),
+              _receiptRow('Target Period Cycle', tx.targetCycle ?? 'Current Cycle', isDark),
+              _receiptRow('Earning Source', tx.earningSource ?? 'Platform Operations', isDark),
+              _receiptRow('Settlement Reference', tx.settlementRef ?? 'N/A', isDark),
             ],
 
             const SizedBox(height: 20),
@@ -465,14 +471,14 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
     );
   }
 
-  Widget _receiptRow(String label, String val, {bool isAlert = false}) {
+  Widget _receiptRow(String label, String val, bool isDark, {bool isAlert = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          Text(label, style: TextStyle(fontSize: 12, color: isDark ? Colors.grey : AppColors.lightTextSecondary)),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -481,7 +487,7 @@ class _WalletDetailsScreenState extends State<WalletDetailsScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
-                color: isAlert ? Colors.redAccent : Colors.white,
+                color: isAlert ? Colors.redAccent : (isDark ? Colors.white : AppColors.darkNavy),
               ),
             ),
           ),

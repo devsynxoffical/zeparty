@@ -620,13 +620,13 @@ class _InboxScreenState extends State<InboxScreen> {
   ) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1B182B),
+      backgroundColor: isDark ? const Color(0xFF1B182B) : AppColors.getCard(isDark),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (b) => Wrap(
         children: [
           ListTile(
             leading: const Icon(Icons.person_rounded, color: Colors.purpleAccent),
-            title: const Text('View Full Profile', style: TextStyle(color: Colors.white)),
+            title: Text('View Full Profile', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
             onTap: () {
               Navigator.pop(b);
               Navigator.push(
@@ -637,7 +637,7 @@ class _InboxScreenState extends State<InboxScreen> {
           ),
           ListTile(
             leading: Icon(meta.isPinned ? Icons.push_pin_outlined : Icons.push_pin_rounded, color: Colors.amberAccent),
-            title: Text(meta.isPinned ? 'Unpin Conversation' : 'Pin to Top', style: const TextStyle(color: Colors.white)),
+            title: Text(meta.isPinned ? 'Unpin Conversation' : 'Pin to Top', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
             onTap: () {
               messaging.togglePin(user.id);
               Navigator.pop(b);
@@ -645,7 +645,7 @@ class _InboxScreenState extends State<InboxScreen> {
           ),
           ListTile(
             leading: Icon(meta.isMuted ? Icons.volume_up_rounded : Icons.volume_off_rounded, color: Colors.blueAccent),
-            title: Text(meta.isMuted ? 'Unmute Notifications' : 'Mute Notifications', style: const TextStyle(color: Colors.white)),
+            title: Text(meta.isMuted ? 'Unmute Notifications' : 'Mute Notifications', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
             onTap: () {
               messaging.toggleMute(user.id);
               Navigator.pop(b);
@@ -653,7 +653,7 @@ class _InboxScreenState extends State<InboxScreen> {
           ),
           ListTile(
             leading: Icon(meta.unreadCount > 0 ? Icons.mark_email_read_rounded : Icons.mark_email_unread_rounded, color: Colors.greenAccent),
-            title: Text(meta.unreadCount > 0 ? 'Mark as Read' : 'Mark as Unread', style: const TextStyle(color: Colors.white)),
+            title: Text(meta.unreadCount > 0 ? 'Mark as Read' : 'Mark as Unread', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
             onTap: () {
               if (meta.unreadCount > 0) {
                 messaging.markThreadAsRead(user.id);
@@ -665,7 +665,7 @@ class _InboxScreenState extends State<InboxScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.block_rounded, color: Colors.redAccent),
-            title: const Text('Block Account', style: TextStyle(color: Colors.white)),
+            title: Text('Block Account', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
             onTap: () {
               messaging.toggleBlock(user.id);
               Navigator.pop(b);
@@ -674,7 +674,7 @@ class _InboxScreenState extends State<InboxScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.report_problem_rounded, color: Colors.orangeAccent),
-            title: const Text('Report Message / Account', style: TextStyle(color: Colors.white)),
+            title: Text('Report Message / Account', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
             onTap: () {
               Navigator.pop(b);
               _promptReportDialog(context, user, messaging);
@@ -697,7 +697,7 @@ class _InboxScreenState extends State<InboxScreen> {
     context.read<MessagingProvider>().markAllSystemMessagesRead();
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1B182B),
+      backgroundColor: isDark ? const Color(0xFF1B182B) : AppColors.getCard(isDark),
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (b) {
@@ -712,31 +712,36 @@ class _InboxScreenState extends State<InboxScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'System Messages',
-                      style: TextStyle(color: Colors.amberAccent, fontSize: 17, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: isDark ? Colors.amberAccent : AppColors.darkNavy, fontSize: 17, fontWeight: FontWeight.bold),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   TextButton(
                     onPressed: () => messaging.markAllSystemMessagesRead(),
-                    child: const Text('Mark All Read', style: TextStyle(color: Colors.greenAccent, fontSize: 13)),
+                    child: Text('Mark All Read', style: TextStyle(color: isDark ? Colors.greenAccent : Colors.green.shade700, fontSize: 13)),
                   ),
                 ],
               ),
-              const Divider(color: Colors.white24),
+              Divider(color: isDark ? Colors.white24 : AppColors.getBorder(isDark)),
               if (messaging.systemMessages.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 40),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 40),
                   child: Center(
-                    child: Text('No system messages', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                    child: Text('No system messages', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13)),
                   ),
                 )
               else
                 ...messaging.systemMessages.map((m) => Card(
-                      color: const Color(0xFF26213B),
+                      color: isDark ? const Color(0xFF26213B) : AppColors.getSurface(isDark),
+                      elevation: isDark ? 1 : 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: isDark ? Colors.transparent : AppColors.getBorder(isDark)),
+                      ),
                       margin: const EdgeInsets.only(bottom: 10),
                       child: Padding(
                         padding: const EdgeInsets.all(12),
@@ -757,11 +762,11 @@ class _InboxScreenState extends State<InboxScreen> {
                                     children: [
                                       Text(
                                         '${m.title} (ZeParty Official)',
-                                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                                        style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 13),
                                       ),
                                       Text(
                                         '${m.timestamp.hour}:${m.timestamp.minute.toString().padLeft(2, '0')}',
-                                        style: const TextStyle(color: Colors.grey, fontSize: 10),
+                                        style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 10),
                                       ),
                                     ],
                                   ),
@@ -785,7 +790,7 @@ class _InboxScreenState extends State<InboxScreen> {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            Text(m.content, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                            Text(m.content, style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12)),
                             if (m.invitationType != null && m.status == 'Pending') ...[
                               const SizedBox(height: 12),
                               Row(
@@ -900,7 +905,7 @@ class _InboxScreenState extends State<InboxScreen> {
     context.read<MessagingProvider>().markAllRewardsRead();
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1B182B),
+      backgroundColor: isDark ? const Color(0xFF1B182B) : AppColors.getCard(isDark),
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (b) {
@@ -915,36 +920,41 @@ class _InboxScreenState extends State<InboxScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Activity Rewards',
-                      style: TextStyle(color: Colors.amberAccent, fontSize: 17, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: isDark ? Colors.amberAccent : AppColors.darkNavy, fontSize: 17, fontWeight: FontWeight.bold),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   TextButton(
                     onPressed: () => messaging.markAllRewardsRead(),
-                    child: const Text('Mark All Read', style: TextStyle(color: Colors.greenAccent, fontSize: 13)),
+                    child: Text('Mark All Read', style: TextStyle(color: isDark ? Colors.greenAccent : Colors.green.shade700, fontSize: 13)),
                   ),
                 ],
               ),
-              const Divider(color: Colors.white24),
+              Divider(color: isDark ? Colors.white24 : AppColors.getBorder(isDark)),
               if (messaging.activityRewards.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 40),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 40),
                   child: Center(
-                    child: Text('No activity rewards available', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                    child: Text('No activity rewards available', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13)),
                   ),
                 )
               else
                 ...messaging.activityRewards.map((r) => Card(
-                      color: const Color(0xFF26213B),
+                      color: isDark ? const Color(0xFF26213B) : AppColors.getSurface(isDark),
+                      elevation: isDark ? 1 : 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: isDark ? Colors.transparent : AppColors.getBorder(isDark)),
+                      ),
                       margin: const EdgeInsets.only(bottom: 10),
                       child: ListTile(
                         leading: const Icon(Icons.card_giftcard_rounded, color: Colors.amberAccent),
-                        title: Text(r.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                        subtitle: Text('${r.description}\nReward: ${r.rewardCoins} Coins', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                        title: Text(r.title, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 13)),
+                        subtitle: Text('${r.description}\nReward: ${r.rewardCoins} Coins', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 11)),
                         trailing: ElevatedButton(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: r.status == 'Claimable' ? Colors.amber : Colors.grey,
@@ -974,7 +984,7 @@ class _InboxScreenState extends State<InboxScreen> {
     context.read<MessagingProvider>().markAllHelpersRead();
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1B182B),
+      backgroundColor: isDark ? const Color(0xFF1B182B) : AppColors.getCard(isDark),
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (b) {
@@ -989,36 +999,41 @@ class _InboxScreenState extends State<InboxScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Activity Helper & Event Tips',
-                      style: TextStyle(color: Colors.purpleAccent, fontSize: 17, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: isDark ? Colors.purpleAccent : AppColors.darkNavy, fontSize: 17, fontWeight: FontWeight.bold),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   TextButton(
                     onPressed: () => messaging.markAllHelpersRead(),
-                    child: const Text('Mark All Read', style: TextStyle(color: Colors.greenAccent, fontSize: 13)),
+                    child: Text('Mark All Read', style: TextStyle(color: isDark ? Colors.greenAccent : Colors.green.shade700, fontSize: 13)),
                   ),
                 ],
               ),
-              const Divider(color: Colors.white24),
+              Divider(color: isDark ? Colors.white24 : AppColors.getBorder(isDark)),
               if (messaging.activityHelpers.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 40),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 40),
                   child: Center(
-                    child: Text('No activity tips', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                    child: Text('No activity tips', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13)),
                   ),
                 )
               else
                 ...messaging.activityHelpers.map((h) => Card(
-                      color: const Color(0xFF26213B),
+                      color: isDark ? const Color(0xFF26213B) : AppColors.getSurface(isDark),
+                      elevation: isDark ? 1 : 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: isDark ? Colors.transparent : AppColors.getBorder(isDark)),
+                      ),
                       margin: const EdgeInsets.only(bottom: 10),
                       child: ListTile(
                         leading: const Icon(Icons.lightbulb_rounded, color: Colors.purpleAccent),
-                        title: Text(h.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                        subtitle: Text('${h.tips}\n${h.eventGuidance}', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                        title: Text(h.title, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 13)),
+                        subtitle: Text('${h.tips}\n${h.eventGuidance}', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 11)),
                         onTap: () => messaging.markHelperRead(h.id),
                       ),
                     )),
@@ -1038,7 +1053,7 @@ class _InboxScreenState extends State<InboxScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1B182B),
+      backgroundColor: isDark ? const Color(0xFF1B182B) : AppColors.getCard(isDark),
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (b) => StatefulBuilder(
@@ -1053,28 +1068,40 @@ class _InboxScreenState extends State<InboxScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Admin Activity Broadcast Notice', style: TextStyle(color: Colors.amberAccent, fontSize: 16, fontWeight: FontWeight.bold)),
+              Text(
+                'Admin Activity Broadcast Notice',
+                style: TextStyle(color: isDark ? Colors.amberAccent : AppColors.darkNavy, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 initialValue: targetType,
-                dropdownColor: const Color(0xFF26213B),
-                decoration: const InputDecoration(labelText: 'Notification Stream', labelStyle: TextStyle(color: Colors.white70)),
+                dropdownColor: isDark ? const Color(0xFF26213B) : AppColors.getCard(isDark),
+                decoration: InputDecoration(
+                  labelText: 'Notification Stream',
+                  labelStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                ),
                 items: ['System Messages', 'Activity Rewards', 'Activity Helper']
-                    .map((t) => DropdownMenuItem(value: t, child: Text(t, style: const TextStyle(color: Colors.white))))
+                    .map((t) => DropdownMenuItem(value: t, child: Text(t, style: TextStyle(color: AppColors.getTextPrimary(isDark)))))
                     .toList(),
                 onChanged: (val) => setModalState(() => targetType = val ?? targetType),
               ),
               const SizedBox(height: 8),
               TextField(
                 controller: titleCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Broadcast Title', labelStyle: TextStyle(color: Colors.white70)),
+                style: TextStyle(color: AppColors.getTextPrimary(isDark)),
+                decoration: InputDecoration(
+                  labelText: 'Broadcast Title',
+                  labelStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                ),
               ),
               const SizedBox(height: 8),
               TextField(
                 controller: contentCtrl,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(labelText: 'Content Body', labelStyle: TextStyle(color: Colors.white70)),
+                style: TextStyle(color: AppColors.getTextPrimary(isDark)),
+                decoration: InputDecoration(
+                  labelText: 'Content Body',
+                  labelStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                ),
               ),
               const SizedBox(height: 16),
               ElevatedButton(

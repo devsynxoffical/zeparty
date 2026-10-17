@@ -424,7 +424,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         maxWidth: MediaQuery.of(context).size.width * 0.45,
                       ),
                       child: Text(
-                        user.displayName.isNotEmpty ? user.displayName : 'User ${user.id}',
+                        user.displayName.isNotEmpty
+                            ? user.displayName
+                            : (user.name.isNotEmpty ? user.name : 'User ${user.id}'),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -432,6 +434,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           fontWeight: FontWeight.bold,
                           color: NobleBadgeHelper.getColoredNicknameColor(
                             NobleBadgeHelper.getTierFromTitle(user.nobleTitle),
+                            isDark: isDark,
                           ),
                         ),
                       ),

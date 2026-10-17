@@ -48,21 +48,14 @@ class _WalletScreenState extends State<WalletScreen> {
         elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.history_rounded, color: Colors.white70),
+            icon: Icon(Icons.history_rounded, color: isDark ? Colors.white70 : AppColors.darkNavy),
             tooltip: 'Coin Records',
             onPressed: () {
               Navigator.push(context, MaterialPageRoute(builder: (_) => const CoinRecordsScreen()));
             },
           ),
           IconButton(
-            icon: const Icon(Icons.history_rounded, color: Colors.white70),
-            tooltip: 'Coin Records',
-            onPressed: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const CoinRecordsScreen()));
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.receipt_long_rounded, color: Colors.white70),
+            icon: Icon(Icons.receipt_long_rounded, color: isDark ? Colors.white70 : AppColors.darkNavy),
             tooltip: 'Diamond Details',
             onPressed: () {
               Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletDetailsScreen()));
@@ -135,15 +128,15 @@ class _WalletScreenState extends State<WalletScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E1B2E),
+                  color: isDark ? const Color(0xFF1E1B2E) : const Color(0xFFFFFBEB),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.amber.withValues(alpha: 0.8), width: 1.2),
+                  border: Border.all(color: Colors.amber.withValues(alpha: isDark ? 0.8 : 0.6), width: 1.2),
                 ),
-                child: const Row(
+                child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.info_outline_rounded, size: 22, color: Colors.amberAccent),
-                    SizedBox(width: 12),
+                    Icon(Icons.info_outline_rounded, size: 22, color: isDark ? Colors.amberAccent : Colors.amber.shade800),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         'IMPORTANT NOTE: Coin top-ups and official seller recharges are available 24/7. Settlements and transfers are exclusively accessible within authorized Agency Center, Host Center, and Live Host Center.',
@@ -151,7 +144,7 @@ class _WalletScreenState extends State<WalletScreen> {
                           fontSize: 12,
                           height: 1.4,
                           fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                          color: isDark ? Colors.white : AppColors.darkNavy,
                         ),
                       ),
                     ),
