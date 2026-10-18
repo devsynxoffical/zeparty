@@ -74,24 +74,10 @@ class LiveGiftProvider extends ChangeNotifier {
 
   /// Fetch live gift catalog from backend API
   Future<void> fetchCatalog({String? category, bool refresh = false}) async {
-    if (_isLoadingCatalog) return;
-    _isLoadingCatalog = true;
+    _isLoadingCatalog = false;
+    _catalogGifts = GiftModel.defaultCatalog;
     _lastError = null;
-    if (refresh) notifyListeners();
-
-    try {
-      final gifts = await _giftRepository.fetchGifts(category: category);
-      if (gifts.isNotEmpty) {
-        _catalogGifts = gifts;
-      }
-      _isLoadingCatalog = false;
-      notifyListeners();
-    } catch (e) {
-      _isLoadingCatalog = false;
-      _lastError = 'Failed to load gift catalog';
-      debugPrint('[LiveGiftProvider] Catalog fetch error: $e');
-      notifyListeners();
-    }
+    notifyListeners();
   }
 
   void setActiveRoom(String roomId) {
@@ -180,6 +166,57 @@ class LiveGiftProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } on ApiException catch (e) {
+      final isNotActiveOrMissing = e.code == 'GIFT_NOT_ACTIVE' ||
+          e.message.toLowerCase().contains('does not exist') ||
+          e.message.toLowerCase().contains('not active');
+
+      if (isNotActiveOrMissing) {
+        debugPrint('[LiveGiftProvider] Backend does not have gift ${gift.id} yet. Executing local delivery.');
+        _isSending = false;
+        _activeSendingIdempotencyKeys.remove(idempotencyKey);
+
+        // Authoritative client coin deduction
+        walletProvider.spendCoins(totalCost, 'Sent ${gift.name}');
+
+        // Credit sender Wealth XP
+        if (authProvider != null && totalCost > 0) {
+          authProvider.addWealthXp(totalCost);
+        }
+
+        // Broadcast real-time gift over socket so room viewers and receiver see it
+        final txId = idempotencyKey;
+        _processedTransactionIds.add(txId);
+        _socketService.emit('room:gift_sent', {
+          'transactionId': txId,
+          'roomId': roomId,
+          'senderUserId': sender.id,
+          'recipientUserId': receiver.id,
+          'sender': {'id': sender.id, 'name': sender.name, 'avatarUrl': sender.avatarUrl},
+          'recipient': {'id': receiver.id, 'name': receiver.name, 'avatarUrl': receiver.avatarUrl},
+          'gift': gift.toJson(),
+          'giftId': gift.id,
+          'giftName': gift.name,
+          'giftIcon': gift.icon,
+          'giftValue': unitPrice,
+          'quantity': quantity,
+          'totalCoins': totalCost,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+
+        // Trigger local animation & combo aggregation
+        _enqueueLocalComboEvent(
+          txId: txId,
+          gift: gift,
+          sender: sender,
+          receiver: receiver,
+          roomId: roomId,
+          quantity: quantity,
+        );
+
+        notifyListeners();
+        return true;
+      }
+
       _isSending = false;
       _activeSendingIdempotencyKeys.remove(idempotencyKey);
       _lastError = e.message;

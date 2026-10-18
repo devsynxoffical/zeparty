@@ -10,6 +10,8 @@ class EmojiReactionModel {
   final DateTime timestamp;
   final int? seatId;
   final String? senderName;
+  final String? senderAvatar;
+  final int? gameResult;
 
   const EmojiReactionModel({
     required this.reactionId,
@@ -20,6 +22,8 @@ class EmojiReactionModel {
     required this.timestamp,
     this.seatId,
     this.senderName,
+    this.senderAvatar,
+    this.gameResult,
   });
 
   Map<String, dynamic> toMap() {
@@ -32,6 +36,8 @@ class EmojiReactionModel {
       'timestamp': timestamp.toIso8601String(),
       'seatId': seatId,
       'senderName': senderName,
+      'senderAvatar': senderAvatar,
+      'gameResult': gameResult,
     };
   }
 
@@ -45,8 +51,10 @@ class EmojiReactionModel {
       timestamp: map['timestamp'] != null
           ? DateTime.tryParse(map['timestamp'] as String) ?? DateTime.now()
           : DateTime.now(),
-      seatId: map['seatId'] as int?,
+      seatId: map['seatId'] is num ? (map['seatId'] as num).toInt() : int.tryParse(map['seatId']?.toString() ?? ''),
       senderName: map['senderName'] as String?,
+      senderAvatar: map['senderAvatar'] as String?,
+      gameResult: map['gameResult'] is num ? (map['gameResult'] as num).toInt() : int.tryParse(map['gameResult']?.toString() ?? ''),
     );
   }
 
@@ -59,6 +67,8 @@ class EmojiReactionModel {
     DateTime? timestamp,
     int? seatId,
     String? senderName,
+    String? senderAvatar,
+    int? gameResult,
   }) {
     return EmojiReactionModel(
       reactionId: reactionId ?? this.reactionId,
@@ -69,6 +79,8 @@ class EmojiReactionModel {
       timestamp: timestamp ?? this.timestamp,
       seatId: seatId ?? this.seatId,
       senderName: senderName ?? this.senderName,
+      senderAvatar: senderAvatar ?? this.senderAvatar,
+      gameResult: gameResult ?? this.gameResult,
     );
   }
 
@@ -83,7 +95,9 @@ class EmojiReactionModel {
         other.emoji == emoji &&
         other.timestamp == timestamp &&
         other.seatId == seatId &&
-        other.senderName == senderName;
+        other.senderName == senderName &&
+        other.senderAvatar == senderAvatar &&
+        other.gameResult == gameResult;
   }
 
   @override
@@ -97,6 +111,8 @@ class EmojiReactionModel {
       timestamp,
       seatId,
       senderName,
+      senderAvatar,
+      gameResult,
     );
   }
 }

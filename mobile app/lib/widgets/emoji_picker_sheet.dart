@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/services/api_client.dart';
+import 'room_emoji_bottom_sheet.dart';
 
 class EmojiPickerSheet extends StatefulWidget {
   final Function(String emoji) onEmojiSelected;
@@ -16,14 +17,12 @@ class EmojiPickerSheet extends StatefulWidget {
     required Function(String emoji) onEmojiSelected,
     String? roomId,
   }) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => EmojiPickerSheet(
-        onEmojiSelected: onEmojiSelected,
-        roomId: roomId,
-      ),
+    RoomEmojiBottomSheet.show(
+      context,
+      roomId: roomId,
+      onEmojiSelected: (item) {
+        onEmojiSelected('reaction:${item.id}');
+      },
     );
   }
 

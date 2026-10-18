@@ -87,6 +87,16 @@ flutter:
     - assets/roles/
     - assets/store/
     - assets/animations/
+    - assets/emojis/
+    - assets/emojis/panel_icons/
+    - assets/emojis/reactions/
+    - assets/emojis/game/
+    - assets/gifts/
+    - assets/gifts/classic/
+    - assets/gifts/event/
+    - assets/gifts/privilege/
+    - assets/gifts/special/
+    - assets/gifts/lucky/
 
   # To add custom fonts to your application, add a fonts section here,
   # in this "flutter" section. Each entry in this list should have a

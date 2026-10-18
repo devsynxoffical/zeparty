@@ -115,7 +115,9 @@ class _StandardGiftAnimatorState extends State<StandardGiftAnimator>
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                           ),
                           Text(
-                            'sent ${widget.event.giftName} ${widget.event.giftIcon}',
+                            (widget.event.giftIcon.startsWith('assets/') || widget.event.giftIcon.startsWith('http'))
+                                ? 'sent ${widget.event.giftName}'
+                                : 'sent ${widget.event.giftName} ${widget.event.giftIcon}',
                             style: const TextStyle(color: Color(0xFFFF80AB), fontSize: 10),
                           ),
                         ],
@@ -143,21 +145,35 @@ class _StandardGiftAnimatorState extends State<StandardGiftAnimator>
                       ),
                     ],
                   ),
-                  child: Text(
-                    widget.event.giftIcon,
-                    style: const TextStyle(fontSize: 64),
-                  ),
+                  child: widget.event.giftIcon.startsWith('assets/')
+                      ? Image.asset(
+                          widget.event.giftIcon,
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.contain,
+                        )
+                      : widget.event.giftIcon.startsWith('http')
+                          ? Image.network(
+                              widget.event.giftIcon,
+                              width: 80,
+                              height: 80,
+                              fit: BoxFit.contain,
+                            )
+                          : Text(
+                              widget.event.giftIcon,
+                              style: const TextStyle(fontSize: 64),
+                            ),
                 ),
               ),
             ),
 
-            // 3. Bottom Neon Banner ("Sana sent Rose 🌹 x1")
+            // 3. Bottom Neon Banner ("Sana sent Rose x1")
             Positioned(
               bottom: size.height * 0.28,
               child: Opacity(
                 opacity: bannerOp,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
                       colors: [Color(0xFF8E24AA), Color(0xFFD81B60)],
@@ -171,14 +187,31 @@ class _StandardGiftAnimatorState extends State<StandardGiftAnimator>
                       ),
                     ],
                   ),
-                  child: Text(
-                    '${widget.event.senderName} sent ${widget.event.giftName} ${widget.event.giftIcon} ${widget.event.comboCount > 1 ? "x${widget.event.comboCount}" : ""}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 14,
-                      letterSpacing: 0.8,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (widget.event.giftIcon.startsWith('assets/')) ...[
+                        Image.asset(
+                          widget.event.giftIcon,
+                          width: 22,
+                          height: 22,
+                          fit: BoxFit.contain,
+                        ),
+                        const SizedBox(width: 8),
+                      ] else if (!widget.event.giftIcon.startsWith('http')) ...[
+                        Text(widget.event.giftIcon, style: const TextStyle(fontSize: 16)),
+                        const SizedBox(width: 8),
+                      ],
+                      Text(
+                        '${widget.event.senderName} sent ${widget.event.giftName} ${widget.event.comboCount > 1 ? "x${widget.event.comboCount}" : ""}'.trim(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 14,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

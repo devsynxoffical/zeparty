@@ -867,13 +867,26 @@ class SocketService {
     required String roomId,
     required String emoji,
     String? targetUserId,
+    int? seatId,
+    String? senderName,
+    String? senderAvatar,
+    int? gameResult,
+    String? reactionId,
   }) {
+    final payload = {
+      'id': reactionId ?? 'emoji_${DateTime.now().millisecondsSinceEpoch}',
+      'roomId': roomId,
+      'emoji': emoji,
+      if (targetUserId != null) 'targetUserId': targetUserId,
+      if (seatId != null) 'seatId': seatId,
+      if (senderName != null) 'senderName': senderName,
+      if (senderAvatar != null) 'senderAvatar': senderAvatar,
+      if (gameResult != null) 'gameResult': gameResult,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
     if (_socket != null && _isConnected) {
-      _socket!.emit('room:emoji_send', {
-        'roomId': roomId,
-        'emoji': emoji,
-        if (targetUserId != null) 'targetUserId': targetUserId,
-      });
+      _socket!.emit('room:emoji_send', payload);
+      _socket!.emit('room:emoji', payload);
     }
   }
 

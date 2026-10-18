@@ -40,7 +40,8 @@ import 'widgets/mic_seat_management_sheet.dart';
 import 'widgets/elimination_wheel_sheet.dart';
 import 'widgets/lucky_bag_sheet.dart';
 import 'widgets/in_room_profile_card_sheet.dart';
-import 'widgets/expanded_message_panel.dart';
+import '../../widgets/room_emoji_bottom_sheet.dart';
+import '../../core/constants/room_emoji_catalog.dart';
 import '../../widgets/multi_role_seat_grid.dart';
 import '../../widgets/svip_entry_banner.dart';
 import '../live/widgets/high_value_announcement.dart';
@@ -575,6 +576,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
       partyProv.sendMessage(user, text, roomId: widget.room.id);
       _chatController.clear();
+      _chatFocusNode.unfocus();
       Future.delayed(const Duration(milliseconds: 100), () {
         if (_chatScrollController.hasClients) {
           _chatScrollController.animateTo(
@@ -584,6 +586,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           );
         }
       });
+      if (mounted) setState(() {});
     }
   }
 
@@ -647,8 +650,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         backgroundColor: const Color(0xFF0D0B18),
       body: Stack(
         children: [
-          // TikTok Live Gifting Overlay
-          TikTokGiftOverlay(roomId: widget.room.id),
           // Ambient Gradient, Equipped Room Theme, or Custom Background Image
           Positioned.fill(
             child: Builder(
@@ -713,7 +714,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                         child: Image(
                           image: bgImage,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(color: const Color(0xFF0D0B18)),
+                          errorBuilder: (context, error, stackTrace) => Container(color: const Color(0xFF0D0B18)),
                         ),
                       ),
                   ],
@@ -787,60 +788,77 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                   ),
                 ),
 
-                // Bottom Controls
-                _buildBottomBar(canManage, isHost, provider, isDark),
+                // Reserve bottom space for the floating bottom bar
+                SizedBox(height: MediaQuery.of(context).padding.bottom + 56),
               ],
             ),
           ),
 
-          // Right-side Floating Action Shortcut (Lucky Bag)
-          Positioned(
-            right: 12,
-            bottom: MediaQuery.of(context).padding.bottom + 120 + MediaQuery.of(context).viewInsets.bottom,
-            child: LuckyBagFloatingWidget(roomId: widget.room.id),
-          ),
+          // Real window keyboard height (not stripped by Scaffold)
+          Builder(
+            builder: (ctx) {
+              final keyboardHeight = MediaQueryData.fromView(View.of(ctx)).viewInsets.bottom;
+              final isKeyboardOpen = keyboardHeight > 0;
 
-          // Right-side Floating Action Shortcut (Game Lobby)
-          Positioned(
-            right: 12,
-            bottom: MediaQuery.of(context).padding.bottom + 66 + MediaQuery.of(context).viewInsets.bottom,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => GameCenterSheet.show(context),
-              child: Container(
-                width: 46,
-                height: 46,
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.8), width: 1.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF00E5FF).withValues(alpha: 0.45),
-                      blurRadius: 10,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: ClipOval(
-                  child: Image.asset(
-                    'assets/images/party_games_icon.jpg',
-                    width: 42,
-                    height: 42,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Container(
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(colors: [Color(0xFF00E676), Color(0xFF00B0FF)]),
-                        ),
-                        child: const Icon(Icons.sports_esports_rounded, color: Colors.white, size: 22),
-                      );
-                    },
+              return Stack(
+                children: [
+
+
+                  // Bottom Controls (Always sits directly above the keyboard when open)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: keyboardHeight,
+                    child: _buildBottomBar(canManage, isHost, provider, isDark),
                   ),
-                ),
-              ),
-            ),
+
+                  // Right-side Floating Action Shortcut (Lucky Bag) - hidden when keyboard is open
+                  if (!isKeyboardOpen)
+                    Positioned(
+                      right: 12,
+                      bottom: MediaQuery.of(ctx).padding.bottom + 120,
+                      child: LuckyBagFloatingWidget(roomId: widget.room.id),
+                    ),
+
+                  // Right-side Floating Action Shortcut (Game Lobby) - hidden when keyboard is open
+                  if (!isKeyboardOpen)
+                    Positioned(
+                      right: 12,
+                      bottom: MediaQuery.of(ctx).padding.bottom + 66,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => GameCenterSheet.show(ctx),
+                        child: Container(
+                          width: 46,
+                          height: 46,
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.8), width: 1.5),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF00E5FF).withValues(alpha: 0.45),
+                                blurRadius: 10,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                          child: ClipOval(
+                            child: Image.asset(
+                              'assets/emojis/game/game_lobby_chest.png',
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+                                child: const Icon(Icons.sports_esports_rounded, color: Colors.white, size: 24),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
 
           TikTokUserJoinBanner(
@@ -851,6 +869,9 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
           // Realtime Animated Emoji Reaction Overlay Layer (Top of Stack)
           EmojiReactionOverlay(roomId: provider.activeRoom?.id ?? widget.room.id),
+
+          // TikTok Live Gifting Overlay
+          TikTokGiftOverlay(roomId: widget.room.id),
 
           // Onscreen 3D Gift Animation Overlay
           GiftAnimationOverlay(key: _giftOverlayKey),
@@ -1654,18 +1675,27 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   }
 
   Widget _buildBottomBar(bool canManage, bool isHost, LivePartyProvider provider, bool isDark) {
-    final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+    final keyboardHeight = MediaQueryData.fromView(View.of(context)).viewInsets.bottom;
+    final isKeyboardOpen = keyboardHeight > 0;
 
     return SafeArea(
       top: false,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFF140D24).withValues(alpha: 0.96),
-            border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
-          ),
+      bottom: !isKeyboardOpen,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF140D24).withValues(alpha: 0.98),
+          border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.12))),
+          boxShadow: isKeyboardOpen
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    blurRadius: 12,
+                    offset: const Offset(0, -3),
+                  ),
+                ]
+              : null,
+        ),
           child: Row(
             children: [
               // ── Far Left: Standalone 3D "+" Options Button ──
@@ -1739,13 +1769,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           focusNode: _chatFocusNode,
                           style: const TextStyle(color: Colors.white, fontSize: 13.5),
                           cursorColor: Colors.pinkAccent,
-                          readOnly: true,
-                          onTap: () {
-                            ExpandedMessagePanel.show(
-                              context,
-                              onOpenStickers: () => _showStickerPanel(context),
-                            );
-                          },
                           decoration: InputDecoration(
                             hintText: 'Say something...',
                             hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.45), fontSize: 13.5),
@@ -1765,7 +1788,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       
                       // 3D Emoji Face Logo Button
                       GestureDetector(
-                        onTap: () => _showStickerPanel(context),
+                        onTap: () => _showEmojiReactionPanel(context),
                         child: Container(
                           width: 26,
                           height: 26,
@@ -2016,8 +2039,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 
   void _showRoomTools(
@@ -2533,131 +2555,60 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     );
   }
 
-  void _showStickerPanel(BuildContext context) {
-    int selectedCategoryIndex = 0;
-    final categories = ['Popular', 'Smileys', 'Stickers', 'Party'];
+  void _showEmojiReactionPanel(BuildContext context) {
+    RoomEmojiBottomSheet.show(
+      context,
+      roomId: widget.room.id,
+      onEmojiSelected: (item) {
+        _handleRoomEmojiReaction(item);
+      },
+    );
+  }
 
-    final popularList = ['🔥', '👑', '🎉', '❤️', '👏', '💎', '🚀', '😍', '✨', '💯', '🎙️', '🎸', '🌟', '🏆'];
-    final smileysList = ['😂', '😍', '😭', '😎', '🙏', '👍', '🥰', '🥳', '🤩', '😇', '🤔', '😴', '😳', '🥳'];
-    final stickersList = ['🎁', '🌹', '👑', '💎', '🚀', '🏆', '🥇', '⚡', '💣', '💖', '⭐', '🎈', '🍾', '🎆'];
-    final partyList = ['🎉', '🥳', '🍾', '🍻', '🍹', '🎧', '🎤', '🎷', '💃', '🕺', '🍿', '🎯', '💥', '✨'];
+  void _handleRoomEmojiReaction(RoomEmojiItem item) {
+    final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+    final emojiProv = Provider.of<EmojiReactionProvider>(context, listen: false);
+    final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1E1B2E),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setPanelState) {
-          List<String> activeList;
-          switch (selectedCategoryIndex) {
-            case 1:
-              activeList = smileysList;
-              break;
-            case 2:
-              activeList = stickersList;
-              break;
-            case 3:
-              activeList = partyList;
-              break;
-            default:
-              activeList = popularList;
-          }
+    // 1. Determine sender's seat (if on a mic seat)
+    final participant = partyProv.participants
+        .where((p) => (p.user.id == currentUser.id || p.user.username == currentUser.username) && p.seatNumber != null)
+        .firstOrNull;
+    final seatId = participant?.seatNumber;
 
-          return SafeArea(
-            child: Container(
-              height: 300,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Handle
-                  Center(
-                    child: Container(
-                      width: 36,
-                      height: 4,
-                      decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+    // 2. Random result for Dice (1-6) or Number (0-999)
+    int? gameResult;
+    if (item.id == 'dice') {
+      gameResult = math.Random().nextInt(6) + 1;
+    } else if (item.id == 'number') {
+      gameResult = math.Random().nextInt(1000);
+    }
 
-                  // Header & Categories Row
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: List.generate(categories.length, (idx) {
-                        final isSel = selectedCategoryIndex == idx;
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text(categories[idx]),
-                            selected: isSel,
-                            selectedColor: Colors.pinkAccent,
-                            backgroundColor: Colors.white.withValues(alpha: 0.08),
-                            labelStyle: TextStyle(
-                              color: isSel ? Colors.white : Colors.white70,
-                              fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
-                              fontSize: 12,
-                            ),
-                            onSelected: (val) {
-                              setPanelState(() => selectedCategoryIndex = idx);
-                            },
-                          ),
-                        );
-                      }),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
+    // 3. Play reaction in the room (anchored to seat or center screen) and broadcast to all connected devices
+    emojiProv.sendReaction(
+      roomId: partyProv.activeRoom?.id ?? widget.room.id,
+      senderId: currentUser.id,
+      emoji: item.id,
+      seatId: seatId,
+      senderName: currentUser.name,
+      senderAvatar: currentUser.avatarUrl,
+      gameResult: gameResult,
+    );
 
-                  // Grid
-                  Expanded(
-                    child: GridView.builder(
-                      physics: const BouncingScrollPhysics(),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 7,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
-                      ),
-                      itemCount: activeList.length,
-                      itemBuilder: (context, index) {
-                        final item = activeList[index];
-                        return GestureDetector(
-                          onTap: () {
-                            _chatController.text += item;
-                            Navigator.pop(context);
-                          },
-                          onLongPress: () {
-                            // Quick send sticker immediately to room chat
-                            final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
-                            final provider = Provider.of<LivePartyProvider>(context, listen: false);
-                            provider.sendMessage(currentUser, item);
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Sent sticker $item to room!'),
-                                duration: const Duration(milliseconds: 900),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Center(
-                              child: Text(item, style: const TextStyle(fontSize: 24)),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+    // 4. Also trigger mic reaction in LivePartyProvider if seated
+    if (seatId != null) {
+      partyProv.sendMicReaction(
+        reactionAsset: item.id,
+        category: 'illustrated',
+        sender: currentUser,
+      );
+    }
+
+    // 5. Also show reaction in room chat feed with sender's avatar and name
+    partyProv.sendMessage(
+      currentUser,
+      'reaction:${item.id}',
+      roomId: widget.room.id,
     );
   }
 

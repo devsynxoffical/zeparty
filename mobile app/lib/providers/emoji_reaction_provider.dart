@@ -56,9 +56,16 @@ class EmojiReactionProvider extends ChangeNotifier {
       try {
         final senderId = (data['sender'] is Map ? (data['sender'] as Map)['id'] : data['senderId'])?.toString() ?? '';
         final senderName = (data['sender'] is Map ? (data['sender'] as Map)['displayName'] : data['senderName'])?.toString();
+        final senderAvatar = (data['sender'] is Map ? (data['sender'] as Map)['avatarUrl'] : data['senderAvatar'])?.toString();
         final emoji = data['emoji']?.toString() ?? '';
         final reactionId = data['id']?.toString() ?? 'remote_${DateTime.now().millisecondsSinceEpoch}';
         final targetUserId = data['targetUserId']?.toString();
+        final seatId = data['seatId'] is num
+            ? (data['seatId'] as num).toInt()
+            : int.tryParse(data['seatId']?.toString() ?? '');
+        final gameResult = data['gameResult'] is num
+            ? (data['gameResult'] as num).toInt()
+            : int.tryParse(data['gameResult']?.toString() ?? '');
 
         if (emoji.isEmpty || senderId.isEmpty) return;
 
@@ -69,7 +76,10 @@ class EmojiReactionProvider extends ChangeNotifier {
           targetUserId: targetUserId ?? senderId,
           emoji: emoji,
           timestamp: DateTime.now(),
+          seatId: seatId,
           senderName: senderName,
+          senderAvatar: senderAvatar,
+          gameResult: gameResult,
         );
         receiveReaction(reaction);
       } catch (e) {
@@ -112,14 +122,16 @@ class EmojiReactionProvider extends ChangeNotifier {
     required String emoji,
     int? seatId,
     String? senderName,
+    String? senderAvatar,
+    int? gameResult,
   }) {
     if (emoji.trim().isEmpty || senderId.trim().isEmpty) return false;
     if (_activeRoomId != null && _activeRoomId != roomId) return false;
 
-    // Rate Limiting: Minimum 250ms interval per user
+    // Rate Limiting: Minimum 200ms interval per user
     final now = DateTime.now();
     final lastTime = _lastUserReactionTimestamp[senderId];
-    if (lastTime != null && now.difference(lastTime).inMilliseconds < 250) {
+    if (lastTime != null && now.difference(lastTime).inMilliseconds < 200) {
       return false; // Throttled rapid spam
     }
 
@@ -147,14 +159,20 @@ class EmojiReactionProvider extends ChangeNotifier {
       timestamp: now,
       seatId: seatId,
       senderName: senderName,
+      senderAvatar: senderAvatar,
+      gameResult: gameResult,
     );
 
-    // Broadcast to other room participants via socket BEFORE adding locally
-    // (the backend will echo it back via room:emoji, which receiveReaction deduplicates)
+    // Broadcast to other room participants via socket
     _socketService.sendRoomEmoji(
       roomId: roomId,
       emoji: emoji,
       targetUserId: targetUserId,
+      seatId: seatId,
+      senderName: senderName,
+      senderAvatar: senderAvatar,
+      gameResult: gameResult,
+      reactionId: reactionId,
     );
 
     return receiveReaction(reaction);

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../core/theme/app_colors.dart';
 import '../models/gift_model.dart';
+import '../core/constants/animated_gifts_catalog.dart';
 import '../models/user_model.dart';
 import '../providers/live_provider.dart';
 import '../providers/wallet_provider.dart';
@@ -664,23 +665,19 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
   }
 
   Widget _buildGiftGrid(bool isDark, Color primaryColor, String category, List<GiftModel> catalog) {
-    List<GiftModel> displayGifts;
+    final List<GiftModel> displayGifts;
     if (category == 'Lucky Gift') {
-      displayGifts = catalog.where((g) => g.isLuckyGift).toList();
+      displayGifts = AnimatedGiftsCatalog.luckyGifts;
     } else if (category == 'Classic') {
-      displayGifts = catalog.where((g) => g.category == 'Classic' || g.giftCategory == 'POPULAR').toList();
+      displayGifts = AnimatedGiftsCatalog.classicGifts;
     } else if (category == 'Event Gifts') {
-      displayGifts = catalog.where((g) => g.category == 'Event Gifts' || g.giftCategory == 'LUXURY').toList();
+      displayGifts = AnimatedGiftsCatalog.eventGifts;
     } else if (category == 'Privileges') {
-      displayGifts = catalog.where((g) => g.category == 'Privileges' || g.giftCategory == 'VIP').toList();
+      displayGifts = AnimatedGiftsCatalog.privilegeGifts;
     } else if (category == 'Special') {
-      displayGifts = catalog.where((g) => g.category == 'Special' || g.giftCategory == 'AUDIO').toList();
+      displayGifts = AnimatedGiftsCatalog.specialGifts;
     } else {
-      displayGifts = catalog;
-    }
-
-    if (displayGifts.isEmpty) {
-      displayGifts = catalog.isNotEmpty ? catalog : GiftModel.defaultCatalog;
+      displayGifts = AnimatedGiftsCatalog.allGifts;
     }
 
     return GridView.builder(
@@ -757,7 +754,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                 ),
               ),
 
-              if (gift.luckyBadge != null || gift.label != null)
+              if (gift.luckyBadge != null || gift.label != null || gift.isAnimated)
                 Positioned(
                   top: -4,
                   right: -4,
@@ -768,12 +765,18 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                           ? const LinearGradient(colors: [Colors.purple, Colors.pink])
                           : gift.luckyBadge == 'MAGIC'
                               ? const LinearGradient(colors: [Colors.amber, Colors.orange])
-                              : const LinearGradient(colors: [Colors.blue, Colors.cyan]),
+                              : gift.label == 'VIP'
+                                  ? const LinearGradient(colors: [Color(0xFFFFB300), Color(0xFFFF6F00)])
+                                  : gift.label == 'EVENT'
+                                      ? const LinearGradient(colors: [Color(0xFFE040FB), Color(0xFF7C4DFF)])
+                                      : gift.label == 'SPECIAL'
+                                          ? const LinearGradient(colors: [Color(0xFF00E5FF), Color(0xFF2979FF)])
+                                          : const LinearGradient(colors: [Color(0xFFFF4081), Color(0xFFD500F9)]),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.white, width: 0.8),
                     ),
                     child: Text(
-                      gift.luckyBadge ?? gift.label!,
+                      gift.luckyBadge ?? gift.label ?? 'MP4',
                       style: const TextStyle(color: Colors.white, fontSize: 7.5, fontWeight: FontWeight.w900),
                     ),
                   ),

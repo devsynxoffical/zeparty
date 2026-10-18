@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 import '../core/theme/app_colors.dart';
 import '../models/gift_model.dart';
 import '../core/services/socket_service.dart';
@@ -26,6 +27,10 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
   late Animation<double> _opacityAnimation;
   StreamSubscription? _giftSub;
   StreamSubscription? _clearFeedSub;
+
+  VideoPlayerController? _videoController;
+  Timer? _videoTimer;
+  bool _isVideoPlaying = false;
 
   @override
   void initState() {
@@ -64,6 +69,7 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
           name: giftMap['name']?.toString() ?? 'Gift',
           icon: giftMap['icon']?.toString() ?? '🎁',
           iconUrl: giftMap['iconUrl']?.toString(),
+          svgaAssetUrl: giftMap['svgaAssetUrl']?.toString() ?? giftMap['animationUrl']?.toString(),
           diamondPrice: giftMap['diamondPrice'] is int ? giftMap['diamondPrice'] as int : 100,
           priceCoins: giftMap['priceCoins'] is int ? giftMap['priceCoins'] as int : 100,
           category: giftMap['category']?.toString() ?? 'Classic',
@@ -83,6 +89,11 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
   void clearAnimation() {
     if (!mounted) return;
     _animController.stop();
+    _videoTimer?.cancel();
+    _videoController?.pause();
+    _videoController?.dispose();
+    _videoController = null;
+    _isVideoPlaying = false;
     setState(() {
       _currentGift = null;
       _giftSenderName = '';
@@ -92,20 +103,69 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
 
   void playGiftAnimation(GiftModel gift, {String senderName = '', int quantity = 1}) {
     if (!mounted) return;
+    _animController.stop();
+    _videoTimer?.cancel();
+    _videoController?.pause();
+    _videoController?.dispose();
+    _videoController = null;
+
+    final isMp4 = gift.svgaAssetUrl != null && gift.svgaAssetUrl!.toLowerCase().endsWith('.mp4');
+
+    if (isMp4) {
+      _playMp4Gift(gift, senderName: senderName, quantity: quantity);
+    } else {
+      setState(() {
+        _currentGift = gift;
+        _giftSenderName = senderName;
+        _giftQuantity = quantity;
+        _isVideoPlaying = false;
+      });
+      _animController.forward(from: 0.0).then((_) {
+        if (mounted) clearAnimation();
+      });
+    }
+  }
+
+  void _playMp4Gift(GiftModel gift, {String senderName = '', int quantity = 1}) async {
+    final assetPath = gift.svgaAssetUrl!;
+    final controller = VideoPlayerController.asset(assetPath);
+    _videoController = controller;
+
     setState(() {
       _currentGift = gift;
       _giftSenderName = senderName;
       _giftQuantity = quantity;
+      _isVideoPlaying = true;
     });
-    _animController.forward(from: 0.0).then((_) {
+
+    try {
+      await controller.initialize();
+      if (!mounted || _videoController != controller) {
+        controller.dispose();
+        return;
+      }
+      controller.setVolume(1.0);
+      controller.play();
+      setState(() {});
+
+      final dur = controller.value.duration;
+      final playDuration = (dur != Duration.zero) ? dur : const Duration(seconds: 4);
+
+      _videoTimer?.cancel();
+      _videoTimer = Timer(playDuration, () {
+        if (mounted && _videoController == controller) {
+          clearAnimation();
+        }
+      });
+    } catch (e) {
+      debugPrint('[GiftAnimationOverlay] Video init failed ($assetPath): $e');
       if (mounted) {
-        setState(() {
-          _currentGift = null;
-          _giftSenderName = '';
-          _giftQuantity = 1;
+        _isVideoPlaying = false;
+        _animController.forward(from: 0.0).then((_) {
+          if (mounted) clearAnimation();
         });
       }
-    });
+    }
   }
 
   @override
@@ -113,6 +173,8 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
     _giftSub?.cancel();
     _clearFeedSub?.cancel();
     _animController.dispose();
+    _videoTimer?.cancel();
+    _videoController?.dispose();
     super.dispose();
   }
 
@@ -120,6 +182,101 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
   Widget build(BuildContext context) {
     if (_currentGift == null) return const SizedBox.shrink();
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (_isVideoPlaying && _videoController != null && _videoController!.value.isInitialized) {
+      final totalCoins = (_currentGift!.priceCoins > 0 ? _currentGift!.priceCoins : _currentGift!.diamondPrice) * _giftQuantity;
+      return IgnorePointer(
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Centered Animated Video Frame
+            Center(
+              child: SizedBox(
+                width: MediaQuery.of(context).size.width * 0.95,
+                height: MediaQuery.of(context).size.height * 0.58,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: SizedBox(
+                    width: _videoController!.value.size.width > 0 ? _videoController!.value.size.width : 400,
+                    height: _videoController!.value.size.height > 0 ? _videoController!.value.size.height : 400,
+                    child: VideoPlayer(_videoController!),
+                  ),
+                ),
+              ),
+            ),
+
+            // Top-Floating Luxury Gift Banner
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 75,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF8E24AA), Color(0xFFFF1744), Color(0xFFFF8F00)],
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFFFD700), width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF1744).withValues(alpha: 0.6),
+                      blurRadius: 16,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_currentGift!.icon.startsWith('assets/'))
+                      Image.asset(
+                        _currentGift!.icon,
+                        width: 24,
+                        height: 24,
+                        fit: BoxFit.contain,
+                      )
+                    else if (_currentGift!.icon.startsWith('http'))
+                      Image.network(
+                        _currentGift!.icon,
+                        width: 24,
+                        height: 24,
+                        fit: BoxFit.contain,
+                      )
+                    else
+                      Text(_currentGift!.icon, style: const TextStyle(fontSize: 24)),
+                    const SizedBox(width: 8),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _giftSenderName.isNotEmpty
+                              ? '$_giftSenderName sent $_giftQuantity × ${_currentGift!.name}'
+                              : 'SPECIAL GIFT: ${_currentGift!.name}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        Text(
+                          '$totalCoins Coins 🪙',
+                          style: const TextStyle(
+                            color: Color(0xFFFFD700),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return IgnorePointer(
       child: Align(
@@ -143,7 +300,22 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(_currentGift!.icon, style: const TextStyle(fontSize: 48)),
+                        if (_currentGift!.icon.startsWith('assets/'))
+                          Image.asset(
+                            _currentGift!.icon,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.contain,
+                          )
+                        else if (_currentGift!.icon.startsWith('http'))
+                          Image.network(
+                            _currentGift!.icon,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.contain,
+                          )
+                        else
+                          Text(_currentGift!.icon, style: const TextStyle(fontSize: 48)),
                         const SizedBox(width: 16),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -190,3 +362,4 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
     );
   }
 }
+
