@@ -1028,11 +1028,13 @@ class LivePartyProvider extends ChangeNotifier {
         final giftIcon = data['giftIcon']?.toString() ?? '🎁';
         final quantity = (data['quantity'] is num) ? (data['quantity'] as num).toInt() : int.tryParse(data['quantity']?.toString() ?? '') ?? 1;
 
+        final cleanIcon = (giftIcon.startsWith('assets/') || giftIcon.startsWith('http')) ? '🎁' : giftIcon;
+
         final giftMsg = PartyMessageModel(
           id: 'gift_$txId',
           sender: sender,
           receiver: receiver,
-          text: '${sender.name} sent $quantity × $giftName $giftIcon to ${receiver.name}',
+          text: '${sender.name} sent $quantity × $giftName $cleanIcon to ${receiver.name}',
           timestamp: DateTime.now(),
           isGiftMessage: true,
           giftId: data['giftId']?.toString() ?? '',
@@ -2701,11 +2703,13 @@ class LivePartyProvider extends ChangeNotifier {
     if (_processedGiftTxIds.contains(txId)) return;
     _processedGiftTxIds.add(txId);
 
+    final cleanIcon = (giftIcon.startsWith('assets/') || giftIcon.startsWith('http')) ? '🎁' : giftIcon;
+
     final giftMsg = PartyMessageModel(
       id: 'gift_$txId',
       sender: sender,
       receiver: receiver,
-      text: '${sender.name} sent $quantity × $giftName $giftIcon to ${receiver.name}',
+      text: '${sender.name} sent $quantity × $giftName $cleanIcon to ${receiver.name}',
       timestamp: DateTime.now(),
       isGiftMessage: true,
       giftId: giftId ?? '',

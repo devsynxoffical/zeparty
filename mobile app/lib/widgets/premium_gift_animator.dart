@@ -127,10 +127,24 @@ class _PremiumGiftAnimatorState extends State<PremiumGiftAnimator>
                         ),
                       ],
                     ),
-                    child: Text(
-                      widget.event.giftIcon,
-                      style: const TextStyle(fontSize: 88),
-                    ),
+                    child: widget.event.giftIcon.startsWith('assets/')
+                        ? Image.asset(
+                            widget.event.giftIcon,
+                            width: 100,
+                            height: 100,
+                            fit: BoxFit.contain,
+                          )
+                        : widget.event.giftIcon.startsWith('http')
+                            ? Image.network(
+                                widget.event.giftIcon,
+                                width: 100,
+                                height: 100,
+                                fit: BoxFit.contain,
+                              )
+                            : Text(
+                                widget.event.giftIcon,
+                                style: const TextStyle(fontSize: 88),
+                              ),
                   ),
                 ),
               ),
@@ -166,7 +180,9 @@ class _PremiumGiftAnimatorState extends State<PremiumGiftAnimator>
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                           ),
                           Text(
-                            'sent ${widget.event.giftName} ${widget.event.giftIcon}',
+                            (widget.event.giftIcon.startsWith('assets/') || widget.event.giftIcon.startsWith('http'))
+                                ? 'sent ${widget.event.giftName}'
+                                : 'sent ${widget.event.giftName} ${widget.event.giftIcon}',
                             style: const TextStyle(color: Color(0xFFE040FB), fontSize: 11, fontWeight: FontWeight.w600),
                           ),
                         ],

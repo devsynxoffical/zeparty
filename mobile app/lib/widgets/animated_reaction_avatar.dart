@@ -292,13 +292,27 @@ class _AnimatedReactionAvatarState extends State<AnimatedReactionAvatar>
                             ),
                           ],
                         ),
-                        child: Text(
-                          _currentEmoji!,
-                          style: TextStyle(
-                            fontSize: emojiFontSize,
-                            height: 1.0,
-                          ),
-                        ),
+                        child: _currentEmoji!.startsWith('assets/')
+                            ? Image.asset(
+                                _currentEmoji!,
+                                width: emojiFontSize,
+                                height: emojiFontSize,
+                                fit: BoxFit.contain,
+                              )
+                            : _currentEmoji!.startsWith('http')
+                                ? Image.network(
+                                    _currentEmoji!,
+                                    width: emojiFontSize,
+                                    height: emojiFontSize,
+                                    fit: BoxFit.contain,
+                                  )
+                                : Text(
+                                    _currentEmoji!,
+                                    style: TextStyle(
+                                      fontSize: emojiFontSize,
+                                      height: 1.0,
+                                    ),
+                                  ),
                       ),
                     ),
                   ),

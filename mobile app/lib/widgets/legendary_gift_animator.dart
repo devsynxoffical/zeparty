@@ -22,7 +22,6 @@ class _LegendaryGiftAnimatorState extends State<LegendaryGiftAnimator>
   late AnimationController _mainController;
   late AnimationController _rotationController;
 
-  late Animation<double> _backdropOpacity;
   late Animation<double> _crownScale;
   late Animation<double> _pedestalFade;
   late Animation<double> _cardsOpacity;
@@ -39,12 +38,6 @@ class _LegendaryGiftAnimatorState extends State<LegendaryGiftAnimator>
       vsync: this,
       duration: const Duration(seconds: 10),
     )..repeat();
-
-    _backdropOpacity = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween<double>(begin: 0.0, end: 0.75), weight: 0.15),
-      TweenSequenceItem(tween: ConstantTween<double>(0.75), weight: 0.70),
-      TweenSequenceItem(tween: Tween<double>(begin: 0.75, end: 0.0), weight: 0.15),
-    ]).animate(_mainController);
 
     _crownScale = TweenSequence<double>([
       TweenSequenceItem(
@@ -94,7 +87,6 @@ class _LegendaryGiftAnimatorState extends State<LegendaryGiftAnimator>
     return AnimatedBuilder(
       animation: Listenable.merge([_mainController, _rotationController]),
       builder: (context, child) {
-        final darkOp = _backdropOpacity.value.clamp(0.0, 1.0);
         final crownScaleVal = _crownScale.value;
         final pedestalOp = _pedestalFade.value.clamp(0.0, 1.0);
         final cardsOp = _cardsOpacity.value.clamp(0.0, 1.0);
@@ -104,8 +96,8 @@ class _LegendaryGiftAnimatorState extends State<LegendaryGiftAnimator>
           alignment: Alignment.center,
           fit: StackFit.expand,
           children: [
-            // 1. Cinematic Screen Darkening Backdrop
-            Container(color: Colors.black.withValues(alpha: darkOp)),
+            // 1. Transparent Overlay (No dark backdrop covering the room)
+            const SizedBox.shrink(),
 
             // 2. Rotating Light Rays Background
             Positioned(
@@ -150,10 +142,14 @@ class _LegendaryGiftAnimatorState extends State<LegendaryGiftAnimator>
                             ),
                           ],
                         ),
-                        child: Text(
-                          widget.event.giftIcon,
-                          style: const TextStyle(fontSize: 100),
-                        ),
+                        child: widget.event.giftIcon.startsWith('assets/')
+                            ? Image.asset(widget.event.giftIcon, width: 120, height: 120, fit: BoxFit.contain)
+                            : widget.event.giftIcon.startsWith('http')
+                                ? Image.network(widget.event.giftIcon, width: 120, height: 120, fit: BoxFit.contain)
+                                : Text(
+                                    widget.event.giftIcon,
+                                    style: const TextStyle(fontSize: 100),
+                                  ),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -210,7 +206,9 @@ class _LegendaryGiftAnimatorState extends State<LegendaryGiftAnimator>
                     ],
                   ),
                   child: Text(
-                    '${widget.event.senderName} sent ${widget.event.giftName} ${widget.event.giftIcon}',
+                    (widget.event.giftIcon.startsWith('assets/') || widget.event.giftIcon.startsWith('http'))
+                        ? '${widget.event.senderName} sent ${widget.event.giftName} 👑'
+                        : '${widget.event.senderName} sent ${widget.event.giftName} ${widget.event.giftIcon}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w900,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/constants/room_emoji_catalog.dart';
 import '../core/utils/noble_badge_helper.dart';
 import 'user_avatar.dart';
 
@@ -316,14 +317,39 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                               fontSize: 12.5,
                             ),
                           ),
-                          TextSpan(
-                            text: widget.text,
-                            style: TextStyle(
-                              color: widget.isGift ? Colors.yellowAccent : Colors.white,
-                              fontWeight: widget.isGift ? FontWeight.w700 : FontWeight.w400,
-                              fontSize: 12.5,
-                            ),
-                          ),
+                          ...() {
+                            final emojiItem = RoomEmojiCatalog.findByReactionString(widget.text);
+                            if (emojiItem != null) {
+                              return [
+                                WidgetSpan(
+                                  alignment: PlaceholderAlignment.middle,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(left: 4),
+                                    child: Image.asset(
+                                      emojiItem.iconAsset,
+                                      width: 28,
+                                      height: 28,
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (_, _, _) => Text(
+                                        emojiItem.name,
+                                        style: const TextStyle(color: Colors.white, fontSize: 12.5),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ];
+                            }
+                            return [
+                              TextSpan(
+                                text: widget.text,
+                                style: TextStyle(
+                                  color: widget.isGift ? Colors.yellowAccent : Colors.white,
+                                  fontWeight: widget.isGift ? FontWeight.w700 : FontWeight.w400,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            ];
+                          }(),
                         ],
                       ),
                     ),

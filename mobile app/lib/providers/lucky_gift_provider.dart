@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../models/lucky_gift_model.dart';
+import '../core/constants/animated_gifts_catalog.dart';
 import 'wallet_provider.dart';
 
 class LuckyGiftProvider extends ChangeNotifier {
@@ -17,56 +18,29 @@ class LuckyGiftProvider extends ChangeNotifier {
   }
 
   void _initMockLuckyGifts() {
-    _luckyGifts.addAll([
-      const LuckyGiftModel(
-        id: 'lg_1',
-        name: 'Lucky Crown',
-        icon: '👑',
-        animationUrl: 'assets/animations/lucky_crown.json',
-        coinPrice: 50,
-        badge: '100× JACKPOT',
-        maxMultiplier: 100,
-        rewardTable: [
-          LuckyMultiplierTier(multiplier: 2, probability: 0.50, label: '2× Multiplier'),
-          LuckyMultiplierTier(multiplier: 5, probability: 0.30, label: '5× Multiplier'),
-          LuckyMultiplierTier(multiplier: 10, probability: 0.15, label: '10× Super Win'),
-          LuckyMultiplierTier(multiplier: 50, probability: 0.04, label: '50× Mega Win'),
-          LuckyMultiplierTier(multiplier: 100, probability: 0.01, label: '100× Grand Jackpot!'),
-        ],
-      ),
-      const LuckyGiftModel(
-        id: 'lg_2',
-        name: 'Lucky Dragon',
-        icon: '🐉',
-        animationUrl: 'assets/animations/lucky_dragon.json',
-        coinPrice: 200,
-        badge: '500× JACKPOT',
-        maxMultiplier: 500,
-        rewardTable: [
-          LuckyMultiplierTier(multiplier: 2, probability: 0.50, label: '2× Multiplier'),
-          LuckyMultiplierTier(multiplier: 10, probability: 0.30, label: '10× Multiplier'),
-          LuckyMultiplierTier(multiplier: 50, probability: 0.15, label: '50× Super Win'),
-          LuckyMultiplierTier(multiplier: 200, probability: 0.04, label: '200× Mega Win'),
-          LuckyMultiplierTier(multiplier: 500, probability: 0.01, label: '500× Grand Jackpot!'),
-        ],
-      ),
-      const LuckyGiftModel(
-        id: 'lg_3',
-        name: 'Lucky Rocket',
-        icon: '🚀',
-        animationUrl: 'assets/animations/lucky_rocket.json',
-        coinPrice: 1000,
-        badge: '1000× JACKPOT',
-        maxMultiplier: 1000,
-        rewardTable: [
-          LuckyMultiplierTier(multiplier: 5, probability: 0.50, label: '5× Multiplier'),
-          LuckyMultiplierTier(multiplier: 20, probability: 0.30, label: '20× Multiplier'),
-          LuckyMultiplierTier(multiplier: 100, probability: 0.15, label: '100× Super Win'),
-          LuckyMultiplierTier(multiplier: 500, probability: 0.04, label: '500× Mega Win'),
-          LuckyMultiplierTier(multiplier: 1000, probability: 0.01, label: '1000× Grand Jackpot!'),
-        ],
-      ),
-    ]);
+    _luckyGifts.clear();
+    for (final g in AnimatedGiftsCatalog.luckyGifts) {
+      final digits = g.luckyBadge?.replaceAll(RegExp(r'[^0-9]'), '') ?? '1000';
+      final maxMult = int.tryParse(digits) ?? 1000;
+      _luckyGifts.add(
+        LuckyGiftModel(
+          id: g.id,
+          name: g.name,
+          icon: g.icon,
+          animationUrl: g.icon,
+          coinPrice: g.priceCoins,
+          badge: g.luckyBadge ?? 'MAX X1000',
+          maxMultiplier: maxMult,
+          rewardTable: [
+            const LuckyMultiplierTier(multiplier: 2, probability: 0.50, label: '2× Multiplier'),
+            const LuckyMultiplierTier(multiplier: 5, probability: 0.25, label: '5× Multiplier'),
+            const LuckyMultiplierTier(multiplier: 10, probability: 0.15, label: '10× Super Win'),
+            const LuckyMultiplierTier(multiplier: 50, probability: 0.07, label: '50× Mega Win'),
+            LuckyMultiplierTier(multiplier: maxMult, probability: 0.03, label: '$maxMult× Grand Jackpot!'),
+          ],
+        ),
+      );
+    }
   }
 
   // Server-Authoritative Lucky Gift Send & Spin Logic
