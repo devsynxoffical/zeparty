@@ -1243,7 +1243,11 @@ export async function postAdminAssignSpecialId(req, res, next) {
 export async function getAdminNoblesCatalog(req, res, next) {
   try {
     const result = await userService.getNoblesCatalog();
-    return res.status(200).json(result);
+    return res.status(200).json({
+      success: true,
+      data: result,
+      nobles: result,
+    });
   } catch (err) {
     next(err);
   }

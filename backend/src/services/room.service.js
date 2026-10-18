@@ -6,6 +6,7 @@ import { SOCKET_EVENTS } from '../socket/socket.constants.js';
 import { clearHostAbsentTimer } from '../socket/roomTimer.manager.js';
 import presenceService from '../socket/presence.service.js';
 import micInviteService from './micInvite.service.js';
+import * as attendanceService from './attendance.service.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -315,6 +316,7 @@ export async function closeMyRoom(roomId, userId, db = prisma) {
 
   clearHostAbsentTimer(roomId);
   micInviteService.clearAllInvitesForRoom(roomId);
+  await attendanceService.endBroadcastSession({ roomId, hostUserId: userId }, db).catch(() => {});
   const closedRoom = await roomRepository.closeRoomTx({ roomId, status: 'ENDED' }, db);
 
   socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, {
@@ -1982,6 +1984,230 @@ export async function adminRemoveFromMic(
   return { success: true, message: 'Participant removed from mic successfully', data: payload };
 }
 
+export async function validateRoomAdminOrOwner(roomId, actorUserId, db = prisma) {
+  if (!roomId || typeof roomId !== 'string') {
+    const error = new Error('Valid roomId is required');
+    error.statusCode = 400;
+    error.code = 'VALIDATION_ERROR';
+    throw error;
+  }
+
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const isRoomOpen = ['LIVE', 'ACTIVE', 'OPEN'].includes(String(room.status).toUpperCase());
+  if (!isRoomOpen) {
+    const error = new Error('Room is not active or has ended');
+    error.statusCode = 400;
+    error.code = 'ROOM_NOT_LIVE';
+    throw error;
+  }
+
+  const isOwner = room.creatorUserId === actorUserId;
+  let isAdmin = false;
+  let actorMember = null;
+
+  if (!isOwner) {
+    actorMember = await db.roomMember.findUnique({
+      where: { roomId_userId: { roomId: room.id, userId: actorUserId } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: { select: { displayName: true } },
+          },
+        },
+      },
+    });
+    if (actorMember && (actorMember.role === 'ADMIN' || actorMember.role === 'HOST')) {
+      isAdmin = true;
+    }
+  }
+
+  if (!isOwner && !isAdmin) {
+    const error = new Error('Only room owner or authorized room administrators can perform this action');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  return { room, isOwner, isAdmin, actorMember };
+}
+
+export async function clearRoomFeed(roomId, actorUserId, { reason } = {}, db = prisma) {
+  const { room, isOwner, isAdmin, actorMember } = await validateRoomAdminOrOwner(roomId, actorUserId, db);
+
+  const clearedAt = new Date().toISOString();
+
+  // Authoritatively record in presence service for stale message filtering on snapshot/reconnect
+  try {
+    await presenceService.setRoomFeedClearedAt(room.id, clearedAt);
+    if (roomId !== room.id) {
+      await presenceService.setRoomFeedClearedAt(roomId, clearedAt);
+    }
+  } catch (presErr) {
+    console.warn('[RoomService] Error updating presence feedClearedAt:', presErr.message);
+  }
+
+  // Non-destructive room moderation audit log (reusing RoomModeration model)
+  try {
+    await db.roomModeration.create({
+      data: {
+        roomId: room.id,
+        targetUserId: actorUserId,
+        actionType: 'DELETE_CONTENT',
+        reason: reason || 'Room feed cleared by room owner/admin',
+      },
+    });
+  } catch (auditErr) {
+    console.warn('[RoomService] Non-blocking room moderation audit log notice:', auditErr.message);
+  }
+
+  const actorDisplayName = isOwner
+    ? (room.creator?.profile?.displayName || room.creator?.username || 'Room Owner')
+    : (actorMember?.user?.profile?.displayName || actorMember?.user?.username || 'Room Admin');
+
+  const clearPayload = {
+    roomId: room.id,
+    clientRoomId: roomId,
+    room: room.id,
+    clearedAt,
+    timestamp: clearedAt,
+    clearedBy: actorUserId,
+    actorUserId,
+    actor: {
+      id: actorUserId,
+      name: actorDisplayName,
+      displayName: actorDisplayName,
+      role: isOwner ? 'OWNER' : 'ADMIN',
+    },
+    reason: reason || 'Room feed cleared',
+    isCleared: true,
+  };
+
+  // Broadcast realtime feed cleared events to all connected room participants
+  try {
+    socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_FEED_CLEARED, clearPayload);
+    socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.PARTY_CLEAR_SCREEN, clearPayload);
+    socketEmitter.emitToRoom(room.id, 'room:feed_cleared', clearPayload);
+    socketEmitter.emitToRoom(room.id, 'party:clear_screen', clearPayload);
+    socketEmitter.emitToRoom(room.id, 'feed:cleared', clearPayload);
+    socketEmitter.emitToRoom(room.id, 'feed_cleared', clearPayload);
+
+    if (roomId !== room.id) {
+      socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_FEED_CLEARED, clearPayload);
+      socketEmitter.emitToRoom(roomId, 'room:feed_cleared', clearPayload);
+      socketEmitter.emitToRoom(roomId, 'party:clear_screen', clearPayload);
+    }
+  } catch (emitErr) {
+    console.warn('[RoomService] Error emitting feed cleared socket event:', emitErr.message);
+  }
+
+  return {
+    success: true,
+    message: 'Room feed cleared successfully',
+    roomId: room.id,
+    clearedAt,
+    clearedBy: actorUserId,
+    data: clearPayload,
+    ...clearPayload,
+  };
+}
+
+export async function adminClearRoomFeed(roomId, adminId, { reason } = {}, db = prisma) {
+  if (!roomId || typeof roomId !== 'string') {
+    const error = new Error('Valid roomId is required');
+    error.statusCode = 400;
+    error.code = 'VALIDATION_ERROR';
+    throw error;
+  }
+
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const isRoomOpen = ['LIVE', 'ACTIVE', 'OPEN'].includes(String(room.status).toUpperCase());
+  if (!isRoomOpen) {
+    const error = new Error('Room is not active or has ended');
+    error.statusCode = 400;
+    error.code = 'ROOM_NOT_LIVE';
+    throw error;
+  }
+
+  const clearedAt = new Date().toISOString();
+
+  try {
+    await presenceService.setRoomFeedClearedAt(room.id, clearedAt);
+    if (roomId !== room.id) {
+      await presenceService.setRoomFeedClearedAt(roomId, clearedAt);
+    }
+  } catch (_) {}
+
+  try {
+    await db.roomModeration.create({
+      data: {
+        roomId: room.id,
+        targetUserId: adminId,
+        actionType: 'DELETE_CONTENT',
+        reason: reason || 'Room feed cleared by platform administrator',
+      },
+    });
+  } catch (_) {}
+
+  const clearPayload = {
+    roomId: room.id,
+    clientRoomId: roomId,
+    room: room.id,
+    clearedAt,
+    timestamp: clearedAt,
+    clearedBy: adminId,
+    actorUserId: adminId,
+    actor: {
+      id: adminId,
+      name: 'Platform Administrator',
+      displayName: 'Platform Administrator',
+      role: 'PLATFORM_ADMIN',
+    },
+    reason: reason || 'Feed cleared by platform administration',
+    isCleared: true,
+  };
+
+  try {
+    socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_FEED_CLEARED, clearPayload);
+    socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.PARTY_CLEAR_SCREEN, clearPayload);
+    socketEmitter.emitToRoom(room.id, 'room:feed_cleared', clearPayload);
+    socketEmitter.emitToRoom(room.id, 'party:clear_screen', clearPayload);
+    socketEmitter.emitToRoom(room.id, 'feed:cleared', clearPayload);
+
+    if (roomId !== room.id) {
+      socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_FEED_CLEARED, clearPayload);
+      socketEmitter.emitToRoom(roomId, 'room:feed_cleared', clearPayload);
+      socketEmitter.emitToRoom(roomId, 'party:clear_screen', clearPayload);
+    }
+  } catch (_) {}
+
+  return {
+    success: true,
+    message: 'Room feed cleared by platform administrator',
+    roomId: room.id,
+    clearedAt,
+    clearedBy: adminId,
+    data: clearPayload,
+    ...clearPayload,
+  };
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -2026,6 +2252,9 @@ export default {
   moderateRoomUserMute,
   kickRoomUser,
   moderateRoomUser,
+  validateRoomAdminOrOwner,
+  clearRoomFeed,
+  adminClearRoomFeed,
   createMicInvite: micInviteService.createMicInvite,
   acceptMicInvite: micInviteService.acceptMicInvite,
   declineMicInvite: micInviteService.declineMicInvite,

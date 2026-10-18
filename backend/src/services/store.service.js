@@ -153,7 +153,7 @@ export async function purchaseAsset({ userId, assetId }, { ipAddress } = {}, db 
       userAsset: userAssetRecord,
       ledgerPosting,
     };
-  });
+  }, { maxWait: 15000, timeout: 30000 });
 
   await logAudit({
     adminId: null,
@@ -274,7 +274,7 @@ export async function sendAsset({ senderUserId, recipientUserId, assetId }, { ip
     }
 
     return { userAsset: userAssetRecord };
-  });
+  }, { maxWait: 15000, timeout: 30000 });
 
   return {
     success: true,

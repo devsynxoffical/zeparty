@@ -6,35 +6,73 @@ import {
   allocateSellerCoinsSchema,
   correctSellerBalanceSchema,
   querySellersSchema,
+  sellerTransferCoinsSchema,
+  verifyRecipientQuerySchema,
 } from '../validators/seller.validator.js';
 
 export async function getPublicSellers(req, res, next) {
   try {
-    const { page, limit, search } = req.query;
-    const result = await sellerRepository.findSellers({
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required to view authorized coin sellers in your country',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const { page, limit, search, q } = req.query;
+    const result = await sellerService.getEligibleSellersForUser({
+      userId,
+      search: (search || q || '').trim(),
       page: page ? Number(page) : 1,
       limit: limit ? Number(limit) : 20,
-      search: search || '',
-      sellerStatus: 'ACTIVE',
     });
-
-    const serializedSellers = result.sellers.map((s) => ({
-      id: s.id,
-      businessName: s.businessName,
-      profitMarginPercent: s.profitMarginPercent,
-      sellerStatus: s.sellerStatus,
-      user: {
-        id: s.user?.id,
-        username: s.user?.username,
-        profile: s.user?.profile,
-      },
-    }));
 
     return res.status(200).json({
       success: true,
-      message: 'Active coin sellers retrieved successfully',
-      data: serializedSellers,
+      message: result.message,
+      data: result.sellers,
+      userCountry: result.userCountry,
       pagination: result.pagination,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getSellerByIdAndVerify(req, res, next) {
+  try {
+    const clientUserId = req.auth?.userId;
+    const { id } = req.params;
+    const { seller, sellerCountry } = await sellerService.validateSellerEligibility(id, clientUserId);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: seller.id,
+        sellerId: seller.id,
+        userId: seller.userId,
+        name: seller.businessName || seller.user?.profile?.displayName || seller.user?.username || 'Authorized Seller',
+        businessName: seller.businessName,
+        avatarUrl: seller.user?.avatarUrl || '',
+        region: sellerCountry.name,
+        country: sellerCountry.code,
+        countryCode: sellerCountry.code,
+        type: 'official',
+        status: 'approved',
+        isVisible: true,
+        paymentMethods: ['Direct Transfer', 'Bank Transfer'],
+        stockCoins: Number(seller.resellerBalanceCoins || seller.user?.wallet?.sellerBalanceCoins || 0),
+        user: {
+          id: seller.user?.id,
+          username: seller.user?.username,
+          displayName: seller.user?.profile?.displayName || seller.user?.username,
+          avatarUrl: seller.user?.avatarUrl,
+          countryCode: sellerCountry.code,
+          region: sellerCountry.name,
+        },
+      },
     });
   } catch (err) {
     next(err);
@@ -265,17 +303,63 @@ export async function deleteSeller(req, res, next) {
   }
 }
 
-export async function verifyRecipient(req, res, next) {
+export async function getMySellerPortal(req, res, next) {
   try {
-    const { userId } = req.query;
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const portal = await sellerService.getSellerPortalByUserId(userId);
     return res.status(200).json({
       success: true,
-      data: {
-        userId: userId || '3001001',
-        nickname: 'Sophia Rose',
-        accountStatus: 'ACTIVE',
-        isVerified: true,
-      },
+      message: 'Seller portal details retrieved successfully',
+      data: portal,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function verifyRecipient(req, res, next) {
+  try {
+    const validated = verifyRecipientQuerySchema.parse(req.query);
+    const recipient = await sellerService.verifyRechargeRecipient(validated.userId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Recipient verified successfully',
+      data: recipient,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function transferCoins(req, res, next) {
+  try {
+    const sellerUserId = req.auth?.userId;
+    if (!sellerUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const validatedData = sellerTransferCoinsSchema.parse(req.body);
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await sellerService.executeSellerRechargeTransfer(sellerUserId, validatedData, { ipAddress });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Coins recharged to recipient successfully',
+      data: result,
     });
   } catch (err) {
     next(err);
@@ -284,6 +368,7 @@ export async function verifyRecipient(req, res, next) {
 
 export default {
   getPublicSellers,
+  getSellerByIdAndVerify,
   getSellers,
   createSeller,
   getSellerById,
@@ -293,4 +378,7 @@ export default {
   allocateCoins,
   correctBalance,
   verifyRecipient,
+  getMySellerPortal,
+  transferCoins,
 };
+

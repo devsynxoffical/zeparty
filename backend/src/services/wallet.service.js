@@ -4,6 +4,7 @@ import ledgerService from './ledger.service.js';
 import approvalService, { requiresApproval } from './approval.service.js';
 import { sanitizeFinancial } from '../utils/bigint.util.js';
 import prisma from '../config/database.js';
+import { getEligibleSellersForUser, validateSellerEligibility } from './seller.service.js';
 
 /**
  * Retrieves a user's wallet with BigInt values safely formatted.
@@ -198,7 +199,25 @@ export async function transferDiamonds({ senderUserId, recipientUserId, diamondA
     throw error;
   }
 
-  if (senderUserId === recipientUserId) {
+  // Resolve recipient if a CoinSeller ID was provided or if recipient is an authorized coin seller
+  let effectiveRecipientUserId = recipientUserId;
+  const sellerRecord = await prisma.coinSeller.findFirst({
+    where: {
+      OR: [
+        { id: recipientUserId },
+        { userId: recipientUserId },
+      ],
+    },
+    include: { user: { select: { id: true, countryCode: true, region: true, status: true } } },
+  });
+
+  if (sellerRecord) {
+    effectiveRecipientUserId = sellerRecord.userId;
+    // Authoritatively revalidate seller active status and strict country matching
+    await validateSellerEligibility(sellerRecord.id, senderUserId, prisma);
+  }
+
+  if (senderUserId === effectiveRecipientUserId) {
     const error = new Error('Cannot transfer Diamonds to yourself.');
     error.status = 400;
     throw error;
@@ -206,8 +225,8 @@ export async function transferDiamonds({ senderUserId, recipientUserId, diamondA
 
   const [senderWallet, recipientWallet, recipientUser] = await Promise.all([
     walletRepository.findByUserId(senderUserId),
-    walletRepository.findByUserId(recipientUserId),
-    prisma.user.findUnique({ where: { id: recipientUserId }, select: { id: true, username: true } }),
+    walletRepository.findByUserId(effectiveRecipientUserId),
+    prisma.user.findUnique({ where: { id: effectiveRecipientUserId }, select: { id: true, username: true } }),
   ]);
 
   if (!senderWallet) {
@@ -351,46 +370,76 @@ export async function getDiamondDetails(userId, { tab = 'ALL', page = 1, limit =
 
 /**
  * Module 22: Transfer Receiver Directory (Coin Sellers & Merchants)
+ * Backed by real database records and strictly filtered by the authenticated user's registered country.
+ * Returns empty arrays and explicit user-facing notice if no eligible sellers exist in the user's country.
  */
-export async function getTransferReceivers({ country = 'GLOBAL', type = 'ALL' } = {}, db = prisma) {
-  const coinSellers = [
-    {
-      id: 'seller_01',
-      sellerId: 'CS-88901',
-      name: 'ZeParty Prime Exchange',
+export async function getTransferReceivers({ userId, search = '', type = 'ALL' } = {}, db = prisma) {
+  let coinSellers = [];
+  let userCountry = null;
+  let notice = null;
+
+  const typeNorm = (type || 'ALL').toUpperCase();
+
+  if (userId && (typeNorm === 'ALL' || typeNorm === 'COIN_SELLERS' || typeNorm === 'COIN SELLER' || typeNorm === 'COIN SELLERS')) {
+    const sellersResult = await getEligibleSellersForUser({ userId, search, page: 1, limit: 50 }, db);
+    userCountry = sellersResult.userCountry;
+    coinSellers = sellersResult.sellers.map((s) => ({
+      id: s.id,
+      sellerId: s.id,
+      userId: s.userId,
+      name: s.name,
       type: 'COIN_SELLER',
-      country: 'AE',
+      country: s.country,
+      region: s.region,
       isVerified: true,
       status: 'ONLINE',
       rateDisplay: '$1 = 7,700 Coins',
       packages: [
-        { id: 'pkg_1', usdValue: 300, diamondsRequired: 3000000, fee: 0 },
-        { id: 'pkg_2', usdValue: 500, diamondsRequired: 5000000, fee: 0 },
-        { id: 'pkg_3', usdValue: 1000, diamondsRequired: 10000000, fee: 0 },
+        { id: `pkg_${s.id}_1`, usdValue: 300, diamondsRequired: 3000000, fee: 0 },
+        { id: `pkg_${s.id}_2`, usdValue: 500, diamondsRequired: 5000000, fee: 0 },
+        { id: `pkg_${s.id}_3`, usdValue: 1000, diamondsRequired: 10000000, fee: 0 },
       ],
-    },
-  ];
+    }));
 
-  const merchants = [
-    {
-      id: 'merchant_01',
-      merchantId: 'M-10023',
-      name: 'Global Merchant Direct',
+    if (coinSellers.length === 0) {
+      notice = 'No authorized coin sellers available in your country';
+    }
+  }
+
+  // Authoritative active merchants from database
+  let merchants = [];
+  if (typeNorm === 'ALL' || typeNorm === 'MERCHANTS' || typeNorm === 'MERCHANT') {
+    const whereMerchant = { status: 'ACTIVE', user: { status: 'ACTIVE' } };
+    if (search && search.trim()) {
+      whereMerchant.companyName = { contains: search.trim(), mode: 'insensitive' };
+    }
+    const dbMerchants = await db.merchant.findMany({
+      where: whereMerchant,
+      take: 20,
+      include: { user: { select: { id: true, username: true, countryCode: true, profile: true } } },
+    });
+    merchants = dbMerchants.map((m) => ({
+      id: m.id,
+      merchantId: m.id,
+      userId: m.userId,
+      name: m.companyName || m.user?.profile?.displayName || m.user?.username || 'Merchant Direct',
       type: 'MERCHANT',
-      country: 'GLOBAL',
+      country: m.user?.countryCode || 'GLOBAL',
       isVerified: true,
       status: 'ONLINE',
       rateDisplay: '$1 = 8,400 Coins (20% Profit Rate)',
       packages: [
-        { id: 'pkg_m1', usdValue: 3000, diamondsRequired: 25200000, fee: 0 },
+        { id: `pkg_m_${m.id}`, usdValue: 3000, diamondsRequired: 25200000, fee: 0 },
       ],
-    },
-  ];
+    }));
+  }
 
   return {
     tabs: ['COIN_SELLERS', 'MERCHANTS'],
     coinSellers,
     merchants,
+    userCountry: userCountry ? userCountry.code : null,
+    notice,
     dateNotice: 'IMPORTANT NOTE: Withdrawals and transfers are available only on the 1st and 15th of each month.',
   };
 }

@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Users, Mic, MicOff, StopCircle, ShieldAlert, AlertTriangle, Image, Trash2, Upload, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Users, Mic, MicOff, StopCircle, ShieldAlert, AlertTriangle, Image, Trash2, Upload, Eraser } from 'lucide-react';
 import { Card, CardHeader } from '../../components/ui/Card';
 import { Badge, StatusBadge } from '../../components/ui/Badge';
 import { DataTable } from '../../components/tables/DataTable';
@@ -23,6 +23,7 @@ import {
   inviteToMic,
   updateRoomCoverDp,
   deleteRoomCoverDp,
+  clearRoomFeed,
 } from '../../services/modules/liveRooms.service';
 import { getLogsForTarget } from '../../services/modules/auditLogs.service';
 import { AgoraVideoPlayer } from '../../components/common/AgoraVideoPlayer';
@@ -44,6 +45,8 @@ export function LiveRoomDetailPage() {
   const [history, setHistory] = useState([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
   const [elapsedDuration, setElapsedDuration] = useState('00:00');
+  const [clearFeedModal, setClearFeedModal] = useState(false);
+  const [isClearingFeed, setIsClearingFeed] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -283,6 +286,21 @@ export function LiveRoomDetailPage() {
     } finally {
       setIsClosing(false);
       setCloseModal(false);
+    }
+  };
+
+  const handleClearFeed = async () => {
+    setIsClearingFeed(true);
+    try {
+      await clearRoomFeed(room?.id, 'Cleared by administrator via moderation panel');
+      await addLog('ROOM_FEED_CLEARED', room?.id, 'Live Rooms', `Cleared chat and feed messages for room "${room?.title}". Visible chat cleared; ledgers preserved.`);
+    } catch (err) {
+      console.error('Failed to clear room feed:', err);
+      alert(err.response?.data?.message || err.message || 'Failed to clear room feed');
+    } finally {
+      setIsClearingFeed(false);
+      setClearFeedModal(false);
+      refreshHistory();
     }
   };
 
@@ -528,6 +546,14 @@ export function LiveRoomDetailPage() {
                 {roomMuted ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
                 <span className="text-xs font-medium">{roomMuted ? 'Unmute Room' : 'Mute Room'}</span>
               </button>
+              <button
+                onClick={() => setClearFeedModal(true)}
+                className="col-span-2 flex items-center justify-center gap-2 p-3 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 transition-colors border border-sky-500/30"
+                title="Clear visible room chat and lower feed for all participants"
+              >
+                <Eraser className="h-5 w-5" />
+                <span className="text-xs font-medium">Clear Screen (Feed)</span>
+              </button>
             </div>
           </Card>
         </div>
@@ -611,6 +637,19 @@ export function LiveRoomDetailPage() {
           variant="danger"
           onConfirm={handleDeleteRoomDp}
           onCancel={() => setDeleteDpModal(false)}
+        />
+      )}
+
+      {/* Clear Room Feed Confirmation */}
+      {clearFeedModal && (
+        <ConfirmDialog
+          isOpen={true}
+          title="Clear Room Feed (Clear Screen)"
+          message={`Are you sure you want to clear the lower room chat feed for "${room.title}" across all active participants? This clears the visible chat screen without deleting gift transactions, ledger records, or room settings.`}
+          confirmLabel={isClearingFeed ? 'Clearing...' : 'Clear Screen'}
+          variant="warning"
+          onConfirm={handleClearFeed}
+          onCancel={() => setClearFeedModal(false)}
         />
       )}
 

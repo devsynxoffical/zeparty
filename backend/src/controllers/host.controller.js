@@ -235,6 +235,38 @@ export async function removeHostRole(req, res, next) {
   }
 }
 
+export async function recordBroadcastHeartbeat(req, res, next) {
+  try {
+    const hostUserId = req.auth.userId;
+    const { roomId } = req.body;
+    const result = await hostService.recordBroadcastHeartbeat({ roomId, hostUserId });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getHostAttendance(req, res, next) {
+  try {
+    const hostUserId = req.auth.userId;
+    const result = await hostService.getHostAttendanceSummary(hostUserId);
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function rejectSimulation(req, res, next) {
+  try {
+    hostService.rejectSimulation();
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   applyHost,
   getMyHostProfile,
@@ -249,5 +281,9 @@ export default {
   getAgencyHostPolicyTable,
   getLiveHostPolicyTable,
   removeHostRole,
+  recordBroadcastHeartbeat,
+  getHostAttendance,
+  rejectSimulation,
 };
+
 

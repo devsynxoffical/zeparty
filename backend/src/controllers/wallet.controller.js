@@ -118,8 +118,13 @@ export async function getDiamondDetails(req, res, next) {
 
 export async function getTransferReceivers(req, res, next) {
   try {
-    const { country = 'GLOBAL', type = 'ALL' } = req.query;
-    const result = await walletService.getTransferReceivers({ country, type });
+    const userId = req.auth?.userId;
+    const { type = 'ALL', search, q } = req.query;
+    const result = await walletService.getTransferReceivers({
+      userId,
+      type,
+      search: search || q || '',
+    });
     return res.status(200).json({
       success: true,
       data: result,

@@ -185,6 +185,13 @@ export async function inviteToMic(id, targetUserId, seatIndex = null) {
   return res.data;
 }
 
+export async function clearRoomFeed(id, reason) {
+  const res = await apiClient.post(`/v1/admin/rooms/${id}/clear-feed`, {
+    reason: reason || 'Room feed cleared by platform administrator',
+  });
+  return res.data;
+}
+
 export default {
   getLiveRooms,
   getLiveRoomById,
@@ -202,4 +209,5 @@ export default {
   getAdminAgoraToken,
   muteHost,
   banRoom,
+  clearRoomFeed,
 };

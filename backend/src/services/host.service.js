@@ -3,6 +3,7 @@ import hostRepository from '../repositories/host.repository.js';
 import policyService from './policy.service.js';
 import * as notificationService from './notification.service.js';
 import emailService from './email.service.js';
+import * as attendanceService from './attendance.service.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
@@ -331,8 +332,22 @@ export async function getHostProfileByUserId(userId, db = prisma) {
     throw error;
   }
 
+  const attendance = await attendanceService.getHostAttendanceSummary(userId, db);
+
   return {
     ...host,
+    dailyLiveMinutes: attendance.dailyLiveMinutes,
+    verifiedMinutesToday: attendance.verifiedMinutesToday,
+    streamingMinutes: attendance.streamingMinutes,
+    isTodayValid: attendance.isTodayValid,
+    completedValidDays: attendance.completedValidDays,
+    validDays: attendance.validDays,
+    targetDaysAchieved: attendance.targetDaysAchieved,
+    requiredValidDays: attendance.requiredValidDays,
+    requiredLiveHostDailyMinutes: attendance.requiredLiveHostDailyMinutes,
+    attendanceCycle: attendance.attendanceCycle,
+    attendanceTimezone: attendance.attendanceTimezone,
+    todayStatus: attendance.todayStatus,
     totalDiamondsEarnedMonth: host.totalDiamondsEarnedMonth ? host.totalDiamondsEarnedMonth.toString() : '0',
   };
 }
@@ -365,6 +380,9 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
 
   const isLiveHost = host?.hostType === 'LIVE_HOST';
   const eligibleDiamonds = Number(wallet?.diamondBalance || 0n);
+
+  // Authoritative real-time attendance stats
+  const attendance = await attendanceService.getHostAttendanceSummary(userId, db);
 
   // 25-level target tiers (ZeParty 2026 Policy)
   const tiers = [
@@ -408,11 +426,11 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
   // Daily hosting requirements
   const requiredDailyHours = isLiveHost ? 1 : 2;
   const dailyTargetMinutes = requiredDailyHours * 60;
-  // Genuinely tracked attendance minutes: starts strictly at 0 for new host
-  const completedMinutesToday = Number(host?.todayOnlineMinutes || 0);
+  // Genuinely tracked attendance minutes from authoritative attendance engine
+  const completedMinutesToday = attendance.dailyLiveMinutes;
 
-  // Completed valid days: starts strictly at 0
-  const completedValidDays = Number(host?.targetDaysAchieved || 0);
+  // Completed valid days from authoritative attendance records
+  const completedValidDays = attendance.completedValidDays;
   const requiredDays = activeTier.durationDays;
 
   // Earned salaries for the current cycle: strictly $0.00 until confirmed target is achieved
@@ -426,7 +444,7 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
 
   // Today attendance status
   let todayStatus = 'Not started';
-  if (completedMinutesToday >= dailyTargetMinutes) {
+  if (completedMinutesToday >= dailyTargetMinutes || attendance.isTodayValid) {
     todayStatus = 'Completed';
   } else if (completedMinutesToday > 0) {
     todayStatus = 'In progress';
@@ -775,6 +793,10 @@ export async function removeHostRole({ hostProfileId, adminId, adminName, reason
   });
 }
 
+export const recordBroadcastHeartbeat = attendanceService.recordBroadcastHeartbeat;
+export const getHostAttendanceSummary = attendanceService.getHostAttendanceSummary;
+export const rejectSimulation = attendanceService.rejectSimulation;
+
 export default {
   applyForHost,
   reviewHostApplication,
@@ -788,5 +810,9 @@ export default {
   getAgencyHostPolicyTable,
   getLiveHostPolicyTable,
   removeHostRole,
+  recordBroadcastHeartbeat,
+  getHostAttendanceSummary,
+  rejectSimulation,
 };
+
 

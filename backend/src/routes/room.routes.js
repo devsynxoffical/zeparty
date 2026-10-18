@@ -24,6 +24,7 @@ userRoomRouter.put('/:id/members/:targetUserId/role', authenticate, roomControll
 userRoomRouter.get('/:id/rankings', roomController.getRoomSendingRankings);
 userRoomRouter.post('/:id/agora-token', authenticate, agoraController.getAgoraToken);
 userRoomRouter.post('/:id/agora-token/refresh', authenticate, agoraController.postRefreshAgoraToken);
+userRoomRouter.post('/:id/heartbeat', authenticate, roomController.recordRoomHeartbeat);
 
 // Module 02: Room Background & Paid Theme / DP Upload
 userRoomRouter.get('/:id/background', roomController.getRoomBackground);
@@ -74,6 +75,10 @@ userRoomRouter.post('/:id/mic/invite/decline', authenticate, roomController.decl
 userRoomRouter.delete('/:id/mic/invitations/:invitationId', authenticate, roomController.cancelMicInvite);
 userRoomRouter.delete('/:id/mic/invite/:invitationId', authenticate, roomController.cancelMicInvite);
 
+// Issue 28: Clear Screen / Lower Room Feed
+userRoomRouter.post('/:id/clear-feed', authenticate, roomController.clearRoomFeed);
+userRoomRouter.post('/:id/clear-screen', authenticate, roomController.clearRoomFeed);
+
 // Admin Live Room Management Routes
 adminRoomRouter.use(authenticate);
 adminRoomRouter.get('/pinned-positions', requirePermission('view_live_rooms'), roomController.getAdminPinnedPositions);
@@ -103,6 +108,8 @@ adminRoomRouter.delete('/:id/dp', requirePermission('moderation_actions'), (req,
 });
 adminRoomRouter.post('/:id/invite-mic', requirePermission('moderation_actions'), roomController.adminInviteViewerToMic);
 adminRoomRouter.post('/:id/mic/invite', requirePermission('moderation_actions'), roomController.adminInviteViewerToMic);
+adminRoomRouter.post('/:id/clear-feed', requirePermission('moderation_actions'), roomController.postAdminClearRoomFeed);
+adminRoomRouter.post('/:id/clear-screen', requirePermission('moderation_actions'), roomController.postAdminClearRoomFeed);
 
 
 export default {

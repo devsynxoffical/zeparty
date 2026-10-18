@@ -2,6 +2,7 @@ import express from 'express';
 import authenticate from '../middlewares/authenticate.js';
 import { requirePermission } from '../middlewares/requirePermission.js';
 import agencyController from '../controllers/agency.controller.js';
+import sellerController from '../controllers/seller.controller.js';
 
 export const adminAgencyRouter = express.Router();
 adminAgencyRouter.use(authenticate);
@@ -23,6 +24,9 @@ adminAgencyRouter.get('/:id/members', requirePermission('view_agencies'), agency
 export const userAgencyRouter = express.Router();
 userAgencyRouter.get('/', agencyController.getPublicAgencies);
 userAgencyRouter.get('/public', agencyController.getPublicAgencies);
+
+// Coin Sellers route requested by Flutter CoinAgencyProvider
+userAgencyRouter.get('/sellers', authenticate, sellerController.getPublicSellers);
 userAgencyRouter.get('/my-agency', authenticate, agencyController.getMyAgency);
 userAgencyRouter.get('/me', authenticate, agencyController.getMyAgency);
 userAgencyRouter.get('/wallet', authenticate, agencyController.getMyAgencyWallet);

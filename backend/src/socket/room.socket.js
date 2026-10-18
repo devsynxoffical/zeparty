@@ -8,6 +8,7 @@ import { startHostAbsentTimer, clearHostAbsentTimer } from './roomTimer.manager.
 import { deriveAgoraUid } from '../utils/agoraToken.util.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
 import { withRateLimit } from './rateLimiter.socket.js';
+import * as attendanceService from '../services/attendance.service.js';
 
 /**
  * Builds a safe, public room snapshot containing no sensitive admin or private fields.
@@ -114,6 +115,7 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     pinPosition: room.pinPosition || null,
     currentViewersCount: typeof viewerCount === 'number' ? viewerCount : (room.currentViewersCount || 0),
     viewerCount: typeof viewerCount === 'number' ? viewerCount : (room.currentViewersCount || 0),
+    feedClearedAt: room.feedClearedAt || null,
     agoraChannelName: room.agoraChannelName || null,
     agoraHostUid: hostUserId ? deriveAgoraUid(hostUserId) : null,
     host: room.creator ? {
@@ -211,9 +213,9 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
 
     // 2. Immediately subscribe socket to room channel so broadcasts & chat are reliably delivered
     if (typeof socket.join === 'function') {
-      socket.join(`room:${roomId}`);
+      await socket.join(`room:${room.id}`);
       if (room.id !== roomId) {
-        socket.join(`room:${room.id}`);
+        await socket.join(`room:${roomId}`);
       }
     }
     socket.joinedRooms = socket.joinedRooms || new Set();
@@ -282,7 +284,13 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       activeUsers = await presenceService.getRoomActiveUsers(room.id);
     } catch (_) {}
 
+    let feedClearedAt = null;
+    try {
+      feedClearedAt = await presenceService.getRoomFeedClearedAt(room.id);
+    } catch (_) {}
+
     const snapshot = buildRoomSnapshot(room, currentCount, activeUsers);
+    snapshot.feedClearedAt = feedClearedAt;
     socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, {
       room: snapshot,
       ...snapshot,
@@ -290,21 +298,29 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       members: snapshot.members || [],
       currentViewersCount: currentCount,
       viewerCount: currentCount,
+      feedClearedAt,
     });
 
     // 6. Broadcast user joined event ONLY on genuine initial entry (not reconnects/pings)
     if (isFirstSocket) {
       const targetRoomIds = Array.from(new Set([String(roomId), String(room.id)]));
+      const roomChannelNames = targetRoomIds.map((id) => `room:${id}`);
       const broadcastTarget = io
-        ? io.to(targetRoomIds.map((id) => `room:${id}`))
+        ? io.to(roomChannelNames)
         : (socket.to ? socket.to(`room:${roomId}`) : socket);
 
+      const entryTimestamp = new Date().toISOString();
+      const entryEventId = `entry_${room.id}_${effectiveJoinedId}_${Date.now()}`;
+
       const userPayload = {
+        id: entryEventId,
+        eventId: entryEventId,
+        entryId: entryEventId,
+        entryEventId,
         roomId: room.id,
         clientRoomId: roomId,
         room: room.id,
         userId: effectiveJoinedId,
-        id: effectiveJoinedId,
         user: {
           id: effectiveJoinedId,
           userId: effectiveJoinedId,
@@ -320,6 +336,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         viewerCount: currentCount,
         count: currentCount,
         currentViewersCount: currentCount,
+        timestamp: entryTimestamp,
       };
 
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
@@ -334,14 +351,20 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         viewerCount: currentCount,
         count: currentCount,
         currentViewersCount: currentCount,
+        timestamp: entryTimestamp,
       };
+
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
       broadcastTarget.emit('room:viewer_count', viewerPayload);
       broadcastTarget.emit('viewer_count_changed', viewerPayload);
 
       // 7. Broadcast system chat announcement so all room participants see "[User] has joined the party"
+      const entryText = `${effectiveJoinedName} has joined the party 🎉`;
       const chatPayload = {
-        id: `sys_join_${Date.now()}_${effectiveJoinedId}`,
+        id: entryEventId,
+        eventId: entryEventId,
+        entryId: entryEventId,
+        entryEventId,
         roomId: room.id,
         clientRoomId: roomId,
         room: room.id,
@@ -357,6 +380,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           isVip: effectiveJoinedVip,
           nobleLevel: effectiveJoinedNoble,
           nobleTitle: effectiveJoinedNoble,
+          isGuest: isGuestUser,
         },
         user: {
           id: effectiveJoinedId,
@@ -368,19 +392,30 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           isVip: effectiveJoinedVip,
           nobleLevel: effectiveJoinedNoble,
           nobleTitle: effectiveJoinedNoble,
+          isGuest: isGuestUser,
         },
-        text: `${effectiveJoinedName} has joined the party 🎉`,
-        message: `${effectiveJoinedName} has joined the party 🎉`,
-        content: `${effectiveJoinedName} has joined the party 🎉`,
+        text: entryText,
+        message: entryText,
+        content: entryText,
         type: 'SYSTEM',
         isSystemMessage: true,
-        timestamp: new Date().toISOString(),
+        timestamp: entryTimestamp,
       };
 
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
       broadcastTarget.emit('room:chat', chatPayload);
       broadcastTarget.emit('chat_message', chatPayload);
       broadcastTarget.emit('room_chat_message', chatPayload);
+
+      // Ensure the entering user socket receives both events reliably if room broadcast didn't include socket
+      if (socket && typeof socket.emit === 'function') {
+        const socketInRoom = socket.rooms && typeof socket.rooms.has === 'function' &&
+          (socket.rooms.has(`room:${room.id}`) || socket.rooms.has(`room:${roomId}`));
+        if (!io || !socketInRoom) {
+          socket.emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
+          socket.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
+        }
+      }
     }
 
     // 8. Update Authoritative User Room Presence
@@ -726,7 +761,13 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       activeUsers = await presenceService.getRoomActiveUsers(room.id);
     } catch (_) {}
 
+    let feedClearedAt = null;
+    try {
+      feedClearedAt = await presenceService.getRoomFeedClearedAt(room.id);
+    } catch (_) {}
+
     const snapshot = buildRoomSnapshot(room, viewerCount, activeUsers);
+    snapshot.feedClearedAt = feedClearedAt;
     const responsePayload = {
       room: snapshot,
       ...snapshot,
@@ -735,6 +776,7 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       members: snapshot.members || [],
       currentViewersCount: viewerCount,
       viewerCount,
+      feedClearedAt,
       timestamp: new Date().toISOString(),
     };
 
@@ -1702,9 +1744,97 @@ export function registerRoomHandlers(io, socket) {
     withRateLimit('MIC_INVITE', 10, 1000, (s, d, cb) => onCancelMicInvite(io, s, d, cb))
   );
 
+  // Issue 28: Clear Screen / Lower Room Feed Realtime Actions
+  socket.on(
+    SOCKET_EVENTS.PARTY_CLEAR_SCREEN,
+    withRateLimit('ROOM_MOD', 10, 1000, (s, d, cb) => onClearScreen(io, s, d, cb))
+  );
+  socket.on(
+    'party:clear_screen',
+    withRateLimit('ROOM_MOD', 10, 1000, (s, d, cb) => onClearScreen(io, s, d, cb))
+  );
+  socket.on(
+    'room:clear_feed',
+    withRateLimit('ROOM_MOD', 10, 1000, (s, d, cb) => onClearScreen(io, s, d, cb))
+  );
+  socket.on(
+    'clear_screen',
+    withRateLimit('ROOM_MOD', 10, 1000, (s, d, cb) => onClearScreen(io, s, d, cb))
+  );
+  socket.on(
+    'clear_feed',
+    withRateLimit('ROOM_MOD', 10, 1000, (s, d, cb) => onClearScreen(io, s, d, cb))
+  );
+
+  // Authoritative Broadcast Attendance Streaming Heartbeats
+  socket.on('stream:heartbeat', (d, cb) => onStreamHeartbeat(io, socket, d, cb));
+  socket.on('live:heartbeat', (d, cb) => onStreamHeartbeat(io, socket, d, cb));
+  socket.on('room:heartbeat', (d, cb) => onStreamHeartbeat(io, socket, d, cb));
+
   // Handle both disconnecting (before leaveAll) and disconnect (as safety fallback)
   socket.on('disconnecting', () => onSocketDisconnect(io, socket));
   socket.on(SOCKET_EVENTS.DISCONNECT, () => onSocketDisconnect(io, socket));
+}
+
+export async function onClearScreen(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+
+  try {
+    const roomId = data?.roomId;
+    if (!roomId || typeof roomId !== 'string') {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.VALIDATION_ERROR, message: 'Valid roomId is required' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_ERRORS.ERROR || SOCKET_EVENTS.ERROR, err);
+    }
+
+    const actorUserId = socket.userId;
+    if (!actorUserId) {
+      const err = {
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Authentication is required to clear room feed' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const result = await roomService.clearRoomFeed(roomId, actorUserId, { reason: data?.reason }, db || prisma);
+
+    if (typeof callback === 'function') {
+      return callback(result);
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: {
+        code: err.code || SOCKET_ERRORS.INTERNAL_ERROR,
+        message: err.message || 'Failed to clear room feed',
+      },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onStreamHeartbeat(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId;
+    const hostUserId = socket.userId;
+    if (!roomId) {
+      const err = { success: false, message: 'roomId is required for streaming heartbeat' };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit('stream:heartbeat_ack', err);
+    }
+    const result = await attendanceService.recordBroadcastHeartbeat({ roomId, hostUserId });
+    if (typeof callback === 'function') return callback(result);
+    return socket.emit('stream:heartbeat_ack', result);
+  } catch (err) {
+    const errPayload = { success: false, error: err.message || 'Heartbeat recording failed' };
+    if (typeof callback === 'function') return callback(errPayload);
+    return socket.emit('stream:heartbeat_ack', errPayload);
+  }
 }
 
 export default {
@@ -1726,5 +1856,7 @@ export default {
   onCancelMicInvite,
   onUpdateRoomBackground,
   onSocketDisconnect,
+  onStreamHeartbeat,
+  onClearScreen,
   registerRoomHandlers,
 };

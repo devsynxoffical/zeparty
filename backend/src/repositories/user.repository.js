@@ -21,6 +21,9 @@ export async function findById(id, db = prisma) {
       profile: true,
       wallet: true,
       hostProfile: true,
+      coinSeller: true,
+      merchant: true,
+      ownedAgencies: { select: { id: true, agencyName: true, status: true } },
     },
   });
 }

@@ -2,6 +2,7 @@ import express from 'express';
 import authenticate from '../middlewares/authenticate.js';
 import requirePermission from '../middlewares/requirePermission.js';
 import idempotency from '../middlewares/idempotency.js';
+import { requireActiveSeller } from '../middlewares/sellerAuth.js';
 import sellerController from '../controllers/seller.controller.js';
 
 export const adminSellerRouter = express.Router();
@@ -18,10 +19,20 @@ adminSellerRouter.post('/:id/allocate', requirePermission('issue_coins'), idempo
 adminSellerRouter.post('/:id/correct', requirePermission('reseller_corrections'), idempotency, sellerController.correctBalance);
 
 export const userSellerRouter = express.Router();
-userSellerRouter.get('/public', sellerController.getPublicSellers);
-userSellerRouter.get('/recharge/verify-recipient', authenticate, sellerController.verifyRecipient);
+
+// Public / User seller directory (Authenticated with server-side country filtering)
+userSellerRouter.get('/', authenticate, sellerController.getPublicSellers);
+userSellerRouter.get('/public', authenticate, sellerController.getPublicSellers);
+userSellerRouter.get('/:id', authenticate, sellerController.getSellerByIdAndVerify);
+
+// Authenticated Seller Portal (Requires authoritative active CoinSeller association)
+userSellerRouter.get('/me', authenticate, requireActiveSeller, sellerController.getMySellerPortal);
+userSellerRouter.get('/me/portal', authenticate, requireActiveSeller, sellerController.getMySellerPortal);
+userSellerRouter.get('/recharge/verify-recipient', authenticate, requireActiveSeller, sellerController.verifyRecipient);
+userSellerRouter.post('/recharge/transfer', authenticate, requireActiveSeller, idempotency, sellerController.transferCoins);
 
 export default {
   adminSellerRouter,
   userSellerRouter,
 };
+

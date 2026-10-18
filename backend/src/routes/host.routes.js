@@ -22,6 +22,9 @@ userHostRouter.get('/profile', authenticate, hostController.getMyHostProfile);
 userHostRouter.get('/application', authenticate, hostController.getMyHostApplication);
 userHostRouter.get('/center/income', authenticate, hostController.getHostIncomeDashboard);
 userHostRouter.post('/become-live-host', authenticate, hostController.becomeLiveHost);
+userHostRouter.post('/heartbeat', authenticate, hostController.recordBroadcastHeartbeat);
+userHostRouter.get('/attendance', authenticate, hostController.getHostAttendance);
+userHostRouter.post('/simulate-minutes', authenticate, hostController.rejectSimulation);
 
 export default {
   adminHostRouter,

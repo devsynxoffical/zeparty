@@ -16,6 +16,8 @@ const memorySocketUser = new Map();
 const memoryUserRoom = new Map();
 // memoryUserLastSeen: userId -> ISO timestamp
 const memoryUserLastSeen = new Map();
+// memoryRoomFeedCleared: roomId -> ISO timestamp
+const memoryRoomFeedCleared = new Map();
 
 /**
  * Realtime Presence Service supporting:
@@ -765,6 +767,33 @@ export async function leaveRoomPresence(roomId, userId) {
   }
 }
 
+export async function setRoomFeedClearedAt(roomId, timestamp = new Date().toISOString()) {
+  if (!roomId) return null;
+  const rId = String(roomId);
+  const ts = typeof timestamp === 'string' ? timestamp : new Date(timestamp).toISOString();
+
+  if (redisClient.isOpen) {
+    try {
+      await redisClient.set(`presence:room:${rId}:feed_cleared_at`, ts, { EX: 86400 * 7 });
+    } catch (_) {}
+  }
+  memoryRoomFeedCleared.set(rId, ts);
+  return ts;
+}
+
+export async function getRoomFeedClearedAt(roomId) {
+  if (!roomId) return null;
+  const rId = String(roomId);
+
+  if (redisClient.isOpen) {
+    try {
+      const val = await redisClient.get(`presence:room:${rId}:feed_cleared_at`);
+      if (val) return val;
+    } catch (_) {}
+  }
+  return memoryRoomFeedCleared.get(rId) || null;
+}
+
 export default {
   registerUserSocket,
   unregisterUserSocket,
@@ -785,4 +814,6 @@ export default {
   getRoomActiveUsers,
   isUserInRoom,
   clearRoomPresence,
+  setRoomFeedClearedAt,
+  getRoomFeedClearedAt,
 };

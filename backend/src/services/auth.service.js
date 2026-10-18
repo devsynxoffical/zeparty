@@ -264,12 +264,44 @@ function sanitizeUser(user) {
   const { passwordHash, ...safeUser } = user;
   const coinBal = safeUser.wallet?.coinBalance != null ? Number(safeUser.wallet.coinBalance) : 0;
   const diamondBal = safeUser.wallet?.diamondBalance != null ? Number(safeUser.wallet.diamondBalance) : 0;
+
+  // Authoritative Coins Seller & Portal evaluation
+  const hasActiveSellerPortal = Boolean(safeUser.coinSeller && safeUser.coinSeller.sellerStatus === 'ACTIVE');
+  const isSeller = hasActiveSellerPortal || safeUser.userType === 'COIN_SELLER' || safeUser.userType === 'SELLER';
+  const isCoinsSeller = isSeller;
+  const hasSellerPortal = hasActiveSellerPortal;
+  const sellerStatus = safeUser.coinSeller ? safeUser.coinSeller.sellerStatus : null;
+  const sellerPortalId = safeUser.coinSeller ? safeUser.coinSeller.id : null;
+  const sellerBalanceNum = safeUser.coinSeller?.resellerBalanceCoins != null
+    ? Number(safeUser.coinSeller.resellerBalanceCoins)
+    : (safeUser.wallet?.sellerBalanceCoins != null ? Number(safeUser.wallet.sellerBalanceCoins) : 0);
+  const sellerBalanceStr = (safeUser.coinSeller?.resellerBalanceCoins ?? safeUser.wallet?.sellerBalanceCoins ?? 0n).toString();
+
+  // Multi-role resolution
+  const userRoles = ['USER'];
+  if (isSeller) {
+    userRoles.push('SELLER');
+    userRoles.push('COIN_SELLER');
+  }
+  if (safeUser.merchant && safeUser.merchant.status === 'ACTIVE') userRoles.push('MERCHANT');
+  if (safeUser.ownedAgencies && safeUser.ownedAgencies.length > 0) userRoles.push('AGENCY_OWNER');
+  if (safeUser.userType && !userRoles.includes(safeUser.userType)) userRoles.push(safeUser.userType);
+  const roles = Array.from(new Set(userRoles));
+
   return {
     ...safeUser,
     coins: coinBal,
     diamonds: diamondBal,
     coinBalance: coinBal,
     diamondBalance: diamondBal,
+    isSeller,
+    isCoinsSeller,
+    hasSellerPortal,
+    sellerStatus,
+    sellerPortalId,
+    sellerBalance: sellerBalanceNum,
+    sellerBalanceCoins: sellerBalanceStr,
+    roles,
     profile: safeUser.profile
       ? {
           ...safeUser.profile,

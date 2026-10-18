@@ -66,6 +66,9 @@ export const RESTRICTED_SVIP_BADGE_IDS = [
   'badge_zp056', // Royalty Crown Badge
   'badge_zp065', // Cyber Elite Badge
   'badge_zp079', // Gold Phoenix Badge
+  'badge_zp093', // SVIP 10 Dragon Badge
+  'card_zp098',  // SVIP 10 Dragon Profile Card
+  'frame_zp097', // SVIP 10 Dragon Profile Frame
   'badge_zp100', // Imperial Dragon Badge
   'badge_zp127', // Supreme Sovereign Badge
 ];

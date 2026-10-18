@@ -1,6 +1,7 @@
 import roomRepository from '../repositories/room.repository.js';
 import socketEmitter from './socket.emitter.js';
 import { SOCKET_EVENTS } from './socket.constants.js';
+import * as attendanceService from '../services/attendance.service.js';
 
 // Map of roomId -> { timer: NodeJS.Timeout, type: 'PARTY' | 'VIDEO', hostUserId: string, startedAt: number, durationMs: number }
 const hostAbsentTimers = new Map();
@@ -45,6 +46,9 @@ export async function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
       if (!currentRoom || currentRoom.status !== 'LIVE') {
         return;
       }
+
+      // End active broadcast attendance session
+      await attendanceService.endBroadcastSession({ roomId }).catch(() => {});
 
       // Close room in database
       await roomRepository.closeRoomTx({

@@ -672,6 +672,7 @@ model HostProfile {
   totalLiveHoursMonth      Float      @default(0.0)
   totalDiamondsEarnedMonth BigInt     @default(0)
   targetDaysAchieved       Int        @default(0)
+  todayOnlineMinutes       Float?     @default(0.0)
   createdAt                DateTime   @default(now())
   updatedAt                DateTime   @updatedAt
 
@@ -681,6 +682,40 @@ model HostProfile {
 
   @@index([hostStatus])
   @@index([hostType])
+}
+
+model HostBroadcastSession {
+  id              String    @id @default(uuid())
+  hostUserId      String
+  roomId          String
+  roomType        String    @default("LIVE_VIDEO")
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  lastHeartbeatAt DateTime  @default(now())
+  verifiedMinutes Float     @default(0.0)
+  status          String    @default("ACTIVE")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([hostUserId, status])
+  @@index([roomId])
+  @@index([startedAt])
+}
+
+model HostDailyAttendance {
+  id              String    @id @default(uuid())
+  hostUserId      String
+  attendanceDate  String
+  verifiedMinutes Float     @default(0.0)
+  isValidDay      Boolean   @default(false)
+  markedValidAt   DateTime?
+  sessionCount    Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([hostUserId, attendanceDate])
+  @@index([hostUserId])
+  @@index([attendanceDate])
 }
 
 model HostApplication {

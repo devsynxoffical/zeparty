@@ -296,6 +296,44 @@ export async function getSelfProfile(userId, db = prisma) {
   const coinBalanceNum = user.wallet?.coinBalance != null ? Number(user.wallet.coinBalance) : 0;
   const diamondBalanceNum = user.wallet?.diamondBalance != null ? Number(user.wallet.diamondBalance) : 0;
 
+  // Authoritative Coins Seller & Portal evaluation
+  const hasActiveSellerPortal = Boolean(user.coinSeller && user.coinSeller.sellerStatus === 'ACTIVE');
+  const isSeller = hasActiveSellerPortal || user.userType === 'COIN_SELLER';
+  const isCoinsSeller = isSeller;
+  const hasSellerPortal = hasActiveSellerPortal;
+  const sellerStatus = user.coinSeller ? user.coinSeller.sellerStatus : null;
+  const sellerPortalId = user.coinSeller ? user.coinSeller.id : null;
+  const sellerBalanceNum = user.coinSeller?.resellerBalanceCoins != null
+    ? Number(user.coinSeller.resellerBalanceCoins)
+    : (user.wallet?.sellerBalanceCoins != null ? Number(user.wallet.sellerBalanceCoins) : 0);
+  const sellerBalanceStr = (user.coinSeller?.resellerBalanceCoins ?? user.wallet?.sellerBalanceCoins ?? 0n).toString();
+
+  // Multi-role resolution: ensure Host, Owner, Merchant, Agency Owner, BD, and Seller coexist
+  const userRoles = ['USER'];
+  if (isHost) userRoles.push('HOST');
+  if (isSeller) {
+    userRoles.push('SELLER');
+    userRoles.push('COIN_SELLER');
+  }
+  if (user.merchant && user.merchant.status === 'ACTIVE') userRoles.push('MERCHANT');
+  if (user.ownedAgencies && user.ownedAgencies.length > 0) userRoles.push('AGENCY_OWNER');
+  if (user.managedBDCenters && user.managedBDCenters.length > 0) userRoles.push('BD_AGENT');
+  if (user.userType && !userRoles.includes(user.userType)) userRoles.push(user.userType);
+  const roles = Array.from(new Set(userRoles));
+
+  const coinSellerData = user.coinSeller ? {
+    id: user.coinSeller.id,
+    userId: user.coinSeller.userId,
+    businessName: user.coinSeller.businessName,
+    resellerBalanceCoins: user.coinSeller.resellerBalanceCoins ? user.coinSeller.resellerBalanceCoins.toString() : '0',
+    profitMarginPercent: user.coinSeller.profitMarginPercent,
+    creditLimitUSD: user.coinSeller.creditLimitUSD ? user.coinSeller.creditLimitUSD.toString() : '0.00',
+    sellerStatus: user.coinSeller.sellerStatus,
+    isActive: user.coinSeller.sellerStatus === 'ACTIVE',
+    createdAt: user.coinSeller.createdAt,
+    updatedAt: user.coinSeller.updatedAt,
+  } : null;
+
   return {
     ...sanitizedUserSafe,
     coins: coinBalanceNum,
@@ -320,6 +358,15 @@ export async function getSelfProfile(userId, db = prisma) {
     })),
     isHost,
     hostApplicationStatus: hostAppStatus,
+    isSeller,
+    isCoinsSeller,
+    hasSellerPortal,
+    sellerStatus,
+    sellerPortalId,
+    sellerBalance: sellerBalanceNum,
+    sellerBalanceCoins: sellerBalanceStr,
+    coinSeller: coinSellerData,
+    roles,
     presenceStatus: presence.presenceStatus,
     currentRoomId: presence.currentRoomId,
     currentRoomTitle: presence.currentRoomTitle,
@@ -1148,6 +1195,17 @@ export async function searchUsers(query, options = {}) {
  * Module 11 & 26: Profile Menu Grid (Family removed, Wealth achievement removed)
  */
 export async function getProfileMenuGrid(userId, db = prisma) {
+  let isSeller = false;
+  if (userId) {
+    try {
+      const seller = await db.coinSeller.findUnique({
+        where: { userId },
+        select: { sellerStatus: true },
+      });
+      isSeller = seller?.sellerStatus === 'ACTIVE';
+    } catch (_) {}
+  }
+
   const items = [
     { key: 'LEVEL', label: 'Level', icon: '⭐', route: '/profile/level' },
     { key: 'GIFT', label: 'Gift', icon: '🎁', route: '/profile/gifts' },
@@ -1160,12 +1218,13 @@ export async function getProfileMenuGrid(userId, db = prisma) {
     { key: 'MYSTERY', label: 'Mystery', icon: '🔮', route: '/profile/mystery' },
     { key: 'AGENCY_CENTER', label: 'Agency Center', icon: '🏢', route: '/profile/agency-center' },
     { key: 'HOST_CENTER', label: 'Host Center', icon: '🎙️', route: '/profile/host-center' },
-    { key: 'RECHARGE_AGENCY', label: 'Recharge Agency', icon: '💰', route: '/profile/recharge-agency' },
+    { key: 'RECHARGE_AGENCY', label: 'Recharge Agency', icon: '💰', route: '/profile/recharge-agency', isAuthorized: isSeller, isVisible: isSeller },
     { key: 'MERCHANT', label: 'Merchant', icon: '🏪', route: '/profile/merchant' },
   ];
 
   return {
     items,
+    isSellerAuthorized: isSeller,
     familyRemoved: true,
   };
 }
@@ -2896,15 +2955,150 @@ export async function assignSpecialIdToUser(
  */
 export async function getNoblesCatalog() {
   const titles = [
-    { title: 'Viscount', rank: 'Viscount', level: 1, name: 'Viscount', badge: '🥈', badgeName: 'Viscount Silver Crest', frame: 'assets/frames/viscount_frame.png', durationDays: 30, monthlyPriceCoins: 15000, description: 'Viscount Aristocratic Status with room seat priority' },
-    { title: 'Earl', rank: 'Earl', level: 2, name: 'Earl', badge: '🥉', badgeName: 'Earl Bronze Crest', frame: 'assets/frames/earl_frame.png', durationDays: 30, monthlyPriceCoins: 35000, description: 'Earl Aristocratic Status with chat bubble & highlight' },
-    { title: 'Marquis', rank: 'Marquis', level: 3, name: 'Marquis', badge: '💎', badgeName: 'Marquis Diamond Crest', frame: 'assets/frames/marquis_frame.png', durationDays: 30, monthlyPriceCoins: 75000, description: 'Marquis Aristocratic Status with custom badge & gift perks' },
-    { title: 'Duke', rank: 'Duke', level: 4, name: 'Duke', badge: '🛡️', badgeName: 'Grand Duke Golden Shield', frame: 'assets/frames/duke_frame.png', durationDays: 30, monthlyPriceCoins: 150000, description: 'Grand Duke Status with entry announcement banner' },
-    { title: 'King', rank: 'King', level: 5, name: 'King', badge: '👑', badgeName: 'Imperial King Crown', frame: 'assets/frames/king_frame.png', durationDays: 30, monthlyPriceCoins: 300000, description: 'Royal King Rank with golden room banner & top seat' },
-    { title: 'Emperor', rank: 'Emperor', level: 6, name: 'Emperor', badge: '🌟', badgeName: 'Supreme Emperor Dragon Crest', frame: 'assets/frames/emperor_frame.png', durationDays: 30, monthlyPriceCoins: 600000, description: 'Supreme Emperor Status with platform-wide royal privileges' },
+    {
+      title: 'Baron',
+      rank: 'Baron',
+      level: 1,
+      tier: 1,
+      id: 'baron',
+      name: 'Baron',
+      badge: '🗡️',
+      badgeIcon: '🗡️',
+      badgeName: 'Baron Steel Crest',
+      badgeAsset: 'assets/nobles/baron_badge.webp',
+      cardAsset: 'assets/nobles/baron_badge.webp',
+      frame: 'assets/nobles/baron_frame.webp',
+      frameAsset: 'assets/nobles/baron_frame.webp',
+      color: '#CD7F32',
+      durationDays: 30,
+      monthlyPriceCoins: 50000,
+      description: 'Baron Aristocratic Status with room seat priority and noble badge',
+      privileges: ['Aristocracy Badge', 'Noble Frame', 'Room Presence'],
+    },
+    {
+      title: 'Viscount',
+      rank: 'Viscount',
+      level: 2,
+      tier: 2,
+      id: 'viscount',
+      name: 'Viscount',
+      badge: '🥈',
+      badgeIcon: '🥈',
+      badgeName: 'Viscount Silver Crest',
+      badgeAsset: 'assets/nobles/viscount_badge.webp',
+      cardAsset: 'assets/nobles/viscount_card.webp',
+      frame: 'assets/nobles/viscount_frame.webp',
+      frameAsset: 'assets/nobles/viscount_frame.webp',
+      color: '#AFC4D8',
+      durationDays: 30,
+      monthlyPriceCoins: 150000,
+      description: 'Viscount Aristocratic Status with room seat priority & dedicated profile card',
+      privileges: ['Seat Priority', 'Viscount Silver Crest', 'Viscount Profile Card', 'Noble Frame'],
+    },
+    {
+      title: 'Count',
+      rank: 'Count',
+      level: 3,
+      tier: 3,
+      id: 'count',
+      name: 'Count',
+      badge: '🥉',
+      badgeIcon: '🥉',
+      badgeName: 'Count Bronze Crest',
+      badgeAsset: 'assets/nobles/count_badge.webp',
+      cardAsset: 'assets/nobles/count_card.webp',
+      frame: 'assets/nobles/count_frame.webp',
+      frameAsset: 'assets/nobles/count_frame.webp',
+      color: '#E24A5A',
+      durationDays: 30,
+      monthlyPriceCoins: 350000,
+      description: 'Count Aristocratic Status with chat bubble & highlight',
+      privileges: ['Chat Bubble', 'Highlight Presence', 'Count Profile Card', 'Seat Priority'],
+    },
+    {
+      title: 'Marquis',
+      rank: 'Marquis',
+      level: 4,
+      tier: 4,
+      id: 'marquis',
+      name: 'Marquis',
+      badge: '💎',
+      badgeIcon: '💎',
+      badgeName: 'Marquis Diamond Crest',
+      badgeAsset: 'assets/nobles/marquis_badge.webp',
+      cardAsset: 'assets/nobles/tier-4-marquis_profilecard.webp',
+      frame: 'assets/nobles/marquis_frame.webp',
+      frameAsset: 'assets/nobles/marquis_frame.webp',
+      color: '#B15CFF',
+      durationDays: 30,
+      monthlyPriceCoins: 750000,
+      description: 'Marquis Aristocratic Status with custom badge & gift perks',
+      privileges: ['Entrance Effect', 'Marquis Profile Card', 'Custom Badge', 'Gift Perks'],
+    },
+    {
+      title: 'Duke',
+      rank: 'Duke',
+      level: 5,
+      tier: 5,
+      id: 'duke',
+      name: 'Duke',
+      badge: '🛡️',
+      badgeIcon: '🛡️',
+      badgeName: 'Grand Duke Golden Shield',
+      badgeAsset: 'assets/nobles/duke_badge.webp',
+      cardAsset: 'assets/nobles/tier-5-duke_profilecard.webp',
+      frame: 'assets/nobles/duke_frame.webp',
+      frameAsset: 'assets/nobles/duke_frame.webp',
+      color: '#3F7CFF',
+      durationDays: 30,
+      monthlyPriceCoins: 1500000,
+      description: 'Grand Duke Status with entry announcement banner',
+      privileges: ['Entry Announcement', 'Duke Profile Card', 'Mic Wave Aura', 'Grand Banner'],
+    },
+    {
+      title: 'King',
+      rank: 'King',
+      level: 6,
+      tier: 6,
+      id: 'king',
+      name: 'King',
+      badge: '👑',
+      badgeIcon: '👑',
+      badgeName: 'Imperial King Crown',
+      badgeAsset: 'assets/nobles/king_badge.webp',
+      cardAsset: 'assets/nobles/king_card.webp',
+      frame: 'assets/nobles/king_frame.webp',
+      frameAsset: 'assets/nobles/king_frame.webp',
+      color: '#F6C945',
+      durationDays: 30,
+      monthlyPriceCoins: 3000000,
+      description: 'Royal King Rank with golden room banner & top seat',
+      privileges: ['Golden Room Banner', 'King Profile Card', 'Top Seat', 'Global World Notification'],
+    },
+    {
+      title: 'Emperor',
+      rank: 'Emperor',
+      level: 7,
+      tier: 7,
+      id: 'emperor',
+      name: 'Emperor',
+      badge: '🌟',
+      badgeIcon: '🌟',
+      badgeName: 'Supreme Emperor Dragon Crest',
+      badgeAsset: 'assets/nobles/emperor_badge.webp',
+      cardAsset: 'assets/nobles/tier-7-emperor_profilecard.webp',
+      frame: 'assets/nobles/emperor_frame.webp',
+      frameAsset: 'assets/nobles/emperor_frame.webp',
+      color: '#FF5A4F',
+      durationDays: 30,
+      monthlyPriceCoins: 6000000,
+      description: 'Supreme Emperor Status with platform-wide royal privileges',
+      privileges: ['Supreme Status', 'Emperor Profile Card', 'Platform-wide Royal Privileges', 'Custom Mic Wave'],
+    },
   ];
 
   titles.success = true;
+  titles.data = titles;
   titles.nobles = titles;
   return titles;
 }

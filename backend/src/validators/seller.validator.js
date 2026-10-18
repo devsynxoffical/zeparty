@@ -42,7 +42,8 @@ export const updateSellerSchema = z.object({
   profitMarginPercent: z.coerce.number().min(0).max(100).optional(),
   creditLimitUSD: z.coerce.number().min(0).optional(),
   sellerStatus: z.enum(['ACTIVE', 'SUSPENDED']).optional(),
-  countryCode: z.string().trim().min(2).max(10).optional().or(z.literal('')),
+  countryCode: z.string().trim().min(2).max(50).optional().or(z.literal('')),
+  country: z.string().trim().min(2).max(50).optional().or(z.literal('')),
 });
 
 export const allocateSellerCoinsSchema = z.object({
@@ -80,4 +81,39 @@ export const querySellersSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().optional().default(''),
   sellerStatus: z.enum(['ACTIVE', 'SUSPENDED']).optional(),
+  country: z.string().optional(),
+  countryCode: z.string().optional(),
 });
+
+export const sellerTransferCoinsSchema = z.object({
+  recipientUserId: z.string().min(1, 'Recipient user identifier is required'),
+  amountCoins: z.union([z.string(), z.number(), z.bigint()]).refine(
+    (val) => {
+      try {
+        const bi = BigInt(val);
+        return bi > 0n;
+      } catch {
+        return false;
+      }
+    },
+    { message: 'amountCoins must be a positive integer value' }
+  ),
+  pin: z.string().optional(),
+  notes: z.string().max(500).optional(),
+});
+
+export const verifyRecipientQuerySchema = z.object({
+  userId: z.string().min(1, 'Recipient user identifier is required'),
+});
+
+export default {
+  createSellerSchema,
+  updateSellerStatusSchema,
+  updateSellerSchema,
+  allocateSellerCoinsSchema,
+  correctSellerBalanceSchema,
+  querySellersSchema,
+  sellerTransferCoinsSchema,
+  verifyRecipientQuerySchema,
+};
+

@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import { normalizeCountry } from '../utils/country.util.js';
 
 export async function findSellerById(id, db = prisma) {
   if (!id) return null;
@@ -12,7 +13,9 @@ export async function findSellerById(id, db = prisma) {
           email: true,
           phone: true,
           countryCode: true,
+          region: true,
           status: true,
+          avatarUrl: true,
           profile: true,
           wallet: true,
         },
@@ -33,7 +36,9 @@ export async function findSellerByUserId(userId, db = prisma) {
           email: true,
           phone: true,
           countryCode: true,
+          region: true,
           status: true,
+          avatarUrl: true,
           profile: true,
           wallet: true,
         },
@@ -43,21 +48,73 @@ export async function findSellerByUserId(userId, db = prisma) {
 }
 
 export async function findSellers(
-  { page = 1, limit = 20, search = '', sellerStatus },
+  { page = 1, limit = 20, search = '', sellerStatus, country, countryCode, countryRequired = false },
   db = prisma
 ) {
-  const where = {};
-  if (sellerStatus) where.sellerStatus = sellerStatus;
+  const andConditions = [];
 
-  if (search) {
-    where.OR = [
-      { businessName: { contains: search, mode: 'insensitive' } },
-      { user: { username: { contains: search, mode: 'insensitive' } } },
-      { user: { email: { contains: search, mode: 'insensitive' } } },
-    ];
+  if (sellerStatus) {
+    andConditions.push({ sellerStatus });
   }
 
+  // Country filtering logic
+  const rawCountry = countryCode || country;
+  if (rawCountry && rawCountry !== 'All' && rawCountry !== 'GLOBAL') {
+    const norm = normalizeCountry(rawCountry);
+    if (norm) {
+      andConditions.push({
+        user: {
+          status: 'ACTIVE',
+          OR: [
+            { countryCode: norm.code },
+            { region: { equals: norm.name, mode: 'insensitive' } },
+            { region: { equals: norm.code, mode: 'insensitive' } },
+          ],
+        },
+      });
+    } else if (countryRequired) {
+      // If a country filter was required but unresolvable, return empty results immediately
+      return {
+        sellers: [],
+        pagination: {
+          page,
+          limit,
+          totalCount: 0,
+          totalPages: 1,
+        },
+      };
+    }
+  } else if (countryRequired) {
+    // Country was required but none provided
+    return {
+      sellers: [],
+      pagination: {
+        page,
+        limit,
+        totalCount: 0,
+        totalPages: 1,
+      },
+    };
+  }
+
+  // Search logic across name, username, display name, and numeric/string IDs
+  if (search && search.trim()) {
+    const cleanSearch = search.trim();
+    andConditions.push({
+      OR: [
+        { businessName: { contains: cleanSearch, mode: 'insensitive' } },
+        { user: { username: { contains: cleanSearch, mode: 'insensitive' } } },
+        { user: { email: { contains: cleanSearch, mode: 'insensitive' } } },
+        { user: { profile: { displayName: { contains: cleanSearch, mode: 'insensitive' } } } },
+        { userId: { contains: cleanSearch, mode: 'insensitive' } },
+        { id: { contains: cleanSearch, mode: 'insensitive' } },
+      ],
+    });
+  }
+
+  const where = andConditions.length > 0 ? { AND: andConditions } : {};
   const skip = (page - 1) * limit;
+
   const [sellers, totalCount] = await Promise.all([
     db.coinSeller.findMany({
       where,
@@ -72,7 +129,9 @@ export async function findSellers(
             email: true,
             phone: true,
             countryCode: true,
+            region: true,
             status: true,
+            avatarUrl: true,
             profile: true,
             wallet: {
               select: {

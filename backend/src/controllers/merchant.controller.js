@@ -1,3 +1,4 @@
+import prisma from '../config/database.js';
 import merchantRepository from '../repositories/merchant.repository.js';
 import merchantService, { sanitizeMerchant } from '../services/merchant.service.js';
 import {
@@ -138,15 +139,48 @@ export async function deleteMerchant(req, res, next) {
 
 export async function verifyMerchantRecharge(req, res, next) {
   try {
-    const { type, id } = req.query;
+    const { type = 'USER', id, userId } = req.query;
+    const targetId = (id || userId || '').trim();
+    if (!targetId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Recipient ID or identifier is required',
+        error: { code: 'INVALID_RECIPIENT_ID' },
+      });
+    }
+
+    const clean = targetId.replace('@', '');
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: clean },
+          { username: { equals: clean, mode: 'insensitive' } },
+          { phone: clean },
+        ],
+      },
+      include: { profile: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: `Recipient user not found for identifier '${clean}'`,
+        error: { code: 'RECIPIENT_NOT_FOUND' },
+      });
+    }
+
     return res.status(200).json({
       success: true,
       data: {
         recipientType: type || 'USER',
-        recipientId: id || '3001001',
-        name: 'Sophia Rose',
-        status: 'ACTIVE',
-        isVerified: true,
+        recipientId: user.id,
+        username: user.username,
+        name: user.profile?.displayName || user.username,
+        displayName: user.profile?.displayName || user.username,
+        avatarUrl: user.avatarUrl,
+        countryCode: user.countryCode,
+        status: user.status,
+        isVerified: user.status === 'ACTIVE',
       },
     });
   } catch (err) {

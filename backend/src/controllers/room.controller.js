@@ -1,5 +1,6 @@
 import roomService from '../services/room.service.js';
 import agoraService from '../services/agora.service.js';
+import * as attendanceService from '../services/attendance.service.js';
 import {
   createRoomSchema,
   queryActiveRoomsSchema,
@@ -888,6 +889,43 @@ export async function adminInviteViewerToMic(req, res, next) {
   }
 }
 
+export async function recordRoomHeartbeat(req, res, next) {
+  try {
+    const hostUserId = req.auth.userId;
+    const { id } = req.params;
+    const result = await attendanceService.recordBroadcastHeartbeat({ roomId: id, hostUserId });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function clearRoomFeed(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const userId = req.auth.userId;
+    const { reason } = req.body || {};
+    const result = await roomService.clearRoomFeed(id, userId, { reason });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminClearRoomFeed(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const adminId = req.auth.userId;
+    const { reason } = req.body || {};
+    const result = await roomService.adminClearRoomFeed(id, adminId, { reason });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -898,6 +936,7 @@ export default {
   leaveSeat,
   leaveMic,
   closeMyRoom,
+  recordRoomHeartbeat,
   getAdminRooms,
   getAdminRoomById,
   getAdminPinnedPositions,
@@ -939,4 +978,7 @@ export default {
   cancelMicInvite,
   getRoomViewers,
   adminInviteViewerToMic,
+  clearRoomFeed,
+  postAdminClearRoomFeed,
 };
+
