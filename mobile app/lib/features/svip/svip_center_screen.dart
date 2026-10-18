@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/utils/formatters.dart';
-import '../../core/utils/noble_badge_helper.dart';
 import '../../models/svip_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/svip_provider.dart';
@@ -29,7 +28,7 @@ class SVIPCenterScreen extends StatefulWidget {
 class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
   late PageController _pageController;
   final ScrollController _tabController = ScrollController();
-  final Set<int> _expandedLevels = {};
+  final Set<int> _collapsedLevels = {};
 
   static const double _tabWidth = 72;
 
@@ -725,7 +724,7 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
           _pill('⭐', 'Mission', () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RewardsScreen()))),
           _pill('🎁', 'Benefit', () {
             final lvl = context.read<SVIPProvider>().selectedViewLevel;
-            setState(() => _expandedLevels.add(lvl));
+            setState(() => _collapsedLevels.remove(lvl));
           }),
         ],
       ),
@@ -763,6 +762,60 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
 
   // ─── Ornamental "Privileges X / 37" ribbon ───
   Widget _buildPrivilegeRibbon(SVIPProvider svip, SVIPLevel lvl) {
+    int count;
+    switch (lvl.level) {
+      case 1:
+        count = 5;
+        break;
+      case 2:
+        count = 7;
+        break;
+      case 3:
+        count = 8;
+        break;
+      case 4:
+        count = 9;
+        break;
+      case 5:
+        count = 10;
+        break;
+      case 6:
+        count = 14;
+        break;
+      case 7:
+        count = 15;
+        break;
+      case 8:
+        count = 16;
+        break;
+      case 9:
+        count = 18;
+        break;
+      case 10:
+        count = 21;
+        break;
+      case 11:
+        count = 26;
+        break;
+      case 12:
+        count = 26;
+        break;
+      case 13:
+        count = 30;
+        break;
+      case 14:
+        count = 33;
+        break;
+      case 15:
+        count = 36;
+        break;
+      case 16:
+        count = 37;
+        break;
+      default:
+        count = lvl.privilegeIds.length;
+    }
+
     return SizedBox(
       height: 40,
       child: Stack(
@@ -794,7 +847,7 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Privileges ${lvl.privilegeIds.length} / ${svip.totalPrivilegesCount}',
+                  'Privileges $count / ${svip.totalPrivilegesCount}',
                   style: const TextStyle(color: _kGoldLight, fontSize: 13.5, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(width: 5),
@@ -827,13 +880,12 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
 
   // ─── Dedicated Privilege Asset Resolvers for SVIP 1..16 (Strict Category Isolation) ───
   String _getVipTagAsset(int level) {
-    if (level == 2) return ''; // SVIP 2 does not have an official VIP tag in source deliverables
     final clamped = level.clamp(1, 16);
     return 'assets/svip/svip${clamped}_tag.png';
   }
 
   String _getHomepageSkinAsset(int level) {
-    if (level == 1 || level == 2) return ''; // SVIP 1 & 2 do not have an official homepage skin in source deliverables
+    if (level == 1) return ''; // SVIP 1 does not have an official homepage skin
     final clamped = level.clamp(1, 16);
     return 'assets/svip/svip${clamped}_card.webp';
   }
@@ -848,32 +900,2540 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
     return 'assets/svip/svip${clamped}_frame.webp';
   }
 
+  String _getProfileCardAsset(int level) {
+    final clamped = level.clamp(1, 16);
+    return 'assets/svip/svip${clamped}_profilecard.webp';
+  }
+
+  String _getProfileCardFallback(int level) {
+    final clamped = level.clamp(1, 16);
+    return 'assets/svip/svip-${clamped}_profilecard.webp';
+  }
+
+  String _getVipVehicleAsset(int level) {
+    final clamped = level.clamp(1, 16);
+    return 'assets/svip/svip${clamped}_vehicle.png';
+  }
+
+  String _getVipVehicleFallback(int level) {
+    return 'assets/svip/svip6_vehicle.png';
+  }
+
   String _getEntranceEffectAsset(int level) {
     final clamped = level.clamp(1, 16);
-    if (clamped == 13) return 'assets/svip/ZP-124_svip-14_entry.webp';
     return 'assets/svip/svip${clamped}_entry.webp';
   }
 
   String _getSvipBadgeAsset(int level) {
     final clamped = level.clamp(1, 16);
-    return NobleBadgeHelper.getBadgeAsset('SVIP $clamped') ?? 'assets/svip/svip${clamped}_badge.webp';
+    final pad2 = clamped.toString().padLeft(2, '0');
+    return 'assets/svip/SVIP${pad2}_badge_live.webp';
   }
 
-  // ─── Privilege cards (3 per row, expandable, strictly category-correct) ───
-  Widget _buildPrivilegeGrid(SVIPLevel lvl) {
-    final l = lvl.level;
+  // ─── Privilege Icon Builders for SVIP 1, SVIP 2 & SVIP 3 ───
+  Widget _buildVisitingTracesIcon() {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          const Icon(
+            Icons.article_rounded,
+            size: 34,
+            color: _kGold,
+          ),
+          Positioned(
+            right: 2,
+            bottom: 2,
+            child: Container(
+              padding: const EdgeInsets.all(1.5),
+              decoration: const BoxDecoration(
+                color: Color(0xFF221811),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.language_rounded,
+                size: 13,
+                color: _kGold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-    final items = <_PrivItem>[
+  Widget _buildExclusiveGiftsIcon() {
+    return const Icon(
+      Icons.card_giftcard_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildDoubleTaskRewardIcon() {
+    return const Icon(
+      Icons.event_available_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildVipSeatIcon() {
+    return const Icon(
+      Icons.chair_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildExclusiveEmojiIcon() {
+    return const Icon(
+      Icons.sentiment_satisfied_alt_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildFlyCommentsIcon() {
+    return const Icon(
+      Icons.subtitles_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildEntranceEffectIcon() {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: const [
+          Icon(
+            Icons.sensor_door_rounded,
+            size: 34,
+            color: _kGold,
+          ),
+          Positioned(
+            right: 0,
+            bottom: 4,
+            child: Icon(
+              Icons.auto_awesome_rounded,
+              size: 16,
+              color: _kGoldLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUpgradedBroadcastIcon() {
+    return const Icon(
+      Icons.campaign_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildMicSoundWaveIcon() {
+    return const Icon(
+      Icons.graphic_eq_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildRoomThemeIcon() {
+    return const Icon(
+      Icons.dashboard_customize_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildExclusiveCustomerIcon() {
+    return const Icon(
+      Icons.support_agent_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildMysteriousVisitorIcon() {
+    return const Icon(
+      Icons.masks_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildOnlineHideIcon() {
+    return const Icon(
+      Icons.visibility_off_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildLuckyBagLimitIcon() {
+    return const Icon(
+      Icons.savings_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildHideGiftRecordIcon() {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: const [
+          Icon(
+            Icons.card_giftcard_rounded,
+            size: 34,
+            color: _kGold,
+          ),
+          Positioned(
+            right: 0,
+            bottom: 2,
+            child: Icon(
+              Icons.lock_rounded,
+              size: 15,
+              color: _kGoldLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSpecialIdIcon() {
+    return Container(
+      width: 42,
+      height: 32,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _kGold, width: 1.8),
+      ),
+      alignment: Alignment.center,
+      child: const Text(
+        'ID',
+        style: TextStyle(
+          color: _kGold,
+          fontWeight: FontWeight.w900,
+          fontSize: 16,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpecialRoomIdIcon() {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          const Icon(
+            Icons.cottage_rounded,
+            size: 36,
+            color: _kGold,
+          ),
+          Positioned(
+            bottom: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 0.5),
+              decoration: BoxDecoration(
+                color: const Color(0xFF221811),
+                borderRadius: BorderRadius.circular(3),
+                border: Border.all(color: _kGold, width: 0.8),
+              ),
+              child: const Text(
+                'ID',
+                style: TextStyle(
+                  color: _kGold,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 9,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDynamicAvatarIcon() {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: const [
+          Icon(
+            Icons.account_circle_rounded,
+            size: 36,
+            color: _kGold,
+          ),
+          Positioned(
+            right: 2,
+            bottom: 2,
+            child: Icon(
+              Icons.motion_photos_on_rounded,
+              size: 16,
+              color: _kGoldLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRankInvisibleIcon() {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: const [
+          Icon(
+            Icons.emoji_events_rounded,
+            size: 34,
+            color: _kGold,
+          ),
+          Positioned(
+            right: 0,
+            bottom: 2,
+            child: Icon(
+              Icons.visibility_off_rounded,
+              size: 16,
+              color: _kGoldLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMoreAdministratorsIcon() {
+    return const Icon(
+      Icons.person_add_alt_1_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildPreventBeingMutedIcon() {
+    return const Icon(
+      Icons.mic_off_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildRoomInvisibleIcon() {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: const [
+          Icon(
+            Icons.cottage_rounded,
+            size: 34,
+            color: _kGold,
+          ),
+          Positioned(
+            right: 0,
+            bottom: 2,
+            child: Icon(
+              Icons.visibility_off_rounded,
+              size: 16,
+              color: _kGoldLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvoidBeingKickedIcon() {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: const [
+          Icon(
+            Icons.door_back_door_rounded,
+            size: 34,
+            color: _kGold,
+          ),
+          Positioned(
+            right: 0,
+            bottom: 2,
+            child: Icon(
+              Icons.block_rounded,
+              size: 16,
+              color: _kGoldLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVipIdentityHiddenIcon() {
+    return const Icon(
+      Icons.fingerprint_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildUnbanAccountIcon() {
+    return const Icon(
+      Icons.verified_user_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildOpenScreenIcon() {
+    return const Icon(
+      Icons.screenshot_monitor_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildCustomizedBroadcastsIcon() {
+    return const Icon(
+      Icons.volume_up_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildOfficialPartyIcon() {
+    return const Icon(
+      Icons.celebration_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildCustomizedFrameIcon() {
+    return SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: const [
+          Icon(
+            Icons.crop_square_rounded,
+            size: 34,
+            color: _kGold,
+          ),
+          Positioned(
+            right: 0,
+            bottom: 2,
+            child: Icon(
+              Icons.auto_awesome_rounded,
+              size: 16,
+              color: _kGoldLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomizedBannerIcon() {
+    return const Icon(
+      Icons.flag_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  Widget _buildComingSoonIcon() {
+    return const Icon(
+      Icons.stars_rounded,
+      size: 36,
+      color: _kGold,
+    );
+  }
+
+  void _showPrivilegeDetailSheet(_PrivItem item) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF17110C),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(22, 16, 22, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 38,
+              height: 4,
+              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 18),
+            if (item.asset.isNotEmpty || item.customPreview != null) ...[
+              SizedBox(
+                height: 72,
+                width: 72,
+                child: Center(
+                  child: item.customPreview ??
+                      Image.asset(
+                        item.asset,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => _fallbackIconForTitle(item.title),
+                      ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            Text(item.title, style: const TextStyle(color: _kGoldLight, fontSize: 16, fontWeight: FontWeight.w800)),
+            if (item.description != null && item.description!.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                item.description!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+              ),
+            ],
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Strictly Curated Privilege Item Sets for SVIP 1..16 ───
+  List<_PrivItem> _getPrivilegeItemsForLevel(int l) {
+    if (l == 1) {
+      // SVIP1: Exactly 5 privileges
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(1),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP1 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+      ];
+    }
+
+    if (l == 2) {
+      // SVIP2: Exactly 7 privileges
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(2),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP2 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(2),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+      ];
+    }
+
+    if (l == 3) {
+      // SVIP3: Exactly 8 privileges
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(3),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP3 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(3),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+      ];
+    }
+
+    if (l == 4) {
+      // SVIP4: Exactly 9 ticked privileges
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(4),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP4 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(4),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          '',
+          customPreview: _buildEntranceEffectIcon(),
+          description: 'World notification and grand entrance splash',
+        ),
+      ];
+    }
+
+    if (l == 5) {
+      // SVIP5: Exactly 10 ticked privileges
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(5),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP5 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(5),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          '',
+          customPreview: _buildEntranceEffectIcon(),
+          description: 'World notification and grand entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+      ];
+    }
+
+    if (l == 6) {
+      // SVIP6: Exactly 14 ticked privileges in marked reference order
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(6),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP6 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(6),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Chat Bubble',
+          _getChatBubbleAsset(6),
+          fallback: _getChatBubbleAsset(6),
+          description: 'Gold glowing chat bubble in all streams',
+        ),
+        _PrivItem(
+          'Profile Card',
+          _getProfileCardAsset(6),
+          fallback: _getProfileCardAsset(6),
+          isSkin: true,
+          description: 'Special animated 3D profile pop-up card',
+        ),
+        _PrivItem(
+          'VIP Vehicle',
+          _getVipVehicleAsset(6),
+          fallback: _getVipVehicleAsset(6),
+          description: 'Luxury hypercar entrance ride-in animation',
+        ),
+        _PrivItem(
+          'Avatar Frame',
+          _getAvatarFrameAsset(6),
+          fallback: _getAvatarFrameAsset(6),
+          description: 'Animated golden luxury avatar ring frame',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          _getEntranceEffectAsset(6),
+          fallback: _getEntranceEffectAsset(6),
+          description: 'World notification and grand entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+      ];
+    }
+
+    if (l == 7) {
+      // SVIP7: Exactly 15 ticked privileges in marked reference order
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(7),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP7 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(7),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Chat Bubble',
+          _getChatBubbleAsset(7),
+          fallback: _getChatBubbleAsset(7),
+          description: 'Gold glowing chat bubble in all streams',
+        ),
+        _PrivItem(
+          'Profile Card',
+          _getProfileCardAsset(7),
+          fallback: _getProfileCardAsset(7),
+          isSkin: true,
+          description: 'Special animated 3D profile pop-up card',
+        ),
+        _PrivItem(
+          'VIP Vehicle',
+          _getVipVehicleAsset(7),
+          fallback: _getVipVehicleAsset(7),
+          description: 'Luxury hypercar entrance ride-in animation',
+        ),
+        _PrivItem(
+          'Avatar Frame',
+          _getAvatarFrameAsset(7),
+          fallback: _getAvatarFrameAsset(7),
+          description: 'Animated golden luxury avatar ring frame',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          _getEntranceEffectAsset(7),
+          fallback: _getEntranceEffectAsset(7),
+          description: 'World notification and grand entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+        _PrivItem(
+          'Mic Sound Wave',
+          '',
+          customPreview: _buildMicSoundWaveIcon(),
+          description: 'Dynamic glowing audio wave ring when speaking',
+        ),
+      ];
+    }
+
+    if (l == 8) {
+      // SVIP8: Exactly 16 ticked privileges in marked reference order
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(8),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP8 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(8),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Chat Bubble',
+          _getChatBubbleAsset(8),
+          fallback: _getChatBubbleAsset(8),
+          description: 'Gold glowing chat bubble in all streams',
+        ),
+        _PrivItem(
+          'Profile Card',
+          _getProfileCardAsset(8),
+          fallback: _getProfileCardAsset(8),
+          isSkin: true,
+          description: 'Special animated 3D profile pop-up card',
+        ),
+        _PrivItem(
+          'VIP Vehicle',
+          _getVipVehicleAsset(8),
+          fallback: _getVipVehicleAsset(8),
+          description: 'Luxury hypercar entrance ride-in animation',
+        ),
+        _PrivItem(
+          'Avatar Frame',
+          _getAvatarFrameAsset(8),
+          fallback: _getAvatarFrameAsset(8),
+          description: 'Animated golden luxury avatar ring frame',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          _getEntranceEffectAsset(8),
+          fallback: _getEntranceEffectAsset(8),
+          description: 'World notification and grand entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+        _PrivItem(
+          'Mic Sound Wave',
+          '',
+          customPreview: _buildMicSoundWaveIcon(),
+          description: 'Dynamic glowing audio wave ring when speaking',
+        ),
+        _PrivItem(
+          'Room Theme',
+          '',
+          customPreview: _buildRoomThemeIcon(),
+          description: 'Customizable party room luxury wallpapers',
+        ),
+      ];
+    }
+
+    if (l == 9) {
+      // SVIP9: Exactly 18 ticked privileges in marked reference order
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(9),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP9 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(9),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Chat Bubble',
+          _getChatBubbleAsset(9),
+          fallback: _getChatBubbleAsset(9),
+          description: 'Gold glowing chat bubble in all streams',
+        ),
+        _PrivItem(
+          'Profile Card',
+          _getProfileCardAsset(9),
+          fallback: _getProfileCardAsset(9),
+          isSkin: true,
+          description: 'Special animated 3D profile pop-up card',
+        ),
+        _PrivItem(
+          'VIP Vehicle',
+          _getVipVehicleAsset(9),
+          fallback: _getVipVehicleAsset(9),
+          description: 'Luxury hypercar entrance ride-in animation',
+        ),
+        _PrivItem(
+          'Avatar Frame',
+          _getAvatarFrameAsset(9),
+          fallback: _getAvatarFrameAsset(9),
+          description: 'Animated golden luxury avatar ring frame',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          _getEntranceEffectAsset(9),
+          fallback: _getEntranceEffectAsset(9),
+          description: 'World notification and grand entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+        _PrivItem(
+          'Mic Sound Wave',
+          '',
+          customPreview: _buildMicSoundWaveIcon(),
+          description: 'Dynamic glowing audio wave ring when speaking',
+        ),
+        _PrivItem(
+          'Room Theme',
+          '',
+          customPreview: _buildRoomThemeIcon(),
+          description: 'Customizable party room luxury wallpapers',
+        ),
+        _PrivItem(
+          'Exclusive Customer',
+          '',
+          customPreview: _buildExclusiveCustomerIcon(),
+          description: '24/7 dedicated 1-on-1 VIP VIP support manager',
+        ),
+        _PrivItem(
+          'Mysterious Visitor',
+          '',
+          customPreview: _buildMysteriousVisitorIcon(),
+          description: 'Option to visit rooms without entrance announcement',
+        ),
+      ];
+    }
+
+    if (l == 10) {
+      // SVIP10: Exactly 21 ticked privileges in confirmed reference order
+      // Mic Sound Wave and Special Room ID are unticked and must be hidden!
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(10),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP10 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(10),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Chat Bubble',
+          _getChatBubbleAsset(10),
+          fallback: _getChatBubbleAsset(10),
+          description: 'Gold glowing chat bubble in all streams',
+        ),
+        _PrivItem(
+          'Profile Card',
+          _getProfileCardAsset(10),
+          fallback: _getProfileCardFallback(10),
+          isSkin: true,
+          description: 'Special animated 3D profile pop-up card',
+        ),
+        _PrivItem(
+          'VIP Vehicle',
+          _getVipVehicleAsset(10),
+          fallback: _getVipVehicleFallback(10),
+          description: 'Luxury hypercar entrance ride-in animation',
+        ),
+        _PrivItem(
+          'Avatar Frame',
+          _getAvatarFrameAsset(10),
+          fallback: _getAvatarFrameAsset(10),
+          description: 'Animated golden luxury avatar ring frame',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          _getEntranceEffectAsset(10),
+          fallback: _getEntranceEffectAsset(10),
+          description: 'World notification and grand entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+        _PrivItem(
+          'Room Theme',
+          '',
+          customPreview: _buildRoomThemeIcon(),
+          description: 'Customizable party room luxury wallpapers',
+        ),
+        _PrivItem(
+          'Exclusive Customer',
+          '',
+          customPreview: _buildExclusiveCustomerIcon(),
+          description: '24/7 dedicated 1-on-1 VIP VIP support manager',
+        ),
+        _PrivItem(
+          'Mysterious Visitor',
+          '',
+          customPreview: _buildMysteriousVisitorIcon(),
+          description: 'Option to visit rooms without entrance announcement',
+        ),
+        _PrivItem(
+          'Online Hide',
+          '',
+          customPreview: _buildOnlineHideIcon(),
+          description: 'Hide online status and room presence',
+        ),
+        _PrivItem(
+          'Lucky Bag Limit Increase',
+          '',
+          customPreview: _buildLuckyBagLimitIcon(),
+          description: 'Increased daily lucky bag claim and drop limits',
+        ),
+        _PrivItem(
+          'Hide Gift Record',
+          '',
+          customPreview: _buildHideGiftRecordIcon(),
+          description: 'Option to hide gift sending history and stats',
+        ),
+        _PrivItem(
+          'Special ID',
+          '',
+          customPreview: _buildSpecialIdIcon(),
+          description: 'Exclusive custom short/special user ID',
+        ),
+      ];
+    }
+
+    if (l == 11) {
+      // SVIP11: Exactly 26 ticked privileges in reference order
+      // Mic Sound Wave and Special Room ID are ticked and visible here!
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(11),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP11 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(11),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Chat Bubble',
+          _getChatBubbleAsset(11),
+          fallback: _getChatBubbleAsset(11),
+          description: 'Gold glowing chat bubble in all streams',
+        ),
+        _PrivItem(
+          'Profile Card',
+          _getProfileCardAsset(11),
+          fallback: _getProfileCardFallback(11),
+          isSkin: true,
+          description: 'Special animated 3D profile pop-up card',
+        ),
+        _PrivItem(
+          'VIP Vehicle',
+          _getVipVehicleAsset(11),
+          fallback: _getVipVehicleFallback(11),
+          description: 'Luxury hypercar entrance ride-in animation',
+        ),
+        _PrivItem(
+          'Avatar Frame',
+          _getAvatarFrameAsset(11),
+          fallback: _getAvatarFrameAsset(11),
+          description: 'Animated golden luxury avatar ring frame',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          _getEntranceEffectAsset(11),
+          fallback: _getEntranceEffectAsset(11),
+          description: 'World notification and grand entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+        _PrivItem(
+          'Mic Sound Wave',
+          '',
+          customPreview: _buildMicSoundWaveIcon(),
+          description: 'Dynamic glowing audio wave ring when speaking',
+        ),
+        _PrivItem(
+          'Room Theme',
+          '',
+          customPreview: _buildRoomThemeIcon(),
+          description: 'Customizable party room luxury wallpapers',
+        ),
+        _PrivItem(
+          'Exclusive Customer',
+          '',
+          customPreview: _buildExclusiveCustomerIcon(),
+          description: '24/7 dedicated 1-on-1 VIP VIP support manager',
+        ),
+        _PrivItem(
+          'Mysterious Visitor',
+          '',
+          customPreview: _buildMysteriousVisitorIcon(),
+          description: 'Option to visit rooms without entrance announcement',
+        ),
+        _PrivItem(
+          'Online Hide',
+          '',
+          customPreview: _buildOnlineHideIcon(),
+          description: 'Hide online status and room presence',
+        ),
+        _PrivItem(
+          'Lucky Bag Limit Increase',
+          '',
+          customPreview: _buildLuckyBagLimitIcon(),
+          description: 'Increased daily lucky bag claim and drop limits',
+        ),
+        _PrivItem(
+          'Hide Gift Record',
+          '',
+          customPreview: _buildHideGiftRecordIcon(),
+          description: 'Option to hide gift sending history and stats',
+        ),
+        _PrivItem(
+          'Special ID',
+          '',
+          customPreview: _buildSpecialIdIcon(),
+          description: 'Exclusive custom short/special user ID',
+        ),
+        _PrivItem(
+          'Special Room ID',
+          '',
+          customPreview: _buildSpecialRoomIdIcon(),
+          description: 'Exclusive custom short/special room ID',
+        ),
+        _PrivItem(
+          'Dynamic Avatar',
+          '',
+          customPreview: _buildDynamicAvatarIcon(),
+          description: 'Animated moving avatar profile display',
+        ),
+        _PrivItem(
+          'Rank Invisible',
+          '',
+          customPreview: _buildRankInvisibleIcon(),
+          description: 'Conceal ranking placement in leaderboards',
+        ),
+        _PrivItem(
+          'More Administrators',
+          '',
+          customPreview: _buildMoreAdministratorsIcon(),
+          description: 'Add extra room administrators to your rooms',
+        ),
+      ];
+    }
+
+    if (l == 12) {
+      // SVIP12: Exactly 26 ticked privileges in reference order
+      // Prevent Being Muted, Room Invisible, Customized Broadcasts are unticked and hidden!
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(12),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP12 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(12),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Chat Bubble',
+          _getChatBubbleAsset(12),
+          fallback: _getChatBubbleAsset(12),
+          description: 'Gold glowing chat bubble in all streams',
+        ),
+        _PrivItem(
+          'Profile Card',
+          _getProfileCardAsset(12),
+          fallback: _getProfileCardAsset(12),
+          isSkin: true,
+          description: 'Special animated 3D profile pop-up card',
+        ),
+        _PrivItem(
+          'VIP Vehicle',
+          _getVipVehicleAsset(12),
+          fallback: _getVipVehicleAsset(12),
+          description: 'Luxury hypercar entrance ride-in animation',
+        ),
+        _PrivItem(
+          'Avatar Frame',
+          _getAvatarFrameAsset(12),
+          fallback: _getAvatarFrameAsset(12),
+          description: 'Animated golden luxury avatar ring frame',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          _getEntranceEffectAsset(12),
+          fallback: _getEntranceEffectAsset(12),
+          description: 'World notification and grand entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+        _PrivItem(
+          'Mic Sound Wave',
+          '',
+          customPreview: _buildMicSoundWaveIcon(),
+          description: 'Dynamic glowing audio wave ring when speaking',
+        ),
+        _PrivItem(
+          'Room Theme',
+          '',
+          customPreview: _buildRoomThemeIcon(),
+          description: 'Customizable party room luxury wallpapers',
+        ),
+        _PrivItem(
+          'Exclusive Customer',
+          '',
+          customPreview: _buildExclusiveCustomerIcon(),
+          description: '24/7 dedicated 1-on-1 VIP VIP support manager',
+        ),
+        _PrivItem(
+          'Mysterious Visitor',
+          '',
+          customPreview: _buildMysteriousVisitorIcon(),
+          description: 'Option to visit rooms without entrance announcement',
+        ),
+        _PrivItem(
+          'Online Hide',
+          '',
+          customPreview: _buildOnlineHideIcon(),
+          description: 'Hide online status and room presence',
+        ),
+        _PrivItem(
+          'Lucky Bag Limit Increase',
+          '',
+          customPreview: _buildLuckyBagLimitIcon(),
+          description: 'Increased daily lucky bag claim and drop limits',
+        ),
+        _PrivItem(
+          'Hide Gift Record',
+          '',
+          customPreview: _buildHideGiftRecordIcon(),
+          description: 'Option to hide gift sending history and stats',
+        ),
+        _PrivItem(
+          'Special ID',
+          '',
+          customPreview: _buildSpecialIdIcon(),
+          description: 'Exclusive custom short/special user ID',
+        ),
+        _PrivItem(
+          'Special Room ID',
+          '',
+          customPreview: _buildSpecialRoomIdIcon(),
+          description: 'Exclusive custom short/special room ID',
+        ),
+        _PrivItem(
+          'Dynamic Avatar',
+          '',
+          customPreview: _buildDynamicAvatarIcon(),
+          description: 'Animated moving avatar profile display',
+        ),
+        _PrivItem(
+          'Rank Invisible',
+          '',
+          customPreview: _buildRankInvisibleIcon(),
+          description: 'Conceal ranking placement in leaderboards',
+        ),
+        _PrivItem(
+          'More Administrators',
+          '',
+          customPreview: _buildMoreAdministratorsIcon(),
+          description: 'Add extra room administrators to your rooms',
+        ),
+      ];
+    }
+
+    if (l == 13) {
+      // SVIP13: Exactly 30 ticked privileges in reference order
+      // Prevent Being Muted, Room Invisible, Avoid Being Kicked, VIP Identity Hidden added!
+      // Customized Broadcasts is unticked and stays hidden!
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(13),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP13 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(13),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Chat Bubble',
+          _getChatBubbleAsset(13),
+          fallback: _getChatBubbleAsset(13),
+          description: 'Gold glowing chat bubble in all streams',
+        ),
+        _PrivItem(
+          'Profile Card',
+          _getProfileCardAsset(13),
+          fallback: _getProfileCardAsset(13),
+          isSkin: true,
+          description: 'Special animated 3D profile pop-up card',
+        ),
+        _PrivItem(
+          'VIP Vehicle',
+          _getVipVehicleAsset(13),
+          fallback: _getVipVehicleAsset(13),
+          description: 'Luxury hypercar entrance ride-in animation',
+        ),
+        _PrivItem(
+          'Avatar Frame',
+          _getAvatarFrameAsset(13),
+          fallback: _getAvatarFrameAsset(13),
+          description: 'Animated golden luxury avatar ring frame',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          _getEntranceEffectAsset(13),
+          fallback: _getEntranceEffectAsset(13),
+          description: 'World notification and grand entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+        _PrivItem(
+          'Mic Sound Wave',
+          '',
+          customPreview: _buildMicSoundWaveIcon(),
+          description: 'Dynamic glowing audio wave ring when speaking',
+        ),
+        _PrivItem(
+          'Room Theme',
+          '',
+          customPreview: _buildRoomThemeIcon(),
+          description: 'Customizable party room luxury wallpapers',
+        ),
+        _PrivItem(
+          'Exclusive Customer',
+          '',
+          customPreview: _buildExclusiveCustomerIcon(),
+          description: '24/7 dedicated 1-on-1 VIP VIP support manager',
+        ),
+        _PrivItem(
+          'Mysterious Visitor',
+          '',
+          customPreview: _buildMysteriousVisitorIcon(),
+          description: 'Option to visit rooms without entrance announcement',
+        ),
+        _PrivItem(
+          'Online Hide',
+          '',
+          customPreview: _buildOnlineHideIcon(),
+          description: 'Hide online status and room presence',
+        ),
+        _PrivItem(
+          'Lucky Bag Limit Increase',
+          '',
+          customPreview: _buildLuckyBagLimitIcon(),
+          description: 'Increased daily lucky bag claim and drop limits',
+        ),
+        _PrivItem(
+          'Hide Gift Record',
+          '',
+          customPreview: _buildHideGiftRecordIcon(),
+          description: 'Option to hide gift sending history and stats',
+        ),
+        _PrivItem(
+          'Special ID',
+          '',
+          customPreview: _buildSpecialIdIcon(),
+          description: 'Exclusive custom short/special user ID',
+        ),
+        _PrivItem(
+          'Special Room ID',
+          '',
+          customPreview: _buildSpecialRoomIdIcon(),
+          description: 'Exclusive custom short/special room ID',
+        ),
+        _PrivItem(
+          'Dynamic Avatar',
+          '',
+          customPreview: _buildDynamicAvatarIcon(),
+          description: 'Animated moving avatar profile display',
+        ),
+        _PrivItem(
+          'Rank Invisible',
+          '',
+          customPreview: _buildRankInvisibleIcon(),
+          description: 'Conceal ranking placement in leaderboards',
+        ),
+        _PrivItem(
+          'More Administrators',
+          '',
+          customPreview: _buildMoreAdministratorsIcon(),
+          description: 'Add extra room administrators to your rooms',
+        ),
+        _PrivItem(
+          'Prevent Being Muted',
+          '',
+          customPreview: _buildPreventBeingMutedIcon(),
+          description: 'Immunity from room moderator mute actions',
+        ),
+        _PrivItem(
+          'Room Invisible',
+          '',
+          customPreview: _buildRoomInvisibleIcon(),
+          description: 'Create secret hidden rooms accessible by invite',
+        ),
+        _PrivItem(
+          'Avoid Being Kicked',
+          '',
+          customPreview: _buildAvoidBeingKickedIcon(),
+          description: 'Complete immunity from room kick actions',
+        ),
+        _PrivItem(
+          'VIP Identity Hidden',
+          '',
+          customPreview: _buildVipIdentityHiddenIcon(),
+          description: 'Full incognito disguise mode in rooms',
+        ),
+      ];
+    }
+
+    if (l == 14) {
+      // SVIP14: Exactly 33 ticked privileges in reference order
+      // Unban Account, Open Screen, Customized Broadcasts added!
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(14),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP14 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(14),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Chat Bubble',
+          _getChatBubbleAsset(14),
+          fallback: _getChatBubbleAsset(14),
+          description: 'Gold glowing chat bubble in all streams',
+        ),
+        _PrivItem(
+          'Profile Card',
+          _getProfileCardAsset(14),
+          fallback: _getProfileCardFallback(14),
+          isSkin: true,
+          description: 'Special animated 3D profile pop-up card',
+        ),
+        _PrivItem(
+          'VIP Vehicle',
+          _getVipVehicleAsset(14),
+          fallback: _getVipVehicleFallback(14),
+          description: 'Luxury hypercar entrance ride-in animation',
+        ),
+        _PrivItem(
+          'Avatar Frame',
+          _getAvatarFrameAsset(14),
+          fallback: _getAvatarFrameAsset(14),
+          description: 'Animated golden luxury avatar ring frame',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          _getEntranceEffectAsset(14),
+          fallback: _getEntranceEffectAsset(14),
+          description: 'World notification and grand entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+        _PrivItem(
+          'Mic Sound Wave',
+          '',
+          customPreview: _buildMicSoundWaveIcon(),
+          description: 'Dynamic glowing audio wave ring when speaking',
+        ),
+        _PrivItem(
+          'Room Theme',
+          '',
+          customPreview: _buildRoomThemeIcon(),
+          description: 'Customizable party room luxury wallpapers',
+        ),
+        _PrivItem(
+          'Exclusive Customer',
+          '',
+          customPreview: _buildExclusiveCustomerIcon(),
+          description: '24/7 dedicated 1-on-1 VIP VIP support manager',
+        ),
+        _PrivItem(
+          'Mysterious Visitor',
+          '',
+          customPreview: _buildMysteriousVisitorIcon(),
+          description: 'Option to visit rooms without entrance announcement',
+        ),
+        _PrivItem(
+          'Online Hide',
+          '',
+          customPreview: _buildOnlineHideIcon(),
+          description: 'Hide online status and room presence',
+        ),
+        _PrivItem(
+          'Lucky Bag Limit Increase',
+          '',
+          customPreview: _buildLuckyBagLimitIcon(),
+          description: 'Increased daily lucky bag claim and drop limits',
+        ),
+        _PrivItem(
+          'Hide Gift Record',
+          '',
+          customPreview: _buildHideGiftRecordIcon(),
+          description: 'Option to hide gift sending history and stats',
+        ),
+        _PrivItem(
+          'Special ID',
+          '',
+          customPreview: _buildSpecialIdIcon(),
+          description: 'Exclusive custom short/special user ID',
+        ),
+        _PrivItem(
+          'Special Room ID',
+          '',
+          customPreview: _buildSpecialRoomIdIcon(),
+          description: 'Exclusive custom short/special room ID',
+        ),
+        _PrivItem(
+          'Dynamic Avatar',
+          '',
+          customPreview: _buildDynamicAvatarIcon(),
+          description: 'Animated moving avatar profile display',
+        ),
+        _PrivItem(
+          'Rank Invisible',
+          '',
+          customPreview: _buildRankInvisibleIcon(),
+          description: 'Conceal ranking placement in leaderboards',
+        ),
+        _PrivItem(
+          'More Administrators',
+          '',
+          customPreview: _buildMoreAdministratorsIcon(),
+          description: 'Add extra room administrators to your rooms',
+        ),
+        _PrivItem(
+          'Prevent Being Muted',
+          '',
+          customPreview: _buildPreventBeingMutedIcon(),
+          description: 'Immunity from room moderator mute actions',
+        ),
+        _PrivItem(
+          'Room Invisible',
+          '',
+          customPreview: _buildRoomInvisibleIcon(),
+          description: 'Create secret hidden rooms accessible by invite',
+        ),
+        _PrivItem(
+          'Avoid Being Kicked',
+          '',
+          customPreview: _buildAvoidBeingKickedIcon(),
+          description: 'Complete immunity from room kick actions',
+        ),
+        _PrivItem(
+          'VIP Identity Hidden',
+          '',
+          customPreview: _buildVipIdentityHiddenIcon(),
+          description: 'Full incognito disguise mode in rooms',
+        ),
+        _PrivItem(
+          'Unban Account',
+          '',
+          customPreview: _buildUnbanAccountIcon(),
+          description: 'Direct emergency appeal priority pathway',
+        ),
+        _PrivItem(
+          'Open Screen',
+          '',
+          customPreview: _buildOpenScreenIcon(),
+          description: 'Display personal banner on app launch',
+        ),
+        _PrivItem(
+          'Customized Broadcasts',
+          '',
+          customPreview: _buildCustomizedBroadcastsIcon(),
+          description: 'Global push alert customized banner',
+        ),
+      ];
+    }
+
+    if (l == 15) {
+      // SVIP15: Exactly 36 ticked privileges in reference order
+      // Official Party, Customized Frame, Customized Banner added!
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(15),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP15 name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(15),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury customized profile background theme',
+        ),
+        _PrivItem(
+          'Chat Bubble',
+          _getChatBubbleAsset(15),
+          fallback: _getChatBubbleAsset(15),
+          description: 'Gold glowing chat bubble in all streams',
+        ),
+        _PrivItem(
+          'Profile Card',
+          _getProfileCardAsset(15),
+          fallback: _getProfileCardFallback(15),
+          isSkin: true,
+          description: 'Special animated 3D profile pop-up card',
+        ),
+        _PrivItem(
+          'VIP Vehicle',
+          _getVipVehicleAsset(15),
+          fallback: _getVipVehicleFallback(15),
+          description: 'Luxury hypercar entrance ride-in animation',
+        ),
+        _PrivItem(
+          'Avatar Frame',
+          _getAvatarFrameAsset(15),
+          fallback: _getAvatarFrameAsset(15),
+          description: 'Animated golden luxury avatar ring frame',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          _getEntranceEffectAsset(15),
+          fallback: _getEntranceEffectAsset(15),
+          description: 'World notification and grand entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+        _PrivItem(
+          'Mic Sound Wave',
+          '',
+          customPreview: _buildMicSoundWaveIcon(),
+          description: 'Dynamic glowing audio wave ring when speaking',
+        ),
+        _PrivItem(
+          'Room Theme',
+          '',
+          customPreview: _buildRoomThemeIcon(),
+          description: 'Customizable party room luxury wallpapers',
+        ),
+        _PrivItem(
+          'Exclusive Customer',
+          '',
+          customPreview: _buildExclusiveCustomerIcon(),
+          description: '24/7 dedicated 1-on-1 VIP VIP support manager',
+        ),
+        _PrivItem(
+          'Mysterious Visitor',
+          '',
+          customPreview: _buildMysteriousVisitorIcon(),
+          description: 'Option to visit rooms without entrance announcement',
+        ),
+        _PrivItem(
+          'Online Hide',
+          '',
+          customPreview: _buildOnlineHideIcon(),
+          description: 'Hide online status and room presence',
+        ),
+        _PrivItem(
+          'Lucky Bag Limit Increase',
+          '',
+          customPreview: _buildLuckyBagLimitIcon(),
+          description: 'Increased daily lucky bag claim and drop limits',
+        ),
+        _PrivItem(
+          'Hide Gift Record',
+          '',
+          customPreview: _buildHideGiftRecordIcon(),
+          description: 'Option to hide gift sending history and stats',
+        ),
+        _PrivItem(
+          'Special ID',
+          '',
+          customPreview: _buildSpecialIdIcon(),
+          description: 'Exclusive custom short/special user ID',
+        ),
+        _PrivItem(
+          'Special Room ID',
+          '',
+          customPreview: _buildSpecialRoomIdIcon(),
+          description: 'Exclusive custom short/special room ID',
+        ),
+        _PrivItem(
+          'Dynamic Avatar',
+          '',
+          customPreview: _buildDynamicAvatarIcon(),
+          description: 'Animated moving avatar profile display',
+        ),
+        _PrivItem(
+          'Rank Invisible',
+          '',
+          customPreview: _buildRankInvisibleIcon(),
+          description: 'Conceal ranking placement in leaderboards',
+        ),
+        _PrivItem(
+          'More Administrators',
+          '',
+          customPreview: _buildMoreAdministratorsIcon(),
+          description: 'Add extra room administrators to your rooms',
+        ),
+        _PrivItem(
+          'Prevent Being Muted',
+          '',
+          customPreview: _buildPreventBeingMutedIcon(),
+          description: 'Immunity from room moderator mute actions',
+        ),
+        _PrivItem(
+          'Room Invisible',
+          '',
+          customPreview: _buildRoomInvisibleIcon(),
+          description: 'Create secret hidden rooms accessible by invite',
+        ),
+        _PrivItem(
+          'Avoid Being Kicked',
+          '',
+          customPreview: _buildAvoidBeingKickedIcon(),
+          description: 'Complete immunity from room kick actions',
+        ),
+        _PrivItem(
+          'VIP Identity Hidden',
+          '',
+          customPreview: _buildVipIdentityHiddenIcon(),
+          description: 'Full incognito disguise mode in rooms',
+        ),
+        _PrivItem(
+          'Unban Account',
+          '',
+          customPreview: _buildUnbanAccountIcon(),
+          description: 'Direct emergency appeal priority pathway',
+        ),
+        _PrivItem(
+          'Open Screen',
+          '',
+          customPreview: _buildOpenScreenIcon(),
+          description: 'Display personal banner on app launch',
+        ),
+        _PrivItem(
+          'Customized Broadcasts',
+          '',
+          customPreview: _buildCustomizedBroadcastsIcon(),
+          description: 'Global push alert customized banner',
+        ),
+        _PrivItem(
+          'Official Party',
+          '',
+          customPreview: _buildOfficialPartyIcon(),
+          description: 'Official ZeParty staff co-hosted party event',
+        ),
+        _PrivItem(
+          'Customized Frame',
+          '',
+          customPreview: _buildCustomizedFrameIcon(),
+          description: 'Designer hand-crafted exclusive avatar border',
+        ),
+        _PrivItem(
+          'Customized Banner',
+          '',
+          customPreview: _buildCustomizedBannerIcon(),
+          description: 'Official in-app marketing hero carousel slot',
+        ),
+      ];
+    }
+
+    if (l == 16) {
+      // SVIP16: Exactly 37 ticked privileges in reference order
+      // Coming Soon card added at #37
+      return <_PrivItem>[
+        _PrivItem(
+          'VIP Tag',
+          _getVipTagAsset(16),
+          fallback: _getVipTagAsset(1),
+          description: 'Exclusive SVIP16 dragon crest name tag in rooms and profile',
+        ),
+        _PrivItem(
+          'Homepage Skin',
+          _getHomepageSkinAsset(16),
+          fallback: 'assets/nobles/viscount_card.webp',
+          isSkin: true,
+          description: 'Luxury SVIP16 gold customized profile background theme',
+        ),
+        _PrivItem(
+          'Chat Bubble',
+          _getChatBubbleAsset(16),
+          fallback: _getChatBubbleAsset(16),
+          description: 'Royal dragon gold glowing chat bubble in all streams',
+        ),
+        _PrivItem(
+          'Profile Card',
+          _getProfileCardAsset(16),
+          fallback: _getProfileCardFallback(16),
+          isSkin: true,
+          description: 'Special animated SVIP16 3D profile pop-up card',
+        ),
+        _PrivItem(
+          'VIP Vehicle',
+          _getVipVehicleAsset(16),
+          fallback: _getVipVehicleFallback(16),
+          description: 'Supreme luxury hypercar entrance ride-in animation',
+        ),
+        _PrivItem(
+          'Avatar Frame',
+          _getAvatarFrameAsset(16),
+          fallback: _getAvatarFrameAsset(16),
+          description: 'Animated golden dragon luxury avatar ring frame',
+        ),
+        _PrivItem(
+          'Visiting Traces',
+          '',
+          customPreview: _buildVisitingTracesIcon(),
+          description: 'Special footprint trail when visiting user profiles',
+        ),
+        _PrivItem(
+          'Exclusive Gifts',
+          '',
+          customPreview: _buildExclusiveGiftsIcon(),
+          description: 'Unlock high-tier SVIP exclusive animated gifts',
+        ),
+        _PrivItem(
+          'Double Task Reward',
+          '',
+          customPreview: _buildDoubleTaskRewardIcon(),
+          description: '2x multiplier on all daily quest rewards',
+        ),
+        _PrivItem(
+          'VIP Seat',
+          '',
+          customPreview: _buildVipSeatIcon(),
+          description: 'Priority reserved guest seat in room stages',
+        ),
+        _PrivItem(
+          'Exclusive Emoji',
+          '',
+          customPreview: _buildExclusiveEmojiIcon(),
+          description: 'Special 3D animated emoji collection',
+        ),
+        _PrivItem(
+          'Fly Comments',
+          '',
+          customPreview: _buildFlyCommentsIcon(),
+          description: 'Full-screen floating bullet comments across room',
+        ),
+        _PrivItem(
+          'Entrance Effect',
+          _getEntranceEffectAsset(16),
+          fallback: _getEntranceEffectAsset(16),
+          description: 'World notification and grand dragon entrance splash',
+        ),
+        _PrivItem(
+          'Upgraded Broadcast',
+          '',
+          customPreview: _buildUpgradedBroadcastIcon(),
+          description: 'Bold color system broadcast message',
+        ),
+        _PrivItem(
+          'Mic Sound Wave',
+          '',
+          customPreview: _buildMicSoundWaveIcon(),
+          description: 'Dynamic glowing audio wave ring when speaking',
+        ),
+        _PrivItem(
+          'Room Theme',
+          '',
+          customPreview: _buildRoomThemeIcon(),
+          description: 'Customizable party room luxury wallpapers',
+        ),
+        _PrivItem(
+          'Exclusive Customer',
+          '',
+          customPreview: _buildExclusiveCustomerIcon(),
+          description: '24/7 dedicated 1-on-1 VIP VIP support manager',
+        ),
+        _PrivItem(
+          'Mysterious Visitor',
+          '',
+          customPreview: _buildMysteriousVisitorIcon(),
+          description: 'Option to visit rooms without entrance announcement',
+        ),
+        _PrivItem(
+          'Online Hide',
+          '',
+          customPreview: _buildOnlineHideIcon(),
+          description: 'Hide online status and room presence',
+        ),
+        _PrivItem(
+          'Lucky Bag Limit Increase',
+          '',
+          customPreview: _buildLuckyBagLimitIcon(),
+          description: 'Increased daily lucky bag claim and drop limits',
+        ),
+        _PrivItem(
+          'Hide Gift Record',
+          '',
+          customPreview: _buildHideGiftRecordIcon(),
+          description: 'Option to hide gift sending history and stats',
+        ),
+        _PrivItem(
+          'Special ID',
+          '',
+          customPreview: _buildSpecialIdIcon(),
+          description: 'Exclusive custom short/special user ID',
+        ),
+        _PrivItem(
+          'Special Room ID',
+          '',
+          customPreview: _buildSpecialRoomIdIcon(),
+          description: 'Exclusive custom short/special room ID',
+        ),
+        _PrivItem(
+          'Dynamic Avatar',
+          '',
+          customPreview: _buildDynamicAvatarIcon(),
+          description: 'Animated moving avatar profile display',
+        ),
+        _PrivItem(
+          'Rank Invisible',
+          '',
+          customPreview: _buildRankInvisibleIcon(),
+          description: 'Conceal ranking placement in leaderboards',
+        ),
+        _PrivItem(
+          'More Administrators',
+          '',
+          customPreview: _buildMoreAdministratorsIcon(),
+          description: 'Add extra room administrators to your rooms',
+        ),
+        _PrivItem(
+          'Prevent Being Muted',
+          '',
+          customPreview: _buildPreventBeingMutedIcon(),
+          description: 'Immunity from room moderator mute actions',
+        ),
+        _PrivItem(
+          'Room Invisible',
+          '',
+          customPreview: _buildRoomInvisibleIcon(),
+          description: 'Create secret hidden rooms accessible by invite',
+        ),
+        _PrivItem(
+          'Avoid Being Kicked',
+          '',
+          customPreview: _buildAvoidBeingKickedIcon(),
+          description: 'Complete immunity from room kick actions',
+        ),
+        _PrivItem(
+          'VIP Identity Hidden',
+          '',
+          customPreview: _buildVipIdentityHiddenIcon(),
+          description: 'Full incognito disguise mode in rooms',
+        ),
+        _PrivItem(
+          'Unban Account',
+          '',
+          customPreview: _buildUnbanAccountIcon(),
+          description: 'Direct emergency appeal priority pathway',
+        ),
+        _PrivItem(
+          'Open Screen',
+          '',
+          customPreview: _buildOpenScreenIcon(),
+          description: 'Display personal banner on app launch',
+        ),
+        _PrivItem(
+          'Customized Broadcasts',
+          '',
+          customPreview: _buildCustomizedBroadcastsIcon(),
+          description: 'Global push alert customized banner',
+        ),
+        _PrivItem(
+          'Official Party',
+          '',
+          customPreview: _buildOfficialPartyIcon(),
+          description: 'Official ZeParty staff co-hosted party event',
+        ),
+        _PrivItem(
+          'Customized Frame',
+          '',
+          customPreview: _buildCustomizedFrameIcon(),
+          description: 'Designer hand-crafted exclusive avatar border',
+        ),
+        _PrivItem(
+          'Customized Banner',
+          '',
+          customPreview: _buildCustomizedBannerIcon(),
+          description: 'Official in-app marketing hero carousel slot',
+        ),
+        _PrivItem(
+          'Coming Soon',
+          '',
+          customPreview: _buildComingSoonIcon(),
+          description: 'Next generation future SVIP privileges',
+        ),
+      ];
+    }
+
+    // Default fallback
+    return <_PrivItem>[
       _PrivItem('VIP Tag', _getVipTagAsset(l), fallback: _getVipTagAsset(l)),
       _PrivItem('Homepage Skin', _getHomepageSkinAsset(l), fallback: _getHomepageSkinAsset(l), isSkin: true),
       _PrivItem('Chat Bubble', _getChatBubbleAsset(l), fallback: _getChatBubbleAsset(l)),
       _PrivItem('Avatar Frame', _getAvatarFrameAsset(l), fallback: _getAvatarFrameAsset(l)),
       _PrivItem('Entrance Effect', _getEntranceEffectAsset(l), fallback: _getEntranceEffectAsset(l)),
-      _PrivItem('SVIP Badge', _getSvipBadgeAsset(l), fallback: _getSvipBadgeAsset(l)),
     ];
+  }
 
-    final expanded = _expandedLevels.contains(l);
-    final visible = expanded ? items : items.take(3).toList();
+  // ─── Universal Privilege Grid with Collapse / Expand Chevron Arrow ───
+  Widget _buildPrivilegeGrid(SVIPLevel lvl) {
+    final l = lvl.level;
+    final items = _getPrivilegeItemsForLevel(l);
+    final isCollapsed = _collapsedLevels.contains(l);
+    final collapseLimit = items.length > 6 ? 6 : 3;
+    final visible = isCollapsed ? items.take(collapseLimit).toList() : items;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -893,7 +3453,15 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
             itemBuilder: (_, i) => _privCard(visible[i]),
           ),
           GestureDetector(
-            onTap: () => setState(() => expanded ? _expandedLevels.remove(l) : _expandedLevels.add(l)),
+            onTap: () {
+              setState(() {
+                if (isCollapsed) {
+                  _collapsedLevels.remove(l);
+                } else {
+                  _collapsedLevels.add(l);
+                }
+              });
+            },
             behavior: HitTestBehavior.opaque,
             child: SizedBox(
               height: 34,
@@ -901,7 +3469,10 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
               child: Center(
                 child: CustomPaint(
                   size: const Size(16, 8),
-                  painter: _ChevronPainter(direction: expanded ? AxisDirection.up : AxisDirection.down, stroke: 1.6),
+                  painter: _ChevronPainter(
+                    direction: isCollapsed ? AxisDirection.down : AxisDirection.up,
+                    stroke: 1.6,
+                  ),
                 ),
               ),
             ),
@@ -911,17 +3482,36 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
     );
   }
 
+  Widget _fallbackIconForTitle(String title) {
+    if (title == 'Profile Card') {
+      return const Icon(Icons.badge_rounded, size: 36, color: _kGold);
+    }
+    if (title == 'VIP Vehicle') {
+      return const Icon(Icons.directions_car_rounded, size: 36, color: _kGold);
+    }
+    if (title == 'Coming Soon') {
+      return const Icon(Icons.stars_rounded, size: 36, color: _kGold);
+    }
+    return const SizedBox.shrink();
+  }
+
   Widget _privCard(_PrivItem item) {
-    Widget img;
-    if (item.asset.isEmpty) {
-      img = const SizedBox.shrink();
+    Widget content;
+    if (item.customPreview != null) {
+      content = item.customPreview!;
+    } else if (item.asset.isEmpty) {
+      content = const SizedBox.shrink();
     } else {
-      img = Image.asset(
+      Widget img = Image.asset(
         item.asset,
         fit: item.isSkin ? BoxFit.cover : BoxFit.contain,
         errorBuilder: (_, _, _) => item.fallback.isNotEmpty
-            ? Image.asset(item.fallback, fit: BoxFit.contain, errorBuilder: (_, _, _) => const SizedBox.shrink())
-            : const SizedBox.shrink(),
+            ? Image.asset(
+                item.fallback,
+                fit: item.isSkin ? BoxFit.cover : BoxFit.contain,
+                errorBuilder: (_, _, _) => _fallbackIconForTitle(item.title),
+              )
+            : _fallbackIconForTitle(item.title),
       );
 
       if (item.isSkin) {
@@ -930,30 +3520,54 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
           child: img,
         );
       }
+      content = img;
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10),
-        gradient: const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF3A2B1C), _kCard],
-        ),
-        border: Border.all(color: _kGold.withValues(alpha: 0.28), width: 0.8),
-      ),
-      padding: const EdgeInsets.fromLTRB(10, 12, 10, 8),
-      child: Column(
-        children: [
-          Expanded(child: Center(child: img)),
-          const SizedBox(height: 8),
-          Text(
-            item.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Color(0xFFBFAF95), fontSize: 11),
+    final bool isAnimated = item.title == 'Entrance Effect' ||
+        item.title == 'Avatar Frame' ||
+        item.title == 'VIP Vehicle' ||
+        item.title == 'Dynamic Avatar' ||
+        item.title == 'Coming Soon';
+
+    if (isAnimated) {
+      content = _AnimatedItemPulse(child: content);
+    }
+
+    return GestureDetector(
+      onTap: () {
+        if (item.description != null && item.description!.isNotEmpty) {
+          _showPrivilegeDetailSheet(item);
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          gradient: const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFF3A2B1C), _kCard],
           ),
-        ],
+          border: Border.all(color: _kGold.withValues(alpha: 0.28), width: 0.8),
+        ),
+        padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
+        child: Column(
+          children: [
+            Expanded(child: Center(child: content)),
+            const SizedBox(height: 6),
+            Text(
+              item.title,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFFBFAF95),
+                fontSize: 10.5,
+                height: 1.15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1057,7 +3671,17 @@ class _PrivItem {
   final String asset;
   final String fallback;
   final bool isSkin;
-  const _PrivItem(this.title, this.asset, {required this.fallback, this.isSkin = false});
+  final Widget? customPreview;
+  final String? description;
+
+  const _PrivItem(
+    this.title,
+    this.asset, {
+    this.fallback = '',
+    this.isSkin = false,
+    this.customPreview,
+    this.description,
+  });
 }
 
 // ─── Gold gradient text ───
@@ -1396,6 +4020,41 @@ class _AnimatedSVIPBadgeState extends State<AnimatedSVIPBadge> with SingleTicker
         fit: BoxFit.contain,
         errorBuilder: (_, _, _) => SizedBox(width: widget.width, height: widget.height),
       ),
+    );
+  }
+}
+
+class _AnimatedItemPulse extends StatefulWidget {
+  final Widget child;
+
+  const _AnimatedItemPulse({required this.child});
+
+  @override
+  State<_AnimatedItemPulse> createState() => _AnimatedItemPulseState();
+}
+
+class _AnimatedItemPulseState extends State<_AnimatedItemPulse> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000))..repeat(reverse: true);
+    _scale = Tween<double>(begin: 0.94, end: 1.05).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scale,
+      child: widget.child,
     );
   }
 }

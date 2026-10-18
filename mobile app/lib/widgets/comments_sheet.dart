@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../core/theme/app_colors.dart';
 import '../core/utils/auth_guard.dart';
 import '../providers/auth_provider.dart';
 import '../providers/social_provider.dart';
@@ -165,6 +166,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final mediaQuery = MediaQuery.of(context);
     final currentUser = context.watch<AuthProvider>().currentUser;
     final social = context.watch<SocialProvider>();
@@ -177,12 +179,15 @@ class _CommentsSheetState extends State<CommentsSheet> {
       child: Container(
         height: mediaQuery.size.height * 0.65,
         decoration: BoxDecoration(
-          color: const Color(0xFF120B24),
+          color: isDark ? const Color(0xFF120B24) : AppColors.getCard(isDark),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.15), width: 1.0),
+          border: Border.all(
+            color: isDark ? Colors.white.withValues(alpha: 0.15) : AppColors.getBorder(isDark),
+            width: 1.0,
+          ),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF8E24AA).withValues(alpha: 0.3),
+              color: isDark ? const Color(0xFF8E24AA).withValues(alpha: 0.3) : Colors.black.withValues(alpha: 0.08),
               blurRadius: 24,
               spreadRadius: 2,
             ),
@@ -196,7 +201,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.white38,
+                color: isDark ? Colors.white38 : AppColors.getMuted(isDark),
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -208,8 +213,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
                 children: [
                   Text(
                     '${widget.title} (${comments.length}) 💬',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: AppColors.getTextPrimary(isDark),
                       fontWeight: FontWeight.w900,
                       fontSize: 16,
                       letterSpacing: 0.5,
@@ -217,13 +222,13 @@ class _CommentsSheetState extends State<CommentsSheet> {
                   ),
                   const Spacer(),
                   IconButton(
-                    icon: const Icon(Icons.close_rounded, color: Colors.white70, size: 22),
+                    icon: Icon(Icons.close_rounded, color: AppColors.getTextSecondary(isDark), size: 22),
                     onPressed: () => Navigator.pop(context),
                   ),
                 ],
               ),
             ),
-            const Divider(color: Colors.white12, height: 1),
+            Divider(color: isDark ? Colors.white12 : AppColors.getBorder(isDark), height: 1),
 
             // Comments List View
             Expanded(
@@ -238,7 +243,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
                               const SizedBox(height: 8),
                               Text(
                                 'No comments yet. Be the first!',
-                                style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+                                style: TextStyle(
+                                  color: AppColors.getTextSecondary(isDark),
+                                  fontSize: 13,
+                                ),
                               ),
                             ],
                           ),
@@ -290,8 +298,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                         },
                                         child: Text(
                                           c.authorName,
-                                          style: const TextStyle(
-                                            color: Color(0xFF00E5FF),
+                                          style: TextStyle(
+                                            color: isDark ? const Color(0xFF00E5FF) : const Color(0xFF00838F),
                                             fontWeight: FontWeight.bold,
                                             fontSize: 12,
                                           ),
@@ -300,15 +308,18 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                       const SizedBox(width: 8),
                                       Text(
                                         timeAgo,
-                                        style: const TextStyle(color: Colors.white38, fontSize: 10),
+                                        style: TextStyle(
+                                          color: AppColors.getTextSecondary(isDark),
+                                          fontSize: 10,
+                                        ),
                                       ),
                                     ],
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
                                     c.text,
-                                    style: const TextStyle(
-                                      color: Colors.white,
+                                    style: TextStyle(
+                                      color: AppColors.getTextPrimary(isDark),
                                       fontSize: 13,
                                       height: 1.3,
                                     ),
@@ -325,14 +336,14 @@ class _CommentsSheetState extends State<CommentsSheet> {
                                 children: [
                                   Icon(
                                     c.isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                                    color: c.isLiked ? const Color(0xFFFF4081) : Colors.white38,
+                                    color: c.isLiked ? const Color(0xFFFF4081) : (isDark ? Colors.white38 : AppColors.getMuted(isDark)),
                                     size: 18,
                                   ),
                                   if (c.likesCount > 0)
                                     Text(
                                       '${c.likesCount}',
                                       style: TextStyle(
-                                        color: c.isLiked ? const Color(0xFFFF4081) : Colors.white38,
+                                        color: c.isLiked ? const Color(0xFFFF4081) : (isDark ? Colors.white38 : AppColors.getMuted(isDark)),
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -350,7 +361,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
             // Bottom Quick Emojis Dock
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              color: Colors.black.withValues(alpha: 0.3),
+              color: isDark ? Colors.black.withValues(alpha: 0.3) : AppColors.getSurface(isDark),
               child: Row(
                 children: ['🔥', '💖', '👏', '👑', '🚀', '✨'].map((emoji) {
                   return GestureDetector(
@@ -370,8 +381,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E1035),
-                  border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+                  color: isDark ? const Color(0xFF1E1035) : AppColors.getCard(isDark),
+                  border: Border(top: BorderSide(color: isDark ? Colors.white.withValues(alpha: 0.1) : AppColors.getBorder(isDark))),
                 ),
                 child: Row(
                   children: [
@@ -381,24 +392,25 @@ class _CommentsSheetState extends State<CommentsSheet> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.4),
+                          color: isDark ? Colors.black.withValues(alpha: 0.4) : AppColors.getSurface(isDark),
                           borderRadius: BorderRadius.circular(22),
+                          border: Border.all(color: isDark ? Colors.transparent : AppColors.getBorder(isDark)),
                         ),
                         child: TextField(
                           controller: _commentController,
                           focusNode: _focusNode,
                           onSubmitted: (_) => _submitComment(),
-                          style: const TextStyle(color: Colors.white, fontSize: 13),
-                          decoration: const InputDecoration(
+                          style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 13),
+                          decoration: InputDecoration(
                             hintText: 'Add a comment...',
-                            hintStyle: TextStyle(color: Colors.white38, fontSize: 13),
+                            hintStyle: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
                             border: InputBorder.none,
                             enabledBorder: InputBorder.none,
                             focusedBorder: InputBorder.none,
                             errorBorder: InputBorder.none,
                             disabledBorder: InputBorder.none,
                             isDense: true,
-                            contentPadding: EdgeInsets.symmetric(vertical: 6),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 6),
                           ),
                         ),
                       ),

@@ -8,6 +8,8 @@ import 'package:file_picker/file_picker.dart';
 import '../../core/services/media_upload_service.dart';
 import '../../core/services/room_share_service.dart';
 import 'package:provider/provider.dart';
+import '../../core/services/room_lock_manager.dart';
+import '../../core/services/room_config_manager.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../models/live_room_model.dart';
 import '../../models/user_model.dart';
@@ -35,6 +37,8 @@ import 'widgets/room_entry_announcement_banner.dart';
 import 'widgets/room_entry_mount_banner.dart';
 import 'widgets/effects_settings_sheet.dart';
 import 'widgets/mic_seat_management_sheet.dart';
+import 'widgets/elimination_wheel_sheet.dart';
+import 'widgets/lucky_bag_sheet.dart';
 import 'widgets/in_room_profile_card_sheet.dart';
 import 'widgets/expanded_message_panel.dart';
 import '../../widgets/multi_role_seat_grid.dart';
@@ -59,6 +63,7 @@ class LivePartyRoomScreen extends StatefulWidget {
 class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   final TextEditingController _chatController = TextEditingController();
   final ScrollController _chatScrollController = ScrollController();
+  final FocusNode _chatFocusNode = FocusNode();
   bool _isMicMuted = false;
   final GlobalKey<GiftAnimationOverlayState> _giftOverlayKey = GlobalKey<GiftAnimationOverlayState>();
   String _activeChatFilter = 'All';
@@ -233,6 +238,15 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
       final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
 
+      final lockState = RoomLockManager.instance.getRoomState(widget.room.id);
+      if (lockState.isLocked) {
+        partyProv.configureRoomLock(
+          isLocked: lockState.isLocked,
+          mode: lockState.lockMode,
+          pin: lockState.pinCode,
+        );
+      }
+
       void attemptRoomEntry() {
         if (!mounted) return;
         partyProv.joinParty(widget.room, user).then((success) {
@@ -315,6 +329,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     _micInviteSub?.cancel();
     _chatController.dispose();
     _chatScrollController.dispose();
+    _chatFocusNode.dispose();
     super.dispose();
   }
 
@@ -551,13 +566,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     }
     setState(() => _isMicMuted = !_isMicMuted);
     partyProv.muteLocalMic(_isMicMuted);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_isMicMuted ? 'Microphone Muted 🔇' : 'Microphone Active 🎙️'),
-        duration: const Duration(seconds: 1),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   void _sendChatMessage() {
@@ -580,6 +588,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   }
 
   void _openGiftDialog({UserModel? targetReceiver}) {
+    // Unfocus and dismiss keyboard before opening gift panel (Item 10)
+    FocusScope.of(context).unfocus();
+    _chatFocusNode.unfocus();
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -605,7 +617,13 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           }
         },
       ),
-    );
+    ).then((_) {
+      // Prevent focus from leaking or returning to chat input on modal dismissal (Item 10)
+      if (mounted) {
+        FocusScope.of(context).unfocus();
+        _chatFocusNode.unfocus();
+      }
+    });
   }
 
   @override
@@ -706,6 +724,12 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
           // Overlays
           const HighValueAnnouncementOverlay(),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 60,
+            left: 0,
+            right: 0,
+            child: const WorldLuckyBagBanner(),
+          ),
 
           // Main Layout
           SafeArea(
@@ -767,6 +791,13 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 _buildBottomBar(canManage, isHost, provider, isDark),
               ],
             ),
+          ),
+
+          // Right-side Floating Action Shortcut (Lucky Bag)
+          Positioned(
+            right: 12,
+            bottom: MediaQuery.of(context).padding.bottom + 120 + MediaQuery.of(context).viewInsets.bottom,
+            child: LuckyBagFloatingWidget(roomId: widget.room.id),
           ),
 
           // Right-side Floating Action Shortcut (Game Lobby)
@@ -926,7 +957,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 Flexible(
                   child: GestureDetector(
                     onTap: () {
-                      final activeRoom = provider.activeRoom ?? widget.room;
+                      final activeRoom = RoomConfigManager.instance.applyOverrides(provider.activeRoom ?? widget.room);
                       showModalBottomSheet(
                         context: context,
                         isScrollControlled: true,
@@ -941,7 +972,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                     },
                     child: Builder(
                       builder: (context) {
-                        final activeRoom = provider.activeRoom ?? widget.room;
+                        final activeRoom = RoomConfigManager.instance.applyOverrides(provider.activeRoom ?? widget.room);
                         return Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -1013,6 +1044,28 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                           },
                                         ),
                                       ),
+                                      if (provider.isRoomLocked) ...[
+                                        const SizedBox(width: 4),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                          decoration: BoxDecoration(
+                                            color: Colors.cyan.withValues(alpha: 0.2),
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.cyanAccent.withValues(alpha: 0.6), width: 0.8),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.lock_rounded, color: Colors.cyanAccent, size: 9),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                'Locked (${provider.roomLockMode})',
+                                                style: const TextStyle(color: Colors.cyanAccent, fontSize: 8, fontWeight: FontWeight.bold),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ],
@@ -1086,11 +1139,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           const SizedBox(width: 3),
                           Text(
                             () {
-                              final activeRoom = provider.activeRoom ?? widget.room;
-                              final pts = activeRoom.host.diamonds;
-                              if (pts >= 1000000) return '${(pts / 1000000).toStringAsFixed(1)}M';
-                              if (pts >= 1000) return '${(pts / 1000).toStringAsFixed(1)}K';
-                              return '$pts';
+                              final total = provider.roomSendingTotal;
+                              if (total >= 1000000) return '${(total / 1000000).toStringAsFixed(1)}M';
+                              if (total >= 1000) return '${(total / 1000).toStringAsFixed(1)}K';
+                              return total > 0 ? '$total' : '0';
                             }(),
                             style: const TextStyle(color: Colors.amberAccent, fontSize: 11, fontWeight: FontWeight.bold),
                           ),
@@ -1684,9 +1736,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       Expanded(
                         child: TextField(
                           controller: _chatController,
+                          focusNode: _chatFocusNode,
                           style: const TextStyle(color: Colors.white, fontSize: 13.5),
                           cursorColor: Colors.pinkAccent,
-                          readOnly: false,
+                          readOnly: true,
                           onTap: () {
                             ExpandedMessagePanel.show(
                               context,
@@ -1774,13 +1827,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                   behavior: HitTestBehavior.opaque,
                   onTap: () {
                     provider.toggleSpeakerOutput();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(provider.isSpeakerMuted ? 'Room Audio Off 🔇' : 'Room Audio On 🔊'),
-                        duration: const Duration(seconds: 1),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
                   },
                   child: Container(
                     width: 38,
@@ -2230,7 +2276,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                         ),
                         _buildRoomToolBtn(
                           Icons.casino_rounded,
-                          'Super Wheel',
+                          'Lucky Wheel',
                           Colors.amberAccent,
                           () {
                             Navigator.pop(ctx);
@@ -2620,8 +2666,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
 
   void _showSeatLockDialog(BuildContext context, LivePartyProvider provider) {
-    final activeRoom = provider.activeRoom ?? widget.room;
-    final totalSeats = activeRoom.seatCapacity;
+    final activeRoom = RoomConfigManager.instance.applyOverrides(provider.activeRoom ?? widget.room);
+    final totalSeats = [10, 15, 20, 30].contains(activeRoom.seatCapacity) ? activeRoom.seatCapacity : 10;
 
     showModalBottomSheet(
       context: context,
@@ -2660,6 +2706,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       itemBuilder: (context, index) {
                         final isLocked = provider.isSeatLocked(index);
                         final isHostSeat = index == 0;
+                        final isCoHostSeat = index == 1;
 
                         return GestureDetector(
                           onTap: isHostSeat
@@ -2692,7 +2739,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  isHostSeat ? 'Host' : 'Seat ${index + 1}',
+                                  isHostSeat
+                                      ? 'Host'
+                                      : isCoHostSeat
+                                          ? 'Co-Host'
+                                          : 'Mic ${index - 1}',
                                   style: TextStyle(
                                     color: isHostSeat ? Colors.amber : (isLocked ? Colors.redAccent : Colors.white70),
                                     fontSize: 10,
@@ -3774,14 +3825,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
     final provider = Provider.of<LivePartyProvider>(context, listen: false);
     provider.sendMessage(user, actionText);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Sound Effect: $actionText'),
-        backgroundColor: Colors.purpleAccent,
-        duration: const Duration(milliseconds: 900),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   Widget _buildRoomToolBtn(
@@ -4130,139 +4173,22 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     );
   }
 
-  // ── Module 06: Super Wheel Control Dialog ──
+  // ── Module 06: Lucky Wheel (Participant Elimination) ──
   void _showSuperWheelControlDialog(BuildContext context) {
-    final provider = context.read<LivePartyProvider>();
-
-    showDialog(
-      context: context,
-      builder: (d) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1B2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.casino_rounded, color: Colors.amberAccent),
-            SizedBox(width: 8),
-            Text('Super Wheel Game Control', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Spin the Super Wheel for all room members! Results & rewards are server-calculated.', style: TextStyle(color: Colors.white70, fontSize: 12)),
-            const SizedBox(height: 16),
-            if (provider.lastSuperWheelResult != null) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.amber.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.amber, width: 1),
-                ),
-                child: Column(
-                  children: [
-                    const Text('Last Winner Result:', style: TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Text('${provider.lastSuperWheelResult!['prize']['name']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Close', style: TextStyle(color: Colors.white60))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.amber),
-            onPressed: () {
-              final authUser = context.read<AuthProvider>().currentUser;
-              final sessionId = 'spin_${DateTime.now().millisecondsSinceEpoch}';
-              final res = provider.spinSuperWheelServer(userId: authUser.id, sessionId: sessionId, costCoins: 100);
-              Navigator.pop(d);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('🎉 Super Wheel Spun! Winner won: ${res['prize']['name']}'), backgroundColor: Colors.green),
-              );
-            },
-            child: const Text('Spin Super Wheel 🎰', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
+    EliminationWheelSheet.show(context);
   }
 
-  // ── Module 06: Lucky Bag Control Dialog ──
+  // ── Module 06: Lucky Bag Control (Normal & World Modes) ──
   void _showLuckyBagControlDialog(BuildContext context) {
-    final provider = context.read<LivePartyProvider>();
-    final coinsCtrl = TextEditingController(text: '1000');
-    final claimsCtrl = TextEditingController(text: '10');
-
-    showDialog(
-      context: context,
-      builder: (d) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1B2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.card_giftcard_rounded, color: Colors.orangeAccent),
-            SizedBox(width: 8),
-            Text('Create Lucky Bag', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: coinsCtrl,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Total Coin Amount 🪙',
-                labelStyle: const TextStyle(color: Colors.white70),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              style: const TextStyle(color: Colors.white),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: claimsCtrl,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'Number of Claims / Users 👥',
-                labelStyle: const TextStyle(color: Colors.white70),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              style: const TextStyle(color: Colors.white),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel', style: TextStyle(color: Colors.white60))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orangeAccent),
-            onPressed: () {
-              final coins = int.tryParse(coinsCtrl.text.trim()) ?? 1000;
-              final claims = int.tryParse(claimsCtrl.text.trim()) ?? 10;
-              final bagId = 'bag_${DateTime.now().millisecondsSinceEpoch}';
-              final err = provider.createLuckyBag(id: bagId, totalCoins: coins, totalClaims: claims);
-              if (err == null) {
-                Navigator.pop(d);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('💰 Lucky Bag of $coins Coins launched for $claims users!'), backgroundColor: Colors.green),
-                );
-              }
-            },
-            child: const Text('Launch Lucky Bag', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
+    LuckyBagCreateSheet.show(context, roomId: widget.room.id, roomTitle: widget.room.title);
   }
 
   // ── Module 06: Lock Room Access Control Dialog ──
   void _showLockRoomControlDialog(BuildContext context) {
     final provider = context.read<LivePartyProvider>();
-    final pinCtrl = TextEditingController(text: provider.roomPinCode);
-    String selectedMode = provider.roomLockMode;
+    bool isLockedStatus = RoomLockManager.instance.isRoomLocked(widget.room.id) || provider.isRoomLocked;
+    String selectedMode = RoomLockManager.instance.getRoomLockMode(widget.room.id);
+    final pinCtrl = TextEditingController(text: RoomLockManager.instance.getRoomPin(widget.room.id));
 
     showDialog(
       context: context,
@@ -4272,7 +4198,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
             children: [
-              Icon(provider.isRoomLocked ? Icons.lock_rounded : Icons.lock_open_rounded, color: Colors.cyanAccent),
+              Icon(isLockedStatus ? Icons.lock_rounded : Icons.lock_open_rounded, color: Colors.cyanAccent),
               const SizedBox(width: 8),
               const Text('Room Lock Settings', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
             ],
@@ -4286,64 +4212,124 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 children: [
                   const Text('Lock Room Status', style: TextStyle(color: Colors.white, fontSize: 14)),
                   Switch(
-                    value: provider.isRoomLocked,
+                    value: isLockedStatus,
                     activeThumbColor: Colors.cyanAccent,
                     onChanged: (val) {
-                      provider.configureRoomLock(isLocked: val, mode: selectedMode, pin: pinCtrl.text);
-                      setState(() {});
+                      setState(() {
+                        isLockedStatus = val;
+                      });
                     },
                   ),
                 ],
               ),
               const SizedBox(height: 12),
               const Text('Access Protection Mode:', style: TextStyle(color: Colors.white70, fontSize: 12)),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: ['PIN', 'Approval'].map((mode) {
-                  final isSel = selectedMode == mode;
-                  return ChoiceChip(
-                    label: Text(mode, style: TextStyle(color: isSel ? Colors.black : Colors.white)),
-                    selected: isSel,
-                    selectedColor: Colors.cyanAccent,
-                    onSelected: (val) {
-                      if (val) {
-                        setState(() {
-                          selectedMode = mode;
-                        });
-                      }
-                    },
-                  );
-                }).toList(),
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => selectedMode = 'PIN'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: selectedMode == 'PIN' ? Colors.cyanAccent : Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Center(
+                          child: Text(
+                            selectedMode == 'PIN' ? '✓ PIN' : 'PIN',
+                            style: TextStyle(
+                              color: selectedMode == 'PIN' ? Colors.black : Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => selectedMode = 'Approval'),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: selectedMode == 'Approval' ? Colors.cyanAccent : Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Center(
+                          child: Text(
+                            selectedMode == 'Approval' ? '✓ Approval' : 'Approval',
+                            style: TextStyle(
+                              color: selectedMode == 'Approval' ? Colors.black : Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               if (selectedMode == 'PIN') ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 TextField(
                   controller: pinCtrl,
                   keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  style: const TextStyle(color: Colors.white, letterSpacing: 4, fontWeight: FontWeight.bold),
                   decoration: InputDecoration(
+                    counterText: '',
                     labelText: '4-Digit Password / PIN',
                     labelStyle: const TextStyle(color: Colors.white70),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.06),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Colors.cyanAccent, width: 1.5),
+                    ),
                   ),
-                  style: const TextStyle(color: Colors.white),
                 ),
               ],
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(d), child: const Text('Close', style: TextStyle(color: Colors.white60))),
+            TextButton(
+              onPressed: () => Navigator.pop(d),
+              child: const Text('Close', style: TextStyle(color: Colors.white60)),
+            ),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.cyanAccent),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.cyanAccent,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              ),
               onPressed: () {
-                provider.configureRoomLock(
-                  isLocked: true,
+                final pin = pinCtrl.text.trim().isEmpty ? '1234' : pinCtrl.text.trim();
+                RoomLockManager.instance.saveLockSettings(
+                  roomId: widget.room.id,
+                  isLocked: isLockedStatus,
                   mode: selectedMode,
-                  pin: pinCtrl.text.trim().isEmpty ? '1234' : pinCtrl.text.trim(),
+                  pin: pin,
+                );
+                provider.configureRoomLock(
+                  isLocked: isLockedStatus,
+                  mode: selectedMode,
+                  pin: pin,
                 );
                 Navigator.pop(d);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('🔒 Room access configured successfully!'), backgroundColor: Colors.green),
+                  SnackBar(
+                    content: Text(
+                      isLockedStatus
+                          ? '🔒 Room locked ($selectedMode mode) successfully!'
+                          : '🔓 Room is now unlocked!',
+                    ),
+                    backgroundColor: Colors.green,
+                  ),
                 );
               },
               child: const Text('Save Lock Settings', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),

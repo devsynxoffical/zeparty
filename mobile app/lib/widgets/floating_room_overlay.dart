@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
+import '../core/services/room_config_manager.dart';
 import '../providers/room_overlay_provider.dart';
 import '../providers/live_provider.dart';
 import '../providers/live_party_provider.dart';
@@ -44,7 +46,7 @@ class _FloatingRoomOverlayState extends State<FloatingRoomOverlay> with SingleTi
           return const SizedBox.shrink();
         }
 
-        final room = overlayProvider.activeRoom!;
+        final room = RoomConfigManager.instance.applyOverrides(overlayProvider.activeRoom!);
         final isLive = overlayProvider.roomType == 'LIVE';
         final screenSize = MediaQuery.of(context).size;
 
@@ -104,10 +106,24 @@ class _FloatingRoomOverlayState extends State<FloatingRoomOverlay> with SingleTi
                             Positioned.fill(
                               child: Opacity(
                                 opacity: 0.35,
-                                child: Image.network(
-                                  room.coverUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                                child: Builder(
+                                  builder: (context) {
+                                    if (room.coverUrl.startsWith('http')) {
+                                      return Image.network(
+                                        room.coverUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                                      );
+                                    } else if (room.coverUrl.startsWith('assets')) {
+                                      return Image.asset(room.coverUrl, fit: BoxFit.cover);
+                                    } else {
+                                      final f = File(room.coverUrl);
+                                      if (f.existsSync()) {
+                                        return Image.file(f, fit: BoxFit.cover);
+                                      }
+                                      return const SizedBox.shrink();
+                                    }
+                                  },
                                 ),
                               ),
                             ),

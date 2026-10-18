@@ -1,8 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_colors.dart';
 import '../core/theme/theme_provider.dart';
 import '../models/live_room_model.dart';
+import '../core/services/room_lock_manager.dart';
+import '../core/services/room_config_manager.dart';
 import '../providers/game_provider.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -22,14 +25,27 @@ class PartyRoomCard extends StatelessWidget {
     final cardColor = AppColors.getCard(isDark);
     final borderColor = AppColors.getBorder(isDark);
 
-    final totalSeats = (room.viewerCount % 3 == 0) ? 4 : 8;
-    final occupiedSeats = (room.viewerCount % totalSeats) + 1;
-    final effectiveDp = gameProvider.getEffectiveRoomDp(
-      room.id,
-      room.coverUrl,
-      room.host.region,
-      hostAvatarUrl: room.host.avatarUrl,
-    );
+    final effectiveRoom = RoomConfigManager.instance.applyOverrides(room);
+    final totalSeats = effectiveRoom.seatCapacity > 0 ? effectiveRoom.seatCapacity : 8;
+    int occupiedSeats = 0;
+    if (effectiveRoom.seats != null && effectiveRoom.seats!.isNotEmpty) {
+      occupiedSeats = effectiveRoom.seats!.where((s) {
+        if (s == null) return false;
+        if (s is Map) return s['user'] != null;
+        return true;
+      }).length;
+    } else {
+      occupiedSeats = effectiveRoom.viewerCount > 0 ? effectiveRoom.viewerCount.clamp(1, totalSeats) : 1;
+    }
+    final customCover = RoomConfigManager.instance.getCustomCover(effectiveRoom.id);
+    final effectiveDp = (customCover != null && customCover.isNotEmpty)
+        ? customCover
+        : gameProvider.getEffectiveRoomDp(
+            effectiveRoom.id,
+            effectiveRoom.coverUrl,
+            effectiveRoom.host.region,
+            hostAvatarUrl: effectiveRoom.host.avatarUrl,
+          );
 
     return GestureDetector(
       onTap: onTap,
@@ -57,19 +73,37 @@ class PartyRoomCard extends StatelessWidget {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.vertical(top: Radius.circular(16.r)),
-                    child: Image.network(
-                      effectiveDp,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Image.network(
-                        room.host.avatarUrl.isNotEmpty
-                            ? room.host.avatarUrl
-                            : gameProvider.globalDefaultRoomDp,
-                        fit: BoxFit.cover,
-                      ),
+                    child: Builder(
+                      builder: (context) {
+                        if (effectiveDp.startsWith('http')) {
+                          return Image.network(
+                            effectiveDp,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Image.network(
+                              effectiveRoom.host.avatarUrl.isNotEmpty
+                                  ? effectiveRoom.host.avatarUrl
+                                  : gameProvider.globalDefaultRoomDp,
+                              fit: BoxFit.cover,
+                            ),
+                          );
+                        } else if (effectiveDp.startsWith('assets')) {
+                          return Image.asset(effectiveDp, fit: BoxFit.cover);
+                        } else {
+                          final f = File(effectiveDp);
+                          if (f.existsSync()) {
+                            return Image.file(f, fit: BoxFit.cover);
+                          }
+                          return Image.network(
+                            effectiveRoom.host.avatarUrl.isNotEmpty
+                                ? effectiveRoom.host.avatarUrl
+                                : gameProvider.globalDefaultRoomDp,
+                            fit: BoxFit.cover,
+                          );
+                        }
+                      },
                     ),
                   ),
 
-                  // Approved Corner Badges Only (No center dark gradient or center avatar overlay)
                   Positioned(
                     top: 8.h,
                     left: 8.w,
@@ -91,6 +125,36 @@ class PartyRoomCard extends StatelessWidget {
                       ),
                     ),
                   ),
+
+                  // Room Lock Badge (Outside listing)
+                  if (RoomLockManager.instance.isRoomLocked(room.id) || room.isPrivate || room.roomMode == 'Lock mode')
+                    Positioned(
+                      top: 32.h,
+                      left: 8.w,
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 2.h),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(6.r),
+                          border: Border.all(color: Colors.cyanAccent, width: 0.8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.lock_rounded, size: 9.sp, color: Colors.cyanAccent),
+                            SizedBox(width: 2.w),
+                            Text(
+                              'Locked',
+                              style: TextStyle(
+                                color: Colors.cyanAccent,
+                                fontSize: 8.sp,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
 
                   Positioned(
                     top: 8.h,
@@ -130,7 +194,7 @@ class PartyRoomCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    room.title,
+                    effectiveRoom.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(

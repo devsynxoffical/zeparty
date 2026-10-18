@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../models/user_model.dart';
 import '../../providers/privacy_settings_provider.dart';
+import '../theme/app_colors.dart';
 
 enum NobleTier {
   none,
@@ -44,25 +45,16 @@ class NobleBadgeHelper {
     if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_badge.webp';
     if (lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/baron_badge.webp';
 
-    // SVIP Badges (Accurate exact mapping for all 1-16 tiers using authentic dedicated webp assets)
+    // SVIP Badges (Accurate exact mapping for all 1-16 tiers using authentic dedicated animated live webp assets)
     if (lower.contains('svip')) {
       final match = RegExp(r'svip\s*(\d+)', caseSensitive: false).firstMatch(lower);
       if (match != null) {
         final level = int.tryParse(match.group(1)!) ?? 1;
         final clampedLevel = level.clamp(1, 16);
-        if (clampedLevel == 1) return 'assets/svip/svip1_badge.webp';
-        if (clampedLevel == 2) return 'assets/svip/svip2_badge.webp';
-        if (clampedLevel == 3) return 'assets/svip/svip3_badge.webp';
-        if (clampedLevel == 4) return 'assets/svip/svip4_badge.webp';
-        if (clampedLevel == 5) return 'assets/svip/svip5_badge.webp';
-        if (clampedLevel == 6) return 'assets/svip/svip6_badge.webp';
         final pad2 = clampedLevel.toString().padLeft(2, '0');
-        if (clampedLevel <= 15) {
-          return 'assets/svip/SVIP${pad2}_badge_live.webp';
-        }
-        return 'assets/svip/SVIP16_badge_live.webp';
+        return 'assets/svip/SVIP${pad2}_badge_live.webp';
       }
-      return 'assets/svip/svip1_badge.webp';
+      return 'assets/svip/SVIP01_badge_live.webp';
     }
 
     // Role Badges
@@ -83,7 +75,7 @@ class NobleBadgeHelper {
     if (lower.contains('lover')) return 'assets/roles/lover_tag.webp';
     if (lower.contains('official')) return 'assets/roles/official_tag.webp';
     if (lower.contains('manager')) return 'assets/roles/manager_tag.webp';
-    if (lower.contains('mystery')) return 'assets/svip/SVIP16_badge_live.webp';
+    if (lower.contains('mystery')) return 'assets/animations/mystery_badge.webp';
 
     return null;
   }
@@ -130,7 +122,7 @@ class NobleBadgeHelper {
     if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_frame.webp';
     if (lower.contains('official')) return 'assets/roles/official_frame.webp';
     if (lower.contains('top fan')) return 'assets/roles/top_fan_frame.webp';
-    if (lower.contains('mystery')) return 'assets/svip/svip16_frame.webp';
+    if (lower.contains('mystery')) return 'assets/animations/mystery_frame.webp';
 
     return null;
   }
@@ -143,7 +135,6 @@ class NobleBadgeHelper {
     if (lower.contains('svip')) {
       for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          if (i == 2) return null; // SVIP 2 does not have an official VIP tag
           return 'assets/svip/svip${i}_tag.png';
         }
       }
@@ -192,7 +183,7 @@ class NobleBadgeHelper {
       return 'assets/nobles/count_chat_bubble.webp';
     }
 
-    if (lower.contains('mystery')) return 'assets/svip/svip16_chat_bubble.webp';
+    if (lower.contains('mystery')) return 'assets/animations/mystery_bubble.webp';
 
     return null;
   }
@@ -214,7 +205,7 @@ class NobleBadgeHelper {
     if (lower.contains('svip')) {
       for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          if (i == 1 || i == 2) return null; // SVIP 1 and 2 do not have an official profile card / skin
+          if (i == 1) return null; // SVIP 1 does not have an official profile card / skin
           return 'assets/svip/svip${i}_card.webp';
         }
       }
@@ -249,22 +240,22 @@ class NobleBadgeHelper {
     return null;
   }
 
-  static Color getColoredNicknameColor(NobleTier tier) {
+  static Color getColoredNicknameColor(NobleTier tier, {bool isDark = true}) {
     switch (tier) {
       case NobleTier.emperor:
       case NobleTier.king:
       case NobleTier.duke:
-        return const Color(0xFFFFD700); // Gold / Shiny Amber
+        return isDark ? const Color(0xFFFFD700) : const Color(0xFFB8860B);
       case NobleTier.prince:
       case NobleTier.marquis:
-        return const Color(0xFFFF4500); // Crimson Red
+        return isDark ? const Color(0xFFFF4500) : const Color(0xFFD84315);
       case NobleTier.earl:
       case NobleTier.viscount:
-        return const Color(0xFFD500F9); // Luxury Purple / Magenta
+        return isDark ? const Color(0xFFD500F9) : const Color(0xFF8E24AA);
       case NobleTier.knight:
-        return const Color(0xFF00E5FF); // Cyan / Teal
+        return isDark ? const Color(0xFF00E5FF) : const Color(0xFF00838F);
       case NobleTier.none:
-        return Colors.white;
+        return isDark ? Colors.white : AppColors.darkNavy;
     }
   }
 
@@ -346,7 +337,8 @@ class NobleBadgeChip extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final color = NobleBadgeHelper.getColoredNicknameColor(tier);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final color = NobleBadgeHelper.getColoredNicknameColor(tier, isDark: isDark);
     final badgeText = NobleBadgeHelper.getNobleIcon(tier).isNotEmpty
         ? NobleBadgeHelper.getNobleIcon(tier)
         : (title ?? 'Noble');

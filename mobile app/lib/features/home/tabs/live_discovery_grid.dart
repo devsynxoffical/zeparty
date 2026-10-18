@@ -8,6 +8,9 @@ import '../../live/live_room_screen.dart';
 import '../../party_room/live_party_room_screen.dart';
 import '../../../models/live_room_model.dart';
 import '../../../core/repositories/backend_repository.dart';
+import 'package:provider/provider.dart';
+import '../../../providers/auth_provider.dart';
+import '../../../core/services/room_lock_manager.dart';
 
 class LiveDiscoveryGrid extends StatelessWidget {
   final List<LiveRoomModel> liveRooms;
@@ -99,11 +102,19 @@ class LiveDiscoveryGrid extends StatelessWidget {
                     ),
                   );
                 } else {
-                  Navigator.push(
+                  final currentUser = context.read<AuthProvider>().currentUser;
+                  RoomLockManager.instance.checkAndEnterRoom(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) => LivePartyRoomScreen(room: room),
-                    ),
+                    room: room,
+                    currentUser: currentUser,
+                    onAdmitted: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => LivePartyRoomScreen(room: room),
+                        ),
+                      );
+                    },
                   );
                 }
               },

@@ -37,6 +37,10 @@ class SocketService {
   final _roomMicInviteController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomMicInviteResponseController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomFeedClearedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomDetailsUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomSeatLockedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomLayoutUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomSendingTotalController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Social realtime event streams
   final _postCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -118,6 +122,10 @@ class SocketService {
   Stream<Map<String, dynamic>> get onRoomMicInvite => _roomMicInviteController.stream;
   Stream<Map<String, dynamic>> get onRoomMicInviteResponse => _roomMicInviteResponseController.stream;
   Stream<Map<String, dynamic>> get onRoomFeedCleared => _roomFeedClearedController.stream;
+  Stream<Map<String, dynamic>> get onRoomDetailsUpdated => _roomDetailsUpdatedController.stream;
+  Stream<Map<String, dynamic>> get onSeatLocked => _roomSeatLockedController.stream;
+  Stream<Map<String, dynamic>> get onRoomLayoutUpdated => _roomLayoutUpdatedController.stream;
+  Stream<Map<String, dynamic>> get onRoomSendingTotalUpdated => _roomSendingTotalController.stream;
 
   // Stream aliases for backwards compatibility
   Stream<Map<String, dynamic>> get roomCreatedStream => onRoomCreated;
@@ -407,6 +415,39 @@ class SocketService {
     _socket!.off('chat');
     _socket!.on('chat', handleChatMessage);
 
+    // Authoritative Room Gift Event Listeners with deduplication
+    final Map<String, int> recentGifts = {};
+    void handleGiftSent(dynamic data) {
+      if (data != null) {
+        final map = safeMap(data);
+        final txId = (map['transactionId'] ?? map['id'] ?? map['_id'] ?? '').toString();
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (txId.isNotEmpty && recentGifts.containsKey(txId)) {
+          if (now - recentGifts[txId]! < 5000) {
+            return; // Deduplicate alias emissions within 5s
+          }
+        }
+        if (txId.isNotEmpty) {
+          recentGifts[txId] = now;
+        }
+        _giftSentController.add(map);
+      }
+    }
+    _socket!.off('room:gift_sent');
+    _socket!.on('room:gift_sent', handleGiftSent);
+    _socket!.off('room_gift_sent');
+    _socket!.on('room_gift_sent', handleGiftSent);
+    _socket!.off('gift:sent');
+    _socket!.on('gift:sent', handleGiftSent);
+    _socket!.off('gift_sent');
+    _socket!.on('gift_sent', handleGiftSent);
+    _socket!.off('room:gift');
+    _socket!.on('room:gift', handleGiftSent);
+    _socket!.off('room_gift');
+    _socket!.on('room_gift', handleGiftSent);
+    _socket!.off('live:gift');
+    _socket!.on('live:gift', handleGiftSent);
+
     _socket!.on('room:user_kicked', (data) {
       if (data != null) _userKickedController.add(safeMap(data));
     });
@@ -466,6 +507,44 @@ class SocketService {
     _socket!.on('room_mic_invite_response', (data) {
       if (data != null) _roomMicInviteResponseController.add(safeMap(data));
     });
+
+    // Room Profile & Details Sync (Item 09)
+    void handleDetailsUpdated(dynamic data) {
+      if (data != null) _roomDetailsUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('room:details_updated');
+    _socket!.on('room:details_updated', handleDetailsUpdated);
+    _socket!.off('room:update_details');
+    _socket!.on('room:update_details', handleDetailsUpdated);
+
+    // Mic Seat Locking Sync (Item 04 & 07, Mic 7 & 8)
+    void handleSeatLocked(dynamic data) {
+      if (data != null) _roomSeatLockedController.add(safeMap(data));
+    }
+    _socket!.off('room:seat_locked_status');
+    _socket!.on('room:seat_locked_status', handleSeatLocked);
+    _socket!.off('room:seat_locked');
+    _socket!.on('room:seat_locked', handleSeatLocked);
+    _socket!.off('room:lock_seat');
+    _socket!.on('room:lock_seat', handleSeatLocked);
+
+    // Room Seat Count & Layout Sync (Item 11)
+    void handleLayoutUpdated(dynamic data) {
+      if (data != null) _roomLayoutUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('room:layout_updated');
+    _socket!.on('room:layout_updated', handleLayoutUpdated);
+    _socket!.off('room:update_layout');
+    _socket!.on('room:update_layout', handleLayoutUpdated);
+
+    // Room Sending Coin Total Sync (Item 08)
+    void handleSendingTotalUpdated(dynamic data) {
+      if (data != null) _roomSendingTotalController.add(safeMap(data));
+    }
+    _socket!.off('room:sending_total_updated');
+    _socket!.on('room:sending_total_updated', handleSendingTotalUpdated);
+    _socket!.off('room:sending_total');
+    _socket!.on('room:sending_total', handleSendingTotalUpdated);
 
     // Social Events
     _socket!.on('post:created', (data) {
@@ -700,12 +779,71 @@ class SocketService {
 
     if (_socket != null && _socket!.connected) {
       _socket!.emit('room:chat_send', payload);
+      _socket!.emit('room_chat_send', payload);
+      _socket!.emit('room:chat', payload);
+      _socket!.emit('chat:send', payload);
       debugPrint('[SocketService] Sent room:chat_send for room:$roomId (msgId: $effectiveId)');
     } else {
       connect(user: sender).then((_) {
         if (_socket != null && _socket!.connected) {
           _socket!.emit('room:chat_send', payload);
+          _socket!.emit('room_chat_send', payload);
+          _socket!.emit('room:chat', payload);
+          _socket!.emit('chat:send', payload);
           debugPrint('[SocketService] Sent room:chat_send after connect for room:$roomId (msgId: $effectiveId)');
+        }
+      });
+    }
+  }
+
+  /// Broadcast a gift sent event in a live party or streaming room
+  void sendRoomGift({
+    required String roomId,
+    required String giftId,
+    required String giftName,
+    required String giftIcon,
+    required int quantity,
+    required Map<String, dynamic> sender,
+    required Map<String, dynamic> receiver,
+    String? transactionId,
+  }) {
+    final effectiveTxId = (transactionId != null && transactionId.isNotEmpty)
+        ? transactionId
+        : 'tx_${DateTime.now().millisecondsSinceEpoch}_${(sender['id'] ?? sender['userId'] ?? 'anon')}';
+
+    final payload = {
+      'transactionId': effectiveTxId,
+      'id': effectiveTxId,
+      'roomId': roomId,
+      'giftId': giftId,
+      'giftName': giftName,
+      'giftIcon': giftIcon,
+      'quantity': quantity,
+      'sender': sender,
+      'senderUserId': sender['id'] ?? sender['_id'] ?? sender['userId'],
+      'senderName': sender['name'] ?? sender['username'] ?? 'User',
+      'senderAvatar': sender['avatarUrl'] ?? sender['avatar'] ?? '',
+      'receiver': receiver,
+      'receiverUserId': receiver['id'] ?? receiver['_id'] ?? receiver['userId'],
+      'receiverName': receiver['name'] ?? receiver['username'] ?? 'Host',
+      'receiverAvatar': receiver['avatarUrl'] ?? receiver['avatar'] ?? '',
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('room:gift_send', payload);
+      _socket!.emit('room_gift_send', payload);
+      _socket!.emit('gift:send', payload);
+      _socket!.emit('room:gift_sent', payload);
+      debugPrint('[SocketService] Sent room:gift_send for room:$roomId (txId: $effectiveTxId)');
+    } else {
+      connect(user: sender).then((_) {
+        if (_socket != null && _socket!.connected) {
+          _socket!.emit('room:gift_send', payload);
+          _socket!.emit('room_gift_send', payload);
+          _socket!.emit('gift:send', payload);
+          _socket!.emit('room:gift_sent', payload);
+          debugPrint('[SocketService] Sent room:gift_send after connect for room:$roomId (txId: $effectiveTxId)');
         }
       });
     }
@@ -815,6 +953,55 @@ class SocketService {
       'roomId': roomId,
       'timestamp': DateTime.now().toIso8601String(),
     });
+  }
+
+  /// Broadcast Room Title & Cover Updates (Item 09)
+  void emitRoomDetailsUpdate(String roomId, {String? title, String? coverUrl}) {
+    final payload = {
+      'roomId': roomId,
+      if (title != null) 'title': title,
+      if (coverUrl != null) 'coverUrl': coverUrl,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    emit('room:update_details', payload);
+    emit('room:details_updated', payload);
+  }
+
+  /// Broadcast Mic Seat Locking State (Item 04 & 07, Mic 7 & 8)
+  void emitRoomSeatLock(String roomId, int seatIndex, bool isLocked) {
+    final payload = {
+      'roomId': roomId,
+      'seatIndex': seatIndex,
+      'isLocked': isLocked,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    emit('room:lock_seat', payload);
+    emit('room:seat_locked_status', payload);
+  }
+
+  /// Broadcast Room Capacity & Layout Updates (Item 11)
+  void emitRoomLayoutUpdate(String roomId, int capacity, String roomType) {
+    final payload = {
+      'roomId': roomId,
+      'capacity': capacity,
+      'seatCapacity': capacity,
+      'roomType': roomType,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    emit('room:update_layout', payload);
+    emit('room:layout_updated', payload);
+  }
+
+  /// Broadcast Room Sending Coin Total Updates (Item 08)
+  void emitRoomSendingTotal(String roomId, num totalCoins) {
+    final payload = {
+      'roomId': roomId,
+      'period': 'daily',
+      'totalCoins': totalCoins,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    emit('room:sending_total_updated', payload);
+    emit('room:sending_total', payload);
   }
 
   /// Generic emit helper for real-time events

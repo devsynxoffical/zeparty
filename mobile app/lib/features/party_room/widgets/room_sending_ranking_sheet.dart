@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/repositories/room_repository.dart';
@@ -102,11 +103,19 @@ class _RoomSendingRankingSheetState extends State<RoomSendingRankingSheet> with 
         period: _currentPeriodKey,
       );
       if (mounted) {
+        final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+        num totalCoins = (res['periodTotalCoins'] as num?) ?? 0;
+        if (_selectedTabIndex == 0) {
+          totalCoins = math.max(totalCoins, partyProv.roomSendingTotal);
+          if (totalCoins > 0 && totalCoins != partyProv.roomSendingTotal) {
+            partyProv.setRoomSendingTotal(totalCoins);
+          }
+        }
         setState(() {
           final list = res['rankings'] as List? ?? [];
           _rankings = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
           _viewerRank = res['viewerRank'] != null ? Map<String, dynamic>.from(res['viewerRank'] as Map) : null;
-          _periodTotalCoins = (res['periodTotalCoins'] as num?) ?? 0;
+          _periodTotalCoins = totalCoins;
           _isLoading = false;
         });
       }
@@ -162,6 +171,13 @@ class _RoomSendingRankingSheetState extends State<RoomSendingRankingSheet> with 
             'avatarUrl': currentUser.avatarUrl,
             'totalCoins': 0,
           };
+        }
+
+        if (_selectedTabIndex == 0) {
+          grandTotal = math.max(grandTotal, partyProv.roomSendingTotal);
+          if (grandTotal > 0 && grandTotal != partyProv.roomSendingTotal) {
+            partyProv.setRoomSendingTotal(grandTotal);
+          }
         }
 
         setState(() {
@@ -428,7 +444,7 @@ class _RoomSendingRankingSheetState extends State<RoomSendingRankingSheet> with 
             ),
             child: ClipOval(
               child: avatarUrl.isNotEmpty
-                  ? Image.network(avatarUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _avatarFallback(name))
+                  ? Image.network(avatarUrl, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => _avatarFallback(name))
                   : _avatarFallback(name),
             ),
           ),
