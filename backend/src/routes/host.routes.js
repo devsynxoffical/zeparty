@@ -17,7 +17,9 @@ adminHostRouter.post('/:id/remove', requirePermission('approve_reject_hosts'), h
 export const userHostRouter = express.Router();
 userHostRouter.get('/policy/agency-table', hostController.getAgencyHostPolicyTable);
 userHostRouter.get('/policy/live-host-table', hostController.getLiveHostPolicyTable);
+userHostRouter.get('/eligibility', authenticate, hostController.getHostingEligibility);
 userHostRouter.post('/apply', authenticate, hostController.applyHost);
+userHostRouter.post('/apply-live', authenticate, hostController.applyLiveHost);
 userHostRouter.get('/profile', authenticate, hostController.getMyHostProfile);
 userHostRouter.get('/application', authenticate, hostController.getMyHostApplication);
 userHostRouter.get('/center/income', authenticate, hostController.getHostIncomeDashboard);

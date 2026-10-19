@@ -1,12 +1,30 @@
 import prisma from '../config/database.js';
 import agencyRepository from '../repositories/agency.repository.js';
 import hostRepository from '../repositories/host.repository.js';
+import hostingEligibilityService, {
+  validateHostingEligibility,
+  HostingEligibilityError,
+} from './hostingEligibility.service.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
+    let validAdminId = adminId;
+    if (adminId) {
+      const adminExists = await db.admin.findUnique({ where: { id: adminId } });
+      if (!adminExists) {
+        const fallbackAdmin = await db.admin.findFirst();
+        validAdminId = fallbackAdmin ? fallbackAdmin.id : null;
+      }
+    } else {
+      const fallbackAdmin = await db.admin.findFirst();
+      validAdminId = fallbackAdmin ? fallbackAdmin.id : null;
+    }
+
+    if (!validAdminId) return;
+
     await db.auditLog.create({
       data: {
-        adminId: adminId || 'SYSTEM',
+        adminId: validAdminId,
         adminName: adminName || 'System',
         action,
         targetEntity,
@@ -18,11 +36,16 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
       },
     });
   } catch (err) {
-    console.error('Failed to write audit log in agency.service:', err);
+    // Non-fatal audit log failure
   }
 }
 
 export async function createAgency(data, { adminId, adminName, ipAddress } = {}, db = prisma) {
+  // Validate that proposed agency owner is eligible (cannot be active Live Host)
+  if (data.ownerUserId) {
+    await validateHostingEligibility(data.ownerUserId, 'CREATE_AGENCY', db, { lockRow: false });
+  }
+
   const existingCode = await agencyRepository.findAgencyByCode(data.agencyCode, db);
   if (existingCode) {
     const error = new Error(`Agency code "${data.agencyCode}" is already in use`);
@@ -58,6 +81,11 @@ export async function updateAgency(id, updates, { adminId, adminName, ipAddress 
     error.statusCode = 404;
     error.code = 'AGENCY_NOT_FOUND';
     throw error;
+  }
+
+  // If transferring ownership, validate new owner eligibility
+  if (updates.ownerUserId && updates.ownerUserId !== agency.ownerUserId) {
+    await validateHostingEligibility(updates.ownerUserId, 'CREATE_AGENCY', db, { lockRow: false });
   }
 
   const updatedAgency = await agencyRepository.updateAgency(id, updates, db);
@@ -124,6 +152,9 @@ export async function bindHostToAgency({ agencyId, hostProfileId }, { adminId, a
   }
 
   const member = await db.$transaction(async (tx) => {
+    // Shared Server-Side Eligibility Validator with PostgreSQL row lock
+    await validateHostingEligibility(host.userId, 'JOIN_AUDIO_HOST', tx, { lockRow: true });
+
     const newMember = await agencyRepository.addMember({
       agencyId,
       userId: host.userId,
@@ -468,74 +499,63 @@ export async function submitAgencyApplication(data, { userId, ipAddress } = {}, 
     ? user.id
     : (user.username && /^\d+$/.test(user.username) ? user.username : user.id);
 
-  // Check if applicant already owns an active agency
-  const existingAgency = await agencyRepository.findAgencyByOwnerUserId(userId, db);
-  if (existingAgency) {
-    const error = new Error('You already own an active agency.');
-    error.statusCode = 409;
-    error.code = 'ALREADY_AGENCY_OWNER';
-    throw error;
-  }
-
-  // Check if applicant has an existing pending application
-  const existingPending = await agencyRepository.findPendingAgencyApplicationByApplicantId(userId, db);
-  if (existingPending) {
-    const error = new Error('You already have a pending agency application under review.');
-    error.statusCode = 409;
-    error.code = 'PENDING_APPLICATION_EXISTS';
-    error.data = existingPending;
-    throw error;
-  }
-
   try {
-    const application = await agencyRepository.createAgencyApplication(
-      {
-        applicantId: userId,
-        applicantZePartyId,
-        agencyName: data.agencyName,
-        description: data.description,
-        phoneNumber: data.phoneNumber,
-        hostRef1: data.hostRef1,
-        hostRef2: data.hostRef2,
-        hostRef3: data.hostRef3,
-        hostRef4: data.hostRef4,
-        hostRef5: data.hostRef5,
-      },
-      db
-    );
+    return await db.$transaction(async (tx) => {
+      // Shared Validator enforces mutual exclusion, role reservations, and pending status under lock
+      await validateHostingEligibility(userId, 'APPLY_AGENCY_OWNER', tx, { lockRow: true });
 
-    await logAudit(
-      {
-        adminId: userId,
-        adminName: user.profile?.displayName || user.username || 'Applicant',
-        action: 'AGENCY_APPLICATION_SUBMITTED',
-        targetEntity: 'AgencyApplication',
-        targetEntityId: application.id,
-        afterStateJson: {
-          agencyName: application.agencyName,
-          applicantId: application.applicantId,
-          applicantZePartyId: application.applicantZePartyId,
-          phoneNumber: application.phoneNumber,
-          hostRef1: application.hostRef1,
-          hostRef2: application.hostRef2,
-          hostRef3: application.hostRef3,
-          hostRef4: application.hostRef4,
-          hostRef5: application.hostRef5,
-          status: 'PENDING',
+      const application = await agencyRepository.createAgencyApplication(
+        {
+          applicantId: userId,
+          applicantZePartyId,
+          agencyName: data.agencyName,
+          description: data.description,
+          phoneNumber: data.phoneNumber,
+          hostRef1: data.hostRef1,
+          hostRef2: data.hostRef2,
+          hostRef3: data.hostRef3,
+          hostRef4: data.hostRef4,
+          hostRef5: data.hostRef5,
         },
-        reason: 'User submitted new agency onboarding application',
-        ipAddress,
-      },
-      db
-    );
+        tx
+      );
 
-    return application;
+      await logAudit(
+        {
+          adminId: userId,
+          adminName: user.profile?.displayName || user.username || 'Applicant',
+          action: 'AGENCY_APPLICATION_SUBMITTED',
+          targetEntity: 'AgencyApplication',
+          targetEntityId: application.id,
+          afterStateJson: {
+            agencyName: application.agencyName,
+            applicantId: application.applicantId,
+            applicantZePartyId: application.applicantZePartyId,
+            phoneNumber: application.phoneNumber,
+            hostRef1: application.hostRef1,
+            hostRef2: application.hostRef2,
+            hostRef3: application.hostRef3,
+            hostRef4: application.hostRef4,
+            hostRef5: application.hostRef5,
+            status: 'PENDING',
+          },
+          reason: 'User submitted new agency onboarding application',
+          ipAddress,
+        },
+        tx
+      );
+
+      return application;
+    }, { maxWait: 15000, timeout: 30000 });
   } catch (err) {
+    if (err instanceof HostingEligibilityError) {
+      throw err;
+    }
     // Catch database-level unique constraint violation (duplicate pending application under concurrency)
     if (err.code === 'P2002' || err.message?.includes('AgencyApplication_applicantId_pending_idx') || err.message?.includes('duplicate key')) {
       const error = new Error('You already have a pending agency application under review.');
       error.statusCode = 409;
-      error.code = 'PENDING_APPLICATION_EXISTS';
+      error.code = 'HOSTING_REQUEST_ALREADY_PENDING';
       throw error;
     }
     throw err;
@@ -603,6 +623,29 @@ export async function approveAgencyApplication(
       error.statusCode = 409;
       error.code = 'APPLICATION_NOT_PENDING';
       throw error;
+    }
+
+    // Re-verify eligibility under lock before activating agency and assigning owner
+    try {
+      await validateHostingEligibility(application.applicantId, 'APPROVE_AGENCY_OWNER', tx, { lockRow: true });
+    } catch (err) {
+      if (err instanceof HostingEligibilityError || err.code?.startsWith('HOSTING_')) {
+        await logAudit(
+          {
+            adminId,
+            adminName,
+            action: 'ADMIN_AGENCY_APPROVAL_BLOCKED_CONFLICT',
+            targetEntity: 'AgencyApplication',
+            targetEntityId: applicationId,
+            reason: err.message,
+            beforeStateJson: { applicationId, applicantId: application.applicantId, status: application.status },
+            afterStateJson: { blocked: true, error: err.code, conflictingRole: err.conflictingRole },
+            ipAddress,
+          },
+          tx
+        );
+      }
+      throw err;
     }
 
     // Check if applicant already owns an agency

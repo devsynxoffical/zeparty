@@ -1,5 +1,6 @@
 import hostRepository from '../repositories/host.repository.js';
 import hostService from '../services/host.service.js';
+import hostingEligibilityService from '../services/hostingEligibility.service.js';
 import {
   applyHostSchema,
   reviewHostApplicationSchema,
@@ -267,8 +268,57 @@ export async function rejectSimulation(req, res, next) {
   }
 }
 
+export async function getHostingEligibility(req, res, next) {
+  try {
+    const userId = req.auth.userId;
+    const eligibility = await hostingEligibilityService.getHostingEligibilityOverview(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Hosting eligibility retrieved successfully',
+      data: eligibility,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function applyLiveHost(req, res, next) {
+  try {
+    const userId = req.auth.userId;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+    const {
+      name,
+      displayName,
+      hostType = 'LIVE_HOST',
+      idCardFrontUrl,
+      idCardBackUrl,
+      videoSampleUrl,
+    } = req.body || {};
+
+    const application = await hostService.applyForHost({
+      userId,
+      hostType: hostType === 'AUDIO_HOST' ? 'AUDIO_HOST' : 'LIVE_HOST',
+      idCardFrontUrl: idCardFrontUrl || 'https://assets.zeparty.app/verifications/id_front.jpg',
+      idCardBackUrl: idCardBackUrl || 'https://assets.zeparty.app/verifications/id_back.jpg',
+      videoSampleUrl: videoSampleUrl || 'https://assets.zeparty.app/verifications/selfie_liveness.mp4',
+      ipAddress,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Live Host application submitted successfully',
+      data: application,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   applyHost,
+  applyLiveHost,
+  getHostingEligibility,
   getMyHostProfile,
   getMyHostApplication,
   getHosts,

@@ -96,9 +96,20 @@ export async function initSocketServer(httpServer) {
       }
     });
 
-    // Real-time Agency & Host Invitation Delivery (Bug 05 Fix)
-    socket.on('agency:invite_member', (data) => {
+    // Real-time Agency & Host Invitation Delivery (Mutual Exclusion Guarded)
+    socket.on('agency:invite_member', async (data) => {
       if (data && data.targetUserId) {
+        try {
+          const { validateHostingEligibility } = await import('../services/hostingEligibility.service.js');
+          await validateHostingEligibility(data.targetUserId, 'JOIN_AUDIO_HOST');
+        } catch (err) {
+          return socket.emit('agency:error', {
+            code: err.code || 'HOSTING_ROLE_CONFLICT',
+            message: err.message || 'Target user is not eligible to join an agency as Audio Host.',
+            conflictingRole: err.conflictingRole,
+          });
+        }
+
         const payload = {
           id: data.invitationId || `sys_inv_${Date.now()}`,
           title: data.title || 'Host Invitation (ZeParty Official)',
@@ -119,9 +130,22 @@ export async function initSocketServer(httpServer) {
       }
     });
 
-    // Real-time Agency & Host Invitation Response Handler
-    socket.on('agency:respond_invite', (data) => {
+    // Real-time Agency & Host Invitation Response Handler (Mutual Exclusion Guarded)
+    socket.on('agency:respond_invite', async (data) => {
       if (data && data.inviterUserId) {
+        if (data.action === 'ACCEPT' || data.status === 'ACCEPTED') {
+          try {
+            const { validateHostingEligibility } = await import('../services/hostingEligibility.service.js');
+            await validateHostingEligibility(socket.userId, 'ACCEPT_AUDIO_HOST_INVITE');
+          } catch (err) {
+            return socket.emit('agency:error', {
+              code: err.code || 'HOSTING_ROLE_CONFLICT',
+              message: err.message,
+              conflictingRole: err.conflictingRole,
+            });
+          }
+        }
+
         io.to(`user:${data.inviterUserId}`).emit('agency:invitation_responded', {
           ...data,
           responderUserId: socket.userId,

@@ -27,6 +27,7 @@ userAgencyRouter.get('/public', agencyController.getPublicAgencies);
 
 // Coin Sellers route requested by Flutter CoinAgencyProvider
 userAgencyRouter.get('/sellers', authenticate, sellerController.getPublicSellers);
+userAgencyRouter.get('/eligibility', authenticate, agencyController.getHostingEligibility);
 userAgencyRouter.get('/my-agency', authenticate, agencyController.getMyAgency);
 userAgencyRouter.get('/me', authenticate, agencyController.getMyAgency);
 userAgencyRouter.get('/wallet', authenticate, agencyController.getMyAgencyWallet);

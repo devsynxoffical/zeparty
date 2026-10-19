@@ -8,6 +8,10 @@ import {
   isRestrictedSpecialAsset,
   isPublicStoreItem,
 } from '../utils/assetClassification.util.js';
+import hostingEligibilityService, {
+  validateHostingEligibility,
+  HostingEligibilityError,
+} from './hostingEligibility.service.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -1659,6 +1663,27 @@ export async function assignUserToAgencyByAdmin(
     throw error;
   }
 
+  // Enforce Hosting Mutual Exclusion for Audio Host assignment
+  try {
+    await validateHostingEligibility(userId, 'GRANT_AUDIO_HOST', db, { lockRow: true });
+  } catch (eligibilityErr) {
+    await logAudit(
+      {
+        adminId,
+        adminName,
+        action: 'ADMIN_ASSIGN_AGENCY_BLOCKED_CONFLICT',
+        targetEntity: 'User',
+        targetEntityId: userId,
+        reason: eligibilityErr.message,
+        beforeStateJson: { userId, attemptedAgencyId: agencyId },
+        afterStateJson: { blocked: true, error: eligibilityErr.code, conflictingRole: eligibilityErr.conflictingRole },
+        ipAddress,
+      },
+      db
+    );
+    throw eligibilityErr;
+  }
+
   const membership = await db.agencyMember.upsert({
     where: {
       agencyId_userId: {
@@ -1678,13 +1703,13 @@ export async function assignUserToAgencyByAdmin(
     },
   });
 
-  // Also link hostProfile if applicable
+  // Also link hostProfile as AUDIO_HOST
   const hostProfile = await db.hostProfile.upsert({
     where: { userId },
     create: {
       userId,
       agencyId,
-      hostType: 'BOTH',
+      hostType: 'AUDIO_HOST',
       hostStatus: 'ACTIVE',
     },
     update: {
@@ -1774,6 +1799,30 @@ export async function assignUserHostRoleByAdmin(
     const error = new Error('User not found');
     error.statusCode = 404;
     throw error;
+  }
+
+  // Enforce Hosting Mutual Exclusion for Live / Audio Host assignment
+  if (hostStatus === 'ACTIVE') {
+    const requestedAction = hostType === 'AUDIO_HOST' ? 'GRANT_AUDIO_HOST' : 'GRANT_LIVE_HOST';
+    try {
+      await validateHostingEligibility(userId, requestedAction, db, { lockRow: true });
+    } catch (eligibilityErr) {
+      await logAudit(
+        {
+          adminId,
+          adminName,
+          action: 'ADMIN_ASSIGN_HOST_BLOCKED_CONFLICT',
+          targetEntity: 'User',
+          targetEntityId: userId,
+          reason: eligibilityErr.message,
+          beforeStateJson: { userId, attemptedHostType: hostType, attemptedStatus: hostStatus },
+          afterStateJson: { blocked: true, error: eligibilityErr.code, conflictingRole: eligibilityErr.conflictingRole },
+          ipAddress,
+        },
+        db
+      );
+      throw eligibilityErr;
+    }
   }
 
   const hostProfile = await db.hostProfile.upsert({

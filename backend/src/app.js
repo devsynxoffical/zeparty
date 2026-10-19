@@ -210,6 +210,9 @@ app.use((err, req, res, next) => {
     message,
     error: {
       code: err.code || 'INTERNAL_SERVER_ERROR',
+      ...(err.conflictingRole ? { conflictingRole: err.conflictingRole } : {}),
+      ...(err.requestedRole ? { requestedRole: err.requestedRole } : {}),
+      ...(err.details ? { details: err.details } : {}),
       ...(env.NODE_ENV === 'development' ? { stack: err.stack } : {}),
     },
   });

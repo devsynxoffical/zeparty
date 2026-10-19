@@ -1,6 +1,10 @@
+import prisma from '../config/database.js';
 import agencyRepository from '../repositories/agency.repository.js';
 import agencyService from '../services/agency.service.js';
 import hostRepository from '../repositories/host.repository.js';
+import hostingEligibilityService, {
+  validateHostingEligibility,
+} from '../services/hostingEligibility.service.js';
 import {
   createAgencySchema,
   updateAgencySchema,
@@ -55,12 +59,24 @@ export async function joinAgency(req, res, next) {
       });
     }
 
-    const host = await hostRepository.findHostProfileByUserId(userId);
+    // 1. Enforce Shared Server-Side Eligibility Validator
+    // Active Live Host or Pending Live Host request is blocked immediately!
+    await validateHostingEligibility(userId, 'JOIN_AUDIO_HOST', prisma);
+
+    // 2. Ensure Audio Host profile exists for membership binding
+    let host = await hostRepository.findHostProfileByUserId(userId);
     if (!host) {
-      return res.status(400).json({
-        success: false,
-        message: 'User does not have an active host profile. Please apply for host status first.',
-        error: { code: 'NOT_A_HOST' },
+      host = await prisma.hostProfile.create({
+        data: {
+          userId,
+          hostType: 'AUDIO_HOST',
+          hostStatus: 'ACTIVE',
+          hostLevel: 1,
+        },
+      });
+      await prisma.user.update({
+        where: { id: userId },
+        data: { userType: 'HOST' },
       });
     }
 
@@ -454,9 +470,25 @@ export async function withdrawMyAgencyCommission(req, res, next) {
   }
 }
 
+export async function getHostingEligibility(req, res, next) {
+  try {
+    const userId = req.auth.userId;
+    const eligibility = await hostingEligibilityService.getHostingEligibilityOverview(userId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Hosting eligibility retrieved successfully',
+      data: eligibility,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getPublicAgencies,
   joinAgency,
+  getHostingEligibility,
   getMyAgency,
   applyRegisterAgency,
   submitAgencyApplication,

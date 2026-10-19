@@ -2034,72 +2034,32 @@ export async function onStreamHeartbeat(io, socket, data, callback) {
   }
 }
 
-export async function onUpdateRoomLock(arg1, arg2, arg3, arg4, arg5) {
-  const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
-  try {
-    const roomId = data?.roomId;
-    const actorUserId = socket.userId || data?.userId;
-    const isLocked = data?.isLocked;
-    const pin = data?.pin;
-    const lockMode = data?.lockMode || data?.mode;
-    const result = await roomService.controlRoomLock(roomId, { isLocked, pin, mode: lockMode, actorUserId }, db || prisma);
-    if (typeof callback === 'function') return callback(result);
-    return socket.emit('room:lock_updated', result);
-  } catch (err) {
-    const errPayload = { success: false, error: { code: err.code || 'LOCK_UPDATE_FAILED', message: err.message } };
-    if (typeof callback === 'function') return callback(errPayload);
-    return socket.emit('error', errPayload);
-  }
-}
-
-export async function onUpdateRoomDetails(arg1, arg2, arg3, arg4, arg5) {
-  const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
-  try {
-    const roomId = data?.roomId;
-    const actorUserId = socket.userId || data?.userId;
-    const { title, coverImageUrl, coverUrl, category, roomType, backgroundImageUrl, capacity, seatCapacity } = data || {};
-    const result = await roomService.updateRoomProfile(roomId, actorUserId, {
-      title,
-      coverImageUrl: coverImageUrl || coverUrl,
-      category,
-      roomType,
-      backgroundImageUrl,
-      capacity,
-      seatCapacity,
-    }, db || prisma);
-    if (typeof callback === 'function') return callback(result);
-    return socket.emit('room:details_updated', result.data);
-  } catch (err) {
-    const errPayload = { success: false, error: { code: err.code || 'PROFILE_UPDATE_FAILED', message: err.message } };
-    if (typeof callback === 'function') return callback(errPayload);
-    return socket.emit('error', errPayload);
-  }
-}
-
-export async function onUpdateRoomLayout(arg1, arg2, arg3, arg4, arg5) {
-  const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+export async function onUpdateRoomLayout(io, socket, data, callback) {
   try {
     const roomId = data?.roomId;
     if (!roomId) {
       const err = { success: false, error: { code: 'VALIDATION_ERROR', message: 'roomId is required' } };
       if (typeof callback === 'function') return callback(err);
-      return socket.emit('error', err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
-    const actorUserId = socket.userId || data?.userId;
+    const actorUserId = socket.user?.id || socket.userId || data?.userId;
     if (!actorUserId) {
       const err = { success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } };
       if (typeof callback === 'function') return callback(err);
-      return socket.emit('error', err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
     const capacity = data?.capacity || data?.seatCapacity;
     const roomType = data?.roomType;
-    const result = await roomService.updateRoomLayout(roomId, actorUserId, { capacity, roomType }, db || prisma);
+    const result = await roomService.updateRoomLayout(roomId, actorUserId, { capacity, roomType });
     if (typeof callback === 'function') return callback(result);
-    return socket.emit('room:layout_updated', result.data);
+    return socket.emit('room:layout_updated', result?.data || result);
   } catch (err) {
-    const errPayload = { success: false, error: { code: err.code || 'LAYOUT_UPDATE_FAILED', message: err.message } };
-    if (typeof callback === 'function') return callback(errPayload);
-    return socket.emit('error', errPayload);
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to update room layout' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
   }
 }
 

@@ -4,6 +4,10 @@ import policyService from './policy.service.js';
 import * as notificationService from './notification.service.js';
 import emailService from './email.service.js';
 import * as attendanceService from './attendance.service.js';
+import hostingEligibilityService, {
+  validateHostingEligibility,
+  HostingEligibilityError,
+} from './hostingEligibility.service.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
@@ -40,46 +44,40 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
 }
 
 export async function applyForHost({ userId, hostType, idCardFrontUrl, idCardBackUrl, videoSampleUrl, ipAddress }, db = prisma) {
-  // Check if active profile exists
-  const existingProfile = await hostRepository.findHostProfileByUserId(userId, db);
-  if (existingProfile && existingProfile.hostStatus === 'ACTIVE') {
-    const error = new Error('User already has an active host profile');
-    error.statusCode = 409;
-    error.code = 'HOST_PROFILE_ALREADY_EXISTS';
-    throw error;
-  }
+  const normalizedHostType = hostType ? hostType.toUpperCase() : 'LIVE_HOST';
+  const requestedAction = normalizedHostType === 'AUDIO_HOST' ? 'JOIN_AUDIO_HOST' : 'APPLY_LIVE_HOST';
 
-  // Check if pending application exists
-  const pendingApp = await hostRepository.findPendingApplicationByUserId(userId, db);
-  if (pendingApp) {
-    const error = new Error('User already has a pending host verification application');
-    error.statusCode = 409;
-    error.code = 'PENDING_APPLICATION_EXISTS';
-    throw error;
-  }
+  // Atomic transactional eligibility validation with PostgreSQL row lock
+  return await db.$transaction(async (tx) => {
+    // Shared Server-Side Eligibility Validator
+    await validateHostingEligibility(userId, requestedAction, tx, { lockRow: true });
 
-  const application = await hostRepository.createApplication(
-    {
-      userId,
-      hostType,
-      idCardFrontUrl,
-      idCardBackUrl,
-      videoSampleUrl,
-    },
-    db
-  );
+    const application = await hostRepository.createApplication(
+      {
+        userId,
+        hostType: normalizedHostType,
+        idCardFrontUrl,
+        idCardBackUrl,
+        videoSampleUrl,
+      },
+      tx
+    );
 
-  await logAudit({
-    adminId: userId,
-    adminName: 'User',
-    action: 'HOST_APPLICATION_SUBMITTED',
-    targetEntity: 'HostApplication',
-    targetEntityId: application.id,
-    afterStateJson: { hostType, status: 'APPLIED' },
-    ipAddress,
-  }, db);
+    await logAudit(
+      {
+        adminId: userId,
+        adminName: 'User',
+        action: 'HOST_APPLICATION_SUBMITTED',
+        targetEntity: 'HostApplication',
+        targetEntityId: application.id,
+        afterStateJson: { hostType: normalizedHostType, status: 'APPLIED' },
+        ipAddress,
+      },
+      tx
+    );
 
-  return application;
+    return application;
+  }, { maxWait: 15000, timeout: 30000 });
 }
 
 export async function reviewHostApplication(
@@ -112,41 +110,67 @@ export async function reviewHostApplication(
   const userEmail = targetUser?.email;
 
   if (status === 'ACTIVE' || status === 'APPROVED') {
-    // Atomic approval & host profile provisioning
-    const result = await db.$transaction(async (tx) => {
-      const updatedApp = await hostRepository.updateApplication(
-        applicationId,
-        {
-          status: 'ACTIVE',
-          reviewerAdminId: adminId,
-          reviewedAt: new Date(),
-        },
-        tx
-      );
+    // Atomic approval & host profile provisioning with shared validator re-check under lock
+    const requestedAction = application.hostType === 'AUDIO_HOST' ? 'ACTIVATE_AUDIO_HOST' : 'ACTIVATE_LIVE_HOST';
 
-      // Create or update HostProfile
-      const hostProfile = await tx.hostProfile.upsert({
-        where: { userId: application.userId },
-        update: {
-          hostType: application.hostType,
-          hostStatus: 'ACTIVE',
-        },
-        create: {
-          userId: application.userId,
-          hostType: application.hostType,
-          hostStatus: 'ACTIVE',
-          hostLevel: 1,
-        },
-      });
+    let result;
+    try {
+      result = await db.$transaction(async (tx) => {
+        // Enforce shared eligibility validator under row lock before activation
+        await validateHostingEligibility(application.userId, requestedAction, tx, { lockRow: true });
 
-      // Update userType to HOST
-      await tx.user.update({
-        where: { id: application.userId },
-        data: { userType: 'HOST' },
-      });
+        const updatedApp = await hostRepository.updateApplication(
+          applicationId,
+          {
+            status: 'ACTIVE',
+            reviewerAdminId: adminId,
+            reviewedAt: new Date(),
+          },
+          tx
+        );
 
-      return { application: updatedApp, hostProfile };
-    });
+        // Create or update HostProfile
+        const hostProfile = await tx.hostProfile.upsert({
+          where: { userId: application.userId },
+          update: {
+            hostType: application.hostType,
+            hostStatus: 'ACTIVE',
+          },
+          create: {
+            userId: application.userId,
+            hostType: application.hostType,
+            hostStatus: 'ACTIVE',
+            hostLevel: 1,
+          },
+        });
+
+        // Update userType to HOST
+        await tx.user.update({
+          where: { id: application.userId },
+          data: { userType: 'HOST' },
+        });
+
+        return { application: updatedApp, hostProfile };
+      }, { maxWait: 15000, timeout: 30000 });
+    } catch (err) {
+      if (err instanceof HostingEligibilityError || err.code?.startsWith('HOSTING_')) {
+        await logAudit(
+          {
+            adminId,
+            adminName,
+            action: 'ADMIN_HOST_APPROVAL_BLOCKED_CONFLICT',
+            targetEntity: 'HostApplication',
+            targetEntityId: applicationId,
+            reason: err.message,
+            beforeStateJson: { applicationId, targetUserId: application.userId, status: application.status },
+            afterStateJson: { blocked: true, error: err.code, conflictingRole: err.conflictingRole },
+            ipAddress,
+          },
+          db
+        );
+      }
+      throw err;
+    }
 
     await logAudit({
       adminId,
@@ -280,6 +304,32 @@ export async function updateHostProfileStatus(
     error.statusCode = 404;
     error.code = 'HOST_NOT_FOUND';
     throw error;
+  }
+
+  // If activating or reactivating host status, enforce mutual exclusion
+  if (hostStatus === 'ACTIVE') {
+    const requestedAction = host.hostType === 'AUDIO_HOST' ? 'ACTIVATE_AUDIO_HOST' : 'ACTIVATE_LIVE_HOST';
+    try {
+      await validateHostingEligibility(host.userId, requestedAction, db, { lockRow: false });
+    } catch (err) {
+      if (err instanceof HostingEligibilityError || err.code?.startsWith('HOSTING_')) {
+        await logAudit(
+          {
+            adminId,
+            adminName,
+            action: 'ADMIN_HOST_STATUS_UPDATE_BLOCKED_CONFLICT',
+            targetEntity: 'HostProfile',
+            targetEntityId: hostId,
+            reason: err.message,
+            beforeStateJson: { hostStatus: host.hostStatus, userId: host.userId },
+            afterStateJson: { blocked: true, requestedStatus: hostStatus, error: err.code },
+            ipAddress,
+          },
+          db
+        );
+      }
+      throw err;
+    }
   }
 
   const updatedHost = await hostRepository.updateHostProfile(
