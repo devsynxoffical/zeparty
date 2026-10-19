@@ -275,8 +275,24 @@ export async function getSelfProfile(userId, db = prisma) {
     ? (presence.lastActiveAt || new Date().toISOString())
     : (presence.lastActiveAt || '1970-01-01T00:00:00.000Z');
 
+  const wealthXpNum = user.profile?.experiencePoints != null ? Number(user.profile.experiencePoints) : 0;
+  const wealthLvl = user.profile?.level != null && user.profile.level > 0
+    ? user.profile.level
+    : (wealthXpNum > 0 ? Math.max(1, Math.floor(wealthXpNum / 10000) + 1) : 1);
+  const charmXpNum = user.profile?.totalEarnedDiamonds != null ? Number(user.profile.totalEarnedDiamonds) : 0;
+  const charmLvl = Math.max(1, Math.floor(charmXpNum / 10000) + 1);
+
   const profileWithPresence = user.profile ? {
     ...user.profile,
+    level: wealthLvl,
+    wealthLevel: wealthLvl,
+    wealthXp: wealthXpNum,
+    experience: wealthXpNum,
+    experiencePoints: user.profile.experiencePoints ? user.profile.experiencePoints.toString() : '0',
+    charmLevel: charmLvl,
+    charmXp: charmXpNum,
+    totalSpentCoins: user.profile.totalSpentCoins ? user.profile.totalSpentCoins.toString() : '0',
+    totalEarnedDiamonds: user.profile.totalEarnedDiamonds ? user.profile.totalEarnedDiamonds.toString() : '0',
     presenceStatus: presence.presenceStatus,
     currentRoomId: presence.currentRoomId,
     currentRoomTitle: presence.currentRoomTitle,
@@ -387,6 +403,12 @@ export async function getSelfProfile(userId, db = prisma) {
     liveRoomId: presence.currentRoomId || null,
     roomId: presence.currentRoomId || null,
     currentRoom: presence.currentRoom,
+    wealthLevel: wealthLvl,
+    wealthXp: wealthXpNum,
+    experience: wealthXpNum,
+    charmLevel: charmLvl,
+    charmXp: charmXpNum,
+    level: wealthLvl,
   };
 }
 
@@ -399,7 +421,8 @@ export async function updateSelfProfile(userId, profileData, db = prisma) {
     throw error;
   }
 
-  return await userRepository.updateUserProfile(userId, profileData, db);
+  await userRepository.updateUserProfile(userId, profileData, db);
+  return await getSelfProfile(userId, db);
 }
 
 export async function getPublicProfile(userId, db = prisma) {
@@ -488,8 +511,24 @@ export async function getPublicProfile(userId, db = prisma) {
     ? (presence.lastActiveAt || new Date().toISOString())
     : (presence.lastActiveAt || '1970-01-01T00:00:00.000Z');
 
+  const pubWealthXpNum = publicUser.profile?.experiencePoints != null ? Number(publicUser.profile.experiencePoints) : 0;
+  const pubWealthLvl = publicUser.profile?.level != null && publicUser.profile.level > 0
+    ? publicUser.profile.level
+    : (pubWealthXpNum > 0 ? Math.max(1, Math.floor(pubWealthXpNum / 10000) + 1) : 1);
+  const pubCharmXpNum = publicUser.profile?.totalEarnedDiamonds != null ? Number(publicUser.profile.totalEarnedDiamonds) : 0;
+  const pubCharmLvl = Math.max(1, Math.floor(pubCharmXpNum / 10000) + 1);
+
   const profileWithPresence = publicUser.profile ? {
     ...publicUser.profile,
+    level: pubWealthLvl,
+    wealthLevel: pubWealthLvl,
+    wealthXp: pubWealthXpNum,
+    experience: pubWealthXpNum,
+    experiencePoints: publicUser.profile.experiencePoints ? publicUser.profile.experiencePoints.toString() : '0',
+    charmLevel: pubCharmLvl,
+    charmXp: pubCharmXpNum,
+    totalSpentCoins: publicUser.profile.totalSpentCoins ? publicUser.profile.totalSpentCoins.toString() : '0',
+    totalEarnedDiamonds: publicUser.profile.totalEarnedDiamonds ? publicUser.profile.totalEarnedDiamonds.toString() : '0',
     presenceStatus: presence.presenceStatus,
     currentRoomId: presence.currentRoomId,
     currentRoomTitle: presence.currentRoomTitle,
@@ -537,6 +576,12 @@ export async function getPublicProfile(userId, db = prisma) {
     liveRoomId: presence.currentRoomId || null,
     roomId: presence.currentRoomId || null,
     currentRoom: presence.currentRoom,
+    wealthLevel: pubWealthLvl,
+    wealthXp: pubWealthXpNum,
+    experience: pubWealthXpNum,
+    charmLevel: pubCharmLvl,
+    charmXp: pubCharmXpNum,
+    level: pubWealthLvl,
   };
 }
 

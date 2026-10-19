@@ -140,6 +140,7 @@ export async function rotateRefreshToken({ refreshToken, ipAddress, userAgent })
 
   return {
     sessionId: session.id,
+    userId: session.userId,
     accessToken: newAccessToken,
     refreshToken: newTokens.rawToken,
     expiresAt: newTokens.expiresAt,

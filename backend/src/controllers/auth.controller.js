@@ -81,6 +81,8 @@ export async function refresh(req, res, next) {
       userAgent,
     });
 
+    const user = result.userId ? await authService.getCurrentUser({ userId: result.userId }).catch(() => null) : null;
+
     return res.status(200).json({
       success: true,
       message: 'Tokens refreshed successfully',
@@ -89,6 +91,7 @@ export async function refresh(req, res, next) {
         accessToken: result.accessToken,
         refreshToken: result.refreshToken,
         expiresAt: result.expiresAt,
+        ...(user ? { user } : {}),
       },
     });
   } catch (err) {
