@@ -103,6 +103,16 @@ export async function transferHostAgency(hostId, fromAgencyId, toAgencyId, reaso
   return res.data;
 }
 
+export async function getAgencyMembers(id, params = {}) {
+  try {
+    const res = await apiClient.get(`/v1/admin/agencies/${id}/members`, { params });
+    return res.data?.data || [];
+  } catch (err) {
+    console.warn('Failed to fetch agency members:', err.message);
+    return [];
+  }
+}
+
 export async function getAgencyApplications(params = {}) {
   try {
     const res = await apiClient.get('/v1/admin/agencies/applications', { params });

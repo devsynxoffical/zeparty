@@ -75,7 +75,9 @@ export async function joinRoom(req, res, next) {
   try {
     const { id } = roomIdParamSchema.parse(req.params);
     const userId = req.auth.userId;
-    const room = await roomService.joinRoom(id, userId);
+    const pin = req.body?.pin || req.body?.password;
+    const isApproved = Boolean(req.body?.isApproved);
+    const room = await roomService.joinRoom(id, userId, { pin, isApproved });
 
     return res.status(200).json({
       success: true,
@@ -582,6 +584,49 @@ export async function controlSuperWheel(req, res, next) {
   }
 }
 
+export async function getSuperWheel(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await roomService.controlSuperWheel(id, { action: 'GET' });
+    return res.status(200).json({ success: true, data: result.data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function joinSuperWheel(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.controlSuperWheel(id, { action: 'JOIN', ...req.body, actorUserId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function spinSuperWheel(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.controlSuperWheel(id, { action: 'SPIN', ...req.body, actorUserId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function cancelSuperWheel(req, res, next) {
+  try {
+    const { id } = req.params;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.controlSuperWheel(id, { action: 'CANCEL', ...req.body, actorUserId });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function controlLuckyBag(req, res, next) {
   try {
     const { id } = req.params;
@@ -593,12 +638,48 @@ export async function controlLuckyBag(req, res, next) {
   }
 }
 
+export async function getActiveLuckyBags(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await roomService.controlLuckyBag(id, { action: 'GET' });
+    return res.status(200).json({ success: true, data: result.data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function claimLuckyBag(req, res, next) {
+  try {
+    const { id, bagId } = req.params;
+    const actorUserId = req.auth?.userId;
+    const result = await roomService.controlLuckyBag(id, {
+      action: 'CLAIM',
+      bagId: bagId || req.body.bagId,
+      actorUserId,
+    });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function controlRoomLock(req, res, next) {
   try {
     const { id } = req.params;
     const actorUserId = req.auth?.userId;
     const result = await roomService.controlRoomLock(id, { ...req.body, actorUserId });
-    return res.status(200).json({ success: true, data: result });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateRoomProfile(req, res, next) {
+  try {
+    const { id } = req.params;
+    const userId = req.auth?.userId;
+    const result = await roomService.updateRoomProfile(id, userId, req.body);
+    return res.status(200).json(result);
   } catch (err) {
     next(err);
   }
@@ -926,6 +1007,42 @@ export async function postAdminClearRoomFeed(req, res, next) {
   }
 }
 
+export async function updateRoomProfile(req, res, next) {
+  try {
+    const { id } = req.params;
+    const userId = req.auth?.userId || req.user?.id;
+    const { title, coverImageUrl, coverUrl, category, roomType, backgroundImageUrl, capacity, seatCapacity } = req.body;
+    const result = await roomService.updateRoomProfile(id, userId, {
+      title,
+      coverImageUrl: coverImageUrl || coverUrl,
+      category,
+      roomType,
+      backgroundImageUrl,
+      capacity,
+      seatCapacity,
+    });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateRoomLayout(req, res, next) {
+  try {
+    const { id } = req.params;
+    const userId = req.auth?.userId || req.user?.id;
+    const { capacity, seatCapacity, roomType } = req.body;
+    const result = await roomService.updateRoomLayout(id, userId, {
+      capacity,
+      seatCapacity,
+      roomType,
+    });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -963,8 +1080,16 @@ export default {
   updateRoomAnnouncement,
   controlRoomYouTube,
   controlSuperWheel,
+  getSuperWheel,
+  joinSuperWheel,
+  spinSuperWheel,
+  cancelSuperWheel,
   controlLuckyBag,
+  getActiveLuckyBags,
+  claimLuckyBag,
   controlRoomLock,
+  updateRoomProfile,
+  updateRoomLayout,
   manageMicSeatAction,
   sendMicReaction,
   getEntryBannerConfig,

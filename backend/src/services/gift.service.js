@@ -445,11 +445,88 @@ export async function sendGift(
   }, db);
 
   if (roomId) {
-    socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_GIFT_SENT, {
-      roomId,
+    let canonicalRoomId = roomId;
+    try {
+      const roomRec = await db.room.findUnique({
+        where: { id: roomId },
+        select: { id: true },
+      });
+      if (roomRec) {
+        canonicalRoomId = roomRec.id;
+      } else if (roomId.length <= 16) {
+        const found = await db.room.findFirst({
+          where: { id: { startsWith: roomId, mode: 'insensitive' } },
+          select: { id: true },
+        });
+        if (found) canonicalRoomId = found.id;
+      }
+    } catch (_) {}
+
+    // Load sender & recipient user details for rich real-time display
+    let senderUser = null;
+    let recipientUser = null;
+    try {
+      [senderUser, recipientUser] = await Promise.all([
+        db.user.findUnique({
+          where: { id: senderUserId },
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: { select: { displayName: true } },
+          },
+        }),
+        db.user.findUnique({
+          where: { id: recipientUserId },
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: { select: { displayName: true } },
+          },
+        }),
+      ]);
+    } catch (_) {}
+
+    const senderDisplayName = senderUser?.profile?.displayName || senderUser?.username || 'User';
+    const senderAvatarUrl = senderUser?.profile?.avatarUrl || senderUser?.avatarUrl || '';
+    const recipientDisplayName = recipientUser?.profile?.displayName || recipientUser?.username || 'Host';
+    const recipientAvatarUrl = recipientUser?.profile?.avatarUrl || recipientUser?.avatarUrl || '';
+
+    const broadcastPayload = {
+      id: result.giftTransaction.id,
       transactionId: result.giftTransaction.id,
+      roomId: canonicalRoomId,
+      clientRoomId: roomId,
+      room: canonicalRoomId,
+      giftId: gift.id,
+      giftName: gift.name,
+      giftIcon: gift.iconUrl || '🎁',
+      quantity: qty,
+      totalCoins: totalCoins.toString(),
       senderUserId,
+      senderName: senderDisplayName,
+      senderAvatar: senderAvatarUrl,
+      sender: {
+        id: senderUserId,
+        userId: senderUserId,
+        name: senderDisplayName,
+        displayName: senderDisplayName,
+        username: senderUser?.username || senderDisplayName,
+        avatarUrl: senderAvatarUrl,
+      },
       recipientUserId,
+      receiverUserId: recipientUserId,
+      receiverName: recipientDisplayName,
+      receiverAvatar: recipientAvatarUrl,
+      receiver: {
+        id: recipientUserId,
+        userId: recipientUserId,
+        name: recipientDisplayName,
+        displayName: recipientDisplayName,
+        username: recipientUser?.username || recipientDisplayName,
+        avatarUrl: recipientAvatarUrl,
+      },
       gift: {
         id: gift.id,
         name: gift.name,
@@ -457,17 +534,49 @@ export async function sendGift(
         animationUrl: gift.svgaAssetUrl || null,
         isFullScreen: gift.isFullScreen || false,
       },
-      quantity: qty,
-      totalCoins: totalCoins.toString(),
       timestamp: new Date().toISOString(),
-    });
+    };
+
+    const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
+    for (const rid of targetRoomIds) {
+      socketEmitter.emitToRoom(rid, SOCKET_EVENTS.ROOM_GIFT_SENT, broadcastPayload);
+      socketEmitter.emitToRoom(rid, 'room:gift_sent', broadcastPayload);
+      socketEmitter.emitToRoom(rid, 'room_gift_sent', broadcastPayload);
+      socketEmitter.emitToRoom(rid, 'gift:sent', broadcastPayload);
+      socketEmitter.emitToRoom(rid, 'gift_sent', broadcastPayload);
+      socketEmitter.emitToRoom(rid, 'room:gift', broadcastPayload);
+    }
+
+    // Issue 08: Room Sending Coin Total Sync (Trophy Counter)
+    try {
+      const todayUtc = new Date();
+      todayUtc.setUTCHours(0, 0, 0, 0);
+      const dailyAggr = await (db || prisma).giftTransaction.aggregate({
+        where: { roomId: canonicalRoomId, createdAt: { gte: todayUtc } },
+        _sum: { totalCoins: true },
+      });
+      const updatedTotal = Number(dailyAggr._sum.totalCoins || 0);
+      const sendingTotalPayload = {
+        roomId: canonicalRoomId,
+        clientRoomId: roomId,
+        period: 'daily',
+        totalCoins: updatedTotal,
+        roomSendingTotal: updatedTotal,
+        dailySendingTotal: updatedTotal,
+        timestamp: new Date().toISOString(),
+      };
+      for (const rid of targetRoomIds) {
+        socketEmitter.emitToRoom(rid, 'room:sending_total_updated', sendingTotalPayload);
+        socketEmitter.emitToRoom(rid, 'room:sending_total', sendingTotalPayload);
+      }
+    } catch (_) {}
 
     try {
       await pkService.recordGiftContribution({
         giftTransactionId: result.giftTransaction.id,
         senderUserId,
         recipientUserId,
-        roomId,
+        roomId: canonicalRoomId,
         coins: Number(totalCoins),
         commitTimestamp: result.giftTransaction.createdAt,
       });
@@ -517,6 +626,8 @@ export async function sendGift(
   return {
     success: true,
     message: `Successfully sent ${qty}x ${gift.name} to host!`,
+    giftTransaction: result.giftTransaction,
+    transactionId: result.giftTransaction.id,
     wealthXPAdded: Number(result.senderWealth.addedXp),
     senderNewLevel: result.senderWealth.wealthLevel,
     senderWealth: result.senderWealth,

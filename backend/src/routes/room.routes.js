@@ -39,14 +39,38 @@ userRoomRouter.put('/:id/mic-config', authenticate, roomController.updateRoomMic
 userRoomRouter.get('/:id/announcement', roomController.getRoomAnnouncement);
 userRoomRouter.put('/:id/announcement', authenticate, roomController.updateRoomAnnouncement);
 
-// Module 06: Owner / Admin Room Options
+// Module 06: Owner / Admin Room Options (Super Wheel & Lucky Bag)
 userRoomRouter.post('/:id/youtube', authenticate, roomController.controlRoomYouTube);
 userRoomRouter.post('/:id/super-wheel', authenticate, roomController.controlSuperWheel);
+userRoomRouter.get('/:id/super-wheel', authenticate, roomController.getSuperWheel);
+userRoomRouter.post('/:id/super-wheel/join', authenticate, roomController.joinSuperWheel);
+userRoomRouter.post('/:id/super-wheel/spin', authenticate, roomController.spinSuperWheel);
+userRoomRouter.post('/:id/super-wheel/cancel', authenticate, roomController.cancelSuperWheel);
 userRoomRouter.post('/:id/lucky-bag', authenticate, roomController.controlLuckyBag);
+userRoomRouter.get('/:id/lucky-bag', authenticate, roomController.getActiveLuckyBags);
+userRoomRouter.post('/:id/lucky-bag/:bagId/claim', authenticate, roomController.claimLuckyBag);
+userRoomRouter.post('/:id/lucky-bag/claim', authenticate, roomController.claimLuckyBag);
 userRoomRouter.post('/:id/lock', authenticate, roomController.controlRoomLock);
+userRoomRouter.put('/:id/lock', authenticate, roomController.controlRoomLock);
+userRoomRouter.post('/:id/lock-settings', authenticate, roomController.controlRoomLock);
+userRoomRouter.put('/:id/lock-settings', authenticate, roomController.controlRoomLock);
+
+// Issue 09: Room Profile Update (Name, DP/Cover Image, Category, Room Type)
+userRoomRouter.put('/:id/profile', authenticate, roomController.updateRoomProfile);
+userRoomRouter.post('/:id/profile', authenticate, roomController.updateRoomProfile);
+userRoomRouter.put('/:id/details', authenticate, roomController.updateRoomProfile);
+userRoomRouter.post('/:id/details', authenticate, roomController.updateRoomProfile);
+userRoomRouter.put('/:id', authenticate, roomController.updateRoomProfile);
+
+// Issue 11: Room Layout & Mic Seat Count Management
+userRoomRouter.put('/:id/layout', authenticate, roomController.updateRoomLayout);
+userRoomRouter.post('/:id/layout', authenticate, roomController.updateRoomLayout);
+userRoomRouter.put('/:id/seats/layout', authenticate, roomController.updateRoomLayout);
 
 // Module 07: Mic Seat Action Sheet
 userRoomRouter.post('/:id/seats/:seatIndex/action', authenticate, roomController.manageMicSeatAction);
+userRoomRouter.post('/:id/seats/:seatIndex/lock', authenticate, roomController.manageMicSeatAction);
+userRoomRouter.post('/:id/seats/lock', authenticate, roomController.manageMicSeatAction);
 
 // Module 08: Mic Reaction Display
 userRoomRouter.post('/:id/mic-reaction', authenticate, roomController.sendMicReaction);

@@ -7,6 +7,9 @@ import { clearHostAbsentTimer } from '../socket/roomTimer.manager.js';
 import presenceService from '../socket/presence.service.js';
 import micInviteService from './micInvite.service.js';
 import * as attendanceService from './attendance.service.js';
+import wheelService from './wheel.service.js';
+import luckyBagService from './luckyBag.service.js';
+import bcrypt from 'bcryptjs';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -215,11 +218,30 @@ export async function getRoomDetails(roomId, db = prisma) {
     totalGiftCoins = room.giftTransactions.reduce((sum, tx) => sum + Number(tx.totalCoins || 0), 0);
   }
 
+  // Calculate today's daily gift coin total (Issue 08: Trophy Counter Sync)
+  const todayUtc = new Date();
+  todayUtc.setUTCHours(0, 0, 0, 0);
+  let dailyGiftCoins = 0;
+  try {
+    const dailyTx = await db.giftTransaction.aggregate({
+      where: {
+        roomId: room.id,
+        createdAt: { gte: todayUtc },
+      },
+      _sum: { totalCoins: true },
+    });
+    dailyGiftCoins = Number(dailyTx._sum.totalCoins || 0);
+  } catch (_) {}
+
   // Check if any seats are muted to determine room-level mute flag
   const isRoomMuted = Array.isArray(room.seats) && room.seats.length > 0 && room.seats.every((s) => s.isMuted);
 
+  const hasPin = Boolean(room.roomPin);
+  const lockMode = hasPin ? 'PIN' : (room.isPrivate ? 'Approval' : 'NONE');
+  const { roomPin: _confidentialPin, ...safeRoom } = room;
+
   return {
-    ...room,
+    ...safeRoom,
     currentViewersCount: viewerCount,
     viewerCount,
     count: viewerCount,
@@ -227,12 +249,20 @@ export async function getRoomDetails(roomId, db = prisma) {
     background: room.backgroundImageUrl || null,
     giftsReceivedCoins: totalGiftCoins,
     totalGifts: totalGiftCoins,
+    roomSendingTotal: dailyGiftCoins,
+    dailySendingTotal: dailyGiftCoins,
+    periodTotalCoins: dailyGiftCoins,
+    trophyCoins: dailyGiftCoins,
+    seatCapacity: (room.seats || []).length || 10,
+    capacity: (room.seats || []).length || 10,
+    isLocked: Boolean(room.isPrivate),
+    lockMode,
     isMuted: isRoomMuted,
   };
 }
 
-export async function joinRoom(roomId, userId, db = prisma) {
-  const result = await roomRepository.joinRoomTx({ roomId, userId }, db);
+export async function joinRoom(roomId, userId, { pin = null, isApproved = false } = {}, db = prisma) {
+  const result = await roomRepository.joinRoomTx({ roomId, userId, pin, isApproved }, db);
   if (result) {
     if (result.creatorUserId === userId) {
       try {
@@ -1042,16 +1072,24 @@ export async function updateMemberRole(roomId, actorUserId, targetUserId, { role
 }
 
 export async function getRoomSendingRankings(roomId, { period = 'daily', currentUserId } = {}, db = prisma) {
-  const room = await db.room.findUnique({
+  let canonicalRoomId = roomId;
+  let room = await db.room.findUnique({
     where: { id: roomId },
     select: { id: true, creatorUserId: true },
   });
+  if (!room && roomId && roomId.length <= 16) {
+    room = await db.room.findFirst({
+      where: { id: { startsWith: roomId, mode: 'insensitive' } },
+      select: { id: true, creatorUserId: true },
+    });
+  }
   if (!room) {
     const error = new Error('Room not found');
     error.statusCode = 404;
     error.code = 'ROOM_NOT_FOUND';
     throw error;
   }
+  canonicalRoomId = room.id;
 
   const startDate = new Date();
 
@@ -1070,7 +1108,7 @@ export async function getRoomSendingRankings(roomId, { period = 'daily', current
   const txs = await db.giftTransaction.groupBy({
     by: ['senderUserId'],
     where: {
-      roomId,
+      roomId: canonicalRoomId,
       createdAt: { gte: startDate },
     },
     _sum: {
@@ -1084,13 +1122,13 @@ export async function getRoomSendingRankings(roomId, { period = 'daily', current
   });
 
   const periodTotalResult = await db.giftTransaction.aggregate({
-    where: { roomId, createdAt: { gte: startDate } },
+    where: { roomId: canonicalRoomId, createdAt: { gte: startDate } },
     _sum: { totalCoins: true },
   });
   const periodTotalCoins = Number(periodTotalResult._sum.totalCoins || 0);
 
   const overallTotalResult = await db.giftTransaction.aggregate({
-    where: { roomId },
+    where: { roomId: canonicalRoomId },
     _sum: { totalCoins: true },
   });
   const overallTotalCoins = Number(overallTotalResult._sum.totalCoins || 0);
@@ -1129,7 +1167,7 @@ export async function getRoomSendingRankings(roomId, { period = 'daily', current
       viewerRank = rankings[userIndex];
     } else {
       const userTx = await db.giftTransaction.aggregate({
-        where: { roomId, senderUserId: currentUserId, createdAt: { gte: startDate } },
+        where: { roomId: canonicalRoomId, senderUserId: currentUserId, createdAt: { gte: startDate } },
         _sum: { totalCoins: true },
       });
       const userCoins = Number(userTx._sum.totalCoins || 0);
@@ -1147,6 +1185,9 @@ export async function getRoomSendingRankings(roomId, { period = 'daily', current
     period,
     periodTotalCoins,
     overallTotalCoins,
+    roomSendingTotal: periodTotalCoins,
+    dailySendingTotal: periodTotalCoins,
+    trophyCoins: periodTotalCoins,
     rankings,
     viewerRank,
   };
@@ -1270,47 +1311,433 @@ export async function controlRoomYouTube(roomId, { action, videoUrl, videoTitle,
   };
 }
 
-export async function controlSuperWheel(roomId, { action, roundCost = 100, actorUserId }, db = prisma) {
+export async function controlSuperWheel(
+  roomId,
+  { action = 'LAUNCH', sessionId, entryCoinFee, stakeAmount, maxParticipants = 10, rewardCoins = 0, actorUserId },
+  db = prisma
+) {
+  const upperAction = String(action || 'LAUNCH').toUpperCase();
+
+  if (upperAction === 'LAUNCH' || upperAction === 'CREATE') {
+    const fee = entryCoinFee !== undefined ? entryCoinFee : (stakeAmount || 0);
+    const session = await wheelService.createWheelSession(
+      roomId,
+      {
+        entryCoinFee: fee,
+        maxParticipants,
+        rewardCoins,
+        actorUserId,
+      },
+      db
+    );
+    return {
+      success: true,
+      message: 'Super Wheel session launched',
+      data: session,
+    };
+  }
+
+  if (upperAction === 'JOIN') {
+    return await wheelService.joinWheelSession({ sessionId, roomId, userId: actorUserId }, db);
+  }
+
+  if (upperAction === 'SPIN') {
+    return await wheelService.spinWheelRound({ sessionId, roomId, actorUserId }, db);
+  }
+
+  if (upperAction === 'CANCEL') {
+    return await wheelService.cancelWheelSession({ sessionId, roomId, actorUserId }, db);
+  }
+
+  const active = wheelService.getActiveWheelSession(roomId);
   return {
     success: true,
-    roomId,
-    sessionType: 'SUPER_WHEEL',
-    action: action || 'LAUNCH',
-    roundCost,
-    status: 'ACTIVE_SPINNING',
+    data: active,
   };
 }
 
-export async function controlLuckyBag(roomId, { action, totalCoins = 10000, claimCount = 10, actorUserId }, db = prisma) {
-  return {
-    success: true,
-    roomId,
-    sessionType: 'LUCKY_BAG',
-    action: action || 'CREATE',
-    totalCoins,
+export async function controlLuckyBag(
+  roomId,
+  {
+    action = 'CREATE',
+    bagId,
+    mode = 'normal',
+    totalCoins = 1000,
     claimCount,
-    claimsRemaining: claimCount,
-    status: 'ACTIVE_CLAIMABLE',
+    quantity,
+    claimersLimit,
+    taskType = 'none',
+    countdownSeconds = 0,
+    actorUserId,
+  },
+  db = prisma
+) {
+  const upperAction = String(action || 'CREATE').toUpperCase();
+
+  if (upperAction === 'CREATE' || upperAction === 'DROP') {
+    const bag = await luckyBagService.createLuckyBag(
+      {
+        roomId,
+        mode,
+        totalCoins,
+        quantity: quantity || claimCount || claimersLimit || 10,
+        taskType,
+        countdownSeconds,
+        creatorUserId: actorUserId,
+      },
+      db
+    );
+    return {
+      success: true,
+      message: 'Lucky Bag dropped successfully',
+      data: bag,
+    };
+  }
+
+  if (upperAction === 'CLAIM') {
+    return await luckyBagService.claimLuckyBag(
+      {
+        bagId,
+        roomId,
+        claimantUserId: actorUserId,
+      },
+      db
+    );
+  }
+
+  const bags = luckyBagService.getActiveLuckyBags(roomId);
+  return {
+    success: true,
+    data: bags,
   };
 }
 
-export async function controlRoomLock(roomId, { isLocked = true, accessMode = 'PASSWORD', pin = '1234', actorUserId }, db = prisma) {
+export async function controlRoomLock(roomId, { isLocked = true, accessMode = 'PASSWORD', mode, pin, actorUserId }, db = prisma) {
+  let room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  // Authorization check: Only Host/Creator or Moderator/Admin
+  const isCreator = room.creatorUserId === actorUserId;
+  let isAuthorized = isCreator;
+  if (!isAuthorized && actorUserId) {
+    const member = await db.roomMember.findFirst({
+      where: {
+        roomId: room.id,
+        userId: actorUserId,
+        role: { in: ['OWNER', 'CO_HOST', 'ADMIN', 'MODERATOR'] },
+      },
+    });
+    if (member) isAuthorized = true;
+  }
+
+  if (!isAuthorized) {
+    const error = new Error('Only the room host or moderator can configure room lock settings');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  const effectiveLockMode = (mode || accessMode || 'PIN').toUpperCase();
+  const locked = Boolean(isLocked);
+  let hashedPin = null;
+
+  if (locked) {
+    if (effectiveLockMode === 'PIN' || effectiveLockMode === 'PASSWORD') {
+      const pinStr = String(pin !== undefined && pin !== null ? pin : '1234').trim();
+      if (!/^\d{4,8}$/.test(pinStr)) {
+        const error = new Error('PIN must be between 4 and 8 digits');
+        error.statusCode = 400;
+        error.code = 'INVALID_PIN_FORMAT';
+        throw error;
+      }
+      hashedPin = await bcrypt.hash(pinStr, 10);
+    }
+  }
+
+  await roomRepository.updateRoomLockSettings({
+    roomId: room.id,
+    isLocked: locked,
+    roomPin: hashedPin,
+  }, db);
+
+  const payload = {
+    roomId: room.id,
+    clientRoomId: roomId,
+    isLocked: locked,
+    lockMode: locked ? (effectiveLockMode.includes('APPROVAL') ? 'Approval' : 'PIN') : 'NONE',
+    hasPin: Boolean(hashedPin),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Broadcast lock state to room participants
+  try {
+    socketEmitter.emitToRoom(room.id, 'room:lock_updated', payload);
+    socketEmitter.emitToRoom(room.id, 'room:lock_status', payload);
+    socketEmitter.emitToRoom(room.id, 'room:lock_settings', payload);
+    if (room.id !== roomId) {
+      socketEmitter.emitToRoom(roomId, 'room:lock_updated', payload);
+      socketEmitter.emitToRoom(roomId, 'room:lock_status', payload);
+    }
+  } catch (_) {}
+
   return {
     success: true,
-    roomId,
-    isLocked: Boolean(isLocked),
-    accessMode,
-    pin: accessMode === 'PASSWORD' ? pin : null,
+    data: payload,
+  };
+}
+
+export async function updateRoomProfile(roomId, userId, { title, coverImageUrl, coverUrl, category, roomType, backgroundImageUrl }, db = prisma) {
+  let room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  // Authorization: Only host or admin can update room profile
+  const isCreator = room.creatorUserId === userId;
+  let isAuthorized = isCreator;
+  if (!isAuthorized && userId) {
+    const member = await db.roomMember.findFirst({
+      where: {
+        roomId: room.id,
+        userId,
+        role: { in: ['OWNER', 'CO_HOST', 'ADMIN', 'MODERATOR'] },
+      },
+    });
+    if (member) isAuthorized = true;
+  }
+
+  if (!isAuthorized) {
+    const error = new Error('Only the room host or moderator can update room information');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  const finalCover = coverImageUrl !== undefined ? coverImageUrl : coverUrl;
+
+  const updatedRoom = await roomRepository.updateRoomDetails({
+    roomId: room.id,
+    title,
+    coverImageUrl: finalCover,
+    category,
+    roomType,
+    backgroundImageUrl,
+  }, db);
+
+  const payload = {
+    roomId: room.id,
+    clientRoomId: roomId,
+    title: updatedRoom.title,
+    coverImageUrl: updatedRoom.coverImageUrl,
+    coverUrl: updatedRoom.coverImageUrl,
+    category: updatedRoom.category,
+    roomType: updatedRoom.roomType,
+    backgroundImageUrl: updatedRoom.backgroundImageUrl,
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    socketEmitter.emitToRoom(room.id, 'room:details_updated', payload);
+    socketEmitter.emitToRoom(room.id, 'room:profile_updated', payload);
+    socketEmitter.emitToRoom(room.id, 'room:update_details', payload);
+    socketEmitter.emitToRoom(room.id, 'room:details_update', payload);
+    if (room.id !== roomId) {
+      socketEmitter.emitToRoom(roomId, 'room:details_updated', payload);
+      socketEmitter.emitToRoom(roomId, 'room:profile_updated', payload);
+    }
+  } catch (_) {}
+
+  return {
+    success: true,
+    data: payload,
+  };
+}
+
+/**
+ * Issue 11: Update Room Seat Count & Layout Mode
+ */
+export async function updateRoomLayout(roomId, userId, { capacity, seatCapacity, roomType }, db = prisma) {
+  let room = await db.room.findUnique({
+    where: { id: roomId },
+    include: { creator: true },
+  });
+
+  if (!room && roomId && roomId.length <= 16) {
+    room = await db.room.findFirst({
+      where: { id: { startsWith: roomId, mode: 'insensitive' } },
+      include: { creator: true },
+    });
+  }
+
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  // Authorization check: Only Host/Creator or Moderator/Admin
+  let isAuthorized = room.creatorUserId === userId;
+  if (!isAuthorized && userId) {
+    const member = await db.roomMember.findFirst({
+      where: {
+        roomId: room.id,
+        userId,
+        role: { in: ['OWNER', 'CO_HOST', 'ADMIN', 'MODERATOR'] },
+      },
+    });
+    if (member) isAuthorized = true;
+  }
+
+  if (!isAuthorized) {
+    const error = new Error('Only the room host or moderator can update room layout');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  const requestedCapacity = parseInt(capacity || seatCapacity, 10);
+  if (!requestedCapacity || isNaN(requestedCapacity) || requestedCapacity < 8 || requestedCapacity > 50) {
+    const error = new Error('Invalid seat capacity. Must be between 8 and 30');
+    error.statusCode = 400;
+    error.code = 'INVALID_SEAT_CAPACITY';
+    throw error;
+  }
+
+  const updatedRoom = await roomRepository.updateRoomLayoutTx({
+    roomId: room.id,
+    capacity: requestedCapacity,
+    roomType,
+  }, db);
+
+  const finalCapacity = (updatedRoom.seats || []).length;
+  const payload = {
+    roomId: room.id,
+    clientRoomId: roomId,
+    capacity: finalCapacity,
+    seatCapacity: finalCapacity,
+    roomType: updatedRoom.roomType,
+    seats: (updatedRoom.seats || []).map((s) => {
+      const u = s.occupiedUser || s.user;
+      return {
+        seatIndex: s.seatIndex,
+        isLocked: s.isLocked,
+        isMuted: s.isMuted,
+        user: u ? {
+          id: u.id,
+          username: u.username,
+          displayName: u.profile?.displayName || u.displayName || u.username,
+          avatarUrl: u.profile?.avatarUrl || u.avatarUrl || null,
+        } : null,
+      };
+    }),
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    socketEmitter.emitToRoom(room.id, 'room:layout_updated', payload);
+    socketEmitter.emitToRoom(room.id, 'room:update_layout', payload);
+    if (room.id !== roomId) {
+      socketEmitter.emitToRoom(roomId, 'room:layout_updated', payload);
+      socketEmitter.emitToRoom(roomId, 'room:update_layout', payload);
+    }
+  } catch (_) {}
+
+  return {
+    success: true,
+    message: 'Room layout updated successfully',
+    data: payload,
   };
 }
 
 /**
  * Module 07: Room Mic Seat Management Action Sheet
  */
-export async function manageMicSeatAction(roomId, { seatIndex = 0, action = 'LOCK', targetUserId, actorUserId }, db = prisma) {
-  const upperAction = String(action).toUpperCase();
+export async function lockRoomSeat(roomId, { seatIndex = 0, isLocked = true, actorUserId }, db = prisma) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  // Permission check: Host or Co-Host or Moderator
+  const isCreator = room.creatorUserId === actorUserId;
+  let isAuthorized = isCreator;
+  if (!isAuthorized && actorUserId) {
+    const member = await db.roomMember.findFirst({
+      where: {
+        roomId: room.id,
+        userId: actorUserId,
+        role: { in: ['OWNER', 'CO_HOST', 'MODERATOR', 'ADMIN'] },
+      },
+    });
+    if (member) isAuthorized = true;
+  }
+
+  if (!isAuthorized) {
+    const error = new Error('Only the room host or moderator can lock or unlock microphone seats');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  const sIndex = Number(seatIndex);
+  if (isNaN(sIndex) || sIndex < 0 || sIndex > 30) {
+    const error = new Error('Invalid seatIndex (must be 0-30)');
+    error.statusCode = 400;
+    error.code = 'INVALID_SEAT_INDEX';
+    throw error;
+  }
+
+  const updatedSeat = await roomRepository.updateSeatLockStatus(
+    { roomId: room.id, seatIndex: sIndex, isLocked: Boolean(isLocked) },
+    db
+  );
+
+  const eventId = `evt-seat-lock-${room.id}-${sIndex}-${Date.now()}`;
+  const payload = {
+    id: eventId,
+    eventId,
+    roomId: room.id,
+    clientRoomId: roomId,
+    seatIndex: sIndex,
+    isLocked: Boolean(isLocked),
+    lockedByUserId: actorUserId,
+    timestamp: new Date().toISOString(),
+  };
+
+  // Broadcast to room channels
+  socketEmitter.emitToRoom(room.id, 'room:seat_locked_status', payload);
+  socketEmitter.emitToRoom(room.id, 'room:seat_locked', payload);
+  socketEmitter.emitToRoom(room.id, 'room:lock_seat', payload);
+  socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_SEAT_UPDATED, payload);
+
+  return {
+    success: true,
+    message: `Seat ${sIndex} ${isLocked ? 'locked' : 'unlocked'} successfully`,
+    data: payload,
+  };
+}
+
+export async function manageMicSeatAction(roomId, { seatIndex = 0, action = 'LOCK', isLocked, targetUserId, actorUserId }, db = prisma) {
+  const upperAction = String(action || '').toUpperCase();
   if (['REMOVE_FROM_MIC', 'REMOVE_MIC', 'MUTE', 'UNMUTE', 'KICK'].includes(upperAction) && targetUserId) {
     return await moderateRoomUser(roomId, actorUserId, { targetUserId, action: upperAction }, db);
+  }
+
+  if (upperAction === 'LOCK' || upperAction === 'UNLOCK' || isLocked !== undefined) {
+    const lockState = isLocked !== undefined ? Boolean(isLocked) : upperAction === 'LOCK';
+    return await lockRoomSeat(roomId, { seatIndex, isLocked: lockState, actorUserId }, db);
   }
 
   return {
@@ -2244,7 +2671,10 @@ export default {
   controlSuperWheel,
   controlLuckyBag,
   controlRoomLock,
+  updateRoomProfile,
+  updateRoomLayout,
   manageMicSeatAction,
+  lockRoomSeat,
   sendMicReaction,
   getEntryBannerConfig,
   validateModerationPermission,

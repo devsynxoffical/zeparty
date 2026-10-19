@@ -100,6 +100,9 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     }
   }
 
+  const hasPin = Boolean(room.roomPin);
+  const lockMode = hasPin ? 'PIN' : (room.isPrivate ? 'Approval' : 'NONE');
+
   return {
     id: room.id,
     roomId: room.id,
@@ -111,6 +114,7 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     backgroundImageUrl: room.backgroundImageUrl || null,
     background: room.backgroundImageUrl || null,
     coverImageUrl: room.coverImageUrl || null,
+    coverUrl: room.coverImageUrl || null,
     isPinned: Boolean(room.isPinned),
     pinPosition: room.pinPosition || null,
     currentViewersCount: typeof viewerCount === 'number' ? viewerCount : (room.currentViewersCount || 0),
@@ -118,6 +122,14 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     feedClearedAt: room.feedClearedAt || null,
     agoraChannelName: room.agoraChannelName || null,
     agoraHostUid: hostUserId ? deriveAgoraUid(hostUserId) : null,
+    isLocked: Boolean(room.isPrivate),
+    lockMode,
+    seatCapacity: (room.seats || []).length || 10,
+    capacity: (room.seats || []).length || 10,
+    roomSendingTotal: room.roomSendingTotal || room.dailySendingTotal || 0,
+    dailySendingTotal: room.dailySendingTotal || room.roomSendingTotal || 0,
+    periodTotalCoins: room.periodTotalCoins || room.dailySendingTotal || 0,
+    trophyCoins: room.trophyCoins || room.dailySendingTotal || 0,
     host: room.creator ? {
       id: room.creator.id,
       username: room.creator.username,
@@ -225,8 +237,21 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     // 3. Persistent RoomMember registration via authoritative Room Service
     let joinResult = null;
     try {
-      joinResult = await roomService.joinRoom(room.id, userId, db || prisma);
+      const pin = data?.pin || data?.password || data?.roomPin;
+      const isApproved = Boolean(data?.isApproved);
+      joinResult = await roomService.joinRoom(room.id, userId, { pin, isApproved }, db || prisma);
     } catch (joinErr) {
+      if (['ROOM_LOCKED_PIN_REQUIRED', 'INVALID_ROOM_PIN', 'ROOM_APPROVAL_REQUIRED'].includes(joinErr.code)) {
+        const errPayload = {
+          success: false,
+          error: {
+            code: joinErr.code,
+            message: joinErr.message,
+          },
+        };
+        if (typeof callback === 'function') return callback(errPayload);
+        return socket.emit(SOCKET_EVENTS.ERROR, errPayload);
+      }
       console.warn(`[RoomSocket] Warning joining room ${roomId} for user ${userId}:`, joinErr.message);
     }
 
@@ -289,8 +314,59 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       feedClearedAt = await presenceService.getRoomFeedClearedAt(room.id);
     } catch (_) {}
 
+    let recentGifts = [];
+    try {
+      const recentTxs = await (db || prisma).giftTransaction.findMany({
+        where: { roomId: room.id },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: {
+          gift: { select: { id: true, name: true, iconUrl: true } },
+          sender: { select: { id: true, username: true, avatarUrl: true, profile: { select: { displayName: true } } } },
+          recipient: { select: { id: true, username: true, avatarUrl: true, profile: { select: { displayName: true } } } },
+        },
+      });
+      recentGifts = recentTxs.reverse().map((tx) => ({
+        id: tx.id,
+        transactionId: tx.id,
+        roomId: room.id,
+        giftId: tx.giftId,
+        giftName: tx.gift?.name || 'Gift',
+        giftIcon: tx.gift?.iconUrl || '🎁',
+        quantity: tx.giftCount,
+        senderUserId: tx.senderUserId,
+        senderName: tx.sender?.profile?.displayName || tx.sender?.username || 'User',
+        senderAvatar: tx.sender?.avatarUrl || '',
+        receiverUserId: tx.recipientUserId,
+        receiverName: tx.recipient?.profile?.displayName || tx.recipient?.username || 'Host',
+        receiverAvatar: tx.recipient?.avatarUrl || '',
+        timestamp: tx.createdAt.toISOString(),
+      }));
+    } catch (_) {}
+
+    // Issue 08: Calculate today's daily gift coin total for room header trophy counter
+    let dailySendingTotal = 0;
+    try {
+      const todayUtc = new Date();
+      todayUtc.setUTCHours(0, 0, 0, 0);
+      const dailyAggr = await (db || prisma).giftTransaction.aggregate({
+        where: { roomId: room.id, createdAt: { gte: todayUtc } },
+        _sum: { totalCoins: true },
+      });
+      dailySendingTotal = Number(dailyAggr._sum.totalCoins || 0);
+    } catch (_) {}
+    room.dailySendingTotal = dailySendingTotal;
+    room.roomSendingTotal = dailySendingTotal;
+    room.periodTotalCoins = dailySendingTotal;
+    room.trophyCoins = dailySendingTotal;
+
     const snapshot = buildRoomSnapshot(room, currentCount, activeUsers);
     snapshot.feedClearedAt = feedClearedAt;
+    snapshot.recentGifts = recentGifts;
+    snapshot.dailySendingTotal = dailySendingTotal;
+    snapshot.roomSendingTotal = dailySendingTotal;
+    snapshot.periodTotalCoins = dailySendingTotal;
+    snapshot.trophyCoins = dailySendingTotal;
     socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, {
       room: snapshot,
       ...snapshot,
@@ -299,6 +375,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       currentViewersCount: currentCount,
       viewerCount: currentCount,
       feedClearedAt,
+      recentGifts,
     });
 
     // 6. Broadcast user joined event ONLY on genuine initial entry (not reconnects/pings)
@@ -766,8 +843,39 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       feedClearedAt = await presenceService.getRoomFeedClearedAt(room.id);
     } catch (_) {}
 
+    let recentGifts = [];
+    try {
+      const recentTxs = await (db || prisma).giftTransaction.findMany({
+        where: { roomId: room.id },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: {
+          gift: { select: { id: true, name: true, iconUrl: true } },
+          sender: { select: { id: true, username: true, avatarUrl: true, profile: { select: { displayName: true } } } },
+          recipient: { select: { id: true, username: true, avatarUrl: true, profile: { select: { displayName: true } } } },
+        },
+      });
+      recentGifts = recentTxs.reverse().map((tx) => ({
+        id: tx.id,
+        transactionId: tx.id,
+        roomId: room.id,
+        giftId: tx.giftId,
+        giftName: tx.gift?.name || 'Gift',
+        giftIcon: tx.gift?.iconUrl || '🎁',
+        quantity: tx.giftCount,
+        senderUserId: tx.senderUserId,
+        senderName: tx.sender?.profile?.displayName || tx.sender?.username || 'User',
+        senderAvatar: tx.sender?.avatarUrl || '',
+        receiverUserId: tx.recipientUserId,
+        receiverName: tx.recipient?.profile?.displayName || tx.recipient?.username || 'Host',
+        receiverAvatar: tx.recipient?.avatarUrl || '',
+        timestamp: tx.createdAt.toISOString(),
+      }));
+    } catch (_) {}
+
     const snapshot = buildRoomSnapshot(room, viewerCount, activeUsers);
     snapshot.feedClearedAt = feedClearedAt;
+    snapshot.recentGifts = recentGifts;
     const responsePayload = {
       room: snapshot,
       ...snapshot,
@@ -777,6 +885,7 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       currentViewersCount: viewerCount,
       viewerCount,
       feedClearedAt,
+      recentGifts,
       timestamp: new Date().toISOString(),
     };
 
@@ -1386,7 +1495,80 @@ export async function onUpdateRoomBackground(io, socket, data, callback) {
   }
 }
 
+export async function onUpdateRoomLock(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId;
+    if (!roomId) {
+      const err = { success: false, error: { code: 'VALIDATION_ERROR', message: 'roomId is required' } };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+    const actorUserId = socket.user?.id || socket.userId;
+    const result = await roomService.controlRoomLock(roomId, {
+      ...data,
+      actorUserId,
+    });
+    if (typeof callback === 'function') return callback(result);
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to update room lock settings' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
+export async function onUpdateRoomDetails(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId;
+    if (!roomId) {
+      const err = { success: false, error: { code: 'VALIDATION_ERROR', message: 'roomId is required' } };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+    const userId = socket.user?.id || socket.userId;
+    const result = await roomService.updateRoomProfile(roomId, userId, data);
+    if (typeof callback === 'function') return callback(result);
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to update room profile' },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+  }
+}
+
 export function registerRoomHandlers(io, socket) {
+  // Issue 07: Room Lock Settings Realtime Socket Events
+  socket.on(
+    'room:update_lock',
+    withRateLimit('ROOM_LOCK', 10, 1000, (s, d, cb) => onUpdateRoomLock(io, s, d, cb))
+  );
+  socket.on(
+    'room:lock_settings',
+    withRateLimit('ROOM_LOCK', 10, 1000, (s, d, cb) => onUpdateRoomLock(io, s, d, cb))
+  );
+  socket.on(
+    'room:lock',
+    withRateLimit('ROOM_LOCK', 10, 1000, (s, d, cb) => onUpdateRoomLock(io, s, d, cb))
+  );
+
+  // Issue 09: Room Details & Profile Updates Realtime Socket Events
+  socket.on(
+    'room:update_details',
+    withRateLimit('ROOM_PROFILE', 10, 1000, (s, d, cb) => onUpdateRoomDetails(io, s, d, cb))
+  );
+  socket.on(
+    'room:details_update',
+    withRateLimit('ROOM_PROFILE', 10, 1000, (s, d, cb) => onUpdateRoomDetails(io, s, d, cb))
+  );
+  socket.on(
+    'room:profile_update',
+    withRateLimit('ROOM_PROFILE', 10, 1000, (s, d, cb) => onUpdateRoomDetails(io, s, d, cb))
+  );
+
   socket.on(
     'room:update_background',
     withRateLimit('ROOM_BG', 10, 1000, (s, d, cb) => onUpdateRoomBackground(io, s, d, cb))
@@ -1771,6 +1953,21 @@ export function registerRoomHandlers(io, socket) {
   socket.on('live:heartbeat', (d, cb) => onStreamHeartbeat(io, socket, d, cb));
   socket.on('room:heartbeat', (d, cb) => onStreamHeartbeat(io, socket, d, cb));
 
+  // Issue 07: Room Lock Settings Realtime Sync
+  socket.on('room:update_lock', (d, cb) => onUpdateRoomLock(io, socket, d, cb));
+  socket.on('room:lock_settings', (d, cb) => onUpdateRoomLock(io, socket, d, cb));
+  socket.on('room:lock', (d, cb) => onUpdateRoomLock(io, socket, d, cb));
+
+  // Issue 09: Room Profile / Details Realtime Sync
+  socket.on('room:update_details', (d, cb) => onUpdateRoomDetails(io, socket, d, cb));
+  socket.on('room:details_update', (d, cb) => onUpdateRoomDetails(io, socket, d, cb));
+  socket.on('room:profile_update', (d, cb) => onUpdateRoomDetails(io, socket, d, cb));
+
+  // Issue 11: Room Seat Count & Layout Mode Realtime Sync
+  socket.on('room:update_layout', (d, cb) => onUpdateRoomLayout(io, socket, d, cb));
+  socket.on('room:layout_updated', (d, cb) => onUpdateRoomLayout(io, socket, d, cb));
+  socket.on('room:change_layout', (d, cb) => onUpdateRoomLayout(io, socket, d, cb));
+
   // Handle both disconnecting (before leaveAll) and disconnect (as safety fallback)
   socket.on('disconnecting', () => onSocketDisconnect(io, socket));
   socket.on(SOCKET_EVENTS.DISCONNECT, () => onSocketDisconnect(io, socket));
@@ -1837,6 +2034,75 @@ export async function onStreamHeartbeat(io, socket, data, callback) {
   }
 }
 
+export async function onUpdateRoomLock(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const actorUserId = socket.userId || data?.userId;
+    const isLocked = data?.isLocked;
+    const pin = data?.pin;
+    const lockMode = data?.lockMode || data?.mode;
+    const result = await roomService.controlRoomLock(roomId, { isLocked, pin, mode: lockMode, actorUserId }, db || prisma);
+    if (typeof callback === 'function') return callback(result);
+    return socket.emit('room:lock_updated', result);
+  } catch (err) {
+    const errPayload = { success: false, error: { code: err.code || 'LOCK_UPDATE_FAILED', message: err.message } };
+    if (typeof callback === 'function') return callback(errPayload);
+    return socket.emit('error', errPayload);
+  }
+}
+
+export async function onUpdateRoomDetails(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    const actorUserId = socket.userId || data?.userId;
+    const { title, coverImageUrl, coverUrl, category, roomType, backgroundImageUrl, capacity, seatCapacity } = data || {};
+    const result = await roomService.updateRoomProfile(roomId, actorUserId, {
+      title,
+      coverImageUrl: coverImageUrl || coverUrl,
+      category,
+      roomType,
+      backgroundImageUrl,
+      capacity,
+      seatCapacity,
+    }, db || prisma);
+    if (typeof callback === 'function') return callback(result);
+    return socket.emit('room:details_updated', result.data);
+  } catch (err) {
+    const errPayload = { success: false, error: { code: err.code || 'PROFILE_UPDATE_FAILED', message: err.message } };
+    if (typeof callback === 'function') return callback(errPayload);
+    return socket.emit('error', errPayload);
+  }
+}
+
+export async function onUpdateRoomLayout(arg1, arg2, arg3, arg4, arg5) {
+  const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId;
+    if (!roomId) {
+      const err = { success: false, error: { code: 'VALIDATION_ERROR', message: 'roomId is required' } };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit('error', err);
+    }
+    const actorUserId = socket.userId || data?.userId;
+    if (!actorUserId) {
+      const err = { success: false, error: { code: 'UNAUTHORIZED', message: 'Authentication required' } };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit('error', err);
+    }
+    const capacity = data?.capacity || data?.seatCapacity;
+    const roomType = data?.roomType;
+    const result = await roomService.updateRoomLayout(roomId, actorUserId, { capacity, roomType }, db || prisma);
+    if (typeof callback === 'function') return callback(result);
+    return socket.emit('room:layout_updated', result.data);
+  } catch (err) {
+    const errPayload = { success: false, error: { code: err.code || 'LAYOUT_UPDATE_FAILED', message: err.message } };
+    if (typeof callback === 'function') return callback(errPayload);
+    return socket.emit('error', errPayload);
+  }
+}
+
 export default {
   buildRoomSnapshot,
   onJoinRoom,
@@ -1858,5 +2124,8 @@ export default {
   onSocketDisconnect,
   onStreamHeartbeat,
   onClearScreen,
+  onUpdateRoomLock,
+  onUpdateRoomDetails,
+  onUpdateRoomLayout,
   registerRoomHandlers,
 };

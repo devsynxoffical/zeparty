@@ -8,6 +8,8 @@ import { registerRoomHandlers } from './room.socket.js';
 import { registerSeatHandlers } from './seat.socket.js';
 import { registerGiftHandlers } from './gift.socket.js';
 import { registerPKHandlers } from './pk.socket.js';
+import { registerWheelHandlers } from './wheel.socket.js';
+import { registerLuckyBagHandlers } from './luckyBag.socket.js';
 import presenceService from './presence.service.js';
 
 let ioInstance = null;
@@ -81,6 +83,8 @@ export async function initSocketServer(httpServer) {
     registerSeatHandlers(io, socket);
     registerGiftHandlers(io, socket);
     registerPKHandlers(io, socket);
+    registerWheelHandlers(io, socket);
+    registerLuckyBagHandlers(io, socket);
 
     // Direct Messaging Typing Indicators
     socket.on('chat:typing', (data) => {
