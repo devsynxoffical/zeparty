@@ -677,8 +677,17 @@ export async function controlRoomLock(req, res, next) {
 export async function updateRoomProfile(req, res, next) {
   try {
     const { id } = req.params;
-    const userId = req.auth?.userId;
-    const result = await roomService.updateRoomProfile(id, userId, req.body);
+    const userId = req.auth?.userId || req.user?.id;
+    const { title, coverImageUrl, coverUrl, category, roomType, backgroundImageUrl, capacity, seatCapacity } = req.body;
+    const result = await roomService.updateRoomProfile(id, userId, {
+      title,
+      coverImageUrl: coverImageUrl || coverUrl,
+      category,
+      roomType,
+      backgroundImageUrl,
+      capacity,
+      seatCapacity,
+    });
     return res.status(200).json(result);
   } catch (err) {
     next(err);
@@ -1007,25 +1016,6 @@ export async function postAdminClearRoomFeed(req, res, next) {
   }
 }
 
-export async function updateRoomProfile(req, res, next) {
-  try {
-    const { id } = req.params;
-    const userId = req.auth?.userId || req.user?.id;
-    const { title, coverImageUrl, coverUrl, category, roomType, backgroundImageUrl, capacity, seatCapacity } = req.body;
-    const result = await roomService.updateRoomProfile(id, userId, {
-      title,
-      coverImageUrl: coverImageUrl || coverUrl,
-      category,
-      roomType,
-      backgroundImageUrl,
-      capacity,
-      seatCapacity,
-    });
-    return res.status(200).json(result);
-  } catch (err) {
-    next(err);
-  }
-}
 
 export async function updateRoomLayout(req, res, next) {
   try {
