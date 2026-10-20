@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../core/services/socket_service.dart';
 import '../../../models/user_model.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/live_party_provider.dart';
@@ -9,7 +10,7 @@ import '../../../providers/wallet_provider.dart';
 import '../../../widgets/user_avatar.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Item 06: Normal & World Lucky Bag Module
+// Item 06: Normal & World Lucky Bag Module (Real-Time Socket-Driven)
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum LuckyBagMode { normal, world }
@@ -78,21 +79,129 @@ class LuckyBagModel {
     final diff = opensAt.difference(DateTime.now());
     return diff.isNegative ? Duration.zero : diff;
   }
+
+  factory LuckyBagModel.fromJson(Map<String, dynamic> json) {
+    final modeStr = json['mode']?.toString().toLowerCase() ?? 'normal';
+    final taskStr = json['taskType']?.toString().toLowerCase() ?? json['task']?.toString().toLowerCase() ?? 'none';
+    final countdown = (json['countdownSeconds'] is num) ? (json['countdownSeconds'] as num).toInt() : int.tryParse(json['countdownSeconds']?.toString() ?? '0') ?? 0;
+    final totalCoins = (json['totalCoins'] is num) ? (json['totalCoins'] as num).toInt() : int.tryParse(json['totalCoins']?.toString() ?? '100') ?? 100;
+    final totalClaims = (json['quantity'] is num) ? (json['quantity'] as num).toInt() : int.tryParse(json['quantity']?.toString() ?? json['totalClaims']?.toString() ?? '10') ?? 10;
+    final createdAt = json['createdAt'] != null ? (DateTime.tryParse(json['createdAt'].toString()) ?? DateTime.now()) : DateTime.now();
+
+    final senderObj = json['sender'] is Map ? (json['sender'] as Map) : <String, dynamic>{};
+
+    return LuckyBagModel(
+      id: json['id']?.toString() ?? json['_id']?.toString() ?? json['bagId']?.toString() ?? 'bag_${DateTime.now().millisecondsSinceEpoch}',
+      mode: modeStr == 'world' ? LuckyBagMode.world : LuckyBagMode.normal,
+      senderId: json['senderId']?.toString() ?? json['creatorId']?.toString() ?? senderObj['id']?.toString() ?? '',
+      senderName: json['senderName']?.toString() ?? json['creatorName']?.toString() ?? senderObj['name']?.toString() ?? 'Host',
+      senderAvatar: json['senderAvatar']?.toString() ?? senderObj['avatarUrl']?.toString() ?? '',
+      sourceRoomId: json['roomId']?.toString() ?? json['sourceRoomId']?.toString() ?? '',
+      sourceRoomTitle: json['roomTitle']?.toString() ?? json['sourceRoomTitle']?.toString() ?? 'Live Party',
+      totalCoins: totalCoins,
+      totalClaims: totalClaims,
+      claimsRemaining: (json['claimsRemaining'] is num) ? (json['claimsRemaining'] as num).toInt() : (int.tryParse(json['claimsRemaining']?.toString() ?? '') ?? totalClaims),
+      coinsRemaining: (json['coinsRemaining'] is num) ? (json['coinsRemaining'] as num).toInt() : (int.tryParse(json['coinsRemaining']?.toString() ?? '') ?? totalCoins),
+      task: taskStr.contains('sender') || taskStr.contains('user')
+          ? LuckyBagTask.followMe
+          : (taskStr.contains('room') ? LuckyBagTask.followRoom : LuckyBagTask.none),
+      countdownSeconds: countdown,
+      createdAt: createdAt,
+      opensAt: json['opensAt'] != null ? (DateTime.tryParse(json['opensAt'].toString()) ?? createdAt.add(Duration(seconds: countdown))) : createdAt.add(Duration(seconds: countdown)),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Singleton LuckyBagService (In-Memory State & Bus)
+// Singleton LuckyBagService (Real-Time Socket-Driven State & Bus)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class LuckyBagService extends ChangeNotifier {
   static final LuckyBagService instance = LuckyBagService._internal();
-  LuckyBagService._internal();
 
   final Map<String, LuckyBagModel> _roomBags = {};
   LuckyBagModel? _worldBag;
   final List<LuckyBagModel> _history = [];
   final Set<String> _followedUsers = {};
   final Set<String> _followedRooms = {};
+
+  StreamSubscription? _bagCreatedSub;
+  StreamSubscription? _bagClaimedSub;
+  StreamSubscription? _worldEventSub;
+
+  LuckyBagService._internal() {
+    _bagCreatedSub = SocketService.instance.onLuckyBagCreated.listen((data) {
+      _handleRemoteBagCreated(data);
+    });
+    _worldEventSub = SocketService.instance.onWorldGlobalEvent.listen((data) {
+      if (data['type'] == 'LUCKY_BAG' || data['bag'] != null || data['event'] == 'luckybag' || data['mode'] == 'world') {
+        final bMap = data['bag'] is Map ? Map<String, dynamic>.from(data['bag']) : data;
+        _handleRemoteBagCreated(bMap);
+      }
+    });
+    _bagClaimedSub = SocketService.instance.onLuckyBagClaimed.listen((data) {
+      _handleRemoteBagClaimed(data);
+    });
+  }
+
+  void _handleRemoteBagCreated(Map<String, dynamic> data) {
+    try {
+      final bag = LuckyBagModel.fromJson(data);
+      if (bag.mode == LuckyBagMode.world) {
+        _worldBag = bag;
+      }
+      if (bag.sourceRoomId.isNotEmpty) {
+        _roomBags[bag.sourceRoomId] = bag;
+      }
+      _history.removeWhere((b) => b.id == bag.id);
+      _history.insert(0, bag);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[LuckyBagService] handleRemoteBagCreated error: $e');
+    }
+  }
+
+  void _handleRemoteBagClaimed(Map<String, dynamic> data) {
+    try {
+      final bagId = data['bagId']?.toString();
+      final claimantMap = data['claimant'] is Map ? (data['claimant'] as Map) : data;
+      final userId = claimantMap['userId']?.toString() ?? claimantMap['id']?.toString() ?? '';
+      final userName = claimantMap['name']?.toString() ?? claimantMap['displayName']?.toString() ?? 'User';
+      final avatarUrl = claimantMap['avatarUrl']?.toString() ?? '';
+      final coins = (data['amount'] is num) ? (data['amount'] as num).toInt() : int.tryParse(data['amount']?.toString() ?? '0') ?? 0;
+
+      void updateBag(LuckyBagModel? b) {
+        if (b == null || b.id != bagId) return;
+        if (data['claimsRemaining'] is num) {
+          b.claimsRemaining = (data['claimsRemaining'] as num).toInt();
+        } else if (b.claimsRemaining > 0) {
+          b.claimsRemaining -= 1;
+        }
+        if (data['coinsRemaining'] is num) {
+          b.coinsRemaining = (data['coinsRemaining'] as num).toInt();
+        } else if (b.coinsRemaining >= coins) {
+          b.coinsRemaining -= coins;
+        }
+        if (userId.isNotEmpty && !b.claims.any((c) => c.userId == userId)) {
+          b.claims.insert(0, LuckyBagClaimRecord(
+            userId: userId,
+            userName: userName,
+            userAvatar: avatarUrl,
+            coins: coins,
+            claimedAt: DateTime.now(),
+          ));
+        }
+      }
+
+      updateBag(_worldBag);
+      for (final b in _roomBags.values) {
+        updateBag(b);
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[LuckyBagService] handleRemoteBagClaimed error: $e');
+    }
+  }
 
   LuckyBagModel? getRoomBag(String roomId) => _roomBags[roomId];
   LuckyBagModel? get worldBag => _worldBag;
@@ -116,7 +225,20 @@ class LuckyBagService extends ChangeNotifier {
       _worldBag = bag;
     }
     _roomBags[bag.sourceRoomId] = bag;
+    _history.removeWhere((b) => b.id == bag.id);
     _history.insert(0, bag);
+
+    // Emit authoritative luckybag:create socket event to server
+    SocketService.instance.createLuckyBagSocket(
+      roomId: bag.sourceRoomId,
+      creatorId: bag.senderId,
+      mode: bag.mode == LuckyBagMode.world ? 'world' : 'normal',
+      totalCoins: bag.totalCoins,
+      quantity: bag.totalClaims,
+      taskType: bag.task == LuckyBagTask.followMe ? 'follow_sender' : (bag.task == LuckyBagTask.followRoom ? 'follow_room' : 'none'),
+      countdownSeconds: bag.countdownSeconds,
+    );
+
     notifyListeners();
   }
 
@@ -139,6 +261,13 @@ class LuckyBagService extends ChangeNotifier {
         'message': 'You already claimed ${existing.coins} coins!',
       };
     }
+
+    // Emit authoritative luckybag:claim socket event to server
+    SocketService.instance.claimLuckyBagSocket(
+      bagId: bag.id,
+      roomId: bag.sourceRoomId,
+      userId: claimant.id,
+    );
 
     // Server-grade randomized reward calculation
     final rand = Random();
@@ -171,6 +300,14 @@ class LuckyBagService extends ChangeNotifier {
       'remainingClaims': bag.claimsRemaining,
       'message': 'Claimed $reward coins!',
     };
+  }
+
+  @override
+  void dispose() {
+    _bagCreatedSub?.cancel();
+    _bagClaimedSub?.cancel();
+    _worldEventSub?.cancel();
+    super.dispose();
   }
 }
 

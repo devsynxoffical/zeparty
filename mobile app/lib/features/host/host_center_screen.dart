@@ -23,6 +23,7 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AgencyProvider>().fetchAllAgencies();
+      context.read<AgencyProvider>().fetchEligibility();
     });
   }
 
@@ -40,6 +41,10 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
     final agencyProv = context.watch<AgencyProvider>();
 
     final audioHost = agencyProv.getAudioHostByUserId(authUser.id);
+    final eligibility = agencyProv.eligibility;
+    final hasRoleConflict = eligibility != null && (!eligibility.canJoinAudioHost || eligibility.hasConflict);
+    final conflictMessage = eligibility?.conflictMessage ??
+        'You already have an active Live Host role that restricts joining an Agency as Audio Host.';
 
     if (audioHost == null) {
       final matchingAgencies = agencyProv.searchAgencies(_searchQuery);
@@ -57,6 +62,41 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (hasRoleConflict) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.6)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.block_flipped, color: Colors.redAccent, size: 24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Audio Hosting Restriction',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.redAccent),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              conflictMessage,
+                              style: const TextStyle(fontSize: 12, height: 1.4),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               // Search Header
               Text(
                 'Join an Agency to Become a Host',
@@ -237,7 +277,7 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
-                            onPressed: isPendingThis
+                            onPressed: (isPendingThis || hasRoleConflict)
                                 ? null
                                 : () {
                                     final res = agencyProv.submitHostJoinRequest(

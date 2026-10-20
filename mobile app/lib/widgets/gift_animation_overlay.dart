@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
-import '../core/theme/app_colors.dart';
 import '../models/gift_model.dart';
 import '../core/services/socket_service.dart';
 
@@ -32,6 +31,18 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
   Timer? _videoTimer;
   bool _isVideoPlaying = false;
 
+  /// Skia ColorMatrix that eliminates black video backgrounds via Luma-keying:
+  /// Black and dark compression artifacts (R+G+B <= 15) -> Alpha = 0 (transparent).
+  /// Colored gift graphics and effects -> Alpha ramps quickly to 255 (fully visible).
+  static const List<double> _blackBackgroundFilterMatrix = <double>[
+    1.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 1.0, 0.0, 0.0,
+    3.0, 3.0, 3.0, 0.0, -45.0,
+  ];
+
+  final Set<String> _processedTxIds = {};
+
   @override
   void initState() {
     super.initState();
@@ -59,14 +70,26 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
         return;
       }
       try {
+        final txId = (data['transactionId'] ?? data['id'] ?? data['eventId'] ?? '').toString();
+        if (txId.isNotEmpty && _processedTxIds.contains(txId)) {
+          // Already played for this client (e.g. sender triggered local animation immediately)
+          return;
+        }
+
         final giftMap = data['gift'] is Map ? Map<String, dynamic>.from(data['gift']) : Map<String, dynamic>.from(data);
         final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender']) : {};
         final senderName = senderMap['displayName'] ?? senderMap['username'] ?? data['senderName'] ?? 'Someone';
         final qty = data['quantity'] is int ? data['quantity'] as int : (int.tryParse(data['quantity']?.toString() ?? '1') ?? 1);
 
-        final model = GiftModel(
-          id: giftMap['id']?.toString() ?? 'gift',
-          name: giftMap['name']?.toString() ?? 'Gift',
+        final rawGiftId = giftMap['id']?.toString() ?? data['giftId']?.toString() ?? '';
+        final rawGiftName = giftMap['name']?.toString() ?? data['giftName']?.toString() ?? '';
+
+        // Authoritatively map raw code or name to local catalog item (e.g. 'cg11' -> 'Birthday Cake', 'cg23' -> 'Private Jet')
+        final catalogGift = GiftModel.findById(rawGiftId) ?? GiftModel.findById(rawGiftName);
+
+        final model = catalogGift ?? GiftModel(
+          id: rawGiftId,
+          name: rawGiftName.isNotEmpty ? rawGiftName : 'Gift',
           icon: giftMap['icon']?.toString() ?? '🎁',
           iconUrl: giftMap['iconUrl']?.toString(),
           svgaAssetUrl: giftMap['svgaAssetUrl']?.toString() ?? giftMap['animationUrl']?.toString(),
@@ -75,7 +98,7 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
           category: giftMap['category']?.toString() ?? 'Classic',
         );
 
-        playGiftAnimation(model, senderName: senderName, quantity: qty);
+        playGiftAnimation(model, senderName: senderName, quantity: qty, transactionId: txId);
       } catch (e) {
         debugPrint('[GiftAnimationOverlay] Error parsing gift event: $e');
       }
@@ -101,21 +124,37 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
     });
   }
 
-  void playGiftAnimation(GiftModel gift, {String senderName = '', int quantity = 1}) {
+  void playGiftAnimation(GiftModel gift, {String senderName = '', int quantity = 1, String? transactionId}) {
     if (!mounted) return;
+
+    if (transactionId != null && transactionId.isNotEmpty) {
+      if (_processedTxIds.contains(transactionId)) {
+        return; // Prevent duplicate execution of the exact same gift transaction
+      }
+      _processedTxIds.add(transactionId);
+      if (_processedTxIds.length > 250) {
+        _processedTxIds.clear();
+      }
+    }
+
     _animController.stop();
     _videoTimer?.cancel();
     _videoController?.pause();
     _videoController?.dispose();
     _videoController = null;
 
-    final isMp4 = gift.svgaAssetUrl != null && gift.svgaAssetUrl!.toLowerCase().endsWith('.mp4');
+    // Resolve authoritative catalog record if the passed model is missing the animation asset
+    final catalogGift = GiftModel.findById(gift.id) ?? GiftModel.findById(gift.name);
+    final effectiveGift = catalogGift ?? gift;
+
+    final isMp4 = effectiveGift.svgaAssetUrl != null && effectiveGift.svgaAssetUrl!.toLowerCase().endsWith('.mp4');
 
     if (isMp4) {
-      _playMp4Gift(gift, senderName: senderName, quantity: quantity);
+      _playMp4Gift(effectiveGift, senderName: senderName, quantity: quantity);
     } else {
+      // ONLY show static overlay if the gift genuinely has NO video animation
       setState(() {
-        _currentGift = gift;
+        _currentGift = effectiveGift;
         _giftSenderName = senderName;
         _giftQuantity = quantity;
         _isVideoPlaying = false;
@@ -181,7 +220,6 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
   @override
   Widget build(BuildContext context) {
     if (_currentGift == null) return const SizedBox.shrink();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     if (_isVideoPlaying && _videoController != null && _videoController!.value.isInitialized) {
       final totalCoins = (_currentGift!.priceCoins > 0 ? _currentGift!.priceCoins : _currentGift!.diamondPrice) * _giftQuantity;
@@ -199,7 +237,10 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
                   child: SizedBox(
                     width: _videoController!.value.size.width > 0 ? _videoController!.value.size.width : 400,
                     height: _videoController!.value.size.height > 0 ? _videoController!.value.size.height : 400,
-                    child: VideoPlayer(_videoController!),
+                    child: ColorFiltered(
+                      colorFilter: const ColorFilter.matrix(_blackBackgroundFilterMatrix),
+                      child: VideoPlayer(_videoController!),
+                    ),
                   ),
                 ),
               ),
@@ -279,87 +320,82 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
     }
 
     return IgnorePointer(
-      child: Align(
-        alignment: const Alignment(0, -0.4),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: AnimatedBuilder(
-            animation: _animController,
-            builder: (context, child) {
-              return Opacity(
-                opacity: _opacityAnimation.value,
-                child: Transform.scale(
-                  scale: _scaleAnimation.value,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    decoration: BoxDecoration(
-                      gradient: AppColors.getAccentGradient(isDark),
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: AppColors.primaryGlow(isDark, alpha: 0.5, blur: 24, spread: 4),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (_currentGift!.icon.startsWith('assets/'))
-                          Image.asset(
-                            _currentGift!.icon,
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.contain,
-                          )
-                        else if (_currentGift!.icon.startsWith('http'))
-                          Image.network(
-                            _currentGift!.icon,
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.contain,
-                          )
-                        else
-                          Text(_currentGift!.icon, style: const TextStyle(fontSize: 48)),
-                        const SizedBox(width: 16),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              _giftSenderName.isNotEmpty
-                                  ? '$_giftSenderName sent $_giftQuantity ×'
-                                  : 'SPECIAL GIFT SENT!',
-                              style: const TextStyle(
-                                color: AppColors.darkBackground,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 12,
-                                letterSpacing: 1.2,
-                              ),
-                            ),
-                            Text(
-                              _currentGift!.name,
-                              style: const TextStyle(
-                                color: AppColors.darkBackground,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 20,
-                              ),
-                            ),
-                            Text(
-                              '${(_currentGift!.priceCoins > 0 ? _currentGift!.priceCoins : _currentGift!.diamondPrice) * _giftQuantity} Coins 🪙',
-                              style: const TextStyle(
-                                color: AppColors.darkBackground,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
+      child: Center(
+        child: AnimatedBuilder(
+          animation: _animController,
+          builder: (context, child) {
+            String iconPath = _currentGift!.icon;
+            if (!iconPath.startsWith('assets/') &&
+                !iconPath.startsWith('http') &&
+                _currentGift!.svgaAssetUrl != null &&
+                _currentGift!.svgaAssetUrl!.endsWith('.mp4')) {
+              iconPath = _currentGift!.svgaAssetUrl!.replaceAll('.mp4', '.png');
+            }
+
+            return Opacity(
+              opacity: _opacityAnimation.value.clamp(0.0, 1.0),
+              child: Transform.scale(
+                scale: _scaleAnimation.value,
+                child: _buildPureGiftDisplay(iconPath),
+              ),
+            );
+          },
         ),
       ),
     );
+  }
+
+  Widget _buildPureGiftDisplay(String iconPath) {
+    Widget giftImage;
+    if (iconPath.startsWith('assets/')) {
+      giftImage = Image.asset(
+        iconPath,
+        width: 180,
+        height: 180,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => Text(
+          _currentGift!.icon.length < 4 ? _currentGift!.icon : '🎁',
+          style: const TextStyle(fontSize: 100),
+        ),
+      );
+    } else if (iconPath.startsWith('http')) {
+      giftImage = Image.network(
+        iconPath,
+        width: 180,
+        height: 180,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => const Text('🎁', style: TextStyle(fontSize: 100)),
+      );
+    } else {
+      giftImage = Text(_currentGift!.icon, style: const TextStyle(fontSize: 100));
+    }
+
+    if (_giftQuantity > 1) {
+      return Stack(
+        alignment: Alignment.center,
+        clipBehavior: Clip.none,
+        children: [
+          giftImage,
+          Positioned(
+            right: -10,
+            bottom: -10,
+            child: Text(
+              '×$_giftQuantity',
+              style: const TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFFFFD700),
+                shadows: [
+                  Shadow(color: Colors.black87, blurRadius: 10, offset: Offset(2, 2)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return giftImage;
   }
 }
 

@@ -25,6 +25,22 @@ class TikTokGiftOverlay extends StatelessWidget {
         final activeEvent = provider.currentActiveEvent;
         if (activeEvent == null) return const SizedBox.shrink();
 
+        // If this gift has an MP4 video animation asset, GiftAnimationOverlay handles it!
+        // Prevent displaying a second, duplicate static gift overlay.
+        final hasVideoAnimation = (activeEvent.animationUrl != null &&
+                activeEvent.animationUrl!.toLowerCase().endsWith('.mp4')) ||
+            (GiftModel.findById(activeEvent.giftId)?.svgaAssetUrl != null &&
+                GiftModel.findById(activeEvent.giftId)!.svgaAssetUrl!.toLowerCase().endsWith('.mp4'));
+
+        if (hasVideoAnimation) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (provider.currentActiveEvent == activeEvent) {
+              provider.onCurrentEventCompleted();
+            }
+          });
+          return const SizedBox.shrink();
+        }
+
         return IgnorePointer(
           ignoring: activeEvent.animationLevel != GiftAnimationLevel.legendary,
           child: _buildLevelAnimator(context, provider, activeEvent),

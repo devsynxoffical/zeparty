@@ -8,6 +8,7 @@ import '../models/agency_wallet_ledger_model.dart';
 import '../models/agency_invitation_model.dart';
 import '../models/audio_host_model.dart';
 import '../models/agency_application_model.dart';
+import '../models/hosting_eligibility_model.dart';
 
 class AgencyHostRequest {
   final String id;
@@ -49,6 +50,22 @@ class AgencyProvider extends ChangeNotifier {
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
+  String? _errorMessage;
+  String? get errorMessage => _errorMessage;
+  HostingEligibilityModel? _eligibility;
+  HostingEligibilityModel? get eligibility => _eligibility;
+
+  Future<HostingEligibilityModel?> fetchEligibility() async {
+    try {
+      final res = await _apiClient.get('/v1/agencies/eligibility');
+      if (res.data != null && res.data['data'] != null) {
+        _eligibility = HostingEligibilityModel.fromJson(res.data['data']);
+        notifyListeners();
+        return _eligibility;
+      }
+    } catch (_) {}
+    return null;
+  }
 
   final List<AgencyModel> _allAgencies = [];
 
@@ -154,8 +171,23 @@ class AgencyProvider extends ChangeNotifier {
     );
 
     try {
-      await _apiClient.post('/v1/agencies/apply', data: newApp.toJson());
-    } catch (_) {}
+      final response = await _apiClient.post('/v1/agencies/apply', data: newApp.toJson());
+      if (response.data is Map && response.data['success'] == false) {
+        _errorMessage = response.data['message']?.toString() ?? 'Application rejected by server';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _isLoading = false;
+      if (e is ApiException) {
+        _errorMessage = e.message;
+      } else {
+        _errorMessage = e.toString();
+      }
+      notifyListeners();
+      return false;
+    }
 
     _myApplication = newApp;
     _adminApplicationQueue.removeWhere((a) => a.id == newApp.id);
@@ -167,6 +199,7 @@ class AgencyProvider extends ChangeNotifier {
     } catch (_) {}
 
     _isLoading = false;
+    _errorMessage = null;
     notifyListeners();
     return true;
   }

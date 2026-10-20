@@ -6,7 +6,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg01',
       name: 'Classic Rose',
-      icon: '🌹',
+      icon: 'assets/gifts/classic/CG01_Classic_Rose_100_coins.png',
       diamondPrice: 100,
       priceCoins: 100,
       category: 'Classic',
@@ -20,7 +20,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg02',
       name: 'Fresh Juice',
-      icon: '🍹',
+      icon: 'assets/gifts/classic/CG02_Fresh_Juice_150_coins.png',
       diamondPrice: 150,
       priceCoins: 150,
       category: 'Classic',
@@ -34,7 +34,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg03',
       name: 'Pink Donut',
-      icon: '🍩',
+      icon: 'assets/gifts/classic/CG03_Pink_Donut_200_coins.png',
       diamondPrice: 200,
       priceCoins: 200,
       category: 'Classic',
@@ -48,7 +48,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg04',
       name: 'Coffee Love',
-      icon: '☕',
+      icon: 'assets/gifts/classic/CG04_Coffee_Love_300_coins.png',
       diamondPrice: 300,
       priceCoins: 300,
       category: 'Classic',
@@ -62,7 +62,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg05',
       name: 'Heart Hands',
-      icon: '🫶',
+      icon: 'assets/gifts/classic/CG05_Heart_Hands_500_coins.png',
       diamondPrice: 500,
       priceCoins: 500,
       category: 'Classic',
@@ -76,7 +76,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg06',
       name: 'Heart Balloons',
-      icon: '🎈',
+      icon: 'assets/gifts/classic/CG06_Heart_Balloons_700_coins.png',
       diamondPrice: 700,
       priceCoins: 700,
       category: 'Classic',
@@ -90,7 +90,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg07',
       name: 'Crystal Diamond',
-      icon: '💎',
+      icon: 'assets/gifts/classic/CG07_Crystal_Diamond_1000_coins.png',
       diamondPrice: 1000,
       priceCoins: 1000,
       category: 'Classic',
@@ -104,7 +104,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg08',
       name: 'Designer Bag',
-      icon: '👜',
+      icon: 'assets/gifts/classic/CG08_Designer_Bag_1200_coins.png',
       diamondPrice: 1200,
       priceCoins: 1200,
       category: 'Classic',
@@ -118,7 +118,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg09',
       name: 'Crystal Heels',
-      icon: '👠',
+      icon: 'assets/gifts/classic/CG09_Crystal_Heels_1500_coins.png',
       diamondPrice: 1500,
       priceCoins: 1500,
       category: 'Classic',
@@ -132,7 +132,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg10',
       name: 'Royal Perfume',
-      icon: '🧴',
+      icon: 'assets/gifts/classic/CG10_Royal_Perfume_1800_coins.png',
       diamondPrice: 1800,
       priceCoins: 1800,
       category: 'Classic',
@@ -146,7 +146,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg11',
       name: 'Birthday Cake',
-      icon: '🎂',
+      icon: 'assets/gifts/classic/CG11_Birthday_Cake_2000_coins.png',
       diamondPrice: 2000,
       priceCoins: 2000,
       category: 'Classic',
@@ -160,7 +160,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg12',
       name: 'Proposal Ring',
-      icon: '💍',
+      icon: 'assets/gifts/classic/CG12_Proposal_Ring_2500_coins.png',
       diamondPrice: 2500,
       priceCoins: 2500,
       category: 'Classic',
@@ -174,7 +174,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg13',
       name: 'Love Bouquet',
-      icon: '💐',
+      icon: 'assets/gifts/classic/CG13_Love_Bouquet_3000_coins.png',
       diamondPrice: 3000,
       priceCoins: 3000,
       category: 'Classic',
@@ -188,7 +188,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg14',
       name: 'Magic Lamp',
-      icon: '🪔',
+      icon: 'assets/gifts/classic/CG14_Magic_Lamp_4000_coins.png',
       diamondPrice: 4000,
       priceCoins: 4000,
       category: 'Classic',
@@ -202,7 +202,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg15',
       name: 'Money Shower',
-      icon: '💸',
+      icon: 'assets/gifts/classic/CG15_Money_Shower_5000_coins.png',
       diamondPrice: 5000,
       priceCoins: 5000,
       category: 'Classic',
@@ -216,7 +216,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg16',
       name: 'Crystal Butterfly',
-      icon: '🦋',
+      icon: 'assets/gifts/classic/CG16_Crystal_Butterfly_6000_coins.png',
       diamondPrice: 6000,
       priceCoins: 6000,
       category: 'Classic',
@@ -230,7 +230,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg17',
       name: 'Romantic Car',
-      icon: '🚗',
+      icon: 'assets/gifts/classic/CG17_Romantic_Car_7000_coins.png',
       diamondPrice: 7000,
       priceCoins: 7000,
       category: 'Classic',
@@ -244,7 +244,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg18',
       name: 'Ferrari',
-      icon: '🏎️',
+      icon: 'assets/gifts/classic/CG18_Ferrari_8000_coins.png',
       diamondPrice: 8000,
       priceCoins: 8000,
       category: 'Classic',
@@ -258,7 +258,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg19',
       name: 'Golden Supercar',
-      icon: '🏎️',
+      icon: 'assets/gifts/classic/CG19_Golden_Supercar_10000_coins.png',
       diamondPrice: 10000,
       priceCoins: 10000,
       category: 'Classic',
@@ -272,7 +272,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg20',
       name: 'Royal Luxury Car',
-      icon: '🚗',
+      icon: 'assets/gifts/classic/CG20_Royal_Luxury_Car_12000_coins.png',
       diamondPrice: 12000,
       priceCoins: 12000,
       category: 'Classic',
@@ -286,7 +286,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg21',
       name: 'Royal Helicopter',
-      icon: '🚁',
+      icon: 'assets/gifts/classic/CG21_Royal_Helicopter_15000_coins.png',
       diamondPrice: 15000,
       priceCoins: 15000,
       category: 'Classic',
@@ -300,7 +300,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg22',
       name: 'Royal Yacht',
-      icon: '🛥️',
+      icon: 'assets/gifts/classic/CG22_Royal_Yacht_18000_coins.png',
       diamondPrice: 18000,
       priceCoins: 18000,
       category: 'Classic',
@@ -314,7 +314,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg23',
       name: 'Private Jet',
-      icon: '🛩️',
+      icon: 'assets/gifts/classic/CG23_Private_Jet_22000_coins.png',
       diamondPrice: 22000,
       priceCoins: 22000,
       category: 'Classic',
@@ -328,7 +328,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg24',
       name: 'Hot Air Balloon',
-      icon: '🎈',
+      icon: 'assets/gifts/classic/CG24_Hot_Air_Balloon_25000_coins.png',
       diamondPrice: 25000,
       priceCoins: 25000,
       category: 'Classic',
@@ -342,7 +342,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg25',
       name: 'Love Cottage',
-      icon: '🏡',
+      icon: 'assets/gifts/classic/CG25_Love_Cottage_30000_coins.png',
       diamondPrice: 30000,
       priceCoins: 30000,
       category: 'Classic',
@@ -356,7 +356,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg26',
       name: 'Crystal Castle',
-      icon: '🏰',
+      icon: 'assets/gifts/classic/CG26_Crystal_Castle_35000_coins.png',
       diamondPrice: 35000,
       priceCoins: 35000,
       category: 'Classic',
@@ -370,7 +370,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg27',
       name: 'Rocket Launch',
-      icon: '🚀',
+      icon: 'assets/gifts/classic/CG27_Rocket_Launch_40000_coins.png',
       diamondPrice: 40000,
       priceCoins: 40000,
       category: 'Classic',
@@ -384,7 +384,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg28',
       name: 'Space Cruiser',
-      icon: '🛸',
+      icon: 'assets/gifts/classic/CG28_Space_Cruiser_50000_coins.png',
       diamondPrice: 50000,
       priceCoins: 50000,
       category: 'Classic',
@@ -398,7 +398,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg29',
       name: 'Meteor Storm',
-      icon: '☄️',
+      icon: 'assets/gifts/classic/CG29_Meteor_Storm_60000_coins.png',
       diamondPrice: 60000,
       priceCoins: 60000,
       category: 'Classic',
@@ -412,7 +412,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg30',
       name: 'Diamond Planet',
-      icon: '💎',
+      icon: 'assets/gifts/classic/CG30_Diamond_Planet_70000_coins.png',
       diamondPrice: 70000,
       priceCoins: 70000,
       category: 'Classic',
@@ -426,7 +426,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg31',
       name: 'Royal Lion',
-      icon: '🦁',
+      icon: 'assets/gifts/classic/CG31_Royal_Lion_80000_coins.png',
       diamondPrice: 80000,
       priceCoins: 80000,
       category: 'Classic',
@@ -440,7 +440,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg32',
       name: 'White Tiger',
-      icon: '🐯',
+      icon: 'assets/gifts/classic/CG32_White_Tiger_90000_coins.png',
       diamondPrice: 90000,
       priceCoins: 90000,
       category: 'Classic',
@@ -454,7 +454,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg33',
       name: 'Emerald Dragon',
-      icon: '🐉',
+      icon: 'assets/gifts/classic/CG33_Emerald_Dragon_100000_coins.png',
       diamondPrice: 100000,
       priceCoins: 100000,
       category: 'Classic',
@@ -468,7 +468,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg34',
       name: 'Fire Phoenix',
-      icon: '🔥',
+      icon: 'assets/gifts/classic/CG34_Fire_Phoenix_120000_coins.png',
       diamondPrice: 120000,
       priceCoins: 120000,
       category: 'Classic',
@@ -482,7 +482,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg35',
       name: 'Golden Angel',
-      icon: '👼',
+      icon: 'assets/gifts/classic/CG35_Golden_Angel_150000_coins.png',
       diamondPrice: 150000,
       priceCoins: 150000,
       category: 'Classic',
@@ -496,7 +496,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg36',
       name: 'Crystal Unicorn',
-      icon: '🦄',
+      icon: 'assets/gifts/classic/CG36_Crystal_Unicorn_180000_coins.png',
       diamondPrice: 180000,
       priceCoins: 180000,
       category: 'Classic',
@@ -510,7 +510,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg37',
       name: 'Ocean Whale',
-      icon: '🐋',
+      icon: 'assets/gifts/classic/CG37_Ocean_Whale_200000_coins.png',
       diamondPrice: 200000,
       priceCoins: 200000,
       category: 'Classic',
@@ -524,7 +524,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg38',
       name: 'Ice Dragon',
-      icon: '🐉',
+      icon: 'assets/gifts/classic/CG38_Ice_Dragon_220000_coins.png',
       diamondPrice: 220000,
       priceCoins: 220000,
       category: 'Classic',
@@ -538,7 +538,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg39',
       name: 'Thunder Tiger',
-      icon: '🐯',
+      icon: 'assets/gifts/classic/CG39_Thunder_Tiger_250000_coins.png',
       diamondPrice: 250000,
       priceCoins: 250000,
       category: 'Classic',
@@ -552,7 +552,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg40',
       name: 'Lion King Throne',
-      icon: '🦁',
+      icon: 'assets/gifts/classic/CG40_Lion_King_Throne_280000_coins.png',
       diamondPrice: 280000,
       priceCoins: 280000,
       category: 'Classic',
@@ -566,7 +566,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg41',
       name: 'Dragon Palace',
-      icon: '🏰',
+      icon: 'assets/gifts/classic/CG41_Dragon_Palace_300000_coins.png',
       diamondPrice: 300000,
       priceCoins: 300000,
       category: 'Classic',
@@ -580,7 +580,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg42',
       name: 'Phoenix Sanctuary',
-      icon: '🏰',
+      icon: 'assets/gifts/classic/CG42_Phoenix_Sanctuary_350000_coins.png',
       diamondPrice: 350000,
       priceCoins: 350000,
       category: 'Classic',
@@ -594,7 +594,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg43',
       name: 'Royal Wedding',
-      icon: '👰',
+      icon: 'assets/gifts/classic/CG43_Royal_Wedding_400000_coins.png',
       diamondPrice: 400000,
       priceCoins: 400000,
       category: 'Classic',
@@ -608,7 +608,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg44',
       name: 'Galaxy Portal',
-      icon: '🪐',
+      icon: 'assets/gifts/classic/CG44_Galaxy_Portal_450000_coins.png',
       diamondPrice: 450000,
       priceCoins: 450000,
       category: 'Classic',
@@ -622,7 +622,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg45',
       name: 'ZeParty Royal Kingdom',
-      icon: '🏰',
+      icon: 'assets/gifts/classic/CG45_ZeParty_Royal_Kingdom_500000_coins.png',
       diamondPrice: 500000,
       priceCoins: 500000,
       category: 'Classic',
@@ -636,7 +636,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg46',
       name: 'Twin Dragon Guardians',
-      icon: '🐉',
+      icon: 'assets/gifts/classic/CG46_Twin_Dragon_Guardians_600000_coins.png',
       diamondPrice: 600000,
       priceCoins: 600000,
       category: 'Classic',
@@ -650,7 +650,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg47',
       name: 'Celestial Angel Queen',
-      icon: '👼',
+      icon: 'assets/gifts/classic/CG47_Celestial_Angel_Queen_700000_coins.png',
       diamondPrice: 700000,
       priceCoins: 700000,
       category: 'Classic',
@@ -664,7 +664,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg48',
       name: 'Phoenix Dragon Fusion',
-      icon: '🐉',
+      icon: 'assets/gifts/classic/CG48_Phoenix_Dragon_Fusion_800000_coins.png',
       diamondPrice: 800000,
       priceCoins: 800000,
       category: 'Classic',
@@ -678,7 +678,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg49',
       name: 'Galactic Lion Emperor',
-      icon: '🦁',
+      icon: 'assets/gifts/classic/CG49_Galactic_Lion_Emperor_900000_coins.png',
       diamondPrice: 900000,
       priceCoins: 900000,
       category: 'Classic',
@@ -692,7 +692,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'cg50',
       name: 'ZeParty Universe',
-      icon: '🪐',
+      icon: 'assets/gifts/classic/CG50_ZeParty_Universe_1000000_coins.png',
       diamondPrice: 1000000,
       priceCoins: 1000000,
       category: 'Classic',
@@ -709,7 +709,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg01',
       name: 'Star Love Lock',
-      icon: '🔒',
+      icon: 'assets/gifts/event/EG01_Star_Love_Lock_100_coins.png',
       diamondPrice: 100,
       priceCoins: 100,
       category: 'Event Gifts',
@@ -723,7 +723,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg02',
       name: 'CP Forever Ring',
-      icon: '💍',
+      icon: 'assets/gifts/event/EG02_CP_Forever_Ring_200_coins.png',
       diamondPrice: 200,
       priceCoins: 200,
       category: 'Event Gifts',
@@ -737,7 +737,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg03',
       name: 'Golden Microphone',
-      icon: '🎤',
+      icon: 'assets/gifts/event/EG03_Golden_Microphone_300_coins.png',
       diamondPrice: 300,
       priceCoins: 300,
       category: 'Event Gifts',
@@ -751,7 +751,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg04',
       name: 'Neon Guitar',
-      icon: '🎸',
+      icon: 'assets/gifts/event/EG04_Neon_Guitar_500_coins.png',
       diamondPrice: 500,
       priceCoins: 500,
       category: 'Event Gifts',
@@ -765,7 +765,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg05',
       name: 'Jasmine Halo',
-      icon: '🌸',
+      icon: 'assets/gifts/event/EG05_Jasmine_Halo_750_coins.png',
       diamondPrice: 750,
       priceCoins: 750,
       category: 'Event Gifts',
@@ -779,7 +779,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg06',
       name: 'Sunflower Bouquet',
-      icon: '💐',
+      icon: 'assets/gifts/event/EG06_Sunflower_Bouquet_1000_coins.png',
       diamondPrice: 1000,
       priceCoins: 1000,
       category: 'Event Gifts',
@@ -793,7 +793,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg07',
       name: 'Carnation Basket',
-      icon: '🚗',
+      icon: 'assets/gifts/event/EG07_Carnation_Basket_1500_coins.png',
       diamondPrice: 1500,
       priceCoins: 1500,
       category: 'Event Gifts',
@@ -807,7 +807,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg08',
       name: 'Pakistan Celebration',
-      icon: '🇵🇰',
+      icon: 'assets/gifts/event/EG08_Pakistan_Celebration_2000_coins.png',
       diamondPrice: 2000,
       priceCoins: 2000,
       category: 'Event Gifts',
@@ -821,7 +821,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg09',
       name: 'Crystal Jewelry Box',
-      icon: '🎁',
+      icon: 'assets/gifts/event/EG09_Crystal_Jewelry_Box_2500_coins.png',
       diamondPrice: 2500,
       priceCoins: 2500,
       category: 'Event Gifts',
@@ -835,7 +835,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg10',
       name: 'Anniversary Cake',
-      icon: '🎂',
+      icon: 'assets/gifts/event/EG10_Anniversary_Cake_3000_coins.png',
       diamondPrice: 3000,
       priceCoins: 3000,
       category: 'Event Gifts',
@@ -849,7 +849,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg11',
       name: 'Dragon Covenant',
-      icon: '🐉',
+      icon: 'assets/gifts/event/EG11_Dragon_Covenant_4000_coins.png',
       diamondPrice: 4000,
       priceCoins: 4000,
       category: 'Event Gifts',
@@ -863,7 +863,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg12',
       name: 'Galaxy UFO',
-      icon: '🛸',
+      icon: 'assets/gifts/event/EG12_Galaxy_UFO_5000_coins.png',
       diamondPrice: 5000,
       priceCoins: 5000,
       category: 'Event Gifts',
@@ -877,7 +877,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg13',
       name: 'Star Astronaut',
-      icon: '👨‍🚀',
+      icon: 'assets/gifts/event/EG13_Star_Astronaut_7000_coins.png',
       diamondPrice: 7000,
       priceCoins: 7000,
       category: 'Event Gifts',
@@ -891,7 +891,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg14',
       name: 'Moon Spacecraft',
-      icon: '🛩️',
+      icon: 'assets/gifts/event/EG14_Moon_Spacecraft_10000_coins.png',
       diamondPrice: 10000,
       priceCoins: 10000,
       category: 'Event Gifts',
@@ -905,7 +905,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg15',
       name: 'Music Carousel',
-      icon: '🚗',
+      icon: 'assets/gifts/event/EG15_Music_Carousel_15000_coins.png',
       diamondPrice: 15000,
       priceCoins: 15000,
       category: 'Event Gifts',
@@ -919,7 +919,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg16',
       name: 'Cherry Blossom Garden',
-      icon: '🌸',
+      icon: 'assets/gifts/event/EG16_Cherry_Blossom_Garden_25000_coins.png',
       diamondPrice: 25000,
       priceCoins: 25000,
       category: 'Event Gifts',
@@ -933,7 +933,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg17',
       name: 'Palace of Love',
-      icon: '🏰',
+      icon: 'assets/gifts/event/EG17_Palace_of_Love_40000_coins.png',
       diamondPrice: 40000,
       priceCoins: 40000,
       category: 'Event Gifts',
@@ -947,7 +947,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg18',
       name: 'Celestial Balloon',
-      icon: '🎈',
+      icon: 'assets/gifts/event/EG18_Celestial_Balloon_60000_coins.png',
       diamondPrice: 60000,
       priceCoins: 60000,
       category: 'Event Gifts',
@@ -961,7 +961,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg19',
       name: 'Fairyland Castle',
-      icon: '🏰',
+      icon: 'assets/gifts/event/EG19_Fairyland_Castle_80000_coins.png',
       diamondPrice: 80000,
       priceCoins: 80000,
       category: 'Event Gifts',
@@ -975,7 +975,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'eg20',
       name: 'ZeParty Anniversary Kingdom',
-      icon: '🏰',
+      icon: 'assets/gifts/event/EG20_ZeParty_Anniversary_Kingdom_100000_coins.png',
       diamondPrice: 100000,
       priceCoins: 100000,
       category: 'Event Gifts',
@@ -992,7 +992,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv01',
       name: 'Royal Teapot',
-      icon: '🫖',
+      icon: 'assets/gifts/privilege/PV01_Royal_Teapot_100_coins.png',
       diamondPrice: 100,
       priceCoins: 100,
       category: 'Privileges',
@@ -1006,7 +1006,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv02',
       name: 'Golden Egg',
-      icon: '🥚',
+      icon: 'assets/gifts/privilege/PV02_Golden_Egg_600_coins.png',
       diamondPrice: 600,
       priceCoins: 600,
       category: 'Privileges',
@@ -1020,7 +1020,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv03',
       name: 'Power Brick',
-      icon: '🧱',
+      icon: 'assets/gifts/privilege/PV03_Power_Brick_800_coins.png',
       diamondPrice: 800,
       priceCoins: 800,
       category: 'Privileges',
@@ -1034,7 +1034,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv04',
       name: 'Magic Perfume',
-      icon: '🧴',
+      icon: 'assets/gifts/privilege/PV04_Magic_Perfume_800_coins.png',
       diamondPrice: 800,
       priceCoins: 800,
       category: 'Privileges',
@@ -1048,7 +1048,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv05',
       name: 'Flying Carpet',
-      icon: '🚗',
+      icon: 'assets/gifts/privilege/PV05_Flying_Carpet_800_coins.png',
       diamondPrice: 800,
       priceCoins: 800,
       category: 'Privileges',
@@ -1062,7 +1062,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv06',
       name: 'Golden Slipper',
-      icon: '👠',
+      icon: 'assets/gifts/privilege/PV06_Golden_Slipper_1000_coins.png',
       diamondPrice: 1000,
       priceCoins: 1000,
       category: 'Privileges',
@@ -1076,7 +1076,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv07',
       name: 'Shining Crown',
-      icon: '👑',
+      icon: 'assets/gifts/privilege/PV07_Shining_Crown_1000_coins.png',
       diamondPrice: 1000,
       priceCoins: 1000,
       category: 'Privileges',
@@ -1090,7 +1090,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv08',
       name: 'Purple Ghost',
-      icon: '👻',
+      icon: 'assets/gifts/privilege/PV08_Purple_Ghost_2000_coins.png',
       diamondPrice: 2000,
       priceCoins: 2000,
       category: 'Privileges',
@@ -1104,7 +1104,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv09',
       name: 'VIP Honor',
-      icon: '🎖️',
+      icon: 'assets/gifts/privilege/PV09_VIP_Honor_2000_coins.png',
       diamondPrice: 2000,
       priceCoins: 2000,
       category: 'Privileges',
@@ -1118,7 +1118,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv10',
       name: 'Angel Sword',
-      icon: '👼',
+      icon: 'assets/gifts/privilege/PV10_Angel_Sword_3000_coins.png',
       diamondPrice: 3000,
       priceCoins: 3000,
       category: 'Privileges',
@@ -1132,7 +1132,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv11',
       name: 'Magic Wand',
-      icon: '🪄',
+      icon: 'assets/gifts/privilege/PV11_Magic_Wand_5000_coins.png',
       diamondPrice: 5000,
       priceCoins: 5000,
       category: 'Privileges',
@@ -1146,7 +1146,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv12',
       name: 'Black Gold Rose',
-      icon: '🌹',
+      icon: 'assets/gifts/privilege/PV12_Black_Gold_Rose_5000_coins.png',
       diamondPrice: 5000,
       priceCoins: 5000,
       category: 'Privileges',
@@ -1160,7 +1160,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv13',
       name: 'Sun and Moon',
-      icon: '☀️',
+      icon: 'assets/gifts/privilege/PV13_Sun_and_Moon_8000_coins.png',
       diamondPrice: 8000,
       priceCoins: 8000,
       category: 'Privileges',
@@ -1174,7 +1174,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv14',
       name: 'Royal Carriage',
-      icon: '🚗',
+      icon: 'assets/gifts/privilege/PV14_Royal_Carriage_10000_coins.png',
       diamondPrice: 10000,
       priceCoins: 10000,
       category: 'Privileges',
@@ -1188,7 +1188,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv15',
       name: 'Golden Pyramid',
-      icon: '🪙',
+      icon: 'assets/gifts/privilege/PV15_Golden_Pyramid_10000_coins.png',
       diamondPrice: 10000,
       priceCoins: 10000,
       category: 'Privileges',
@@ -1202,7 +1202,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv16',
       name: 'VIP Rocket',
-      icon: '🚀',
+      icon: 'assets/gifts/privilege/PV16_VIP_Rocket_30000_coins.png',
       diamondPrice: 30000,
       priceCoins: 30000,
       category: 'Privileges',
@@ -1216,7 +1216,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv17',
       name: 'Golden Racer',
-      icon: '🏎️',
+      icon: 'assets/gifts/privilege/PV17_Golden_Racer_40000_coins.png',
       diamondPrice: 40000,
       priceCoins: 40000,
       category: 'Privileges',
@@ -1230,7 +1230,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv18',
       name: 'Fantasy Throne',
-      icon: '👑',
+      icon: 'assets/gifts/privilege/PV18_Fantasy_Throne_80000_coins.png',
       diamondPrice: 80000,
       priceCoins: 80000,
       category: 'Privileges',
@@ -1244,7 +1244,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv19',
       name: 'Mirage Palace',
-      icon: '🏰',
+      icon: 'assets/gifts/privilege/PV19_Mirage_Palace_80000_coins.png',
       diamondPrice: 80000,
       priceCoins: 80000,
       category: 'Privileges',
@@ -1258,7 +1258,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv20',
       name: 'Thunder Chariot',
-      icon: '🚗',
+      icon: 'assets/gifts/privilege/PV20_Thunder_Chariot_100000_coins.png',
       diamondPrice: 100000,
       priceCoins: 100000,
       category: 'Privileges',
@@ -1272,7 +1272,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'pv21',
       name: 'Dragon Scepter',
-      icon: '🐉',
+      icon: 'assets/gifts/privilege/PV21_Dragon_Scepter_200000_coins.png',
       diamondPrice: 200000,
       priceCoins: 200000,
       category: 'Privileges',
@@ -1289,7 +1289,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'sp01',
       name: 'Best Couple',
-      icon: '👩‍❤️‍👨',
+      icon: 'assets/gifts/special/SP01_Best_Couple_11250_coins.png',
       diamondPrice: 11250,
       priceCoins: 11250,
       category: 'Special',
@@ -1303,7 +1303,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'sp02',
       name: 'Bosom Friend',
-      icon: '🤝',
+      icon: 'assets/gifts/special/SP02_Bosom_Friend_7500_coins.png',
       diamondPrice: 7500,
       priceCoins: 7500,
       category: 'Special',
@@ -1317,7 +1317,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'sp03',
       name: 'Close Friend',
-      icon: '🤝',
+      icon: 'assets/gifts/special/SP03_Close_Friend_3750_coins.png',
       diamondPrice: 3750,
       priceCoins: 3750,
       category: 'Special',
@@ -1331,7 +1331,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'sp04',
       name: 'Dessert',
-      icon: '🧁',
+      icon: 'assets/gifts/special/SP04_Dessert_100_coins.png',
       diamondPrice: 100,
       priceCoins: 100,
       category: 'Special',
@@ -1345,7 +1345,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'sp05',
       name: 'Letter',
-      icon: '💌',
+      icon: 'assets/gifts/special/SP05_Letter_100_coins.png',
       diamondPrice: 100,
       priceCoins: 100,
       category: 'Special',
@@ -1359,7 +1359,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'sp06',
       name: 'Cupid',
-      icon: '💘',
+      icon: 'assets/gifts/special/SP06_Cupid_3000_coins.png',
       diamondPrice: 3000,
       priceCoins: 3000,
       category: 'Special',
@@ -1373,7 +1373,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'sp07',
       name: 'Meteor Shower',
-      icon: '☄️',
+      icon: 'assets/gifts/special/SP07_Meteor_Shower_20000_coins.png',
       diamondPrice: 20000,
       priceCoins: 20000,
       category: 'Special',
@@ -1387,7 +1387,7 @@ class AnimatedGiftsCatalog {
     GiftModel(
       id: 'sp08',
       name: 'Eternal Love',
-      icon: '🎁',
+      icon: 'assets/gifts/special/SP08_Eternal_Love_50000_coins.png',
       diamondPrice: 50000,
       priceCoins: 50000,
       category: 'Special',

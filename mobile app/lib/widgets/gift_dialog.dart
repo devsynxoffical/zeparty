@@ -586,6 +586,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
 
                               if (success) {
                                 totalSuccess++;
+                                final txId = liveGiftProv.lastTransactionId ?? 'tx_${DateTime.now().millisecondsSinceEpoch}';
                                 try {
                                   partyLiveProv.sendGiftActivityMessage(
                                     sender: auth.currentUser,
@@ -594,7 +595,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                                     giftName: selectedGift!.name,
                                     giftIcon: selectedGift!.icon,
                                     quantity: quantity,
-                                    transactionId: 'tx_${DateTime.now().millisecondsSinceEpoch}',
+                                    transactionId: txId,
                                   );
                                 } catch (_) {}
                               }
@@ -643,25 +644,36 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildGiftIconWidget(String icon) {
-    if (icon.startsWith('assets/')) {
+  Widget _buildGiftIconWidget(GiftModel gift) {
+    String iconPath = gift.icon;
+    if (!iconPath.startsWith('assets/') &&
+        !iconPath.startsWith('http') &&
+        gift.svgaAssetUrl != null &&
+        gift.svgaAssetUrl!.endsWith('.mp4')) {
+      iconPath = gift.svgaAssetUrl!.replaceAll('.mp4', '.png');
+    }
+
+    if (iconPath.startsWith('assets/')) {
       return Image.asset(
-        icon,
-        width: 38,
-        height: 38,
+        iconPath,
+        width: 44,
+        height: 44,
         fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => Text(icon.length < 4 ? icon : '🎁', style: const TextStyle(fontSize: 26)),
+        errorBuilder: (context, error, stackTrace) => Text(
+          gift.icon.length < 4 ? gift.icon : '🎁',
+          style: const TextStyle(fontSize: 26),
+        ),
       );
-    } else if (icon.startsWith('http')) {
+    } else if (iconPath.startsWith('http')) {
       return Image.network(
-        icon,
-        width: 38,
-        height: 38,
+        iconPath,
+        width: 44,
+        height: 44,
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => const Text('🎁', style: TextStyle(fontSize: 26)),
       );
     }
-    return Text(icon, style: const TextStyle(fontSize: 26));
+    return Text(gift.icon, style: const TextStyle(fontSize: 26));
   }
 
   Widget _buildGiftGrid(bool isDark, Color primaryColor, String category, List<GiftModel> catalog) {
@@ -722,7 +734,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _buildGiftIconWidget(gift.icon),
+                    _buildGiftIconWidget(gift),
                     const SizedBox(height: 2),
                     Text(
                       gift.name,

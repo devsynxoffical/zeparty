@@ -14,6 +14,8 @@ build/
 *.zip
 .gradle_cache/
 .idea/
+.kotlin/
+**/.kotlin/
 
 # Environment
 .env

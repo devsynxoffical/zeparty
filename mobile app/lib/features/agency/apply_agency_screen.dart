@@ -27,6 +27,14 @@ class _ApplyAgencyScreenState extends State<ApplyAgencyScreen> {
   bool _isResubmitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AgencyProvider>().fetchEligibility();
+    });
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
     _descController.dispose();
@@ -102,9 +110,10 @@ class _ApplyAgencyScreenState extends State<ApplyAgencyScreen> {
         ),
       );
     } else {
+      final msg = agencyProv.errorMessage ?? 'Failed to submit application. Please check all fields and try again.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Failed to submit application. Please check all fields and try again.'),
+        SnackBar(
+          content: Text(msg),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -289,6 +298,10 @@ class _ApplyAgencyScreenState extends State<ApplyAgencyScreen> {
     final agencyProv = context.watch<AgencyProvider>();
     final myApp = agencyProv.myApplication;
     final isAdmin = authUser.role == UserRole.admin;
+    final eligibility = agencyProv.eligibility;
+    final hasRoleConflict = eligibility != null && (!eligibility.canCreateAgency || eligibility.hasConflict);
+    final conflictMessage = eligibility?.conflictMessage ??
+        'You already have an active hosting role (e.g. Live Host) that restricts owning an Agency.';
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -310,6 +323,41 @@ class _ApplyAgencyScreenState extends State<ApplyAgencyScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (hasRoleConflict) ...[
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.redAccent.withValues(alpha: 0.6)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.block_flipped, color: Colors.redAccent, size: 24),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Agency Creation Restriction',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.redAccent),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            conflictMessage,
+                            style: const TextStyle(fontSize: 12, height: 1.4),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             // If user has a pending or rejected application and is not resubmitting:
             if (myApp != null && !_isResubmitting) ...[
               if (myApp.isPending) ...[
@@ -660,7 +708,7 @@ class _ApplyAgencyScreenState extends State<ApplyAgencyScreen> {
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
                         ),
-                        onPressed: agencyProv.isLoading ? null : () => _submitApplication(authUser, agencyProv),
+                        onPressed: (agencyProv.isLoading || hasRoleConflict) ? null : () => _submitApplication(authUser, agencyProv),
                         child: agencyProv.isLoading
                             ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
                             : const Text('Submit Agency Application', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),

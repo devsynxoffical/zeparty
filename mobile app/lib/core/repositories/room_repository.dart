@@ -186,5 +186,18 @@ class RoomRepository {
       });
     } catch (_) {}
   }
+
+  /// Update room lock settings (Host or Admin only) - Issue 07
+  Future<Map<String, dynamic>> updateLockSettings(String roomId, {required bool isLocked, String? lockMode, String? pin}) async {
+    final response = await _apiClient.put(
+      '/rooms/$roomId/lock-settings',
+      data: {
+        'isLocked': isLocked,
+        if (isLocked && lockMode != null) 'lockMode': lockMode,
+        if (isLocked && pin != null) 'pin': pin,
+      },
+    );
+    return response.data?['data'] as Map<String, dynamic>? ?? {};
+  }
 }
 

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -10,7 +9,7 @@ class AgoraRtcService {
   AgoraRtcService._internal();
 
   String _currentAppId = '970ca35de60c44645bbae8a215061401';
-  RtcEngine? _engine;
+  RtcEngineEx? _engine;
   bool _isInitialized = false;
   bool _isVideoEnabled = false;
   int? _currentUid;
@@ -26,7 +25,7 @@ class AgoraRtcService {
   Stream<int> get firstRemoteVideoFrameStream => _firstRemoteVideoFrameController.stream;
   Set<int> get remoteUids => Set.unmodifiable(_remoteUids);
 
-  RtcEngine? get engine => _engine;
+  RtcEngineEx? get engine => _engine;
   bool get isInitialized => _isInitialized;
   bool get isVideoEnabled => _isVideoEnabled;
   int? get currentUid => _currentUid;
@@ -49,7 +48,7 @@ class AgoraRtcService {
         await [Permission.microphone].request();
       }
 
-      _engine = createAgoraRtcEngine();
+      _engine = createAgoraRtcEngineEx();
       await _engine!.initialize(RtcEngineContext(
         appId: _currentAppId,
         channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
@@ -275,8 +274,74 @@ class AgoraRtcService {
     );
   }
 
+  String? _pkOpponentChannel;
+  int? _pkOpponentUid;
+  String? get pkOpponentChannel => _pkOpponentChannel;
+  int? get pkOpponentUid => _pkOpponentUid;
+
+  /// Subscribe to Opponent Host's Agora Channel for Cross-Room PK Relay (Audio & Video)
+  Future<void> joinOpponentPKChannel({
+    required String opponentChannel,
+    required int localUid,
+    int? opponentUid,
+    bool isVideo = false,
+  }) async {
+    if (_engine == null) return;
+    try {
+      _pkOpponentChannel = opponentChannel;
+      _pkOpponentUid = opponentUid;
+      await _engine!.joinChannelEx(
+        token: '',
+        connection: RtcConnection(channelId: opponentChannel, localUid: localUid),
+        options: ChannelMediaOptions(
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: isVideo,
+          publishCameraTrack: false,
+          publishMicrophoneTrack: false,
+          clientRoleType: ClientRoleType.clientRoleAudience,
+          audienceLatencyLevel: AudienceLatencyLevelType.audienceLatencyLevelUltraLowLatency,
+        ),
+      );
+      debugPrint('[AgoraRtcService] Subscribed to Opponent PK Channel: $opponentChannel (Host UID: $opponentUid)');
+    } catch (e) {
+      debugPrint('[AgoraRtcService] joinOpponentPKChannel error: $e');
+    }
+  }
+
+  /// Disconnect from Opponent Host's Agora Channel after PK ends or forfeits
+  Future<void> leaveOpponentPKChannel() async {
+    if (_engine == null || _pkOpponentChannel == null || _currentUid == null) return;
+    try {
+      await _engine!.leaveChannelEx(
+        connection: RtcConnection(channelId: _pkOpponentChannel!, localUid: _currentUid!),
+      );
+      debugPrint('[AgoraRtcService] Left Opponent PK Channel: $_pkOpponentChannel');
+    } catch (_) {}
+    _pkOpponentChannel = null;
+    _pkOpponentUid = null;
+  }
+
+  /// Mute opponent playback locally without affecting other listeners (Section 2 & 3)
+  Future<void> muteOpponentAudio(bool muted) async {
+    if (_engine == null) return;
+    try {
+      if (_pkOpponentChannel != null && _pkOpponentUid != null && _currentUid != null) {
+        await _engine!.muteRemoteAudioStreamEx(
+          uid: _pkOpponentUid!,
+          mute: muted,
+          connection: RtcConnection(channelId: _pkOpponentChannel!, localUid: _currentUid!),
+        );
+      } else if (_pkOpponentUid != null) {
+        await _engine!.muteRemoteAudioStream(uid: _pkOpponentUid!, mute: muted);
+      }
+    } catch (e) {
+      debugPrint('[AgoraRtcService] muteOpponentAudio error: $e');
+    }
+  }
+
   Future<void> dispose() async {
     try {
+      await leaveOpponentPKChannel();
       _remoteUids.clear();
       await _engine?.stopPreview();
       await _engine?.leaveChannel();
@@ -289,3 +354,4 @@ class AgoraRtcService {
     _currentUid = null;
   }
 }
+

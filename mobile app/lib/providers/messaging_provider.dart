@@ -164,6 +164,7 @@ class MessagingProvider extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _socketSub;
   StreamSubscription<Map<String, dynamic>>? _readSub;
   StreamSubscription<Map<String, dynamic>>? _notifSub;
+  StreamSubscription<Map<String, dynamic>>? _presenceSub;
 
   final Set<String> _readSystemIds = {};
   final Set<String> _readRewardIds = {};
@@ -325,6 +326,37 @@ class MessagingProvider extends ChangeNotifier {
     _notifSub = SocketService.instance.onNotificationNew.listen((data) {
       _handleIncomingSystemNotification(data);
     });
+
+    _presenceSub?.cancel();
+    _presenceSub = SocketService.instance.onUserPresence.listen((data) {
+      _handleIncomingPresenceUpdate(data);
+    });
+  }
+
+  void _handleIncomingPresenceUpdate(Map<String, dynamic> data) {
+    try {
+      final userId = (data['userId'] ?? data['id'] ?? '').toString();
+      if (userId.isEmpty) return;
+
+      final isOnline = data['isOnline'] == true || data['online'] == true;
+      bool found = false;
+
+      for (int i = 0; i < _chatUsers.length; i++) {
+        if (_chatUsers[i].id == userId) {
+          if (_chatUsers[i].isOnline != isOnline) {
+            _chatUsers[i] = _chatUsers[i].copyWith(isOnline: isOnline);
+            found = true;
+          }
+          break;
+        }
+      }
+
+      if (found) {
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[MessagingProvider] Error processing presence update: $e');
+    }
   }
 
   void _handleIncomingSystemNotification(Map<String, dynamic> data) {
@@ -955,6 +987,8 @@ class MessagingProvider extends ChangeNotifier {
     _socketSub?.cancel();
     _readSub?.cancel();
     _typingSub?.cancel();
+    _notifSub?.cancel();
+    _presenceSub?.cancel();
     super.dispose();
   }
 }

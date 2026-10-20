@@ -329,4 +329,25 @@ class SocialRepository {
   Future<void> markMessagesAsRead(String targetUserId) async {
     await _client.patch<Map<String, dynamic>>('/v1/messages/$targetUserId/read');
   }
+
+  /// GET /v1/users/:id/relationship or /v1/relationship/me (Item 08)
+  Future<Map<String, dynamic>?> getUserRelationship(String userId) async {
+    try {
+      final response = await _client.get<Map<String, dynamic>>('/v1/users/$userId/relationship');
+      if (response.data != null && response.data!['data'] is Map<String, dynamic>) {
+        return response.data!['data'] as Map<String, dynamic>;
+      }
+      return response.data;
+    } catch (_) {
+      try {
+        final fallback = await _client.get<Map<String, dynamic>>('/v1/relationship/me');
+        if (fallback.data != null && fallback.data!['data'] is Map<String, dynamic>) {
+          return fallback.data!['data'] as Map<String, dynamic>;
+        }
+        return fallback.data;
+      } catch (_) {
+        return null;
+      }
+    }
+  }
 }

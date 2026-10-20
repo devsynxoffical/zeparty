@@ -2,18 +2,23 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/services/agora_rtc_service.dart';
 import '../core/services/socket_service.dart';
+import '../core/services/api_client.dart';
 import '../core/repositories/room_repository.dart';
 import '../core/repositories/backend_repository.dart';
+import '../core/repositories/pk_repository.dart';
 import '../models/live_room_model.dart';
 import '../models/party_participant_model.dart';
 import '../models/party_message_model.dart';
 import '../models/user_model.dart';
+import '../models/pk_battle_model.dart';
+import '../models/gift_model.dart';
 import '../core/services/room_config_manager.dart';
 
 class LivePartyProvider extends ChangeNotifier {
   final AgoraRtcService _agoraService = AgoraRtcService();
   final RoomRepository _roomRepository = RoomRepository.instance;
   final SocketService _socketService = SocketService.instance;
+  final ApiClient _apiClient = ApiClient.instance;
 
   LiveRoomModel? _activeRoom;
   LiveRoomModel? get activeRoom => _activeRoom;
@@ -101,18 +106,45 @@ class LivePartyProvider extends ChangeNotifier {
   String? _activeWarningMessage;
   String? get activeWarningMessage => _activeWarningMessage;
 
-  // PK Battle State
+  // PK Battle State (1v1 Audio Room PK - Spec 13 October 2026)
+  PKBattleModel? _activePkBattle;
+  PKBattleModel? get activePkBattle => _activePkBattle;
   bool _isPkActive = false;
-  bool get isPkActive => _isPkActive;
+  bool get isPkActive => _isPkActive && _activePkBattle != null && _activePkBattle!.isStarted;
   int _pkScoreA = 0;
   int _pkScoreB = 0;
   int get pkScoreA => _pkScoreA;
   int get pkScoreB => _pkScoreB;
-  int _pkTimerRemaining = 300; // 5 minutes
+  int _pkTimerRemaining = 300;
   int get pkTimerRemaining => _pkTimerRemaining;
   Timer? _pkTimer;
   UserModel? _pkOpponent;
   UserModel? get pkOpponent => _pkOpponent;
+  int _pkCountdown = 0;
+  int get pkCountdown => _pkCountdown;
+  bool get isPkCountdown => _pkCountdown > 0;
+  bool _isPkOpponentDisconnected = false;
+  int _pkDisconnectGrace = 30;
+  bool get isPkOpponentDisconnected => _isPkOpponentDisconnected;
+  int get pkDisconnectGrace => _pkDisconnectGrace;
+  bool _isOpponentAudioMuted = false;
+  bool get isOpponentAudioMuted => _isOpponentAudioMuted;
+
+  StreamSubscription? _socketPkInviteSub;
+  StreamSubscription? _socketPkPreparingSub;
+  StreamSubscription? _socketPkCountdownSub;
+  StreamSubscription? _socketPkMatchStartedSub;
+  StreamSubscription? _socketPkScoreUpdatedSub;
+  StreamSubscription? _socketPkHostConnectionSub;
+  StreamSubscription? _socketPkMatchFinishedSub;
+  StreamSubscription? _socketPkForfeitedSub;
+  StreamSubscription? _socketPkAbortedSub;
+
+  final _pkInvitationController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onPkInvitation => _pkInvitationController.stream;
+
+  final _pkResultController = StreamController<PKBattleModel>.broadcast();
+  Stream<PKBattleModel> get onPkResult => _pkResultController.stream;
 
   // ── Module 05: Room Gift Activity & Deduplication ──
   final Set<String> _processedGiftTxIds = {};
@@ -216,6 +248,9 @@ class LivePartyProvider extends ChangeNotifier {
 
   bool _isSpeakerMuted = false;
   bool get isSpeakerMuted => _isSpeakerMuted;
+
+  bool _isHostAbsent = false;
+  bool get isHostAbsent => _isHostAbsent;
 
   final Set<int> _lockedSeatIndices = {};
   Set<int> get lockedSeatIndices => _lockedSeatIndices;
@@ -368,6 +403,20 @@ class LivePartyProvider extends ChangeNotifier {
             notifyListeners();
           }
         }).catchError((_) {});
+
+        // Reconnect / Recovery: Check active PK match for this room (Section 5)
+        try {
+          final activePk = await PKRepository.instance.getActiveMatchForRoom(_activeRoom!.id);
+          if (activePk != null && activePk.isStarted) {
+            _activePkBattle = activePk;
+            _isPkActive = true;
+            _pkScoreA = activePk.scoreA;
+            _pkScoreB = activePk.scoreB;
+            _pkTimerRemaining = activePk.remainingSeconds;
+            _setupAudioPkRelay(activePk);
+            _startPkAuthoritativeTimer();
+          }
+        } catch (_) {}
       }
 
       final hostUserId = _activeRoom?.creatorUserId ?? _activeRoom?.host.id ?? room.host.id;
@@ -547,6 +596,11 @@ class LivePartyProvider extends ChangeNotifier {
       sendSystemMessage('👋 Welcome to ${room.title}! Please follow community guidelines.');
       return true;
     } catch (e) {
+      if (e is ApiException && (e.code == 'ROOM_LOCKED_PIN_REQUIRED' || (e.statusCode == 403 && (e.message.toLowerCase().contains('pin') || e.message.toLowerCase().contains('lock'))))) {
+        _lastJoinFailureReason = 'ROOM_LOCKED_PIN_REQUIRED';
+        _errorMessage = 'ROOM_LOCKED_PIN_REQUIRED';
+        return false;
+      }
       _errorMessage = e.toString();
       final errLower = _errorMessage!.toLowerCase();
       final isUnavailable = errLower.contains('not live') ||
@@ -709,6 +763,60 @@ class LivePartyProvider extends ChangeNotifier {
         if (_activeRoom != null) {
           _activeRoom = _activeRoom!.copyWith(viewerCount: effectiveSnapshotCount);
         }
+
+        // Process recent gifts snapshot (Issue 01: snapshot recovery on join/reconnect)
+        final recentGiftsList = data['recentGifts'] is List
+            ? (data['recentGifts'] as List)
+            : (roomObj['recentGifts'] is List ? (roomObj['recentGifts'] as List) : []);
+        for (final g in recentGiftsList) {
+          if (g is! Map) continue;
+          final gMap = Map<String, dynamic>.from(g);
+          final txId = (gMap['transactionId'] ?? gMap['id'] ?? gMap['_id'] ?? '').toString();
+          if (txId.isNotEmpty && _processedGiftTxIds.contains(txId)) continue;
+          if (txId.isNotEmpty) _processedGiftTxIds.add(txId);
+
+          final senderMap = gMap['sender'] is Map ? Map<String, dynamic>.from(gMap['sender'] as Map) : <String, dynamic>{};
+          final receiverMap = (gMap['receiver'] is Map
+              ? Map<String, dynamic>.from(gMap['receiver'] as Map)
+              : (gMap['recipient'] is Map ? Map<String, dynamic>.from(gMap['recipient'] as Map) : <String, dynamic>{}));
+
+          final sender = UserModel(
+            id: gMap['senderUserId']?.toString() ?? senderMap['id']?.toString() ?? '',
+            username: gMap['senderName']?.toString() ?? senderMap['name']?.toString() ?? senderMap['username']?.toString() ?? 'User',
+            name: gMap['senderName']?.toString() ?? senderMap['name']?.toString() ?? senderMap['displayName']?.toString() ?? 'User',
+            avatarUrl: gMap['senderAvatar']?.toString() ?? senderMap['avatarUrl']?.toString() ?? '',
+          );
+          final receiver = UserModel(
+            id: gMap['receiverUserId']?.toString() ?? gMap['recipientUserId']?.toString() ?? receiverMap['id']?.toString() ?? '',
+            username: gMap['receiverName']?.toString() ?? gMap['recipientName']?.toString() ?? receiverMap['name']?.toString() ?? receiverMap['username']?.toString() ?? 'Host',
+            name: gMap['receiverName']?.toString() ?? gMap['recipientName']?.toString() ?? receiverMap['name']?.toString() ?? receiverMap['displayName']?.toString() ?? 'Host',
+            avatarUrl: receiverMap['avatarUrl']?.toString() ?? '',
+          );
+
+          final giftName = gMap['giftName']?.toString() ?? (gMap['gift'] is Map ? (gMap['gift'] as Map)['name']?.toString() : null) ?? 'Gift';
+          final giftIcon = gMap['giftIcon']?.toString() ?? (gMap['gift'] is Map ? (gMap['gift'] as Map)['icon']?.toString() : null) ?? '🎁';
+          final quantity = (gMap['quantity'] is num) ? (gMap['quantity'] as num).toInt() : int.tryParse(gMap['quantity']?.toString() ?? '') ?? 1;
+          final cleanIcon = (giftIcon.startsWith('assets/') || giftIcon.startsWith('http')) ? '🎁' : giftIcon;
+
+          _messages.add(PartyMessageModel(
+            id: 'snapshot_gift_$txId',
+            sender: sender,
+            receiver: receiver,
+            text: '${sender.name} sent $quantity × $giftName $cleanIcon to ${receiver.name}',
+            timestamp: DateTime.now(),
+            isGiftMessage: true,
+            giftId: gMap['giftId']?.toString() ?? '',
+            giftName: giftName,
+            giftIcon: giftIcon,
+            quantity: quantity,
+            transactionId: txId,
+            serverTimestamp: DateTime.now(),
+          ));
+        }
+        if (_messages.length > 100) {
+          _messages.removeRange(0, _messages.length - 100);
+        }
+
         notifyListeners();
       } catch (e) {
         debugPrint('[LivePartyProvider] Snapshot processing error: $e');
@@ -1024,11 +1132,27 @@ class LivePartyProvider extends ChangeNotifier {
           avatarUrl: receiverMap['avatarUrl']?.toString() ?? '',
         );
 
-        final giftName = data['giftName']?.toString() ?? 'Gift';
-        final giftIcon = data['giftIcon']?.toString() ?? '🎁';
+        final rawGiftId = data['giftId']?.toString() ?? (data['gift'] is Map ? (data['gift'] as Map)['id']?.toString() : '') ?? '';
+        final rawGiftName = data['giftName']?.toString() ?? (data['gift'] is Map ? (data['gift'] as Map)['name']?.toString() : null) ?? 'Gift';
+        final rawGiftIcon = data['giftIcon']?.toString() ?? (data['gift'] is Map ? (data['gift'] as Map)['icon']?.toString() : null) ?? '🎁';
+
+        // Authoritative resolution against catalog to prevent codes like 'CG11' or 'CG23'
+        final catalogGift = GiftModel.findById(rawGiftId) ?? GiftModel.findById(rawGiftName);
+        final giftName = catalogGift?.name ?? rawGiftName;
+        final giftIcon = catalogGift?.icon ?? rawGiftIcon;
         final quantity = (data['quantity'] is num) ? (data['quantity'] as num).toInt() : int.tryParse(data['quantity']?.toString() ?? '') ?? 1;
 
         final cleanIcon = (giftIcon.startsWith('assets/') || giftIcon.startsWith('http')) ? '🎁' : giftIcon;
+
+        // Deduplication against locally generated optimistic gift messages
+        final isOptimisticDuplicate = _messages.any((m) =>
+            m.isGiftMessage &&
+            m.sender.id == sender.id &&
+            m.giftName?.toLowerCase() == giftName.toLowerCase() &&
+            m.quantity == quantity &&
+            ((m.transactionId?.startsWith('tx_') ?? false) || m.id.startsWith('gift_tx_')) &&
+            DateTime.now().difference(m.timestamp).inSeconds.abs() <= 4);
+        if (isOptimisticDuplicate) return;
 
         final giftMsg = PartyMessageModel(
           id: 'gift_$txId',
@@ -1037,7 +1161,7 @@ class LivePartyProvider extends ChangeNotifier {
           text: '${sender.name} sent $quantity × $giftName $cleanIcon to ${receiver.name}',
           timestamp: DateTime.now(),
           isGiftMessage: true,
-          giftId: data['giftId']?.toString() ?? '',
+          giftId: catalogGift?.id ?? data['giftId']?.toString() ?? '',
           giftName: giftName,
           giftIcon: giftIcon,
           quantity: quantity,
@@ -1491,6 +1615,154 @@ class LivePartyProvider extends ChangeNotifier {
         }
       }
     });
+
+    // Room Lock Status Stream (Issue 07)
+    _socketService.onRoomLockUpdated.listen((data) {
+      final rId = data['roomId']?.toString();
+      final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
+      if (rId == null || rId == currentId) {
+        _isRoomLocked = data['isLocked'] == true;
+        if (data['lockMode'] != null) _roomLockMode = data['lockMode'].toString();
+        notifyListeners();
+      }
+    });
+
+    // Host Presence & Grace Period Stream (Bug 06)
+    _socketService.onRoomHostAbsent.listen((data) {
+      final rId = data['roomId']?.toString();
+      final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
+      if (rId == null || rId == currentId) {
+        _isHostAbsent = true;
+        notifyListeners();
+      }
+    });
+
+    _socketService.onRoomHostReturned.listen((data) {
+      final rId = data['roomId']?.toString();
+      final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
+      if (rId == null || rId == currentId) {
+        _isHostAbsent = false;
+        notifyListeners();
+      }
+    });
+
+    // 21. PK Battle: Invitation Received (Section 1)
+    _socketPkInviteSub?.cancel();
+    _socketPkInviteSub = _socketService.onPkInvitationReceived.listen((data) {
+      if (isHost || _activeRoom?.creatorUserId == currentUser.id) {
+        _pkInvitationController.add(data);
+      }
+    });
+
+    // 22. PK Battle: Preparing (15s Window - Section 1)
+    _socketPkPreparingSub?.cancel();
+    _socketPkPreparingSub = _socketService.onPkPreparing.listen((data) {
+      try {
+        _activePkBattle = PKBattleModel.fromJson(data);
+        _isPkActive = true;
+        notifyListeners();
+        if (isHost && _activePkBattle != null) {
+          PKRepository.instance.setOperatorReady(matchId: _activePkBattle!.id, mediaPrepared: true);
+        }
+      } catch (_) {}
+    });
+
+    // 23. PK Battle: 3-Second Countdown (Section 1)
+    _socketPkCountdownSub?.cancel();
+    _socketPkCountdownSub = _socketService.onPkCountdownStarted.listen((data) {
+      _pkCountdown = 3;
+      notifyListeners();
+      Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (_pkCountdown > 0) {
+          _pkCountdown--;
+          notifyListeners();
+        } else {
+          timer.cancel();
+        }
+      });
+    });
+
+    // 24. PK Battle: Match Started (Active - Section 2)
+    _socketPkMatchStartedSub?.cancel();
+    _socketPkMatchStartedSub = _socketService.onPkStarted.listen((data) {
+      try {
+        _activePkBattle = PKBattleModel.fromJson(data);
+        _isPkActive = true;
+        _pkCountdown = 0;
+        _isPkOpponentDisconnected = false;
+        _pkScoreA = _activePkBattle!.scoreA;
+        _pkScoreB = _activePkBattle!.scoreB;
+        _pkTimerRemaining = _activePkBattle!.remainingSeconds;
+
+        _setupAudioPkRelay(_activePkBattle!);
+        _startPkAuthoritativeTimer();
+        notifyListeners();
+      } catch (_) {}
+    });
+
+    // 25. PK Battle: Authoritative Score Updated (Section 4)
+    _socketPkScoreUpdatedSub?.cancel();
+    _socketPkScoreUpdatedSub = _socketService.onPkScoreUpdated.listen((data) {
+      final sA = int.tryParse(data['scoreA']?.toString() ?? '') ?? _pkScoreA;
+      final sB = int.tryParse(data['scoreB']?.toString() ?? '') ?? _pkScoreB;
+      _pkScoreA = sA;
+      _pkScoreB = sB;
+      if (_activePkBattle != null) {
+        _activePkBattle = _activePkBattle!.copyWith(scoreA: sA, scoreB: sB);
+      }
+      notifyListeners();
+    });
+
+    // 26. PK Battle: Host Connection Changed (30s Grace - Section 5)
+    _socketPkHostConnectionSub?.cancel();
+    _socketPkHostConnectionSub = _socketService.onPkHostConnectionChanged.listen((data) {
+      final status = data['status']?.toString();
+      if (status == 'OFFLINE' || status == 'RECONNECTING') {
+        _isPkOpponentDisconnected = true;
+        _pkDisconnectGrace = data['graceRemainingSeconds'] ?? 30;
+      } else if (status == 'CONNECTED') {
+        _isPkOpponentDisconnected = false;
+      }
+      notifyListeners();
+    });
+
+    // 27. PK Battle: Match Finished (Section 4 & 5)
+    _socketPkMatchFinishedSub?.cancel();
+    _socketPkMatchFinishedSub = _socketService.onPkMatchFinished.listen((data) {
+      try {
+        _activePkBattle = PKBattleModel.fromJson(data);
+        _isPkActive = false;
+        _pkTimer?.cancel();
+        _agoraService.leaveOpponentPKChannel();
+        _pkResultController.add(_activePkBattle!);
+        notifyListeners();
+      } catch (_) {}
+    });
+
+    // 28. PK Battle: Forfeited or Aborted (Section 5)
+    _socketPkForfeitedSub?.cancel();
+    _socketPkForfeitedSub = _socketService.onPkMatchForfeited.listen((data) {
+      try {
+        _activePkBattle = PKBattleModel.fromJson(data);
+        _isPkActive = false;
+        _pkTimer?.cancel();
+        _agoraService.leaveOpponentPKChannel();
+        sendSystemMessage('⚔️ PK Match ended: ${data['endReason'] ?? "Opponent forfeited."}');
+        _pkResultController.add(_activePkBattle!);
+        notifyListeners();
+      } catch (_) {}
+    });
+    _socketPkAbortedSub?.cancel();
+    _socketPkAbortedSub = _socketService.onPkMatchAborted.listen((data) {
+      try {
+        _activePkBattle = PKBattleModel.fromJson(data);
+        _isPkActive = false;
+        _pkTimer?.cancel();
+        _agoraService.leaveOpponentPKChannel();
+        sendSystemMessage('⚠️ PK Match aborted: ${data['endReason'] ?? "System incident."}');
+        notifyListeners();
+      } catch (_) {}
+    });
   }
 
   /// Clears the room's lower feed messages and records clear timestamp
@@ -1581,9 +1853,22 @@ class LivePartyProvider extends ChangeNotifier {
     _socketSeatLockedSub?.cancel();
     _socketLayoutUpdatedSub?.cancel();
     _socketSendingTotalSub?.cancel();
+    _socketPkInviteSub?.cancel();
+    _socketPkPreparingSub?.cancel();
+    _socketPkCountdownSub?.cancel();
+    _socketPkMatchStartedSub?.cancel();
+    _socketPkScoreUpdatedSub?.cancel();
+    _socketPkHostConnectionSub?.cancel();
+    _socketPkMatchFinishedSub?.cancel();
+    _socketPkForfeitedSub?.cancel();
+    _socketPkAbortedSub?.cancel();
+    _agoraService.leaveOpponentPKChannel();
     _pendingOutgoingInvites.clear();
     _feedClearedAt = null;
     _pkTimer?.cancel();
+    _activePkBattle = null;
+    _isPkOpponentDisconnected = false;
+    _pkCountdown = 0;
 
     _activeRoom = null;
     _initialRoomId = null;
@@ -2472,27 +2757,92 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _setupAudioPkRelay(PKBattleModel battle) {
+    if (battle.agoraRelay == null) return;
+    final relay = battle.agoraRelay!;
+    final currentRoomId = _activeRoom?.id ?? '';
+    String opponentChannel = relay.channelB;
+    int opponentUid = relay.hostBUid;
+
+    if (currentRoomId == battle.roomBId || currentRoomId == relay.channelB) {
+      opponentChannel = relay.channelA;
+      opponentUid = relay.hostAUid;
+    }
+
+    final localUid = _agoraService.currentUid ?? 0;
+    _agoraService.joinOpponentPKChannel(
+      opponentChannel: opponentChannel,
+      localUid: localUid,
+      opponentUid: opponentUid,
+      isVideo: false,
+    );
+  }
+
+  void _startPkAuthoritativeTimer() {
+    _pkTimer?.cancel();
+    _pkTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_pkTimerRemaining > 0) {
+        _pkTimerRemaining--;
+        if (_isPkOpponentDisconnected && _pkDisconnectGrace > 0) {
+          _pkDisconnectGrace--;
+        }
+        notifyListeners();
+      } else {
+        timer.cancel();
+      }
+    });
+  }
+
+  Future<void> respondToPkInvitation({required String invitationId, required bool accept}) async {
+    try {
+      await PKRepository.instance.respondInvitation(
+        invitationId: invitationId,
+        action: accept ? 'ACCEPT' : 'REJECT',
+        targetRoomId: _activeRoom?.id,
+      );
+    } catch (e) {
+      debugPrint('[LivePartyProvider] respondToPkInvitation error: $e');
+    }
+  }
+
+  Future<void> cancelPkInvitation(String invitationId) async {
+    try {
+      await PKRepository.instance.cancelInvitation(invitationId);
+    } catch (e) {
+      debugPrint('[LivePartyProvider] cancelPkInvitation error: $e');
+    }
+  }
+
+  void toggleOpponentMute() {
+    _isOpponentAudioMuted = !_isOpponentAudioMuted;
+    _agoraService.muteOpponentAudio(_isOpponentAudioMuted);
+    notifyListeners();
+  }
+
+  Future<void> requestPkRematch() async {
+    if (_activePkBattle == null) return;
+    try {
+      await PKRepository.instance.requestRematch(_activePkBattle!.id);
+      sendSystemMessage('⚔️ Rematch invitation sent!');
+    } catch (e) {
+      debugPrint('[LivePartyProvider] requestPkRematch error: $e');
+    }
+  }
+
+  void endPk() {
+    _isPkActive = false;
+    _pkTimer?.cancel();
+    _agoraService.leaveOpponentPKChannel();
+    notifyListeners();
+  }
+
   void startPk(UserModel opponent) {
     _pkOpponent = opponent;
     _isPkActive = true;
     _pkScoreA = 0;
     _pkScoreB = 0;
     _pkTimerRemaining = 300;
-    notifyListeners();
-
-    _pkTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (_pkTimerRemaining > 0) {
-        _pkTimerRemaining--;
-        notifyListeners();
-      } else {
-        endPk();
-      }
-    });
-  }
-
-  void endPk() {
-    _isPkActive = false;
-    _pkTimer?.cancel();
+    _startPkAuthoritativeTimer();
     notifyListeners();
   }
 
@@ -2642,6 +2992,23 @@ class LivePartyProvider extends ChangeNotifier {
         _socketService.emitRoomLayoutUpdate(_activeRoom!.id, updatedCapacity, updatedRoomType);
       }
 
+      // Persist to backend database via REST API (Issue 09)
+      if (title != null || coverUrl != null || category != null) {
+        try {
+          _apiClient.put(
+            '/rooms/${_activeRoom!.id}/profile',
+            data: {
+              'title': updatedTitle,
+              'coverImageUrl': updatedCover,
+              if (category != null || _activeRoom!.category.isNotEmpty) 'category': category ?? _activeRoom!.category,
+              'roomType': updatedRoomType,
+            },
+          );
+        } catch (err) {
+          debugPrint('[LivePartyProvider] Room profile REST update error: $err');
+        }
+      }
+
       sendSystemMessage('✏️ Room details updated.');
       notifyListeners();
     }
@@ -2653,6 +3020,19 @@ class LivePartyProvider extends ChangeNotifier {
     if (pin != null) _roomPinCode = pin;
     sendSystemMessage(isLocked ? '🔒 Room is now locked ($mode).' : '🔓 Room is now unlocked.');
     notifyListeners();
+  }
+
+  Future<bool> updateRoomLockSettings({required bool isLocked, String? mode, String? pin}) async {
+    final roomId = _activeRoom?.id ?? _initialRoomId;
+    if (roomId == null || roomId.isEmpty) return false;
+    try {
+      await _roomRepository.updateLockSettings(roomId, isLocked: isLocked, lockMode: mode, pin: pin);
+      configureRoomLock(isLocked: isLocked, mode: mode, pin: pin);
+      return true;
+    } catch (e) {
+      debugPrint('[LivePartyProvider] updateRoomLockSettings error: $e');
+      return false;
+    }
   }
 
   bool validateRoomPin(String pin) => _roomPinCode == pin;
@@ -2699,22 +3079,26 @@ class LivePartyProvider extends ChangeNotifier {
     String? giftId,
     String? transactionId,
   }) {
+    final catalogGift = GiftModel.findById(giftId) ?? GiftModel.findById(giftName);
+    final resolvedGiftName = catalogGift?.name ?? giftName;
+    final resolvedGiftIcon = catalogGift?.icon ?? giftIcon;
+
     final txId = transactionId ?? DateTime.now().millisecondsSinceEpoch.toString();
     if (_processedGiftTxIds.contains(txId)) return;
     _processedGiftTxIds.add(txId);
 
-    final cleanIcon = (giftIcon.startsWith('assets/') || giftIcon.startsWith('http')) ? '🎁' : giftIcon;
+    final cleanIcon = (resolvedGiftIcon.startsWith('assets/') || resolvedGiftIcon.startsWith('http')) ? '🎁' : resolvedGiftIcon;
 
     final giftMsg = PartyMessageModel(
       id: 'gift_$txId',
       sender: sender,
       receiver: receiver,
-      text: '${sender.name} sent $quantity × $giftName $cleanIcon to ${receiver.name}',
+      text: '${sender.name} sent $quantity × $resolvedGiftName $cleanIcon to ${receiver.name}',
       timestamp: DateTime.now(),
       isGiftMessage: true,
-      giftId: giftId ?? '',
-      giftName: giftName,
-      giftIcon: giftIcon,
+      giftId: catalogGift?.id ?? giftId ?? '',
+      giftName: resolvedGiftName,
+      giftIcon: resolvedGiftIcon,
       quantity: quantity,
       transactionId: txId,
       serverTimestamp: DateTime.now(),

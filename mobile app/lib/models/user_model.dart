@@ -240,6 +240,19 @@ class UserModel {
   /// Effective cover image URL fallback
   String get effectiveCoverUrl => (coverUrl != null && coverUrl!.isNotEmpty) ? coverUrl! : avatarUrl;
 
+  // Helper parser for flexible int extraction (handles int, double, String, and BigInt)
+  static int _parseIntSafe(dynamic value, [int defaultValue = 0]) {
+    if (value == null) return defaultValue;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) {
+      final parsedNum = num.tryParse(value.trim());
+      if (parsedNum != null) return parsedNum.toInt();
+      return defaultValue;
+    }
+    return defaultValue;
+  }
+
   factory UserModel.fromJson(Map<String, dynamic> json) {
     final profile = json['profile'] is Map<String, dynamic> ? json['profile'] as Map<String, dynamic> : {};
     final wallet = json['wallet'] is Map<String, dynamic> ? json['wallet'] as Map<String, dynamic> : {};
@@ -334,10 +347,39 @@ class UserModel {
       hostAppStatus = 'approved';
     }
 
-    final int wealthLevel = profile['wealthLevel'] is int ? profile['wealthLevel'] as int : (json['wealthLevel'] is int ? json['wealthLevel'] as int : 0);
-    final int charmLevel = profile['charmLevel'] is int ? profile['charmLevel'] as int : (json['charmLevel'] is int ? json['charmLevel'] as int : 0);
-    final int accountLevel = profile['level'] is int ? profile['level'] as int : (json['accountLevel'] is int ? json['accountLevel'] as int : 0);
-    final bool isVipUser = json['isVip'] == true || (wealthLevel > 10);
+    final int parsedWealthLevel = _parseIntSafe(
+      profile['wealthLevel'] ?? profile['level'] ?? json['wealthLevel'] ?? json['level'],
+      1, // Default minimum level is 1
+    );
+    final int parsedWealthXp = _parseIntSafe(
+      profile['wealthXp'] ?? profile['experience'] ?? profile['experiencePoints'] ?? json['wealthXp'] ?? json['experiencePoints'],
+      0,
+    );
+    final int parsedCharmLevel = _parseIntSafe(
+      profile['charmLevel'] ?? json['charmLevel'],
+      1,
+    );
+    final int parsedCharmXp = _parseIntSafe(
+      profile['charmXp'] ?? profile['totalEarnedDiamonds'] ?? json['charmXp'],
+      0,
+    );
+    final int parsedAccountLevel = _parseIntSafe(
+      profile['accountLevel'] ?? profile['level'] ?? json['accountLevel'] ?? json['level'],
+      1,
+    );
+    final int parsedAccountXp = _parseIntSafe(
+      profile['accountXp'] ?? profile['experiencePoints'] ?? json['accountXp'],
+      0,
+    );
+    final int parsedGameLevel = _parseIntSafe(
+      profile['gameLevel'] ?? json['gameLevel'],
+      1,
+    );
+    final int parsedGameXp = _parseIntSafe(
+      profile['gameXp'] ?? json['gameXp'],
+      0,
+    );
+    final bool isVipUser = json['isVip'] == true || (parsedWealthLevel > 10);
 
     return UserModel(
       id: id,
@@ -391,14 +433,14 @@ class UserModel {
       role: role,
       hostApplicationStatus: hostAppStatus,
       hostRejectionReason: hostProfile?['rejectionReason']?.toString() ?? json['hostRejectionReason']?.toString(),
-      wealthLevel: wealthLevel,
-      wealthXp: profile['experience'] is int ? profile['experience'] as int : (json['wealthXp'] is int ? json['wealthXp'] as int : 0),
-      charmLevel: charmLevel,
-      charmXp: json['charmXp'] is int ? json['charmXp'] as int : 0,
-      gameLevel: json['gameLevel'] is int ? json['gameLevel'] as int : 0,
-      gameXp: json['gameXp'] is int ? json['gameXp'] as int : 0,
-      accountLevel: accountLevel,
-      accountXp: json['accountXp'] is int ? json['accountXp'] as int : 0,
+      wealthLevel: parsedWealthLevel,
+      wealthXp: parsedWealthXp,
+      charmLevel: parsedCharmLevel,
+      charmXp: parsedCharmXp,
+      gameLevel: parsedGameLevel,
+      gameXp: parsedGameXp,
+      accountLevel: parsedAccountLevel,
+      accountXp: parsedAccountXp,
       cpPartnerId: json['cpPartnerId']?.toString(),
       nobleTitle: json['nobleTitle']?.toString(),
       status: json['status']?.toString() ?? 'ACTIVE',

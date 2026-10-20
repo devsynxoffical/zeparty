@@ -507,6 +507,68 @@ class _ChatBubbleState extends State<ChatBubble> {
                   ),
                 ),
               ),
+            ] else if (widget.message.text.contains('Replied to story') || widget.message.text.startsWith('📸')) ...[
+              // ─── Interactive Story Reply Preview Card (Item 12) ───
+              Builder(
+                builder: (context) {
+                  final storyMatch = RegExp(r'story \(([^)]+)\)').firstMatch(widget.message.text);
+                  final storyId = storyMatch != null ? storyMatch.group(1) : '';
+                  final quoteMatch = RegExp(r'"([^"]+)"').firstMatch(widget.message.text);
+                  final replyText = quoteMatch != null ? quoteMatch.group(1) : widget.message.text;
+
+                  return Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.withOpacity(0.4)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(Icons.auto_stories_rounded, color: Colors.amber, size: 20),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Replied to Story',
+                                    style: TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                  if (storyId != null && storyId.isNotEmpty)
+                                    Text(
+                                      'Story #$storyId',
+                                      style: TextStyle(color: textColor?.withOpacity(0.7) ?? Colors.white70, fontSize: 10),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          replyText ?? widget.message.text,
+                          style: TextStyle(
+                            color: textColor,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
             ] else ...[
               Text(
                 widget.message.text,

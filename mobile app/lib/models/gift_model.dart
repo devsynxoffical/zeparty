@@ -98,6 +98,104 @@ class GiftModel {
 
   int get price => priceCoins > 0 ? priceCoins : diamondPrice;
 
+  GiftModel copyWith({
+    String? id,
+    String? name,
+    String? icon,
+    String? iconUrl,
+    String? svgaAssetUrl,
+    int? diamondPrice,
+    int? priceCoins,
+    String? category,
+    String? giftCategory,
+    GiftAnimationLevel? animationLevel,
+    String? animationEffect,
+    bool? supportsCombo,
+    String? soundAsset,
+    String? label,
+    bool? isLuckyGift,
+    String? luckyBadge,
+    bool? isAnimated,
+    bool? isFullScreen,
+    bool? isActive,
+  }) {
+    return GiftModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      icon: icon ?? this.icon,
+      iconUrl: iconUrl ?? this.iconUrl,
+      svgaAssetUrl: svgaAssetUrl ?? this.svgaAssetUrl,
+      diamondPrice: diamondPrice ?? this.diamondPrice,
+      priceCoins: priceCoins ?? this.priceCoins,
+      category: category ?? this.category,
+      giftCategory: giftCategory ?? this.giftCategory,
+      animationLevel: animationLevel ?? this.animationLevel,
+      animationEffect: animationEffect ?? this.animationEffect,
+      supportsCombo: supportsCombo ?? this.supportsCombo,
+      soundAsset: soundAsset ?? this.soundAsset,
+      label: label ?? this.label,
+      isLuckyGift: isLuckyGift ?? this.isLuckyGift,
+      luckyBadge: luckyBadge ?? this.luckyBadge,
+      isAnimated: isAnimated ?? this.isAnimated,
+      isFullScreen: isFullScreen ?? this.isFullScreen,
+      isActive: isActive ?? this.isActive,
+    );
+  }
+
+  /// Authoritative lookup for gift by ID, code, or name.
+  /// Maps raw backend IDs (e.g. 'cg11', 'CG11', 'cg23') to their full catalog record
+  /// (e.g. 'Birthday Cake', 'Private Jet') with correct animation asset & icon.
+  static GiftModel? findById(String? idOrName) {
+    if (idOrName == null) return null;
+    final clean = idOrName.trim().toLowerCase();
+    if (clean.isEmpty) return null;
+
+    final catalog = defaultCatalog;
+
+    // 1. Direct ID match (e.g. 'cg11', 'cg23', 'eg01', 'pv05')
+    for (final g in catalog) {
+      if (g.id.toLowerCase() == clean) return g;
+    }
+
+    // 2. Exact Name match (e.g. 'birthday cake', 'private jet')
+    for (final g in catalog) {
+      if (g.name.toLowerCase() == clean) return g;
+    }
+
+    // 3. Alphanumeric normalized ID match (e.g. 'cg_11' -> 'cg11')
+    final alnum = clean.replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (alnum.isNotEmpty) {
+      for (final g in catalog) {
+        final gAlnum = g.id.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        if (gAlnum == alnum) return g;
+      }
+    }
+
+    // 4. Match asset path filename prefix (e.g. 'cg11' in 'CG11_Birthday_Cake_...')
+    for (final g in catalog) {
+      final asset = g.svgaAssetUrl?.toLowerCase() ?? '';
+      if (asset.contains('/${clean}_') || (alnum.isNotEmpty && asset.contains('/${alnum}_'))) {
+        return g;
+      }
+    }
+
+    // 5. Common aliases (e.g. 'jet' -> 'Private Jet')
+    if (clean == 'jet' || clean == 'plane') {
+      for (final g in catalog) {
+        if (g.id.toLowerCase() == 'cg23' || g.name.toLowerCase() == 'private jet') return g;
+      }
+    }
+
+    // 6. Partial name match (e.g. 'cake' matches 'Birthday Cake')
+    for (final g in catalog) {
+      if (g.name.toLowerCase().contains(clean) || (clean.length >= 4 && clean.contains(g.name.toLowerCase()))) {
+        return g;
+      }
+    }
+
+    return null;
+  }
+
   factory GiftModel.fromJson(Map<String, dynamic> json) {
     final rawCoins = json['coinValue'] ?? json['priceCoins'] ?? json['diamondPrice'] ?? 0;
     int coins = 0;
@@ -105,6 +203,18 @@ class GiftModel {
       coins = rawCoins.toInt();
     } else if (rawCoins is String) {
       coins = int.tryParse(rawCoins) ?? 0;
+    }
+
+    final rawId = json['id'] as String? ?? json['giftId'] as String? ?? '';
+    final rawName = json['name'] as String? ?? json['giftName'] as String? ?? '';
+
+    // Authoritative lookup against catalog to resolve proper name, icon, and video asset:
+    final catalogMatch = findById(rawId.isNotEmpty ? rawId : rawName);
+    if (catalogMatch != null) {
+      return catalogMatch.copyWith(
+        priceCoins: coins > 0 ? coins : catalogMatch.priceCoins,
+        diamondPrice: coins > 0 ? coins : catalogMatch.diamondPrice,
+      );
     }
 
     final backendCat = (json['giftCategory'] as String? ?? 'POPULAR').toUpperCase();
@@ -135,8 +245,8 @@ class GiftModel {
     }
 
     return GiftModel(
-      id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? 'Gift',
+      id: rawId,
+      name: rawName.isNotEmpty ? rawName : 'Gift',
       icon: iconString,
       iconUrl: json['iconUrl'] as String?,
       svgaAssetUrl: json['svgaAssetUrl'] as String? ?? json['animationUrl'] as String?,

@@ -1136,9 +1136,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
         targetReceiver: targetHost,
         onGiftSent: (gift) {
           final currentUser = context.read<AuthProvider>().currentUser;
+          final liveGiftProv = context.read<LiveGiftProvider>();
           context.read<LiveProvider>().addPkScore(forHostA, gift.diamondPrice);
           context.read<LiveProvider>().sendGift(gift, currentUser.name);
-          _giftOverlayKey.currentState?.playGiftAnimation(gift, senderName: currentUser.name);
+          _giftOverlayKey.currentState?.playGiftAnimation(
+            gift,
+            senderName: currentUser.name,
+            transactionId: liveGiftProv.lastTransactionId,
+          );
         },
       ),
     );
@@ -1321,77 +1326,165 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   }
 
   /// Victory Overlay when Battle Ends in Live Room
+  /// Authoritative Result Overlay when PK Match Finishes (Section 4 & 5)
   Widget _buildPkVictoryOverlay(PKBattleModel pk) {
+    final isDraw = pk.isDraw || (pk.scoreA == pk.scoreB);
     final scoreA = pk.scoreA;
     final scoreB = pk.scoreB;
-    final isWinnerA = scoreA >= scoreB;
+    final isWinnerA = scoreA > scoreB;
     final winner = isWinnerA ? pk.hostA : pk.hostB;
     final winScore = isWinnerA ? scoreA : scoreB;
+    final supportersA = pk.topSupportersA;
+    final supportersB = pk.topSupportersB;
 
     return Container(
-      color: Colors.black.withValues(alpha: 0.8),
+      color: Colors.black.withValues(alpha: 0.85),
       child: Center(
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 24),
-          padding: const EdgeInsets.all(24),
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFF4A148C), Color(0xFF8E24AA), Color(0xFFD81B60)],
+              colors: [Color(0xFF2E124D), Color(0xFF130A24)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
             ),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: const Color(0xFFFFD700), width: 2),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFFFD700).withValues(alpha: 0.6),
+                color: const Color(0xFFFFD700).withValues(alpha: 0.4),
                 blurRadius: 24,
-                spreadRadius: 3,
+                spreadRadius: 2,
               ),
             ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('👑', style: TextStyle(fontSize: 60)),
-              const SizedBox(height: 8),
-              const Text(
-                'PK VICTORY!',
+              Text(isDraw ? '🤝' : '👑', style: const TextStyle(fontSize: 48)),
+              const SizedBox(height: 6),
+              Text(
+                isDraw ? 'IT IS A DRAW!' : 'PK VICTORY!',
                 style: TextStyle(
-                  color: Color(0xFFFFD700),
+                  color: isDraw ? Colors.amberAccent : const Color(0xFFFFD700),
                   fontWeight: FontWeight.w900,
-                  fontSize: 24,
+                  fontSize: 22,
                   letterSpacing: 1.5,
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                winner.name,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
-                ),
-              ),
               const SizedBox(height: 4),
+              if (!isDraw) ...[
+                Text(
+                  winner.name,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+                Text(
+                  'Won with $winScore coins!',
+                  style: const TextStyle(color: Color(0xFF00E5FF), fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ],
               Text(
-                'Won with $winScore 💎 diamonds!',
-                style: const TextStyle(
-                  color: Color(0xFF00E5FF),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                'Final Score: $scoreA - $scoreB',
+                style: const TextStyle(color: Colors.white60, fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+
+              // Top 3 Supporters Section (Section 4)
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Top Supporters (Coins Spent):', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Side A
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(pk.sideA?.displayName ?? pk.hostA.name, style: const TextStyle(color: Color(0xFF2196F3), fontWeight: FontWeight.bold, fontSize: 10)),
+                              const SizedBox(height: 2),
+                              if (supportersA.isEmpty)
+                                const Text('No gifts', style: TextStyle(color: Colors.white38, fontSize: 9))
+                              else
+                                ...supportersA.take(3).map((s) => Text(
+                                      '#${s.rank} ${s.displayName}: ${s.totalCoins}',
+                                      style: const TextStyle(color: Colors.white60, fontSize: 9),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    )),
+                            ],
+                          ),
+                        ),
+                        Container(width: 1, height: 45, color: Colors.white12),
+                        // Side B
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(pk.sideB?.displayName ?? pk.hostB.name, style: const TextStyle(color: Color(0xFFF44336), fontWeight: FontWeight.bold, fontSize: 10)),
+                                const SizedBox(height: 2),
+                                if (supportersB.isEmpty)
+                                  const Text('No gifts', style: TextStyle(color: Colors.white38, fontSize: 9))
+                                else
+                                  ...supportersB.take(3).map((s) => Text(
+                                        '#${s.rank} ${s.displayName}: ${s.totalCoins}',
+                                        style: const TextStyle(color: Colors.white60, fontSize: 9),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      )),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFD700),
-                  foregroundColor: const Color(0xFF0A071B),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-                ),
-                onPressed: () {
-                  context.read<LiveProvider>().endPkBattle();
-                },
-                child: const Text('Continue Stream', style: TextStyle(fontWeight: FontWeight.w900)),
+
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        side: const BorderSide(color: Colors.white38),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: () {
+                        context.read<LiveProvider>().endPkBattle();
+                      },
+                      child: const Text('Close', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFE91E63),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: () {
+                        context.read<LiveProvider>().requestPkRematch();
+                        context.read<LiveProvider>().endPkBattle();
+                      },
+                      child: const Text('Rematch ⚔️', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1470,10 +1563,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             onPressed: () async {
               Navigator.pop(ctx);
               try {
-                await ApiClient.instance.post(
-                  '/v1/pk/invite/$invitationId/respond',
-                  data: {'action': 'DECLINE'},
-                );
+                await context.read<LiveProvider>().respondToPKInvite(invitationId, false);
               } catch (_) {}
             },
             child: const Text('Decline', style: TextStyle(color: Colors.white60, fontSize: 14)),
@@ -1488,10 +1578,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             onPressed: () async {
               Navigator.pop(ctx);
               try {
-                await ApiClient.instance.post(
-                  '/v1/pk/invite/$invitationId/respond',
-                  data: {'action': 'ACCEPT'},
-                );
+                await context.read<LiveProvider>().respondToPKInvite(invitationId, true);
               } catch (e) {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -1647,7 +1734,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final liveProvider = context.watch<LiveProvider>();
     final activeRoom = liveProvider.activeRoom ?? widget.room;
-    final activeGift = liveProvider.activeGiftAnimation;
     final currentUser = context.read<AuthProvider>().currentUser;
     final isHost = widget.isHost ||
         (activeRoom.host.id == currentUser.id) ||
@@ -1700,9 +1786,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               ),
             ),
           ),
-
-          // Gift Animated Overlay
-          if (activeGift != null) const GiftAnimationOverlay(),
 
           // High Value Announcement Overlay
           const HighValueAnnouncementOverlay(),
@@ -2285,8 +2368,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                     streamerName: effectiveHost.name,
                                     targetReceiver: effectiveHost,
                                     onGiftSent: (gift) {
+                                      final liveGiftProv = context.read<LiveGiftProvider>();
                                       liveProvider.sendGift(gift, currentUser.name);
-                                      _giftOverlayKey.currentState?.playGiftAnimation(gift, senderName: currentUser.name);
+                                      _giftOverlayKey.currentState?.playGiftAnimation(
+                                        gift,
+                                        senderName: currentUser.name,
+                                        transactionId: liveGiftProv.lastTransactionId,
+                                      );
                                     },
                                   );
                                 },
@@ -2467,6 +2555,57 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
           // Onscreen 3D Gift Animation Overlay
           GiftAnimationOverlay(key: _giftOverlayKey),
+
+          // PK 3-Second Countdown Overlay (Section 1)
+          if (liveProvider.isPkCountdown)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.65),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'PK BATTLE STARTING IN',
+                        style: TextStyle(
+                          color: Color(0xFF00E5FF),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        width: 90,
+                        height: 90,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFE91E63), Color(0xFFFF4081)],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.pinkAccent.withValues(alpha: 0.6),
+                              blurRadius: 25,
+                              spreadRadius: 4,
+                            ),
+                          ],
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${liveProvider.pkCountdown}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 44,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
           // PK Victory Celebration Overlay
           if (liveProvider.activePkBattle != null && (liveProvider.activePkBattle!.isEnded || liveProvider.pkTimeRemainingSeconds == 0))
@@ -2785,7 +2924,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       imageAsset: 'assets/images/party_tool_pk_match.png',
                       onTap: () {
                         Navigator.pop(c);
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id, roomType: 'VIDEO')));
                       },
                     ),
 

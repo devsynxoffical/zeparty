@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/cumulative_recharge_model.dart';
+import '../core/services/api_client.dart';
 import 'wallet_provider.dart';
 
 class CumulativeRechargeProvider extends ChangeNotifier {
@@ -133,30 +134,56 @@ class CumulativeRechargeProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
+    bool syncedWithBackend = false;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final key = 'zeparty_recharge_rewards_${userId}_${_currentEvent.id}';
-      final raw = prefs.getString(key);
+      final response = await ApiClient.instance.get<Map<String, dynamic>>('/v1/recharge/rewards/current');
+      final data = response.data?['data'];
+      if (data is Map<String, dynamic>) {
+        final progress = data['userProgress'];
+        if (progress is Map<String, dynamic>) {
+          _cumulativeRechargeUsd = (progress['cumulativeRechargeUSD'] as num?)?.toDouble() ?? 0.00;
+        }
 
-      if (raw != null && raw.isNotEmpty) {
-        final data = jsonDecode(raw) as Map<String, dynamic>;
-        _cumulativeRechargeUsd = (data['cumulativeUsd'] as num?)?.toDouble() ?? 0.00;
-        final claimed = (data['claimedLevels'] as List?)?.map((e) => int.tryParse(e.toString()) ?? 0).where((e) => e > 0).toSet() ?? {};
-        _claimedMilestoneLevels.clear();
-        _claimedMilestoneLevels.addAll(claimed);
-      } else {
-        // Zero starting state for user with no recorded event progress
+        final rawMilestones = data['milestones'];
+        if (rawMilestones is List) {
+          _claimedMilestoneLevels.clear();
+          for (final m in rawMilestones) {
+            if (m is Map<String, dynamic> && m['status'] == 'CLAIMED') {
+              final lvl = int.tryParse(m['level']?.toString() ?? '');
+              if (lvl != null && lvl > 0) _claimedMilestoneLevels.add(lvl);
+            }
+          }
+        }
+        syncedWithBackend = true;
+        await _persistUserProgress();
+      }
+    } catch (_) {}
+
+    if (!syncedWithBackend) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final key = 'zeparty_recharge_rewards_${userId}_${_currentEvent.id}';
+        final raw = prefs.getString(key);
+
+        if (raw != null && raw.isNotEmpty) {
+          final data = jsonDecode(raw) as Map<String, dynamic>;
+          _cumulativeRechargeUsd = (data['cumulativeUsd'] as num?)?.toDouble() ?? 0.00;
+          final claimed = (data['claimedLevels'] as List?)?.map((e) => int.tryParse(e.toString()) ?? 0).where((e) => e > 0).toSet() ?? {};
+          _claimedMilestoneLevels.clear();
+          _claimedMilestoneLevels.addAll(claimed);
+        } else {
+          _cumulativeRechargeUsd = 0.00;
+          _claimedMilestoneLevels.clear();
+        }
+      } catch (_) {
         _cumulativeRechargeUsd = 0.00;
         _claimedMilestoneLevels.clear();
       }
-    } catch (_) {
-      _cumulativeRechargeUsd = 0.00;
-      _claimedMilestoneLevels.clear();
-    } finally {
-      _refreshEventState();
-      _isLoading = false;
-      notifyListeners();
     }
+
+    _refreshEventState();
+    _isLoading = false;
+    notifyListeners();
   }
 
   Future<void> _persistUserProgress() async {
@@ -210,7 +237,17 @@ class CumulativeRechargeProvider extends ChangeNotifier {
 
     _isLoading = true;
     notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 250));
+
+    // Call backend API to record claim authoritatively in PostgreSQL (Change 22)
+    try {
+      await ApiClient.instance.post<Map<String, dynamic>>(
+        '/v1/recharge/rewards/claim',
+        data: {
+          'eventId': _currentEvent.id,
+          'milestoneLevel': milestoneLevel,
+        },
+      );
+    } catch (_) {}
 
     // Award rewards
     wallet.rechargeCoins(target.bonusCoins, 0.0);

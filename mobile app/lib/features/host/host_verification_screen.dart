@@ -75,12 +75,20 @@ class _HostVerificationScreenState extends State<HostVerificationScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context); // Close loading
-      context.read<AuthProvider>().updateHostApplicationStatus('pending');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Host Application recorded (Server review queued): $e'),
-          backgroundColor: AppColors.success,
-          behavior: SnackBarBehavior.floating,
+      final errorMessage = (e is ApiException)
+          ? e.message
+          : 'Host application failed: $e';
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Application Notice'),
+          content: Text(errorMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
         ),
       );
     }

@@ -1,15 +1,15 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../core/services/socket_service.dart';
 import '../../../models/user_model.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/live_party_provider.dart';
 import '../../../widgets/user_avatar.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Elimination Lucky Wheel — Item 05
-// All state is local. Backend events are emitted via provider.sendRoomEvent()
-// (see backend report for required socket events).
+// Elimination Lucky Wheel — Item 05 (Real-Time Multiplayer Server-Authoritative)
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum _WheelPhase { setup, joining, spinning, roundResult, winner }
@@ -36,6 +36,15 @@ class _EliminationWheelSheetState extends State<EliminationWheelSheet>
   int _entryCoinFee = 0;
   int _maxParticipants = 10;
   bool _onlySeatedMics = false;
+  String? _sessionId;
+  int _rewardCoins = 0;
+
+  // ── Socket Subscriptions (Issue 05) ───────────────────────────────────────
+  StreamSubscription? _wheelCreatedSub;
+  StreamSubscription? _wheelJoinedSub;
+  StreamSubscription? _wheelEliminatedSub;
+  StreamSubscription? _wheelCompletedSub;
+  StreamSubscription? _wheelCancelledSub;
 
   // ── Game state ────────────────────────────────────────────────────────────
   _WheelPhase _phase = _WheelPhase.setup;
@@ -68,10 +77,73 @@ class _EliminationWheelSheetState extends State<EliminationWheelSheet>
     _celebAnim = Tween<double>(begin: 0.85, end: 1.15).animate(
       CurvedAnimation(parent: _celebCtrl, curve: Curves.easeInOut),
     );
+
+    // Socket.IO Listeners for Multiplayer Wheel Synchronization
+    _wheelCreatedSub = SocketService.instance.onWheelSessionCreated.listen((data) {
+      if (!mounted) return;
+      final sId = data['sessionId']?.toString();
+      final fee = (data['entryCoinFee'] is num) ? (data['entryCoinFee'] as num).toInt() : int.tryParse(data['entryCoinFee']?.toString() ?? '');
+      final cap = (data['maxParticipants'] is num) ? (data['maxParticipants'] as num).toInt() : int.tryParse(data['maxParticipants']?.toString() ?? '');
+      setState(() {
+        if (sId != null && sId.isNotEmpty) _sessionId = sId;
+        if (fee != null) _entryCoinFee = fee;
+        if (cap != null) _maxParticipants = cap;
+        _phase = _WheelPhase.joining;
+      });
+    });
+
+    _wheelJoinedSub = SocketService.instance.onWheelParticipantJoined.listen((data) {
+      if (!mounted) return;
+      final pMap = data['participant'] is Map ? Map<String, dynamic>.from(data['participant'] as Map) : data;
+      final pId = pMap['id']?.toString() ?? pMap['userId']?.toString() ?? '';
+      if (pId.isNotEmpty && !_joined.any((u) => u.id == pId)) {
+        setState(() {
+          _joined.add(UserModel(
+            id: pId,
+            name: pMap['name']?.toString() ?? pMap['displayName']?.toString() ?? pMap['username']?.toString() ?? 'Player',
+            username: pMap['username']?.toString() ?? 'player_$pId',
+            avatarUrl: pMap['avatarUrl']?.toString() ?? '',
+          ));
+        });
+      }
+    });
+
+    _wheelEliminatedSub = SocketService.instance.onWheelRoundEliminated.listen((data) {
+      if (!mounted) return;
+      final eliminatedId = data['eliminatedUserId']?.toString();
+      final angleDeg = (data['targetAngleDegrees'] is num) ? (data['targetAngleDegrees'] as num).toDouble() : double.tryParse(data['targetAngleDegrees']?.toString() ?? '');
+      _animateSpinToAngle(angleDeg, eliminatedId);
+    });
+
+    _wheelCompletedSub = SocketService.instance.onWheelSessionCompleted.listen((data) {
+      if (!mounted) return;
+      final winnerId = data['winnerUserId']?.toString();
+      final reward = (data['rewardCoins'] is num) ? (data['rewardCoins'] as num).toInt() : int.tryParse(data['rewardCoins']?.toString() ?? '') ?? 0;
+      UserModel? winnerUser;
+      if (winnerId != null) {
+        winnerUser = _joined.where((u) => u.id == winnerId).firstOrNull;
+      }
+      setState(() {
+        _rewardCoins = reward;
+        if (winnerUser != null) _winner = winnerUser;
+        _phase = _WheelPhase.winner;
+      });
+    });
+
+    _wheelCancelledSub = SocketService.instance.onWheelSessionCancelled.listen((data) {
+      if (!mounted) return;
+      _resetGame();
+      _showMsg('Elimination Wheel round cancelled. Coins refunded.');
+    });
   }
 
   @override
   void dispose() {
+    _wheelCreatedSub?.cancel();
+    _wheelJoinedSub?.cancel();
+    _wheelEliminatedSub?.cancel();
+    _wheelCompletedSub?.cancel();
+    _wheelCancelledSub?.cancel();
     _spinCtrl.dispose();
     _celebCtrl.dispose();
     super.dispose();
@@ -80,6 +152,22 @@ class _EliminationWheelSheetState extends State<EliminationWheelSheet>
   // ─────────────────────────────────────────────────────────────────────────
   // Logic
   // ─────────────────────────────────────────────────────────────────────────
+
+  void _openLobby() {
+    final provider = context.read<LivePartyProvider>();
+    final authUser = context.read<AuthProvider>().currentUser;
+    final rId = provider.activeRoom?.id ?? '';
+    final sId = 'wheel_${DateTime.now().millisecondsSinceEpoch}';
+    _sessionId = sId;
+    setState(() => _phase = _WheelPhase.joining);
+    SocketService.instance.createWheelSession(
+      roomId: rId,
+      hostId: authUser.id,
+      entryCoinFee: _entryCoinFee,
+      maxParticipants: _maxParticipants,
+      onlySeatedMics: _onlySeatedMics,
+    );
+  }
 
   void _startGame() {
     if (_joined.length < 2) {
@@ -98,6 +186,15 @@ class _EliminationWheelSheetState extends State<EliminationWheelSheet>
       _showMsg('Wheel is full ($_maxParticipants max)');
       return;
     }
+    final provider = context.read<LivePartyProvider>();
+    final rId = provider.activeRoom?.id ?? '';
+    final sId = _sessionId ?? 'wheel_${DateTime.now().millisecondsSinceEpoch}';
+    _sessionId = sId;
+    SocketService.instance.joinWheelSession(
+      sessionId: sId,
+      userId: user.id,
+      roomId: rId,
+    );
     setState(() => _joined.add(user));
   }
 
@@ -105,13 +202,42 @@ class _EliminationWheelSheetState extends State<EliminationWheelSheet>
     if (_spinCtrl.isAnimating) return;
     if (_joined.length < 2) return;
 
-    final rng = Random();
-    _eliminatedIdx = rng.nextInt(_joined.length);
+    final provider = context.read<LivePartyProvider>();
+    final rId = provider.activeRoom?.id ?? '';
+    final sId = _sessionId ?? 'wheel_${DateTime.now().millisecondsSinceEpoch}';
+
+    // Broadcast spin to backend server
+    SocketService.instance.spinWheelRound(
+      sessionId: sId,
+      roomId: rId,
+    );
+
+    // Fallback animation in case of offline/local demo
+    _animateSpinToAngle(null, null);
+  }
+
+  void _animateSpinToAngle(double? targetAngleDegrees, String? eliminatedUserId) {
+    if (_spinCtrl.isAnimating) return;
+    if (_joined.length < 2) return;
+
+    int victimIdx = 0;
+    if (eliminatedUserId != null) {
+      final idx = _joined.indexWhere((u) => u.id == eliminatedUserId);
+      if (idx != -1) victimIdx = idx;
+    } else {
+      victimIdx = Random().nextInt(_joined.length);
+    }
+    _eliminatedIdx = victimIdx;
 
     final sliceAngle = (2 * pi) / _joined.length;
-    final targetSliceCenter = _eliminatedIdx! * sliceAngle + sliceAngle / 2;
-    final totalRotations = 5 + rng.nextInt(3);
-    final targetAngle = _currentAngle + totalRotations * 2 * pi + targetSliceCenter;
+    double targetAngle;
+    if (targetAngleDegrees != null) {
+      targetAngle = _currentAngle + (5 * 2 * pi) + (targetAngleDegrees * pi / 180.0);
+    } else {
+      final targetSliceCenter = victimIdx * sliceAngle + sliceAngle / 2;
+      final totalRotations = 5 + Random().nextInt(2);
+      targetAngle = _currentAngle + totalRotations * 2 * pi + targetSliceCenter;
+    }
 
     _spinAnim = Tween<double>(begin: _currentAngle, end: targetAngle).animate(
       CurvedAnimation(parent: _spinCtrl, curve: Curves.decelerate),
@@ -157,8 +283,15 @@ class _EliminationWheelSheetState extends State<EliminationWheelSheet>
   }
 
   void _resetGame() {
+    final provider = context.read<LivePartyProvider>();
+    final rId = provider.activeRoom?.id ?? '';
+    if (_sessionId != null && _sessionId!.isNotEmpty) {
+      SocketService.instance.cancelWheelSession(sessionId: _sessionId!, roomId: rId);
+    }
     _spinCtrl.reset();
     setState(() {
+      _sessionId = null;
+      _rewardCoins = 0;
       _phase = _WheelPhase.setup;
       _joined.clear();
       _eliminated.clear();
@@ -379,7 +512,7 @@ class _EliminationWheelSheetState extends State<EliminationWheelSheet>
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 elevation: 0,
               ),
-              onPressed: () => setState(() => _phase = _WheelPhase.joining),
+              onPressed: _openLobby,
               child: const Text('Open Registration 🎟️', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
@@ -873,7 +1006,9 @@ class _EliminationWheelSheetState extends State<EliminationWheelSheet>
                           border: Border.all(color: const Color(0xFFFFE000).withValues(alpha: 0.4)),
                         ),
                         child: Text(
-                          '🪙 Prize Pool: ${_entryCoinFee * (_joined.length + _eliminated.length)} coins',
+                          _rewardCoins > 0
+                              ? '🪙 Won: $_rewardCoins coins'
+                              : '🪙 Prize Pool: ${_entryCoinFee * (_joined.length + _eliminated.length)} coins',
                           style: const TextStyle(color: Color(0xFFFFE000), fontWeight: FontWeight.bold, fontSize: 13),
                         ),
                       ),

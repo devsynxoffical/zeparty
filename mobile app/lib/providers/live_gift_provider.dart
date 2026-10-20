@@ -44,6 +44,9 @@ class LiveGiftProvider extends ChangeNotifier {
   String? _lastError;
   String? get lastError => _lastError;
 
+  String? _lastTransactionId;
+  String? get lastTransactionId => _lastTransactionId;
+
   StreamSubscription<Map<String, dynamic>>? _socketGiftSubscription;
 
   LiveGiftProvider() {
@@ -54,7 +57,7 @@ class LiveGiftProvider extends ChangeNotifier {
   void _initSocketListener() {
     _socketGiftSubscription?.cancel();
     _socketGiftSubscription = _socketService.onGiftSent.listen((data) {
-      final txId = data['transactionId']?.toString() ?? '';
+      final txId = (data['transactionId'] ?? data['id'] ?? data['eventId'] ?? '').toString();
       if (txId.isNotEmpty && _processedTransactionIds.contains(txId)) {
         // Already processed locally (e.g. sender triggered local animation on REST response)
         return;
@@ -65,6 +68,10 @@ class LiveGiftProvider extends ChangeNotifier {
 
       try {
         final event = LiveGiftEventModel.fromSocketJson(data);
+        // Video gifts play exclusively in GiftAnimationOverlay; do not double-play in TikTokGiftOverlay
+        final hasVideo = event.animationUrl != null && event.animationUrl!.toLowerCase().endsWith('.mp4');
+        if (hasVideo) return;
+
         receiveGiftEvent(event);
       } catch (e) {
         debugPrint('[LiveGiftProvider] Error parsing socket gift event: $e');
@@ -141,6 +148,7 @@ class LiveGiftProvider extends ChangeNotifier {
       _activeSendingIdempotencyKeys.remove(idempotencyKey);
 
       final txId = response['transactionId']?.toString() ?? '';
+      _lastTransactionId = txId.isNotEmpty ? txId : idempotencyKey;
       if (txId.isNotEmpty) {
         _processedTransactionIds.add(txId);
       }
@@ -153,7 +161,7 @@ class LiveGiftProvider extends ChangeNotifier {
         authProvider.addWealthXp(totalCost);
       }
 
-      // Trigger local animation & combo aggregation
+      // Trigger local animation & combo aggregation (only for non-video gifts)
       _enqueueLocalComboEvent(
         txId: txId.isNotEmpty ? txId : idempotencyKey,
         gift: gift,
@@ -185,6 +193,7 @@ class LiveGiftProvider extends ChangeNotifier {
 
         // Broadcast real-time gift over socket so room viewers and receiver see it
         final txId = idempotencyKey;
+        _lastTransactionId = txId;
         _processedTransactionIds.add(txId);
         _socketService.emit('room:gift_sent', {
           'transactionId': txId,
@@ -203,7 +212,7 @@ class LiveGiftProvider extends ChangeNotifier {
           'timestamp': DateTime.now().toIso8601String(),
         });
 
-        // Trigger local animation & combo aggregation
+        // Trigger local animation & combo aggregation (only for non-video gifts)
         _enqueueLocalComboEvent(
           txId: txId,
           gift: gift,
@@ -248,6 +257,13 @@ class LiveGiftProvider extends ChangeNotifier {
     required String roomId,
     required int quantity,
   }) {
+    // If this gift has an MP4 video animation, it plays exclusively in GiftAnimationOverlay
+    final hasVideoAnimation = (gift.svgaAssetUrl != null && gift.svgaAssetUrl!.toLowerCase().endsWith('.mp4')) ||
+        (GiftModel.findById(gift.id)?.svgaAssetUrl != null && GiftModel.findById(gift.id)!.svgaAssetUrl!.toLowerCase().endsWith('.mp4'));
+    if (hasVideoAnimation) {
+      return;
+    }
+
     final comboKey = '${sender.id}_${gift.id}_${receiver.id}';
     final now = DateTime.now();
 

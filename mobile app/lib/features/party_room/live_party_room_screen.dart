@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
@@ -30,6 +31,7 @@ import '../../widgets/tiktok_gift_overlay.dart';
 import '../../providers/live_gift_provider.dart';
 import '../games/game_center_sheet.dart';
 import '../pk_battle/pk_match_screen.dart';
+import '../../models/pk_battle_model.dart';
 import 'widgets/room_info_sheet.dart';
 import 'widgets/room_sending_ranking_sheet.dart';
 import 'widgets/room_type_selector_sheet.dart';
@@ -102,9 +104,31 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   StreamSubscription? _partyRoomClosedSub;
   StreamSubscription? _kickedSub;
   StreamSubscription? _micInviteSub;
+  StreamSubscription? _pkInviteSub;
+  StreamSubscription? _pkResultSub;
   bool _isPartyEndedDialogShown = false;
   bool _isConnectionErrorDialogShown = false;
   bool _isMicInviteDialogShown = false;
+  bool _isClearScreenMode = false;
+
+  void _toggleClearScreenMode() {
+    if (mounted) {
+      setState(() {
+        _isClearScreenMode = !_isClearScreenMode;
+      });
+      ScaffoldMessenger.of(context).clearSnackBars();
+      if (_isClearScreenMode) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✨ Clear Screen Mode enabled. Single tap to restore controls.'),
+            backgroundColor: Color(0xFF6A11CB),
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
 
   void _handlePartyRoomEnded([String? reason]) {
     if (_isPartyEndedDialogShown || !mounted) return;
@@ -229,6 +253,80 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     );
   }
 
+  void _promptPinCode(UserModel user, Function(String) onPinEntered) {
+    if (!mounted) return;
+    final pinController = TextEditingController();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1B2E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.lock_rounded, color: Colors.cyanAccent, size: 24),
+            SizedBox(width: 10),
+            Text('Room Locked', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'This room is private and requires a PIN to enter.',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: pinController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              obscureText: true,
+              autofocus: true,
+              style: const TextStyle(color: Colors.white, fontSize: 18, letterSpacing: 4),
+              decoration: InputDecoration(
+                hintText: 'Enter PIN',
+                hintStyle: const TextStyle(color: Colors.white38, letterSpacing: 1),
+                counterText: '',
+                filled: true,
+                fillColor: Colors.white.withValues(alpha: 0.08),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.cyanAccent,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () {
+              final pin = pinController.text.trim();
+              if (pin.isNotEmpty) {
+                Navigator.pop(ctx);
+                onPinEntered(pin);
+              }
+            },
+            child: const Text('Unlock & Join', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -248,14 +346,16 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         );
       }
 
-      void attemptRoomEntry() {
+      void attemptRoomEntry([String? pin]) {
         if (!mounted) return;
-        partyProv.joinParty(widget.room, user).then((success) {
+        partyProv.joinParty(widget.room, user, password: pin).then((success) {
           if (!success && mounted) {
             if (partyProv.lastJoinFailureReason == 'ROOM_NOT_AVAILABLE') {
               _handlePartyRoomEnded('This party room is not available or has ended.');
+            } else if (partyProv.lastJoinFailureReason == 'ROOM_LOCKED_PIN_REQUIRED' || partyProv.errorMessage == 'ROOM_LOCKED_PIN_REQUIRED') {
+              _promptPinCode(user, (enteredPin) => attemptRoomEntry(enteredPin));
             } else {
-              _handleConnectionError(attemptRoomEntry);
+              _handleConnectionError(() => attemptRoomEntry(pin));
             }
           }
         });
@@ -305,6 +405,16 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         if (!mounted) return;
         _showIncomingMicInvitePrompt(data);
       });
+
+      _pkInviteSub?.cancel();
+      _pkInviteSub = partyProv.onPkInvitation.listen((data) {
+        if (mounted) _showIncomingPKInvitationDialog(data);
+      });
+
+      _pkResultSub?.cancel();
+      _pkResultSub = partyProv.onPkResult.listen((result) {
+        if (mounted) _showPkResultDialog(result);
+      });
       
       // Mock SVIP entry for demonstration
       if (user.isVip) {
@@ -328,6 +438,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     _partyRoomClosedSub?.cancel();
     _kickedSub?.cancel();
     _micInviteSub?.cancel();
+    _pkInviteSub?.cancel();
+    _pkResultSub?.cancel();
     _chatController.dispose();
     _chatScrollController.dispose();
     _chatFocusNode.dispose();
@@ -594,6 +706,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     // Unfocus and dismiss keyboard before opening gift panel (Item 10)
     FocusScope.of(context).unfocus();
     _chatFocusNode.unfocus();
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
 
     showModalBottomSheet(
       context: context,
@@ -603,16 +716,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         streamerName: widget.room.host.name,
         targetReceiver: targetReceiver,
         onGiftSent: (gift) {
-          _giftOverlayKey.currentState?.playGiftAnimation(gift);
+          final liveGiftProv = Provider.of<LiveGiftProvider>(context, listen: false);
           final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
           final provider = Provider.of<LivePartyProvider>(context, listen: false);
-          final emojiProvider = Provider.of<EmojiReactionProvider>(context, listen: false);
-          
-          emojiProvider.sendReaction(
-            roomId: widget.room.id,
-            senderId: user.id,
-            emoji: gift.icon,
+
+          _giftOverlayKey.currentState?.playGiftAnimation(
+            gift,
             senderName: user.name,
+            transactionId: liveGiftProv.lastTransactionId,
           );
 
           if (provider.isPkActive) {
@@ -625,6 +736,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       if (mounted) {
         FocusScope.of(context).unfocus();
         _chatFocusNode.unfocus();
+        SystemChannels.textInput.invokeMethod('TextInput.hide');
       }
     });
   }
@@ -652,7 +764,15 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         children: [
           // Ambient Gradient, Equipped Room Theme, or Custom Background Image
           Positioned.fill(
-            child: Builder(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onDoubleTap: _toggleClearScreenMode,
+              onTap: () {
+                if (_isClearScreenMode) {
+                  _toggleClearScreenMode();
+                }
+              },
+              child: Builder(
               builder: (context) {
                 final equippedTheme = context.watch<BackpackProvider>().equippedThemeUrl;
                 final bgImage = _customBackgroundPath != null
@@ -722,23 +842,54 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               },
             ),
           ),
+        ),
 
-          // Overlays
-          const HighValueAnnouncementOverlay(),
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 60,
-            left: 0,
-            right: 0,
-            child: const WorldLuckyBagBanner(),
-          ),
+          // Overlays (hidden in Clear Screen Mode)
+          if (!_isClearScreenMode) const HighValueAnnouncementOverlay(),
+          if (!_isClearScreenMode)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 60,
+              left: 0,
+              right: 0,
+              child: const WorldLuckyBagBanner(),
+            ),
 
-          // Main Layout
-          SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
+          // Main Layout with Smooth Opacity Transition (Item 28)
+          IgnorePointer(
+            ignoring: _isClearScreenMode,
+            child: AnimatedOpacity(
+              opacity: _isClearScreenMode ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 250),
+              child: SafeArea(
+                bottom: false,
+                child: Column(
+                  children: [
                 // Top Header
                 _buildHeader(context, isHost, canManage, provider),
+
+                // Host Stepped Away Banner (Bug 06)
+                if (provider.isHostAbsent)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.hourglass_top_rounded, color: Colors.amberAccent, size: 16),
+                        SizedBox(width: 8),
+                        Text(
+                          'Host stepped away (reconnecting...)',
+                          style: TextStyle(color: Colors.amberAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // Audience & Participants Avatar Bar (Shows active listeners & users in real-time)
                 _buildAudienceRow(provider, canManage, isDark),
@@ -793,10 +944,17 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               ],
             ),
           ),
+        ),
+      ),
 
           // Real window keyboard height (not stripped by Scaffold)
-          Builder(
-            builder: (ctx) {
+          IgnorePointer(
+            ignoring: _isClearScreenMode,
+            child: AnimatedOpacity(
+              opacity: _isClearScreenMode ? 0.0 : 1.0,
+              duration: const Duration(milliseconds: 250),
+              child: Builder(
+                builder: (ctx) {
               final keyboardHeight = MediaQueryData.fromView(View.of(ctx)).viewInsets.bottom;
               final isKeyboardOpen = keyboardHeight > 0;
 
@@ -860,6 +1018,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               );
             },
           ),
+        ),
+      ),
 
           TikTokUserJoinBanner(
             roomId: provider.activeRoom?.id ?? widget.room.id,
@@ -875,6 +1035,57 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
           // Onscreen 3D Gift Animation Overlay
           GiftAnimationOverlay(key: _giftOverlayKey),
+
+          // PK 3-Second Countdown Overlay (Section 1)
+          if (provider.isPkCountdown)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.65),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'PK BATTLE STARTING IN',
+                        style: TextStyle(
+                          color: Color(0xFF00E5FF),
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        width: 90,
+                        height: 90,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFE91E63), Color(0xFFFF4081)],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.pinkAccent.withValues(alpha: 0.6),
+                              blurRadius: 25,
+                              spreadRadius: 4,
+                            ),
+                          ],
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '${provider.pkCountdown}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 44,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
 
           // Admin Moderation Warning Banner (Floats in FRONT of seats and all stage layers)
           if (provider.activeWarningMessage != null)
@@ -1348,54 +1559,487 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     );
   }
 
-  Widget _buildPkBanner(LivePartyProvider provider) {
+  Widget _buildPkBanner(LivePartyProvider provider) => _buildAudioPkPanel(provider);
+
+  Widget _buildAudioPkPanel(LivePartyProvider provider) {
+    final pk = provider.activePkBattle;
     final scoreA = provider.pkScoreA;
     final scoreB = provider.pkScoreB;
     final total = (scoreA + scoreB) == 0 ? 1 : (scoreA + scoreB);
-    final ratioA = (scoreA == 0 && scoreB == 0) ? 0.5 : (scoreA / total);
+    final ratioA = (scoreA == 0 && scoreB == 0) ? 0.5 : (scoreA / total).clamp(0.05, 0.95);
+
+    final sideA = pk?.sideA;
+    final sideB = pk?.sideB;
+
+    final hostAName = sideA?.displayName ?? widget.room.host.name;
+    final hostAAvatar = sideA?.avatarUrl ?? widget.room.host.avatarUrl;
+    final hostAId = sideA?.numericId ?? (sideA?.hostId != null ? sideA!.hostId.substring(0, math.min(6, sideA.hostId.length)) : 'Host');
+
+    final hostBName = sideB?.displayName ?? 'Opponent';
+    final hostBAvatar = sideB?.avatarUrl ?? '';
+    final hostBId = sideB?.numericId ?? (sideB?.hostId != null ? sideB!.hostId.substring(0, math.min(6, sideB.hostId.length)) : 'Rival');
+
+    final minutes = provider.pkTimerRemaining ~/ 60;
+    final seconds = (provider.pkTimerRemaining % 60).toString().padLeft(2, '0');
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [const Color(0xFFFF416C).withValues(alpha: 0.8), const Color(0xFF2193B0).withValues(alpha: 0.8)],
-        ),
+        color: const Color(0xFF160D2E).withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
         boxShadow: [
           BoxShadow(
-            color: Colors.pinkAccent.withValues(alpha: 0.3),
+            color: Colors.black.withValues(alpha: 0.5),
             blurRadius: 10,
-            offset: const Offset(0, 2),
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Column(
         children: [
+          // Row: Host A Info | VS / Timer Pill | Host B Info
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('🔥 Team Host: \$scoreA', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(10)),
-                child: Text('PK ${provider.pkTimerRemaining}s', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11)),
+              // Side A (Host A)
+              Expanded(
+                flex: 4,
+                child: Row(
+                  children: [
+                    Stack(
+                      children: [
+                        UserAvatar(imageUrl: hostAAvatar, radius: 18),
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF2196F3),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('A', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            hostAName,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'ID: $hostAId',
+                            style: const TextStyle(color: Colors.white54, fontSize: 9),
+                          ),
+                          Text(
+                            '🪙 $scoreA',
+                            style: const TextStyle(color: Color(0xFF00E5FF), fontWeight: FontWeight.w900, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              Text('Team Rival: \$scoreB ⚡', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+
+              // Center VS & Timer
+              Expanded(
+                flex: 3,
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFE91E63), Color(0xFF9C27B0)],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'PK $minutes:$seconds',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
+                      ),
+                    ),
+                    if (provider.isPkOpponentDisconnected)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          '⚠️ Offline ${provider.pkDisconnectGrace}s',
+                          style: const TextStyle(color: Colors.redAccent, fontSize: 8, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              // Side B (Host B / Opponent)
+              Expanded(
+                flex: 4,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            hostBName,
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            'ID: $hostBId',
+                            style: const TextStyle(color: Colors.white54, fontSize: 9),
+                          ),
+                          Text(
+                            '🪙 $scoreB',
+                            style: const TextStyle(color: Color(0xFFFF5252), fontWeight: FontWeight.w900, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Stack(
+                      children: [
+                        UserAvatar(imageUrl: hostBAvatar, radius: 18),
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF44336),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text('B', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Local Opponent Mute button (Section 2: does not affect other listeners)
+                    GestureDetector(
+                      onTap: provider.toggleOpponentMute,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Icon(
+                          provider.isOpponentAudioMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                          color: provider.isOpponentAudioMuted ? Colors.redAccent : Colors.white70,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
+          // Ratio Score Bar
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: ratioA,
-              minHeight: 6,
-              backgroundColor: const Color(0xFF2193B0),
-              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF416C)),
+              minHeight: 5,
+              backgroundColor: const Color(0xFFF44336),
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF2196F3)),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  void _showIncomingPKInvitationDialog(Map<String, dynamic> data) {
+    final invitationId = data['invitationId']?.toString() ?? '';
+    final fromHost = data['fromHost'] is Map ? data['fromHost'] as Map : {};
+    final fromRoom = data['fromRoom'] is Map ? data['fromRoom'] as Map : {};
+    final hostName = fromHost['displayName'] ?? fromHost['username'] ?? 'Live Host';
+    final hostAvatar = fromHost['avatarUrl']?.toString() ?? '';
+    final roomTitle = fromRoom['title']?.toString() ?? 'Audio Room';
+    final durationSeconds = data['durationSeconds'] ?? 300;
+    final durationMinutes = durationSeconds ~/ 60;
+
+    int secondsRemaining = 30;
+    Timer? dialogTimer;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            dialogTimer ??= Timer.periodic(const Duration(seconds: 1), (t) {
+              if (secondsRemaining <= 1) {
+                t.cancel();
+                if (Navigator.canPop(dialogCtx)) Navigator.pop(dialogCtx);
+              } else {
+                setDialogState(() => secondsRemaining--);
+              }
+            });
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E1035),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: const BorderSide(color: Color(0xFF00E5FF), width: 1.5),
+              ),
+              title: Row(
+                children: [
+                  const Icon(Icons.flash_on_rounded, color: Colors.orangeAccent, size: 26),
+                  const SizedBox(width: 8),
+                  const Text('PK Challenge!', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.redAccent.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text('${secondsRemaining}s', style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  UserAvatar(imageUrl: hostAvatar, radius: 32),
+                  const SizedBox(height: 10),
+                  Text(
+                    '$hostName challenged your room to a $durationMinutes-minute Audio PK Match!',
+                    style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Room: $roomTitle',
+                    style: const TextStyle(color: Color(0xFF00E5FF), fontSize: 11, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+              actionsPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              actions: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          dialogTimer?.cancel();
+                          Navigator.pop(ctx);
+                          Provider.of<LivePartyProvider>(context, listen: false).respondToPkInvitation(
+                            invitationId: invitationId,
+                            accept: false,
+                          );
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.white38),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        child: const Text('Decline', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          dialogTimer?.cancel();
+                          Navigator.pop(ctx);
+                          Provider.of<LivePartyProvider>(context, listen: false).respondToPkInvitation(
+                            invitationId: invitationId,
+                            accept: true,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFE91E63),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                        ),
+                        child: const Text('Accept', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showPkResultDialog(PKBattleModel battle) {
+    final isDraw = battle.isDraw;
+    final winnerId = battle.winnerId;
+    final scoreA = battle.scoreA;
+    final scoreB = battle.scoreB;
+    final supportersA = battle.topSupportersA;
+    final supportersB = battle.topSupportersB;
+
+    final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+    final isCurrentRoomA = partyProv.activeRoom?.id == battle.roomAId;
+    final isWinner = !isDraw && (isCurrentRoomA ? (battle.sideA?.hostId == winnerId) : (battle.sideB?.hostId == winnerId));
+
+    int autoCloseSeconds = 10;
+    Timer? closeTimer;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (dialogCtx, setDialogState) {
+            closeTimer ??= Timer.periodic(const Duration(seconds: 1), (t) {
+              if (autoCloseSeconds <= 1) {
+                t.cancel();
+                if (Navigator.canPop(dialogCtx)) Navigator.pop(dialogCtx);
+              } else {
+                setDialogState(() => autoCloseSeconds--);
+              }
+            });
+
+            return AlertDialog(
+              backgroundColor: const Color(0xFF130A24),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: const BorderSide(color: Color(0xFF00E5FF), width: 1.5),
+              ),
+              title: Column(
+                children: [
+                  Icon(
+                    isDraw ? Icons.handshake_rounded : (isWinner ? Icons.emoji_events_rounded : Icons.sports_kabaddi_rounded),
+                    color: isDraw ? Colors.amber : (isWinner ? Colors.amberAccent : Colors.orange),
+                    size: 40,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    isDraw ? 'IT IS A DRAW!' : (isWinner ? 'VICTORY!' : 'DEFEAT'),
+                    style: TextStyle(
+                      color: isDraw ? Colors.amber : (isWinner ? Colors.greenAccent : Colors.redAccent),
+                      fontWeight: FontWeight.w900,
+                      fontSize: 22,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  Text(
+                    'Final Score: $scoreA - $scoreB • Closing in ${autoCloseSeconds}s',
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Top Supporters (Coins Contributed):', style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Side A Supporters
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(battle.sideA?.displayName ?? 'Side A', style: const TextStyle(color: Color(0xFF2196F3), fontWeight: FontWeight.bold, fontSize: 11)),
+                              const SizedBox(height: 4),
+                              if (supportersA.isEmpty)
+                                const Text('No gifts', style: TextStyle(color: Colors.white38, fontSize: 10))
+                              else
+                                ...supportersA.take(3).map((s) => Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 2),
+                                      child: Text(
+                                        '#${s.rank} ${s.displayName}: ${s.totalCoins}',
+                                        style: const TextStyle(color: Colors.white70, fontSize: 10),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    )),
+                            ],
+                          ),
+                        ),
+                        Container(width: 1, height: 60, color: Colors.white12),
+                        // Side B Supporters
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(battle.sideB?.displayName ?? 'Side B', style: const TextStyle(color: Color(0xFFF44336), fontWeight: FontWeight.bold, fontSize: 11)),
+                                const SizedBox(height: 4),
+                                if (supportersB.isEmpty)
+                                  const Text('No gifts', style: TextStyle(color: Colors.white38, fontSize: 10))
+                                else
+                                  ...supportersB.take(3).map((s) => Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 2),
+                                        child: Text(
+                                          '#${s.rank} ${s.displayName}: ${s.totalCoins}',
+                                          style: const TextStyle(color: Colors.white70, fontSize: 10),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      )),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              actionsPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              actions: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          closeTimer?.cancel();
+                          Navigator.pop(ctx);
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Colors.white38),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text('Close', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                      ),
+                    ),
+                    if (partyProv.isHost) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            closeTimer?.cancel();
+                            Navigator.pop(ctx);
+                            partyProv.requestPkRematch();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE91E63),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: const Text('Rematch', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -2140,14 +2784,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                         imageAsset: 'assets/images/party_tool_seat.png',
                       ),
                       _buildRoomToolBtn(
-                        Icons.sports_esports_rounded,
-                        'Game Center',
-                        Colors.cyanAccent,
+                        Icons.cleaning_services_rounded,
+                        'Clear Screen',
+                        Colors.tealAccent,
                         () {
                           Navigator.pop(ctx);
-                          GameCenterSheet.show(context);
+                          _toggleClearScreenMode();
                         },
-                        imageAsset: 'assets/images/party_tool_game_center.png',
+                        imageAsset: 'assets/images/party_tool_clear_screen.png',
                       ),
 
                       // Management Controls (CR 38 - Strictly Gated to Owner & Admins)
@@ -2183,7 +2827,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                             if (provider.isPkActive) {
                               provider.endPk();
                             } else {
-                              Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id)));
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id, roomType: 'AUDIO')));
                             }
                           },
                           imageAsset: 'assets/images/party_tool_pk_match.png',
@@ -4258,7 +4902,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 backgroundColor: Colors.cyanAccent,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               ),
-              onPressed: () {
+              onPressed: () async {
                 final pin = pinCtrl.text.trim().isEmpty ? '1234' : pinCtrl.text.trim();
                 RoomLockManager.instance.saveLockSettings(
                   roomId: widget.room.id,
@@ -4266,7 +4910,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                   mode: selectedMode,
                   pin: pin,
                 );
-                provider.configureRoomLock(
+                await provider.updateRoomLockSettings(
                   isLocked: isLockedStatus,
                   mode: selectedMode,
                   pin: pin,

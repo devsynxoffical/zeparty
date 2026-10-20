@@ -41,6 +41,9 @@ class SocketService {
   final _roomSeatLockedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomLayoutUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomSendingTotalController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomLockUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomHostAbsentController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomHostReturnedController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Social realtime event streams
   final _postCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -76,6 +79,7 @@ class SocketService {
   final _directMessageController = StreamController<Map<String, dynamic>>.broadcast();
   final _directMessageReadController = StreamController<Map<String, dynamic>>.broadcast();
   final _typingController = StreamController<Map<String, dynamic>>.broadcast();
+  final _userPresenceController = StreamController<Map<String, dynamic>>.broadcast();
 
   // PK Battle Real-time event streams
   final _pkCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -88,6 +92,27 @@ class SocketService {
   final _pkInvitationReceivedController = StreamController<Map<String, dynamic>>.broadcast();
   final _pkInvitationAcceptedController = StreamController<Map<String, dynamic>>.broadcast();
   final _pkInvitationDeclinedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkPreparingController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkCountdownStartedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkHostConnectionChangedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkMatchFinishedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkMatchForfeitedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkMatchAbortedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkInvitationRespondedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkInvitationCancelledController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkInvitationExpiredController = StreamController<Map<String, dynamic>>.broadcast();
+
+  // Lucky Wheel Elimination Game Streams (Issue 05)
+  final _wheelSessionCreatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _wheelParticipantJoinedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _wheelRoundEliminatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _wheelSessionCompletedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _wheelSessionCancelledController = StreamController<Map<String, dynamic>>.broadcast();
+
+  // Lucky Bag Streams (Issue 06)
+  final _luckyBagCreatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _luckyBagClaimedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _worldGlobalEventController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Getters - PK Battle
   Stream<Map<String, dynamic>> get onPkCreated => _pkCreatedController.stream;
@@ -100,6 +125,27 @@ class SocketService {
   Stream<Map<String, dynamic>> get onPkInvitationReceived => _pkInvitationReceivedController.stream;
   Stream<Map<String, dynamic>> get onPkInvitationAccepted => _pkInvitationAcceptedController.stream;
   Stream<Map<String, dynamic>> get onPkInvitationDeclined => _pkInvitationDeclinedController.stream;
+  Stream<Map<String, dynamic>> get onPkPreparing => _pkPreparingController.stream;
+  Stream<Map<String, dynamic>> get onPkCountdownStarted => _pkCountdownStartedController.stream;
+  Stream<Map<String, dynamic>> get onPkHostConnectionChanged => _pkHostConnectionChangedController.stream;
+  Stream<Map<String, dynamic>> get onPkMatchFinished => _pkMatchFinishedController.stream;
+  Stream<Map<String, dynamic>> get onPkMatchForfeited => _pkMatchForfeitedController.stream;
+  Stream<Map<String, dynamic>> get onPkMatchAborted => _pkMatchAbortedController.stream;
+  Stream<Map<String, dynamic>> get onPkInvitationResponded => _pkInvitationRespondedController.stream;
+  Stream<Map<String, dynamic>> get onPkInvitationCancelled => _pkInvitationCancelledController.stream;
+  Stream<Map<String, dynamic>> get onPkInvitationExpired => _pkInvitationExpiredController.stream;
+
+  // Getters - Lucky Wheel (Issue 05)
+  Stream<Map<String, dynamic>> get onWheelSessionCreated => _wheelSessionCreatedController.stream;
+  Stream<Map<String, dynamic>> get onWheelParticipantJoined => _wheelParticipantJoinedController.stream;
+  Stream<Map<String, dynamic>> get onWheelRoundEliminated => _wheelRoundEliminatedController.stream;
+  Stream<Map<String, dynamic>> get onWheelSessionCompleted => _wheelSessionCompletedController.stream;
+  Stream<Map<String, dynamic>> get onWheelSessionCancelled => _wheelSessionCancelledController.stream;
+
+  // Getters - Lucky Bag (Issue 06)
+  Stream<Map<String, dynamic>> get onLuckyBagCreated => _luckyBagCreatedController.stream;
+  Stream<Map<String, dynamic>> get onLuckyBagClaimed => _luckyBagClaimedController.stream;
+  Stream<Map<String, dynamic>> get onWorldGlobalEvent => _worldGlobalEventController.stream;
 
   // Getters - Room
   Stream<Map<String, dynamic>> get onUserJoined => _userJoinedController.stream;
@@ -126,6 +172,9 @@ class SocketService {
   Stream<Map<String, dynamic>> get onSeatLocked => _roomSeatLockedController.stream;
   Stream<Map<String, dynamic>> get onRoomLayoutUpdated => _roomLayoutUpdatedController.stream;
   Stream<Map<String, dynamic>> get onRoomSendingTotalUpdated => _roomSendingTotalController.stream;
+  Stream<Map<String, dynamic>> get onRoomLockUpdated => _roomLockUpdatedController.stream;
+  Stream<Map<String, dynamic>> get onRoomHostAbsent => _roomHostAbsentController.stream;
+  Stream<Map<String, dynamic>> get onRoomHostReturned => _roomHostReturnedController.stream;
 
   // Stream aliases for backwards compatibility
   Stream<Map<String, dynamic>> get roomCreatedStream => onRoomCreated;
@@ -175,6 +224,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get onDirectMessage => _directMessageController.stream;
   Stream<Map<String, dynamic>> get onDirectMessageRead => _directMessageReadController.stream;
   Stream<Map<String, dynamic>> get onChatTyping => _typingController.stream;
+  Stream<Map<String, dynamic>> get onUserPresence => _userPresenceController.stream;
 
   void markMessageAsRead(String senderId) {
     if (_socket != null && _isConnected) {
@@ -546,6 +596,25 @@ class SocketService {
     _socket!.off('room:sending_total');
     _socket!.on('room:sending_total', handleSendingTotalUpdated);
 
+    // Room Lock Status Sync (Issue 07)
+    void handleLockUpdated(dynamic data) {
+      if (data != null) _roomLockUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('room:lock_updated');
+    _socket!.on('room:lock_updated', handleLockUpdated);
+    _socket!.off('room:lock_status');
+    _socket!.on('room:lock_status', handleLockUpdated);
+
+    // Host Presence & Grace Period Lifecycle (Bug 06)
+    _socket!.off('room:host_absent');
+    _socket!.on('room:host_absent', (data) {
+      if (data != null) _roomHostAbsentController.add(safeMap(data));
+    });
+    _socket!.off('room:host_returned');
+    _socket!.on('room:host_returned', (data) {
+      if (data != null) _roomHostReturnedController.add(safeMap(data));
+    });
+
     // Social Events
     _socket!.on('post:created', (data) {
       if (data is Map) _postCreatedController.add(Map<String, dynamic>.from(data));
@@ -629,6 +698,23 @@ class SocketService {
     _socket!.on('message_read', (data) {
       if (data is Map) _directMessageReadController.add(Map<String, dynamic>.from(data));
     });
+
+    // Real-Time User & Contact Presence Listeners (Item 07)
+    void handlePresenceUpdate(dynamic data) {
+      if (data != null) _userPresenceController.add(safeMap(data));
+    }
+    _socket!.off('user:presence_changed');
+    _socket!.on('user:presence_changed', handlePresenceUpdate);
+    _socket!.off('presence:changed');
+    _socket!.on('presence:changed', handlePresenceUpdate);
+    _socket!.off('presence:sync');
+    _socket!.on('presence:sync', handlePresenceUpdate);
+    _socket!.off('user_presence_update');
+    _socket!.on('user_presence_update', handlePresenceUpdate);
+    _socket!.off('presence_update');
+    _socket!.on('presence_update', handlePresenceUpdate);
+    _socket!.off('inbox:presence_update');
+    _socket!.on('inbox:presence_update', handlePresenceUpdate);
     // PK Battle Real-time Events
     _socket!.on('pk:created', (data) {
       if (data is Map) _pkCreatedController.add(Map<String, dynamic>.from(data));
@@ -640,7 +726,10 @@ class SocketService {
       if (data is Map) _pkReadyController.add(Map<String, dynamic>.from(data));
     });
     _socket!.on('pk:started', (data) {
-      if (data is Map) _pkStartedController.add(Map<String, dynamic>.from(data));
+      if (data is Map) {
+        final map = Map<String, dynamic>.from(data);
+        _pkStartedController.add(map);
+      }
     });
     _socket!.on('pk:active', (data) {
       if (data is Map) _pkActiveController.add(Map<String, dynamic>.from(data));
@@ -659,6 +748,74 @@ class SocketService {
     });
     _socket!.on('pk:invitation_declined', (data) {
       if (data is Map) _pkInvitationDeclinedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:preparing', (data) {
+      if (data is Map) _pkPreparingController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:countdown_started', (data) {
+      if (data is Map) _pkCountdownStartedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:match_started', (data) {
+      if (data is Map) {
+        final map = Map<String, dynamic>.from(data);
+        _pkStartedController.add(map);
+      }
+    });
+    _socket!.on('pk:host_connection_changed', (data) {
+      if (data is Map) _pkHostConnectionChangedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:match_finished', (data) {
+      if (data is Map) {
+        final map = Map<String, dynamic>.from(data);
+        _pkMatchFinishedController.add(map);
+        _pkEndedController.add(map);
+      }
+    });
+    _socket!.on('pk:match_forfeited', (data) {
+      if (data is Map) _pkMatchForfeitedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:match_aborted', (data) {
+      if (data is Map) _pkMatchAbortedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:invitation_responded', (data) {
+      if (data is Map) _pkInvitationRespondedController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:invitation_cancelled', (data) {
+      if (data is Map) _pkInvitationCancelledController.add(Map<String, dynamic>.from(data));
+    });
+    _socket!.on('pk:invitation_expired', (data) {
+      if (data is Map) _pkInvitationExpiredController.add(Map<String, dynamic>.from(data));
+    });
+
+    // Lucky Wheel Real-time Events (Issue 05)
+    _socket!.on('wheel:session_created', (data) {
+      if (data != null) _wheelSessionCreatedController.add(safeMap(data));
+    });
+    _socket!.on('wheel:participant_joined', (data) {
+      if (data != null) _wheelParticipantJoinedController.add(safeMap(data));
+    });
+    _socket!.on('wheel:round_eliminated', (data) {
+      if (data != null) _wheelRoundEliminatedController.add(safeMap(data));
+    });
+    _socket!.on('wheel:session_completed', (data) {
+      if (data != null) _wheelSessionCompletedController.add(safeMap(data));
+    });
+    _socket!.on('wheel:session_cancelled', (data) {
+      if (data != null) _wheelSessionCancelledController.add(safeMap(data));
+    });
+
+    // Lucky Bag Real-time Events (Issue 06)
+    _socket!.on('luckybag:created', (data) {
+      if (data != null) _luckyBagCreatedController.add(safeMap(data));
+    });
+    _socket!.on('luckybag:claimed', (data) {
+      if (data != null) _luckyBagClaimedController.add(safeMap(data));
+    });
+    _socket!.on('world:global_event', (data) {
+      if (data != null) _worldGlobalEventController.add(safeMap(data));
+    });
+    _socket!.on('global:announcement', (data) {
+      if (data != null) _worldGlobalEventController.add(safeMap(data));
     });
 
     _socket!.connect();
@@ -1022,6 +1179,101 @@ class SocketService {
     if (_socket != null && _isConnected) {
       _socket!.emit(event, data);
     }
+  }
+
+  /// ── Lucky Wheel Sockets (Issue 05) ─────────────────────────────────────────
+  void createWheelSession({
+    required String roomId,
+    required String hostId,
+    required int entryCoinFee,
+    required int maxParticipants,
+    bool onlySeatedMics = false,
+  }) {
+    emit('wheel:create_session', {
+      'roomId': roomId,
+      'hostId': hostId,
+      'entryCoinFee': entryCoinFee,
+      'maxParticipants': maxParticipants,
+      'onlySeatedMics': onlySeatedMics,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+
+  void joinWheelSession({
+    required String sessionId,
+    required String userId,
+    required String roomId,
+  }) {
+    emit('wheel:join_session', {
+      'sessionId': sessionId,
+      'userId': userId,
+      'roomId': roomId,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+
+  void spinWheelRound({
+    required String sessionId,
+    required String roomId,
+  }) {
+    emit('wheel:spin_round', {
+      'sessionId': sessionId,
+      'roomId': roomId,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+
+  void cancelWheelSession({
+    required String sessionId,
+    required String roomId,
+  }) {
+    emit('wheel:cancel_session', {
+      'sessionId': sessionId,
+      'roomId': roomId,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+
+  // ── Lucky Bag Sockets (Issue 06) ───────────────────────────────────────────
+  void createLuckyBagSocket({
+    required String roomId,
+    required String creatorId,
+    required String mode,
+    required int totalCoins,
+    required int quantity,
+    required String taskType,
+    required int countdownSeconds,
+  }) {
+    emit('luckybag:create', {
+      'roomId': roomId,
+      'creatorId': creatorId,
+      'mode': mode,
+      'totalCoins': totalCoins,
+      'quantity': quantity,
+      'taskType': taskType,
+      'countdownSeconds': countdownSeconds,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+
+  void claimLuckyBagSocket({
+    required String bagId,
+    required String roomId,
+    required String userId,
+  }) {
+    emit('luckybag:claim', {
+      'bagId': bagId,
+      'roomId': roomId,
+      'userId': userId,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  }
+
+  void queryActiveLuckyBags(String roomId) {
+    emit('luckybag:get_active', {
+      'roomId': roomId,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
   }
 
   /// Disconnect socket cleanly

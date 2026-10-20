@@ -82,6 +82,22 @@ class LiveProvider extends ChangeNotifier {
   StreamSubscription? _socketPkScoreSub;
   StreamSubscription? _socketPkEndedSub;
   StreamSubscription? _socketPkInviteSub;
+  StreamSubscription? _socketPkPreparingSub;
+  StreamSubscription? _socketPkCountdownSub;
+  StreamSubscription? _socketPkHostConnectionSub;
+  StreamSubscription? _socketPkMatchFinishedSub;
+  StreamSubscription? _socketPkForfeitedSub;
+  StreamSubscription? _socketPkAbortedSub;
+
+  int _pkCountdown = 0;
+  int get pkCountdown => _pkCountdown;
+  bool get isPkCountdown => _pkCountdown > 0;
+  bool _isPkOpponentDisconnected = false;
+  int _pkDisconnectGrace = 30;
+  bool get isPkOpponentDisconnected => _isPkOpponentDisconnected;
+  int get pkDisconnectGrace => _pkDisconnectGrace;
+  bool _isOpponentAudioMuted = false;
+  bool get isOpponentAudioMuted => _isOpponentAudioMuted;
 
   final _likeReceivedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onLikeReceived => _likeReceivedController.stream;
@@ -94,6 +110,9 @@ class LiveProvider extends ChangeNotifier {
 
   final _pkInvitationReceivedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onPkInvitationReceived => _pkInvitationReceivedController.stream;
+
+  final _pkResultController = StreamController<PKBattleModel>.broadcast();
+  Stream<PKBattleModel> get onPkResult => _pkResultController.stream;
 
   final _roomClosedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onRoomClosed => _roomClosedController.stream;
@@ -308,6 +327,33 @@ class LiveProvider extends ChangeNotifier {
           ));
         }
       }
+
+      // Process recent gifts snapshot (Issue 01)
+      final recentGifts = data['recentGifts'] is List
+          ? (data['recentGifts'] as List)
+          : (roomObj['recentGifts'] is List ? (roomObj['recentGifts'] as List) : []);
+      for (final g in recentGifts) {
+        if (g is! Map) continue;
+        final gMap = Map<String, dynamic>.from(g);
+        final txId = (gMap['transactionId'] ?? gMap['id'] ?? gMap['_id'] ?? '').toString();
+        if (txId.isNotEmpty && _messages.any((m) => m.id == 'snap_$txId')) continue;
+        final giftMap = gMap['gift'] is Map ? Map<String, dynamic>.from(gMap['gift']) : {};
+        final senderMap = gMap['sender'] is Map ? Map<String, dynamic>.from(gMap['sender']) : {};
+        final senderName = gMap['senderName'] ?? senderMap['displayName'] ?? senderMap['username'] ?? 'A fan';
+        final giftName = gMap['giftName'] ?? giftMap['name'] ?? 'Gift';
+        final giftIcon = gMap['giftIcon'] ?? giftMap['icon'] ?? '🎁';
+        final qty = gMap['quantity'] ?? 1;
+        _messages.add(LiveMessage(
+          id: 'snap_$txId',
+          sender: senderName.toString(),
+          text: 'sent $qty × $giftName $giftIcon!',
+          isGift: true,
+        ));
+      }
+      if (_messages.length > _maxMessageBuffer) {
+        _messages.removeRange(0, _messages.length - _maxMessageBuffer);
+      }
+
       notifyListeners();
     });
 
@@ -410,10 +456,20 @@ class LiveProvider extends ChangeNotifier {
       }
       final giftMap = data['gift'] is Map ? Map<String, dynamic>.from(data['gift']) : {};
       final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender']) : {};
-      final senderName = senderMap['displayName'] ?? senderMap['username'] ?? 'A fan';
-      final giftName = giftMap['name'] ?? 'Gift';
-      final giftIcon = giftMap['icon'] ?? '🎁';
+      final senderName = senderMap['displayName'] ?? senderMap['username'] ?? data['senderName'] ?? 'A fan';
+      final rawGiftId = giftMap['id']?.toString() ?? data['giftId']?.toString() ?? '';
+      final rawGiftName = giftMap['name']?.toString() ?? data['giftName']?.toString() ?? 'Gift';
+      final catalogGift = GiftModel.findById(rawGiftId) ?? GiftModel.findById(rawGiftName);
+      final giftName = catalogGift?.name ?? rawGiftName;
+      final giftIcon = catalogGift?.icon ?? giftMap['icon'] ?? '🎁';
       final qty = data['quantity'] ?? 1;
+
+      // Deduplicate against locally added optimistic message
+      final isOptimisticDuplicate = _messages.any((m) =>
+          m.isGift &&
+          m.sender == senderName &&
+          m.text.toLowerCase().contains(giftName.toLowerCase()));
+      if (isOptimisticDuplicate) return;
 
       _messages.add(LiveMessage(
         sender: senderName,
@@ -629,6 +685,34 @@ class LiveProvider extends ChangeNotifier {
       }
     });
 
+    _socketPkPreparingSub?.cancel();
+    _socketPkPreparingSub = _socketService.onPkPreparing.listen((data) {
+      try {
+        final pk = PKBattleModel.fromJson(data);
+        setPkBattle(pk);
+        final isHost = _activeRoom != null && (_activeRoom!.host.id == currentUser?.id || _activeRoom!.creatorUserId == currentUser?.id);
+        if (isHost) {
+          PKRepository.instance.setOperatorReady(matchId: pk.id, mediaPrepared: true);
+        }
+      } catch (e) {
+        debugPrint('[LiveProvider] PK preparing error: $e');
+      }
+    });
+
+    _socketPkCountdownSub?.cancel();
+    _socketPkCountdownSub = _socketService.onPkCountdownStarted.listen((data) {
+      _pkCountdown = 3;
+      notifyListeners();
+      Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (_pkCountdown > 0) {
+          _pkCountdown--;
+          notifyListeners();
+        } else {
+          timer.cancel();
+        }
+      });
+    });
+
     _socketPkParticipantJoinedSub?.cancel();
     _socketPkParticipantJoinedSub = _socketService.onPkParticipantJoined.listen((data) {
       try {
@@ -653,7 +737,10 @@ class LiveProvider extends ChangeNotifier {
     _socketPkStartedSub = _socketService.onPkStarted.listen((data) {
       try {
         final pk = PKBattleModel.fromJson(data);
+        _pkCountdown = 0;
+        _isPkOpponentDisconnected = false;
         setPkBattle(pk);
+        _setupVideoPkRelay(pk);
       } catch (e) {
         debugPrint('[LiveProvider] PK started parse error: $e');
       }
@@ -662,30 +749,72 @@ class LiveProvider extends ChangeNotifier {
     _socketPkScoreSub?.cancel();
     _socketPkScoreSub = _socketService.onPkScoreUpdated.listen((data) {
       if (_activePkBattle != null) {
-        if (data['participants'] is List) {
-          try {
-            final pk = PKBattleModel.fromJson(data);
-            _activePkBattle = pk;
-            notifyListeners();
-            return;
-          } catch (_) {}
-        }
-        final scoreA = int.tryParse(data['hostAScore']?.toString() ?? '') ?? _activePkBattle!.scoreA;
-        final scoreB = int.tryParse(data['hostBScore']?.toString() ?? '') ?? _activePkBattle!.scoreB;
+        final scoreA = int.tryParse(data['scoreA']?.toString() ?? data['hostAScore']?.toString() ?? '') ?? _activePkBattle!.scoreA;
+        final scoreB = int.tryParse(data['scoreB']?.toString() ?? data['hostBScore']?.toString() ?? '') ?? _activePkBattle!.scoreB;
         _activePkBattle = _activePkBattle!.copyWith(scoreA: scoreA, scoreB: scoreB);
         notifyListeners();
       }
     });
 
+    _socketPkHostConnectionSub?.cancel();
+    _socketPkHostConnectionSub = _socketService.onPkHostConnectionChanged.listen((data) {
+      final status = data['status']?.toString();
+      if (status == 'OFFLINE' || status == 'RECONNECTING') {
+        _isPkOpponentDisconnected = true;
+        _pkDisconnectGrace = data['graceRemainingSeconds'] ?? 30;
+      } else if (status == 'CONNECTED') {
+        _isPkOpponentDisconnected = false;
+      }
+      notifyListeners();
+    });
+
+    _socketPkMatchFinishedSub?.cancel();
+    _socketPkMatchFinishedSub = _socketService.onPkMatchFinished.listen((data) {
+      try {
+        final pk = PKBattleModel.fromJson(data);
+        _activePkBattle = pk;
+        _pkTimer?.cancel();
+        _agoraService.leaveOpponentPKChannel();
+        _pkResultController.add(pk);
+        notifyListeners();
+      } catch (_) {}
+    });
+
+    _socketPkForfeitedSub?.cancel();
+    _socketPkForfeitedSub = _socketService.onPkMatchForfeited.listen((data) {
+      try {
+        final pk = PKBattleModel.fromJson(data);
+        _activePkBattle = pk;
+        _pkTimer?.cancel();
+        _agoraService.leaveOpponentPKChannel();
+        _messages.add(LiveMessage(sender: 'System', text: '⚔️ PK ended: ${data['endReason'] ?? "Opponent forfeited."}'));
+        _pkResultController.add(pk);
+        notifyListeners();
+      } catch (_) {}
+    });
+
+    _socketPkAbortedSub?.cancel();
+    _socketPkAbortedSub = _socketService.onPkMatchAborted.listen((data) {
+      try {
+        final pk = PKBattleModel.fromJson(data);
+        _activePkBattle = pk;
+        _pkTimer?.cancel();
+        _agoraService.leaveOpponentPKChannel();
+        _messages.add(LiveMessage(sender: 'System', text: '⚠️ PK aborted: ${data['endReason'] ?? "Incident."}'));
+        notifyListeners();
+      } catch (_) {}
+    });
+
     _socketPkEndedSub?.cancel();
     _socketPkEndedSub = _socketService.onPkEnded.listen((data) {
       if (_activePkBattle != null) {
-        final winner = data['winnerHostUserId']?.toString();
+        final winner = data['winnerHostUserId']?.toString() ?? data['winnerHostId']?.toString();
         _activePkBattle = _activePkBattle!.copyWith(
           winnerId: winner,
-          status: 'ENDED',
+          status: 'FINISHED',
         );
         _pkTimer?.cancel();
+        _agoraService.leaveOpponentPKChannel();
         notifyListeners();
       }
     });
@@ -972,14 +1101,50 @@ class LiveProvider extends ChangeNotifier {
     }
   }
 
-  /// Respond to PK invitation
-  Future<PKBattleModel?> respondToPKInvite(String inviteId, bool accept) async {
+  void _setupVideoPkRelay(PKBattleModel pk) {
+    if (pk.agoraRelay == null) return;
+    final relay = pk.agoraRelay!;
+    final currentRoomId = _activeRoom?.id ?? '';
+    String opponentChannel = relay.channelB;
+    int opponentUid = relay.hostBUid;
+
+    if (currentRoomId == pk.roomBId || currentRoomId == relay.channelB) {
+      opponentChannel = relay.channelA;
+      opponentUid = relay.hostAUid;
+    }
+
+    final localUid = _agoraService.currentUid ?? 0;
+    _agoraService.joinOpponentPKChannel(
+      opponentChannel: opponentChannel,
+      localUid: localUid,
+      opponentUid: opponentUid,
+      isVideo: true,
+    );
+  }
+
+  void toggleOpponentMute() {
+    _isOpponentAudioMuted = !_isOpponentAudioMuted;
+    _agoraService.muteOpponentAudio(_isOpponentAudioMuted);
+    notifyListeners();
+  }
+
+  Future<void> requestPkRematch() async {
+    if (_activePkBattle == null) return;
     try {
-      final pk = await PKRepository.instance.respondToInvite(inviteId: inviteId, accept: accept);
-      if (accept) {
-        setPkBattle(pk);
-      }
-      return pk;
+      await PKRepository.instance.requestRematch(_activePkBattle!.id);
+    } catch (e) {
+      debugPrint('[LiveProvider] requestPkRematch error: $e');
+    }
+  }
+
+  /// Respond to PK invitation (Section 1)
+  Future<void> respondToPKInvite(String inviteId, bool accept) async {
+    try {
+      await PKRepository.instance.respondInvitation(
+        invitationId: inviteId,
+        action: accept ? 'ACCEPT' : 'REJECT',
+        targetRoomId: _activeRoom?.id,
+      );
     } catch (e) {
       debugPrint('[LiveProvider] respondToPKInvite error: $e');
       rethrow;
@@ -989,6 +1154,7 @@ class LiveProvider extends ChangeNotifier {
   void endPkBattle() {
     _activePkBattle = null;
     _pkTimer?.cancel();
+    _agoraService.leaveOpponentPKChannel();
     notifyListeners();
   }
 

@@ -53,6 +53,7 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
         final prov = context.read<LiveHostProvider>();
         prov.fetchHostProfile(authUser.id);
         prov.fetchHostApplication(authUser.id);
+        prov.fetchEligibility();
       }
     });
   }
@@ -203,13 +204,17 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
     final authUser = context.watch<AuthProvider>().currentUser;
     final liveHostProv = context.watch<LiveHostProvider>();
     final existingApp = liveHostProv.getApplicationByUserId(authUser.id);
+    final eligibility = liveHostProv.eligibility;
+    final hasRoleConflict = eligibility != null && (!eligibility.canApplyLiveHost || eligibility.hasConflict);
+    final conflictMessage = eligibility?.conflictMessage ??
+        'You already have an active hosting or agency role that restricts Live Hosting.';
 
     final isApprovedHost = authUser.isHost ||
         authUser.hasLiveHostAccess ||
         authUser.role == UserRole.host ||
         existingApp?.status == 'Approved' ||
         liveHostProv.activeLiveHost != null;
-    final isLocked = isApprovedHost || (existingApp != null && (existingApp.status == 'Submitted' || existingApp.status == 'Under Review' || existingApp.status == 'Approved'));
+    final isLocked = isApprovedHost || hasRoleConflict || (existingApp != null && (existingApp.status == 'Submitted' || existingApp.status == 'Under Review' || existingApp.status == 'Approved'));
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -225,6 +230,41 @@ class _ApplyLiveHostScreenState extends State<ApplyLiveHostScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (hasRoleConflict) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.6)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.block_flipped, color: Colors.redAccent, size: 24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Hosting Role Restriction',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.redAccent),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              conflictMessage,
+                              style: const TextStyle(fontSize: 12, height: 1.4),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               if (isApprovedHost) ...[
                 Container(
                   width: double.infinity,

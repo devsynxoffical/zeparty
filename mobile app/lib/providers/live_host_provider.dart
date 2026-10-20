@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/live_host_application_model.dart';
 import '../models/live_host_model.dart';
+import '../models/hosting_eligibility_model.dart';
 import '../core/policy/live_host_policy.dart';
 import '../core/services/api_client.dart';
 
@@ -8,11 +10,14 @@ class LiveHostProvider extends ChangeNotifier {
   LiveHostModel? _activeLiveHost;
   final List<LiveHostApplicationModel> _applications = [];
   final List<Map<String, dynamic>> _auditLogs = [];
+  HostingEligibilityModel? _eligibility;
   bool _isLoading = false;
+  Timer? _heartbeatTimer;
 
   LiveHostModel? get activeLiveHost => _activeLiveHost;
   List<LiveHostApplicationModel> get applications => List.unmodifiable(_applications);
   List<Map<String, dynamic>> get auditLogs => List.unmodifiable(_auditLogs);
+  HostingEligibilityModel? get eligibility => _eligibility;
   bool get isLoading => _isLoading;
 
   LiveHostProvider() {
@@ -21,6 +26,20 @@ class LiveHostProvider extends ChangeNotifier {
 
   LiveHostApplicationModel? getApplicationByUserId(String userId) {
     return _applications.where((a) => a.userId == userId).firstOrNull;
+  }
+
+  Future<HostingEligibilityModel?> fetchEligibility() async {
+    try {
+      final res = await ApiClient.instance.get('/v1/hosts/eligibility');
+      if (res.data != null && res.data['data'] != null) {
+        _eligibility = HostingEligibilityModel.fromJson(res.data['data']);
+        notifyListeners();
+        return _eligibility;
+      }
+    } catch (e) {
+      debugPrint('[LiveHostProvider] fetchEligibility error: $e');
+    }
+    return null;
   }
 
   Future<void> fetchHostProfile(String userId) async {
@@ -121,12 +140,9 @@ class LiveHostProvider extends ChangeNotifier {
       );
     } catch (e) {
       debugPrint('[LiveHostProvider] Backend API host application call: $e');
-      final errStr = e.toString().toLowerCase();
-      if (!errStr.contains('already exists') && !errStr.contains('409') && !errStr.contains('pending_application_exists')) {
-        _isLoading = false;
-        notifyListeners();
-        rethrow;
-      }
+      _isLoading = false;
+      notifyListeners();
+      rethrow;
     }
 
     // 2. Update local state
@@ -222,6 +238,47 @@ class LiveHostProvider extends ChangeNotifier {
     return null;
   }
 
+  // ── Periodic Broadcast Streaming Heartbeat (Change 26) ──
+  // Sends verified heartbeat every 60 seconds during live broadcast sessions
+  void startBroadcastHeartbeat(String roomId) {
+    stopBroadcastHeartbeat();
+    _sendHeartbeat(roomId);
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      _sendHeartbeat(roomId);
+    });
+  }
+
+  Future<void> _sendHeartbeat(String roomId) async {
+    try {
+      await ApiClient.instance.post('/v1/hosts/heartbeat', data: {'roomId': roomId});
+    } catch (_) {
+      try {
+        await ApiClient.instance.post('/v1/rooms/$roomId/heartbeat');
+      } catch (_) {}
+    }
+  }
+
+  void stopBroadcastHeartbeat() {
+    _heartbeatTimer?.cancel();
+    _heartbeatTimer = null;
+  }
+
+  // ── Host Attendance & Target Tracking (Change 26) ──
+  Map<String, dynamic>? _attendanceData;
+  Map<String, dynamic>? get attendanceData => _attendanceData;
+
+  Future<void> fetchAttendance() async {
+    try {
+      final res = await ApiClient.instance.get('/v1/hosts/attendance');
+      if (res.statusCode == 200 && res.data != null) {
+        _attendanceData = res.data['data'] is Map<String, dynamic>
+            ? res.data['data'] as Map<String, dynamic>
+            : res.data as Map<String, dynamic>;
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
   void _logAudit({
     required String actorId,
     required String action,
@@ -237,5 +294,11 @@ class LiveHostProvider extends ChangeNotifier {
       'newValue': newValue ?? '',
       'timestamp': DateTime.now().toIso8601String(),
     });
+  }
+
+  @override
+  void dispose() {
+    _heartbeatTimer?.cancel();
+    super.dispose();
   }
 }

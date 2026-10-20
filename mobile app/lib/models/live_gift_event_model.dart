@@ -142,32 +142,43 @@ class LiveGiftEventModel {
   factory LiveGiftEventModel.fromSocketJson(Map<String, dynamic> json) {
     final giftRaw = json['gift'];
     final giftObj = giftRaw is Map ? Map<String, dynamic>.from(giftRaw) : <String, dynamic>{};
-    final isFull = giftObj['isFullScreen'] == true;
-    final animUrl = giftObj['animationUrl']?.toString();
-    final iconUrl = giftObj['iconUrl']?.toString();
+    final rawGiftId = giftObj['id']?.toString() ?? json['giftId']?.toString() ?? '';
+    final rawGiftName = giftObj['name']?.toString() ?? json['giftName']?.toString() ?? 'Gift';
+
+    // Authoritative lookup against catalog to resolve original name, icon, and MP4 asset:
+    final catalogGift = GiftModel.findById(rawGiftId) ?? GiftModel.findById(rawGiftName);
+
+    final isFull = catalogGift?.isFullScreen ?? (giftObj['isFullScreen'] == true);
+    final animUrl = catalogGift?.svgaAssetUrl ?? giftObj['animationUrl']?.toString();
+    final iconUrl = catalogGift?.iconUrl ?? giftObj['iconUrl']?.toString();
+    final giftIcon = catalogGift?.icon ?? (isFull ? '🏰' : (giftObj['icon']?.toString() ?? '🎁'));
+    final giftName = catalogGift?.name ?? rawGiftName;
 
     final totalCoins = int.tryParse(json['totalCoins']?.toString() ?? json['coins']?.toString() ?? '0') ?? 0;
     final qty = (json['quantity'] is num ? (json['quantity'] as num).toInt() : int.tryParse(json['quantity']?.toString() ?? '1')) ?? 1;
-    final unitCoins = qty > 0 ? (totalCoins ~/ qty) : (totalCoins > 0 ? totalCoins : 10);
+    final catalogPrice = (catalogGift?.priceCoins ?? 0) > 0 ? catalogGift!.priceCoins : 10;
+    final unitCoins = qty > 0 ? (totalCoins ~/ qty) : (totalCoins > 0 ? totalCoins : catalogPrice);
 
-    GiftAnimationLevel animLevel = GiftAnimationLevel.basic;
-    if (isFull || unitCoins >= 10000) {
-      animLevel = GiftAnimationLevel.legendary;
-    } else if (unitCoins >= 1000) {
-      animLevel = GiftAnimationLevel.premium;
-    } else if (unitCoins >= 100 || animUrl != null) {
-      animLevel = GiftAnimationLevel.standard;
+    GiftAnimationLevel animLevel = catalogGift?.animationLevel ?? GiftAnimationLevel.basic;
+    if (catalogGift == null) {
+      if (isFull || unitCoins >= 10000) {
+        animLevel = GiftAnimationLevel.legendary;
+      } else if (unitCoins >= 1000) {
+        animLevel = GiftAnimationLevel.premium;
+      } else if (unitCoins >= 100 || animUrl != null) {
+        animLevel = GiftAnimationLevel.standard;
+      }
     }
 
     return LiveGiftEventModel(
       eventId: json['transactionId']?.toString() ?? json['id']?.toString() ?? 'tx_${DateTime.now().millisecondsSinceEpoch}',
-      giftId: giftObj['id']?.toString() ?? json['giftId']?.toString() ?? '',
-      giftName: giftObj['name']?.toString() ?? json['giftName']?.toString() ?? 'Gift',
-      giftIcon: isFull ? '🏰' : (giftObj['icon']?.toString() ?? '🎁'),
+      giftId: catalogGift?.id ?? rawGiftId,
+      giftName: giftName,
+      giftIcon: giftIcon,
       iconUrl: iconUrl,
       animationUrl: animUrl,
       animationLevel: animLevel,
-      giftValue: unitCoins > 0 ? unitCoins : 10,
+      giftValue: unitCoins > 0 ? unitCoins : catalogPrice,
       quantity: qty,
       comboCount: qty,
       senderId: json['senderUserId']?.toString() ?? (json['sender'] is Map ? (json['sender'] as Map)['id']?.toString() : null) ?? '',

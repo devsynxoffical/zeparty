@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../core/services/socket_service.dart';
 import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
@@ -116,6 +118,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   late TabController _tabController;
   bool _isLoading = true;
   UserModel? _user;
+  Map<String, dynamic>? _relationData;
+  StreamSubscription? _userPresenceSub;
 
   bool get _isMe {
     final currentId = context.read<AuthProvider>().currentUser.id;
@@ -131,10 +135,31 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       _user = widget.user;
     }
     _loadUser();
+
+    _userPresenceSub = SocketService.instance.onUserPresence.listen((data) {
+      final targetUserId = data['userId']?.toString();
+      final currentTargetId = _user?.id ?? widget.userId;
+      if (targetUserId != null && targetUserId == currentTargetId) {
+        final status = data['presenceStatus']?.toString().toUpperCase() ?? data['status']?.toString().toUpperCase();
+        final isOnline = data['isOnline'] == true || status == 'ONLINE' || status == 'IN_ROOM';
+        final isInRoom = data['isInRoom'] == true || status == 'IN_ROOM' || (data['currentRoomId'] != null && data['currentRoomId'].toString().isNotEmpty);
+        final roomId = data['currentRoomId']?.toString() ?? data['roomId']?.toString();
+        if (mounted && _user != null) {
+          setState(() {
+            _user = _user!.copyWith(
+              isOnline: isOnline,
+              isLive: isInRoom,
+              liveRoomId: isInRoom ? roomId : null,
+            );
+          });
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
+    _userPresenceSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -182,6 +207,20 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         }
       } catch (_) {}
     }
+
+    // Fetch Relationship hierarchy (Item 08: Pair, Agency, Sponsors)
+    try {
+      final targetUserId = user?.id ?? widget.userId;
+      if (targetUserId.isNotEmpty) {
+        final rel = await SocialRepository.instance.getUserRelationship(targetUserId);
+        if (mounted) {
+          setState(() {
+            _relationData = rel;
+          });
+        }
+      }
+    } catch (_) {}
+
     if (mounted) {
       setState(() {
         _user = user;
@@ -2759,20 +2798,362 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   Widget _buildRelationTab(bool isDark) {
     final primaryText = AppColors.getTextPrimary(isDark);
     final secondaryText = AppColors.getTextSecondary(isDark);
+    final cardBg = isDark ? const Color(0xFF1E1F28) : Colors.white;
+    final borderColor = isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06);
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      alignment: Alignment.center,
+    final rel = _relationData ?? {};
+    final hasRelationship = rel['hasRelationship'] == true;
+    final partner = rel['partner'] is Map<String, dynamic> ? rel['partner'] as Map<String, dynamic> : null;
+    final partnerName = partner?['displayName']?.toString() ?? partner?['username']?.toString() ?? 'CP Partner';
+    final partnerAvatar = partner?['avatarUrl']?.toString() ?? '';
+    final partnerId = partner?['id']?.toString() ?? '';
+    final daysTogether = rel['daysTogether']?.toString() ?? '1';
+    final cpLevel = rel['cpLevel']?.toString() ?? '1';
+    final ringBadge = rel['ringBadge']?.toString() ?? 'SILVER_LOVE';
+
+    final agency = rel['agency'] is Map<String, dynamic>
+        ? rel['agency'] as Map<String, dynamic>
+        : (rel['agencyInfo'] is Map<String, dynamic> ? rel['agencyInfo'] as Map<String, dynamic> : null);
+    final agencyName = agency?['agencyName']?.toString() ?? agency?['name']?.toString() ?? 'ZeParty Official Talent';
+    final agencyId = agency?['agencyId']?.toString() ?? agency?['id']?.toString() ?? 'ZP-AG-01';
+
+    final sponsors = (rel['sponsors'] is List ? rel['sponsors'] as List : (rel['topSponsors'] is List ? rel['topSponsors'] as List : []));
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.favorite_border_rounded, size: 40, color: secondaryText),
-          const SizedBox(height: 10),
-          Text(
-            'ZeParty CP & Friends',
-            style: TextStyle(color: primaryText, fontWeight: FontWeight.bold, fontSize: 15),
+          // ── Tier 1: Relationship Pair (Top Anchor) ──
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: hasRelationship ? Colors.pinkAccent.withOpacity(0.3) : borderColor),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.pinkAccent.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 18),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Relationship Pair',
+                      style: TextStyle(
+                        color: primaryText,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (hasRelationship)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFF416C), Color(0xFFFF4B2B)],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'LV.$cpLevel CP',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                if (hasRelationship && partner != null)
+                  Row(
+                    children: [
+                      // User DP
+                      CircleAvatar(
+                        radius: 24,
+                        backgroundColor: AppColors.getPrimary(isDark).withOpacity(0.2),
+                        backgroundImage: (_user?.avatarUrl != null && _user!.avatarUrl.isNotEmpty)
+                            ? NetworkImage(_user!.avatarUrl)
+                            : null,
+                        child: (_user?.avatarUrl == null || _user!.avatarUrl.isEmpty)
+                            ? Text((_user?.name ?? 'U').substring(0, 1).toUpperCase())
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.favorite, color: Colors.pinkAccent, size: 20),
+                      const SizedBox(width: 8),
+                      // Partner DP
+                      GestureDetector(
+                        onTap: () {
+                          if (partnerId.isNotEmpty) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => UserProfileDetailsScreen(userId: partnerId),
+                              ),
+                            );
+                          }
+                        },
+                        child: CircleAvatar(
+                          radius: 24,
+                          backgroundColor: Colors.pinkAccent.withOpacity(0.2),
+                          backgroundImage: partnerAvatar.isNotEmpty ? NetworkImage(partnerAvatar) : null,
+                          child: partnerAvatar.isEmpty
+                              ? Text(partnerName.substring(0, 1).toUpperCase(), style: const TextStyle(color: Colors.pinkAccent))
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              partnerName,
+                              style: TextStyle(color: primaryText, fontWeight: FontWeight.bold, fontSize: 13),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '$daysTogether days together • $ringBadge',
+                              style: TextStyle(color: secondaryText, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.04),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.favorite_border_rounded, color: secondaryText, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'No Active Couple Partner',
+                              style: TextStyle(color: primaryText, fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Send relationship cards in room or feed to pair up.',
+                              style: TextStyle(color: secondaryText, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
           ),
-          const SizedBox(height: 4),
-          Text('Build CP relationships to unlock special dynamic effects!', style: TextStyle(color: secondaryText, fontSize: 12)),
+
+          const SizedBox(height: 12),
+
+          // ── Tier 2: Agency Affiliation (Middle Card) ──
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: borderColor),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.apartment_rounded, color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        agencyName,
+                        style: TextStyle(color: primaryText, fontWeight: FontWeight.bold, fontSize: 13),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Agency ID: $agencyId • Verified Partner',
+                        style: TextStyle(color: secondaryText, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.getPrimary(isDark).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    'Agency',
+                    style: TextStyle(
+                      color: AppColors.getPrimary(isDark),
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // ── Tier 3: Top Sponsors (Bottom Section) ──
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: borderColor),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.military_tech_rounded, color: Colors.amber, size: 18),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Top Sponsors',
+                      style: TextStyle(
+                        color: primaryText,
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      'Ranked by gifts',
+                      style: TextStyle(color: secondaryText, fontSize: 11),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (sponsors.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Center(
+                      child: Text(
+                        'No sponsors yet. Be the first to gift!',
+                        style: TextStyle(color: secondaryText, fontSize: 12),
+                      ),
+                    ),
+                  )
+                else
+                  Column(
+                    children: List.generate(sponsors.length.clamp(0, 5), (i) {
+                      final item = sponsors[i] is Map<String, dynamic> ? sponsors[i] as Map<String, dynamic> : {};
+                      final sName = item['displayName']?.toString() ?? item['username']?.toString() ?? 'Sponsor #${i + 1}';
+                      final sCoins = item['coins']?.toString() ?? item['totalCoins']?.toString() ?? '0';
+                      final sAvatar = item['avatarUrl']?.toString() ?? '';
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            Text(
+                              '${i + 1}',
+                              style: TextStyle(
+                                color: i == 0 ? Colors.amber : (i == 1 ? Colors.grey[400] : secondaryText),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            CircleAvatar(
+                              radius: 16,
+                              backgroundColor: Colors.amber.withOpacity(0.2),
+                              backgroundImage: sAvatar.isNotEmpty ? NetworkImage(sAvatar) : null,
+                              child: sAvatar.isEmpty
+                                  ? Text(sName.substring(0, 1).toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.amber))
+                                  : null,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                sName,
+                                style: TextStyle(color: primaryText, fontSize: 12, fontWeight: FontWeight.w600),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const Icon(Icons.monetization_on_rounded, color: Colors.amber, size: 14),
+                            const SizedBox(width: 4),
+                            Text(
+                              sCoins,
+                              style: const TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
         ],
       ),
     );
