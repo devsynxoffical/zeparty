@@ -5,35 +5,62 @@
 import apiClient from '../api';
 
 export async function getWalletStats() {
-  const res = await apiClient.get('/v1/admin/wallet/stats');
-  const d = res.data?.data || {};
-  return {
-    totalCoinsInCirculation: Number(d.totalCoins || d.totalCoinsInCirculation || 0),
-    totalDiamonds: Number(d.totalDiamonds || 0),
-    coinsPurchased: Number(d.totalRechargedUSD || d.coinsPurchased || 0),
-    coinsGifted: Number(d.totalWithdrawnUSD || d.coinsGifted || 0),
-    totalWallets: d.totalWallets || 0,
-  };
+  try {
+    const res = await apiClient.get('/v1/admin/wallet/stats');
+    const d = res.data?.data || {};
+    return {
+      totalCoinsInCirculation: Number(d.totalCoins || d.totalCoinsInCirculation || 0),
+      totalDiamonds: Number(d.totalDiamonds || 0),
+      coinsPurchased: Number(d.totalRechargedUSD || d.coinsPurchased || 0),
+      coinsGifted: Number(d.totalWithdrawnUSD || d.coinsGifted || 0),
+      totalWallets: Number(d.totalWallets || 0),
+    };
+  } catch (err) {
+    try {
+      const res2 = await apiClient.get('/v1/wallet/stats');
+      const d = res2.data?.data || {};
+      return {
+        totalCoinsInCirculation: Number(d.totalCoins || d.totalCoinsInCirculation || 0),
+        totalDiamonds: Number(d.totalDiamonds || 0),
+        coinsPurchased: Number(d.totalRechargedUSD || d.coinsPurchased || 0),
+        coinsGifted: Number(d.totalWithdrawnUSD || d.coinsGifted || 0),
+        totalWallets: Number(d.totalWallets || 0),
+      };
+    } catch {
+      return {
+        totalCoinsInCirculation: 0,
+        totalDiamonds: 0,
+        coinsPurchased: 0,
+        coinsGifted: 0,
+        totalWallets: 0,
+      };
+    }
+  }
 }
 
 export async function getWalletTransactions(params = {}) {
-  const res = await apiClient.get('/v1/finance/transactions', { params });
-  const rawItems = res.data?.data || [];
-  return rawItems.map((tx) => ({
-    id: tx.id,
-    date: tx.createdAt,
-    type: tx.type,
-    user: tx.wallet?.user?.username || tx.wallet?.userId || tx.userId || 'System',
-    source: tx.source || (tx.type === 'RECHARGE' ? 'Gateway' : 'Wallet'),
-    destination: tx.destination || (tx.type === 'WITHDRAWAL' ? 'Bank/Payout' : 'Wallet'),
-    coins: Number(tx.coinAmount || tx.coins || 0),
-    diamonds: Number(tx.diamondAmount || tx.diamonds || 0),
-    amount: tx.amount ? `$${tx.amount}` : '-',
-    status: tx.status || 'COMPLETED',
-    operator: tx.operator || 'System',
-    reason: tx.reason || '',
-    referenceId: tx.referenceId || '',
-  }));
+  try {
+    const res = await apiClient.get('/v1/finance/transactions', { params });
+    const rawItems = res.data?.data || [];
+    return rawItems.map((tx) => ({
+      id: tx.id,
+      date: tx.createdAt,
+      type: tx.type,
+      user: tx.wallet?.user?.username || tx.wallet?.userId || tx.userId || 'System',
+      source: tx.source || (tx.type === 'RECHARGE' ? 'Gateway' : 'Wallet'),
+      destination: tx.destination || (tx.type === 'WITHDRAWAL' ? 'Bank/Payout' : 'Wallet'),
+      coins: Number(tx.coinAmount || tx.coins || 0),
+      diamonds: Number(tx.diamondAmount || tx.diamonds || 0),
+      amount: tx.amount ? `$${tx.amount}` : '-',
+      status: tx.status || 'COMPLETED',
+      operator: tx.operator || 'System',
+      reason: tx.reason || '',
+      referenceId: tx.referenceId || '',
+    }));
+  } catch (err) {
+    console.warn('Failed to load wallet transactions:', err);
+    return [];
+  }
 }
 
 export async function adjustBalance(payload) {

@@ -81,9 +81,17 @@ function AdjustBalanceModal({ isOpen, onClose, onAdjust }) {
   );
 }
 
+const DEFAULT_WALLET_STATS = {
+  totalCoinsInCirculation: 0,
+  totalDiamonds: 0,
+  coinsPurchased: 0,
+  coinsGifted: 0,
+  totalWallets: 0,
+};
+
 export function WalletPage() {
   const { logAdminAction } = useAuditLog();
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState(DEFAULT_WALLET_STATS);
   const [transactions, setTransactions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -97,13 +105,13 @@ export function WalletPage() {
   useEffect(() => {
     Promise.allSettled([getWalletStats(), getWalletTransactions()])
       .then(([statsRes, txRes]) => {
-        if (statsRes.status === 'fulfilled') {
+        if (statsRes.status === 'fulfilled' && statsRes.value) {
           setStats(statsRes.value);
         } else {
           console.error('Failed to load wallet stats:', statsRes.reason);
         }
-        if (txRes.status === 'fulfilled') {
-          setTransactions(txRes.value || []);
+        if (txRes.status === 'fulfilled' && Array.isArray(txRes.value)) {
+          setTransactions(txRes.value);
         } else {
           console.error('Failed to load wallet transactions:', txRes.reason);
         }
@@ -197,10 +205,10 @@ export function WalletPage() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Coins" value={formatNumber(stats.totalCoinsInCirculation)} icon={Coins} iconColor="text-gold-400" iconBg="bg-gold-500/10" />
-        <StatCard title="Total Diamonds" value={formatNumber(stats.totalDiamonds)} icon={Gem} iconColor="text-purple-400" iconBg="bg-purple-500/10" />
-        <StatCard title="Coins Purchased" value={formatNumber(stats.coinsPurchased)} icon={Wallet} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
-        <StatCard title="Coins Gifted" value={formatNumber(stats.coinsGifted)} icon={ArrowRightLeft} iconColor="text-sky-400" iconBg="bg-sky-500/10" />
+        <StatCard title="Total Coins" value={formatNumber(stats?.totalCoinsInCirculation || 0)} icon={Coins} iconColor="text-gold-400" iconBg="bg-gold-500/10" />
+        <StatCard title="Total Diamonds" value={formatNumber(stats?.totalDiamonds || 0)} icon={Gem} iconColor="text-purple-400" iconBg="bg-purple-500/10" />
+        <StatCard title="Coins Purchased" value={formatNumber(stats?.coinsPurchased || 0)} icon={Wallet} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
+        <StatCard title="Coins Gifted" value={formatNumber(stats?.coinsGifted || 0)} icon={ArrowRightLeft} iconColor="text-sky-400" iconBg="bg-sky-500/10" />
       </div>
 
       <Card>
