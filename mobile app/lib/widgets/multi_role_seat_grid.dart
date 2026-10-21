@@ -143,7 +143,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
         ...List.generate(3, (rowIdx) {
           int startIdx = 2 + (rowIdx * 6);
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: 2.5),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: List.generate(
@@ -176,7 +176,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
         ...List.generate(4, (rowIdx) {
           int startIdx = 2 + (rowIdx * 7);
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: List.generate(

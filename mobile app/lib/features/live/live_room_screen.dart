@@ -1138,7 +1138,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
           final currentUser = context.read<AuthProvider>().currentUser;
           final liveGiftProv = context.read<LiveGiftProvider>();
           context.read<LiveProvider>().addPkScore(forHostA, gift.diamondPrice);
-          context.read<LiveProvider>().sendGift(gift, currentUser.name);
+          context.read<LiveProvider>().sendGift(gift, currentUser.name, transactionId: liveGiftProv.lastTransactionId);
           _giftOverlayKey.currentState?.playGiftAnimation(
             gift,
             senderName: currentUser.name,
@@ -2134,8 +2134,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           itemBuilder: (context, index) {
                             final msg = liveProvider.messages.reversed.toList()[index];
                             final isSystem = msg.sender.toLowerCase().contains('system') || msg.sender.contains('🛡️');
-                            final isHostMsg = msg.isHost || msg.sender == widget.room.host.name;
-                            final isMeMsg = msg.senderId == currentUser.id;
+                            final isHostMsg = msg.isHost || msg.sender == widget.room.host.name || (msg.senderId.isNotEmpty && msg.senderId == widget.room.host.id);
+                            final isMeMsg = msg.senderId == currentUser.id || msg.sender == currentUser.name;
+                            final effectiveAvatar = (msg.avatarUrl != null && msg.avatarUrl!.isNotEmpty)
+                                ? msg.avatarUrl
+                                : (isHostMsg ? widget.room.host.avatarUrl : (isMeMsg ? currentUser.avatarUrl : null));
                             String? equippedBubble = msg.chatBubble;
                             String? equippedFrame = msg.avatarFrame;
                             try {
@@ -2152,7 +2155,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               key: ValueKey('${msg.sender}_${msg.text}_${msg.id}_$index'),
                               senderId: msg.senderId.isNotEmpty ? msg.senderId : (isHostMsg ? widget.room.host.id : 'user_$index'),
                               senderName: msg.sender,
-                              avatarUrl: msg.avatarUrl,
+                              avatarUrl: effectiveAvatar,
                               text: msg.text,
                               isHost: isHostMsg,
                               isMod: msg.isMod,
@@ -2369,7 +2372,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                     targetReceiver: effectiveHost,
                                     onGiftSent: (gift) {
                                       final liveGiftProv = context.read<LiveGiftProvider>();
-                                      liveProvider.sendGift(gift, currentUser.name);
+                                      liveProvider.sendGift(gift, currentUser.name, transactionId: liveGiftProv.lastTransactionId);
                                       _giftOverlayKey.currentState?.playGiftAnimation(
                                         gift,
                                         senderName: currentUser.name,
@@ -2922,9 +2925,18 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       color: Colors.orangeAccent,
                       isDark: isDark,
                       imageAsset: 'assets/images/party_tool_pk_match.png',
-                      onTap: () {
+                      onTap: () async {
                         Navigator.pop(c);
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id, roomType: 'VIDEO')));
+                        final result = await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id, roomType: 'VIDEO')),
+                        );
+                        if (result == true && mounted) {
+                          final liveProv = context.read<LiveProvider>();
+                          if (liveProv.activePkBattle == null) {
+                            liveProv.startHostPKBattle(currentHost: widget.room.host);
+                          }
+                        }
                       },
                     ),
 

@@ -471,14 +471,19 @@ class SocketService {
       if (data != null) {
         final map = safeMap(data);
         final txId = (map['transactionId'] ?? map['id'] ?? map['_id'] ?? '').toString();
+        final senderId = (map['senderUserId'] ?? map['senderId'] ?? (map['sender'] is Map ? map['sender']['id'] : '') ?? '').toString();
+        final giftId = (map['giftId'] ?? (map['gift'] is Map ? map['gift']['id'] : '') ?? '').toString();
+        final qty = map['quantity']?.toString() ?? '1';
+        final dedupKey = txId.isNotEmpty ? txId : 'fallback_${map['roomId']}_${senderId}_${giftId}_$qty';
         final now = DateTime.now().millisecondsSinceEpoch;
-        if (txId.isNotEmpty && recentGifts.containsKey(txId)) {
-          if (now - recentGifts[txId]! < 5000) {
+        if (recentGifts.containsKey(dedupKey)) {
+          if (now - recentGifts[dedupKey]! < 5000) {
             return; // Deduplicate alias emissions within 5s
           }
         }
-        if (txId.isNotEmpty) {
-          recentGifts[txId] = now;
+        recentGifts[dedupKey] = now;
+        if (recentGifts.length > 500) {
+          recentGifts.remove(recentGifts.keys.first);
         }
         _giftSentController.add(map);
       }

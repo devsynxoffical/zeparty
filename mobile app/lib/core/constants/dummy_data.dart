@@ -148,7 +148,7 @@ class DummyData {
     hostB: popularUsers[1],
     scoreA: 14500,
     scoreB: 18200,
-    remainingTime: const Duration(minutes: 2, seconds: 45),
+    remainingSeconds: 165,
   );
 
   static final PartyRoomModel samplePartyRoom = PartyRoomModel(

@@ -22,6 +22,7 @@ import '../../providers/wallet_provider.dart';
 import '../../providers/live_party_provider.dart';
 import '../../providers/room_overlay_provider.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/constants/dummy_data.dart';
 import '../recharge/recharge_screen.dart';
 import '../../models/party_participant_model.dart';
 import '../../widgets/user_avatar.dart';
@@ -70,7 +71,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   bool _isMicMuted = false;
   final GlobalKey<GiftAnimationOverlayState> _giftOverlayKey = GlobalKey<GiftAnimationOverlayState>();
   String _activeChatFilter = 'All';
-  bool _isNoticeExpanded = true;
+  bool _isNoticeExpanded = false;
 
   // ─── Room Tools State ───
   List<Color> _roomBackgroundGradient = [
@@ -120,7 +121,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       if (_isClearScreenMode) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✨ Clear Screen Mode enabled. Single tap to restore controls.'),
+            content: Text('✨ Clear Screen: Comments cleared. Double tap again to restore.'),
             backgroundColor: Color(0xFF6A11CB),
             duration: Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
@@ -854,17 +855,12 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               child: const WorldLuckyBagBanner(),
             ),
 
-          // Main Layout with Smooth Opacity Transition (Item 28)
-          IgnorePointer(
-            ignoring: _isClearScreenMode,
-            child: AnimatedOpacity(
-              opacity: _isClearScreenMode ? 0.0 : 1.0,
-              duration: const Duration(milliseconds: 250),
-              child: SafeArea(
-                bottom: false,
-                child: Column(
-                  children: [
-                // Top Header
+          // Main Layout
+          SafeArea(
+            bottom: false,
+            child: Column(
+              children: [
+                // Top Header (Always visible)
                 _buildHeader(context, isHost, canManage, provider),
 
                 // Host Stepped Away Banner (Bug 06)
@@ -897,7 +893,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 // PK Battle Banner (If Active)
                 if (provider.isPkActive) _buildPkBanner(provider),
 
-                // Audio Mic Stage Grid
+                // Audio Mic Stage Grid (Always visible!)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                   child: Center(
@@ -905,56 +901,63 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                   ),
                 ),
 
-                // Banners Strip
-                const SvipEntryBanner(),
-
-                // Room Entry Mount Banner Widget
-                RoomEntryMountBannerWidget(
-                  roomId: widget.room.id,
-                  currentBanner: _currentMountBanner,
-                  onBannerComplete: () {
-                    if (mounted) {
-                      setState(() {
-                        _currentMountBanner = null;
-                      });
-                    }
-                  },
-                ),
-
-                // Room Entry Announcement Banner
-                RoomEntryAnnouncementBanner(
-                  roomId: widget.room.id,
-                  roomEntrySessionId: _roomEntrySessionId,
-                  isDark: isDark,
-                ),
-
-                // Coordinated Room Guidelines Notice & Chat Filters Bar
-                _buildRoomNoticeAndFilterBar(provider),
-
-                // Notification & Chat stream directly following the notice bar
+                // Area Under the Seats: Banners, Notices, Chat & Notifications (Cleared in Clear Screen Mode)
                 Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: _buildChatFeed(provider),
+                  child: IgnorePointer(
+                    ignoring: _isClearScreenMode,
+                    child: AnimatedOpacity(
+                      opacity: _isClearScreenMode ? 0.0 : 1.0,
+                      duration: const Duration(milliseconds: 250),
+                      child: Column(
+                        children: [
+                          // Banners Strip
+                          const SvipEntryBanner(),
+
+                          // Room Entry Mount Banner Widget
+                          RoomEntryMountBannerWidget(
+                            roomId: widget.room.id,
+                            currentBanner: _currentMountBanner,
+                            onBannerComplete: () {
+                              if (mounted) {
+                                setState(() {
+                                  _currentMountBanner = null;
+                                });
+                              }
+                            },
+                          ),
+
+                          // Room Entry Announcement Banner
+                          RoomEntryAnnouncementBanner(
+                            roomId: widget.room.id,
+                            roomEntrySessionId: _roomEntrySessionId,
+                            isDark: isDark,
+                          ),
+
+                          // Coordinated Room Guidelines Notice & Chat Filters Bar
+                          _buildRoomNoticeAndFilterBar(provider),
+
+                          // Notification & Chat stream directly following the notice bar
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: _buildChatFeed(provider),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
 
                 // Reserve bottom space for the floating bottom bar
-                SizedBox(height: MediaQuery.of(context).padding.bottom + 56),
+                SizedBox(height: MediaQuery.of(context).padding.bottom + 52),
               ],
             ),
           ),
-        ),
-      ),
 
-          // Real window keyboard height (not stripped by Scaffold)
-          IgnorePointer(
-            ignoring: _isClearScreenMode,
-            child: AnimatedOpacity(
-              opacity: _isClearScreenMode ? 0.0 : 1.0,
-              duration: const Duration(milliseconds: 250),
-              child: Builder(
-                builder: (ctx) {
+          // Real window keyboard height (not stripped by Scaffold) - Bottom area always remains visible & active
+          Builder(
+            builder: (ctx) {
               final keyboardHeight = MediaQueryData.fromView(View.of(ctx)).viewInsets.bottom;
               final isKeyboardOpen = keyboardHeight > 0;
 
@@ -1018,14 +1021,13 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               );
             },
           ),
-        ),
-      ),
 
-          TikTokUserJoinBanner(
-            roomId: provider.activeRoom?.id ?? widget.room.id,
-            secondaryRoomId: widget.room.id != provider.activeRoom?.id ? widget.room.id : provider.initialRoomId,
-            bottomOffset: 240,
-          ),
+          if (!_isClearScreenMode)
+            TikTokUserJoinBanner(
+              roomId: provider.activeRoom?.id ?? widget.room.id,
+              secondaryRoomId: widget.room.id != provider.activeRoom?.id ? widget.room.id : provider.initialRoomId,
+              bottomOffset: 240,
+            ),
 
           // Realtime Animated Emoji Reaction Overlay Layer (Top of Stack)
           EmojiReactionOverlay(roomId: provider.activeRoom?.id ?? widget.room.id),
@@ -2205,46 +2207,52 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: Colors.deepOrangeAccent.withValues(alpha: 0.25)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'Welcome to ${activeRoom.title}: please respect each other, no vulgar words, no politics, no religion, no violence, no sexual topic etc.',
-                    style: const TextStyle(
-                      color: Color(0xFFFFB74D),
-                      fontSize: 11,
-                      height: 1.3,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  if (announcement.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Notice: 📝 ',
-                          style: TextStyle(
-                            color: Color(0xFFFFCC80),
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 72),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Welcome to ${activeRoom.title}: please respect each other, no vulgar words, no politics, no religion, no violence, no sexual topic etc.',
+                        style: const TextStyle(
+                          color: Color(0xFFFFB74D),
+                          fontSize: 11,
+                          height: 1.3,
+                          fontWeight: FontWeight.w500,
                         ),
-                        Expanded(
-                          child: Text(
-                            announcement,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w400,
+                      ),
+                      if (announcement.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Notice: 📝 ',
+                              style: TextStyle(
+                                color: Color(0xFFFFCC80),
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
+                            Expanded(
+                              child: Text(
+                                announcement,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
-                    ),
-                  ],
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
@@ -2827,7 +2835,18 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                             if (provider.isPkActive) {
                               provider.endPk();
                             } else {
-                              Navigator.push(context, MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id, roomType: 'AUDIO')));
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id, roomType: 'AUDIO')),
+                              ).then((res) {
+                                if (res == true && mounted && !provider.isPkActive) {
+                                  final opponent = DummyData.popularUsers.firstWhere(
+                                    (u) => u.id != widget.room.host.id,
+                                    orElse: () => DummyData.popularUsers.first,
+                                  );
+                                  provider.startPk(opponent);
+                                }
+                              });
                             }
                           },
                           imageAsset: 'assets/images/party_tool_pk_match.png',

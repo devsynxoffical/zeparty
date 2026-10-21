@@ -1030,7 +1030,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     Navigator.pop(context);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Removed ${user.name} from mic ${seatIndex + 1} to audience.'),
+        content: Text('Removed ${user.name} from ${liveProvider.formatSeatLabel(seatIndex)} to audience.'),
         backgroundColor: Colors.orange.shade800,
         behavior: SnackBarBehavior.floating,
       ),

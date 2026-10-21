@@ -535,22 +535,26 @@ class LivePartyProvider extends ChangeNotifier {
       _deduplicateParticipants();
 
       // 3. Acquire short-lived Agora RTC token from backend
-      final isSelfSeated = _participants.any((p) => p.user.id == currentUser.id && p.seatNumber != null);
-      final agoraData = await _roomRepository.getAgoraToken(room.id);
-      if (agoraData['token'] != null) {
-        final token = agoraData['token'] as String;
-        final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
-        final uid = agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
-        final appId = agoraData['appId'] as String?;
+      try {
+        final isSelfSeated = _participants.any((p) => p.user.id == currentUser.id && p.seatNumber != null);
+        final agoraData = await _roomRepository.getAgoraToken(room.id);
+        if (agoraData['token'] != null) {
+          final token = agoraData['token'] as String;
+          final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
+          final uid = agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
+          final appId = agoraData['appId'] as String?;
 
-        await _agoraService.initialize(appId: appId, enableVideo: false);
-        await _agoraService.joinChannel(
-          token,
-          channelName,
-          uid,
-          isHost: isSelfSeated,
-          isVideo: false,
-        );
+          await _agoraService.initialize(appId: appId, enableVideo: false);
+          await _agoraService.joinChannel(
+            token,
+            channelName,
+            uid,
+            isHost: isSelfSeated,
+            isVideo: false,
+          );
+        }
+      } catch (agoraErr) {
+        debugPrint('[LivePartyProvider] Agora token/channel join warning: $agoraErr');
       }
 
       // 4. Listen to Agora Active Speaker stream
@@ -1013,10 +1017,11 @@ class LivePartyProvider extends ChangeNotifier {
 
           // Only announce if the seat state actually changed (ignore pings, refreshes, duplicate socket packets)
           if (!isUnchangedSeat) {
+            final seatLabel = formatSeatLabel(seatIndex);
             if (previousSeat != null) {
-              sendSystemMessage('🎙️ ${occupantUser.name} moved to Mic ${seatIndex + 1}.');
+              sendSystemMessage('🎙️ ${occupantUser.name} moved to $seatLabel.');
             } else {
-              sendSystemMessage('🎙️ ${occupantUser.name} took Mic ${seatIndex + 1}.');
+              sendSystemMessage('🎙️ ${occupantUser.name} took $seatLabel.');
             }
           }
           notifyListeners();
@@ -1891,6 +1896,15 @@ class LivePartyProvider extends ChangeNotifier {
   }
 
   // ── Seat Management ────────────────────────────────────────────────────────
+  /// Helper to get the correct user-facing seat label (0=Host Mic, 1=Co-Host Mic, 2..N=Seat 1..N-1)
+  String formatSeatLabel(int seatIndex) {
+    if (seatIndex == 0) return 'Host Mic';
+    if (seatIndex == 1) return 'Co-Host Mic';
+    final capacity = _activeRoom?.seatCapacity ?? 10;
+    if (capacity == 15 && seatIndex == 2) return 'VIP Mic';
+    return 'Seat ${seatIndex - 1}';
+  }
+
   Future<String?> takeMicSeat(int seatIndex, UserModel actor) async {
     final seatLabel = seatIndex == 0 ? 'Host Mic' : (seatIndex == 1 ? 'Co-Host Mic' : 'Mic ${seatIndex - 1}');
     if (isSeatLocked(seatIndex)) {
@@ -1994,6 +2008,7 @@ class LivePartyProvider extends ChangeNotifier {
       } catch (_) {}
     }
 
+    final seatName = formatSeatLabel(seatIndex);
     _logMicAudit(
       seatIndex: seatIndex,
       actorId: actor.id,
@@ -2001,10 +2016,10 @@ class LivePartyProvider extends ChangeNotifier {
       targetId: actor.id,
       action: 'TAKE_MIC',
       previousState: 'Audience',
-      newState: 'Mic ${seatIndex + 1}',
+      newState: seatName,
     );
 
-    sendSystemMessage('🎙️ ${actor.name} took Mic ${seatIndex + 1}.');
+    sendSystemMessage('🎙️ ${actor.name} took $seatName.');
     notifyListeners();
     return null;
   }
@@ -2162,17 +2177,18 @@ class LivePartyProvider extends ChangeNotifier {
         await _agoraService.switchRole(isHost: false);
       }
 
+      final seatName = formatSeatLabel(targetSeatIndex);
       _logMicAudit(
         seatIndex: targetSeatIndex,
         actorId: targetUser.id,
         actorRole: _getRoleString(targetUser.id),
         targetId: targetUser.id,
         action: 'LEAVE_MIC',
-        previousState: 'Mic ${targetSeatIndex + 1}',
+        previousState: seatName,
         newState: 'Audience',
       );
 
-      sendSystemMessage('🎙️ ${targetUser.name} left Mic ${targetSeatIndex + 1} and moved to the audience.');
+      sendSystemMessage('🎙️ ${targetUser.name} left $seatName and moved to the audience.');
       notifyListeners();
       return null;
     } catch (e) {
@@ -2211,17 +2227,18 @@ class LivePartyProvider extends ChangeNotifier {
 
         _deduplicateParticipants();
 
+        final seatName = formatSeatLabel(seatIndex);
         _logMicAudit(
           seatIndex: seatIndex,
           actorId: actor.id,
           actorRole: _getRoleString(actor.id),
           targetId: occupant.user.id,
           action: 'CLEAR_MIC_SEAT',
-          previousState: 'Occupied (${occupant.user.name})',
+          previousState: 'Occupied (${occupant.user.name}) on $seatName',
           newState: 'Empty',
         );
 
-        sendSystemMessage('🚫 ${occupant.user.name} was moved off Mic ${seatIndex + 1}.');
+        sendSystemMessage('🚫 ${occupant.user.name} was moved off $seatName.');
         notifyListeners();
       }
     } catch (e) {
@@ -2250,7 +2267,7 @@ class LivePartyProvider extends ChangeNotifier {
       _socketService.emitRoomSeatLock(roomId, seatIndex, lock);
     }
 
-    final seatLabel = seatIndex == 0 ? 'Host Mic' : (seatIndex == 1 ? 'Co-Host Mic' : 'Mic ${seatIndex - 1}');
+    final seatLabel = formatSeatLabel(seatIndex);
 
     _logMicAudit(
       seatIndex: seatIndex,
@@ -2283,6 +2300,8 @@ class LivePartyProvider extends ChangeNotifier {
       }
     }
 
+    final seatLabel = formatSeatLabel(seatIndex);
+
     _logMicAudit(
       seatIndex: seatIndex,
       actorId: actor.id,
@@ -2293,7 +2312,7 @@ class LivePartyProvider extends ChangeNotifier {
       newState: mute ? 'Muted' : 'Active',
     );
 
-    sendSystemMessage(mute ? '🔇 Mic ${seatIndex + 1} muted.' : '🔊 Mic ${seatIndex + 1} unmuted.');
+    sendSystemMessage(mute ? '🔇 $seatLabel muted.' : '🔊 $seatLabel unmuted.');
     notifyListeners();
   }
 
@@ -2316,6 +2335,8 @@ class LivePartyProvider extends ChangeNotifier {
 
     _micSeatInvitations.add(invitation);
 
+    final seatLabel = formatSeatLabel(seatIndex);
+
     _logMicAudit(
       seatIndex: seatIndex,
       actorId: inviter.id,
@@ -2326,7 +2347,7 @@ class LivePartyProvider extends ChangeNotifier {
       newState: 'Invited',
     );
 
-    sendSystemMessage('📩 ${inviter.name} invited ${targetUser.name} to take Mic ${seatIndex + 1}.');
+    sendSystemMessage('📩 ${inviter.name} invited ${targetUser.name} to take $seatLabel.');
     notifyListeners();
     return inviteId;
   }

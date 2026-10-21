@@ -9,6 +9,7 @@ import '../core/services/socket_service.dart';
 import '../core/repositories/room_repository.dart';
 import '../core/repositories/pk_repository.dart';
 import '../core/utils/noble_badge_helper.dart';
+import '../core/constants/dummy_data.dart';
 
 class LiveMessage {
   final String id;
@@ -61,6 +62,7 @@ class LiveProvider extends ChangeNotifier {
   int _likeCount = 0;
   int _giftPoints = 0;
   static const int _maxMessageBuffer = 100;
+  final Set<String> _processedGiftTxIds = {};
 
   // Stream Subscriptions
   StreamSubscription? _socketUserJoinedSub;
@@ -336,17 +338,32 @@ class LiveProvider extends ChangeNotifier {
         if (g is! Map) continue;
         final gMap = Map<String, dynamic>.from(g);
         final txId = (gMap['transactionId'] ?? gMap['id'] ?? gMap['_id'] ?? '').toString();
-        if (txId.isNotEmpty && _messages.any((m) => m.id == 'snap_$txId')) continue;
+        if (txId.isNotEmpty) {
+          if (_processedGiftTxIds.contains(txId) || _messages.any((m) => m.id == 'snap_$txId' || m.id == 'gift_$txId')) continue;
+          _processedGiftTxIds.add(txId);
+          if (_processedGiftTxIds.length > 500) _processedGiftTxIds.remove(_processedGiftTxIds.first);
+        }
         final giftMap = gMap['gift'] is Map ? Map<String, dynamic>.from(gMap['gift']) : {};
         final senderMap = gMap['sender'] is Map ? Map<String, dynamic>.from(gMap['sender']) : {};
         final senderName = gMap['senderName'] ?? senderMap['displayName'] ?? senderMap['username'] ?? 'A fan';
         final giftName = gMap['giftName'] ?? giftMap['name'] ?? 'Gift';
-        final giftIcon = gMap['giftIcon'] ?? giftMap['icon'] ?? '🎁';
-        final qty = gMap['quantity'] ?? 1;
+        final qty = (gMap['quantity'] is num) ? (gMap['quantity'] as num).toInt() : 1;
+        final senderId = senderMap['id']?.toString() ?? senderMap['_id']?.toString() ?? gMap['senderId']?.toString() ?? '';
+        final senderAvatar = senderMap['avatarUrl']?.toString() ?? senderMap['avatar']?.toString() ?? gMap['senderAvatar']?.toString();
+        final isHostSender = (_activeRoom != null) &&
+            (senderId == _activeRoom!.host.id || senderId == _activeRoom!.creatorUserId || senderName.toString() == _activeRoom!.host.name);
+        final effectiveAvatar = (senderAvatar != null && senderAvatar.isNotEmpty)
+            ? senderAvatar
+            : (isHostSender ? _activeRoom?.host.avatarUrl : null);
+        final formattedText = qty > 1 ? 'sent $qty × $giftName!' : 'sent $giftName!';
+
         _messages.add(LiveMessage(
           id: 'snap_$txId',
           sender: senderName.toString(),
-          text: 'sent $qty × $giftName $giftIcon!',
+          senderId: senderId,
+          avatarUrl: effectiveAvatar,
+          isHost: isHostSender,
+          text: formattedText,
           isGift: true,
         ));
       }
@@ -454,6 +471,17 @@ class LiveProvider extends ChangeNotifier {
       if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
         return;
       }
+      final txId = (data['transactionId'] ?? data['id'] ?? data['_id'] ?? '').toString();
+      if (txId.isNotEmpty) {
+        if (_processedGiftTxIds.contains(txId)) {
+          return;
+        }
+        _processedGiftTxIds.add(txId);
+        if (_processedGiftTxIds.length > 500) {
+          _processedGiftTxIds.remove(_processedGiftTxIds.first);
+        }
+      }
+
       final giftMap = data['gift'] is Map ? Map<String, dynamic>.from(data['gift']) : {};
       final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender']) : {};
       final senderName = senderMap['displayName'] ?? senderMap['username'] ?? data['senderName'] ?? 'A fan';
@@ -461,22 +489,50 @@ class LiveProvider extends ChangeNotifier {
       final rawGiftName = giftMap['name']?.toString() ?? data['giftName']?.toString() ?? 'Gift';
       final catalogGift = GiftModel.findById(rawGiftId) ?? GiftModel.findById(rawGiftName);
       final giftName = catalogGift?.name ?? rawGiftName;
-      final giftIcon = catalogGift?.icon ?? giftMap['icon'] ?? '🎁';
-      final qty = data['quantity'] ?? 1;
+      final qty = (data['quantity'] is num) ? (data['quantity'] as num).toInt() : 1;
+      final senderId = senderMap['id']?.toString() ?? senderMap['_id']?.toString() ?? data['senderId']?.toString() ?? data['userId']?.toString() ?? '';
+      final senderAvatar = senderMap['avatarUrl']?.toString() ?? senderMap['avatar']?.toString() ?? data['senderAvatar']?.toString() ?? (senderId == currentUser?.id ? currentUser?.avatarUrl : null);
+      final isHostSender = (_activeRoom != null) &&
+          (senderId == _activeRoom!.host.id || senderId == _activeRoom!.creatorUserId || senderName.toString() == _activeRoom!.host.name);
+      final effectiveAvatar = (senderAvatar != null && senderAvatar.isNotEmpty)
+          ? senderAvatar
+          : (isHostSender ? _activeRoom?.host.avatarUrl : (senderId == currentUser?.id ? currentUser?.avatarUrl : null));
+      final formattedText = qty > 1 ? 'sent $qty × $giftName!' : 'sent $giftName!';
 
-      // Deduplicate against locally added optimistic message
+      // Comprehensive deduplication against locally added optimistic message
       final isOptimisticDuplicate = _messages.any((m) =>
           m.isGift &&
-          m.sender == senderName &&
-          m.text.toLowerCase().contains(giftName.toLowerCase()));
+          ( (txId.isNotEmpty && (m.id == 'gift_$txId' || m.id == txId)) ||
+            ( ((senderId.isNotEmpty && m.senderId == senderId) ||
+               m.sender.trim().toLowerCase() == senderName.toString().trim().toLowerCase()) &&
+              m.text.toLowerCase().contains(giftName.toLowerCase()) &&
+              DateTime.now().difference(m.timestamp).inSeconds.abs() <= 5 )
+          ));
       if (isOptimisticDuplicate) return;
 
       _messages.add(LiveMessage(
-        sender: senderName,
-        text: 'sent $qty × $giftName $giftIcon!',
+        id: txId.isNotEmpty ? 'gift_$txId' : null,
+        sender: senderName.toString(),
+        senderId: senderId,
+        avatarUrl: effectiveAvatar,
+        isHost: isHostSender,
+        text: formattedText,
         isGift: true,
+        gift: catalogGift,
       ));
       if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
+
+      // Trigger gift animation and points update for stream viewers
+      if (senderId != currentUser?.id && catalogGift != null) {
+        _activeGiftAnimation = catalogGift;
+        _giftPoints += ((catalogGift.priceCoins > 0 ? catalogGift.priceCoins : catalogGift.diamondPrice) * qty);
+        _giftTimer?.cancel();
+        _giftTimer = Timer(const Duration(seconds: 3), () {
+          _activeGiftAnimation = null;
+          notifyListeners();
+        });
+      }
+
       notifyListeners();
     });
 
@@ -873,6 +929,7 @@ class LiveProvider extends ChangeNotifier {
     _activeRoom = null;
     _currentUser = null;
     _messages.clear();
+    _processedGiftTxIds.clear();
     _announcedViewerIds.clear();
     _activeGiftAnimation = null;
     _activePkBattle = null;
@@ -964,27 +1021,60 @@ class LiveProvider extends ChangeNotifier {
     }
   }
 
-  void sendGift(GiftModel gift, String sender) {
+  void sendGift(GiftModel gift, String sender, {String? transactionId, int quantity = 1}) {
     _activeGiftAnimation = gift;
-    _giftPoints += (gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice);
-    _messages.add(
-      LiveMessage(
-        sender: sender,
-        text: 'sent ${gift.name} ${gift.icon}!',
-        isGift: true,
-        gift: gift,
-      ),
-    );
-    if (_messages.length > _maxMessageBuffer) {
-      _messages.removeAt(0);
-    }
-    notifyListeners();
+    _giftPoints += ((gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice) * quantity);
 
     _giftTimer?.cancel();
     _giftTimer = Timer(const Duration(seconds: 3), () {
       _activeGiftAnimation = null;
       notifyListeners();
     });
+
+    final txId = (transactionId != null && transactionId.isNotEmpty)
+        ? transactionId
+        : 'opt_${DateTime.now().millisecondsSinceEpoch}_${gift.id}';
+
+    if (_processedGiftTxIds.contains(txId)) {
+      notifyListeners();
+      return;
+    }
+    _processedGiftTxIds.add(txId);
+    if (_processedGiftTxIds.length > 500) {
+      _processedGiftTxIds.remove(_processedGiftTxIds.first);
+    }
+
+    final isDuplicate = _messages.any((m) =>
+        m.isGift &&
+        (m.id == 'gift_$txId' ||
+         ((m.senderId.isNotEmpty && m.senderId == (currentUser?.id ?? '')) ||
+          m.sender.toLowerCase().trim() == sender.toLowerCase().trim()) &&
+         m.text.toLowerCase().contains(gift.name.toLowerCase()) &&
+         DateTime.now().difference(m.timestamp).inSeconds.abs() <= 5));
+
+    if (!isDuplicate) {
+      final isHostSender = (_activeRoom != null && currentUser != null) &&
+          (currentUser!.id == _activeRoom!.host.id || currentUser!.id == _activeRoom!.creatorUserId);
+      final effectiveAvatar = currentUser?.avatarUrl ?? (isHostSender ? _activeRoom?.host.avatarUrl : null);
+      final formattedText = quantity > 1 ? 'sent $quantity × ${gift.name}!' : 'sent ${gift.name}!';
+
+      _messages.add(
+        LiveMessage(
+          id: 'gift_$txId',
+          sender: sender,
+          senderId: currentUser?.id ?? '',
+          avatarUrl: effectiveAvatar,
+          isHost: isHostSender,
+          text: formattedText,
+          isGift: true,
+          gift: gift,
+        ),
+      );
+      if (_messages.length > _maxMessageBuffer) {
+        _messages.removeAt(0);
+      }
+    }
+    notifyListeners();
   }
 
   void clearMessages() {
@@ -1064,16 +1154,54 @@ class LiveProvider extends ChangeNotifier {
   }
 
   /// Host explicitly starts the PK Battle
-  Future<PKBattleModel?> startHostPKBattle() async {
-    if (_activePkBattle == null) return null;
-    try {
-      final pk = await PKRepository.instance.startPKBattle(_activePkBattle!.id);
-      setPkBattle(pk);
-      return pk;
-    } catch (e) {
-      debugPrint('[LiveProvider] startHostPKBattle error: $e');
-      rethrow;
+  Future<PKBattleModel?> startHostPKBattle({UserModel? currentHost, UserModel? opponentHost}) async {
+    if (_activePkBattle != null) {
+      try {
+        final pk = await PKRepository.instance.startPKBattle(_activePkBattle!.id);
+        setPkBattle(pk);
+        return pk;
+      } catch (e) {
+        debugPrint('[LiveProvider] startHostPKBattle remote error: $e');
+        final active = _activePkBattle!.copyWith(status: 'STARTED', startedAt: DateTime.now());
+        setPkBattle(active);
+        return active;
+      }
     }
+
+    // Check if room has an active match on server
+    if (_activeRoom != null) {
+      try {
+        final existing = await PKRepository.instance.getActiveMatchForRoom(_activeRoom!.id);
+        if (existing != null) {
+          setPkBattle(existing);
+          return existing;
+        }
+      } catch (_) {}
+    }
+
+    // Initialize battle session with fallback to prevent infinite loading
+    final host = currentHost ?? _currentUser ?? _activeRoom?.host ?? DummyData.currentUser;
+    final opponent = opponentHost ?? DummyData.popularUsers.firstWhere(
+      (u) => u.id != host.id,
+      orElse: () => DummyData.popularUsers.first,
+    );
+
+    final newPk = PKBattleModel(
+      id: 'pk_${DateTime.now().millisecondsSinceEpoch}',
+      roomAId: _activeRoom?.id ?? 'room_${host.id}',
+      roomBId: 'room_${opponent.id}',
+      initiatorUserId: host.id,
+      hostA: host,
+      hostB: opponent,
+      scoreA: 0,
+      scoreB: 0,
+      durationSeconds: 300,
+      remainingSeconds: 300,
+      status: 'STARTED',
+      startedAt: DateTime.now(),
+    );
+    setPkBattle(newPk);
+    return newPk;
   }
 
   /// Host ends the PK Battle

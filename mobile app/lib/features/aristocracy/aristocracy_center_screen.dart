@@ -1023,46 +1023,130 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
             itemBuilder: (context, index) {
               final item = privileges[index];
 
-              return Container(
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(16.r),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(4.w),
-                          child: item['type'] == 'colored_name'
-                              ? _buildColoredNamePreview(item['color'], user)
-                              : Image.asset(
-                                  item['asset'],
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (c, e, s) => const Icon(Icons.star_rounded, color: Color(0xFFFFD700), size: 42),
-                                ),
+              return GestureDetector(
+                onTap: () => _showPrivilegePreviewDialog(item, rankData['name'] ?? 'Aristocracy'),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(16.r),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(4.w),
+                            child: item['type'] == 'colored_name'
+                                ? _buildColoredNamePreview(item['color'], user)
+                                : Image.asset(
+                                    item['asset'],
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (c, e, s) => const Icon(Icons.star_rounded, color: Color(0xFFFFD700), size: 42),
+                                  ),
+                          ),
                         ),
                       ),
-                    ),
-                    Padding(
-                      padding: EdgeInsets.only(bottom: 8.h),
-                      child: Text(
-                        item['name'],
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 11.5.sp,
-                          fontWeight: FontWeight.w600,
+                      Padding(
+                        padding: EdgeInsets.only(bottom: 8.h),
+                        child: Text(
+                          item['name'],
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 11.5.sp,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               );
             },
           ),
         ],
+      ),
+    );
+  }
+
+  void _showPrivilegePreviewDialog(Map<String, dynamic> item, String rankName) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black87,
+      builder: (ctx) => Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            margin: EdgeInsets.symmetric(horizontal: 24.w),
+            padding: EdgeInsets.all(20.w),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1E1528), Color(0xFF0F0B18)],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+              borderRadius: BorderRadius.circular(24.r),
+              border: Border.all(color: const Color(0xFFFFD700).withValues(alpha: 0.6), width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFFFD700).withValues(alpha: 0.25),
+                  blurRadius: 24,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '$rankName · ${item['name']}',
+                      style: TextStyle(
+                        color: const Color(0xFFFFD700),
+                        fontSize: 16.sp,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.of(ctx).pop(),
+                      child: Container(
+                        padding: EdgeInsets.all(4.w),
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white12,
+                        ),
+                        child: const Icon(Icons.close_rounded, color: Colors.white70, size: 20),
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 20.h),
+                if (item['type'] == 'colored_name')
+                  Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24.h),
+                    child: _buildColoredNamePreview(item['color'], null),
+                  )
+                else
+                  Container(
+                    constraints: BoxConstraints(maxHeight: 220.h),
+                    child: Image.asset(
+                      item['asset'],
+                      fit: BoxFit.contain,
+                      errorBuilder: (c, e, s) => const Icon(Icons.broken_image_rounded, color: Colors.white24, size: 64),
+                    ),
+                  ),
+                SizedBox(height: 16.h),
+                Text(
+                  'Exclusive $rankName privilege reward',
+                  style: TextStyle(color: Colors.white54, fontSize: 12.sp),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

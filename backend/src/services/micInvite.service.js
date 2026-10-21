@@ -521,6 +521,8 @@ export async function acceptMicInvite({ roomId, invitationId, userId }, db = pri
   socketEmitter.emitToRoom(room.id, 'room_seat_occupied', seatPayload);
 
   // Broadcast single mic join announcement in lower room chat (Bug 09 deduplication)
+  const seatLabel = chosenSeatIndex === 0 ? 'Host Mic' : (chosenSeatIndex === 1 ? 'Co-Host Mic' : `Seat ${chosenSeatIndex - 1}`);
+  const seatMsg = `🎙️ ${effectiveName} took ${seatLabel}.`;
   const chatPayload = {
     id: `mic_join_${Date.now()}_${userId}`,
     roomId: room.id,
@@ -542,9 +544,9 @@ export async function acceptMicInvite({ roomId, invitationId, userId }, db = pri
       avatarUrl: effectiveAvatar,
       isVip: effectiveVip,
     },
-    text: `🎙️ ${effectiveName} took Mic ${chosenSeatIndex + 1}.`,
-    message: `🎙️ ${effectiveName} took Mic ${chosenSeatIndex + 1}.`,
-    content: `🎙️ ${effectiveName} took Mic ${chosenSeatIndex + 1}.`,
+    text: seatMsg,
+    message: seatMsg,
+    content: seatMsg,
     type: 'SYSTEM',
     isSystemMessage: true,
     timestamp: new Date().toISOString(),

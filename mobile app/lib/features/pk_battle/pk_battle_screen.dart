@@ -14,6 +14,7 @@ import '../../widgets/gift_dialog.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/tiktok_gift_overlay.dart';
 import '../../widgets/comments_sheet.dart';
+import '../../core/constants/dummy_data.dart';
 
 class PKBattleScreen extends StatefulWidget {
   final PKBattleModel? pkBattle;
@@ -79,7 +80,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
       if (widget.pkBattle != null) {
         liveProv.setPkBattle(widget.pkBattle!);
       } else {
-        liveProv.startHostPKBattle();
+        liveProv.startHostPKBattle(currentHost: currentUser);
       }
       final activeBattleRoom = widget.pkBattle?.roomAId.isNotEmpty == true
           ? widget.pkBattle!.roomAId
@@ -203,7 +204,8 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
         targetReceiver: targetUser,
         onGiftSent: (gift) {
           final currentUser = context.read<AuthProvider>().currentUser;
-          context.read<LiveProvider>().sendGift(gift, currentUser.name);
+          final liveGiftProv = context.read<LiveGiftProvider>();
+          context.read<LiveProvider>().sendGift(gift, currentUser.name, transactionId: liveGiftProv.lastTransactionId);
         },
       ),
     );
@@ -225,24 +227,39 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final liveProvider = context.watch<LiveProvider>();
-    final pk = liveProvider.activePkBattle;
+    final PKBattleModel pk = liveProvider.activePkBattle ??
+        () {
+          final currentUser = context.read<AuthProvider>().currentUser;
+          final opponent = DummyData.popularUsers.firstWhere(
+            (u) => u.id != currentUser.id,
+            orElse: () => DummyData.popularUsers.first,
+          );
+          final fallbackPk = PKBattleModel(
+            id: 'pk_${DateTime.now().millisecondsSinceEpoch}',
+            roomAId: liveProvider.activeRoom?.id ?? 'pk_battle',
+            roomBId: 'room_${opponent.id}',
+            initiatorUserId: currentUser.id,
+            hostA: currentUser,
+            hostB: opponent,
+            scoreA: 0,
+            scoreB: 0,
+            durationSeconds: 300,
+            remainingSeconds: 300,
+            status: 'STARTED',
+            startedAt: DateTime.now(),
+          );
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            liveProvider.setPkBattle(fallbackPk);
+          });
+          return fallbackPk;
+        }();
+
     final seconds = liveProvider.pkTimeRemainingSeconds;
     final minutes = (seconds / 60).floor();
     final remSecs = (seconds % 60).toString().padLeft(2, '0');
 
-    if (pk == null) {
-      return const Scaffold(
-        backgroundColor: Color(0xFF0A071B),
-        body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF00E5FF)),
-        ),
-      );
-    }
-
     final scoreA = pk.scoreA;
     final scoreB = pk.scoreB;
-    final totalScore = (scoreA + scoreB) == 0 ? 1 : (scoreA + scoreB);
-    final ratioA = (scoreA / totalScore).clamp(0.08, 0.92);
     final isLeadingA = scoreA >= scoreB;
 
     if (seconds == 0 && !_showWinner) {
@@ -823,7 +840,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Camera Preview or Avatar Image
+            // Camera Preview or Avatar Image / Stream
             if (useRealCamera &&
                 _isCameraInitialized &&
                 _cameraController != null &&
@@ -831,15 +848,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                 !_isCameraOff)
               CameraPreview(_cameraController!)
             else
-              Image.network(
-                participant.avatarUrl,
-                fit: BoxFit.cover,
-                alignment: Alignment.center,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  color: const Color(0xFF1E1035),
-                  child: const Icon(Icons.person, color: Colors.white54, size: 36),
-                ),
-              ),
+              _buildParticipantVisualFeed(participant, sideColor),
 
             // Gradient Vignette
             Container(
@@ -960,6 +969,79 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildParticipantVisualFeed(PKParticipantModel participant, Color sideColor) {
+    final avatar = participant.avatarUrl.isNotEmpty
+        ? participant.avatarUrl
+        : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500';
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.network(
+          avatar,
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          errorBuilder: (context, error, stackTrace) => Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  sideColor.withValues(alpha: 0.35),
+                  const Color(0xFF0A071B),
+                ],
+              ),
+            ),
+          ),
+        ),
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              UserAvatar(
+                imageUrl: participant.avatarUrl,
+                name: participant.name,
+                radius: 28,
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: sideColor.withValues(alpha: 0.6)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'LIVE FEED',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

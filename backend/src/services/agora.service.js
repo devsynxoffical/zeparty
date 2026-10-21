@@ -77,11 +77,16 @@ export async function issueRoomAgoraToken({ roomId, userId }, db = prisma) {
   }
 
   if (!room.agoraChannelName) {
-    const error = new Error('Room does not have an active Agora channel configured');
-    error.statusCode = 500;
-    error.status = 500;
-    error.code = 'AGORA_CHANNEL_MISSING';
-    throw error;
+    const fallbackChannel = `room_${(room.id || '').replace(/-/g, '')}`;
+    try {
+      await db.room.update({
+        where: { id: room.id },
+        data: { agoraChannelName: fallbackChannel },
+      });
+      room.agoraChannelName = fallbackChannel;
+    } catch (updateErr) {
+      room.agoraChannelName = fallbackChannel;
+    }
   }
 
   // Check if user was kicked from this room session
