@@ -5,7 +5,7 @@
 import apiClient from '../api';
 
 export async function getWalletStats() {
-  const res = await apiClient.get('/v1/wallet/stats');
+  const res = await apiClient.get('/v1/admin/wallet/stats');
   const d = res.data?.data || {};
   return {
     totalCoinsInCirculation: Number(d.totalCoins || d.totalCoinsInCirculation || 0),
@@ -42,7 +42,7 @@ export async function adjustBalance(payload) {
   const absAmount = Math.abs(amountNum);
   const asset = (payload.currency || payload.asset || 'COINS').toUpperCase() === 'DIAMONDS' ? 'DIAMONDS' : 'COINS';
 
-  const res = await apiClient.post('/v1/wallet/adjust', {
+  const res = await apiClient.post('/v1/admin/wallet/adjust', {
     targetUserId: payload.targetUserId || payload.user,
     asset,
     direction,

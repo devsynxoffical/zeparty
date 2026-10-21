@@ -251,6 +251,8 @@ router.use('/v1/webhooks', webhookRoutes);
 router.use('/webhooks', webhookRoutes);
 
 // Register wallet & financial routes
+router.use('/v1/admin/wallet', walletRoutes);
+router.use('/admin/wallet', walletRoutes);
 router.use('/v1/wallet', walletRoutes);
 router.use('/wallet', walletRoutes);
 

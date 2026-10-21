@@ -162,13 +162,16 @@ export async function adjustUserBalance(id, amount, currencyType = 'coins', acti
   const isDiamond = String(currencyType).toLowerCase().includes('diamond');
   const asset = isDiamond ? 'DIAMONDS' : 'COINS';
   const direction = (action === 'add' || action === 'CREDIT' || action === 'credit') ? 'CREDIT' : 'DEBIT';
+  const numericAmount = Number(amount);
+  const isDeduct = action === 'deduct' || action === 'DEBIT' || action === 'debit';
+  const signedDelta = isDeduct ? -numericAmount : numericAmount;
 
   try {
-    const res = await apiClient.post('/v1/wallet/adjust', {
+    const res = await apiClient.post('/v1/admin/wallet/adjust', {
       targetUserId: id,
       asset,
       direction,
-      amount: Number(amount),
+      amount: numericAmount,
       reason: reason || `Administrative balance adjustment (${action} ${amount} ${currencyType})`,
     });
     if (res.data && res.data.success) {
@@ -176,7 +179,19 @@ export async function adjustUserBalance(id, amount, currencyType = 'coins', acti
     }
     return { success: true };
   } catch (err) {
-    throw new Error(err.response?.data?.message || err.message || 'Failed to adjust user balance on backend.');
+    try {
+      const res2 = await apiClient.post(`/v1/admin/users/${id}/wallet/adjust-balance`, {
+        coinDelta: isDiamond ? 0 : signedDelta,
+        diamondDelta: isDiamond ? signedDelta : 0,
+        reason: reason || `Administrative balance adjustment (${action} ${amount} ${currencyType})`,
+      });
+      if (res2.data && res2.data.success) {
+        return res2.data;
+      }
+      return { success: true };
+    } catch (err2) {
+      throw new Error(err.response?.data?.message || err2.response?.data?.message || err.message || 'Failed to adjust user balance on backend.');
+    }
   }
 }
 

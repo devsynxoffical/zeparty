@@ -55,7 +55,9 @@ export async function authenticate(req, res, next) {
     const isAdminRoute = Boolean(
       req.baseUrl?.includes('admin') ||
       req.originalUrl?.includes('/admin') ||
-      req.path?.includes('admin')
+      req.path?.includes('admin') ||
+      req.originalUrl?.includes('/wallet/adjust') ||
+      req.originalUrl?.includes('/wallet/stats')
     );
 
     const isTokenAdmin = Boolean(
