@@ -554,12 +554,14 @@ export async function joinRoomTx({ roomId, userId, pin = null, isApproved = fals
   const isGuest = Boolean(String(userId).startsWith('guest_'));
 
   if (!isGuest) {
-    // Clean up any stale membership for this registered user in other rooms
+    // Clean up any stale membership for this registered user in other rooms,
+    // while preserving durable administrative appointments (ADMIN, HOST) in other rooms
     try {
       await db.roomMember.deleteMany({
         where: {
           userId,
           roomId: { not: resolvedRoomId },
+          role: { notIn: ['ADMIN', 'HOST'] },
         },
       });
     } catch (cleanErr) {
@@ -678,12 +680,14 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
   }
 
   if (!isGuest) {
-    // Remove persistent membership record for registered user
+    // Remove persistent membership record for regular viewers,
+    // but preserve durable administrative roles (ADMIN, HOST) across room exits
     try {
       await db.roomMember.deleteMany({
         where: {
           roomId: resolvedRoomId,
           userId,
+          role: { notIn: ['ADMIN', 'HOST'] },
         },
       });
     } catch (leaveErr) {
@@ -727,7 +731,7 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
   const audienceMemberCount = await db.roomMember.count({
     where: {
       roomId: resolvedRoomId,
-      userId: { not: room.creatorUserId },
+      userId: { notIn: [room.creatorUserId, userId] },
     },
   });
 
@@ -735,7 +739,7 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
   try {
     const presenceViewerCount = await presenceService.getRoomViewerCount(resolvedRoomId, room.creatorUserId);
     if (typeof presenceViewerCount === 'number' && presenceViewerCount >= 0) {
-      totalViewerCount = Math.max(audienceMemberCount, presenceViewerCount);
+      totalViewerCount = presenceViewerCount;
     }
   } catch (_) {}
 

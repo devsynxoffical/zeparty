@@ -890,6 +890,13 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
     },
   });
 
+  let activePresenceUserIds = new Set();
+  let activePresence = [];
+  try {
+    activePresence = await presenceService.getRoomActiveUsers(resolvedRoomId);
+    activePresenceUserIds = new Set(activePresence.map((p) => p.userId).filter(Boolean));
+  } catch (_) {}
+
   const formatted = members
     .filter((m) => !(hostIsOccupyingSeat && m.userId === room.creatorUserId))
     .map((m) => {
@@ -898,12 +905,15 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
       if (m.role === 'ADMIN') {
         role = 'ADMIN';
       }
+      const isOnline = activePresenceUserIds.has(m.userId);
       return {
         id: m.id,
         userId: m.userId,
         role,
         isHost,
         isOwner: isHost,
+        isOnline,
+        inRoom: isOnline,
         joinedAt: m.joinedAt,
         user: {
           id: m.user.id,
@@ -931,12 +941,15 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
         },
       });
       if (creatorUser) {
+        const hostIsOnline = activePresenceUserIds.has(room.creatorUserId);
         formatted.unshift({
           id: `host_member_${room.creatorUserId}`,
           userId: room.creatorUserId,
           role: 'HOST',
           isHost: true,
           isOwner: true,
+          isOnline: hostIsOnline,
+          inRoom: hostIsOnline,
           joinedAt: new Date().toISOString(),
           user: {
             id: creatorUser.id,
@@ -955,7 +968,6 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
 
   // Merge active guest participants from realtime presence
   try {
-    const activePresence = await presenceService.getRoomActiveUsers(resolvedRoomId);
     for (const p of activePresence) {
       if (p.userId && !existingIds.has(p.userId)) {
         if (p.userId === room.creatorUserId && hostIsOccupyingSeat) continue;
@@ -969,6 +981,8 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
           id: `guest_member_${p.userId}`,
           userId: p.userId,
           role: 'MEMBER',
+          isOnline: true,
+          inRoom: true,
           joinedAt: p.joinedAt || new Date().toISOString(),
           user: {
             id: p.userId,

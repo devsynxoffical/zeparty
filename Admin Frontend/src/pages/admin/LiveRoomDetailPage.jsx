@@ -92,10 +92,12 @@ export function LiveRoomDetailPage() {
               found.members.forEach((m) => {
                 const u = m.user || m;
                 if (u && u.id && !realParticipants.some((p) => p.id === u.id)) {
+                  const memberRole = String(m.role || '').toLowerCase() === 'admin' ? 'admin' : 'viewer';
                   realParticipants.push({
                     id: u.id,
                     name: u.profile?.displayName || u.username || 'Viewer',
-                    role: 'viewer',
+                    role: memberRole,
+                    isOnline: m.isOnline !== undefined ? Boolean(m.isOnline) : true,
                     micOn: false,
                   });
                 }
@@ -325,7 +327,23 @@ export function LiveRoomDetailPage() {
 
   const participantsColumns = [
     { key: 'user', header: 'User', render: (row) => <span className="text-white font-medium">{row.name}</span> },
-    { key: 'role', header: 'Role', render: (row) => <Badge variant={row.role === 'host' ? 'primary' : 'muted'}>{row.role}</Badge> },
+    {
+      key: 'role',
+      header: 'Role',
+      render: (row) => (
+        <Badge
+          variant={
+            row.role === 'host'
+              ? 'primary'
+              : row.role === 'admin'
+              ? 'warning'
+              : 'muted'
+          }
+        >
+          {row.role === 'admin' ? 'Room Admin' : row.role}
+        </Badge>
+      ),
+    },
     {
       key: 'mic',
       header: 'Mic Status',
