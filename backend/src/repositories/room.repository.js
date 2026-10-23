@@ -686,20 +686,30 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
 
   const isGuest = Boolean(String(userId).startsWith('guest_'));
 
-  // Release seat if user occupied one
-  try {
-    await db.roomSeat.updateMany({
-      where: {
-        roomId: resolvedRoomId,
-        occupiedUserId: userId,
-      },
-      data: {
-        occupiedUserId: null,
-        isMuted: false,
-      },
-    });
-  } catch (seatErr) {
-    console.warn(`[RoomRepo] Seat release notice on leave for user ${userId}:`, seatErr.message);
+  // Release seat if user occupied one and capture vacatedSeatIndex
+  let vacatedSeatIndex = null;
+  if (userId) {
+    try {
+      const occupiedSeat = await db.roomSeat.findFirst({
+        where: {
+          roomId: resolvedRoomId,
+          occupiedUserId: userId,
+        },
+      });
+      if (occupiedSeat) {
+        vacatedSeatIndex = occupiedSeat.seatIndex;
+        await db.roomSeat.update({
+          where: { id: occupiedSeat.id },
+          data: {
+            occupiedUserId: null,
+            isMuted: false,
+            isMutedByModerator: false,
+          },
+        });
+      }
+    } catch (seatErr) {
+      console.warn(`[RoomRepo] Seat release notice on leave for user ${userId}:`, seatErr.message);
+    }
   }
 
   // Preserving persistent RoomMember records across live session exits (NEW-17)
@@ -733,7 +743,7 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
     }
   } catch (_) {}
 
-  return await db.room.update({
+  const updatedRoom = await db.room.update({
     where: { id: resolvedRoomId },
     data: {
       currentViewersCount: totalViewerCount,
@@ -751,6 +761,11 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
       },
     },
   });
+
+  return {
+    ...updatedRoom,
+    vacatedSeatIndex,
+  };
 }
 
 export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
@@ -856,16 +871,36 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
     });
     const isModerationMuted = Boolean(activeModMute);
 
-    const updatedSeat = await tx.roomSeat.update({
+    // Atomic claim with strict concurrency protection against simultaneous seat takes
+    const claimResult = await tx.roomSeat.updateMany({
+      where: {
+        roomId: resolvedRoomId,
+        seatIndex,
+        isLocked: false,
+        OR: [
+          { occupiedUserId: null },
+          { occupiedUserId: userId },
+        ],
+      },
+      data: {
+        occupiedUserId: userId,
+        ...(isModerationMuted ? { isMuted: true, isMutedByModerator: true } : {}),
+      },
+    });
+
+    if (claimResult.count === 0) {
+      const error = new Error('Seat is already occupied by another user');
+      error.statusCode = 409;
+      error.code = 'SEAT_ALREADY_OCCUPIED';
+      throw error;
+    }
+
+    const updatedSeat = await tx.roomSeat.findUnique({
       where: {
         roomId_seatIndex: {
           roomId: resolvedRoomId,
           seatIndex,
         },
-      },
-      data: {
-        occupiedUserId: userId,
-        ...(isModerationMuted ? { isMuted: true, isMutedByModerator: true } : {}),
       },
       include: {
         occupiedUser: {

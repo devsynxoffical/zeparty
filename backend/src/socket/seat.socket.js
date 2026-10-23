@@ -43,6 +43,17 @@ export async function onOccupySeat(io, socket, data, callback, db) {
     const updatedSeat = result?.updatedSeat || result;
     const vacatedSeatIndex = result?.vacatedSeatIndex;
 
+    // Fetch refreshed room snapshot so seats array is completely up to date for all clients
+    let updatedSnapshot = null;
+    try {
+      const updatedRoom = await roomRepository.findRoomById(canonicalRoomId, db || prisma);
+      if (updatedRoom) {
+        const viewerCount = await presenceService.getRoomViewerCount(updatedRoom.id, updatedRoom.creatorUserId);
+        const activeUsers = await presenceService.getRoomActiveUsers(updatedRoom.id);
+        updatedSnapshot = buildRoomSnapshot(updatedRoom, viewerCount, activeUsers);
+      }
+    } catch (_) {}
+
     const effectiveName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || 'Speaker';
     const effectiveAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
     const effectiveNoble = clientUser.nobleTitle || socket.user?.nobleTitle || null;
@@ -53,20 +64,29 @@ export async function onOccupySeat(io, socket, data, callback, db) {
       id: eventId,
       eventId,
       roomId: canonicalRoomId,
+      canonicalRoomId,
       clientRoomId: roomId,
       room: canonicalRoomId,
       seatIndex: updatedSeat.seatIndex,
+      seatNumber: updatedSeat.seatIndex,
       vacatedSeatIndex: typeof vacatedSeatIndex === 'number' ? vacatedSeatIndex : null,
+      previousSeatNumber: typeof vacatedSeatIndex === 'number' ? vacatedSeatIndex : null,
+      isMuted: Boolean(updatedSeat.isMuted),
+      isLocked: Boolean(updatedSeat.isLocked),
+      isMutedByModerator: Boolean(updatedSeat.isMutedByModerator),
       user: {
         id: userId,
         userId: userId,
         username: clientUser.username || socket.user?.username || effectiveName,
         displayName: effectiveName,
         name: effectiveName,
+        avatar: effectiveAvatar,
         avatarUrl: effectiveAvatar,
         nobleTitle: effectiveNoble,
         isVip: effectiveVip,
       },
+      seats: updatedSnapshot ? updatedSnapshot.seats : [],
+      timestamp: new Date().toISOString(),
     };
 
     // If user is ALREADY on this seat (idempotent tap / retry), return early to caller without re-broadcasting duplicate notifications
@@ -83,32 +103,44 @@ export async function onOccupySeat(io, socket, data, callback, db) {
 
     const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
 
-    // If moving from a previous seat, broadcast seat release for old seat first
+    // If moving from a previous seat, broadcast seat release for old seat first across all aliases
     if (typeof vacatedSeatIndex === 'number' && vacatedSeatIndex !== seatIndex) {
       const releaseEventId = `seat_rel_${canonicalRoomId}_${vacatedSeatIndex}_${userId}_${Date.now()}`;
       const releasePayload = {
         id: releaseEventId,
         eventId: releaseEventId,
         roomId: canonicalRoomId,
+        canonicalRoomId,
         clientRoomId: roomId,
         seatIndex: vacatedSeatIndex,
+        seatNumber: vacatedSeatIndex,
         releasedByUserId: userId,
+        userId,
+        previousUserId: userId,
+        seats: updatedSnapshot ? updatedSnapshot.seats : [],
+        timestamp: new Date().toISOString(),
       };
       for (const rid of targetRoomIds) {
         const broadcastTarget = io && io.to ? io.to(`room:${rid}`) : (socket.to ? socket.to(`room:${rid}`) : socket);
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, releasePayload);
+        broadcastTarget.emit('room:seat_released', releasePayload);
+        broadcastTarget.emit('room_seat_released', releasePayload);
+        broadcastTarget.emit('room:seat_left', releasePayload);
+        broadcastTarget.emit('room_seat_left', releasePayload);
         broadcastTarget.emit('seat_released', releasePayload);
         broadcastTarget.emit('seat:released', releasePayload);
+        broadcastTarget.emit('mic:left', releasePayload);
       }
     }
 
-    // Broadcast authoritative seat occupied event to the entire room
+    // Broadcast authoritative seat occupied event to the entire room across all aliases
     for (const rid of targetRoomIds) {
       const broadcastTarget = io && io.to ? io.to(`room:${rid}`) : (socket.to ? socket.to(`room:${rid}`) : socket);
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_OCCUPIED, payload);
+      broadcastTarget.emit('room:seat_occupied', payload);
+      broadcastTarget.emit('room_seat_occupied', payload);
       broadcastTarget.emit('seat_occupied', payload);
       broadcastTarget.emit('seat:occupied', payload);
-      broadcastTarget.emit('room_seat_occupied', payload);
     }
 
     if (typeof callback === 'function') {
@@ -222,27 +254,34 @@ export async function onLeaveSeat(io, socket, data, callback, db = prisma) {
       id: leaveEventId,
       eventId: leaveEventId,
       roomId: updatedSnapshot ? updatedSnapshot.id : resolvedRoomId,
+      canonicalRoomId: resolvedRoomId,
       clientRoomId: roomId,
       seatIndex: releasedSeat.seatIndex,
+      seatNumber: releasedSeat.seatIndex,
       releasedByUserId: userId,
       userId,
+      previousUserId: userId,
       isOwner: isRoomOwner,
       isHost: isRoomOwner,
       seats: updatedSnapshot ? updatedSnapshot.seats : [],
       members: updatedSnapshot ? updatedSnapshot.members : [],
       viewerCount: typeof viewerCount === 'number' ? viewerCount : (updatedSnapshot?.viewerCount || 0),
       currentViewersCount: typeof viewerCount === 'number' ? viewerCount : (updatedSnapshot?.currentViewersCount || 0),
+      timestamp: new Date().toISOString(),
     };
 
     const targetRoomIds = Array.from(new Set([String(roomId), String(resolvedRoomId)]));
 
-    // Broadcast authoritative seat released event to the entire room
+    // Broadcast authoritative seat released event to the entire room across all mobile aliases
     for (const rid of targetRoomIds) {
       const broadcastTarget = io && io.to ? io.to(`room:${rid}`) : (socket.to ? socket.to(`room:${rid}`) : socket);
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, payload);
+      broadcastTarget.emit('room:seat_released', payload);
+      broadcastTarget.emit('room_seat_released', payload);
+      broadcastTarget.emit('room:seat_left', payload);
+      broadcastTarget.emit('room_seat_left', payload);
       broadcastTarget.emit('seat_released', payload);
       broadcastTarget.emit('seat:released', payload);
-      broadcastTarget.emit('room_seat_released', payload);
       broadcastTarget.emit('room:mic_left', payload);
       broadcastTarget.emit('mic:left', payload);
       broadcastTarget.emit('mic_left', payload);
@@ -379,6 +418,69 @@ export function registerSeatHandlers(io, socket) {
     'room_seat_locked_status',
     withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLockSeat(io, s, d, cb))
   );
+
+  // Mic Mute & Self-Toggle Events
+  socket.on(
+    'room:mute_seat',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
+  );
+  socket.on(
+    'seat_mute',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
+  );
+  socket.on(
+    'seat:mute',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
+  );
+  socket.on(
+    'room:toggle_mute',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
+  );
+  socket.on(
+    'toggle_mute',
+    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
+  );
+}
+
+export async function onMuteSeat(io, socket, data, callback, db) {
+  try {
+    const roomId = data?.roomId;
+    const actorUserId = socket.user?.id || socket.userId;
+    const targetUserId = data?.targetUserId || data?.userId || actorUserId;
+    const isMuted = data?.isMuted !== undefined ? Boolean(data.isMuted) : true;
+    const reason = data?.reason;
+
+    if (!roomId) {
+      const err = {
+        success: false,
+        error: { code: SOCKET_ERRORS.INVALID_ROOM_ID, message: 'Valid roomId is required' },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const result = await roomService.moderateRoomUserMute(roomId, actorUserId, { targetUserId, isMuted, reason }, db || prisma);
+
+    if (typeof callback === 'function') {
+      return callback({
+        success: true,
+        message: isMuted ? 'Muted' : 'Unmuted',
+        data: result.data,
+      });
+    }
+  } catch (err) {
+    const errorResponse = {
+      success: false,
+      error: {
+        code: err.code || SOCKET_ERRORS.INTERNAL_ERROR,
+        message: err.message || 'Failed to update mute state',
+      },
+    };
+    if (typeof callback === 'function') return callback(errorResponse);
+    if (socket && typeof socket.emit === 'function') {
+      socket.emit(SOCKET_EVENTS.ERROR, errorResponse);
+    }
+  }
 }
 
 export async function onLockSeat(io, socket, data, callback, db) {
@@ -490,5 +592,6 @@ export default {
   onOccupySeat,
   onLeaveSeat,
   onLockSeat,
+  onMuteSeat,
   registerSeatHandlers,
 };

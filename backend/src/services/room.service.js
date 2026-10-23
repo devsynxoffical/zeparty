@@ -2257,10 +2257,16 @@ export async function removeRoomUserFromMic(roomId, actorUserId, { targetUserId,
   const snapshot = formatRoomSnapshot(updatedRoom, viewerCount);
 
   const seatPayload = {
+    id: `seat_rel_${room.id}_${occupiedSeat.seatIndex}_${targetUserId}_${Date.now()}`,
+    eventId: `seat_rel_${room.id}_${occupiedSeat.seatIndex}_${targetUserId}_${Date.now()}`,
     roomId: room.id,
+    clientRoomId: room.id,
     seatIndex: occupiedSeat.seatIndex,
+    seatNumber: occupiedSeat.seatIndex,
     releasedByUserId: actorUserId,
     targetUserId,
+    userId: targetUserId,
+    previousUserId: targetUserId,
     isModerationAction: true,
     action: 'REMOVE_FROM_MIC',
     seats: snapshot.seats,
@@ -2272,15 +2278,23 @@ export async function removeRoomUserFromMic(roomId, actorUserId, { targetUserId,
   const notificationPayload = {
     roomId: room.id,
     seatIndex: occupiedSeat.seatIndex,
+    seatNumber: occupiedSeat.seatIndex,
     removedByUserId: actorUserId,
     targetUserId,
     reason: reason || 'Removed from microphone seat by room moderator',
     timestamp: new Date().toISOString(),
   };
 
-  // Broadcast to room
+  // Broadcast to room across all mobile-compatible aliases
   socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatPayload);
   socketEmitter.emitToRoom(room.id, 'room:seat_released', seatPayload);
+  socketEmitter.emitToRoom(room.id, 'room_seat_released', seatPayload);
+  socketEmitter.emitToRoom(room.id, 'room:seat_left', seatPayload);
+  socketEmitter.emitToRoom(room.id, 'room_seat_left', seatPayload);
+  socketEmitter.emitToRoom(room.id, 'seat_released', seatPayload);
+  socketEmitter.emitToRoom(room.id, 'seat:released', seatPayload);
+  socketEmitter.emitToRoom(room.id, 'room:mic_left', seatPayload);
+  socketEmitter.emitToRoom(room.id, 'mic:left', seatPayload);
   socketEmitter.emitToRoom(room.id, 'room:audience_updated', {
     roomId: room.id,
     members: snapshot.members,
@@ -2291,6 +2305,8 @@ export async function removeRoomUserFromMic(roomId, actorUserId, { targetUserId,
   socketEmitter.emitToUser(targetUserId, 'room:removed_from_mic', notificationPayload);
   socketEmitter.emitToUser(targetUserId, SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatPayload);
   socketEmitter.emitToUser(targetUserId, 'room:seat_released', seatPayload);
+  socketEmitter.emitToUser(targetUserId, 'room:seat_left', seatPayload);
+  socketEmitter.emitToUser(targetUserId, 'seat_released', seatPayload);
 
   await logAudit(
     {
@@ -2311,6 +2327,7 @@ export async function removeRoomUserFromMic(roomId, actorUserId, { targetUserId,
       roomId: room.id,
       targetUserId,
       seatIndex: occupiedSeat.seatIndex,
+      seatNumber: occupiedSeat.seatIndex,
       seats: snapshot.seats,
       members: snapshot.members,
     },
@@ -2318,8 +2335,81 @@ export async function removeRoomUserFromMic(roomId, actorUserId, { targetUserId,
 }
 
 export async function moderateRoomUserMute(roomId, actorUserId, { targetUserId, isMuted = true, reason }, db = prisma) {
-  const { room, occupiedSeat } = await validateModerationPermission(roomId, actorUserId, targetUserId, db);
   const shouldMute = Boolean(isMuted);
+
+  // 1. Handle self-mute by a seated occupant (no moderator privileges required to mute/unmute one's own microphone)
+  if (actorUserId && actorUserId === targetUserId) {
+    const room = await roomRepository.findRoomById(roomId, db);
+    if (!room) {
+      const error = new Error('Room not found');
+      error.statusCode = 404;
+      error.code = 'ROOM_NOT_FOUND';
+      throw error;
+    }
+    const occupiedSeat = Array.isArray(room.seats) ? room.seats.find((s) => s.occupiedUserId === actorUserId) : null;
+    if (!occupiedSeat) {
+      const error = new Error('You do not occupy a microphone seat in this room');
+      error.statusCode = 400;
+      error.code = 'USER_NOT_ON_MIC';
+      throw error;
+    }
+    // If the seat was muted by a moderator, the user cannot self-unmute
+    if (!shouldMute && occupiedSeat.isMutedByModerator) {
+      const error = new Error('Your microphone was muted by a room moderator and cannot be unmuted by yourself');
+      error.statusCode = 403;
+      error.code = 'MUTED_BY_MODERATOR';
+      throw error;
+    }
+
+    await db.roomSeat.update({
+      where: { id: occupiedSeat.id },
+      data: {
+        isMuted: shouldMute,
+      },
+    });
+
+    const updatedRoom = await roomRepository.findRoomById(room.id, db);
+    let viewerCount = updatedRoom?.currentViewersCount || 0;
+    try {
+      const presCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
+      if (typeof presCount === 'number') viewerCount = presCount;
+    } catch (_) {}
+
+    const snapshot = formatRoomSnapshot(updatedRoom, viewerCount);
+
+    const mutePayload = {
+      id: `evt_mute_${room.id}_${occupiedSeat.seatIndex}_${Date.now()}`,
+      eventId: `evt_mute_${room.id}_${occupiedSeat.seatIndex}_${Date.now()}`,
+      roomId: room.id,
+      clientRoomId: room.id,
+      targetUserId,
+      userId: targetUserId,
+      seatIndex: occupiedSeat.seatIndex,
+      seatNumber: occupiedSeat.seatIndex,
+      isMuted: shouldMute,
+      isMutedByModerator: Boolean(occupiedSeat.isMutedByModerator),
+      moderatedByUserId: actorUserId,
+      seats: snapshot.seats,
+      timestamp: new Date().toISOString(),
+    };
+
+    const eventName = shouldMute ? SOCKET_EVENTS.ROOM_USER_MUTED : 'room:user_unmuted';
+    socketEmitter.emitToRoom(room.id, eventName, mutePayload);
+    socketEmitter.emitToRoom(room.id, shouldMute ? 'room:user_muted' : 'room:user_unmuted', mutePayload);
+    socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_SEAT_UPDATED, mutePayload);
+    socketEmitter.emitToRoom(room.id, 'room:seat_updated', mutePayload);
+    socketEmitter.emitToRoom(room.id, shouldMute ? 'room:seat_muted' : 'room:seat_unmuted', mutePayload);
+    socketEmitter.emitToRoom(room.id, shouldMute ? 'seat_muted' : 'seat_unmuted', mutePayload);
+
+    return {
+      success: true,
+      message: shouldMute ? 'Microphone muted' : 'Microphone unmuted',
+      data: mutePayload,
+    };
+  }
+
+  // 2. Authoritative moderator mute/unmute
+  const { room, occupiedSeat } = await validateModerationPermission(roomId, actorUserId, targetUserId, db);
 
   if (shouldMute) {
     const existing = await db.roomModeration.findFirst({
@@ -2369,9 +2459,14 @@ export async function moderateRoomUserMute(roomId, actorUserId, { targetUserId, 
   const snapshot = formatRoomSnapshot(updatedRoom, viewerCount);
 
   const mutePayload = {
+    id: `evt_mute_${room.id}_${occupiedSeat ? occupiedSeat.seatIndex : 'user'}_${Date.now()}`,
+    eventId: `evt_mute_${room.id}_${occupiedSeat ? occupiedSeat.seatIndex : 'user'}_${Date.now()}`,
     roomId: room.id,
+    clientRoomId: room.id,
     targetUserId,
+    userId: targetUserId,
     seatIndex: occupiedSeat ? occupiedSeat.seatIndex : null,
+    seatNumber: occupiedSeat ? occupiedSeat.seatIndex : null,
     isMuted: shouldMute,
     isMutedByModerator: shouldMute,
     moderatedByUserId: actorUserId,
@@ -2384,6 +2479,8 @@ export async function moderateRoomUserMute(roomId, actorUserId, { targetUserId, 
   socketEmitter.emitToRoom(room.id, shouldMute ? 'room:user_muted' : 'room:user_unmuted', mutePayload);
   socketEmitter.emitToRoom(room.id, SOCKET_EVENTS.ROOM_SEAT_UPDATED, mutePayload);
   socketEmitter.emitToRoom(room.id, 'room:seat_updated', mutePayload);
+  socketEmitter.emitToRoom(room.id, shouldMute ? 'room:seat_muted' : 'room:seat_unmuted', mutePayload);
+  socketEmitter.emitToRoom(room.id, shouldMute ? 'seat_muted' : 'seat_unmuted', mutePayload);
 
   socketEmitter.emitToUser(targetUserId, eventName, mutePayload);
   socketEmitter.emitToUser(targetUserId, shouldMute ? 'room:user_muted' : 'room:user_unmuted', mutePayload);

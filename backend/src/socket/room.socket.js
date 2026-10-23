@@ -138,15 +138,24 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     } : null,
     seats: (room.seats || []).map((s) => {
       const u = s.occupiedUser || s.user;
+      const isOccupied = Boolean(u && s.occupiedUserId);
       return {
         seatIndex: s.seatIndex,
-        isLocked: s.isLocked,
-        isMuted: s.isMuted,
-        user: u ? {
+        seatNumber: s.seatIndex,
+        occupiedUserId: isOccupied ? (u.id || s.occupiedUserId) : null,
+        isLocked: Boolean(s.isLocked),
+        isMuted: Boolean(s.isMuted),
+        isMutedByModerator: Boolean(s.isMutedByModerator),
+        user: isOccupied ? {
           id: u.id,
+          userId: u.id,
           username: u.username,
           displayName: u.profile?.displayName || u.displayName || u.username,
+          name: u.profile?.displayName || u.displayName || u.username,
           avatarUrl: u.profile?.avatarUrl || u.avatarUrl || null,
+          avatar: u.profile?.avatarUrl || u.avatarUrl || null,
+          level: u.profile?.level || 1,
+          vipLevel: u.profile?.vipLevel || 0,
         } : null,
       };
     }),
@@ -637,6 +646,42 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
         broadcastTarget.emit('room:viewer_count', countPayload);
         broadcastTarget.emit('viewer_count_changed', countPayload);
       }
+
+      // If the leaving user was occupying a microphone seat, broadcast authoritative seat release across all aliases
+      if (typeof leaveResult?.vacatedSeatIndex === 'number') {
+        let updatedSnapshot = null;
+        try {
+          const freshRoom = await roomRepository.findRoomById(room ? room.id : roomId, db);
+          if (freshRoom) {
+            updatedSnapshot = buildRoomSnapshot(freshRoom, updatedViewerCount);
+          }
+        } catch (_) {}
+
+        const seatRelPayload = {
+          id: `seat_rel_${roomId}_${leaveResult.vacatedSeatIndex}_${userId}_${Date.now()}`,
+          eventId: `seat_rel_${roomId}_${leaveResult.vacatedSeatIndex}_${userId}_${Date.now()}`,
+          roomId: room ? room.id : roomId,
+          canonicalRoomId: room ? room.id : roomId,
+          clientRoomId: roomId,
+          seatIndex: leaveResult.vacatedSeatIndex,
+          seatNumber: leaveResult.vacatedSeatIndex,
+          releasedByUserId: userId,
+          userId,
+          previousUserId: userId,
+          seats: updatedSnapshot ? updatedSnapshot.seats : [],
+          timestamp: new Date().toISOString(),
+        };
+
+        broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatRelPayload);
+        broadcastTarget.emit('room:seat_released', seatRelPayload);
+        broadcastTarget.emit('room_seat_released', seatRelPayload);
+        broadcastTarget.emit('room:seat_left', seatRelPayload);
+        broadcastTarget.emit('room_seat_left', seatRelPayload);
+        broadcastTarget.emit('seat_released', seatRelPayload);
+        broadcastTarget.emit('seat:released', seatRelPayload);
+        broadcastTarget.emit('room:mic_left', seatRelPayload);
+        broadcastTarget.emit('mic:left', seatRelPayload);
+      }
     }
 
     // 4. Update Authoritative User Room Presence on Leave & Clear Pending Mic Invites
@@ -782,6 +827,43 @@ export async function onSocketDisconnect(io, socket, db) {
             broadcastTarget.emit('room:viewer_count', countPayload);
             broadcastTarget.emit('viewer_count_changed', countPayload);
           }
+
+          // If the disconnecting user was occupying a microphone seat, broadcast authoritative seat release across all aliases
+          if (typeof leaveResult?.vacatedSeatIndex === 'number') {
+            let updatedSnapshot = null;
+            try {
+              const freshRoom = await roomRepository.findRoomById(room.id, db);
+              if (freshRoom) {
+                updatedSnapshot = buildRoomSnapshot(freshRoom, updatedViewerCount);
+              }
+            } catch (_) {}
+
+            const seatRelPayload = {
+              id: `seat_rel_${roomId}_${leaveResult.vacatedSeatIndex}_${userId}_${Date.now()}`,
+              eventId: `seat_rel_${roomId}_${leaveResult.vacatedSeatIndex}_${userId}_${Date.now()}`,
+              roomId: room.id,
+              canonicalRoomId: room.id,
+              clientRoomId: roomId,
+              seatIndex: leaveResult.vacatedSeatIndex,
+              seatNumber: leaveResult.vacatedSeatIndex,
+              releasedByUserId: userId,
+              userId,
+              previousUserId: userId,
+              seats: updatedSnapshot ? updatedSnapshot.seats : [],
+              timestamp: new Date().toISOString(),
+            };
+
+            broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatRelPayload);
+            broadcastTarget.emit('room:seat_released', seatRelPayload);
+            broadcastTarget.emit('room_seat_released', seatRelPayload);
+            broadcastTarget.emit('room:seat_left', seatRelPayload);
+            broadcastTarget.emit('room_seat_left', seatRelPayload);
+            broadcastTarget.emit('seat_released', seatRelPayload);
+            broadcastTarget.emit('seat:released', seatRelPayload);
+            broadcastTarget.emit('room:mic_left', seatRelPayload);
+            broadcastTarget.emit('mic:left', seatRelPayload);
+          }
+
           if (userId) {
             try {
               await micInviteService.clearPendingInvitesForUser(roomId, userId);
