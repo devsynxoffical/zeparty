@@ -256,6 +256,8 @@ router.use('/admin/wallet', walletRoutes);
 router.use('/v1/wallet', walletRoutes);
 router.use('/wallet', walletRoutes);
 
+router.use('/v1/admin/finance', financeRoutes);
+router.use('/admin/finance', financeRoutes);
 router.use('/v1/finance', financeRoutes);
 router.use('/finance', financeRoutes);
 

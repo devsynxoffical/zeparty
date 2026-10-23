@@ -57,7 +57,9 @@ export async function authenticate(req, res, next) {
       req.originalUrl?.includes('/admin') ||
       req.path?.includes('admin') ||
       req.originalUrl?.includes('/wallet/adjust') ||
-      req.originalUrl?.includes('/wallet/stats')
+      req.originalUrl?.includes('/wallet/stats') ||
+      req.baseUrl?.includes('finance') ||
+      req.originalUrl?.includes('/finance')
     );
 
     const isTokenAdmin = Boolean(
@@ -76,37 +78,13 @@ export async function authenticate(req, res, next) {
       });
     }
 
-    // 2. Admin tokens cannot access mobile user-only endpoints
-    const isAuthEndpoint = Boolean(
-      req.baseUrl?.includes('auth') ||
-      req.originalUrl?.includes('/auth/me') ||
-      req.originalUrl?.includes('/auth/logout')
-    );
-
-    if (!isAdminRoute && !isAuthEndpoint && isTokenAdmin) {
-      return res.status(403).json({
+    // 2. Reject non-admin tokens claiming administrative audience
+    if (decoded.aud && decoded.aud === 'zeparty-admin' && !isTokenAdmin) {
+      return res.status(401).json({
         success: false,
-        message: 'Admin accounts cannot access mobile user endpoints',
-        error: { code: 'FORBIDDEN' },
+        message: 'Token audience does not match account privileges',
+        error: { code: 'TOKEN_INVALID' },
       });
-    }
-
-    // 3. Reject mismatched audience claims
-    if (decoded.aud) {
-      if (decoded.aud === 'zeparty-admin' && !isTokenAdmin) {
-        return res.status(401).json({
-          success: false,
-          message: 'Token audience does not match account privileges',
-          error: { code: 'TOKEN_INVALID' },
-        });
-      }
-      if (decoded.aud === 'zeparty-mobile' && isTokenAdmin) {
-        return res.status(401).json({
-          success: false,
-          message: 'Token audience does not match account privileges',
-          error: { code: 'TOKEN_INVALID' },
-        });
-      }
     }
 
     // ==========================================
