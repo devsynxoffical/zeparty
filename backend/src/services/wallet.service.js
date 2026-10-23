@@ -36,10 +36,221 @@ export async function getWallet(userId) {
 }
 
 /**
- * Retrieves paginated ledger history for a user's wallet.
+ * Resolves real counterparties, calculates accurate signed amounts, directions,
+ * and user-friendly descriptions for raw WalletLedger entries.
  */
-export async function getWalletLedger(userId, { page = 1, limit = 20, type = null }) {
-  const wallet = await walletRepository.findByUserId(userId);
+async function enrichLedgerEntries(items, currentUserId, db = prisma) {
+  if (!items || items.length === 0) return [];
+
+  const refIds = items.map((i) => i.referenceId).filter(Boolean);
+  const selRefIds = refIds.filter((id) => typeof id === 'string' && id.startsWith('SEL-RCHG'));
+
+  // 1. Batch resolve counterparties for seller recharges
+  let relatedLedgers = [];
+  let relatedNotifications = [];
+  if (selRefIds.length > 0) {
+    [relatedLedgers, relatedNotifications] = await Promise.all([
+      db.walletLedger.findMany({
+        where: { referenceId: { in: selRefIds } },
+        include: {
+          wallet: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  avatarUrl: true,
+                  profile: {
+                    select: { displayName: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      }),
+      db.notification.findMany({
+        where: {
+          sourceType: 'RECHARGE',
+          sourceId: { in: selRefIds },
+        },
+        select: {
+          sourceId: true,
+          title: true,
+          body: true,
+          dataJson: true,
+        },
+      }),
+    ]);
+  }
+
+  // Map referenceId -> counterparty info for seller recharges
+  const refToLedgersMap = new Map();
+  for (const l of relatedLedgers) {
+    if (!l.referenceId) continue;
+    if (!refToLedgersMap.has(l.referenceId)) {
+      refToLedgersMap.set(l.referenceId, []);
+    }
+    refToLedgersMap.get(l.referenceId).push(l);
+  }
+
+  const notifMap = new Map();
+  for (const n of relatedNotifications) {
+    if (n.sourceId) notifMap.set(n.sourceId, n);
+  }
+
+  return items.map((rawItem) => {
+    const item = sanitizeFinancial(rawItem);
+    const coinDelta = BigInt(rawItem.coinDelta ?? 0n);
+    const diamondDelta = BigInt(rawItem.diamondDelta ?? 0n);
+    const usdDelta = Number(rawItem.usdDelta ?? 0);
+
+    // Determine asset and signed amount
+    let asset = 'COINS';
+    let signedAmount = 0;
+    if (coinDelta !== 0n) {
+      asset = 'COINS';
+      signedAmount = Number(coinDelta);
+    } else if (diamondDelta !== 0n) {
+      asset = 'DIAMONDS';
+      signedAmount = Number(diamondDelta);
+    } else if (usdDelta !== 0) {
+      asset = 'USD';
+      signedAmount = usdDelta;
+    }
+
+    const direction = signedAmount >= 0 ? 'INCOME' : 'EXPENSE';
+    const absAmount = Math.abs(signedAmount);
+
+    // Parse integer balance before and after
+    let coinBalanceBefore = 0;
+    let coinBalanceAfter = 0;
+    if (rawItem.balanceBefore && typeof rawItem.balanceBefore === 'object') {
+      coinBalanceBefore = Number(rawItem.balanceBefore.coins ?? 0);
+    }
+    if (rawItem.balanceAfter && typeof rawItem.balanceAfter === 'object') {
+      coinBalanceAfter = Number(rawItem.balanceAfter.coins ?? 0);
+    }
+
+    // Default counterparty & description
+    let targetUserId = null;
+    let counterparty = null;
+    let description = `${asset} ${rawItem.transactionType || 'TRANSACTION'}`;
+    let category = rawItem.transactionType || 'TRANSACTION';
+
+    const refId = rawItem.referenceId || '';
+
+    // Handle SEL-RCHG (Agency Seller Recharge)
+    if (refId.startsWith('SEL-RCHG')) {
+      category = 'RECHARGE';
+      const siblings = refToLedgersMap.get(refId) || [];
+      const notif = notifMap.get(refId);
+      const notifMeta = notif?.dataJson && typeof notif.dataJson === 'object' ? notif.dataJson : {};
+
+      if (coinDelta > 0n) {
+        // Current user is the recipient receiving coins from a seller -> Income +N
+        const sellerEntry = siblings.find((s) => BigInt(s.coinDelta ?? 0n) === 0n && s.wallet?.userId !== currentUserId);
+        const sellerUser = sellerEntry?.wallet?.user;
+
+        const sellerPublicId = notifMeta.sellerPublicId || sellerUser?.username || 'Coin Seller';
+        const sellerDisplayName = notifMeta.sellerName || sellerUser?.profile?.displayName || sellerPublicId;
+        const sellerAvatar = sellerUser?.avatarUrl || null;
+
+        targetUserId = sellerPublicId;
+        counterparty = {
+          id: sellerUser?.id || null,
+          username: sellerPublicId,
+          displayName: sellerDisplayName,
+          avatarUrl: sellerAvatar,
+        };
+        description = `Coins Recharged by ${sellerDisplayName} (@${sellerPublicId})`;
+      } else {
+        // Current user is the seller transferring coins
+        const recipientEntry = siblings.find((s) => BigInt(s.coinDelta ?? 0n) > 0n && s.wallet?.userId !== currentUserId);
+        const recipientUser = recipientEntry?.wallet?.user;
+
+        const recipientPublicId = recipientUser?.username || 'Recipient';
+        const recipientDisplayName = recipientUser?.profile?.displayName || recipientPublicId;
+        const recipientAvatar = recipientUser?.avatarUrl || null;
+
+        targetUserId = recipientPublicId;
+        counterparty = {
+          id: recipientUser?.id || null,
+          username: recipientPublicId,
+          displayName: recipientDisplayName,
+          avatarUrl: recipientAvatar,
+        };
+        description = `Agency Recharge to ${recipientDisplayName} (@${recipientPublicId})`;
+      }
+    } else if (rawItem.transactionType === 'RECHARGE') {
+      category = 'RECHARGE';
+      targetUserId = 'Online Gateway';
+      counterparty = { id: null, username: 'Payment Gateway', displayName: 'Online Recharge', avatarUrl: null };
+      description = 'Coin Package Online Recharge';
+    } else if (rawItem.transactionType === 'GIFT_SENT') {
+      category = 'GIFT_SENT';
+      description = 'Room Gift Sent';
+      targetUserId = 'Room Host';
+    } else if (rawItem.transactionType === 'GIFT_RECEIVED') {
+      category = 'GIFT_RECEIVED';
+      description = 'Room Gift Received';
+      targetUserId = 'Room Supporter';
+    } else if (rawItem.transactionType === 'SWAP') {
+      category = 'SWAP';
+      description = 'Store Purchase / Coins Exchanged';
+      targetUserId = 'ZeParty Store';
+      counterparty = { id: null, username: 'Store', displayName: 'ZeParty Store', avatarUrl: null };
+    } else if (rawItem.transactionType === 'ADMIN_ADJUSTMENT') {
+      category = 'ADMIN_ADJUSTMENT';
+      description = 'Administrative Balance Adjustment';
+      targetUserId = 'ZeParty System';
+      counterparty = { id: null, username: 'System', displayName: 'ZeParty System', avatarUrl: null };
+    } else if (rawItem.transactionType === 'RESELLER_ALLOCATION') {
+      category = 'RESELLER_ALLOCATION';
+      description = 'Wholesale Reseller Quota Allocation';
+      targetUserId = 'ZeParty System';
+    } else if (rawItem.transactionType === 'WITHDRAWAL') {
+      category = 'WITHDRAWAL';
+      description = 'Diamond Host Payout Withdrawal';
+      targetUserId = 'Bank / Payout Account';
+    }
+
+    return {
+      ...item,
+      id: rawItem.id,
+      amount: signedAmount,
+      absAmount,
+      direction,
+      type: category,
+      transactionType: rawItem.transactionType,
+      category,
+      asset,
+      currency: asset,
+      title: description,
+      description,
+      targetUserId: targetUserId || 'ZeParty System',
+      counterparty,
+      balanceBefore: coinBalanceBefore,
+      balanceAfter: coinBalanceAfter,
+      balanceBeforeDetails: item.balanceBefore,
+      balanceAfterDetails: item.balanceAfter,
+      referenceId: rawItem.referenceId,
+      status: 'Completed',
+      createdAt: rawItem.createdAt instanceof Date ? rawItem.createdAt.toISOString() : String(rawItem.createdAt),
+      date: rawItem.createdAt instanceof Date ? rawItem.createdAt.toISOString() : String(rawItem.createdAt),
+    };
+  });
+}
+
+/**
+ * Retrieves paginated authoritative ledger history for a user's wallet.
+ */
+export async function getWalletLedger(
+  userId,
+  { page = 1, limit = 20, type = null, asset = null, tab = null, startDate = null, endDate = null } = {},
+  db = prisma
+) {
+  const wallet = await walletRepository.findByUserId(userId, db);
   if (!wallet) {
     const error = new Error('Wallet not found');
     error.status = 404;
@@ -47,16 +258,23 @@ export async function getWalletLedger(userId, { page = 1, limit = 20, type = nul
     throw error;
   }
 
-  const items = await ledgerRepository.findByWalletId(wallet.id, { page, limit, type });
-  const total = await ledgerRepository.countByWalletId(wallet.id, { type });
+  const rawItems = await ledgerRepository.findByWalletId(wallet.id, { page, limit, type, asset, tab, startDate, endDate }, db);
+  const total = await ledgerRepository.countByWalletId(wallet.id, { type, asset, tab, startDate, endDate }, db);
+
+  const enrichedItems = await enrichLedgerEntries(rawItems, userId, db);
+
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
 
   return {
-    items: items.map((item) => sanitizeFinancial(item)),
+    items: enrichedItems,
     pagination: {
-      page: Number(page),
-      limit: Number(limit),
+      page: pageNum,
+      limit: limitNum,
       total,
-      totalPages: Math.ceil(total / limit) || 1,
+      totalPages: Math.ceil(total / limitNum) || 1,
+      hasNextPage: pageNum < Math.ceil(total / limitNum),
+      hasPrevPage: pageNum > 1,
     },
   };
 }
@@ -446,47 +664,48 @@ export async function getTransferReceivers({ userId, search = '', type = 'ALL' }
 
 /**
  * Module 30: Wallet Coin Records (All, Income [+], Expenses [−])
+ * Queries authoritative WalletLedger entries, isolating personal coin transactions
+ * from wholesale reseller inventory movements.
  */
-export async function getCoinRecords(userId, { tab = 'ALL', page = 1, limit = 20 } = {}, db = prisma) {
-  const tabs = ['ALL', 'INCOME', 'EXPENSES'];
-  const mockCoinRecords = [
-    {
-      id: 'rec_coin_01',
-      type: 'INCOME',
-      description: 'Coin Package Recharge',
-      amount: '+50,000',
-      currency: 'COINS',
-      status: 'SUCCESSFUL',
-      date: new Date(Date.now() - 1800000).toISOString(),
-    },
-    {
-      id: 'rec_coin_02',
-      type: 'EXPENSES',
-      description: 'Room Gift Sent (Danial Khan to Sophia Rose)',
-      amount: '-10,000',
-      currency: 'COINS',
-      status: 'SUCCESSFUL',
-      date: new Date(Date.now() - 3600000).toISOString(),
-    },
-    {
-      id: 'rec_coin_03',
-      type: 'INCOME',
-      description: 'Lucky Gift Multiplier Reward (10x)',
-      amount: '+25,000',
-      currency: 'COINS',
-      status: 'SUCCESSFUL',
-      date: new Date(Date.now() - 7200000).toISOString(),
-    },
-  ];
+export async function getCoinRecords(
+  userId,
+  { tab = 'ALL', page = 1, limit = 20, type = null, startDate = null, endDate = null } = {},
+  db = prisma
+) {
+  const activeTab = (tab || 'ALL').toUpperCase();
+  const validTabs = ['ALL', 'INCOME', 'EXPENSES'];
 
-  const filtered = tab === 'ALL' ? mockCoinRecords : mockCoinRecords.filter((r) => r.type === tab);
+  const ledgerResult = await getWalletLedger(
+    userId,
+    {
+      page,
+      limit,
+      type,
+      asset: 'COINS', // Strictly isolate personal coins: coinDelta !== 0n
+      tab: activeTab === 'ALL' ? null : activeTab,
+      startDate,
+      endDate,
+    },
+    db
+  );
 
   return {
-    tabs,
-    activeTab: tab,
-    items: filtered,
-    pagination: { page: Number(page), limit: Number(limit), total: filtered.length },
+    tabs: validTabs,
+    activeTab,
+    items: ledgerResult.items,
+    pagination: ledgerResult.pagination,
   };
+}
+
+export async function reconcileWallet(userId, db = prisma) {
+  const wallet = await walletRepository.findByUserId(userId, db);
+  if (!wallet) {
+    const error = new Error('Wallet not found');
+    error.status = 404;
+    error.code = 'WALLET_NOT_FOUND';
+    throw error;
+  }
+  return await ledgerRepository.reconcileWalletBalances(wallet.id, db);
 }
 
 export default {
@@ -500,4 +719,5 @@ export default {
   getDiamondDetails,
   getTransferReceivers,
   getCoinRecords,
+  reconcileWallet,
 };

@@ -3,6 +3,7 @@ import authenticate from '../middlewares/authenticate.js';
 import requirePermission from '../middlewares/requirePermission.js';
 import userController from '../controllers/user.controller.js';
 import socialController from '../controllers/social.controller.js';
+import roomController from '../controllers/room.controller.js';
 import { optionalAuthenticate } from '../middlewares/authenticate.js';
 
 export const adminUserRouter = express.Router();
@@ -96,6 +97,8 @@ userProfileRouter.get('/me/privacy-settings', authenticate, userController.getUs
 userProfileRouter.put('/me/privacy-settings', authenticate, userController.putUserPrivacySettings);
 userProfileRouter.get('/me/visitors', authenticate, socialController.getProfileVisitors);
 userProfileRouter.get('/me/visited', authenticate, socialController.getProfileVisited);
+userProfileRouter.get('/me/rooms', authenticate, roomController.getUserJoinedRooms);
+userProfileRouter.get('/me/joined-rooms', authenticate, roomController.getUserJoinedRooms);
 userProfileRouter.put('/profile', authenticate, userController.putMyProfile);
 userProfileRouter.patch('/profile', authenticate, userController.putMyProfile);
 userProfileRouter.post('/delete-account', authenticate, userController.deleteSelfAccount);
@@ -113,6 +116,10 @@ userProfileRouter.post('/:id/follow', authenticate, socialController.postFollow)
 userProfileRouter.delete('/:id/follow', authenticate, socialController.deleteFollow);
 userProfileRouter.get('/:id/followers', optionalAuthenticate, socialController.getFollowers);
 userProfileRouter.get('/:id/following', optionalAuthenticate, socialController.getFollowing);
+userProfileRouter.get('/:id/visitors', authenticate, socialController.getProfileVisitors);
+userProfileRouter.get('/:id/visited', authenticate, socialController.getProfileVisited);
+userProfileRouter.get('/:id/rooms', optionalAuthenticate, roomController.getUserJoinedRooms);
+userProfileRouter.get('/:id/joined-rooms', optionalAuthenticate, roomController.getUserJoinedRooms);
 userProfileRouter.post('/:id/block', authenticate, socialController.postBlock);
 userProfileRouter.delete('/:id/block', authenticate, socialController.deleteBlock);
 

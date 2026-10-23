@@ -159,8 +159,14 @@ export async function getNotifications(userId, query = {}, db = prisma) {
     throw error;
   }
 
-  return await notificationRepository.findUserNotifications(userId, query, db);
+  const result = await notificationRepository.findUserNotifications(userId, query, db);
+  return {
+    ...result,
+    notifications: result.items || [],
+  };
 }
+
+export const getUserNotifications = getNotifications;
 
 /**
  * Calculates authoritative unread notification count.
@@ -250,11 +256,227 @@ export async function deleteNotification(id, userId, db = prisma) {
   return { success: true, message: 'Notification deleted successfully' };
 }
 
+/**
+ * Formats a BigInt or numeric coin amount into a localized string with commas.
+ * (e.g. 100000 -> "100,000")
+ */
+export function formatCoins(amount) {
+  if (amount === undefined || amount === null) return '0';
+  return amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+// In-memory concurrency lock to prevent race conditions during simultaneous notification processing
+const inflightRechargeLocks = new Map();
+
+/**
+ * Sends a persistent system notification to the recipient of a confirmed coin recharge.
+ * 
+ * Required exact message format:
+ * "[Seller Name] (ID: [Seller ID]) has recharged [Amount] coins to your account. Transaction ID: [Transaction ID]."
+ * Example:
+ * "Ali (ID: 7654321) has recharged 100,000 coins to your account. Transaction ID: SEL-RCHG-1729512345678-ABCD."
+ *
+ * @param {Object} params
+ * @param {string} params.recipientId - Recipient's internal account/user ID
+ * @param {string} [params.sellerUserId] - Seller's internal user ID
+ * @param {string} params.sellerName - Authoritative seller display name or business name
+ * @param {string} params.sellerPublicId - Authoritative seller public user ID
+ * @param {number|string|BigInt} params.amountCoins - Exact coin amount
+ * @param {string} params.transactionId - Authoritative transaction reference ID
+ * @param {Date|string} [params.timestamp] - Server-generated creation timestamp
+ * @param {Object} [db] - Prisma client or transaction instance
+ */
+export async function sendRechargeNotification(
+  {
+    recipientId,
+    sellerUserId = null,
+    sellerName,
+    sellerPublicId,
+    amountCoins,
+    transactionId,
+    timestamp = new Date(),
+  },
+  db = prisma
+) {
+  if (!recipientId) {
+    const error = new Error('Recipient ID is required for recharge notification');
+    error.statusCode = 400;
+    error.code = 'INVALID_RECIPIENT_ID';
+    throw error;
+  }
+
+  if (!transactionId) {
+    const error = new Error('Transaction ID is required for recharge notification');
+    error.statusCode = 400;
+    error.code = 'INVALID_TRANSACTION_ID';
+    throw error;
+  }
+
+  const cleanSellerName = (sellerName && String(sellerName).trim()) || 'Authorized Seller';
+  const cleanSellerPublicId = (sellerPublicId && String(sellerPublicId).trim()) || 'Unknown';
+  const formattedCoins = formatCoins(amountCoins);
+
+  // Exact required message format:
+  // "[Seller Name] (ID: [Seller ID]) has recharged [Amount] coins to your account. Transaction ID: [Transaction ID]."
+  const title = 'Coins Recharged';
+  const body = `${cleanSellerName} (ID: ${cleanSellerPublicId}) has recharged ${formattedCoins} coins to your account. Transaction ID: ${transactionId}.`;
+
+  const lockKey = `${recipientId}:RECHARGE:${transactionId}`;
+  if (inflightRechargeLocks.has(lockKey)) {
+    try {
+      const lockedNotification = await inflightRechargeLocks.get(lockKey);
+      if (lockedNotification) {
+        return {
+          success: true,
+          notification: lockedNotification,
+          isDuplicate: true,
+        };
+      }
+    } catch (_) {}
+
+    const existingAfterWait = await notificationRepository.findExistingNotification(
+      {
+        userId: recipientId,
+        type: 'SYSTEM',
+        sourceType: 'RECHARGE',
+        sourceId: transactionId,
+      },
+      db
+    );
+    if (existingAfterWait) {
+      return {
+        success: true,
+        notification: existingAfterWait,
+        isDuplicate: true,
+      };
+    }
+  }
+
+  let resolveLock;
+  let rejectLock;
+  const lockPromise = new Promise((resolve, reject) => {
+    resolveLock = resolve;
+    rejectLock = reject;
+  });
+  inflightRechargeLocks.set(lockKey, lockPromise);
+
+  try {
+    // Idempotency check: strictly one persistent message per transaction & recipient
+    const existing = await notificationRepository.findExistingNotification(
+      {
+        userId: recipientId,
+        type: 'SYSTEM',
+        sourceType: 'RECHARGE',
+        sourceId: transactionId,
+      },
+      db
+    );
+
+    if (existing) {
+      resolveLock(existing);
+      return {
+        success: true,
+        notification: existing,
+        isDuplicate: true,
+      };
+    }
+
+    // Create persistent notification record in PostgreSQL
+    const notification = await notificationRepository.createNotification(
+      {
+        userId: recipientId,
+        title,
+        body,
+        type: 'SYSTEM',
+        category: 'Recharge',
+        dataJson: {
+          notificationType: 'RECHARGE_SUCCESS',
+          transactionId,
+          referenceId: transactionId,
+          amountCoins: String(amountCoins),
+          sellerUserId: sellerUserId || null,
+          sellerPublicId: cleanSellerPublicId,
+          sellerName: cleanSellerName,
+          recipientUserId: recipientId,
+          createdAt: (timestamp instanceof Date ? timestamp : new Date(timestamp)).toISOString(),
+        },
+        sourceType: 'RECHARGE',
+        sourceId: transactionId,
+        deliveryStatus: 'DELIVERED',
+      },
+      db
+    );
+
+    resolveLock(notification);
+    return {
+      success: true,
+      notification,
+      isDuplicate: false,
+    };
+  } catch (err) {
+    rejectLock(err);
+    throw err;
+  } finally {
+    inflightRechargeLocks.delete(lockKey);
+  }
+}
+
+/**
+ * Dispatches post-commit real-time Socket.IO emission and background FCM push.
+ * Completely decoupled from the financial transaction and database persistence.
+ * Safe against transport or device errors.
+ */
+export async function dispatchRechargeRealtimeNotifications(
+  {
+    recipientId,
+    notification,
+  },
+  db = prisma
+) {
+  if (!recipientId || !notification) return;
+
+  // 1. Emit Realtime Socket.IO event to recipient's private room
+  try {
+    socketEmitter.emitToUser(recipientId, SOCKET_EVENTS.NOTIFICATION_NEW, {
+      id: notification.id,
+      title: notification.title,
+      body: notification.body,
+      type: notification.type,
+      category: notification.category,
+      data: notification.dataJson,
+      isRead: false,
+      createdAt: notification.createdAt?.toISOString?.() || new Date().toISOString(),
+    });
+  } catch (socketErr) {
+    console.error('Failed to emit realtime recharge notification socket event:', socketErr);
+  }
+
+  // 2. Asynchronous FCM Push (Push failures must never affect persistent notification)
+  try {
+    await dispatchFcmPush(
+      {
+        userId: recipientId,
+        title: notification.title,
+        body: notification.body,
+        data: notification.dataJson || {},
+      },
+      db
+    );
+  } catch (fcmErr) {
+    console.error('Failed to dispatch recharge push notification:', fcmErr);
+  }
+}
+
 export default {
   sendNotification,
+  sendRechargeNotification,
+  dispatchRechargeRealtimeNotifications,
+  formatCoins,
   getNotifications,
+  getUserNotifications,
   getUnreadCount,
   markAsRead,
   markAllAsRead,
   deleteNotification,
 };
+

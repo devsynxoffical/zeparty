@@ -6,6 +6,7 @@ import {
   allocateSellerCoinsSchema,
   correctSellerBalanceSchema,
   querySellersSchema,
+  publicSellersQuerySchema,
   sellerTransferCoinsSchema,
   verifyRecipientQuerySchema,
 } from '../validators/seller.validator.js';
@@ -21,12 +22,13 @@ export async function getPublicSellers(req, res, next) {
       });
     }
 
-    const { page, limit, search, q } = req.query;
+    const validated = publicSellersQuerySchema.parse(req.query);
+    const searchVal = (validated.search || validated.q || '').trim();
     const result = await sellerService.getEligibleSellersForUser({
       userId,
-      search: (search || q || '').trim(),
-      page: page ? Number(page) : 1,
-      limit: limit ? Number(limit) : 20,
+      search: searchVal,
+      page: validated.page,
+      limit: validated.limit,
     });
 
     return res.status(200).json({
@@ -47,29 +49,51 @@ export async function getSellerByIdAndVerify(req, res, next) {
     const { id } = req.params;
     const { seller, sellerCountry } = await sellerService.validateSellerEligibility(id, clientUserId);
 
+    const linkedUser = seller.user || {};
+    const publicId = /^[1-9]\d{6}$/.test(linkedUser.id)
+      ? linkedUser.id
+      : (linkedUser.username && /^\d+$/.test(linkedUser.username) ? linkedUser.username : linkedUser.id || seller.userId);
+    const realNickname = linkedUser.profile?.displayName || linkedUser.username || seller.businessName || 'Authorized Seller';
+    const profileImg = linkedUser.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80';
+
     return res.status(200).json({
       success: true,
       data: {
         id: seller.id,
         sellerId: seller.id,
         userId: seller.userId,
-        name: seller.businessName || seller.user?.profile?.displayName || seller.user?.username || 'Authorized Seller',
+        publicUserId: publicId,
+        publicId: publicId,
+        name: seller.businessName || realNickname,
+        nickname: realNickname,
+        displayName: realNickname,
         businessName: seller.businessName,
-        avatarUrl: seller.user?.avatarUrl || '',
+        profileImage: profileImg,
+        avatarUrl: linkedUser.avatarUrl || profileImg,
         region: sellerCountry.name,
         country: sellerCountry.code,
         countryCode: sellerCountry.code,
+        countryName: sellerCountry.name,
+        countryLabel: sellerCountry.label || sellerCountry.name,
+        countryFlag: sellerCountry.flag,
         type: 'official',
         status: 'approved',
+        sellerStatus: seller.sellerStatus,
         isVisible: true,
         paymentMethods: ['Direct Transfer', 'Bank Transfer'],
-        stockCoins: Number(seller.resellerBalanceCoins || seller.user?.wallet?.sellerBalanceCoins || 0),
+        stockCoins: Number(seller.resellerBalanceCoins || linkedUser.wallet?.sellerBalanceCoins || 0),
         user: {
-          id: seller.user?.id,
-          username: seller.user?.username,
-          displayName: seller.user?.profile?.displayName || seller.user?.username,
-          avatarUrl: seller.user?.avatarUrl,
+          id: linkedUser.id,
+          publicUserId: publicId,
+          publicId: publicId,
+          username: linkedUser.username,
+          nickname: realNickname,
+          displayName: realNickname,
+          profileImage: profileImg,
+          avatarUrl: linkedUser.avatarUrl || profileImg,
           countryCode: sellerCountry.code,
+          countryName: sellerCountry.name,
+          countryFlag: sellerCountry.flag,
           region: sellerCountry.name,
         },
       },
@@ -328,7 +352,8 @@ export async function getMySellerPortal(req, res, next) {
 export async function verifyRecipient(req, res, next) {
   try {
     const validated = verifyRecipientQuerySchema.parse(req.query);
-    const recipient = await sellerService.verifyRechargeRecipient(validated.userId);
+    const identifier = validated.userId || validated.publicUserId || validated.identifier || validated.id;
+    const recipient = await sellerService.verifyRechargeRecipient(identifier);
 
     return res.status(200).json({
       success: true,
@@ -366,6 +391,72 @@ export async function transferCoins(req, res, next) {
   }
 }
 
+export async function getRechargeHistory(req, res, next) {
+  try {
+    const sellerUserId = req.auth?.userId;
+    if (!sellerUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const { page = 1, limit = 20, status, search, q, startDate, endDate } = req.query;
+    const result = await sellerService.getSellerRechargeHistory(sellerUserId, {
+      page,
+      limit,
+      status,
+      search: search || q,
+      startDate,
+      endDate,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Recharge history retrieved successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAdminSellerHistory(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { page = 1, limit = 20, status, search, q, startDate, endDate } = req.query;
+    const result = await sellerService.getSellerRechargeHistory(id, {
+      page,
+      limit,
+      status,
+      search: search || q,
+      startDate,
+      endDate,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Seller recharge history retrieved successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRechargeStatus(req, res, next) {
+  try {
+    const { id } = req.params;
+    const sellerUserId = req.auth?.userId;
+    const result = await sellerService.getRechargeTransactionStatus(id, sellerUserId);
+    const statusCode = result.found ? 200 : 404;
+    return res.status(statusCode).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getPublicSellers,
   getSellerByIdAndVerify,
@@ -380,5 +471,8 @@ export default {
   verifyRecipient,
   getMySellerPortal,
   transferCoins,
+  getRechargeHistory,
+  getAdminSellerHistory,
+  getRechargeStatus,
 };
 

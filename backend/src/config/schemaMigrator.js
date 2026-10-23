@@ -7,6 +7,18 @@ import prisma from './database.js';
 export async function ensureDatabaseSchema(db = prisma) {
   console.log('🔄 Verifying and synchronizing database schema DDL...');
 
+  // Warm-up database connection with retry
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      await db.$queryRaw`SELECT 1`;
+      break;
+    } catch (e) {
+      if (attempt === 5) throw e;
+      console.log(`  Waiting for DB connection... (attempt ${attempt}/5)`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+
   // 1. Ensure PKStatus enum values
   const pkEnums = [
     'PENDING',
@@ -537,6 +549,115 @@ export async function ensureDatabaseSchema(db = prisma) {
     }
   } catch (err) {
     console.warn('RechargeRewards event bootstrap note:', err.message);
+  }
+
+  // 17. NEW 10: Host Target Persistent Attribution, Reversals, and Reconciliation Tables
+  try {
+    await db.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "HostTargetAttribution" (
+        "id" TEXT PRIMARY KEY,
+        "giftTransactionId" TEXT NOT NULL,
+        "recipientUserId" TEXT NOT NULL,
+        "hostProfileId" TEXT,
+        "agencyId" TEXT,
+        "targetScope" TEXT NOT NULL,
+        "cycleIdentifier" TEXT NOT NULL,
+        "cycleStartDate" TIMESTAMP(3) NOT NULL,
+        "cycleEndDate" TIMESTAMP(3) NOT NULL,
+        "originalCoinValue" BIGINT NOT NULL,
+        "giftCategory" TEXT NOT NULL DEFAULT 'POPULAR',
+        "isLucky" BOOLEAN NOT NULL DEFAULT false,
+        "quantity" INTEGER NOT NULL DEFAULT 1,
+        "grossCoins" BIGINT NOT NULL,
+        "targetCoins" BIGINT NOT NULL,
+        "status" TEXT NOT NULL DEFAULT 'ATTRIBUTED',
+        "reversalReferenceId" TEXT,
+        "reversalReason" TEXT,
+        "reversedAt" TIMESTAMP(3),
+        "reconciledAt" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await db.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "HostTargetAttribution_giftTransactionId_key" ON "HostTargetAttribution"("giftTransactionId");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "HostTargetAttribution_recipientUserId_cycleIdentifier_idx" ON "HostTargetAttribution"("recipientUserId", "cycleIdentifier");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "HostTargetAttribution_agencyId_cycleIdentifier_idx" ON "HostTargetAttribution"("agencyId", "cycleIdentifier");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "HostTargetAttribution_status_idx" ON "HostTargetAttribution"("status");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "HostTargetAttribution_cycleIdentifier_idx" ON "HostTargetAttribution"("cycleIdentifier");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "HostTargetAttribution_createdAt_idx" ON "HostTargetAttribution"("createdAt");`);
+
+    await db.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "HostTargetReversal" (
+        "id" TEXT PRIMARY KEY,
+        "attributionId" TEXT NOT NULL,
+        "giftTransactionId" TEXT NOT NULL,
+        "recipientUserId" TEXT NOT NULL,
+        "hostProfileId" TEXT,
+        "agencyId" TEXT,
+        "targetScope" TEXT NOT NULL,
+        "cycleIdentifier" TEXT NOT NULL,
+        "deductedCoins" BIGINT NOT NULL,
+        "reason" TEXT NOT NULL,
+        "referenceId" TEXT NOT NULL,
+        "reversedByAdminId" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await db.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "HostTargetReversal_referenceId_key" ON "HostTargetReversal"("referenceId");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "HostTargetReversal_attributionId_idx" ON "HostTargetReversal"("attributionId");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "HostTargetReversal_giftTransactionId_idx" ON "HostTargetReversal"("giftTransactionId");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "HostTargetReversal_recipientUserId_idx" ON "HostTargetReversal"("recipientUserId");`);
+
+    await db.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "TargetReconciliationRun" (
+        "id" TEXT PRIMARY KEY,
+        "runIdentifier" TEXT NOT NULL,
+        "executionMode" TEXT NOT NULL,
+        "targetPeriod" TEXT NOT NULL,
+        "hostType" TEXT NOT NULL DEFAULT 'ALL',
+        "targetUserId" TEXT,
+        "agencyId" TEXT,
+        "transactionsExamined" INTEGER NOT NULL DEFAULT 0,
+        "alreadyAttributedCount" INTEGER NOT NULL DEFAULT 0,
+        "missingAttributionsFound" INTEGER NOT NULL DEFAULT 0,
+        "attributionsCreated" INTEGER NOT NULL DEFAULT 0,
+        "discrepanciesFound" INTEGER NOT NULL DEFAULT 0,
+        "correctionsApplied" INTEGER NOT NULL DEFAULT 0,
+        "unresolvedCount" INTEGER NOT NULL DEFAULT 0,
+        "status" TEXT NOT NULL DEFAULT 'COMPLETED',
+        "summaryReportJson" JSONB NOT NULL,
+        "executedByAdminId" TEXT NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await db.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "TargetReconciliationRun_runIdentifier_key" ON "TargetReconciliationRun"("runIdentifier");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "TargetReconciliationRun_executionMode_idx" ON "TargetReconciliationRun"("executionMode");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "TargetReconciliationRun_status_idx" ON "TargetReconciliationRun"("status");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "TargetReconciliationRun_createdAt_idx" ON "TargetReconciliationRun"("createdAt");`);
+    console.log('✅ NEW 10: HostTargetAttribution, HostTargetReversal, and TargetReconciliationRun schema verified');
+  } catch (err) {
+    console.warn('Target attribution DDL note:', err.message);
+  }
+
+  // 17. Ensure ProfileVisit table and indexes exist (NEW-16)
+  try {
+    await db.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "ProfileVisit" (
+        "id" TEXT PRIMARY KEY,
+        "visitorId" TEXT NOT NULL,
+        "visitedId" TEXT NOT NULL,
+        "isMystery" BOOLEAN NOT NULL DEFAULT false,
+        "visitedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await db.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "ProfileVisit_visitorId_visitedId_key" ON "ProfileVisit"("visitorId", "visitedId");`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ProfileVisit_visitedId_visitedAt_idx" ON "ProfileVisit"("visitedId", "visitedAt" DESC);`);
+    await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ProfileVisit_visitorId_visitedAt_idx" ON "ProfileVisit"("visitorId", "visitedAt" DESC);`);
+    console.log('✅ NEW 16: ProfileVisit schema verified');
+  } catch (err) {
+    console.warn('ProfileVisit DDL note:', err.message);
   }
 
   console.log('✅ Database schema and platform analytics verified and synchronized successfully');

@@ -28,6 +28,7 @@ import { usePermission } from '../../hooks/usePermission';
 import { useAuditLog } from '../../context/AuditLogContext';
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryShortName } from '../../constants/countries.data';
+import { TargetReconciliationPanel } from '../../components/hosts/TargetReconciliationPanel';
 
 function PolicyOverviewCard() {
   const [policyType, setPolicyType] = useState('LIVE');
@@ -774,37 +775,56 @@ export function HostsPage() {
             </span>
           )}
         </button>
+        <button
+          onClick={() => {
+            setActiveTab('reconciliation');
+            setSearch('');
+            setSearchParams((prev) => {
+              const n = new URLSearchParams(prev);
+              n.set('tab', 'reconciliation');
+              return n;
+            });
+          }}
+          className={`pb-3 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
+            activeTab === 'reconciliation' ? 'text-gold-400 border-gold-500' : 'text-slate-400 border-transparent hover:text-white'
+          }`}
+        >
+          <ShieldAlert className="w-4 h-4 text-amber-400" />
+          <span>Target Reconciliation & Reliability</span>
+        </button>
       </div>
 
-      {/* Filter Bar */}
-      <Card className="p-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
-        <Input
-          placeholder="Search by Host ID, name, username, or agency..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          leftIcon={Search}
-          containerClassName="flex-1 max-w-md"
-        />
+      {/* Filter Bar (for management and applications) */}
+      {activeTab !== 'reconciliation' && (
+        <Card className="p-4 flex flex-col md:flex-row gap-3 items-stretch md:items-center justify-between">
+          <Input
+            placeholder="Search by Host ID, name, username, or agency..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            leftIcon={Search}
+            containerClassName="flex-1 max-w-md"
+          />
 
-        <div className="flex items-center gap-2">
-          {activeTab === 'applications' && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 font-bold">Status:</span>
-              {['all', 'pending', 'approved', 'rejected'].map((st) => (
-                <button
-                  key={st}
-                  onClick={() => setStatusFilter(st)}
-                  className={`px-2 py-1 rounded text-xs font-medium uppercase border ${
-                    statusFilter === st ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {st}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </Card>
+          <div className="flex items-center gap-2">
+            {activeTab === 'applications' && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 font-bold">Status:</span>
+                {['all', 'pending', 'approved', 'rejected'].map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => setStatusFilter(st)}
+                    className={`px-2 py-1 rounded text-xs font-medium uppercase border ${
+                      statusFilter === st ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
 
       {/* Data tables */}
       {activeTab === 'management' && (
@@ -824,6 +844,13 @@ export function HostsPage() {
           isLoading={isLoading}
           emptyTitle="No Host Applications"
           emptyDescription="There are no applications matching the filters."
+        />
+      )}
+
+      {activeTab === 'reconciliation' && (
+        <TargetReconciliationPanel
+          showFeedback={showFeedback}
+          activeHosts={activeHosts}
         />
       )}
 

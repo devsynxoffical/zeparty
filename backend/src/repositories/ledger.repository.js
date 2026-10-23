@@ -56,34 +56,185 @@ export async function createEntry(
 
 /**
  * Retrieves paginated ledger history for a specific wallet.
+ * Supports asset-level isolation (e.g. personal coins vs diamonds) and income/expense tab filtering,
+ * with deterministic secondary sorting for stable pagination.
  */
 export async function findByWalletId(
   walletId,
-  { page = 1, limit = 20, type = null },
+  { page = 1, limit = 20, type = null, asset = null, tab = null, startDate = null, endDate = null } = {},
   db = prisma
 ) {
-  const pageNum = parseInt(page, 10) || 1;
-  const limitNum = parseInt(limit, 10) || 20;
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
   const where = { walletId };
   if (type) where.transactionType = type;
 
-  const skip = (Math.max(1, pageNum) - 1) * limitNum;
+  // Date range filtering
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate);
+    if (endDate) where.createdAt.lte = new Date(endDate);
+  }
+
+  // Isolate personal coin transactions from wholesale inventory or diamond movements
+  if (asset === 'COINS') {
+    where.coinDelta = { not: 0n };
+  } else if (asset === 'DIAMONDS') {
+    where.diamondDelta = { not: 0n };
+  }
+
+  // Direction filtering for tabs
+  const upperTab = (tab || '').toUpperCase();
+  if (upperTab === 'INCOME') {
+    if (asset === 'DIAMONDS') {
+      where.diamondDelta = { gt: 0n };
+    } else {
+      where.coinDelta = { gt: 0n };
+    }
+  } else if (upperTab === 'EXPENSES' || upperTab === 'EXPENSE') {
+    if (asset === 'DIAMONDS') {
+      where.diamondDelta = { lt: 0n };
+    } else {
+      where.coinDelta = { lt: 0n };
+    }
+  }
+
+  const skip = (pageNum - 1) * limitNum;
 
   return await db.walletLedger.findMany({
     where,
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     skip,
     take: limitNum,
   });
 }
 
 /**
- * Counts ledger records for a specific wallet.
+ * Counts ledger records for a specific wallet matching query filters.
  */
-export async function countByWalletId(walletId, { type = null }, db = prisma) {
+export async function countByWalletId(
+  walletId,
+  { type = null, asset = null, tab = null, startDate = null, endDate = null } = {},
+  db = prisma
+) {
   const where = { walletId };
   if (type) where.transactionType = type;
+
+  if (startDate || endDate) {
+    where.createdAt = {};
+    if (startDate) where.createdAt.gte = new Date(startDate);
+    if (endDate) where.createdAt.lte = new Date(endDate);
+  }
+
+  if (asset === 'COINS') {
+    where.coinDelta = { not: 0n };
+  } else if (asset === 'DIAMONDS') {
+    where.diamondDelta = { not: 0n };
+  }
+
+  const upperTab = (tab || '').toUpperCase();
+  if (upperTab === 'INCOME') {
+    if (asset === 'DIAMONDS') {
+      where.diamondDelta = { gt: 0n };
+    } else {
+      where.coinDelta = { gt: 0n };
+    }
+  } else if (upperTab === 'EXPENSES' || upperTab === 'EXPENSE') {
+    if (asset === 'DIAMONDS') {
+      where.diamondDelta = { lt: 0n };
+    } else {
+      where.coinDelta = { lt: 0n };
+    }
+  }
+
   return await db.walletLedger.count({ where });
+}
+
+/**
+ * Performs authoritative dual-assurance balance reconciliation between
+ * stored Wallet balances and aggregated WalletLedger deltas.
+ */
+export async function reconcileWalletBalances(walletId, db = prisma) {
+  const wallet = await db.wallet.findUnique({
+    where: { id: walletId },
+    select: {
+      id: true,
+      userId: true,
+      coinBalance: true,
+      diamondBalance: true,
+      sellerBalanceCoins: true,
+      escrowLockedCoins: true,
+    },
+  });
+
+  if (!wallet) {
+    throw new Error(`Wallet not found for ID: ${walletId}`);
+  }
+
+  const ledgers = await db.walletLedger.findMany({
+    where: { walletId },
+    select: {
+      coinDelta: true,
+      diamondDelta: true,
+      balanceBefore: true,
+      balanceAfter: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  let sumCoinDelta = 0n;
+  let sumDiamondDelta = 0n;
+  let sumSellerDelta = 0n;
+
+  for (const entry of ledgers) {
+    sumCoinDelta += BigInt(entry.coinDelta || 0n);
+    sumDiamondDelta += BigInt(entry.diamondDelta || 0n);
+    if (entry.balanceBefore && entry.balanceAfter) {
+      try {
+        const before = typeof entry.balanceBefore === 'string' ? JSON.parse(entry.balanceBefore) : entry.balanceBefore;
+        const after = typeof entry.balanceAfter === 'string' ? JSON.parse(entry.balanceAfter) : entry.balanceAfter;
+        if (before?.sellerCoins !== undefined && after?.sellerCoins !== undefined) {
+          sumSellerDelta += (BigInt(after.sellerCoins) - BigInt(before.sellerCoins));
+        }
+      } catch (e) {}
+    }
+  }
+
+  const storedCoins = BigInt(wallet.coinBalance || 0n);
+  const storedDiamonds = BigInt(wallet.diamondBalance || 0n);
+  const storedSellerCoins = BigInt(wallet.sellerBalanceCoins || 0n);
+
+  const diffCoins = storedCoins - sumCoinDelta;
+  const diffDiamonds = storedDiamonds - sumDiamondDelta;
+  const diffSellerCoins = storedSellerCoins - sumSellerDelta;
+
+  const isReconciled = diffCoins === 0n && diffDiamonds === 0n;
+
+  return {
+    walletId: wallet.id,
+    userId: wallet.userId,
+    isReconciled,
+    coins: {
+      stored: storedCoins.toString(),
+      derivedFromLedger: sumCoinDelta.toString(),
+      discrepancy: diffCoins.toString(),
+      isMatched: diffCoins === 0n,
+    },
+    diamonds: {
+      stored: storedDiamonds.toString(),
+      derivedFromLedger: sumDiamondDelta.toString(),
+      discrepancy: diffDiamonds.toString(),
+      isMatched: diffDiamonds === 0n,
+    },
+    sellerCoins: {
+      stored: storedSellerCoins.toString(),
+      derivedFromLedger: sumSellerDelta.toString(),
+      discrepancy: diffSellerCoins.toString(),
+      isMatched: diffSellerCoins === 0n,
+    },
+    ledgerEntryCount: ledgers.length,
+    timestamp: new Date().toISOString(),
+  };
 }
 
 /**
@@ -115,13 +266,19 @@ export async function findAll(
             select: {
               id: true,
               username: true,
+              avatarUrl: true,
               userType: true,
+              profile: {
+                select: {
+                  displayName: true,
+                },
+              },
             },
           },
         },
       },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     skip,
     take: limit,
   });
@@ -152,6 +309,8 @@ export default {
   createEntry,
   findByWalletId,
   countByWalletId,
+  reconcileWalletBalances,
+  normalizeLedgerType,
   findAll,
   countAll,
 };

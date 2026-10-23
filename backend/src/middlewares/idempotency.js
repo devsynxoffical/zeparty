@@ -11,11 +11,14 @@ import {
  * If client provides `Idempotency-Key` or `X-Idempotency-Key`, guarantees single execution.
  */
 export function idempotencyMiddleware(req, res, next) {
-  const idempotencyKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'];
+  const rawKey = req.headers['idempotency-key'] || req.headers['x-idempotency-key'] || req.body?.idempotencyKey;
 
-  if (!idempotencyKey || req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+  if (!rawKey || req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
     return next();
   }
+
+  const actorId = req.auth?.userId || req.user?.id || 'public';
+  const idempotencyKey = `${actorId}:${String(rawKey).trim()}`;
 
   const payloadHash = hashPayload(req.body);
 

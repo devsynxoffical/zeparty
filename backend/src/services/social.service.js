@@ -7,6 +7,7 @@ import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
 import * as notificationService from './notification.service.js';
 import presenceService from '../socket/presence.service.js';
+import privacyEligibilityService from './privacyEligibility.service.js';
 
 /**
  * Social & Engagement Service
@@ -618,23 +619,25 @@ export async function followUser(followerId, followingId, db = prisma) {
     throw error;
   }
 
-  if (followerId === followingId) {
-    const error = new Error('You cannot follow yourself');
-    error.statusCode = 400;
-    error.code = 'CANNOT_FOLLOW_SELF';
-    throw error;
-  }
-
-  const targetUser = await socialRepository.findSocialProfile(followingId, db);
-  if (!targetUser) {
+  const targetUser = await socialRepository.resolveCanonicalUser(followingId, db);
+  if (!targetUser || targetUser.status === 'DELETED') {
     const error = new Error('Target user not found');
     error.statusCode = 404;
     error.code = 'USER_NOT_FOUND';
     throw error;
   }
 
+  const canonicalFollowingId = targetUser.id;
+
+  if (followerId === canonicalFollowingId) {
+    const error = new Error('You cannot follow yourself');
+    error.statusCode = 400;
+    error.code = 'CANNOT_FOLLOW_SELF';
+    throw error;
+  }
+
   // Check if blocked
-  const blocked = await socialRepository.isBlocked(followerId, followingId, db);
+  const blocked = await socialRepository.isBlocked(followerId, canonicalFollowingId, db);
   if (blocked) {
     const error = new Error('Cannot follow this user');
     error.statusCode = 403;
@@ -642,7 +645,19 @@ export async function followUser(followerId, followingId, db = prisma) {
     throw error;
   }
 
-  const existing = await socialRepository.findFollow({ followerId, followingId }, db);
+  // Phase 2 Privacy Rule (NEW-058): Check if target user has Anti-Follow enabled & eligible
+  const targetPreferences = await privacyEligibilityService.getUserPreferences(canonicalFollowingId, db);
+  if (targetPreferences?.ANTI_FOLLOW) {
+    const eligibility = await privacyEligibilityService.checkUserEligibility(canonicalFollowingId, 'ANTI_FOLLOW', db);
+    if (eligibility.isEligible) {
+      const error = new Error('This user has enabled Anti-Follow protection and cannot be followed');
+      error.statusCode = 403;
+      error.code = 'ANTI_FOLLOW_ENABLED';
+      throw error;
+    }
+  }
+
+  const existing = await socialRepository.findFollow({ followerId, followingId: canonicalFollowingId }, db);
   if (existing) {
     return { success: true, alreadyFollowing: true, status: existing.status };
   }
@@ -650,14 +665,14 @@ export async function followUser(followerId, followingId, db = prisma) {
   const status = 'ACCEPTED';
 
   try {
-    const follow = await socialRepository.createFollow({ followerId, followingId, status }, db);
+    const follow = await socialRepository.createFollow({ followerId, followingId: canonicalFollowingId, status }, db);
 
     await Promise.all([
       socialRepository.incrementFollowingCount(followerId, db),
-      socialRepository.incrementFollowersCount(followingId, db),
+      socialRepository.incrementFollowersCount(canonicalFollowingId, db),
     ]);
 
-    socketEmitter.emitToUser(followingId, SOCKET_EVENTS.FOLLOW_CREATED, {
+    socketEmitter.emitToUser(canonicalFollowingId, SOCKET_EVENTS.FOLLOW_CREATED, {
       followerId,
       status,
       timestamp: new Date().toISOString(),
@@ -668,7 +683,7 @@ export async function followUser(followerId, followingId, db = prisma) {
       const follower = await userRepository.findUserById(followerId, db);
       const followerName = follower?.profile?.displayName || follower?.username || 'Someone';
       await notificationService.sendNotification({
-        recipientId: followingId,
+        recipientId: canonicalFollowingId,
         title: 'New Follower',
         body: `@${follower?.username || followerName} started following you.`,
         type: 'SOCIAL',
@@ -701,22 +716,25 @@ export async function unfollowUser(followerId, followingId, db = prisma) {
     throw error;
   }
 
-  const existing = await socialRepository.findFollow({ followerId, followingId }, db);
+  const targetUser = await socialRepository.resolveCanonicalUser(followingId, db);
+  const canonicalFollowingId = targetUser?.id || followingId;
+
+  const existing = await socialRepository.findFollow({ followerId, followingId: canonicalFollowingId }, db);
   if (!existing) {
     return { success: true, alreadyUnfollowed: true };
   }
 
   try {
-    await socialRepository.deleteFollow({ followerId, followingId }, db);
+    await socialRepository.deleteFollow({ followerId, followingId: canonicalFollowingId }, db);
 
     if (existing.status === 'ACCEPTED') {
       await Promise.all([
         socialRepository.decrementFollowingCount(followerId, db),
-        socialRepository.decrementFollowersCount(followingId, db),
+        socialRepository.decrementFollowersCount(canonicalFollowingId, db),
       ]);
     }
 
-    socketEmitter.emitToUser(followingId, SOCKET_EVENTS.FOLLOW_REMOVED, {
+    socketEmitter.emitToUser(canonicalFollowingId, SOCKET_EVENTS.FOLLOW_REMOVED, {
       followerId,
       timestamp: new Date().toISOString(),
     });
@@ -731,16 +749,37 @@ export async function unfollowUser(followerId, followingId, db = prisma) {
 }
 
 export async function getFollowers(userId, { viewerUserId = null, page = 1, limit = 20 } = {}, db = prisma) {
-  const profile = await socialRepository.findSocialProfile(userId, db);
-  if (!profile) {
+  const targetUser = await socialRepository.resolveCanonicalUser(userId, db);
+  if (!targetUser || targetUser.status === 'DELETED') {
     const error = new Error('User not found');
     error.statusCode = 404;
     error.code = 'USER_NOT_FOUND';
     throw error;
   }
 
+  // Block check: if viewer is blocked with target user
+  if (viewerUserId && viewerUserId !== targetUser.id) {
+    const blocked = await socialRepository.isBlocked(viewerUserId, targetUser.id, db);
+    if (blocked) {
+      const error = new Error('User not found');
+      error.statusCode = 404;
+      error.code = 'USER_NOT_FOUND';
+      throw error;
+    }
+  }
+
+  const isOwner = Boolean(viewerUserId && (viewerUserId === targetUser.id || viewerUserId === targetUser.username));
+
   // If user turned on private / hidden follow list and viewer is not the profile owner
-  if (profile.profile?.isPrivate && userId !== viewerUserId) {
+  if (targetUser.profile?.isPrivate && !isOwner) {
+    const totalCount = await db.follow.count({
+      where: {
+        followingId: targetUser.id,
+        status: 'ACCEPTED',
+        follower: { status: { not: 'DELETED' } },
+      },
+    });
+
     return {
       followers: [],
       isPrivate: true,
@@ -748,13 +787,13 @@ export async function getFollowers(userId, { viewerUserId = null, page = 1, limi
       pagination: {
         page: Number(page) || 1,
         limit: Number(limit) || 20,
-        total: profile.profile?.followersCount || 0,
+        total: totalCount,
         totalPages: 0,
       },
     };
   }
 
-  const result = await socialRepository.findFollowers(userId, { page, limit }, db);
+  const result = await socialRepository.findFollowers(targetUser.id, { viewerUserId, page, limit }, db);
   return {
     ...result,
     isPrivate: false,
@@ -762,16 +801,37 @@ export async function getFollowers(userId, { viewerUserId = null, page = 1, limi
 }
 
 export async function getFollowing(userId, { viewerUserId = null, page = 1, limit = 20 } = {}, db = prisma) {
-  const profile = await socialRepository.findSocialProfile(userId, db);
-  if (!profile) {
+  const targetUser = await socialRepository.resolveCanonicalUser(userId, db);
+  if (!targetUser || targetUser.status === 'DELETED') {
     const error = new Error('User not found');
     error.statusCode = 404;
     error.code = 'USER_NOT_FOUND';
     throw error;
   }
 
+  // Block check: if viewer is blocked with target user
+  if (viewerUserId && viewerUserId !== targetUser.id) {
+    const blocked = await socialRepository.isBlocked(viewerUserId, targetUser.id, db);
+    if (blocked) {
+      const error = new Error('User not found');
+      error.statusCode = 404;
+      error.code = 'USER_NOT_FOUND';
+      throw error;
+    }
+  }
+
+  const isOwner = Boolean(viewerUserId && (viewerUserId === targetUser.id || viewerUserId === targetUser.username));
+
   // If user turned on private / hidden follow list and viewer is not the profile owner
-  if (profile.profile?.isPrivate && userId !== viewerUserId) {
+  if (targetUser.profile?.isPrivate && !isOwner) {
+    const totalCount = await db.follow.count({
+      where: {
+        followerId: targetUser.id,
+        status: 'ACCEPTED',
+        following: { status: { not: 'DELETED' } },
+      },
+    });
+
     return {
       following: [],
       isPrivate: true,
@@ -779,13 +839,13 @@ export async function getFollowing(userId, { viewerUserId = null, page = 1, limi
       pagination: {
         page: Number(page) || 1,
         limit: Number(limit) || 20,
-        total: profile.profile?.followingCount || 0,
+        total: totalCount,
         totalPages: 0,
       },
     };
   }
 
-  const result = await socialRepository.findFollowing(userId, { page, limit }, db);
+  const result = await socialRepository.findFollowing(targetUser.id, { viewerUserId, page, limit }, db);
   return {
     ...result,
     isPrivate: false,
@@ -804,23 +864,25 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     throw error;
   }
 
-  const user = await socialRepository.findSocialProfile(targetUserId, db);
-  if (!user || user.userType === 'ADMIN' || (typeof user.username === 'string' && user.username.startsWith('admin_shadow'))) {
+  const user = await socialRepository.resolveCanonicalUser(targetUserId, db);
+  if (!user || user.status === 'DELETED' || user.userType === 'ADMIN' || (typeof user.username === 'string' && user.username.startsWith('admin_shadow'))) {
     const error = new Error('User not found');
     error.statusCode = 404;
     error.code = 'USER_NOT_FOUND';
     throw error;
   }
 
+  const canonicalTargetId = user.id;
+
   let isFollowing = false;
   let isFollowedBy = false;
   let isBlockedByViewer = false;
 
-  if (viewerUserId && viewerUserId !== targetUserId) {
+  if (viewerUserId && viewerUserId !== canonicalTargetId) {
     const [follow, reverseFollow, blocked] = await Promise.all([
-      socialRepository.findFollow({ followerId: viewerUserId, followingId: targetUserId }, db),
-      socialRepository.findFollow({ followerId: targetUserId, followingId: viewerUserId }, db),
-      socialRepository.isBlocked(viewerUserId, targetUserId, db),
+      socialRepository.findFollow({ followerId: viewerUserId, followingId: canonicalTargetId }, db),
+      socialRepository.findFollow({ followerId: canonicalTargetId, followingId: viewerUserId }, db),
+      socialRepository.isBlocked(viewerUserId, canonicalTargetId, db),
     ]);
     isFollowing = Boolean(follow && follow.status === 'ACCEPTED');
     isFollowedBy = Boolean(reverseFollow && reverseFollow.status === 'ACCEPTED');
@@ -828,12 +890,12 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
   }
 
   const [followersCount, followingCount] = await Promise.all([
-    db.follow.count({ where: { followingId: targetUserId, status: 'ACCEPTED' } }),
-    db.follow.count({ where: { followerId: targetUserId, status: 'ACCEPTED' } }),
+    db.follow.count({ where: { followingId: canonicalTargetId, status: 'ACCEPTED', follower: { status: { not: 'DELETED' } } } }),
+    db.follow.count({ where: { followerId: canonicalTargetId, status: 'ACCEPTED', following: { status: { not: 'DELETED' } } } }),
   ]);
 
   const isPrivate = Boolean(user.profile?.isPrivate);
-  const canViewPosts = !isPrivate || isFollowing || viewerUserId === targetUserId;
+  const canViewPosts = !isPrivate || isFollowing || viewerUserId === canonicalTargetId;
 
   let presence = null;
   try {
@@ -930,10 +992,14 @@ export async function blockUser(blockerId, blockedId, db = prisma) {
   }
 
   // Remove any existing follow relationships
-  await Promise.all([
-    socialRepository.deleteFollow({ followerId: blockerId, followingId: blockedId }, db).catch(() => {}),
-    socialRepository.deleteFollow({ followerId: blockedId, followingId: blockerId }, db).catch(() => {}),
-  ]);
+  await db.follow.deleteMany({
+    where: {
+      OR: [
+        { followerId: blockerId, followingId: blockedId },
+        { followerId: blockedId, followingId: blockerId },
+      ],
+    },
+  });
 
   try {
     await socialRepository.createBlock({ blockerId, blockedId }, db);
@@ -1064,16 +1130,30 @@ export async function sharePost(postId, userId = null, db = prisma) {
 }
 
 export async function recordProfileVisit({ visitorId, visitedId, isMystery = false }, db = prisma) {
-  if (!visitorId || !visitedId || visitorId === visitedId) return null;
-  return await socialRepository.recordProfileVisit({ visitorId, visitedId, isMystery }, db);
+  if (!visitorId || !visitedId) return null;
+  if (visitorId === visitedId) {
+    return { success: true, isSelfVisit: true, message: 'Self-visit ignored' };
+  }
+
+  let effectiveMystery = Boolean(isMystery);
+  if (!effectiveMystery) {
+    try {
+      const prefs = await privacyEligibilityService.getUserPreferences(visitorId, db);
+      if (prefs && prefs.INVISIBLE_VISIT) {
+        effectiveMystery = true;
+      }
+    } catch (_) {}
+  }
+
+  return await socialRepository.recordProfileVisit({ visitorId, visitedId, isMystery: effectiveMystery }, db);
 }
 
-export async function getProfileVisitors(userId, { limit = 50 } = {}, db = prisma) {
-  return await socialRepository.findProfileVisitors(userId, { limit }, db);
+export async function getProfileVisitors(userId, { page = 1, limit = 50, viewerUserId = null } = {}, db = prisma) {
+  return await socialRepository.findProfileVisitors(userId, { page, limit, viewerUserId }, db);
 }
 
-export async function getProfileVisited(userId, { limit = 50 } = {}, db = prisma) {
-  return await socialRepository.findProfileVisited(userId, { limit }, db);
+export async function getProfileVisited(userId, { page = 1, limit = 50, viewerUserId = null } = {}, db = prisma) {
+  return await socialRepository.findProfileVisited(userId, { page, limit, viewerUserId }, db);
 }
 
 // ============================================================

@@ -85,8 +85,19 @@ export const querySellersSchema = z.object({
   countryCode: z.string().optional(),
 });
 
+export const publicSellersQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().optional().default(''),
+  q: z.string().optional().default(''),
+});
+
 export const sellerTransferCoinsSchema = z.object({
-  recipientUserId: z.string().min(1, 'Recipient user identifier is required'),
+  recipientUserId: z.string().optional(),
+  publicUserId: z.string().optional(),
+  recipientIdentifier: z.string().optional(),
+  accountId: z.string().optional(),
+  recipientAccountId: z.string().optional(),
   amountCoins: z.union([z.string(), z.number(), z.bigint()]).refine(
     (val) => {
       try {
@@ -99,12 +110,27 @@ export const sellerTransferCoinsSchema = z.object({
     { message: 'amountCoins must be a positive integer value' }
   ),
   pin: z.string().optional(),
+  idempotencyKey: z.string().optional(),
   notes: z.string().max(500).optional(),
-});
+  // Client-supplied identity overrides are accepted in payload for compatibility but discarded by backend
+  recipientName: z.string().optional(),
+  recipientAvatarUrl: z.string().optional(),
+  nickname: z.string().optional(),
+  profileImage: z.string().optional(),
+}).refine(
+  (data) => Boolean((data.recipientUserId || data.publicUserId || data.recipientIdentifier || data.accountId)?.trim()),
+  { message: 'Recipient user identifier is required', path: ['recipientUserId'] }
+);
 
 export const verifyRecipientQuerySchema = z.object({
-  userId: z.string().min(1, 'Recipient user identifier is required'),
-});
+  userId: z.string().optional(),
+  publicUserId: z.string().optional(),
+  identifier: z.string().optional(),
+  id: z.string().optional(),
+}).refine(
+  (data) => Boolean((data.userId || data.publicUserId || data.identifier || data.id)?.trim()),
+  { message: 'Recipient user identifier is required', path: ['userId'] }
+);
 
 export default {
   createSellerSchema,

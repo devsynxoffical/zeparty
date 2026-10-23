@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import presenceService from '../socket/presence.service.js';
 import bcrypt from 'bcryptjs';
+import { resolveCanonicalUser } from './social.repository.js';
 
 export async function createRoomWithSeats(
   {
@@ -554,21 +555,7 @@ export async function joinRoomTx({ roomId, userId, pin = null, isApproved = fals
   const isGuest = Boolean(String(userId).startsWith('guest_'));
 
   if (!isGuest) {
-    // Clean up any stale membership for this registered user in other rooms,
-    // while preserving durable administrative appointments (ADMIN, HOST) in other rooms
-    try {
-      await db.roomMember.deleteMany({
-        where: {
-          userId,
-          roomId: { not: resolvedRoomId },
-          role: { notIn: ['ADMIN', 'HOST'] },
-        },
-      });
-    } catch (cleanErr) {
-      console.warn(`[RoomRepo] Stale room membership cleanup notice for user ${userId}:`, cleanErr.message);
-    }
-
-    // Ensure RoomMember record exists for registered user
+    // Ensure durable RoomMember record exists for registered user
     try {
       const existingMember = await db.roomMember.findUnique({
         where: {
@@ -679,21 +666,7 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
     console.warn(`[RoomRepo] Seat release notice on leave for user ${userId}:`, seatErr.message);
   }
 
-  if (!isGuest) {
-    // Remove persistent membership record for regular viewers,
-    // but preserve durable administrative roles (ADMIN, HOST) across room exits
-    try {
-      await db.roomMember.deleteMany({
-        where: {
-          roomId: resolvedRoomId,
-          userId,
-          role: { notIn: ['ADMIN', 'HOST'] },
-        },
-      });
-    } catch (leaveErr) {
-      console.warn(`[RoomRepo] Membership removal notice for user ${userId}:`, leaveErr.message);
-    }
-  }
+  // Preserving persistent RoomMember records across live session exits (NEW-17)
 
   const totalMemberCount = await db.roomMember.count({
     where: { roomId: resolvedRoomId },
@@ -993,6 +966,23 @@ export async function pinRoom({ roomId, isPinnedTop, pinnedPosition = null }, db
 
 export async function closeRoomTx({ roomId, status = 'ENDED', endedAt = new Date() }, db = prisma) {
   return await db.$transaction(async (tx) => {
+    // Check existing room state to preserve true original endedAt if already ended (idempotency)
+    const existing = await tx.room.findUnique({
+      where: { id: roomId },
+      select: { id: true, status: true, endedAt: true },
+    });
+
+    if (!existing) {
+      const error = new Error('Room not found');
+      error.statusCode = 404;
+      error.code = 'ROOM_NOT_FOUND';
+      throw error;
+    }
+
+    const isAlreadyEnded = ['ENDED', 'CLOSED_BY_ADMIN', 'HOST_KICKED'].includes(existing.status);
+    const resolvedEndedAt = (isAlreadyEnded && existing.endedAt) ? existing.endedAt : (endedAt || new Date());
+    const resolvedStatus = isAlreadyEnded ? existing.status : status;
+
     // Release all seats
     await tx.roomSeat.updateMany({
       where: { roomId },
@@ -1010,8 +1000,8 @@ export async function closeRoomTx({ roomId, status = 'ENDED', endedAt = new Date
     return await tx.room.update({
       where: { id: roomId },
       data: {
-        status,
-        endedAt,
+        status: resolvedStatus,
+        endedAt: resolvedEndedAt,
         currentViewersCount: 0,
       },
     });
@@ -1423,6 +1413,108 @@ export async function updateRoomLayoutTx({ roomId, capacity, roomType }, db = pr
   }, { timeout: 20000, maxWait: 10000 });
 }
 
+export async function unjoinRoomTx({ roomId, userId }, db = prisma) {
+  let resolvedRoomId = roomId;
+  const room = await db.room.findUnique({ where: { id: roomId } });
+  if (room) resolvedRoomId = room.id;
+
+  const canonical = await resolveCanonicalUser(userId, db);
+  const targetUserId = canonical ? canonical.id : userId;
+
+  await db.roomMember.deleteMany({
+    where: {
+      roomId: resolvedRoomId,
+      userId: targetUserId,
+    },
+  });
+
+  return { success: true, message: 'Unjoined room successfully' };
+}
+
+export async function getUserJoinedRooms(userId, { page = 1, limit = 20, viewerUserId = null } = {}, db = prisma) {
+  const canonical = await resolveCanonicalUser(userId, db);
+  if (!canonical) {
+    return { data: [], rooms: [], pagination: { page: 1, limit, total: 0, totalPages: 0, hasMore: false } };
+  }
+
+  const where = {
+    userId: canonical.id,
+    room: { status: { not: 'CLOSED_BY_ADMIN' } },
+  };
+
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(100, Math.max(1, Number(limit) || 20));
+  const skip = (pageNum - 1) * limitNum;
+
+  const [total, members] = await Promise.all([
+    db.roomMember.count({ where }),
+    db.roomMember.findMany({
+      where,
+      orderBy: { joinedAt: 'desc' },
+      skip,
+      take: limitNum,
+      include: {
+        room: {
+          include: {
+            creator: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                profile: { select: { displayName: true } },
+              },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+
+  const rooms = members.map(m => {
+    const r = m.room;
+    const isLive = r.status === 'LIVE' || r.status === 'ACTIVE';
+    const hostName = r.creator?.profile?.displayName || r.creator?.username || 'Host';
+    return {
+      id: r.id,
+      roomId: r.id,
+      publicRoomId: r.id,
+      title: r.title,
+      name: r.title,
+      coverUrl: r.coverImageUrl || '',
+      coverImageUrl: r.coverImageUrl || '',
+      backgroundImageUrl: r.backgroundImageUrl || null,
+      roomType: r.roomType,
+      category: r.category,
+      isPrivate: r.isPrivate,
+      status: r.status,
+      isLive,
+      live: isLive,
+      currentViewersCount: r.currentViewersCount || 0,
+      joinedAt: m.joinedAt,
+      role: m.role,
+      host: {
+        id: r.creatorUserId,
+        name: hostName,
+        displayName: hostName,
+        username: r.creator?.username,
+        avatarUrl: r.creator?.avatarUrl || '',
+      },
+    };
+  });
+
+  return {
+    data: rooms,
+    rooms,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages: Math.ceil(total / limitNum),
+      hasMore: skip + rooms.length < total,
+    },
+  };
+}
+
 export default {
   createRoomWithSeats,
   findRoomById,
@@ -1430,6 +1522,8 @@ export default {
   findAdminRooms,
   joinRoomTx,
   leaveRoomTx,
+  unjoinRoomTx,
+  getUserJoinedRooms,
   occupySeatTx,
   leaveSeatTx,
   pinRoom,

@@ -14,6 +14,12 @@ adminHostRouter.put('/:id/status', requirePermission('approve_reject_hosts'), ho
 adminHostRouter.delete('/:id', requirePermission('approve_reject_hosts'), hostController.removeHostRole);
 adminHostRouter.post('/:id/remove', requirePermission('approve_reject_hosts'), hostController.removeHostRole);
 
+// NEW 10: Target Reliability, Reconciliation & Reversal Admin Endpoints
+adminHostRouter.post('/targets/reconcile/preview', requirePermission('view_hosts'), hostController.previewTargetReconciliation);
+adminHostRouter.post('/targets/reconcile/apply', requirePermission('approve_reject_hosts'), hostController.applyTargetReconciliation);
+adminHostRouter.post('/targets/reversal', requirePermission('approve_reject_hosts'), hostController.reverseGiftTarget);
+adminHostRouter.get('/targets/reconcile/runs', requirePermission('view_hosts'), hostController.getTargetReconciliationRuns);
+
 export const userHostRouter = express.Router();
 userHostRouter.get('/policy/agency-table', hostController.getAgencyHostPolicyTable);
 userHostRouter.get('/policy/live-host-table', hostController.getLiveHostPolicyTable);
@@ -21,6 +27,7 @@ userHostRouter.get('/eligibility', authenticate, hostController.getHostingEligib
 userHostRouter.post('/apply', authenticate, hostController.applyHost);
 userHostRouter.post('/apply-live', authenticate, hostController.applyLiveHost);
 userHostRouter.get('/profile', authenticate, hostController.getMyHostProfile);
+userHostRouter.get('/targets/summary', authenticate, hostController.getHostTargetSummary);
 userHostRouter.get('/application', authenticate, hostController.getMyHostApplication);
 userHostRouter.get('/center/income', authenticate, hostController.getHostIncomeDashboard);
 userHostRouter.post('/become-live-host', authenticate, hostController.becomeLiveHost);

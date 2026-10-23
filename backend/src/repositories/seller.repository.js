@@ -62,14 +62,25 @@ export async function findSellers(
   if (rawCountry && rawCountry !== 'All' && rawCountry !== 'GLOBAL') {
     const norm = normalizeCountry(rawCountry);
     if (norm) {
+      const countryVariants = [
+        { countryCode: { equals: norm.code, mode: 'insensitive' } },
+        { countryCode: { equals: norm.shortName, mode: 'insensitive' } },
+        { countryCode: { equals: norm.name, mode: 'insensitive' } },
+        { region: { equals: norm.name, mode: 'insensitive' } },
+        { region: { equals: norm.code, mode: 'insensitive' } },
+        { region: { equals: norm.shortName, mode: 'insensitive' } },
+        { region: { contains: norm.name, mode: 'insensitive' } },
+        { region: { contains: norm.code, mode: 'insensitive' } },
+      ];
+      if (norm.flag) {
+        countryVariants.push({ region: { contains: norm.flag } });
+      }
+
       andConditions.push({
         user: {
           status: 'ACTIVE',
-          OR: [
-            { countryCode: norm.code },
-            { region: { equals: norm.name, mode: 'insensitive' } },
-            { region: { equals: norm.code, mode: 'insensitive' } },
-          ],
+          deletedAt: null,
+          OR: countryVariants,
         },
       });
     } else if (countryRequired) {
@@ -97,17 +108,18 @@ export async function findSellers(
     };
   }
 
-  // Search logic across name, username, display name, and numeric/string IDs
+  // Search logic across name, username, display name, public ID, and numeric/string IDs
   if (search && search.trim()) {
-    const cleanSearch = search.trim();
+    const cleanSearch = search.trim().replace(/^@/, '');
     andConditions.push({
       OR: [
         { businessName: { contains: cleanSearch, mode: 'insensitive' } },
+        { userId: { contains: cleanSearch, mode: 'insensitive' } },
+        { id: { contains: cleanSearch, mode: 'insensitive' } },
+        { user: { id: { contains: cleanSearch, mode: 'insensitive' } } },
         { user: { username: { contains: cleanSearch, mode: 'insensitive' } } },
         { user: { email: { contains: cleanSearch, mode: 'insensitive' } } },
         { user: { profile: { displayName: { contains: cleanSearch, mode: 'insensitive' } } } },
-        { userId: { contains: cleanSearch, mode: 'insensitive' } },
-        { id: { contains: cleanSearch, mode: 'insensitive' } },
       ],
     });
   }
@@ -120,7 +132,7 @@ export async function findSellers(
       where,
       skip,
       take: limit,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       include: {
         user: {
           select: {
@@ -190,6 +202,30 @@ export async function updateSellerBalance(id, amountDelta, db = prisma) {
   });
 }
 
+export async function findSellerWithLock(id, db = prisma) {
+  if (!id) return null;
+  try {
+    const rows = await db.$queryRaw`
+      SELECT * FROM "CoinSeller" WHERE id = ${id} FOR UPDATE
+    `;
+    return rows && rows.length > 0 ? rows[0] : null;
+  } catch (err) {
+    return await db.coinSeller.findUnique({ where: { id } });
+  }
+}
+
+export async function findSellerByUserIdWithLock(userId, db = prisma) {
+  if (!userId) return null;
+  try {
+    const rows = await db.$queryRaw`
+      SELECT * FROM "CoinSeller" WHERE "userId" = ${userId} FOR UPDATE
+    `;
+    return rows && rows.length > 0 ? rows[0] : null;
+  } catch (err) {
+    return await db.coinSeller.findUnique({ where: { userId } });
+  }
+}
+
 export async function deleteSeller(id, db = prisma) {
   return await db.coinSeller.delete({
     where: { id },
@@ -199,6 +235,8 @@ export async function deleteSeller(id, db = prisma) {
 export default {
   findSellerById,
   findSellerByUserId,
+  findSellerWithLock,
+  findSellerByUserIdWithLock,
   findSellers,
   createSeller,
   updateSeller,

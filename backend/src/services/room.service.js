@@ -240,11 +240,17 @@ export async function getRoomDetails(roomId, db = prisma) {
   const lockMode = hasPin ? 'PIN' : (room.isPrivate ? 'Approval' : 'NONE');
   const { roomPin: _confidentialPin, ...safeRoom } = room;
 
+  let peakViewers = 0;
+  try {
+    peakViewers = await presenceService.getRoomPeakViewers(room.id);
+  } catch (_) {}
+
   return {
     ...safeRoom,
     currentViewersCount: viewerCount,
     viewerCount,
     count: viewerCount,
+    peakViewers: peakViewers > 0 ? peakViewers : viewerCount,
     backgroundImageUrl: room.backgroundImageUrl || null,
     background: room.backgroundImageUrl || null,
     giftsReceivedCoins: totalGiftCoins,
@@ -328,6 +334,156 @@ export async function leaveSeat(roomId, seatIndex, userId, options = {}, db = pr
   return await roomRepository.leaveSeatTx({ roomId, seatIndex, userId, force }, targetDb);
 }
 
+/**
+ * Generates an authoritative session summary for a live broadcast.
+ * Calculates duration from persisted createdAt and endedAt timestamps.
+ * Calculates peak viewers from authoritative presence tracking.
+ * Calculates gift earnings from the authoritative GiftTransaction ledger.
+ */
+export async function getLiveSessionSummary(roomId, db = prisma) {
+  let room = await db.room.findUnique({
+    where: { id: roomId },
+    include: {
+      creator: {
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          profile: {
+            select: {
+              displayName: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!room && roomId && roomId.length <= 16) {
+    room = await db.room.findFirst({
+      where: { id: { startsWith: roomId, mode: 'insensitive' } },
+      include: {
+        creator: {
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: {
+              select: {
+                displayName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const startedAt = room.createdAt;
+  const endedAt = room.endedAt || new Date();
+  const durationSeconds = Math.max(0, Math.floor((new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000));
+
+  const hours = Math.floor(durationSeconds / 3600);
+  const minutes = Math.floor((durationSeconds % 3600) / 60);
+  const seconds = durationSeconds % 60;
+  const durationFormatted = hours > 0
+    ? `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+  // Authoritative peak viewers tracking
+  const trackedPeak = await presenceService.getRoomPeakViewers(room.id);
+  const hasAuthoritativePeak = typeof trackedPeak === 'number' && trackedPeak > 0;
+  const peakViewers = hasAuthoritativePeak ? trackedPeak : 0;
+
+  // Authoritative gift coins calculation from GiftTransaction ledger
+  let totalGiftCoins = 0;
+  let totalDiamonds = 0;
+  let totalGiftsCount = 0;
+  try {
+    const giftAggr = await db.giftTransaction.aggregate({
+      where: { roomId: room.id },
+      _sum: {
+        totalCoins: true,
+        hostDiamonds: true,
+        giftCount: true,
+      },
+    });
+    totalGiftCoins = Number(giftAggr._sum.totalCoins || 0);
+    totalDiamonds = Number(giftAggr._sum.hostDiamonds || 0);
+    totalGiftsCount = Number(giftAggr._sum.giftCount || 0);
+  } catch (err) {
+    console.warn(`[RoomService] Failed to aggregate gift ledger for room ${room.id}:`, err?.message);
+  }
+
+  // Top 3 contributors during this session
+  let topContributors = [];
+  try {
+    const topGifters = await db.giftTransaction.groupBy({
+      by: ['senderUserId'],
+      where: { roomId: room.id },
+      _sum: { totalCoins: true },
+      orderBy: { _sum: { totalCoins: 'desc' } },
+      take: 3,
+    });
+
+    if (topGifters.length > 0) {
+      const userIds = topGifters.map((g) => g.senderUserId);
+      const users = await db.user.findMany({
+        where: { id: { in: userIds } },
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          profile: { select: { displayName: true } },
+        },
+      });
+      const userMap = new Map(users.map((u) => [u.id, u]));
+
+      topContributors = topGifters.map((g) => {
+        const u = userMap.get(g.senderUserId);
+        return {
+          userId: g.senderUserId,
+          coins: Number(g._sum.totalCoins || 0),
+          username: u?.username || 'Unknown',
+          displayName: u?.profile?.displayName || u?.username || 'Gifter',
+          avatarUrl: u?.avatarUrl || null,
+        };
+      });
+    }
+  } catch (_) {}
+
+  return {
+    roomId: room.id,
+    roomTitle: room.title,
+    roomType: room.roomType,
+    hostUserId: room.creatorUserId,
+    hostUsername: room.creator?.username || null,
+    hostDisplayName: room.creator?.profile?.displayName || room.creator?.username || null,
+    hostAvatarUrl: room.creator?.avatarUrl || null,
+    status: room.status,
+    startedAt: startedAt.toISOString(),
+    endedAt: (room.endedAt || endedAt).toISOString(),
+    durationSeconds,
+    durationFormatted,
+    peakViewers,
+    hasAuthoritativePeak,
+    peakViewersNote: hasAuthoritativePeak
+      ? null
+      : 'Historical peak concurrent viewers was not tracked for this session.',
+    totalGiftCoins,
+    totalDiamonds,
+    totalGiftsCount,
+    topContributors,
+  };
+}
+
 export async function closeMyRoom(roomId, userId, db = prisma) {
   const room = await roomRepository.findRoomById(roomId, db);
   if (!room) {
@@ -348,14 +504,22 @@ export async function closeMyRoom(roomId, userId, db = prisma) {
   micInviteService.clearAllInvitesForRoom(roomId);
   await attendanceService.endBroadcastSession({ roomId, hostUserId: userId }, db).catch(() => {});
   const closedRoom = await roomRepository.closeRoomTx({ roomId, status: 'ENDED' }, db);
+  const summary = await getLiveSessionSummary(roomId, db);
 
-  socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, {
+  const closePayload = {
     roomId,
     status: 'ENDED',
     reason: 'HOST_CLOSED',
-  });
+    summary,
+  };
 
-  return closedRoom;
+  socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, closePayload);
+  socketEmitter.broadcastGlobal('room:closed', closePayload);
+
+  return {
+    ...closedRoom,
+    summary,
+  };
 }
 
 export async function listRoomsForAdmin(filters, db = prisma) {
@@ -532,13 +696,21 @@ export async function adminCloseRoom(
     db
   );
 
-  socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, {
+  const summary = await getLiveSessionSummary(roomId, db);
+  const closePayload = {
     roomId,
     status: 'CLOSED_BY_ADMIN',
     reason,
-  });
+    summary,
+  };
 
-  return updatedRoom;
+  socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, closePayload);
+  socketEmitter.broadcastGlobal('room:closed', closePayload);
+
+  return {
+    ...updatedRoom,
+    summary,
+  };
 }
 
 export async function adminIssueWarning(
@@ -717,11 +889,15 @@ export async function adminKickUser(
     socketEmitter.emitToUser(targetUserId, 'room:user_kicked', kickPayload);
     socketEmitter.broadcastGlobal('room:user_kicked', kickPayload);
 
-    socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, {
+    const summary = await getLiveSessionSummary(roomId, db).catch(() => null);
+    const closePayload = {
       roomId,
       status: 'ENDED',
       reason: 'HOST_KICKED_BY_ADMIN',
-    });
+      summary,
+    };
+    socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, closePayload);
+    socketEmitter.broadcastGlobal('room:closed', closePayload);
 
     await logAudit(
       {
@@ -1218,6 +1394,14 @@ export async function uploadPaidRoomTheme({ roomId, userId, themeUrl, themeType 
     throw error;
   }
 
+  // Phase 2 Room Admin Rule: Effects and themes controls strictly prohibited for Room Admins
+  if (room.creatorUserId !== userId) {
+    const error = new Error('Room Admins are not permitted to change effects or custom wallpapers. Only the room owner can manage room themes.');
+    error.statusCode = 403;
+    error.code = 'ROOM_ADMIN_ACTION_NOT_PERMITTED';
+    throw error;
+  }
+
   const wallet = await db.wallet.findUnique({ where: { userId } });
   const requiredCoins = 100000;
 
@@ -1269,6 +1453,16 @@ export async function uploadPaidRoomTheme({ roomId, userId, themeUrl, themeType 
  * Module 03: Room Mic Size Preset
  */
 export async function updateRoomMicConfig(roomId, { micPreset = 'LARGE', actorUserId }, db = prisma) {
+  if (actorUserId) {
+    const room = await roomRepository.findRoomById(roomId, db);
+    if (room && room.creatorUserId !== actorUserId) {
+      const error = new Error('Room Admins are not permitted to update mic configuration. Only the room owner can manage mic configuration.');
+      error.statusCode = 403;
+      error.code = 'ROOM_ADMIN_ACTION_NOT_PERMITTED';
+      throw error;
+    }
+  }
+
   return {
     success: true,
     roomId,
@@ -1300,6 +1494,16 @@ export async function getRoomAnnouncement(roomId, db = prisma) {
 }
 
 export async function updateRoomAnnouncement(roomId, { announcement, isEnabled = true, actorUserId }, db = prisma) {
+  if (actorUserId) {
+    const room = await roomRepository.findRoomById(roomId, db);
+    if (room && room.creatorUserId !== actorUserId) {
+      const error = new Error('Room Admins are not permitted to update room announcements. Only the room owner can update announcements.');
+      error.statusCode = 403;
+      error.code = 'ROOM_ADMIN_ACTION_NOT_PERMITTED';
+      throw error;
+    }
+  }
+
   return {
     success: true,
     roomId,
@@ -1314,6 +1518,16 @@ export async function updateRoomAnnouncement(roomId, { announcement, isEnabled =
  * Module 06: Party Room Owner/Admin Controls (YouTube, Super Wheel, Lucky Bag, Lock Room)
  */
 export async function controlRoomYouTube(roomId, { action, videoUrl, videoTitle, timestamp = 0, actorUserId }, db = prisma) {
+  if (actorUserId) {
+    const room = await roomRepository.findRoomById(roomId, db);
+    if (room && room.creatorUserId !== actorUserId) {
+      const error = new Error('Room Admins are not permitted to control room YouTube playback. Only the room owner can control media sessions.');
+      error.statusCode = 403;
+      error.code = 'ROOM_ADMIN_ACTION_NOT_PERMITTED';
+      throw error;
+    }
+  }
+
   return {
     success: true,
     roomId,
@@ -1435,24 +1649,13 @@ export async function controlRoomLock(roomId, { isLocked = true, accessMode = 'P
     throw error;
   }
 
-  // Authorization check: Only Host/Creator or Moderator/Admin
+  // Authorization check: ONLY Room Owner (Creator) can configure room lock settings
+  // Confirmed Phase 2 Rule: Room Admins are strictly prohibited from room lock controls
   const isCreator = room.creatorUserId === actorUserId;
-  let isAuthorized = isCreator;
-  if (!isAuthorized && actorUserId) {
-    const member = await db.roomMember.findFirst({
-      where: {
-        roomId: room.id,
-        userId: actorUserId,
-        role: { in: ['OWNER', 'CO_HOST', 'ADMIN', 'MODERATOR'] },
-      },
-    });
-    if (member) isAuthorized = true;
-  }
-
-  if (!isAuthorized) {
-    const error = new Error('Only the room host or moderator can configure room lock settings');
+  if (!isCreator) {
+    const error = new Error('Room Admins are not permitted to configure room lock settings. Only the room owner can lock the room.');
     error.statusCode = 403;
-    error.code = 'FORBIDDEN';
+    error.code = 'ROOM_ADMIN_ACTION_NOT_PERMITTED';
     throw error;
   }
 
@@ -1514,24 +1717,12 @@ export async function updateRoomProfile(roomId, userId, { title, coverImageUrl, 
     throw error;
   }
 
-  // Authorization: Only host or admin can update room profile
+  // Authorization: ONLY Room Owner (Creator) can update room profile
   const isCreator = room.creatorUserId === userId;
-  let isAuthorized = isCreator;
-  if (!isAuthorized && userId) {
-    const member = await db.roomMember.findFirst({
-      where: {
-        roomId: room.id,
-        userId,
-        role: { in: ['OWNER', 'CO_HOST', 'ADMIN', 'MODERATOR'] },
-      },
-    });
-    if (member) isAuthorized = true;
-  }
-
-  if (!isAuthorized) {
-    const error = new Error('Only the room host or moderator can update room information');
+  if (!isCreator) {
+    const error = new Error('Room Admins are not permitted to update room profile. Only the room owner can update room information.');
     error.statusCode = 403;
-    error.code = 'FORBIDDEN';
+    error.code = 'ROOM_ADMIN_ACTION_NOT_PERMITTED';
     throw error;
   }
 
@@ -1598,23 +1789,12 @@ export async function updateRoomLayout(roomId, userId, { capacity, seatCapacity,
     throw error;
   }
 
-  // Authorization check: Only Host/Creator or Moderator/Admin
-  let isAuthorized = room.creatorUserId === userId;
-  if (!isAuthorized && userId) {
-    const member = await db.roomMember.findFirst({
-      where: {
-        roomId: room.id,
-        userId,
-        role: { in: ['OWNER', 'CO_HOST', 'ADMIN', 'MODERATOR'] },
-      },
-    });
-    if (member) isAuthorized = true;
-  }
-
-  if (!isAuthorized) {
-    const error = new Error('Only the room host or moderator can update room layout');
+  // Authorization check: ONLY Room Owner (Creator) can update room layout
+  const isCreator = room.creatorUserId === userId;
+  if (!isCreator) {
+    const error = new Error('Room Admins are not permitted to update room layout. Only the room owner can update seat capacity.');
     error.statusCode = 403;
-    error.code = 'FORBIDDEN';
+    error.code = 'ROOM_ADMIN_ACTION_NOT_PERMITTED';
     throw error;
   }
 
@@ -1684,24 +1864,13 @@ export async function lockRoomSeat(roomId, { seatIndex = 0, isLocked = true, act
     throw error;
   }
 
-  // Permission check: Host or Co-Host or Moderator
+  // Permission check: ONLY Room Owner (Creator) can lock or unlock mic seats
+  // Confirmed Phase 2 Rule: Room Admins are strictly prohibited from mic seat locking
   const isCreator = room.creatorUserId === actorUserId;
-  let isAuthorized = isCreator;
-  if (!isAuthorized && actorUserId) {
-    const member = await db.roomMember.findFirst({
-      where: {
-        roomId: room.id,
-        userId: actorUserId,
-        role: { in: ['OWNER', 'CO_HOST', 'MODERATOR', 'ADMIN'] },
-      },
-    });
-    if (member) isAuthorized = true;
-  }
-
-  if (!isAuthorized) {
-    const error = new Error('Only the room host or moderator can lock or unlock microphone seats');
+  if (!isCreator) {
+    const error = new Error('Room Admins are not permitted to lock or unlock mic seats. Only the room owner can manage seat locks.');
     error.statusCode = 403;
-    error.code = 'FORBIDDEN';
+    error.code = 'ROOM_ADMIN_ACTION_NOT_PERMITTED';
     throw error;
   }
 
@@ -1998,6 +2167,14 @@ export async function validateModerationPermission(roomId, actorUserId, targetUs
     const error = new Error('Cannot moderate or kick the room owner');
     error.statusCode = 403;
     error.code = 'CANNOT_MODERATE_OWNER';
+    throw error;
+  }
+
+  // Room admins cannot moderate themselves via moderation actions (must use leave mic)
+  if (!isOwner && targetUserId === actorUserId) {
+    const error = new Error('Room Admins cannot remove or moderate themselves via moderation actions; use standard leave mic endpoint');
+    error.statusCode = 400;
+    error.code = 'CANNOT_MODERATE_SELF';
     throw error;
   }
 
@@ -2649,6 +2826,14 @@ export async function adminClearRoomFeed(roomId, adminId, { reason } = {}, db = 
   };
 }
 
+export async function unjoinRoom(roomId, userId, db = prisma) {
+  return await roomRepository.unjoinRoomTx({ roomId, userId }, db);
+}
+
+export async function getUserJoinedRooms(userId, options = {}, db = prisma) {
+  return await roomRepository.getUserJoinedRooms(userId, options, db);
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -2656,9 +2841,12 @@ export default {
   getRoomDetails,
   joinRoom,
   leaveRoom,
+  unjoinRoom,
+  getUserJoinedRooms,
   occupySeat,
   leaveSeat,
   closeMyRoom,
+  getLiveSessionSummary,
   listRoomsForAdmin,
   adminPinRoom,
   adminUnpinRoom,

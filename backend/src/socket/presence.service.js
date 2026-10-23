@@ -18,6 +18,8 @@ const memoryUserRoom = new Map();
 const memoryUserLastSeen = new Map();
 // memoryRoomFeedCleared: roomId -> ISO timestamp
 const memoryRoomFeedCleared = new Map();
+// memoryRoomPeakViewers: roomId -> number (peak concurrent viewers during session)
+const memoryRoomPeakViewers = new Map();
 
 /**
  * Realtime Presence Service supporting:
@@ -631,19 +633,24 @@ export async function getRoomActiveUserCount(roomId) {
 /**
  * Authoritative viewer count calculation:
  * Distinct active users in the room, excluding the active host/creator.
+ * Automatically updates authoritative peak concurrent viewers tracking.
  */
 export async function getRoomViewerCount(roomId, hostUserId = null) {
   if (!roomId) return 0;
   const roomUsersKey = `presence:room:${roomId}:users`;
+  let count = 0;
 
   if (redisClient.isOpen) {
     try {
       const totalUsers = await redisClient.sCard(roomUsersKey);
       if (hostUserId) {
         const isHostActive = await redisClient.sIsMember(roomUsersKey, hostUserId);
-        return isHostActive ? Math.max(0, totalUsers - 1) : totalUsers;
+        count = isHostActive ? Math.max(0, totalUsers - 1) : totalUsers;
+      } else {
+        count = totalUsers;
       }
-      return totalUsers;
+      await updateRoomPeakViewers(roomId, count).catch(() => {});
+      return count;
     } catch (err) {}
   }
 
@@ -651,9 +658,12 @@ export async function getRoomViewerCount(roomId, hostUserId = null) {
   if (!userMap) return 0;
   const total = userMap.size;
   if (hostUserId && userMap.has(hostUserId)) {
-    return Math.max(0, total - 1);
+    count = Math.max(0, total - 1);
+  } else {
+    count = total;
   }
-  return total;
+  await updateRoomPeakViewers(roomId, count).catch(() => {});
+  return count;
 }
 
 /**
@@ -794,6 +804,55 @@ export async function getRoomFeedClearedAt(roomId) {
   return memoryRoomFeedCleared.get(rId) || null;
 }
 
+/**
+ * Updates authoritative peak concurrent viewers for a room.
+ * Persists in Redis (30-day TTL) and in-memory map.
+ */
+export async function updateRoomPeakViewers(roomId, count) {
+  if (!roomId || typeof count !== 'number' || isNaN(count)) return 0;
+  const rId = String(roomId);
+  const currentCount = Math.max(0, Math.floor(count));
+
+  let currentPeak = 0;
+  if (redisClient.isOpen) {
+    try {
+      const existing = await redisClient.get(`presence:room:${rId}:peak_viewers`);
+      currentPeak = existing ? parseInt(existing, 10) || 0 : 0;
+      if (currentCount > currentPeak) {
+        currentPeak = currentCount;
+        await redisClient.set(`presence:room:${rId}:peak_viewers`, String(currentPeak), { EX: 86400 * 30 });
+      }
+    } catch (_) {}
+  }
+
+  const memPeak = memoryRoomPeakViewers.get(rId) || 0;
+  if (currentCount > memPeak) {
+    memoryRoomPeakViewers.set(rId, currentCount);
+  }
+  return Math.max(currentPeak, memoryRoomPeakViewers.get(rId) || 0);
+}
+
+/**
+ * Retrieves authoritative peak concurrent viewers for a room.
+ */
+export async function getRoomPeakViewers(roomId) {
+  if (!roomId) return 0;
+  const rId = String(roomId);
+
+  let peak = 0;
+  if (redisClient.isOpen) {
+    try {
+      const val = await redisClient.get(`presence:room:${rId}:peak_viewers`);
+      if (val !== null && val !== undefined) {
+        peak = parseInt(val, 10) || 0;
+      }
+    } catch (_) {}
+  }
+
+  const memPeak = memoryRoomPeakViewers.get(rId) || 0;
+  return Math.max(peak, memPeak);
+}
+
 export default {
   registerUserSocket,
   unregisterUserSocket,
@@ -811,6 +870,8 @@ export default {
   leaveRoomPresence,
   getRoomActiveUserCount,
   getRoomViewerCount,
+  updateRoomPeakViewers,
+  getRoomPeakViewers,
   getRoomActiveUsers,
   isUserInRoom,
   clearRoomPresence,

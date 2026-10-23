@@ -57,12 +57,19 @@ export async function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
         endedAt: new Date(),
       }).catch((e) => console.warn(`[RoomTimerManager] Could not close room ${roomId} on timer expiry:`, e?.message));
 
+      let summary = null;
+      try {
+        const { getLiveSessionSummary } = await import('../services/room.service.js');
+        summary = await getLiveSessionSummary(roomId);
+      } catch (_) {}
+
       // Broadcast room closed to all clients
       const closePayload = {
         roomId,
         status: 'ENDED',
         reason: 'HOST_ABSENT_TIMEOUT',
         message: isAudioParty ? 'Party ended because the host was absent.' : 'Broadcast has ended (host absence timeout).',
+        summary,
       };
 
       if (io) {

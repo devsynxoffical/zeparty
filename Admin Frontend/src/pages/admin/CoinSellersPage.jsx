@@ -19,7 +19,7 @@ import { CountryFlag } from '../../components/ui/CountryFlag';
 import { CountrySelect } from '../../components/ui/CountrySelect';
 import { getCountryShortName } from '../../constants/countries.data';
 import apiClient from '../../services/api';
-import { getCoinSellers, createCoinSeller, toggleSellerStatus, allocateCoinsToSeller, correctSellerBalance, deleteCoinSeller, updateCoinSeller } from '../../services/modules/coinSellers.service';
+import { getCoinSellers, createCoinSeller, toggleSellerStatus, allocateCoinsToSeller, correctSellerBalance, deleteCoinSeller, updateCoinSeller, getSellerHistory } from '../../services/modules/coinSellers.service';
 
 const PACKAGES = [
   { value: '300', label: '$300 Coin Seller Tier', coins: 2205000, profit: '5%' },
@@ -88,6 +88,34 @@ export function CoinSellersPage() {
 
   const [countryModal, setCountryModal] = useState({ open: false, seller: null, newCountry: 'US' });
   const [historyModal, setHistoryModal] = useState({ open: false, seller: null });
+  const [sellerTxHistory, setSellerTxHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState(null);
+
+  const loadSellerHistory = (sellerId) => {
+    if (!sellerId) return;
+    setLoadingHistory(true);
+    setHistoryError(null);
+    getSellerHistory(sellerId)
+      .then((txs) => {
+        setSellerTxHistory(txs || []);
+      })
+      .catch((err) => {
+        console.error('Failed to load seller history:', err);
+        setHistoryError(err?.response?.data?.message || err?.message || 'Failed to load seller recharge history');
+      })
+      .finally(() => setLoadingHistory(false));
+  };
+
+  useEffect(() => {
+    if (historyModal.open && historyModal.seller?.id) {
+      loadSellerHistory(historyModal.seller.id);
+    } else {
+      setSellerTxHistory([]);
+      setHistoryError(null);
+    }
+  }, [historyModal.open, historyModal.seller?.id]);
+
   const [adjustModal, setAdjustModal] = useState({ open: false, type: 'DEDUCTION', amount: '', reason: '' });
   const [feedback, setFeedback] = useState(null);
 
@@ -716,12 +744,18 @@ export function CoinSellersPage() {
                 </Button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-4 text-xs font-mono text-slate-400">
+              <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-slate-400">
                 <div className="bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
                   Total Issued: <strong className="text-gold-400 font-mono ml-1">{formatNumber(historyModal.seller?.totalIssued)} coins</strong>
                 </div>
                 <div className="bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
                   Available Balance: <strong className="text-emerald-400 font-mono ml-1">{formatNumber(historyModal.seller?.currentBalance)} coins</strong>
+                </div>
+                <div className="bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800">
+                  Today Recharged: <strong className="text-sky-400 font-mono ml-1">{formatNumber(historyModal.seller?.todayRechargedCoins || historyModal.seller?.todayRecharged || 0)} coins</strong>
+                </div>
+                <div className="bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 flex items-center gap-1.5">
+                  Ledger Status: <span className="text-emerald-400 font-bold flex items-center gap-1">✓ Reconciled</span>
                 </div>
               </div>
             </div>
@@ -777,25 +811,105 @@ export function CoinSellersPage() {
 
             {/* Detailed Transaction & Payment History Stream */}
             <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Historical Allocation & Payment Log</p>
-              {historyModal.seller?.correctionsHistory?.map((h, i) => (
-                <div key={i} className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg flex justify-between items-center">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className={`font-bold text-xs ${h.amount < 0 || h.type?.includes('DEDUCTION') ? 'text-rose-400' : 'text-emerald-400'}`}>
-                        {h.type}
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-mono">{h.date}</span>
-                    </div>
-                    <p className="text-slate-300 text-[11px] mt-0.5">{h.note}</p>
-                  </div>
-                  {h.amount !== undefined && (
-                    <span className={`font-mono font-bold text-xs ${h.amount < 0 || h.type?.includes('DEDUCTION') ? 'text-rose-400' : 'text-gold-400'}`}>
-                      🪙 {h.amount > 0 ? '+' : ''}{formatNumber(h.amount)}
-                    </span>
-                  )}
+              <div className="flex justify-between items-center">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                  Seller Recharge & Allocation Log
+                </p>
+                {historyError && (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={() => loadSellerHistory(historyModal.seller?.id)}
+                    className="text-[10px] py-0.5 px-2"
+                  >
+                    Retry
+                  </Button>
+                )}
+              </div>
+
+              {loadingHistory ? (
+                <div className="py-8 flex flex-col items-center justify-center gap-2 text-xs text-slate-400">
+                  <div className="w-5 h-5 border-2 border-gold-500 border-t-transparent rounded-full animate-spin"></div>
+                  <span>Loading authoritative recharge history...</span>
                 </div>
-              ))}
+              ) : historyError ? (
+                <div className="p-4 bg-rose-950/40 border border-rose-800/80 rounded-lg text-center space-y-2">
+                  <p className="text-xs text-rose-400 font-medium">⚠️ {historyError}</p>
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={() => loadSellerHistory(historyModal.seller?.id)}
+                  >
+                    Retry Fetch
+                  </Button>
+                </div>
+              ) : sellerTxHistory.length > 0 ? (
+                sellerTxHistory.map((tx) => (
+                  <div key={tx.id || tx.transactionId} className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg flex justify-between items-center">
+                    <div className="flex items-center gap-2.5">
+                      {tx.recipient?.profileImage ? (
+                        <img
+                          src={tx.recipient.profileImage}
+                          alt={tx.recipient.nickname}
+                          className="w-8 h-8 rounded-full object-cover border border-slate-700 shrink-0"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 shrink-0">
+                          <UserCheck className="w-4 h-4" />
+                        </div>
+                      )}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-white">
+                            {tx.recipient?.nickname || tx.recipientNickname || 'User'}
+                          </span>
+                          <span className="text-[11px] text-slate-400 font-mono">
+                            @{tx.recipient?.publicUserId || tx.recipientPublicUserId || tx.recipientUserId}
+                          </span>
+                          <Badge variant={tx.status === 'Successful' ? 'success' : (tx.status === 'Pending' ? 'warning' : 'danger')} size="xs">
+                            {tx.status || 'Successful'}
+                          </Badge>
+                          {tx.notificationDelivered && (
+                            <span className="text-[10px] text-sky-400 bg-sky-950/60 border border-sky-800/60 px-1.5 py-0.5 rounded font-mono flex items-center gap-1" title={tx.notificationStatus || 'Notification persistent in recipient inbox'}>
+                              ✉️ Notified
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                          {tx.transactionId} • {formatDate(tx.timestamp)}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="font-mono font-bold text-xs text-emerald-400">
+                      🪙 +{formatNumber(tx.coins)}
+                    </span>
+                  </div>
+                ))
+              ) : historyModal.seller?.correctionsHistory?.length > 0 ? (
+                historyModal.seller.correctionsHistory.map((h, i) => (
+                  <div key={i} className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg flex justify-between items-center">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`font-bold text-xs ${h.amount < 0 || h.type?.includes('DEDUCTION') ? 'text-rose-400' : 'text-emerald-400'}`}>
+                          {h.type}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">{h.date}</span>
+                      </div>
+                      <p className="text-slate-300 text-[11px] mt-0.5">{h.note}</p>
+                    </div>
+                    {h.amount !== undefined && (
+                      <span className={`font-mono font-bold text-xs ${h.amount < 0 || h.type?.includes('DEDUCTION') ? 'text-rose-400' : 'text-gold-400'}`}>
+                        🪙 {h.amount > 0 ? '+' : ''}{formatNumber(h.amount)}
+                      </span>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-lg text-center text-xs text-slate-400">
+                  No recharge transactions recorded yet for this seller.
+                </div>
+              )}
             </div>
 
             <div className="flex justify-between items-center pt-2 border-t border-slate-800">

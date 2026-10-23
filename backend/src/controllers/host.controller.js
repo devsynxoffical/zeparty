@@ -1,6 +1,7 @@
 import hostRepository from '../repositories/host.repository.js';
 import hostService from '../services/host.service.js';
 import hostingEligibilityService from '../services/hostingEligibility.service.js';
+import hostTargetService from '../services/hostTarget.service.js';
 import {
   applyHostSchema,
   reviewHostApplicationSchema,
@@ -315,6 +316,101 @@ export async function applyLiveHost(req, res, next) {
   }
 }
 
+export async function previewTargetReconciliation(req, res, next) {
+  try {
+    const { targetPeriod, hostType, targetUserId, agencyId } = req.body || {};
+    const adminId = req.auth?.adminId || req.auth?.userId || 'ADMIN';
+    const result = await hostTargetService.reconcileHistoricalTargets({
+      targetPeriod: targetPeriod || 'CURRENT',
+      hostType: hostType || 'ALL',
+      targetUserId: targetUserId || null,
+      agencyId: agencyId || null,
+      executionMode: 'DRY_RUN',
+      adminId,
+    });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function applyTargetReconciliation(req, res, next) {
+  try {
+    const { targetPeriod, hostType, targetUserId, agencyId, confirmed } = req.body || {};
+    if (confirmed !== true) {
+      return res.status(400).json({
+        success: false,
+        message: 'Explicit confirmation (confirmed: true) is required before applying target corrections',
+        error: { code: 'CONFIRMATION_REQUIRED' },
+      });
+    }
+    const adminId = req.auth?.adminId || req.auth?.userId || 'ADMIN';
+    const result = await hostTargetService.reconcileHistoricalTargets({
+      targetPeriod: targetPeriod || 'CURRENT',
+      hostType: hostType || 'ALL',
+      targetUserId: targetUserId || null,
+      agencyId: agencyId || null,
+      executionMode: 'APPLIED',
+      adminId,
+    });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function reverseGiftTarget(req, res, next) {
+  try {
+    const { giftTransactionId, referenceId, reason } = req.body || {};
+    if (!giftTransactionId) {
+      return res.status(400).json({
+        success: false,
+        message: 'giftTransactionId is required',
+        error: { code: 'MISSING_TRANSACTION_ID' },
+      });
+    }
+    const adminId = req.auth?.adminId || req.auth?.userId || 'ADMIN';
+    const ref = referenceId || `REV-GIFT-${Date.now()}`;
+    const result = await hostTargetService.recordGiftReversal({
+      giftTransactionId,
+      referenceId: ref,
+      reason: reason || 'Administrative dispute / gift reversal',
+      adminId,
+    });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getTargetReconciliationRuns(req, res, next) {
+  try {
+    const { page, limit } = req.query;
+    const result = await hostTargetService.getTargetReconciliationRuns({
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 20,
+    });
+    return res.status(200).json({
+      success: true,
+      data: result.runs,
+      pagination: result.pagination,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getHostTargetSummary(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const date = req.query?.date ? new Date(req.query.date) : new Date();
+    const result = await hostTargetService.getHostTargetProgress(userId, { date });
+    return res.status(200).json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   applyHost,
   applyLiveHost,
@@ -334,6 +430,11 @@ export default {
   recordBroadcastHeartbeat,
   getHostAttendance,
   rejectSimulation,
+  previewTargetReconciliation,
+  applyTargetReconciliation,
+  reverseGiftTarget,
+  getTargetReconciliationRuns,
+  getHostTargetSummary,
 };
 
 

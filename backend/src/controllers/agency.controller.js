@@ -5,6 +5,7 @@ import hostRepository from '../repositories/host.repository.js';
 import hostingEligibilityService, {
   validateHostingEligibility,
 } from '../services/hostingEligibility.service.js';
+import hostTargetService from '../services/hostTarget.service.js';
 import {
   createAgencySchema,
   updateAgencySchema,
@@ -229,9 +230,20 @@ export async function getMyAgency(req, res, next) {
     }
 
     const agency = await agencyRepository.findAgencyByOwnerUserId(userId);
+    let targetSummary = null;
+    if (agency) {
+      targetSummary = await hostTargetService.getAgencyTargetProgress(agency.id).catch(() => null);
+    }
+
     return res.status(200).json({
       success: true,
-      data: agency || null,
+      data: agency
+        ? {
+            ...agency,
+            targetSummary,
+            totalTargetCoins: targetSummary?.totalTargetCoins || '0',
+          }
+        : null,
     });
   } catch (err) {
     next(err);

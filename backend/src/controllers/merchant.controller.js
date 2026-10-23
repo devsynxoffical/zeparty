@@ -165,19 +165,28 @@ export async function verifyMerchantRecharge(req, res, next) {
       return res.status(404).json({
         success: false,
         message: `Recipient user not found for identifier '${clean}'`,
-        error: { code: 'RECIPIENT_NOT_FOUND' },
+        error: { code: 'USER_NOT_FOUND' },
       });
     }
+
+    const nickname = (user.profile?.displayName && user.profile.displayName.trim())
+      ? user.profile.displayName.trim()
+      : user.username;
+    const profileImage = user.avatarUrl || null;
 
     return res.status(200).json({
       success: true,
       data: {
+        accountId: user.id,
+        publicUserId: user.username,
+        nickname,
+        profileImage,
         recipientType: type || 'USER',
         recipientId: user.id,
         username: user.username,
-        name: user.profile?.displayName || user.username,
-        displayName: user.profile?.displayName || user.username,
-        avatarUrl: user.avatarUrl,
+        name: nickname,
+        displayName: nickname,
+        avatarUrl: profileImage,
         countryCode: user.countryCode,
         status: user.status,
         isVerified: user.status === 'ACTIVE',

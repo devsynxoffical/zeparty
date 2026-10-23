@@ -8,12 +8,12 @@ const router = express.Router();
 
 router.use(authenticate);
 
-// User-facing endpoints
 router.get('/balance', walletController.getBalance);
 router.get('/ledger', walletController.getLedger);
 router.get('/diamond-details', walletController.getDiamondDetails);
 router.get('/transfer-receivers', walletController.getTransferReceivers);
 router.get('/coin-records', walletController.getCoinRecords);
+router.get('/reconcile', walletController.reconcileWallet);
 router.post('/diamonds/exchange', idempotencyMiddleware, walletController.exchangeDiamonds);
 router.post('/diamonds/transfer', idempotencyMiddleware, walletController.transferDiamonds);
 

@@ -19,4 +19,10 @@ router.post('/:id/versions', requirePermission('economy_settings'), policyContro
 router.post('/:id/versions/:versionId/publish', requirePermission('economy_settings'), policyController.publishVersion);
 router.post('/:id/rollback', requirePermission('economy_settings'), policyController.rollbackPolicy);
 
+// --- Phase 2 / NEW-058: Privacy Feature Eligibility Configuration ---
+router.get('/privacy/eligibility', requirePermission('view_settings'), policyController.getPrivacyEligibility);
+router.put('/privacy/eligibility', requirePermission('economy_settings'), policyController.updatePrivacyEligibility);
+router.post('/privacy/eligibility/grant', requirePermission('economy_settings'), policyController.grantIndividualPrivacyAccess);
+router.post('/privacy/eligibility/revoke', requirePermission('economy_settings'), policyController.revokeIndividualPrivacyAccess);
+
 export default router;

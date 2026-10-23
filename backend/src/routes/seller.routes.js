@@ -17,6 +17,7 @@ adminSellerRouter.put('/:id/status', requirePermission('manage_sellers'), seller
 adminSellerRouter.patch('/:id/status', requirePermission('manage_sellers'), sellerController.updateSellerStatus);
 adminSellerRouter.post('/:id/allocate', requirePermission('issue_coins'), idempotency, sellerController.allocateCoins);
 adminSellerRouter.post('/:id/correct', requirePermission('reseller_corrections'), idempotency, sellerController.correctBalance);
+adminSellerRouter.get('/:id/history', requirePermission('view_sellers'), sellerController.getAdminSellerHistory);
 
 export const userSellerRouter = express.Router();
 
@@ -30,6 +31,9 @@ userSellerRouter.get('/me', authenticate, requireActiveSeller, sellerController.
 userSellerRouter.get('/me/portal', authenticate, requireActiveSeller, sellerController.getMySellerPortal);
 userSellerRouter.get('/recharge/verify-recipient', authenticate, requireActiveSeller, sellerController.verifyRecipient);
 userSellerRouter.post('/recharge/transfer', authenticate, requireActiveSeller, idempotency, sellerController.transferCoins);
+userSellerRouter.get('/recharge/history', authenticate, requireActiveSeller, sellerController.getRechargeHistory);
+userSellerRouter.get('/recharge/status/:id', authenticate, requireActiveSeller, sellerController.getRechargeStatus);
+userSellerRouter.get('/history', authenticate, requireActiveSeller, sellerController.getRechargeHistory);
 
 export default {
   adminSellerRouter,

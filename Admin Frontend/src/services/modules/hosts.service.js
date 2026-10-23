@@ -84,6 +84,26 @@ export async function removeHost(id, reason) {
   return res.data;
 }
 
+export async function previewTargetReconciliation(payload) {
+  const res = await apiClient.post('/v1/admin/hosts/targets/reconcile/preview', payload);
+  return res.data;
+}
+
+export async function applyTargetReconciliation(payload) {
+  const res = await apiClient.post('/v1/admin/hosts/targets/reconcile/apply', payload);
+  return res.data;
+}
+
+export async function reverseGiftTarget(payload) {
+  const res = await apiClient.post('/v1/admin/hosts/targets/reversal', payload);
+  return res.data;
+}
+
+export async function getTargetReconciliationRuns(params = {}) {
+  const res = await apiClient.get('/v1/admin/hosts/targets/reconcile/runs', { params });
+  return res.data;
+}
+
 export default {
   getHosts,
   getHostApplications,
@@ -92,5 +112,9 @@ export default {
   rejectHostApplication,
   updateHostStatus,
   removeHost,
+  previewTargetReconciliation,
+  applyTargetReconciliation,
+  reverseGiftTarget,
+  getTargetReconciliationRuns,
 };
 

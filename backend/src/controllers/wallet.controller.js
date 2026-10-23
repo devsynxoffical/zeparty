@@ -19,9 +19,9 @@ export async function getBalance(req, res, next) {
 export async function getLedger(req, res, next) {
   try {
     const userId = req.auth.userId;
-    const { page = 1, limit = 20, type } = req.query;
+    const { page = 1, limit = 20, type, asset, tab, startDate, endDate } = req.query;
 
-    const ledger = await walletService.getWalletLedger(userId, { page, limit, type });
+    const ledger = await walletService.getWalletLedger(userId, { page, limit, type, asset, tab, startDate, endDate });
 
     return res.status(200).json({
       success: true,
@@ -137,10 +137,24 @@ export async function getTransferReceivers(req, res, next) {
 export async function getCoinRecords(req, res, next) {
   try {
     const userId = req.auth?.userId;
-    const { tab = 'ALL', page = 1, limit = 20 } = req.query;
-    const result = await walletService.getCoinRecords(userId, { tab, page, limit });
+    const { tab = 'ALL', page = 1, limit = 20, type, startDate, endDate } = req.query;
+    const result = await walletService.getCoinRecords(userId, { tab, page, limit, type, startDate, endDate });
     return res.status(200).json({
       success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function reconcileWallet(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const result = await walletService.reconcileWallet(userId);
+    return res.status(200).json({
+      success: true,
+      message: 'Wallet balance reconciliation completed',
       data: result,
     });
   } catch (err) {
@@ -158,4 +172,5 @@ export default {
   getDiamondDetails,
   getTransferReceivers,
   getCoinRecords,
+  reconcileWallet,
 };

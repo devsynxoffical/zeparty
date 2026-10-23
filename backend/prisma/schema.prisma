@@ -382,6 +382,8 @@ model User {
   likes                    Like[]
   following                Follow[]            @relation("Follower")
   followers                Follow[]            @relation("Following")
+  profileVisitsMade        ProfileVisit[]      @relation("VisitorUser")
+  profileVisitsReceived    ProfileVisit[]      @relation("VisitedUser")
   sentMessages             Message[]           @relation("MessageSender")
   notifications            Notification[]
   notificationPreference   NotificationPreference?
@@ -1493,6 +1495,22 @@ model UserBlock {
   @@index([blockedId])
 }
 
+model ProfileVisit {
+  id         String   @id @default(uuid())
+  visitorId  String
+  visitor    User     @relation("VisitorUser", fields: [visitorId], references: [id], onDelete: Cascade)
+  visitedId  String
+  visited    User     @relation("VisitedUser", fields: [visitedId], references: [id], onDelete: Cascade)
+  isMystery  Boolean  @default(false)
+  visitedAt  DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([visitorId, visitedId])
+  @@index([visitedId, visitedAt(sort: Desc)])
+  @@index([visitorId, visitedAt(sort: Desc)])
+}
+
 model Message {
   id              String    @id @default(uuid())
   senderId        String
@@ -1918,5 +1936,90 @@ model UserMilestoneClaim {
   @@unique([userId, eventId, milestoneLevel])
   @@index([userId, eventId])
   @@index([userId])
+}
+
+// ==========================================
+// DOMAIN K: HOST TARGET ATTRIBUTION & RECOVERY (NEW 10)
+// ==========================================
+
+model HostTargetAttribution {
+  id                  String   @id @default(uuid())
+  giftTransactionId   String   @unique
+  recipientUserId     String
+  hostProfileId       String?
+  agencyId            String?
+  targetScope         String   // "LIVE_HOST" | "AUDIO_HOST" | "NONE"
+  cycleIdentifier     String   // e.g. "LIVE_HOST_2026-10_C2"
+  cycleStartDate      DateTime
+  cycleEndDate        DateTime
+  originalCoinValue   BigInt
+  giftCategory        String   @default("POPULAR")
+  isLucky             Boolean  @default(false)
+  quantity            Int      @default(1)
+  grossCoins          BigInt
+  targetCoins         BigInt   // 100% normal / 10% lucky
+  status              String   @default("ATTRIBUTED") // "ATTRIBUTED", "REVERSED", "RECONCILED", "NON_HOST_GIFT"
+  reversalReferenceId String?
+  reversalReason      String?
+  reversedAt          DateTime?
+  reconciledAt        DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  reversals           HostTargetReversal[]
+
+  @@index([recipientUserId, cycleIdentifier])
+  @@index([agencyId, cycleIdentifier])
+  @@index([status])
+  @@index([createdAt])
+  @@index([cycleIdentifier])
+}
+
+model HostTargetReversal {
+  id                  String                @id @default(uuid())
+  attributionId       String
+  attribution         HostTargetAttribution @relation(fields: [attributionId], references: [id], onDelete: Cascade)
+  giftTransactionId   String
+  recipientUserId     String
+  hostProfileId       String?
+  agencyId            String?
+  targetScope         String
+  cycleIdentifier     String
+  deductedCoins       BigInt
+  reason              String
+  referenceId         String                @unique
+  reversedByAdminId   String?
+  createdAt           DateTime              @default(now())
+
+  @@index([attributionId])
+  @@index([giftTransactionId])
+  @@index([recipientUserId])
+  @@index([referenceId])
+}
+
+model TargetReconciliationRun {
+  id                       String   @id @default(uuid())
+  runIdentifier            String   @unique // e.g. "REC-RUN-20261022-..."
+  executionMode            String   // "DRY_RUN" | "APPLIED"
+  targetPeriod             String   // "2026-10"
+  hostType                 String   @default("ALL") // "ALL" | "LIVE_HOST" | "AUDIO_HOST"
+  targetUserId             String?
+  agencyId                 String?
+  transactionsExamined     Int      @default(0)
+  alreadyAttributedCount   Int      @default(0)
+  missingAttributionsFound  Int      @default(0)
+  attributionsCreated      Int      @default(0)
+  discrepanciesFound       Int      @default(0)
+  correctionsApplied       Int      @default(0)
+  unresolvedCount          Int      @default(0)
+  status                   String   @default("COMPLETED") // "COMPLETED" | "FAILED" | "REQUIRES_MANUAL_REVIEW"
+  summaryReportJson        Json
+  executedByAdminId        String
+  createdAt                DateTime @default(now())
+
+  @@index([runIdentifier])
+  @@index([executionMode])
+  @@index([status])
+  @@index([createdAt])
 }
 

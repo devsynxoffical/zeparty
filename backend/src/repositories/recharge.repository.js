@@ -95,7 +95,14 @@ export async function findAllOfflineRecharges(
     where,
     include: {
       user: {
-        select: { id: true, username: true },
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          profile: {
+            select: { displayName: true },
+          },
+        },
       },
     },
     orderBy: { createdAt: 'desc' },

@@ -1,5 +1,6 @@
 import policyService from '../services/policy.service.js';
 import autoRestoreService from '../services/autoRestore.service.js';
+import privacyEligibilityService from '../services/privacyEligibility.service.js';
 import policyRepository from '../repositories/policy.repository.js';
 import {
   createPolicySchema,
@@ -313,6 +314,99 @@ export async function triggerAutoRestoreSweep(req, res, next) {
   }
 }
 
+// --- Privacy Feature Eligibility (Phase 2 / NEW-058) ---
+
+export async function getPrivacyEligibility(req, res, next) {
+  try {
+    const policy = await privacyEligibilityService.getPrivacyEligibilityPolicy();
+    return res.status(200).json({
+      success: true,
+      data: policy,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updatePrivacyEligibility(req, res, next) {
+  try {
+    const { featureKey, eligibleSvipLevels, eligibleNobleRanks, individualUserGrants } = req.body;
+    const adminId = req.auth?.adminId || req.auth?.userId;
+    const ipAddress = req.ip || req.connection?.remoteAddress;
+
+    const updated = await privacyEligibilityService.updatePrivacyEligibilityPolicy(
+      { featureKey, eligibleSvipLevels, eligibleNobleRanks, individualUserGrants },
+      { adminId, ipAddress }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Privacy eligibility policy updated for ${featureKey}`,
+      data: updated,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function grantIndividualPrivacyAccess(req, res, next) {
+  try {
+    const { userId, featureKey } = req.body;
+    const adminId = req.auth?.adminId || req.auth?.userId;
+    const ipAddress = req.ip || req.connection?.remoteAddress;
+
+    if (!userId || !featureKey) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'userId and featureKey are required' },
+      });
+    }
+
+    const result = await privacyEligibilityService.grantIndividualAccess(
+      userId,
+      featureKey,
+      { adminId, ipAddress }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Explicit access to ${featureKey} granted for user ${userId}`,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function revokeIndividualPrivacyAccess(req, res, next) {
+  try {
+    const { userId, featureKey } = req.body;
+    const adminId = req.auth?.adminId || req.auth?.userId;
+    const ipAddress = req.ip || req.connection?.remoteAddress;
+
+    if (!userId || !featureKey) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'userId and featureKey are required' },
+      });
+    }
+
+    const result = await privacyEligibilityService.revokeIndividualAccess(
+      userId,
+      featureKey,
+      { adminId, ipAddress }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Explicit access to ${featureKey} revoked for user ${userId}`,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getPolicies,
   getPolicyById,
@@ -328,4 +422,8 @@ export default {
   disableConfiguration,
   restoreConfiguration,
   triggerAutoRestoreSweep,
+  getPrivacyEligibility,
+  updatePrivacyEligibility,
+  grantIndividualPrivacyAccess,
+  revokeIndividualPrivacyAccess,
 };

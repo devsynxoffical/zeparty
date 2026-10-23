@@ -12,6 +12,7 @@ import hostingEligibilityService, {
   validateHostingEligibility,
   HostingEligibilityError,
 } from './hostingEligibility.service.js';
+import privacyEligibilityService from './privacyEligibility.service.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -199,9 +200,11 @@ export async function getSelfProfile(userId, db = prisma) {
     throw error;
   }
 
-  const [followersCount, followingCount, activeRoom, equippedUserAssets] = await Promise.all([
-    db.follow.count({ where: { followingId: userId, status: 'ACCEPTED' } }),
-    db.follow.count({ where: { followerId: userId, status: 'ACCEPTED' } }),
+  const [followersCount, followingCount, visitorsCount, roomCount, activeRoom, equippedUserAssets] = await Promise.all([
+    db.follow.count({ where: { followingId: userId, status: 'ACCEPTED', follower: { status: { not: 'DELETED' } } } }),
+    db.follow.count({ where: { followerId: userId, status: 'ACCEPTED', following: { status: { not: 'DELETED' } } } }),
+    db.profileVisit ? db.profileVisit.count({ where: { visitedId: userId } }).catch(() => 0) : 0,
+    db.roomMember ? db.roomMember.count({ where: { userId, room: { status: { not: 'CLOSED_BY_ADMIN' } } } }).catch(() => 0) : 0,
     getActiveRoomForUser(userId, db),
     db.userAsset.findMany({
       where: {
@@ -216,10 +219,16 @@ export async function getSelfProfile(userId, db = prisma) {
   if (user.profile) {
     user.profile.followersCount = followersCount;
     user.profile.followingCount = followingCount;
+    user.profile.visitorsCount = visitorsCount;
+    user.profile.roomCount = roomCount;
+    user.profile.joinedRoomsCount = roomCount;
   } else {
     user.profile = {
       followersCount,
       followingCount,
+      visitorsCount,
+      roomCount,
+      joinedRoomsCount: roomCount,
       postsCount: 0,
       level: 1,
       isPrivate: false,
@@ -360,6 +369,11 @@ export async function getSelfProfile(userId, db = prisma) {
     diamonds: diamondBalanceNum,
     coinBalance: coinBalanceNum,
     diamondBalance: diamondBalanceNum,
+    followersCount,
+    followingCount,
+    visitorsCount,
+    roomCount,
+    joinedRoomsCount: roomCount,
     publicId,
     zePartyId: publicId,
     profile: profileWithPresence ? sanitizeFinancial(profileWithPresence) : profileWithPresence,
@@ -441,9 +455,11 @@ export async function getPublicProfile(userId, db = prisma) {
     throw error;
   }
 
-  const [followersCount, followingCount, activeRoom, equippedUserAssets] = await Promise.all([
-    db.follow.count({ where: { followingId: userId, status: 'ACCEPTED' } }),
-    db.follow.count({ where: { followerId: userId, status: 'ACCEPTED' } }),
+  const [followersCount, followingCount, visitorsCount, roomCount, activeRoom, equippedUserAssets] = await Promise.all([
+    db.follow.count({ where: { followingId: userId, status: 'ACCEPTED', follower: { status: { not: 'DELETED' } } } }),
+    db.follow.count({ where: { followerId: userId, status: 'ACCEPTED', following: { status: { not: 'DELETED' } } } }),
+    db.profileVisit ? db.profileVisit.count({ where: { visitedId: userId, isMystery: false } }).catch(() => 0) : 0,
+    db.roomMember ? db.roomMember.count({ where: { userId, room: { status: { not: 'CLOSED_BY_ADMIN' } } } }).catch(() => 0) : 0,
     getActiveRoomForUser(userId, db),
     db.userAsset.findMany({
       where: {
@@ -458,10 +474,16 @@ export async function getPublicProfile(userId, db = prisma) {
   if (publicUser.profile) {
     publicUser.profile.followersCount = followersCount;
     publicUser.profile.followingCount = followingCount;
+    publicUser.profile.visitorsCount = visitorsCount;
+    publicUser.profile.roomCount = roomCount;
+    publicUser.profile.joinedRoomsCount = roomCount;
   } else {
     publicUser.profile = {
       followersCount,
       followingCount,
+      visitorsCount,
+      roomCount,
+      joinedRoomsCount: roomCount,
       postsCount: 0,
       level: 1,
       isPrivate: false,
@@ -549,6 +571,11 @@ export async function getPublicProfile(userId, db = prisma) {
 
   return {
     ...publicUser,
+    followersCount,
+    followingCount,
+    visitorsCount,
+    roomCount,
+    joinedRoomsCount: roomCount,
     publicId,
     zePartyId: publicId,
     profile: profileWithPresence,
@@ -1427,30 +1454,78 @@ export async function editOwnProfile(userId, { nickname, personalNote, gender, b
  * Module 28: Tier-Based Privacy Settings Unlocks
  */
 export async function getUserPrivacySettings(userId, db = prisma) {
+  const [userProfile, userPreferences, antiFollowEligibility, failedToFindEligibility] = await Promise.all([
+    db.userProfile.findUnique({ where: { userId } }),
+    privacyEligibilityService.getUserPreferences(userId, db),
+    privacyEligibilityService.checkUserEligibility(userId, 'ANTI_FOLLOW', db),
+    privacyEligibilityService.checkUserEligibility(userId, 'FAILED_TO_FIND', db),
+  ]);
+
+  const svipLevel = Number(userProfile?.svipLevel || 0);
+
   return {
     userId,
     items: [
-      { key: 'GENDER_PRIVACY', label: 'Gender Privacy', requiredTier: 'Standard', isLocked: false, isEnabled: true },
-      { key: 'VIEW_LISTS', label: 'View Lists Related to Me', requiredTier: 'Standard', isLocked: false, isEnabled: true },
-      { key: 'INVISIBLE_VISIT', label: 'Invisible Profile Visit', requiredTier: 'SVIP 9', isLocked: true, isEnabled: false },
-      { key: 'HIDE_ONLINE', label: 'Hide Online Status', requiredTier: 'SVIP 10', isLocked: true, isEnabled: false },
-      { key: 'HIDE_GIFT_RECORD', label: 'Hide Gift Record', requiredTier: 'SVIP 10', isLocked: true, isEnabled: false },
-      { key: 'RANK_INVISIBLE', label: 'Rank Invisible', requiredTier: 'SVIP 11', isLocked: true, isEnabled: false },
-      { key: 'ROOM_INVISIBLE', label: 'Room Invisible', requiredTier: 'SVIP 12', isLocked: true, isEnabled: false },
-      { key: 'SVIP_HIDDEN', label: 'SVIP Identity Hidden', requiredTier: 'SVIP 13', isLocked: true, isEnabled: false },
-      { key: 'ANTI_FOLLOW', label: 'Anti-Follow', requiredTier: 'Emperor', isLocked: true, isEnabled: false },
-      { key: 'FAILED_TO_FIND', label: 'Failed To Find', requiredTier: 'Sovereign', isLocked: true, isEnabled: false },
-      { key: 'MYSTERY', label: 'Mystery', requiredTier: 'Admin Configured', isLocked: true, isEnabled: false },
-      { key: 'HIDE_WEALTH', label: 'Hide Wealth Level', requiredTier: 'Admin Configured', isLocked: true, isEnabled: false },
+      { key: 'GENDER_PRIVACY', label: 'Gender Privacy', requiredTier: 'Standard', isLocked: false, isEnabled: userPreferences.GENDER_PRIVACY !== false },
+      { key: 'VIEW_LISTS', label: 'View Lists Related to Me', requiredTier: 'Standard', isLocked: false, isEnabled: userPreferences.VIEW_LISTS !== false },
+      { key: 'INVISIBLE_VISIT', label: 'Invisible Profile Visit', requiredTier: 'SVIP 9', isLocked: svipLevel < 9, isEnabled: svipLevel >= 9 && Boolean(userPreferences.INVISIBLE_VISIT) },
+      { key: 'HIDE_ONLINE', label: 'Hide Online Status', requiredTier: 'SVIP 10', isLocked: svipLevel < 10, isEnabled: svipLevel >= 10 && Boolean(userPreferences.HIDE_ONLINE) },
+      { key: 'HIDE_GIFT_RECORD', label: 'Hide Gift Record', requiredTier: 'SVIP 10', isLocked: svipLevel < 10, isEnabled: svipLevel >= 10 && Boolean(userPreferences.HIDE_GIFT_RECORD) },
+      { key: 'RANK_INVISIBLE', label: 'Rank Invisible', requiredTier: 'SVIP 11', isLocked: svipLevel < 11, isEnabled: svipLevel >= 11 && Boolean(userPreferences.RANK_INVISIBLE) },
+      { key: 'ROOM_INVISIBLE', label: 'Room Invisible', requiredTier: 'SVIP 12', isLocked: svipLevel < 12, isEnabled: svipLevel >= 12 && Boolean(userPreferences.ROOM_INVISIBLE) },
+      { key: 'SVIP_HIDDEN', label: 'SVIP Identity Hidden', requiredTier: 'SVIP 13', isLocked: svipLevel < 13, isEnabled: svipLevel >= 13 && Boolean(userPreferences.SVIP_HIDDEN) },
+      {
+        key: 'ANTI_FOLLOW',
+        label: 'Anti-Follow',
+        requiredTier: 'Configurable SVIP/Noble or Grant',
+        isLocked: !antiFollowEligibility.isEligible,
+        isEnabled: antiFollowEligibility.isEligible && Boolean(userPreferences.ANTI_FOLLOW),
+        eligibilityReason: antiFollowEligibility.reason,
+      },
+      {
+        key: 'FAILED_TO_FIND',
+        label: 'Failed To Find',
+        requiredTier: 'Configurable SVIP/Noble or Grant',
+        isLocked: !failedToFindEligibility.isEligible,
+        isEnabled: failedToFindEligibility.isEligible && Boolean(userPreferences.FAILED_TO_FIND),
+        eligibilityReason: failedToFindEligibility.reason,
+      },
+      { key: 'MYSTERY', label: 'Mystery', requiredTier: 'Admin Configured', isLocked: true, isEnabled: Boolean(userPreferences.MYSTERY) },
+      { key: 'HIDE_WEALTH', label: 'Hide Wealth Level', requiredTier: 'Admin Configured', isLocked: true, isEnabled: Boolean(userPreferences.HIDE_WEALTH) },
     ],
   };
 }
 
 export async function updateUserPrivacySettings(userId, { key, isEnabled }, db = prisma) {
+  const upperKey = String(key || '').toUpperCase();
+  const willEnable = Boolean(isEnabled);
+
+  // Authoritative eligibility check for configurable Phase 2 features (NEW-058)
+  if (upperKey === 'ANTI_FOLLOW' || upperKey === 'FAILED_TO_FIND') {
+    if (willEnable) {
+      const eligibility = await privacyEligibilityService.checkUserEligibility(userId, upperKey, db);
+      if (!eligibility.isEligible) {
+        const error = new Error(`User is not eligible to enable ${upperKey}. Requires configured SVIP tier, Noble rank, or explicit individual grant.`);
+        error.statusCode = 403;
+        error.code = 'PRIVACY_FEATURE_INELIGIBLE';
+        error.featureKey = upperKey;
+        throw error;
+      }
+    }
+  }
+
+  // Persist preference
+  const updatedPrefs = await privacyEligibilityService.setUserPreferences(
+    userId,
+    { [upperKey]: willEnable },
+    db
+  );
+
   return {
     success: true,
-    key,
-    isEnabled: Boolean(isEnabled),
+    key: upperKey,
+    isEnabled: willEnable,
+    preferences: updatedPrefs,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -2476,7 +2551,8 @@ export async function processUserCoinRefundCorrectionByAdmin(
 }
 
 export async function getUserRechargeHistoryForAdmin(userId, db = prisma) {
-  const [online, offline] = await Promise.all([
+  const userWallet = await db.wallet.findUnique({ where: { userId } });
+  const [online, offline, walletRecharges] = await Promise.all([
     db.onlineRecharge.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
@@ -2487,12 +2563,20 @@ export async function getUserRechargeHistoryForAdmin(userId, db = prisma) {
       orderBy: { createdAt: 'desc' },
       take: 50,
     }),
+    userWallet
+      ? db.walletLedger.findMany({
+          where: { walletId: userWallet.id, transactionType: 'RECHARGE' },
+          orderBy: { createdAt: 'desc' },
+          take: 50,
+        })
+      : Promise.resolve([]),
   ]);
 
   return {
     userId,
     totalOnline: online.length,
     totalOffline: offline.length,
+    totalWalletRecharges: walletRecharges.length,
     onlineRecharges: online.map(r => ({
       id: r.id,
       gateway: r.gateway,
@@ -2510,6 +2594,14 @@ export async function getUserRechargeHistoryForAdmin(userId, db = prisma) {
       receiptPhotoUrl: r.receiptPhotoUrl,
       status: r.status,
       createdAt: r.createdAt,
+    })),
+    walletRecharges: walletRecharges.map(w => ({
+      id: w.id,
+      referenceId: w.referenceId,
+      coinDelta: Number(w.coinDelta),
+      coinsCredited: Number(w.coinDelta),
+      usdDelta: Number(w.usdDelta),
+      createdAt: w.createdAt,
     })),
   };
 }

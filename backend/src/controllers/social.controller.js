@@ -92,6 +92,7 @@ export async function getFollowers(req, res, next) {
       success: true,
       message: result.message || 'Followers retrieved successfully',
       data: result.followers,
+      followers: result.followers,
       isPrivate: result.isPrivate ?? false,
       pagination: result.pagination,
     });
@@ -113,6 +114,7 @@ export async function getFollowing(req, res, next) {
       success: true,
       message: result.message || 'Following list retrieved successfully',
       data: result.following,
+      following: result.following,
       isPrivate: result.isPrivate ?? false,
       pagination: result.pagination,
     });
@@ -170,9 +172,13 @@ export async function getBlockedUsers(req, res, next) {
 
 export async function recordProfileVisit(req, res, next) {
   try {
-    const { id: visitedId } = userIdParamSchema.parse(req.params);
+    const visitedId = req.params.id || req.body?.visitedId;
     const visitorId = req.auth?.userId;
     const isMystery = Boolean(req.body?.isMystery);
+
+    if (!visitedId) {
+      return res.status(400).json({ success: false, message: 'Visited user ID is required' });
+    }
 
     if (visitorId && visitorId !== visitedId) {
       await socialService.recordProfileVisit({ visitorId, visitedId, isMystery });
@@ -189,14 +195,21 @@ export async function recordProfileVisit(req, res, next) {
 
 export async function getProfileVisitors(req, res, next) {
   try {
-    const userId = req.auth?.userId;
+    const targetUserId = req.params.id || req.params.userId || req.auth?.userId;
+    const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
-    const visitors = await socialService.getProfileVisitors(userId, { limit });
+    const result = await socialService.getProfileVisitors(targetUserId, {
+      page,
+      limit,
+      viewerUserId: req.auth?.userId,
+    });
 
     return res.status(200).json({
       success: true,
       message: 'Profile visitors retrieved successfully',
-      data: visitors,
+      data: result.data || [],
+      visitors: result.visitors || result.data || [],
+      pagination: result.pagination || { page, limit, total: result.data?.length || 0, totalPages: 1, hasMore: false },
     });
   } catch (err) {
     next(err);
@@ -205,14 +218,21 @@ export async function getProfileVisitors(req, res, next) {
 
 export async function getProfileVisited(req, res, next) {
   try {
-    const userId = req.auth?.userId;
+    const targetUserId = req.params.id || req.params.userId || req.auth?.userId;
+    const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
-    const visited = await socialService.getProfileVisited(userId, { limit });
+    const result = await socialService.getProfileVisited(targetUserId, {
+      page,
+      limit,
+      viewerUserId: req.auth?.userId,
+    });
 
     return res.status(200).json({
       success: true,
       message: 'Visited profiles retrieved successfully',
-      data: visited,
+      data: result.data || [],
+      visited: result.visited || result.data || [],
+      pagination: result.pagination || { page, limit, total: result.data?.length || 0, totalPages: 1, hasMore: false },
     });
   } catch (err) {
     next(err);

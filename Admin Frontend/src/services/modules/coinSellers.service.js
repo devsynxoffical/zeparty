@@ -66,6 +66,11 @@ export async function correctSellerBalance(id, payload) {
   return res.data;
 }
 
+export async function getSellerHistory(id, params = {}) {
+  const res = await apiClient.get(`/v1/admin/sellers/${id}/history`, { params });
+  return res.data?.data?.transactions || [];
+}
+
 export default {
   getCoinSellers,
   createCoinSeller,
@@ -75,4 +80,5 @@ export default {
   toggleSellerStatus,
   allocateCoinsToSeller,
   correctSellerBalance,
+  getSellerHistory,
 };

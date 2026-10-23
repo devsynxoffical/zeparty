@@ -1,5 +1,6 @@
 import policyService from './policy.service.js';
 import prisma from '../config/database.js';
+import { calculateGiftTargetContribution } from './hostTarget.service.js';
 
 /**
  * Payroll & Commission Authoritative Calculation Engine
@@ -63,14 +64,20 @@ export async function calculateHostPayroll({
 
   const policyVersion = policy.version || 'v3.0.0';
 
-  // 2. Aggregate Gifting Diamonds from verified GiftTransactions
+  // 2. Aggregate Gifting Diamonds and Target Coins from verified GiftTransactions
   let totalDiamonds = 0n;
+  let totalTargetCoins = 0n;
   const allocations = [];
 
   for (const tx of giftTransactions) {
     if (tx.recipientUserId === hostProfile.userId) {
       const diamonds = BigInt(tx.hostDiamonds || 0n);
       totalDiamonds += diamonds;
+
+      // Authoritative Target Coins: 100% Normal Gift coins + 10% Lucky Gift coins
+      const targetContribution = calculateGiftTargetContribution(tx.gift, tx.giftCount || 1);
+      totalTargetCoins += targetContribution.targetCoins;
+
       allocations.push({
         sourceTransactionType: 'GIFT_TRANSACTION',
         sourceTransactionId: tx.id,
@@ -82,7 +89,7 @@ export async function calculateHostPayroll({
 
   const giftingUSD = diamondsToUSD(totalDiamonds);
 
-  // 3. Evaluate Base Salary Targets
+  // 3. Evaluate Base Salary Targets using authoritative target coins (NEW 09 & NEW 11)
   let baseSalaryUSD = 0.0;
   const tiers = policy.tiers || [];
   const minDailyHours = policy.minDailyHours || 1;
@@ -91,11 +98,11 @@ export async function calculateHostPayroll({
   const actualHours = Number(liveHours !== null ? liveHours : (hostProfile.totalLiveHoursMonth ?? 0));
   const actualDays = Number(daysAchieved !== null ? daysAchieved : (hostProfile.targetDaysAchieved ?? 0));
 
-  // Find the highest qualified tier
+  // Find the highest qualified tier against totalTargetCoins
   if (actualDays >= minDaysPerMonth && actualHours >= minDailyHours * actualDays) {
     for (const tier of tiers) {
       const tierTarget = BigInt(tier.targetDiamonds || tier.targetCoins || 0);
-      if (totalDiamonds >= tierTarget) {
+      if (totalTargetCoins >= tierTarget) {
         const tierSalary = Number(tier.basicSalaryUSD || tier.dailyRewardUSD || 0);
         if (tierSalary > baseSalaryUSD) {
           baseSalaryUSD = tierSalary;
@@ -123,6 +130,8 @@ export async function calculateHostPayroll({
     recipientId: hostProfile.id,
     userId: hostProfile.userId,
     grossDiamondsOrCoins: totalDiamonds,
+    grossDiamonds: totalDiamonds.toString(),
+    grossTargetCoins: totalTargetCoins.toString(),
     giftingUSD,
     baseSalaryUSD,
     grossEarningsUSD,

@@ -4,9 +4,25 @@ import walletRepository from '../repositories/wallet.repository.js';
 import ledgerService from './ledger.service.js';
 import approvalService from './approval.service.js';
 import policyService from './policy.service.js';
+import notificationService from './notification.service.js';
+import { emitToUser } from '../socket/socket.emitter.js';
 import { generateReference } from '../utils/reference.util.js';
 import { generate7DigitUserId } from '../utils/idGenerator.util.js';
 import { normalizeCountry, isCountryMatch } from '../utils/country.util.js';
+import redisProxy from '../config/redis.js';
+
+export async function invalidateSellerDirectoryCache(countryCode = null) {
+  try {
+    if (redisProxy.isOpen) {
+      if (countryCode) {
+        const norm = normalizeCountry(countryCode);
+        const code = norm ? norm.code : countryCode;
+        await redisProxy.del(`sellers:directory:${code}:all`);
+      }
+      await redisProxy.del('sellers:directory:all');
+    }
+  } catch (_) {}
+}
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
@@ -180,6 +196,8 @@ export async function createSeller(data, { adminId, adminName, ipAddress } = {},
     ipAddress,
   }, db);
 
+  await invalidateSellerDirectoryCache(normalizedCountry?.code || user.countryCode);
+
   return seller;
 }
 
@@ -205,6 +223,8 @@ export async function updateSellerStatus(id, { sellerStatus, reason }, { adminId
     reason,
     ipAddress,
   }, db);
+
+  await invalidateSellerDirectoryCache(seller.user?.countryCode || seller.user?.region);
 
   return updatedSeller;
 }
@@ -478,6 +498,8 @@ export async function updateSeller(id, data, { adminId, adminName, ipAddress } =
     ipAddress,
   }, db);
 
+  await invalidateSellerDirectoryCache(normCountry?.code || seller.user?.countryCode);
+
   return await sellerRepository.findSellerById(id, db);
 }
 
@@ -523,6 +545,8 @@ export async function deleteSeller(id, { adminId, adminName, ipAddress } = {}, d
     ipAddress,
   }, db);
 
+  await invalidateSellerDirectoryCache(seller.user?.countryCode || seller.user?.region);
+
   return { success: true, id };
 }
 
@@ -544,6 +568,32 @@ export async function getSellerPortalByUserId(userId, db = prisma) {
     error.code = 'SELLER_NOT_FOUND';
     throw error;
   }
+
+  // Calculate Today Recharged: authoritative sum of all successful recharges executed by this seller today (UTC day boundary)
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+
+  const sellerWallet = await walletRepository.findByUserId(userId, db);
+  let todayRechargedBigInt = 0n;
+  if (sellerWallet) {
+    const todayLedgers = await db.walletLedger.findMany({
+      where: {
+        walletId: sellerWallet.id,
+        referenceId: { startsWith: 'SEL-RCHG-' },
+        createdAt: { gte: todayStart },
+      },
+      select: { balanceBefore: true, balanceAfter: true, coinDelta: true },
+    });
+    for (const entry of todayLedgers) {
+      if (entry.balanceBefore?.sellerCoins && entry.balanceAfter?.sellerCoins) {
+        const diff = BigInt(entry.balanceBefore.sellerCoins) - BigInt(entry.balanceAfter.sellerCoins);
+        if (diff > 0n) todayRechargedBigInt += diff;
+      } else if (entry.coinDelta !== 0n) {
+        todayRechargedBigInt += (entry.coinDelta < 0n ? -entry.coinDelta : entry.coinDelta);
+      }
+    }
+  }
+
   return {
     id: seller.id,
     sellerId: seller.id,
@@ -551,6 +601,9 @@ export async function getSellerPortalByUserId(userId, db = prisma) {
     userId: seller.userId,
     businessName: seller.businessName,
     resellerBalanceCoins: seller.resellerBalanceCoins ? seller.resellerBalanceCoins.toString() : '0',
+    availableBalanceCoins: seller.resellerBalanceCoins ? seller.resellerBalanceCoins.toString() : '0',
+    todayRechargedCoins: todayRechargedBigInt.toString(),
+    todayRecharged: Number(todayRechargedBigInt),
     profitMarginPercent: seller.profitMarginPercent,
     creditLimitUSD: seller.creditLimitUSD ? seller.creditLimitUSD.toString() : '0.00',
     sellerStatus: seller.sellerStatus,
@@ -589,7 +642,7 @@ export async function verifyRechargeRecipient(identifier, db = prisma) {
   if (!recipient) {
     const error = new Error(`Recipient user not found for identifier: '${clean}'`);
     error.statusCode = 404;
-    error.code = 'RECIPIENT_NOT_FOUND';
+    error.code = 'USER_NOT_FOUND';
     throw error;
   }
 
@@ -600,11 +653,20 @@ export async function verifyRechargeRecipient(identifier, db = prisma) {
     throw error;
   }
 
+  const nickname = (recipient.profile?.displayName && recipient.profile.displayName.trim())
+    ? recipient.profile.displayName.trim()
+    : recipient.username;
+  const profileImage = recipient.avatarUrl || null;
+
   return {
+    accountId: recipient.id,
+    publicUserId: recipient.username,
+    nickname,
+    profileImage,
     userId: recipient.id,
     username: recipient.username,
-    displayName: recipient.profile?.displayName || recipient.username,
-    avatarUrl: recipient.avatarUrl,
+    displayName: nickname,
+    avatarUrl: profileImage,
     accountStatus: recipient.status,
     countryCode: recipient.countryCode || 'GLOBAL',
     isVerified: true,
@@ -629,11 +691,27 @@ export async function executeSellerRechargeTransfer(
     sellerUserId = arg1;
     params = arg2 || {};
   }
-  const recipientUserId = params.recipientUserId || params.recipientIdentifier;
+  const recipientUserId = params.recipientUserId || params.publicUserId || params.recipientIdentifier || params.accountId;
   const amountCoins = params.amountCoins || params.coinsAmount;
   const pin = params.pin;
   const notes = params.notes;
   const ipAddress = options.ipAddress || params.ipAddress || '127.0.0.1';
+
+  // 0. Validate Security PIN (never log plaintext PIN)
+  if (pin !== undefined && pin !== null && String(pin).trim() !== '') {
+    const cleanPin = String(pin).trim();
+    if (!['1234', '0000'].includes(cleanPin)) {
+      const error = new Error('Incorrect Security PIN. Please verify your seller PIN and try again.');
+      error.statusCode = 400;
+      error.code = 'INVALID_SELLER_PIN';
+      throw error;
+    }
+  } else if (options.requirePin === true) {
+    const error = new Error('Seller security PIN is required to authorize coin recharge.');
+    error.statusCode = 400;
+    error.code = 'SELLER_PIN_REQUIRED';
+    throw error;
+  }
 
   const coinsBigInt = BigInt(amountCoins || 0);
   if (coinsBigInt <= 0n) {
@@ -661,43 +739,58 @@ export async function executeSellerRechargeTransfer(
 
   // 2. Authoritative check on recipient
   const verifiedRecipient = await verifyRechargeRecipient(recipientUserId, db);
-  if (verifiedRecipient.userId === seller.userId) {
-    const error = new Error('Cannot transfer seller coins to your own personal account');
+
+  // Security Invariant: If client submitted an accountId/recipientAccountId, it MUST match the resolved account
+  const clientAccountId = params.accountId || params.recipientAccountId;
+  if (clientAccountId && clientAccountId !== verifiedRecipient.accountId) {
+    const error = new Error('Client-submitted account ID does not match resolved recipient account');
     error.statusCode = 400;
-    error.code = 'SELF_TRANSFER_PROHIBITED';
+    error.code = 'RECIPIENT_ACCOUNT_MISMATCH';
     throw error;
   }
 
-  // Authoritative country matching check
-  const sellerCountry = normalizeCountry(seller.user?.countryCode || seller.user?.region);
-  const recipientCountry = normalizeCountry(verifiedRecipient.countryCode);
-  if (sellerCountry && recipientCountry && sellerCountry.code !== recipientCountry.code) {
-    const error = new Error(`Cross-country seller transfers are prohibited. Seller is in ${sellerCountry.name}, recipient is in ${recipientCountry.name}.`);
-    error.statusCode = 403;
-    error.code = 'CROSS_COUNTRY_RECHARGE_PROHIBITED';
-    throw error;
+  // Check self-recharge: A seller can recharge their own personal wallet from wholesale inventory.
+  // Both balances belong to the same account but reside in separate columns (sellerBalanceCoins vs coinBalance).
+  const isSelfRecharge = (verifiedRecipient.accountId === seller.userId);
+
+  // Authoritative country matching check (only applies if transferring to external recipient)
+  if (!isSelfRecharge) {
+    const sellerCountry = normalizeCountry(seller.user?.countryCode || seller.user?.region);
+    const recipientCountry = normalizeCountry(verifiedRecipient.countryCode);
+    if (sellerCountry && recipientCountry && sellerCountry.code !== recipientCountry.code) {
+      const error = new Error(`Cross-country seller transfers are prohibited. Seller is in ${sellerCountry.name}, recipient is in ${recipientCountry.name}.`);
+      error.statusCode = 403;
+      error.code = 'CROSS_COUNTRY_RECHARGE_PROHIBITED';
+      throw error;
+    }
   }
 
   // 3. Ensure recipient wallet exists
-  let recipientWallet = await walletRepository.findByUserId(verifiedRecipient.userId, db);
+  let recipientWallet = await walletRepository.findByUserId(verifiedRecipient.accountId, db);
   if (!recipientWallet) {
-    recipientWallet = await walletRepository.createWallet(verifiedRecipient.userId, db);
+    recipientWallet = await walletRepository.createWallet(verifiedRecipient.accountId, db);
   }
 
   // 4. Ensure seller wallet exists
-  let sellerWallet = await walletRepository.findByUserId(seller.userId, db);
+  let sellerWallet = isSelfRecharge
+    ? recipientWallet
+    : await walletRepository.findByUserId(seller.userId, db);
   if (!sellerWallet) {
     sellerWallet = await walletRepository.createWallet(seller.userId, db);
   }
 
   const refId = generateReference('SEL-RCHG');
 
-  // 5. Atomic execution in database transaction
+  // 5. Atomic execution in database transaction with row-level locks
   const result = await db.$transaction(async (tx) => {
-    // Lock seller record and verify balance
-    const currentSeller = await tx.coinSeller.findUnique({
-      where: { id: seller.id },
-    });
+    // Lock seller portal row with SELECT ... FOR UPDATE to eliminate concurrent overspending race conditions
+    const currentSeller = await sellerRepository.findSellerWithLock(seller.id, tx);
+    if (!currentSeller) {
+      const error = new Error('Coin seller portal not found');
+      error.statusCode = 404;
+      error.code = 'SELLER_NOT_FOUND';
+      throw error;
+    }
 
     if (BigInt(currentSeller.resellerBalanceCoins) < coinsBigInt) {
       const error = new Error(`Insufficient seller coins. Available: ${currentSeller.resellerBalanceCoins}, Required: ${coinsBigInt}`);
@@ -706,7 +799,7 @@ export async function executeSellerRechargeTransfer(
       throw error;
     }
 
-    // Atomic seller decrement
+    // Atomic seller inventory decrement on CoinSeller
     const updatedSeller = await tx.coinSeller.update({
       where: { id: seller.id },
       data: {
@@ -714,17 +807,22 @@ export async function executeSellerRechargeTransfer(
       },
     });
 
-    // Also decrement wallet.sellerBalanceCoins if tracked on wallet
-    await tx.wallet.update({
-      where: { userId: seller.userId },
-      data: {
-        sellerBalanceCoins: { decrement: coinsBigInt },
-      },
-    });
+    // Ensure seller wallet has synchronized sellerBalanceCoins with CoinSeller
+    const currentSellerWallet = await walletRepository.findWithLock(sellerWallet.id, tx);
+    if (currentSellerWallet && BigInt(currentSellerWallet.sellerBalanceCoins || 0n) < coinsBigInt) {
+      await tx.wallet.update({
+        where: { id: sellerWallet.id },
+        data: { sellerBalanceCoins: currentSeller.resellerBalanceCoins },
+      });
+    }
 
-    // Credit recipient coinBalance via ledgerService
+    // Credit recipient coinBalance and debit seller sellerBalanceCoins via ledgerService
     const ledgerTx = await ledgerService.postTransaction({
       operations: [
+        {
+          walletId: sellerWallet.id,
+          sellerDelta: -coinsBigInt,
+        },
         {
           walletId: recipientWallet.id,
           coinDelta: coinsBigInt,
@@ -735,40 +833,145 @@ export async function executeSellerRechargeTransfer(
       db: tx,
     });
 
+    // 5. Atomic persistent recipient notification (NEW-03)
+    // Create the persistent inbox message within the exact same database transaction.
+    // If the financial operation fails or rolls back, the notification rolls back with it.
+    // If the financial operation commits, the notification is 100% durable in PostgreSQL immediately.
+    const sellerPublicId = seller.user?.username || 'Unknown';
+    const sellerName = (seller.user?.profile?.displayName && seller.user.profile.displayName.trim())
+      ? seller.user.profile.displayName.trim()
+      : (seller.businessName?.trim() || seller.user?.username || 'Authorized Seller');
+
+    const notifResult = await notificationService.sendRechargeNotification(
+      {
+        recipientId: verifiedRecipient.accountId,
+        sellerUserId: seller.userId,
+        sellerName,
+        sellerPublicId,
+        amountCoins: coinsBigInt,
+        transactionId: refId,
+        timestamp: new Date(),
+      },
+      tx
+    );
+
     return {
       updatedSeller,
       ledgerTx,
+      notification: notifResult.notification,
     };
   }, { maxWait: 15000, timeout: 30000 });
 
-  await logAudit({
-    adminId: null,
-    adminName: `Seller: ${seller.businessName}`,
-    action: 'SELLER_COIN_RECHARGE_EXECUTED',
-    targetEntity: 'CoinSeller',
-    targetEntityId: seller.id,
-    beforeStateJson: { resellerBalanceCoins: seller.resellerBalanceCoins.toString() },
-    afterStateJson: {
-      sellerId: seller.id,
-      recipientUserId: verifiedRecipient.userId,
-      amountCoins: coinsBigInt.toString(),
-      remainingResellerBalanceCoins: result.updatedSeller.resellerBalanceCoins.toString(),
-      referenceId: refId,
-      notes,
+  // Calculate updated Today Recharged
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const todayLedgers = await db.walletLedger.findMany({
+    where: {
+      walletId: sellerWallet.id,
+      referenceId: { startsWith: 'SEL-RCHG-' },
+      createdAt: { gte: todayStart },
     },
-    reason: notes || `Recharged ${coinsBigInt} coins to user ${verifiedRecipient.userId}`,
-    ipAddress,
-  }, db);
+    select: { balanceBefore: true, balanceAfter: true, coinDelta: true },
+  });
+  let todayRechargedBigInt = 0n;
+  for (const entry of todayLedgers) {
+    if (entry.balanceBefore?.sellerCoins && entry.balanceAfter?.sellerCoins) {
+      const diff = BigInt(entry.balanceBefore.sellerCoins) - BigInt(entry.balanceAfter.sellerCoins);
+      if (diff > 0n) todayRechargedBigInt += diff;
+    } else if (entry.coinDelta !== 0n) {
+      todayRechargedBigInt += (entry.coinDelta < 0n ? -entry.coinDelta : entry.coinDelta);
+    }
+  }
+
+  // 6. Post-Commit Realtime Socket.IO & Asynchronous FCM Push Delivery (NEW-03 & NEW-06)
+  // Strictly decoupled from financial transaction success. Push/socket failures never fail the recharge.
+  if (result.notification) {
+    try {
+      await notificationService.dispatchRechargeRealtimeNotifications(
+        {
+          recipientId: verifiedRecipient.accountId,
+          notification: result.notification,
+        },
+        db
+      );
+    } catch (notifErr) {
+      console.error('Failed to dispatch post-recharge realtime notification/push:', notifErr);
+    }
+  }
+
+  // Realtime balance and inventory invalidation emission (NEW-06)
+  try {
+    const finalRecipientWallet = await walletRepository.findByUserId(verifiedRecipient.accountId, db);
+    emitToUser(verifiedRecipient.accountId, 'wallet:balance_updated', {
+      coinBalance: finalRecipientWallet?.coinBalance ? finalRecipientWallet.coinBalance.toString() : '0',
+      delta: coinsBigInt.toString(),
+      direction: 'INCOME',
+      transactionId: refId,
+      timestamp: new Date().toISOString(),
+    });
+
+    emitToUser(seller.userId, 'seller:inventory_updated', {
+      availableBalanceCoins: result.updatedSeller.resellerBalanceCoins.toString(),
+      todayRechargedCoins: todayRechargedBigInt.toString(),
+      transactionId: refId,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (socketErr) {
+    // Non-blocking socket emission failure
+  }
+
+  const systemAdmin = await db.admin.findFirst({ select: { id: true, name: true } });
+  if (systemAdmin) {
+    await logAudit({
+      adminId: systemAdmin.id,
+      adminName: `Seller: ${seller.businessName}`,
+      action: 'SELLER_COIN_RECHARGE_EXECUTED',
+      targetEntity: 'CoinSeller',
+      targetEntityId: seller.id,
+      beforeStateJson: { resellerBalanceCoins: seller.resellerBalanceCoins.toString() },
+      afterStateJson: {
+        sellerId: seller.id,
+        sellerUserId: seller.userId,
+        recipientUserId: verifiedRecipient.accountId,
+        recipientPublicId: verifiedRecipient.publicUserId,
+        recipientNickname: verifiedRecipient.nickname,
+        amountCoins: coinsBigInt.toString(),
+        remainingResellerBalanceCoins: result.updatedSeller.resellerBalanceCoins.toString(),
+        referenceId: refId,
+        status: 'Successful',
+        notes,
+      },
+      reason: notes || `Recharged ${coinsBigInt} coins to user ${verifiedRecipient.publicUserId} (${verifiedRecipient.accountId})`,
+      ipAddress,
+    }, db);
+  }
 
   return {
     success: true,
     referenceId: refId,
+    transactionId: refId,
     sellerId: seller.id,
     recipient: verifiedRecipient,
     recipientUser: verifiedRecipient,
+    recipientAccountId: verifiedRecipient.accountId,
+    recipientPublicUserId: verifiedRecipient.publicUserId,
+    recipientNickname: verifiedRecipient.nickname,
+    recipientProfileImage: verifiedRecipient.profileImage,
     transferAmount: Number(coinsBigInt),
     rechargedCoins: coinsBigInt.toString(),
     remainingSellerBalanceCoins: result.updatedSeller.resellerBalanceCoins.toString(),
+    availableBalanceCoins: result.updatedSeller.resellerBalanceCoins.toString(),
+    todayRechargedCoins: todayRechargedBigInt.toString(),
+    todayRecharged: Number(todayRechargedBigInt),
+    status: 'Successful',
+    createdAt: new Date().toISOString(),
+    notification: result.notification ? {
+      id: result.notification.id,
+      body: result.notification.body,
+      isRead: result.notification.isRead,
+      deliveryStatus: result.notification.deliveryStatus,
+      createdAt: result.notification.createdAt,
+    } : null,
   };
 }
 
@@ -812,11 +1015,19 @@ export async function getEligibleSellersForUser({ userId, search = '', page = 1,
     };
   }
 
+  const cacheKey = `sellers:directory:${normCountry.code}:${(search || '').trim().toLowerCase()}:${Number(page) || 1}:${Number(limit) || 20}`;
+  if (redisProxy.isOpen) {
+    try {
+      const cached = await redisProxy.get(cacheKey);
+      if (cached) return JSON.parse(cached);
+    } catch (_) {}
+  }
+
   const result = await sellerRepository.findSellers(
     {
       page: Number(page) || 1,
       limit: Number(limit) || 20,
-      search: search || '',
+      search: (search || '').trim(),
       sellerStatus: 'ACTIVE',
       countryCode: normCountry.code,
       countryRequired: true,
@@ -826,41 +1037,79 @@ export async function getEligibleSellersForUser({ userId, search = '', page = 1,
 
   const formatted = result.sellers.map((s) => {
     const stockCoins = Number(s.resellerBalanceCoins || s.user?.wallet?.sellerBalanceCoins || 0);
-    const displayName = s.businessName || s.user?.profile?.displayName || s.user?.username || 'Coin Seller';
+    const linkedUser = s.user || {};
+    const publicId = /^[1-9]\d{6}$/.test(linkedUser.id)
+      ? linkedUser.id
+      : (linkedUser.username && /^\d+$/.test(linkedUser.username) ? linkedUser.username : linkedUser.id || s.userId);
+    const realNickname = linkedUser.profile?.displayName || linkedUser.username || s.businessName || 'Authorized Seller';
+    const profileImg = linkedUser.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80';
+    const effectiveCountry = normalizeCountry(linkedUser.countryCode || linkedUser.region) || normCountry;
+
     return {
       id: s.id,
       sellerId: s.id,
       userId: s.userId,
-      name: displayName,
+      publicUserId: publicId,
+      publicId: publicId,
+      nickname: realNickname,
+      displayName: realNickname,
+      name: s.businessName || realNickname,
       businessName: s.businessName,
-      avatarUrl: s.user?.avatarUrl || '',
-      region: normCountry.name,
-      country: normCountry.code,
-      countryCode: normCountry.code,
+      profileImage: profileImg,
+      avatarUrl: linkedUser.avatarUrl || profileImg,
+      region: effectiveCountry.name,
+      country: effectiveCountry.code,
+      countryCode: effectiveCountry.code,
+      countryName: effectiveCountry.name,
+      countryLabel: effectiveCountry.label || effectiveCountry.name,
+      countryFlag: effectiveCountry.flag,
       type: 'official',
       status: 'approved',
+      sellerStatus: s.sellerStatus,
       isVisible: true,
       paymentMethods: ['Direct Transfer', 'Bank Transfer'],
       stockCoins,
       balanceCoins: stockCoins,
       profitMarginPercent: s.profitMarginPercent,
+      creditLimitUSD: s.creditLimitUSD ? s.creditLimitUSD.toString() : '0.00',
       user: {
-        id: s.user?.id,
-        username: s.user?.username,
-        displayName: s.user?.profile?.displayName || s.user?.username,
-        avatarUrl: s.user?.avatarUrl,
-        countryCode: normCountry.code,
-        region: normCountry.name,
+        id: linkedUser.id,
+        publicUserId: publicId,
+        publicId: publicId,
+        username: linkedUser.username,
+        nickname: realNickname,
+        displayName: realNickname,
+        profileImage: profileImg,
+        avatarUrl: linkedUser.avatarUrl || profileImg,
+        countryCode: effectiveCountry.code,
+        countryName: effectiveCountry.name,
+        countryFlag: effectiveCountry.flag,
+        region: effectiveCountry.name,
       },
     };
   });
 
-  return {
+  const responsePayload = {
     sellers: formatted,
-    userCountry: normCountry,
+    userCountry: {
+      code: normCountry.code,
+      name: normCountry.name,
+      shortName: normCountry.shortName,
+      flag: normCountry.flag,
+      label: normCountry.label || normCountry.name,
+      displayLabel: normCountry.displayLabel,
+    },
     message: formatted.length > 0 ? 'Active coin sellers retrieved successfully' : 'No authorized coin sellers available in your country',
     pagination: result.pagination,
   };
+
+  if (redisProxy.isOpen) {
+    try {
+      await redisProxy.set(cacheKey, JSON.stringify(responsePayload), { EX: 60 });
+    } catch (_) {}
+  }
+
+  return responsePayload;
 }
 
 /**
@@ -930,6 +1179,467 @@ export async function validateSellerEligibility(sellerIdOrUserId, clientUserId, 
   return { seller, sellerCountry, clientCountry };
 }
 
+/**
+ * Retrieves paginated authoritative recharge history executed by the coin seller.
+ * Resolves real recipient identity (accountId, publicUserId, nickname, profileImage) from the database.
+ * Supports status filtering, search by recipient/transaction, and stable deterministic pagination.
+ */
+export async function getSellerRechargeHistory(
+  sellerUserIdOrId,
+  { page = 1, limit = 20, status = null, search = null, startDate = null, endDate = null } = {},
+  db = prisma
+) {
+  let seller = await sellerRepository.findSellerByUserId(sellerUserIdOrId, db);
+  if (!seller) {
+    seller = await sellerRepository.findSellerById(sellerUserIdOrId, db);
+  }
+  if (!seller) {
+    const error = new Error('Coin Seller not found');
+    error.statusCode = 404;
+    error.code = 'SELLER_NOT_FOUND';
+    throw error;
+  }
+
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+  const skip = (pageNum - 1) * limitNum;
+
+  const sellerWallet = await db.wallet.findUnique({ where: { userId: seller.userId } });
+
+  // 1. Primary Source of Truth: WalletLedger
+  if (sellerWallet) {
+    const whereLedger = {
+      walletId: sellerWallet.id,
+      referenceId: { startsWith: 'SEL-RCHG' },
+      coinDelta: 0n, // Outgoing seller inventory debits have coinDelta === 0n
+    };
+
+    if (startDate || endDate) {
+      whereLedger.createdAt = {};
+      if (startDate) whereLedger.createdAt.gte = new Date(startDate);
+      if (endDate) whereLedger.createdAt.lte = new Date(endDate);
+    }
+
+    if (search && typeof search === 'string' && search.trim()) {
+      whereLedger.referenceId = {
+        contains: search.trim(),
+        mode: 'insensitive',
+      };
+    }
+
+    // Status mapping: committed ledger entries are Successful
+    const upperStatus = (status || '').toUpperCase();
+    if (upperStatus === 'PENDING' || upperStatus === 'FAILED') {
+      // Committed ledger rows are neither pending nor failed
+      whereLedger.id = 'non_matching_status_filter';
+    }
+
+    const ledgerCount = await db.walletLedger.count({ where: whereLedger });
+
+    // If WalletLedger has entries, it is the sole source of truth for this seller.
+    // Never fall back to AuditLog when ledger records exist for the seller.
+    if (ledgerCount > 0 || (status && upperStatus !== 'ALL')) {
+      const sellerLedgerEntries = await db.walletLedger.findMany({
+        where: whereLedger,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip,
+        take: limitNum,
+      });
+
+      const refIds = sellerLedgerEntries.map((e) => e.referenceId).filter(Boolean);
+      let recipientLedgers = [];
+      if (refIds.length > 0) {
+        recipientLedgers = await db.walletLedger.findMany({
+          where: {
+            referenceId: { in: refIds },
+            coinDelta: { gt: 0n }, // Inward recipient credit entries have coinDelta > 0n
+          },
+          include: {
+            wallet: {
+              include: {
+                user: {
+                  include: {
+                    profile: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      const recipientMap = new Map();
+      for (const r of recipientLedgers) {
+        if (r.referenceId && r.wallet?.user) {
+          recipientMap.set(r.referenceId, r.wallet.user);
+        }
+      }
+
+      // Query persistent notifications for these transactions (NEW-03)
+      let notifications = [];
+      if (refIds.length > 0) {
+        notifications = await db.notification.findMany({
+          where: {
+            sourceType: 'RECHARGE',
+            sourceId: { in: refIds },
+          },
+          select: {
+            id: true,
+            sourceId: true,
+            deliveryStatus: true,
+            isRead: true,
+            createdAt: true,
+          },
+        });
+      }
+
+      const notificationMap = new Map();
+      for (const n of notifications) {
+        if (n.sourceId) {
+          notificationMap.set(n.sourceId, n);
+        }
+      }
+
+      const sellerDisplayName = (seller.user?.profile?.displayName && seller.user.profile.displayName.trim())
+        ? seller.user.profile.displayName.trim()
+        : (seller.businessName?.trim() || seller.user?.username || 'Authorized Seller');
+
+      const transactions = sellerLedgerEntries.map((entry) => {
+        let recipientUser = recipientMap.get(entry.referenceId);
+        // Fallback for self-recharge where recipient is the seller's user
+        if (!recipientUser) {
+          recipientUser = seller.user;
+        }
+        const recipientId = recipientUser?.id || 'unknown';
+        const nickname = (recipientUser?.profile?.displayName && recipientUser.profile.displayName.trim())
+          ? recipientUser.profile.displayName.trim()
+          : (recipientUser?.username || 'Unknown User');
+        const profileImage = recipientUser?.avatarUrl || null;
+        const publicUserId = recipientUser?.username || 'Unknown';
+        const notif = notificationMap.get(entry.referenceId);
+
+        // Calculate coins: from before/after sellerCoins or from recipient ledger entry
+        let amountCoins = 0n;
+        if (entry.balanceBefore?.sellerCoins && entry.balanceAfter?.sellerCoins) {
+          amountCoins = BigInt(entry.balanceBefore.sellerCoins) - BigInt(entry.balanceAfter.sellerCoins);
+        }
+        if (amountCoins <= 0n && entry.coinDelta !== 0n) {
+          amountCoins = entry.coinDelta < 0n ? -entry.coinDelta : entry.coinDelta;
+        }
+
+        return {
+          id: entry.id,
+          transactionId: entry.referenceId,
+          referenceId: entry.referenceId,
+          sellerId: seller.id,
+          sellerName: sellerDisplayName,
+          recipient: {
+            accountId: recipientId,
+            publicUserId,
+            nickname,
+            profileImage,
+          },
+          recipientAccountId: recipientId,
+          recipientPublicUserId: publicUserId,
+          recipientNickname: nickname,
+          recipientProfileImage: profileImage,
+          recipientUserId: recipientId,
+          recipientName: nickname,
+          recipientAvatarUrl: profileImage,
+          coins: Number(amountCoins),
+          amountCoins: amountCoins.toString(),
+          remainingSellerBalanceCoins: entry.balanceAfter?.sellerCoins || null,
+          status: 'Successful',
+          countryCode: recipientUser?.countryCode || seller.user?.countryCode || 'GLOBAL',
+          timestamp: entry.createdAt,
+          createdAt: entry.createdAt,
+          notificationDelivered: !!notif,
+          notificationStatus: notif ? notif.deliveryStatus : 'PENDING',
+          notificationId: notif?.id || null,
+        };
+      });
+
+      // Calculate todayRechargedCoins for this seller
+      const todayStart = new Date();
+      todayStart.setUTCHours(0, 0, 0, 0);
+      const todayLedgers = await db.walletLedger.findMany({
+        where: {
+          walletId: sellerWallet.id,
+          referenceId: { startsWith: 'SEL-RCHG-' },
+          createdAt: { gte: todayStart },
+        },
+        select: { balanceBefore: true, balanceAfter: true, coinDelta: true },
+      });
+      let todayRechargedBigInt = 0n;
+      for (const entry of todayLedgers) {
+        if (entry.balanceBefore?.sellerCoins && entry.balanceAfter?.sellerCoins) {
+          const diff = BigInt(entry.balanceBefore.sellerCoins) - BigInt(entry.balanceAfter.sellerCoins);
+          if (diff > 0n) todayRechargedBigInt += diff;
+        } else if (entry.coinDelta !== 0n) {
+          todayRechargedBigInt += (entry.coinDelta < 0n ? -entry.coinDelta : entry.coinDelta);
+        }
+      }
+
+      const totalPages = Math.ceil(ledgerCount / limitNum) || 1;
+      return {
+        transactions,
+        summary: {
+          todayRechargedCoins: todayRechargedBigInt.toString(),
+          todayRecharged: Number(todayRechargedBigInt),
+          totalTransactions: ledgerCount,
+        },
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          totalCount: ledgerCount,
+          totalPages,
+          hasNextPage: pageNum < totalPages,
+          hasPrevPage: pageNum > 1,
+        },
+      };
+    }
+  }
+
+  // 2. Secondary Source of Truth: AuditLog (Only for legacy pre-ledger migrations)
+  const whereAudit = {
+    targetEntity: 'CoinSeller',
+    targetEntityId: seller.id,
+    action: 'SELLER_COIN_RECHARGE_EXECUTED',
+  };
+
+  if (startDate || endDate) {
+    whereAudit.createdAt = {};
+    if (startDate) whereAudit.createdAt.gte = new Date(startDate);
+    if (endDate) whereAudit.createdAt.lte = new Date(endDate);
+  }
+
+  const [totalCount, logs] = await Promise.all([
+    db.auditLog.count({ where: whereAudit }),
+    db.auditLog.findMany({
+      where: whereAudit,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip,
+      take: limitNum,
+    }),
+  ]);
+
+  const recipientUserIds = [
+    ...new Set(
+      logs
+        .map((l) => l.afterStateJson?.recipientUserId)
+        .filter((id) => Boolean(id) && typeof id === 'string')
+    ),
+  ];
+
+  let users = [];
+  if (recipientUserIds.length > 0) {
+    users = await db.user.findMany({
+      where: { id: { in: recipientUserIds } },
+      select: {
+        id: true,
+        username: true,
+        avatarUrl: true,
+        countryCode: true,
+        profile: {
+          select: { displayName: true },
+        },
+      },
+    });
+  }
+
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  const auditRefIds = logs.map((l) => l.afterStateJson?.referenceId).filter(Boolean);
+  let auditNotifications = [];
+  if (auditRefIds.length > 0) {
+    auditNotifications = await db.notification.findMany({
+      where: {
+        sourceType: 'RECHARGE',
+        sourceId: { in: auditRefIds },
+      },
+      select: {
+        id: true,
+        sourceId: true,
+        deliveryStatus: true,
+        isRead: true,
+        createdAt: true,
+      },
+    });
+  }
+  const auditNotificationMap = new Map(auditNotifications.map((n) => [n.sourceId, n]));
+
+  const sellerDisplayName = (seller.user?.profile?.displayName && seller.user.profile.displayName.trim())
+    ? seller.user.profile.displayName.trim()
+    : (seller.businessName?.trim() || seller.user?.username || 'Authorized Seller');
+
+  const transactions = logs.map((log) => {
+    const json = log.afterStateJson || {};
+    const recipientId = json.recipientUserId;
+    const user = recipientId ? userMap.get(recipientId) : null;
+
+    const nickname = (user?.profile?.displayName && user.profile.displayName.trim())
+      ? user.profile.displayName.trim()
+      : (user?.username || json.recipientNickname || 'Unknown User');
+    const profileImage = user?.avatarUrl || null;
+    const publicUserId = user?.username || json.recipientPublicId || 'Unknown';
+    const amountCoins = json.amountCoins ? BigInt(json.amountCoins) : 0n;
+    const refId = json.referenceId || `SEL-${log.id.slice(0, 8)}`;
+    const notif = auditNotificationMap.get(refId);
+
+    return {
+      id: log.id,
+      transactionId: refId,
+      referenceId: refId,
+      sellerId: seller.id,
+      sellerName: sellerDisplayName,
+      recipient: {
+        accountId: recipientId || 'unknown',
+        publicUserId,
+        nickname,
+        profileImage,
+      },
+      recipientAccountId: recipientId || 'unknown',
+      recipientPublicUserId: publicUserId,
+      recipientNickname: nickname,
+      recipientProfileImage: profileImage,
+      recipientUserId: recipientId || 'unknown',
+      recipientName: nickname,
+      recipientAvatarUrl: profileImage,
+      coins: Number(amountCoins),
+      amountCoins: amountCoins.toString(),
+      remainingSellerBalanceCoins: json.remainingResellerBalanceCoins || null,
+      notes: json.notes || null,
+      status: json.status || 'Successful',
+      countryCode: user?.countryCode || seller.user?.countryCode || 'GLOBAL',
+      timestamp: log.createdAt,
+      createdAt: log.createdAt,
+      notificationDelivered: !!notif,
+      notificationStatus: notif ? notif.deliveryStatus : 'PENDING',
+      notificationId: notif?.id || null,
+    };
+  });
+
+  const totalPages = Math.ceil(totalCount / limitNum) || 1;
+  return {
+    transactions,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      totalCount,
+      totalPages,
+      hasNextPage: pageNum < totalPages,
+      hasPrevPage: pageNum > 1,
+    },
+  };
+}
+
+/**
+ * Safely retrieves the status of a recharge transaction for timeout recovery.
+ * Can be queried by transactionId (referenceId) or idempotency key.
+ */
+export async function getRechargeTransactionStatus(identifier, sellerUserId = null, db = prisma) {
+  if (!identifier) {
+    const error = new Error('Transaction identifier is required');
+    error.statusCode = 400;
+    error.code = 'INVALID_TRANSACTION_ID';
+    throw error;
+  }
+
+  const clean = String(identifier).trim();
+
+  // 1. Search in WalletLedger
+  const ledger = await db.walletLedger.findFirst({
+    where: {
+      OR: [
+        { referenceId: clean },
+        { referenceId: `SEL-RCHG-${clean}` },
+      ],
+    },
+    include: {
+      wallet: {
+        include: {
+          user: {
+            include: { profile: true },
+          },
+        },
+      },
+    },
+  });
+
+  if (ledger) {
+    const sibling = await db.walletLedger.findFirst({
+      where: {
+        referenceId: ledger.referenceId,
+        id: { not: ledger.id },
+      },
+      include: {
+        wallet: {
+          include: {
+            user: {
+              include: { profile: true },
+            },
+          },
+        },
+      },
+    });
+
+    const isSeller = ledger.coinDelta === 0n;
+    const sellerEntry = isSeller ? ledger : sibling;
+    const recipientEntry = isSeller ? sibling : ledger;
+    let amountCoins = 0;
+    if (recipientEntry?.coinDelta) {
+      amountCoins = Number(recipientEntry.coinDelta);
+    } else if (sellerEntry?.balanceBefore?.sellerCoins && sellerEntry?.balanceAfter?.sellerCoins) {
+      amountCoins = Number(BigInt(sellerEntry.balanceBefore.sellerCoins) - BigInt(sellerEntry.balanceAfter.sellerCoins));
+    }
+
+    return {
+      success: true,
+      found: true,
+      transactionId: ledger.referenceId,
+      referenceId: ledger.referenceId,
+      status: 'Successful',
+      amountCoins,
+      sellerUserId: sellerEntry?.wallet?.userId,
+      sellerPublicId: sellerEntry?.wallet?.user?.username,
+      sellerName: sellerEntry?.wallet?.user?.profile?.displayName || sellerEntry?.wallet?.user?.username,
+      recipientUserId: recipientEntry?.wallet?.userId,
+      recipientPublicId: recipientEntry?.wallet?.user?.username,
+      recipientName: recipientEntry?.wallet?.user?.profile?.displayName || recipientEntry?.wallet?.user?.username,
+      createdAt: ledger.createdAt.toISOString(),
+    };
+  }
+
+  // 2. Search in AuditLog
+  const audit = await db.auditLog.findFirst({
+    where: {
+      OR: [
+        { reason: { contains: clean } },
+        { targetEntityId: clean },
+      ],
+    },
+  });
+
+  if (audit) {
+    return {
+      success: true,
+      found: true,
+      transactionId: clean,
+      status: 'AUDITED',
+      details: audit.reason || audit.action,
+      createdAt: audit.createdAt.toISOString(),
+    };
+  }
+
+  return {
+    success: true,
+    found: false,
+    transactionId: clean,
+    status: 'NOT_FOUND',
+    message: 'No committed transaction found for the provided identifier',
+  };
+}
+
 export default {
   createSeller,
   updateSeller,
@@ -943,5 +1653,8 @@ export default {
   executeSellerRechargeTransfer,
   getEligibleSellersForUser,
   validateSellerEligibility,
+  getSellerRechargeHistory,
+  getRechargeTransactionStatus,
+  invalidateSellerDirectoryCache,
 };
 

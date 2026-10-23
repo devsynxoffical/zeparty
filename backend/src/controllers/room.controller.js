@@ -105,6 +105,55 @@ export async function leaveRoom(req, res, next) {
   }
 }
 
+export async function unjoinRoom(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const userId = req.auth.userId;
+    const result = await roomService.unjoinRoom(id, userId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Unjoined room successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getUserJoinedRooms(req, res, next) {
+  try {
+    const targetUserId = req.params.userId || req.params.id || req.auth?.userId;
+    const page = req.query.page ? parseInt(req.query.page, 10) : 1;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : 20;
+    const viewerUserId = req.auth?.userId || null;
+
+    if (!targetUserId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Target user ID is required',
+      });
+    }
+
+    const result = await roomService.getUserJoinedRooms(targetUserId, {
+      page,
+      limit,
+      viewerUserId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'User joined rooms retrieved successfully',
+      data: result.rooms,
+      rooms: result.rooms,
+      pagination: result.pagination,
+      total: result.pagination.total,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function occupySeat(req, res, next) {
   try {
     const { id, seatIndex } = occupySeatParamSchema.parse(req.params);
@@ -200,6 +249,51 @@ export async function closeMyRoom(req, res, next) {
       success: true,
       message: 'Room ended successfully',
       data: room,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getLiveSessionSummary(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const userId = req.auth.userId;
+    const userRole = req.auth.role || req.user?.role;
+
+    // Verify room existence & permission (host or admin)
+    const room = await roomService.getRoomDetails(id);
+    const isOwner = room.creatorUserId === userId;
+    const isAdmin = ['ADMIN', 'SUPER_ADMIN', 'MODERATOR'].includes(String(userRole || '').toUpperCase());
+
+    if (!isOwner && !isAdmin) {
+      const error = new Error('You are not authorized to view the earnings summary for this live session');
+      error.statusCode = 403;
+      error.code = 'FORBIDDEN';
+      throw error;
+    }
+
+    const summary = await roomService.getLiveSessionSummary(id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Live session summary retrieved successfully',
+      data: summary,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAdminLiveSessionSummary(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const summary = await roomService.getLiveSessionSummary(id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Admin live session summary retrieved successfully',
+      data: summary,
     });
   } catch (err) {
     next(err);
@@ -1043,6 +1137,8 @@ export default {
   leaveSeat,
   leaveMic,
   closeMyRoom,
+  getLiveSessionSummary,
+  getAdminLiveSessionSummary,
   recordRoomHeartbeat,
   getAdminRooms,
   getAdminRoomById,
@@ -1095,5 +1191,7 @@ export default {
   adminInviteViewerToMic,
   clearRoomFeed,
   postAdminClearRoomFeed,
+  unjoinRoom,
+  getUserJoinedRooms,
 };
 

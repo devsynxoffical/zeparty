@@ -4,6 +4,7 @@ import policyService from './policy.service.js';
 import * as notificationService from './notification.service.js';
 import emailService from './email.service.js';
 import * as attendanceService from './attendance.service.js';
+import hostTargetService from './hostTarget.service.js';
 import hostingEligibilityService, {
   validateHostingEligibility,
   HostingEligibilityError,
@@ -382,7 +383,10 @@ export async function getHostProfileByUserId(userId, db = prisma) {
     throw error;
   }
 
-  const attendance = await attendanceService.getHostAttendanceSummary(userId, db);
+  const [attendance, targetSummary] = await Promise.all([
+    attendanceService.getHostAttendanceSummary(userId, db),
+    hostTargetService.getHostTargetProgress(userId, {}, db).catch(() => null),
+  ]);
 
   return {
     ...host,
@@ -399,6 +403,12 @@ export async function getHostProfileByUserId(userId, db = prisma) {
     attendanceTimezone: attendance.attendanceTimezone,
     todayStatus: attendance.todayStatus,
     totalDiamondsEarnedMonth: host.totalDiamondsEarnedMonth ? host.totalDiamondsEarnedMonth.toString() : '0',
+    targetSummary,
+    achievedTargetCoins: targetSummary?.achievedCoins || '0',
+    remainingTargetCoins: targetSummary?.remainingCoins || '0',
+    nextTargetCoins: targetSummary?.nextTargetCoins || '0',
+    targetProgressBarPercent: targetSummary?.progressPercent || 0,
+    targetCycle: targetSummary?.cycle || null,
   };
 }
 
@@ -429,10 +439,15 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
   });
 
   const isLiveHost = host?.hostType === 'LIVE_HOST';
-  const eligibleDiamonds = Number(wallet?.diamondBalance || 0n);
 
-  // Authoritative real-time attendance stats
-  const attendance = await attendanceService.getHostAttendanceSummary(userId, db);
+  // Authoritative real-time attendance stats and target calculation engine (NEW 09 & NEW 11)
+  const [attendance, targetProgress] = await Promise.all([
+    attendanceService.getHostAttendanceSummary(userId, db),
+    hostTargetService.getHostTargetProgress(userId, {}, db),
+  ]);
+
+  const totalTargetCoins = BigInt(targetProgress?.achievedCoins || '0');
+  const eligibleDiamonds = Number(wallet?.diamondBalance || 0n);
 
   // 25-level target tiers (ZeParty 2026 Policy)
   const tiers = [
@@ -463,15 +478,10 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
     { level: 25, targetDiamonds: 50000000, durationDays: 5, basicSalaryUSD: 4000.00, hostSalaryUSD: 3200.00, agencySalaryUSD: 800.00, specialId: 'Special ID 120 Days' },
   ];
 
-  // Determine current active target tier (target tier 1 is base policy)
-  let activeTier = tiers[0];
-  let targetAchieved = false;
-  for (const t of tiers) {
-    if (eligibleDiamonds >= t.targetDiamonds) {
-      activeTier = t;
-      targetAchieved = true;
-    }
-  }
+  // Determine current active target tier and next tier from authoritative target service
+  let activeTier = targetProgress?.currentTier || targetProgress?.nextTier || tiers[0];
+  let nextTier = targetProgress?.nextTier || null;
+  let targetAchieved = Boolean(targetProgress?.currentTier);
 
   // Daily hosting requirements
   const requiredDailyHours = isLiveHost ? 1 : 2;
@@ -484,13 +494,13 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
   const requiredDays = activeTier.durationDays;
 
   // Earned salaries for the current cycle: strictly $0.00 until confirmed target is achieved
-  const basicTotalSalary = targetAchieved ? activeTier.basicSalaryUSD : 0.00;
-  const hostBasicSalary = targetAchieved ? activeTier.hostSalaryUSD : 0.00;
-  const agencyShareEarned = targetAchieved ? activeTier.agencySalaryUSD : 0.00;
+  const basicTotalSalary = targetAchieved ? (activeTier.basicSalaryUSD || 0.00) : 0.00;
+  const hostBasicSalary = targetAchieved ? (activeTier.hostSalaryUSD || 0.00) : 0.00;
+  const agencyShareEarned = targetAchieved ? (activeTier.agencySalaryUSD || 0.00) : 0.00;
   const specialIdBonusEarned = targetAchieved && activeTier.specialId !== '/' ? activeTier.specialId : '$0.00';
 
-  // Progress bar strictly starts at 0%
-  const progressPercent = Math.min(100, Math.floor((eligibleDiamonds / activeTier.targetDiamonds) * 100));
+  // Authoritative progress percentage
+  const progressPercent = targetProgress?.progressPercent || 0;
 
   // Today attendance status
   let todayStatus = 'Not started';
@@ -571,8 +581,15 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
       agencyName: host?.agency?.agencyName || 'No agency joined',
     },
     newHostInitialDisplay: {
-      achievedCoinsOrDiamonds: eligibleDiamonds,
+      achievedCoinsOrDiamonds: Number(totalTargetCoins),
+      achievedCoins: totalTargetCoins.toString(),
+      remainingCoins: targetProgress?.remainingCoins || '0',
+      nextTargetCoins: targetProgress?.nextTargetCoins || '0',
       targetProgressBarPercent: progressPercent,
+      cycle: targetProgress?.cycle,
+      targetCycle: targetProgress?.cycle,
+      currentTier: targetProgress?.currentTier,
+      nextTier: targetProgress?.nextTier,
       basicTotalSalaryUSD: Number(basicTotalSalary.toFixed(2)),
       hostBasicSalaryUSD: Number(hostBasicSalary.toFixed(2)),
       agencyShareUSD: Number(agencyShareEarned.toFixed(2)),
@@ -587,9 +604,18 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
       pendingWithdrawalUSD: Number(pendingWithdrawalUSD.toFixed(2)),
       totalEarnedUSD: Number(totalEarnedUSD.toFixed(2)),
       totalWithdrawnUSD: Number(totalWithdrawnUSD.toFixed(2)),
+      walletDiamonds: (wallet?.diamondBalance || 0n).toString(),
       historyRecordsCount: combinedHistory.length,
     },
-    // Backwards-compatible legacy properties for existing UI widgets
+    // Backwards-compatible properties for mobile & admin centers
+    achievedCoins: totalTargetCoins.toString(),
+    remainingCoins: targetProgress?.remainingCoins || '0',
+    nextTargetCoins: targetProgress?.nextTargetCoins || '0',
+    targetProgressBarPercent: progressPercent,
+    currentTier: targetProgress?.currentTier,
+    nextTier: targetProgress?.nextTier,
+    targetCycle: targetProgress?.cycle,
+    cycle: targetProgress?.cycle,
     basicTotalSalaryUSD: Number(basicTotalSalary.toFixed(2)),
     hostBasicSalaryUSD: Number(hostBasicSalary.toFixed(2)),
     agencyShareUSD: Number(agencyShareEarned.toFixed(2)),
@@ -606,10 +632,11 @@ export async function getHostIncomeDashboard(userId, db = prisma) {
     currentLevel: activeTier.level,
     targetDiamonds: activeTier.targetDiamonds,
     eligibleDiamonds,
+    walletDiamonds: (wallet?.diamondBalance || 0n).toString(),
     dollarTarget: activeTier.basicSalaryUSD,
-    achievedDollars: targetAchieved ? activeTier.hostSalaryUSD : 0.00,
-    remainingDiamonds: Math.max(0, activeTier.targetDiamonds - eligibleDiamonds),
-    remainingDollars: Math.max(0, activeTier.basicSalaryUSD - (targetAchieved ? activeTier.hostSalaryUSD : 0)),
+    achievedDollars: targetAchieved ? (activeTier.hostSalaryUSD || activeTier.basicSalaryUSD) : 0.00,
+    remainingDiamonds: Number(targetProgress?.remainingCoins || 0),
+    remainingDollars: Math.max(0, (activeTier.basicSalaryUSD || 0) - (targetAchieved ? (activeTier.hostSalaryUSD || activeTier.basicSalaryUSD) : 0)),
     progressPercent,
     specialIdBonus: specialIdBonusEarned,
     durationDays: requiredDays,

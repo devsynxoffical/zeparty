@@ -143,6 +143,12 @@ export function LiveRoomDetailPage() {
 
   useEffect(() => {
     if (!room?.startedAt) return;
+    if (room.status !== 'active') {
+      if (room.duration) {
+        setElapsedDuration(room.duration);
+      }
+      return;
+    }
     const start = new Date(room.startedAt).getTime();
     const updateElapsed = () => {
       const diffSec = Math.max(0, Math.floor((Date.now() - start) / 1000));
@@ -158,7 +164,7 @@ export function LiveRoomDetailPage() {
     updateElapsed();
     const timer = setInterval(updateElapsed, 1000);
     return () => clearInterval(timer);
-  }, [room?.startedAt]);
+  }, [room?.startedAt, room?.status, room?.duration]);
 
   const refreshHistory = () => {
     if (!id) return;
@@ -536,7 +542,11 @@ export function LiveRoomDetailPage() {
               </div>
               <div>
                 <p className="text-xs text-slate-500 mb-1">Stream Duration</p>
-                <p className="text-sm font-semibold text-emerald-400 font-mono">{elapsedDuration || room.duration || '00:00'}</p>
+                <p className="text-sm font-semibold text-emerald-400 font-mono">{room.status === 'active' ? (elapsedDuration || room.duration || '00:00') : (room.duration || '00:00')}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-1">Peak Viewers</p>
+                <p className="text-sm font-semibold text-sky-400 font-mono">{room.peakViewers || room.viewers || 0}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 mb-1">Total Gifts Received</p>

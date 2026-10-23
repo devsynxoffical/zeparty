@@ -66,11 +66,14 @@ export async function deleteRechargePlan(id) {
 // ---- Offline Recharge ----
 export async function getOfflineRechargeRequests(params = {}) {
   const res = await apiClient.get('/v1/finance/recharge/offline', { params });
-  const items = res.data?.data || [];
+  const items = res.data?.data?.items || res.data?.data || [];
   return items.map((req) => ({
     id: req.id,
     userId: req.userId,
     username: req.user?.username || req.userId,
+    userName: req.user?.profile?.displayName || req.user?.username || req.userId,
+    userUsername: req.user?.username || req.userId,
+    userAvatar: req.user?.avatarUrl || null,
     country: 'GLOBAL',
     amountUSD: Number(req.amountUSD || req.amount || 0),
     amountCoins: Number(req.coinAmount || req.coins || 0),

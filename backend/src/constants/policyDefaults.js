@@ -109,7 +109,7 @@ export const BASELINE_POLICY_TEMPLATES = {
     description: 'Creator Video Live Streaming 25-Level Target Matrix & Salary Policy (ZeParty 2026)',
     config: {
       version: 'v3.0.0',
-      payoutCycleDays: 15,
+      payoutCycleDays: 10,
       roomOwnerRewardPercent: 5,
       incompleteDaysPayoutPercent: 50,
       dailyHoursRequired: 1.0,

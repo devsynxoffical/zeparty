@@ -9,6 +9,7 @@ import { generateReference } from '../utils/reference.util.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
 import pkService from './pk.service.js';
+import hostTargetService from './hostTarget.service.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
@@ -425,6 +426,24 @@ export async function sendGift(
     };
   }, { maxWait: 10000, timeout: 30000 });
 
+  // NEW 10: Authoritative Persistent Gift-Target Attribution (Counting Key = giftTransaction.id)
+  let targetAttribution = null;
+  try {
+    const attrRes = await hostTargetService.recordGiftAttribution(
+      {
+        giftTransaction: result.giftTransaction,
+        recipientUser,
+        hostProfile,
+        gift,
+        quantity: qty,
+      },
+      db
+    );
+    targetAttribution = attrRes.attribution;
+  } catch (attrErr) {
+    console.warn('Target attribution record warning:', attrErr.message);
+  }
+
   await logAudit({
     action: 'GIFT_TRANSACTION_EXECUTED',
     targetEntity: 'GiftTransaction',
@@ -623,6 +642,35 @@ export async function sendGift(
     } catch (_) {}
   }
 
+  // NEW 09 & NEW 11: Authoritative Host Target Progress Real-Time Refresh
+  let hostTargetProgress = null;
+  try {
+    hostTargetProgress = await hostTargetService.getHostTargetProgress(
+      recipientUserId,
+      { date: result.giftTransaction.createdAt },
+      db
+    );
+
+    if (hostTargetProgress.isHost) {
+      // Emit to receiving host personal socket channel
+      socketEmitter.emitToUser(recipientUserId, 'host:target_updated', hostTargetProgress);
+      socketEmitter.emitToUser(recipientUserId, 'host_target_updated', hostTargetProgress);
+
+      // If Audio/ID host belongs to an agency, emit to agency channel for aggregate sync
+      if (hostTargetProgress.agencyId) {
+        const agencyTargetProgress = await hostTargetService.getAgencyTargetProgress(
+          hostTargetProgress.agencyId,
+          { date: result.giftTransaction.createdAt },
+          db
+        );
+        socketEmitter.emitToAgency(hostTargetProgress.agencyId, 'agency:target_updated', agencyTargetProgress);
+        socketEmitter.emitToAgency(hostTargetProgress.agencyId, 'agency_target_updated', agencyTargetProgress);
+      }
+    }
+  } catch (err) {
+    // Non-fatal for gift delivery response
+  }
+
   return {
     success: true,
     message: `Successfully sent ${qty}x ${gift.name} to host!`,
@@ -631,6 +679,14 @@ export async function sendGift(
     wealthXPAdded: Number(result.senderWealth.addedXp),
     senderNewLevel: result.senderWealth.wealthLevel,
     senderWealth: result.senderWealth,
+    hostTarget: hostTargetProgress ? {
+      isHost: hostTargetProgress.isHost,
+      achievedCoins: hostTargetProgress.achievedCoins,
+      remainingCoins: hostTargetProgress.remainingCoins,
+      nextTargetCoins: hostTargetProgress.nextTargetCoins,
+      progressPercent: hostTargetProgress.progressPercent,
+      cycle: hostTargetProgress.cycle,
+    } : null,
     data: {
       referenceId: refId,
       gift: {
@@ -649,7 +705,52 @@ export async function sendGift(
       wealthXPAdded: Number(result.senderWealth.addedXp),
       senderNewLevel: result.senderWealth.wealthLevel,
       senderWealth: result.senderWealth,
+      hostTarget: hostTargetProgress ? {
+        isHost: hostTargetProgress.isHost,
+        achievedCoins: hostTargetProgress.achievedCoins,
+        remainingCoins: hostTargetProgress.remainingCoins,
+        nextTargetCoins: hostTargetProgress.nextTargetCoins,
+        progressPercent: hostTargetProgress.progressPercent,
+        cycle: hostTargetProgress.cycle,
+      } : null,
     },
+  };
+}
+
+/**
+ * Reverses a confirmed gift transaction and its linked target attribution.
+ *
+ * @param {Object} params
+ * @param {string} params.giftTransactionId
+ * @param {string} params.referenceId
+ * @param {string} params.reason
+ * @param {string} [params.adminId='SYSTEM']
+ * @param {Object} [db=prisma]
+ * @returns {Promise<Object>}
+ */
+export async function reverseGiftTransaction(
+  { giftTransactionId, referenceId, reason, adminId = 'SYSTEM' },
+  db = prisma
+) {
+  // 1. Perform linked host target reversal
+  const targetReversalResult = await hostTargetService.recordGiftReversal(
+    { giftTransactionId, referenceId, reason, adminId },
+    db
+  );
+
+  // 2. Load gift transaction details
+  const giftTx = await db.giftTransaction.findUnique({
+    where: { id: giftTransactionId },
+    include: { gift: true },
+  });
+
+  return {
+    success: true,
+    message: 'Gift transaction and target attribution successfully reversed',
+    giftTransactionId,
+    referenceId,
+    targetReversal: targetReversalResult,
+    giftTransaction: giftTx,
   };
 }
 
@@ -662,4 +763,5 @@ export default {
   getGiftDetails,
   getPublicGifts,
   sendGift,
+  reverseGiftTransaction,
 };

@@ -55,9 +55,31 @@ export const CANONICAL_COUNTRIES = [
   { code: 'SG', name: 'Singapore', shortName: 'SGP', aliases: ['sg', 'sgp', 'singapore'] },
 ];
 
+export function getCountryFlag(countryCode) {
+  if (!countryCode || typeof countryCode !== 'string') return '';
+  const code = countryCode.trim().toUpperCase();
+  if (code.length !== 2 || !/^[A-Z]{2}$/.test(code)) return '';
+  return code
+    .split('')
+    .map((c) => String.fromCodePoint(c.charCodeAt(0) + 127397))
+    .join('');
+}
+
+function buildCanonicalCountry(code, name, shortName) {
+  const flag = getCountryFlag(code);
+  return {
+    code,
+    name,
+    shortName: shortName || code,
+    flag,
+    label: name,
+    displayLabel: `${flag} ${name}`.trim(),
+  };
+}
+
 /**
  * Normalizes any country input (2-letter code, 3-letter code, or country name)
- * to an authoritative canonical representation: { code: 'PK', name: 'Pakistan', shortName: 'PAK' }
+ * to an authoritative canonical representation: { code: 'PK', name: 'Pakistan', shortName: 'PAK', flag: '🇵🇰', label: 'Pakistan' }
  * Returns null if the country is unresolvable or invalid.
  */
 export function normalizeCountry(input) {
@@ -71,32 +93,32 @@ export function normalizeCountry(input) {
   const upper = clean.toUpperCase();
   const directMatch = CANONICAL_COUNTRIES.find((c) => c.code === upper);
   if (directMatch) {
-    return { code: directMatch.code, name: directMatch.name, shortName: directMatch.shortName };
+    return buildCanonicalCountry(directMatch.code, directMatch.name, directMatch.shortName);
   }
 
   // 2. Match on aliases, shortName, or name
   for (const c of CANONICAL_COUNTRIES) {
     if (c.shortName.toLowerCase() === clean) {
-      return { code: c.code, name: c.name, shortName: c.shortName };
+      return buildCanonicalCountry(c.code, c.name, c.shortName);
     }
     if (c.name.toLowerCase() === clean) {
-      return { code: c.code, name: c.name, shortName: c.shortName };
+      return buildCanonicalCountry(c.code, c.name, c.shortName);
     }
     if (c.aliases && c.aliases.includes(clean)) {
-      return { code: c.code, name: c.name, shortName: c.shortName };
+      return buildCanonicalCountry(c.code, c.name, c.shortName);
     }
   }
 
   // 3. Substring matching for multi-word country names
   for (const c of CANONICAL_COUNTRIES) {
     if (c.name.toLowerCase().includes(clean) || clean.includes(c.name.toLowerCase())) {
-      return { code: c.code, name: c.name, shortName: c.shortName };
+      return buildCanonicalCountry(c.code, c.name, c.shortName);
     }
   }
 
   // If 2 uppercase ASCII letters, accept as valid ISO code even if not in popular list
   if (upper.length === 2 && /^[A-Z]{2}$/.test(upper)) {
-    return { code: upper, name: upper, shortName: upper };
+    return buildCanonicalCountry(upper, upper, upper);
   }
 
   return null;
@@ -116,4 +138,5 @@ export default {
   CANONICAL_COUNTRIES,
   normalizeCountry,
   isCountryMatch,
+  getCountryFlag,
 };

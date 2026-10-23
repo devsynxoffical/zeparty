@@ -47,8 +47,8 @@ export async function getLiveRoomById(id) {
   let durationStr = '00:00';
   if (r.createdAt) {
     const start = new Date(r.createdAt).getTime();
-    const now = Date.now();
-    const diffSec = Math.max(0, Math.floor((now - start) / 1000));
+    const end = r.endedAt ? new Date(r.endedAt).getTime() : Date.now();
+    const diffSec = Math.max(0, Math.floor((end - start) / 1000));
     const mins = Math.floor(diffSec / 60);
     const secs = diffSec % 60;
     const hrs = Math.floor(mins / 60);
@@ -74,17 +74,24 @@ export async function getLiveRoomById(id) {
     region: r.creator?.countryCode || r.countryCode || 'PK',
     category: r.category || 'General',
     viewers: Number(r.currentViewersCount || r.activeMembersCount || 0),
+    peakViewers: Number(r.peakViewers || r.summary?.peakViewers || 0),
     giftsReceived: Number(r.giftsReceivedCoins || r.totalGifts || 0),
     duration: durationStr,
     status: (r.status || 'LIVE').toLowerCase() === 'live' ? 'active' : (r.status || 'active').toLowerCase(),
     isPinned: Boolean(r.isPinnedTop || r.isPinned),
     isMuted: Boolean(r.isMuted),
     startedAt: r.createdAt,
+    endedAt: r.endedAt || null,
     agoraChannelName: r.agoraChannelName,
     members: r.members || [],
     seats: r.seats || [],
     creator: r.creator,
   };
+}
+
+export async function getLiveRoomSummary(id) {
+  const res = await apiClient.get(`/v1/admin/rooms/${id}/summary`);
+  return res.data?.data;
 }
 
 export async function pinRoom(id, pinnedOrder = 1) {

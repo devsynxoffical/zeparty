@@ -255,22 +255,131 @@ export async function findFollowingUserIds(followerId, db = prisma) {
   return follows.map((f) => f.followingId);
 }
 
-export async function findFollowers(userId, { page = 1, limit = 20 } = {}, db = prisma) {
-  let targetId = userId;
-  const foundUser = await db.user.findFirst({
-    where: { OR: [{ id: userId }, { username: userId }] },
-    select: { id: true },
-  });
-  if (foundUser) targetId = foundUser.id;
+// ============================================================
+// CANONICAL USER RESOLUTION
+// ============================================================
 
+export async function resolveCanonicalUser(identifier, db = prisma) {
+  if (!identifier) return null;
+  const strId = String(identifier).trim();
+  if (!strId) return null;
+
+  // 1. Direct primary key lookup (e.g. public ID "9202535")
+  const directUser = await db.user.findUnique({
+    where: { id: strId },
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      bio: true,
+      region: true,
+      countryCode: true,
+      status: true,
+      userType: true,
+      createdAt: true,
+      profile: {
+        select: {
+          displayName: true,
+          level: true,
+          vipLevel: true,
+          svipLevel: true,
+          nobleRank: true,
+          signature: true,
+          isPrivate: true,
+          followersCount: true,
+          followingCount: true,
+          postsCount: true,
+        },
+      },
+    },
+  });
+
+  if (directUser && directUser.status !== 'DELETED') {
+    return directUser;
+  }
+
+  // 2. Secondary lookup by username or email, prioritizing non-deleted accounts
+  const candidates = await db.user.findMany({
+    where: {
+      OR: [
+        { id: strId },
+        { username: strId },
+        { email: strId },
+      ],
+    },
+    orderBy: [
+      { status: 'asc' }, // 'ACTIVE' comes before 'DELETED'
+      { createdAt: 'desc' },
+    ],
+    take: 5,
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      bio: true,
+      region: true,
+      countryCode: true,
+      status: true,
+      userType: true,
+      createdAt: true,
+      profile: {
+        select: {
+          displayName: true,
+          level: true,
+          vipLevel: true,
+          svipLevel: true,
+          nobleRank: true,
+          signature: true,
+          isPrivate: true,
+          followersCount: true,
+          followingCount: true,
+          postsCount: true,
+        },
+      },
+    },
+  });
+
+  const activeCandidate = candidates.find((c) => c.status !== 'DELETED');
+  return activeCandidate || directUser || candidates[0] || null;
+}
+
+export async function findFollowers(userId, { viewerUserId = null, page = 1, limit = 20 } = {}, db = prisma) {
+  const targetUser = await resolveCanonicalUser(userId, db);
+  if (!targetUser || targetUser.status === 'DELETED') {
+    return {
+      followers: [],
+      pagination: {
+        page: Number(page) || 1,
+        limit: Number(limit) || 20,
+        total: 0,
+        totalPages: 1,
+      },
+      targetUser: null,
+    };
+  }
+
+  const targetId = targetUser.id;
   const parsedLimit = Math.max(1, Math.min(100, Number(limit) || 20));
   const parsedPage = Math.max(1, Number(page) || 1);
   const skip = (parsedPage - 1) * parsedLimit;
 
+  // Blocked users filter: if viewer is specified, exclude users blocked by or blocking viewer
+  let blockedUserIds = [];
+  if (viewerUserId) {
+    blockedUserIds = await findBlockedUserIds(viewerUserId, db);
+  }
+
   const where = {
     followingId: targetId,
     status: 'ACCEPTED',
+    follower: {
+      status: { not: 'DELETED' },
+    },
   };
+
+  if (blockedUserIds.length > 0) {
+    where.followerId = { notIn: blockedUserIds };
+  }
 
   const [total, follows] = await Promise.all([
     db.follow.count({ where }),
@@ -278,7 +387,10 @@ export async function findFollowers(userId, { page = 1, limit = 20 } = {}, db = 
       where,
       skip,
       take: parsedLimit,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { createdAt: 'desc' },
+        { followerId: 'asc' }, // deterministic tie-breaker
+      ],
       include: {
         follower: {
           select: {
@@ -289,12 +401,16 @@ export async function findFollowers(userId, { page = 1, limit = 20 } = {}, db = 
             gender: true,
             region: true,
             status: true,
+            userType: true,
+            createdAt: true,
             profile: {
               select: {
                 displayName: true,
                 level: true,
                 vipLevel: true,
                 svipLevel: true,
+                nobleRank: true,
+                signature: true,
                 isPrivate: true,
                 followersCount: true,
                 followingCount: true,
@@ -306,33 +422,119 @@ export async function findFollowers(userId, { page = 1, limit = 20 } = {}, db = 
     }),
   ]);
 
+  // Determine viewer relationship state (isFollowing / isFollowedBy)
+  const followerIds = follows.map((f) => f.follower.id);
+  let viewerFollowsMap = new Set();
+  let viewerFollowedByMap = new Set();
+
+  if (viewerUserId && followerIds.length > 0) {
+    const [viewerFollowing, viewerFollowers] = await Promise.all([
+      db.follow.findMany({
+        where: { followerId: viewerUserId, followingId: { in: followerIds }, status: 'ACCEPTED' },
+        select: { followingId: true },
+      }),
+      db.follow.findMany({
+        where: { followerId: { in: followerIds }, followingId: viewerUserId, status: 'ACCEPTED' },
+        select: { followerId: true },
+      }),
+    ]);
+    viewerFollowsMap = new Set(viewerFollowing.map((vf) => vf.followingId));
+    viewerFollowedByMap = new Set(viewerFollowers.map((vf) => vf.followerId));
+  }
+
+  const formattedFollowers = follows.map((f) => {
+    const u = f.follower;
+    const displayName = u.profile?.displayName || u.username || `User ${u.id}`;
+    const isFollowing = viewerFollowsMap.has(u.id);
+    const isFollowedBy = viewerFollowedByMap.has(u.id);
+
+    return {
+      id: u.id,
+      publicId: u.id,
+      publicUserId: u.id,
+      username: u.username,
+      name: displayName,
+      displayName,
+      avatarUrl: u.avatarUrl || '',
+      profileImage: u.avatarUrl || '',
+      bio: u.bio || u.profile?.signature || '',
+      gender: u.gender || 'Not Specified',
+      region: u.region || 'Global',
+      status: u.status,
+      userType: u.userType || 'USER',
+      level: u.profile?.level || 1,
+      vipLevel: u.profile?.vipLevel || 0,
+      svipLevel: u.profile?.svipLevel || 0,
+      nobleRank: u.profile?.nobleRank || null,
+      followersCount: u.profile?.followersCount || 0,
+      followingCount: u.profile?.followingCount || 0,
+      isFollowing,
+      isFollowedBy,
+      isMutual: isFollowing && isFollowedBy,
+      createdAt: f.createdAt,
+      profile: {
+        displayName,
+        avatarUrl: u.avatarUrl || '',
+        level: u.profile?.level || 1,
+        vipLevel: u.profile?.vipLevel || 0,
+        svipLevel: u.profile?.svipLevel || 0,
+        nobleRank: u.profile?.nobleRank || null,
+        isPrivate: Boolean(u.profile?.isPrivate),
+        followersCount: u.profile?.followersCount || 0,
+        followingCount: u.profile?.followingCount || 0,
+      },
+    };
+  });
+
   return {
-    followers: follows.map((f) => f.follower),
+    followers: formattedFollowers,
     pagination: {
       page: parsedPage,
       limit: parsedLimit,
       total,
       totalPages: Math.ceil(total / parsedLimit) || 1,
     },
+    targetUser,
   };
 }
 
-export async function findFollowing(userId, { page = 1, limit = 20 } = {}, db = prisma) {
-  let targetId = userId;
-  const foundUser = await db.user.findFirst({
-    where: { OR: [{ id: userId }, { username: userId }] },
-    select: { id: true },
-  });
-  if (foundUser) targetId = foundUser.id;
+export async function findFollowing(userId, { viewerUserId = null, page = 1, limit = 20 } = {}, db = prisma) {
+  const targetUser = await resolveCanonicalUser(userId, db);
+  if (!targetUser || targetUser.status === 'DELETED') {
+    return {
+      following: [],
+      pagination: {
+        page: Number(page) || 1,
+        limit: Number(limit) || 20,
+        total: 0,
+        totalPages: 1,
+      },
+      targetUser: null,
+    };
+  }
 
+  const targetId = targetUser.id;
   const parsedLimit = Math.max(1, Math.min(100, Number(limit) || 20));
   const parsedPage = Math.max(1, Number(page) || 1);
   const skip = (parsedPage - 1) * parsedLimit;
 
+  // Blocked users filter
+  let blockedUserIds = [];
+  if (viewerUserId) {
+    blockedUserIds = await findBlockedUserIds(viewerUserId, db);
+  }
+
   const where = {
     followerId: targetId,
     status: 'ACCEPTED',
+    following: {
+      status: { not: 'DELETED' },
+    },
   };
+
+  if (blockedUserIds.length > 0) {
+    where.followingId = { notIn: blockedUserIds };
+  }
 
   const [total, follows] = await Promise.all([
     db.follow.count({ where }),
@@ -340,7 +542,10 @@ export async function findFollowing(userId, { page = 1, limit = 20 } = {}, db = 
       where,
       skip,
       take: parsedLimit,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { createdAt: 'desc' },
+        { followingId: 'asc' }, // deterministic tie-breaker
+      ],
       include: {
         following: {
           select: {
@@ -351,12 +556,16 @@ export async function findFollowing(userId, { page = 1, limit = 20 } = {}, db = 
             gender: true,
             region: true,
             status: true,
+            userType: true,
+            createdAt: true,
             profile: {
               select: {
                 displayName: true,
                 level: true,
                 vipLevel: true,
                 svipLevel: true,
+                nobleRank: true,
+                signature: true,
                 isPrivate: true,
                 followersCount: true,
                 followingCount: true,
@@ -368,14 +577,79 @@ export async function findFollowing(userId, { page = 1, limit = 20 } = {}, db = 
     }),
   ]);
 
+  // Determine viewer relationship state (isFollowing / isFollowedBy)
+  const followingIds = follows.map((f) => f.following.id);
+  let viewerFollowsMap = new Set();
+  let viewerFollowedByMap = new Set();
+
+  if (viewerUserId && followingIds.length > 0) {
+    const [viewerFollowing, viewerFollowers] = await Promise.all([
+      db.follow.findMany({
+        where: { followerId: viewerUserId, followingId: { in: followingIds }, status: 'ACCEPTED' },
+        select: { followingId: true },
+      }),
+      db.follow.findMany({
+        where: { followerId: { in: followingIds }, followingId: viewerUserId, status: 'ACCEPTED' },
+        select: { followerId: true },
+      }),
+    ]);
+    viewerFollowsMap = new Set(viewerFollowing.map((vf) => vf.followingId));
+    viewerFollowedByMap = new Set(viewerFollowers.map((vf) => vf.followerId));
+  }
+
+  const formattedFollowing = follows.map((f) => {
+    const u = f.following;
+    const displayName = u.profile?.displayName || u.username || `User ${u.id}`;
+    const isFollowing = viewerFollowsMap.has(u.id);
+    const isFollowedBy = viewerFollowedByMap.has(u.id);
+
+    return {
+      id: u.id,
+      publicId: u.id,
+      publicUserId: u.id,
+      username: u.username,
+      name: displayName,
+      displayName,
+      avatarUrl: u.avatarUrl || '',
+      profileImage: u.avatarUrl || '',
+      bio: u.bio || u.profile?.signature || '',
+      gender: u.gender || 'Not Specified',
+      region: u.region || 'Global',
+      status: u.status,
+      userType: u.userType || 'USER',
+      level: u.profile?.level || 1,
+      vipLevel: u.profile?.vipLevel || 0,
+      svipLevel: u.profile?.svipLevel || 0,
+      nobleRank: u.profile?.nobleRank || null,
+      followersCount: u.profile?.followersCount || 0,
+      followingCount: u.profile?.followingCount || 0,
+      isFollowing,
+      isFollowedBy,
+      isMutual: isFollowing && isFollowedBy,
+      createdAt: f.createdAt,
+      profile: {
+        displayName,
+        avatarUrl: u.avatarUrl || '',
+        level: u.profile?.level || 1,
+        vipLevel: u.profile?.vipLevel || 0,
+        svipLevel: u.profile?.svipLevel || 0,
+        nobleRank: u.profile?.nobleRank || null,
+        isPrivate: Boolean(u.profile?.isPrivate),
+        followersCount: u.profile?.followersCount || 0,
+        followingCount: u.profile?.followingCount || 0,
+      },
+    };
+  });
+
   return {
-    following: follows.map((f) => f.following),
+    following: formattedFollowing,
     pagination: {
       page: parsedPage,
       limit: parsedLimit,
       total,
       totalPages: Math.ceil(total / parsedLimit) || 1,
     },
+    targetUser,
   };
 }
 
@@ -385,7 +659,7 @@ export async function findFollowing(userId, { page = 1, limit = 20 } = {}, db = 
 
 export async function incrementFollowersCount(userId, db = prisma) {
   const count = await db.follow.count({
-    where: { followingId: userId, status: 'ACCEPTED' },
+    where: { followingId: userId, status: 'ACCEPTED', follower: { status: { not: 'DELETED' } } },
   });
   return await db.userProfile.upsert({
     where: { userId },
@@ -396,7 +670,7 @@ export async function incrementFollowersCount(userId, db = prisma) {
 
 export async function decrementFollowersCount(userId, db = prisma) {
   const count = await db.follow.count({
-    where: { followingId: userId, status: 'ACCEPTED' },
+    where: { followingId: userId, status: 'ACCEPTED', follower: { status: { not: 'DELETED' } } },
   });
   return await db.userProfile.upsert({
     where: { userId },
@@ -407,7 +681,7 @@ export async function decrementFollowersCount(userId, db = prisma) {
 
 export async function incrementFollowingCount(userId, db = prisma) {
   const count = await db.follow.count({
-    where: { followerId: userId, status: 'ACCEPTED' },
+    where: { followerId: userId, status: 'ACCEPTED', following: { status: { not: 'DELETED' } } },
   });
   return await db.userProfile.upsert({
     where: { userId },
@@ -418,7 +692,7 @@ export async function incrementFollowingCount(userId, db = prisma) {
 
 export async function decrementFollowingCount(userId, db = prisma) {
   const count = await db.follow.count({
-    where: { followerId: userId, status: 'ACCEPTED' },
+    where: { followerId: userId, status: 'ACCEPTED', following: { status: { not: 'DELETED' } } },
   });
   return await db.userProfile.upsert({
     where: { userId },
@@ -539,146 +813,271 @@ export async function updateUserPrivacy(userId, isPrivate, db = prisma) {
 
 export async function findSocialProfile(userId, db = prisma) {
   if (!userId) return null;
-  return await db.user.findFirst({
-    where: {
-      OR: [
-        { id: userId },
-        { username: userId },
-        { email: userId },
-      ],
-    },
-    select: {
-      id: true,
-      username: true,
-      avatarUrl: true,
-      bio: true,
-      region: true,
-      countryCode: true,
-      status: true,
-      createdAt: true,
-      profile: {
-        select: {
-          displayName: true,
-          level: true,
-          vipLevel: true,
-          svipLevel: true,
-          nobleRank: true,
-          isPrivate: true,
-          followersCount: true,
-          followingCount: true,
-          postsCount: true,
-        },
-      },
-    },
-  });
+  return await resolveCanonicalUser(userId, db);
 }
 
-// ─── Profile Visitors Tracking ──────────────────────────────────────────────
-const _profileVisits = [];
+// ─── Profile Visitors Tracking (NEW-16) ─────────────────────────────────────
 
 export async function recordProfileVisit({ visitorId, visitedId, isMystery = false }, db = prisma) {
   if (!visitorId || !visitedId || visitorId === visitedId) return null;
 
-  const existingIdx = _profileVisits.findIndex(v => v.visitorId === visitorId && v.visitedId === visitedId);
-  if (existingIdx !== -1) {
-    _profileVisits.splice(existingIdx, 1);
-  }
+  const [visitor, visited] = await Promise.all([
+    resolveCanonicalUser(visitorId, db),
+    resolveCanonicalUser(visitedId, db),
+  ]);
 
-  const record = {
-    id: `visit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    visitorId,
-    visitedId,
-    isMystery: Boolean(isMystery),
-    visitedAt: new Date(),
-  };
-  _profileVisits.unshift(record);
-  if (_profileVisits.length > 5000) _profileVisits.pop();
+  if (!visitor || !visited || visitor.id === visited.id) return null;
+  if (visitor.status === 'DELETED' || visited.status === 'DELETED') return null;
+
+  // Check if blocked in either direction
+  const isBlocked = await db.userBlock.findFirst({
+    where: {
+      OR: [
+        { blockerId: visitor.id, blockedId: visited.id },
+        { blockerId: visited.id, blockedId: visitor.id },
+      ],
+    },
+  });
+  if (isBlocked) return null;
+
+  // Upsert guarantees exactly ONE record per (visitor, visited) pair, updating visitedAt
+  const record = await db.profileVisit.upsert({
+    where: {
+      visitorId_visitedId: {
+        visitorId: visitor.id,
+        visitedId: visited.id,
+      },
+    },
+    update: {
+      visitedAt: new Date(),
+      isMystery: Boolean(isMystery),
+    },
+    create: {
+      visitorId: visitor.id,
+      visitedId: visited.id,
+      isMystery: Boolean(isMystery),
+      visitedAt: new Date(),
+    },
+  });
+
   return record;
 }
 
-export async function findProfileVisitors(visitedId, { limit = 50 } = {}, db = prisma) {
-  const matches = _profileVisits.filter(v => v.visitedId === visitedId).slice(0, limit);
-  const results = [];
-  for (const visit of matches) {
-    const user = await db.user.findUnique({
-      where: { id: visit.visitorId },
-      select: {
-        id: true,
-        username: true,
-        avatarUrl: true,
-        profile: {
+export async function findProfileVisitors(visitedId, { page = 1, limit = 50, viewerUserId = null } = {}, db = prisma) {
+  const target = await resolveCanonicalUser(visitedId, db);
+  if (!target) {
+    return { data: [], visitors: [], pagination: { page: 1, limit, total: 0, totalPages: 0, hasMore: false } };
+  }
+
+  // Check blocks
+  const blocks = await db.userBlock.findMany({
+    where: {
+      OR: [
+        { blockerId: target.id },
+        { blockedId: target.id },
+      ],
+    },
+  });
+  const blockedIds = blocks.map(b => (b.blockerId === target.id ? b.blockedId : b.blockerId));
+
+  const isOwner = Boolean(viewerUserId && (viewerUserId === target.id || viewerUserId === target.username));
+
+  const where = {
+    visitedId: target.id,
+    visitor: { status: { not: 'DELETED' } },
+    ...(blockedIds.length > 0 ? { visitorId: { notIn: blockedIds } } : {}),
+  };
+
+  // If third party is viewing, exclude invisible / mystery visits
+  if (!isOwner) {
+    where.isMystery = false;
+  }
+
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(100, Math.max(1, Number(limit) || 50));
+  const skip = (pageNum - 1) * limitNum;
+
+  const [total, visits] = await Promise.all([
+    db.profileVisit.count({ where }),
+    db.profileVisit.findMany({
+      where,
+      orderBy: [{ visitedAt: 'desc' }, { visitorId: 'asc' }],
+      skip,
+      take: limitNum,
+      include: {
+        visitor: {
           select: {
-            displayName: true,
-            level: true,
-            vipLevel: true,
-            followersCount: true,
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: {
+              select: {
+                displayName: true,
+                level: true,
+                svipLevel: true,
+                nobleRank: true,
+                followersCount: true,
+                signature: true,
+              },
+            },
           },
         },
       },
-    });
-    if (user) {
-      results.push({
-        id: visit.id,
-        user: {
-          id: user.id,
-          username: user.username,
-          name: user.profile?.displayName || user.username,
-          displayName: user.profile?.displayName || user.username,
-          avatarUrl: user.avatarUrl || '',
-          accountLevel: user.profile?.level || 1,
-          vipLevel: user.profile?.vipLevel ? `VIP ${user.profile.vipLevel}` : 'None',
-          followers: user.profile?.followersCount || 0,
-        },
-        visitedAt: visit.visitedAt,
-        isMystery: visit.isMystery,
-      });
-    }
-  }
-  return results;
+    }),
+  ]);
+
+  const results = visits.map(visit => {
+    const user = visit.visitor;
+    const publicId = /^[1-9]\d{6}$/.test(user.id) ? user.id : (user.username && /^\d+$/.test(user.username) ? user.username : user.id);
+    const displayName = user.profile?.displayName || user.username;
+    const userObj = {
+      id: publicId,
+      publicUserId: publicId,
+      publicId,
+      username: user.username,
+      name: displayName,
+      displayName,
+      nickname: displayName,
+      avatarUrl: user.avatarUrl || '',
+      accountLevel: user.profile?.level || 1,
+      vipLevel: user.profile?.svipLevel ? `SVIP ${user.profile.svipLevel}` : (user.profile?.nobleRank || 'None'),
+      followers: user.profile?.followersCount || 0,
+      profile: {
+        userId: publicId,
+        displayName,
+        bio: user.profile?.signature || null,
+        signature: user.profile?.signature || null,
+        avatarUrl: user.avatarUrl || '',
+      },
+    };
+
+    return {
+      id: visit.id,
+      visitedAt: visit.visitedAt,
+      isMystery: visit.isMystery,
+      user: userObj,
+      ...userObj,
+    };
+  });
+
+  return {
+    data: results,
+    visitors: results,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages: Math.ceil(total / limitNum),
+      hasMore: skip + results.length < total,
+    },
+  };
 }
 
-export async function findProfileVisited(visitorId, { limit = 50 } = {}, db = prisma) {
-  const matches = _profileVisits.filter(v => v.visitorId === visitorId).slice(0, limit);
-  const results = [];
-  for (const visit of matches) {
-    const user = await db.user.findUnique({
-      where: { id: visit.visitedId },
-      select: {
-        id: true,
-        username: true,
-        avatarUrl: true,
-        profile: {
+export async function findProfileVisited(visitorId, { page = 1, limit = 50, viewerUserId = null } = {}, db = prisma) {
+  const target = await resolveCanonicalUser(visitorId, db);
+  if (!target) {
+    return { data: [], visited: [], pagination: { page: 1, limit, total: 0, totalPages: 0, hasMore: false } };
+  }
+
+  // Check blocks
+  const blocks = await db.userBlock.findMany({
+    where: {
+      OR: [
+        { blockerId: target.id },
+        { blockedId: target.id },
+      ],
+    },
+  });
+  const blockedIds = blocks.map(b => (b.blockerId === target.id ? b.blockedId : b.blockerId));
+
+  const where = {
+    visitorId: target.id,
+    visited: { status: { not: 'DELETED' } },
+    ...(blockedIds.length > 0 ? { visitedId: { notIn: blockedIds } } : {}),
+  };
+
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(100, Math.max(1, Number(limit) || 50));
+  const skip = (pageNum - 1) * limitNum;
+
+  const [total, visits] = await Promise.all([
+    db.profileVisit.count({ where }),
+    db.profileVisit.findMany({
+      where,
+      orderBy: [{ visitedAt: 'desc' }, { visitedId: 'asc' }],
+      skip,
+      take: limitNum,
+      include: {
+        visited: {
           select: {
-            displayName: true,
-            level: true,
-            vipLevel: true,
-            followersCount: true,
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: {
+              select: {
+                displayName: true,
+                level: true,
+                svipLevel: true,
+                nobleRank: true,
+                followersCount: true,
+                signature: true,
+              },
+            },
           },
         },
       },
-    });
-    if (user) {
-      results.push({
-        id: visit.id,
-        user: {
-          id: user.id,
-          username: user.username,
-          name: user.profile?.displayName || user.username,
-          displayName: user.profile?.displayName || user.username,
-          avatarUrl: user.avatarUrl || '',
-          accountLevel: user.profile?.level || 1,
-          vipLevel: user.profile?.vipLevel ? `VIP ${user.profile.vipLevel}` : 'None',
-          followers: user.profile?.followersCount || 0,
-        },
-        visitedAt: visit.visitedAt,
-        isMystery: visit.isMystery,
-      });
-    }
-  }
-  return results;
+    }),
+  ]);
+
+  const results = visits.map(visit => {
+    const user = visit.visited;
+    const publicId = /^[1-9]\d{6}$/.test(user.id) ? user.id : (user.username && /^\d+$/.test(user.username) ? user.username : user.id);
+    const displayName = user.profile?.displayName || user.username;
+    const userObj = {
+      id: publicId,
+      publicUserId: publicId,
+      publicId,
+      username: user.username,
+      name: displayName,
+      displayName,
+      nickname: displayName,
+      avatarUrl: user.avatarUrl || '',
+      accountLevel: user.profile?.level || 1,
+      vipLevel: user.profile?.svipLevel ? `SVIP ${user.profile.svipLevel}` : (user.profile?.nobleRank || 'None'),
+      followers: user.profile?.followersCount || 0,
+      profile: {
+        userId: publicId,
+        displayName,
+        bio: user.profile?.signature || null,
+        signature: user.profile?.signature || null,
+        avatarUrl: user.avatarUrl || '',
+      },
+    };
+
+    return {
+      id: visit.id,
+      visitedAt: visit.visitedAt,
+      isMystery: visit.isMystery,
+      user: userObj,
+      ...userObj,
+    };
+  });
+
+  return {
+    data: results,
+    visited: results,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total,
+      totalPages: Math.ceil(total / limitNum),
+      hasMore: skip + results.length < total,
+    },
+  };
 }
 
 export default {
+  resolveCanonicalUser,
   createLike,
   deleteLike,
   findLike,

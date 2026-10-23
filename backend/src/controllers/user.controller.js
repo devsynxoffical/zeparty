@@ -1,4 +1,5 @@
 import userService from '../services/user.service.js';
+import socialService from '../services/social.service.js';
 import {
   queryUsersSchema,
   updateUserStatusSchema,
@@ -298,6 +299,12 @@ export async function putMyProfile(req, res, next) {
 export async function getPublicUserById(req, res, next) {
   try {
     const { id } = userIdParamSchema.parse(req.params);
+    const viewerUserId = req.auth?.userId;
+
+    if (viewerUserId && viewerUserId !== id) {
+      socialService.recordProfileVisit({ visitorId: viewerUserId, visitedId: id }).catch(() => {});
+    }
+
     const publicUser = await userService.getPublicProfile(id);
     return res.status(200).json({
       success: true,
