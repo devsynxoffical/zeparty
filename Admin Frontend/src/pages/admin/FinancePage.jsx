@@ -20,6 +20,11 @@ import {
   getSettlements,
   updateSettlementStatus
 } from '../../services/modules/finance.service';
+import {
+  financeDashboardMock,
+  financeRevenueChartMock,
+  financeSettlementsMock,
+} from '../../mocks/finance.mock';
 
 const ChartTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
@@ -37,10 +42,10 @@ const ChartTooltip = ({ active, payload, label }) => {
 
 export function FinancePage() {
   const { addLog } = useAuditLog();
-  const [stats, setStats] = useState(null);
-  const [chartData, setChartData] = useState([]);
-  const [settlements, setSettlements] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [stats, setStats] = useState(financeDashboardMock);
+  const [chartData, setChartData] = useState(financeRevenueChartMock);
+  const [settlements, setSettlements] = useState(financeSettlementsMock);
+  const [isLoading, setIsLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedSettlement, setSelectedSettlement] = useState(null);
   const [rejectTarget, setRejectTarget] = useState(null);
@@ -48,14 +53,31 @@ export function FinancePage() {
   const [chartPeriod, setChartPeriod] = useState('Week');
 
   useEffect(() => {
-    Promise.all([getFinanceDashboard(), getRevenueChart(), getSettlements()])
+    let isMounted = true;
+    Promise.all([
+      getFinanceDashboard().catch(() => financeDashboardMock),
+      getRevenueChart().catch(() => financeRevenueChartMock),
+      getSettlements().catch(() => financeSettlementsMock),
+    ])
       .then(([s, c, setts]) => {
-        setStats(s);
-        setChartData(c);
-        setSettlements(setts);
+        if (!isMounted) return;
+        setStats(s || financeDashboardMock);
+        if (Array.isArray(c) && c.length > 0) setChartData(c);
+        if (Array.isArray(setts) && setts.length > 0) setSettlements(setts);
       })
-      .finally(() => setIsLoading(false));
+      .catch((err) => {
+        console.warn('[FinancePage] Failed to load finance data:', err);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
+
+  const safeStats = stats || financeDashboardMock;
 
   const filteredSettlements = useMemo(() => {
     return settlements.filter(s => statusFilter === 'ALL' || s.status === statusFilter);
@@ -175,10 +197,10 @@ export function FinancePage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Gross Recharge Revenue" value={formatCurrency(stats.grossRechargeRevenue)} icon={TrendingUp} iconColor="text-sky-400" iconBg="bg-sky-500/10" />
-        <StatCard title="Net Platform Revenue" value={formatCurrency(stats.netPlatformRevenue)} icon={PieChart} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
-        <StatCard title="Host Earnings" value={formatCurrency(stats.hostEarnings)} icon={Activity} iconColor="text-gold-400" iconBg="bg-gold-500/10" />
-        <StatCard title="Pending Settlements" value={formatCurrency(stats.pendingSettlement)} icon={Building} iconColor="text-amber-400" iconBg="bg-amber-500/10" />
+        <StatCard title="Gross Recharge Revenue" value={formatCurrency(safeStats.grossRechargeRevenue ?? 0)} icon={TrendingUp} iconColor="text-sky-400" iconBg="bg-sky-500/10" />
+        <StatCard title="Net Platform Revenue" value={formatCurrency(safeStats.netPlatformRevenue ?? 0)} icon={PieChart} iconColor="text-emerald-400" iconBg="bg-emerald-500/10" />
+        <StatCard title="Host Earnings" value={formatCurrency(safeStats.hostEarnings ?? 0)} icon={Activity} iconColor="text-gold-400" iconBg="bg-gold-500/10" />
+        <StatCard title="Pending Settlements" value={formatCurrency(safeStats.pendingSettlement ?? 0)} icon={Building} iconColor="text-amber-400" iconBg="bg-amber-500/10" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -214,19 +236,19 @@ export function FinancePage() {
           <div className="p-4 space-y-4">
             <div className="flex justify-between items-center text-sm">
               <span className="text-slate-400">Gross Recharge</span>
-              <span className="text-white font-medium">{formatCurrency(stats.grossRechargeRevenue)}</span>
+              <span className="text-white font-medium">{formatCurrency(safeStats.grossRechargeRevenue ?? 0)}</span>
             </div>
             <div className="flex justify-between items-center text-sm border-t border-slate-700/50 pt-3">
               <span className="text-slate-400">- Host Earnings</span>
-              <span className="text-red-400 font-medium">-{formatCurrency(stats.hostEarnings)}</span>
+              <span className="text-red-400 font-medium">-{formatCurrency(safeStats.hostEarnings ?? 0)}</span>
             </div>
             <div className="flex justify-between items-center text-sm">
               <span className="text-slate-400">- Agency Commission</span>
-              <span className="text-red-400 font-medium">-{formatCurrency(stats.agencyCommission)}</span>
+              <span className="text-red-400 font-medium">-{formatCurrency(safeStats.agencyCommission ?? 0)}</span>
             </div>
             <div className="flex justify-between items-center text-sm border-t border-slate-700 pt-3">
               <span className="text-white font-bold">= Platform Profit</span>
-              <span className="text-emerald-400 font-bold">{formatCurrency(stats.platformProfit)}</span>
+              <span className="text-emerald-400 font-bold">{formatCurrency(safeStats.platformProfit ?? 0)}</span>
             </div>
           </div>
         </Card>

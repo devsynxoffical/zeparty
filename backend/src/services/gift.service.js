@@ -233,11 +233,26 @@ export async function sendGift(
     throw error;
   }
 
-  // 2. Load Recipient User & optional Host Profile
-  const recipientUser = await db.user.findUnique({
-    where: { id: recipientUserId },
-    select: { id: true, username: true },
-  });
+  // 2. Parallel Pre-Transaction Entity & Policy Resolution
+  const [
+    recipientUser,
+    hostProfile,
+    initialSenderWallet,
+    initialHostWallet,
+    economyPolicy,
+    roomRecord,
+  ] = await Promise.all([
+    db.user.findUnique({
+      where: { id: recipientUserId },
+      select: { id: true, username: true },
+    }),
+    hostRepository.findHostProfileByUserId(recipientUserId, db).catch(() => null),
+    walletRepository.findByUserId(senderUserId, db),
+    walletRepository.findByUserId(recipientUserId, db),
+    policyService.getEffectivePolicy('ECONOMY', db).catch(() => null),
+    roomId ? db.room.findUnique({ where: { id: roomId } }).catch(() => null) : Promise.resolve(null),
+  ]);
+
   if (!recipientUser) {
     const error = new Error('Recipient user not found');
     error.statusCode = 404;
@@ -245,15 +260,13 @@ export async function sendGift(
     throw error;
   }
 
-  const hostProfile = await hostRepository.findHostProfileByUserId(recipientUserId, db).catch(() => null);
-
-  // 3. Ensure sender and recipient wallets exist
-  let senderWallet = await walletRepository.findByUserId(senderUserId, db);
+  // Ensure sender and recipient wallets exist
+  let senderWallet = initialSenderWallet;
   if (!senderWallet) {
     senderWallet = await walletRepository.createWallet(senderUserId, db);
   }
 
-  let hostWallet = await walletRepository.findByUserId(recipientUserId, db);
+  let hostWallet = initialHostWallet;
   if (!hostWallet) {
     hostWallet = await walletRepository.createWallet(recipientUserId, db);
   }
@@ -263,7 +276,6 @@ export async function sendGift(
   const totalCoins = giftCoinValue * BigInt(qty);
 
   // 5. Dynamic ECONOMY Policy Resolution
-  const economyPolicy = await policyService.getEffectivePolicy('ECONOMY', db);
   const hostBps = BigInt(economyPolicy?.config?.hostShareBps || 3500); // Default 35%
   const agencyBps = BigInt(economyPolicy?.config?.agencyShareBps || 1200); // Default 12%
   const roomBps = BigInt(economyPolicy?.config?.roomRewardBps || 800); // Default 8%
@@ -288,18 +300,11 @@ export async function sendGift(
   // Check Room linkage
   let roomOwnerWallet = null;
   let roomCoins = 0n;
-  if (roomId) {
-    try {
-      const room = await db.room.findUnique({ where: { id: roomId } });
-      if (room && room.status === 'LIVE' && room.creatorUserId) {
-        roomCoins = (totalCoins * roomBps) / 10000n;
-        roomOwnerWallet = await walletRepository.findByUserId(room.creatorUserId, db);
-        if (!roomOwnerWallet) {
-          roomOwnerWallet = await walletRepository.createWallet(room.creatorUserId, db);
-        }
-      }
-    } catch {
-      // Ignore room lookup error if Room table empty/unmocked in test
+  if (roomRecord && roomRecord.status === 'LIVE' && roomRecord.creatorUserId) {
+    roomCoins = (totalCoins * roomBps) / 10000n;
+    roomOwnerWallet = await walletRepository.findByUserId(roomRecord.creatorUserId, db);
+    if (!roomOwnerWallet) {
+      roomOwnerWallet = await walletRepository.createWallet(roomRecord.creatorUserId, db);
     }
   }
 
@@ -414,9 +419,12 @@ export async function sendGift(
       tx
     );
 
+    const senderNewBalance = (BigInt(currentSenderWallet.coinBalance) - totalCoins).toString();
+
     return {
       giftTransaction: giftTx,
       ledgerPosting,
+      senderNewBalance,
       senderWealth: {
         previousXp: currentXp.toString(),
         newXp: newXp.toString(),
@@ -426,295 +434,302 @@ export async function sendGift(
     };
   }, { maxWait: 10000, timeout: 30000 });
 
-  // NEW 10: Authoritative Persistent Gift-Target Attribution (Counting Key = giftTransaction.id)
-  let targetAttribution = null;
-  try {
-    const attrRes = await hostTargetService.recordGiftAttribution(
-      {
-        giftTransaction: result.giftTransaction,
-        recipientUser,
-        hostProfile,
-        gift,
-        quantity: qty,
-      },
-      db
-    );
-    targetAttribution = attrRes.attribution;
-  } catch (attrErr) {
-    console.warn('Target attribution record warning:', attrErr.message);
-  }
-
-  await logAudit({
-    action: 'GIFT_TRANSACTION_EXECUTED',
-    targetEntity: 'GiftTransaction',
-    targetEntityId: result.giftTransaction.id,
-    afterStateJson: {
-      senderUserId,
-      recipientUserId,
-      giftId: gift.id,
-      giftName: gift.name,
-      quantity: qty,
-      totalCoins: totalCoins.toString(),
-      hostDiamonds: hostDiamonds.toString(),
-      agencyCoins: agencyCoins.toString(),
-      roomCoins: roomCoins.toString(),
-      referenceId: refId,
+  // Prepare immediate confirmed HTTP response payload (Bug #26: sub-50ms latency)
+  const responseData = {
+    referenceId: refId,
+    status: 'CONFIRMED',
+    gift: {
+      id: gift.id,
+      name: gift.name,
+      iconUrl: gift.iconUrl,
+      svgaAssetUrl: gift.svgaAssetUrl,
+      isFullScreen: gift.isFullScreen,
     },
-    ipAddress,
-  }, db);
-
-  if (roomId) {
-    let canonicalRoomId = roomId;
-    try {
-      const roomRec = await db.room.findUnique({
-        where: { id: roomId },
-        select: { id: true },
-      });
-      if (roomRec) {
-        canonicalRoomId = roomRec.id;
-      } else if (roomId.length <= 16) {
-        const found = await db.room.findFirst({
-          where: { id: { startsWith: roomId, mode: 'insensitive' } },
-          select: { id: true },
-        });
-        if (found) canonicalRoomId = found.id;
-      }
-    } catch (_) {}
-
-    // Load sender & recipient user details for rich real-time display
-    let senderUser = null;
-    let recipientUser = null;
-    try {
-      [senderUser, recipientUser] = await Promise.all([
-        db.user.findUnique({
-          where: { id: senderUserId },
-          select: {
-            id: true,
-            username: true,
-            avatarUrl: true,
-            profile: { select: { displayName: true } },
-          },
-        }),
-        db.user.findUnique({
-          where: { id: recipientUserId },
-          select: {
-            id: true,
-            username: true,
-            avatarUrl: true,
-            profile: { select: { displayName: true } },
-          },
-        }),
-      ]);
-    } catch (_) {}
-
-    const senderDisplayName = senderUser?.profile?.displayName || senderUser?.username || 'User';
-    const senderAvatarUrl = senderUser?.profile?.avatarUrl || senderUser?.avatarUrl || '';
-    const recipientDisplayName = recipientUser?.profile?.displayName || recipientUser?.username || 'Host';
-    const recipientAvatarUrl = recipientUser?.profile?.avatarUrl || recipientUser?.avatarUrl || '';
-
-    const broadcastPayload = {
-      id: result.giftTransaction.id,
-      transactionId: result.giftTransaction.id,
-      roomId: canonicalRoomId,
-      clientRoomId: roomId,
-      room: canonicalRoomId,
-      giftId: gift.id,
-      giftName: gift.name,
-      giftIcon: gift.iconUrl || '🎁',
-      quantity: qty,
-      totalCoins: totalCoins.toString(),
-      senderUserId,
-      senderName: senderDisplayName,
-      senderAvatar: senderAvatarUrl,
-      sender: {
-        id: senderUserId,
-        userId: senderUserId,
-        name: senderDisplayName,
-        displayName: senderDisplayName,
-        username: senderUser?.username || senderDisplayName,
-        avatarUrl: senderAvatarUrl,
-      },
-      recipientUserId,
-      receiverUserId: recipientUserId,
-      receiverName: recipientDisplayName,
-      receiverAvatar: recipientAvatarUrl,
-      receiver: {
-        id: recipientUserId,
-        userId: recipientUserId,
-        name: recipientDisplayName,
-        displayName: recipientDisplayName,
-        username: recipientUser?.username || recipientDisplayName,
-        avatarUrl: recipientAvatarUrl,
-      },
-      gift: {
-        id: gift.id,
-        name: gift.name,
-        iconUrl: gift.iconUrl || null,
-        animationUrl: gift.svgaAssetUrl || null,
-        isFullScreen: gift.isFullScreen || false,
-      },
-      timestamp: new Date().toISOString(),
-    };
-
-    const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
-    for (const rid of targetRoomIds) {
-      socketEmitter.emitToRoom(rid, SOCKET_EVENTS.ROOM_GIFT_SENT, broadcastPayload);
-      socketEmitter.emitToRoom(rid, 'room:gift_sent', broadcastPayload);
-      socketEmitter.emitToRoom(rid, 'room_gift_sent', broadcastPayload);
-      socketEmitter.emitToRoom(rid, 'gift:sent', broadcastPayload);
-      socketEmitter.emitToRoom(rid, 'gift_sent', broadcastPayload);
-      socketEmitter.emitToRoom(rid, 'room:gift', broadcastPayload);
-    }
-
-    // Issue 08: Room Sending Coin Total Sync (Trophy Counter)
-    try {
-      const todayUtc = new Date();
-      todayUtc.setUTCHours(0, 0, 0, 0);
-      const dailyAggr = await (db || prisma).giftTransaction.aggregate({
-        where: { roomId: canonicalRoomId, createdAt: { gte: todayUtc } },
-        _sum: { totalCoins: true },
-      });
-      const updatedTotal = Number(dailyAggr._sum.totalCoins || 0);
-      const sendingTotalPayload = {
-        roomId: canonicalRoomId,
-        clientRoomId: roomId,
-        period: 'daily',
-        totalCoins: updatedTotal,
-        roomSendingTotal: updatedTotal,
-        dailySendingTotal: updatedTotal,
-        timestamp: new Date().toISOString(),
-      };
-      for (const rid of targetRoomIds) {
-        socketEmitter.emitToRoom(rid, 'room:sending_total_updated', sendingTotalPayload);
-        socketEmitter.emitToRoom(rid, 'room:sending_total', sendingTotalPayload);
-      }
-    } catch (_) {}
-
-    try {
-      await pkService.recordGiftContribution({
-        giftTransactionId: result.giftTransaction.id,
-        senderUserId,
-        recipientUserId,
-        roomId: canonicalRoomId,
-        coins: Number(totalCoins),
-        commitTimestamp: result.giftTransaction.createdAt,
-      });
-    } catch (_) {}
-  }
-
-  // High-Value Activity Announcement Trigger (100,000+ Coins)
-  if (totalCoins >= 100000n) {
-    try {
-      const sender = await db.user.findUnique({
-        where: { id: senderUserId },
-        select: {
-          id: true,
-          username: true,
-          avatarUrl: true,
-          profile: { select: { displayName: true, vipLevel: true, svipLevel: true } },
-        },
-      });
-
-      const tier = totalCoins >= 1000000n ? 'MEGA' : totalCoins >= 500000n ? 'SUPER' : 'HIGH_VALUE';
-
-      socketEmitter.broadcastGlobal('room:high_value_announcement', {
-        eventType: 'GIFT',
-        tier,
-        sender: {
-          id: sender?.id || senderUserId,
-          username: sender?.username,
-          displayName: sender?.profile?.displayName || sender?.username,
-          avatarUrl: sender?.avatarUrl,
-          vipLevel: sender?.profile?.vipLevel || 0,
-          svipLevel: sender?.profile?.svipLevel || 0,
-        },
-        recipientUserId,
-        roomId: roomId || null,
-        gift: {
-          id: gift.id,
-          name: gift.name,
-          iconUrl: gift.iconUrl,
-        },
-        quantity: qty,
-        amount: Number(totalCoins),
-        timestamp: new Date().toISOString(),
-      });
-    } catch (_) {}
-  }
-
-  // NEW 09 & NEW 11: Authoritative Host Target Progress Real-Time Refresh
-  let hostTargetProgress = null;
-  try {
-    hostTargetProgress = await hostTargetService.getHostTargetProgress(
-      recipientUserId,
-      { date: result.giftTransaction.createdAt },
-      db
-    );
-
-    if (hostTargetProgress.isHost) {
-      // Emit to receiving host personal socket channel
-      socketEmitter.emitToUser(recipientUserId, 'host:target_updated', hostTargetProgress);
-      socketEmitter.emitToUser(recipientUserId, 'host_target_updated', hostTargetProgress);
-
-      // If Audio/ID host belongs to an agency, emit to agency channel for aggregate sync
-      if (hostTargetProgress.agencyId) {
-        const agencyTargetProgress = await hostTargetService.getAgencyTargetProgress(
-          hostTargetProgress.agencyId,
-          { date: result.giftTransaction.createdAt },
-          db
-        );
-        socketEmitter.emitToAgency(hostTargetProgress.agencyId, 'agency:target_updated', agencyTargetProgress);
-        socketEmitter.emitToAgency(hostTargetProgress.agencyId, 'agency_target_updated', agencyTargetProgress);
-      }
-    }
-  } catch (err) {
-    // Non-fatal for gift delivery response
-  }
-
-  return {
-    success: true,
-    message: `Successfully sent ${qty}x ${gift.name} to host!`,
-    giftTransaction: result.giftTransaction,
+    quantity: qty,
+    totalCoinsDebited: totalCoins.toString(),
+    hostDiamondsCredited: hostDiamonds.toString(),
+    agencyCoinsCredited: agencyCoins.toString(),
+    roomCoinsCredited: roomCoins.toString(),
+    senderNewBalance: result.senderNewBalance,
+    updatedCoinBalance: result.senderNewBalance,
+    newCoinBalance: result.senderNewBalance,
+    remainingBalance: result.senderNewBalance,
     transactionId: result.giftTransaction.id,
     wealthXPAdded: Number(result.senderWealth.addedXp),
     senderNewLevel: result.senderWealth.wealthLevel,
     senderWealth: result.senderWealth,
-    hostTarget: hostTargetProgress ? {
-      isHost: hostTargetProgress.isHost,
-      achievedCoins: hostTargetProgress.achievedCoins,
-      remainingCoins: hostTargetProgress.remainingCoins,
-      nextTargetCoins: hostTargetProgress.nextTargetCoins,
-      progressPercent: hostTargetProgress.progressPercent,
-      cycle: hostTargetProgress.cycle,
-    } : null,
-    data: {
-      referenceId: refId,
-      gift: {
-        id: gift.id,
-        name: gift.name,
-        iconUrl: gift.iconUrl,
-        svgaAssetUrl: gift.svgaAssetUrl,
-        isFullScreen: gift.isFullScreen,
-      },
-      quantity: qty,
-      totalCoinsDebited: totalCoins.toString(),
-      hostDiamondsCredited: hostDiamonds.toString(),
-      agencyCoinsCredited: agencyCoins.toString(),
-      roomCoinsCredited: roomCoins.toString(),
-      transactionId: result.giftTransaction.id,
-      wealthXPAdded: Number(result.senderWealth.addedXp),
-      senderNewLevel: result.senderWealth.wealthLevel,
-      senderWealth: result.senderWealth,
-      hostTarget: hostTargetProgress ? {
-        isHost: hostTargetProgress.isHost,
-        achievedCoins: hostTargetProgress.achievedCoins,
-        remainingCoins: hostTargetProgress.remainingCoins,
-        nextTargetCoins: hostTargetProgress.nextTargetCoins,
-        progressPercent: hostTargetProgress.progressPercent,
-        cycle: hostTargetProgress.cycle,
-      } : null,
-    },
+    hostTarget: null,
   };
+
+  const returnPayload = {
+    success: true,
+    message: `Successfully sent ${qty}x ${gift.name} to host!`,
+    giftTransaction: result.giftTransaction,
+    transactionId: result.giftTransaction.id,
+    senderNewBalance: result.senderNewBalance,
+    updatedCoinBalance: result.senderNewBalance,
+    wealthXPAdded: Number(result.senderWealth.addedXp),
+    senderNewLevel: result.senderWealth.wealthLevel,
+    senderWealth: result.senderWealth,
+    data: responseData,
+  };
+
+  // Asynchronous background execution: target attribution, audit log, socket emissions, PK sync, and high-value notifications
+  setImmediate(async () => {
+    try {
+      // 1. Authoritative Persistent Gift-Target Attribution (Counting Key = giftTransaction.id)
+      try {
+        await hostTargetService.recordGiftAttribution(
+          {
+            giftTransaction: result.giftTransaction,
+            recipientUser,
+            hostProfile,
+            gift,
+            quantity: qty,
+          },
+          db
+        );
+      } catch (attrErr) {
+        console.warn('Target attribution record warning:', attrErr.message);
+      }
+
+      // 2. Audit Logging
+      await logAudit({
+        action: 'GIFT_TRANSACTION_EXECUTED',
+        targetEntity: 'GiftTransaction',
+        targetEntityId: result.giftTransaction.id,
+        afterStateJson: {
+          senderUserId,
+          recipientUserId,
+          giftId: gift.id,
+          giftName: gift.name,
+          quantity: qty,
+          totalCoins: totalCoins.toString(),
+          hostDiamonds: hostDiamonds.toString(),
+          agencyCoins: agencyCoins.toString(),
+          roomCoins: roomCoins.toString(),
+          referenceId: refId,
+        },
+        ipAddress,
+      }, db);
+
+      // 3. Realtime Room Socket Broadcasts
+      if (roomId) {
+        let canonicalRoomId = roomId;
+        try {
+          const roomRec = await db.room.findUnique({
+            where: { id: roomId },
+            select: { id: true },
+          });
+          if (roomRec) {
+            canonicalRoomId = roomRec.id;
+          } else if (roomId.length <= 16) {
+            const found = await db.room.findFirst({
+              where: { id: { startsWith: roomId, mode: 'insensitive' } },
+              select: { id: true },
+            });
+            if (found) canonicalRoomId = found.id;
+          }
+        } catch (_) {}
+
+        // Load sender & recipient user details for rich real-time display
+        let senderUser = null;
+        let recipientUserObj = null;
+        try {
+          [senderUser, recipientUserObj] = await Promise.all([
+            db.user.findUnique({
+              where: { id: senderUserId },
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                profile: { select: { displayName: true } },
+              },
+            }),
+            db.user.findUnique({
+              where: { id: recipientUserId },
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                profile: { select: { displayName: true } },
+              },
+            }),
+          ]);
+        } catch (_) {}
+
+        const senderDisplayName = senderUser?.profile?.displayName || senderUser?.username || 'User';
+        const senderAvatarUrl = senderUser?.profile?.avatarUrl || senderUser?.avatarUrl || '';
+        const recipientDisplayName = recipientUserObj?.profile?.displayName || recipientUserObj?.username || 'Host';
+        const recipientAvatarUrl = recipientUserObj?.profile?.avatarUrl || recipientUserObj?.avatarUrl || '';
+
+        // Bug #28: Tag live broadcast with explicit playback & replay flags
+        const broadcastPayload = {
+          id: result.giftTransaction.id,
+          transactionId: result.giftTransaction.id,
+          eventId: `live_gift_${result.giftTransaction.id}`,
+          isLive: true,
+          isHistorical: false,
+          playbackType: 'ANIMATE_ONCE',
+          replayAnimation: true,
+          roomId: canonicalRoomId,
+          clientRoomId: roomId,
+          room: canonicalRoomId,
+          giftId: gift.id,
+          giftName: gift.name,
+          giftIcon: gift.iconUrl || '🎁',
+          quantity: qty,
+          totalCoins: totalCoins.toString(),
+          senderUserId,
+          senderName: senderDisplayName,
+          senderAvatar: senderAvatarUrl,
+          sender: {
+            id: senderUserId,
+            userId: senderUserId,
+            name: senderDisplayName,
+            displayName: senderDisplayName,
+            username: senderUser?.username || senderDisplayName,
+            avatarUrl: senderAvatarUrl,
+          },
+          recipientUserId,
+          receiverUserId: recipientUserId,
+          receiverName: recipientDisplayName,
+          receiverAvatar: recipientAvatarUrl,
+          receiver: {
+            id: recipientUserId,
+            userId: recipientUserId,
+            name: recipientDisplayName,
+            displayName: recipientDisplayName,
+            username: recipientUserObj?.username || recipientDisplayName,
+            avatarUrl: recipientAvatarUrl,
+          },
+          gift: {
+            id: gift.id,
+            name: gift.name,
+            iconUrl: gift.iconUrl || null,
+            animationUrl: gift.svgaAssetUrl || null,
+            isFullScreen: gift.isFullScreen || false,
+          },
+          timestamp: new Date().toISOString(),
+        };
+
+        const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
+        for (const rid of targetRoomIds) {
+          socketEmitter.emitToRoom(rid, SOCKET_EVENTS.ROOM_GIFT_SENT, broadcastPayload);
+          socketEmitter.emitToRoom(rid, 'room:gift_sent', broadcastPayload);
+          socketEmitter.emitToRoom(rid, 'room_gift_sent', broadcastPayload);
+          socketEmitter.emitToRoom(rid, 'gift:sent', broadcastPayload);
+          socketEmitter.emitToRoom(rid, 'gift_sent', broadcastPayload);
+          socketEmitter.emitToRoom(rid, 'room:gift', broadcastPayload);
+        }
+
+        // Room Sending Coin Total Sync (Trophy Counter)
+        try {
+          const todayUtc = new Date();
+          todayUtc.setUTCHours(0, 0, 0, 0);
+          const dailyAggr = await (db || prisma).giftTransaction.aggregate({
+            where: { roomId: canonicalRoomId, createdAt: { gte: todayUtc } },
+            _sum: { totalCoins: true },
+          });
+          const updatedTotal = Number(dailyAggr._sum.totalCoins || 0);
+          const sendingTotalPayload = {
+            roomId: canonicalRoomId,
+            clientRoomId: roomId,
+            period: 'daily',
+            totalCoins: updatedTotal,
+            roomSendingTotal: updatedTotal,
+            dailySendingTotal: updatedTotal,
+            timestamp: new Date().toISOString(),
+          };
+          for (const rid of targetRoomIds) {
+            socketEmitter.emitToRoom(rid, 'room:sending_total_updated', sendingTotalPayload);
+            socketEmitter.emitToRoom(rid, 'room:sending_total', sendingTotalPayload);
+          }
+        } catch (_) {}
+
+        try {
+          await pkService.recordGiftContribution({
+            giftTransactionId: result.giftTransaction.id,
+            senderUserId,
+            recipientUserId,
+            roomId: canonicalRoomId,
+            coins: Number(totalCoins),
+            commitTimestamp: result.giftTransaction.createdAt,
+          });
+        } catch (_) {}
+      }
+
+      // High-Value Activity Announcement Trigger (100,000+ Coins)
+      if (totalCoins >= 100000n) {
+        try {
+          const sender = await db.user.findUnique({
+            where: { id: senderUserId },
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              profile: { select: { displayName: true, vipLevel: true, svipLevel: true } },
+            },
+          });
+
+          const tier = totalCoins >= 1000000n ? 'MEGA' : totalCoins >= 500000n ? 'SUPER' : 'HIGH_VALUE';
+
+          socketEmitter.broadcastGlobal('room:high_value_announcement', {
+            eventType: 'GIFT',
+            tier,
+            sender: {
+              id: sender?.id || senderUserId,
+              username: sender?.username,
+              displayName: sender?.profile?.displayName || sender?.username,
+              avatarUrl: sender?.avatarUrl,
+              vipLevel: sender?.profile?.vipLevel || 0,
+              svipLevel: sender?.profile?.svipLevel || 0,
+            },
+            recipientUserId,
+            roomId: roomId || null,
+            gift: {
+              id: gift.id,
+              name: gift.name,
+              iconUrl: gift.iconUrl,
+            },
+            quantity: qty,
+            amount: Number(totalCoins),
+            timestamp: new Date().toISOString(),
+          });
+        } catch (_) {}
+      }
+
+      // Authoritative Host Target Progress Real-Time Refresh
+      try {
+        const hostTargetProgress = await hostTargetService.getHostTargetProgress(
+          recipientUserId,
+          { date: result.giftTransaction.createdAt },
+          db
+        );
+
+        if (hostTargetProgress?.isHost) {
+          // Emit to receiving host personal socket channel
+          socketEmitter.emitToUser(recipientUserId, 'host:target_updated', hostTargetProgress);
+          socketEmitter.emitToUser(recipientUserId, 'host_target_updated', hostTargetProgress);
+
+          // If Audio/ID host belongs to an agency, emit to agency channel for aggregate sync
+          if (hostTargetProgress.agencyId) {
+            const agencyTargetProgress = await hostTargetService.getAgencyTargetProgress(
+              hostTargetProgress.agencyId,
+              { date: result.giftTransaction.createdAt },
+              db
+            );
+            socketEmitter.emitToAgency(hostTargetProgress.agencyId, 'agency:target_updated', agencyTargetProgress);
+            socketEmitter.emitToAgency(hostTargetProgress.agencyId, 'agency_target_updated', agencyTargetProgress);
+          }
+        }
+      } catch (_) {}
+    } catch (bgErr) {
+      console.warn('[sendGift Background Task] Warning:', bgErr?.message);
+    }
+  });
+
+  return returnPayload;
 }
 
 /**

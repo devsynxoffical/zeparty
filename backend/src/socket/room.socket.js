@@ -329,6 +329,11 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       recentGifts = recentTxs.reverse().map((tx) => ({
         id: tx.id,
         transactionId: tx.id,
+        eventId: `hist_gift_${tx.id}`,
+        isHistorical: true,
+        isLive: false,
+        playbackType: 'HISTORY_ONLY',
+        replayAnimation: false,
         roomId: room.id,
         giftId: tx.giftId,
         giftName: tx.gift?.name || 'Gift',
@@ -858,6 +863,11 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       recentGifts = recentTxs.reverse().map((tx) => ({
         id: tx.id,
         transactionId: tx.id,
+        eventId: `hist_gift_${tx.id}`,
+        isHistorical: true,
+        isLive: false,
+        playbackType: 'HISTORY_ONLY',
+        replayAnimation: false,
         roomId: room.id,
         giftId: tx.giftId,
         giftName: tx.gift?.name || 'Gift',

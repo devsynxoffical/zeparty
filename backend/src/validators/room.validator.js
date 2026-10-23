@@ -23,6 +23,7 @@ export const createRoomSchema = z.object({
   }, z.enum(['MUSIC', 'CHAT', 'GAMING']).default('CHAT')),
   isPrivate: z.boolean().default(false),
   roomPin: z.string().max(10).optional().or(z.literal('')),
+  forceNew: z.boolean().optional().default(false),
 });
 
 export const updateRoomBackgroundSchema = z.object({

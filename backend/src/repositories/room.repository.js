@@ -290,17 +290,53 @@ export async function findActiveRooms(
     }),
   ]);
 
+  const roomIds = rawRooms.map((r) => r.id);
+  const giftTotalsMap = {};
+  const dailyTotalsMap = {};
+  if (roomIds.length > 0) {
+    try {
+      const todayUtc = new Date();
+      todayUtc.setUTCHours(0, 0, 0, 0);
+      const [allGifts, dailyGifts] = await Promise.all([
+        db.giftTransaction.groupBy({
+          by: ['roomId'],
+          where: { roomId: { in: roomIds } },
+          _sum: { totalCoins: true },
+        }),
+        db.giftTransaction.groupBy({
+          by: ['roomId'],
+          where: { roomId: { in: roomIds }, createdAt: { gte: todayUtc } },
+          _sum: { totalCoins: true },
+        }),
+      ]);
+      for (const g of allGifts) {
+        if (g.roomId) giftTotalsMap[g.roomId] = Number(g._sum.totalCoins || 0);
+      }
+      for (const d of dailyGifts) {
+        if (d.roomId) dailyTotalsMap[d.roomId] = Number(d._sum.totalCoins || 0);
+      }
+    } catch (_) {}
+  }
+
   const rooms = rawRooms.map((r) => {
     const hasPin = Boolean(r.roomPin);
     const lockMode = hasPin ? 'PIN' : (r.isPrivate ? 'Approval' : 'NONE');
     const { roomPin: _confidentialPin, ...safeRoom } = r;
     const seatCount = (r.seats || []).length || 10;
+    const giftsReceived = giftTotalsMap[r.id] || 0;
+    const dailyTotal = dailyTotalsMap[r.id] || 0;
     return {
       ...safeRoom,
       isLocked: Boolean(r.isPrivate),
       lockMode,
       seatCapacity: seatCount,
       capacity: seatCount,
+      giftsReceivedCoins: giftsReceived,
+      totalGifts: giftsReceived,
+      dailySendingTotal: dailyTotal,
+      roomSendingTotal: dailyTotal,
+      periodTotalCoins: dailyTotal,
+      trophyCoins: dailyTotal,
     };
   });
 
@@ -678,28 +714,9 @@ export async function leaveRoomTx({ roomId, userId }, db = prisma) {
     activePresenceCount = await presenceService.getRoomActiveUserCount(resolvedRoomId);
   } catch (_) {}
 
-  // A guest leaving is purely a viewer departure and must NEVER terminate the room.
-  // Registered members only trigger termination if no persistent members AND no active socket presence remain.
-  // Audio party rooms are governed by host absent timers with a grace period; do not auto-close prematurely here.
-  const isAudioParty = (room.roomType || '').toUpperCase().includes('AUDIO') || (room.roomType || '').toUpperCase().includes('PARTY');
-  const shouldDeleteRoom = !isAudioParty && !isGuest && totalMemberCount === 0 && activePresenceCount === 0 && (room.creatorUserId === userId);
-
-  if (shouldDeleteRoom) {
-    try {
-      await db.room.update({
-        where: { id: resolvedRoomId },
-        data: {
-          status: 'ENDED',
-          currentViewersCount: 0,
-          endedAt: new Date(),
-        },
-      });
-      await presenceService.clearRoomPresence(resolvedRoomId);
-    } catch (closeErr) {
-      console.warn(`[RoomRepo] Failed to end empty room ${resolvedRoomId}:`, closeErr.message);
-    }
-    return { id: resolvedRoomId, currentViewersCount: 0, status: 'ENDED' };
-  }
+  // Bug #27: Neither guests nor hosts departing/minimizing should immediately terminate the room.
+  // Both live video and audio party rooms are protected by host absent timers with a 3-minute grace period.
+  // Rooms can only be terminated by explicit host closure (/v1/rooms/:id/close) or host absent timer expiration.
 
   const audienceMemberCount = await db.roomMember.count({
     where: {

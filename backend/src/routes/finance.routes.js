@@ -11,6 +11,11 @@ router.use(authenticate);
 // Master Transactions Ledger
 router.get('/transactions', requirePermission('view_ledger'), financeController.getMasterLedger);
 
+// Finance Dashboard & Revenue Stats (Admin Finance & Earnings)
+router.get('/dashboard', requirePermission('view_finance'), financeController.getFinanceDashboard);
+router.get('/stats', requirePermission('view_finance'), financeController.getFinanceDashboard);
+router.get('/chart', requirePermission('view_finance'), financeController.getRevenueChart);
+
 // Recharge Plans Management
 router.get('/recharge/plans', requirePermission('view_recharge_plans'), financeController.getRechargePlans);
 router.post('/recharge/plans', requirePermission('manage_recharge_plans'), financeController.createRechargePlan);

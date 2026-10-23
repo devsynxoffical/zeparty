@@ -39,7 +39,7 @@ async function logAudit(
 }
 
 export async function createRoom(
-  { userId, title, coverImageUrl, backgroundImageUrl, roomType, category, isPrivate, roomPin },
+  { userId, title, coverImageUrl, backgroundImageUrl, roomType, category, isPrivate, roomPin, forceNew = false },
   db = prisma
 ) {
   // 1. Any user can start live broadcast or audio party room freely without host registration requirement
@@ -47,7 +47,37 @@ export async function createRoom(
     where: { userId },
   });
 
-  // Automatically close any previous active LIVE rooms created by this user
+  // Bug #27: Check if the user already has an active LIVE room session to resume rather than destroying it
+  if (!forceNew) {
+    try {
+      const existingRoom = await db.room.findFirst({
+        where: { creatorUserId: userId, status: 'LIVE' },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (existingRoom) {
+        clearHostAbsentTimer(existingRoom.id);
+        const updateData = {};
+        if (title && title !== existingRoom.title) updateData.title = title;
+        if (coverImageUrl && coverImageUrl !== existingRoom.coverImageUrl) updateData.coverImageUrl = coverImageUrl;
+        if (backgroundImageUrl !== undefined && backgroundImageUrl !== existingRoom.backgroundImageUrl) updateData.backgroundImageUrl = backgroundImageUrl;
+        if (category && category !== existingRoom.category) updateData.category = category;
+        if (isPrivate !== undefined && isPrivate !== existingRoom.isPrivate) updateData.isPrivate = isPrivate;
+        if (roomPin !== undefined && roomPin !== existingRoom.roomPin) updateData.roomPin = roomPin;
+
+        if (Object.keys(updateData).length > 0) {
+          await db.room.update({
+            where: { id: existingRoom.id },
+            data: updateData,
+          });
+        }
+        return await roomRepository.findRoomById(existingRoom.id, db);
+      }
+    } catch (err) {
+      console.warn('[RoomService] Error resuming existing room:', err?.message);
+    }
+  }
+
+  // If forceNew is requested or no active room exists, automatically close any lingering LIVE rooms
   try {
     const existingRooms = await db.room.findMany({
       where: { creatorUserId: userId, status: 'LIVE' },
@@ -164,24 +194,6 @@ export async function cleanupStaleRooms(db = prisma) {
 export async function getRoomDetails(roomId, db = prisma) {
   let room = await roomRepository.findRoomById(roomId, db);
 
-  // If room is ended or not live, check if host has restarted and has an active LIVE room session
-  const isRoomLive = room && ['LIVE', 'ACTIVE', 'OPEN'].includes(String(room.status).toUpperCase());
-  if (!isRoomLive && room && room.creatorUserId) {
-    const activeRoom = await db.room.findFirst({
-      where: {
-        creatorUserId: room.creatorUserId,
-        status: 'LIVE',
-      },
-      select: { id: true },
-    });
-    if (activeRoom) {
-      const freshRoom = await roomRepository.findRoomById(activeRoom.id, db);
-      if (freshRoom) {
-        room = freshRoom;
-      }
-    }
-  }
-
   // If room wasn't found by ID, check if roomId is a host's userId who has an active LIVE room
   if (!room && roomId) {
     const activeRoomByUser = await db.room.findFirst({
@@ -212,10 +224,18 @@ export async function getRoomDetails(roomId, db = prisma) {
     }
   } catch (_) {}
 
-  // Calculate gift coin total from transactions if present
+  // Calculate gift coin total from transactions or fallback aggregate
   let totalGiftCoins = 0;
-  if (Array.isArray(room.giftTransactions)) {
+  if (Array.isArray(room.giftTransactions) && room.giftTransactions.length > 0) {
     totalGiftCoins = room.giftTransactions.reduce((sum, tx) => sum + Number(tx.totalCoins || 0), 0);
+  } else {
+    try {
+      const allTx = await db.giftTransaction.aggregate({
+        where: { roomId: room.id },
+        _sum: { totalCoins: true },
+      });
+      totalGiftCoins = Number(allTx._sum?.totalCoins || 0);
+    } catch (_) {}
   }
 
   // Calculate today's daily gift coin total (Issue 08: Trophy Counter Sync)
