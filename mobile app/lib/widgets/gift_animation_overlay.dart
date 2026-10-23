@@ -268,22 +268,41 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (_currentGift!.icon.startsWith('assets/'))
-                      Image.asset(
-                        _currentGift!.icon,
-                        width: 24,
-                        height: 24,
-                        fit: BoxFit.contain,
-                      )
-                    else if (_currentGift!.icon.startsWith('http'))
-                      Image.network(
-                        _currentGift!.icon,
-                        width: 24,
-                        height: 24,
-                        fit: BoxFit.contain,
-                      )
-                    else
-                      Text(_currentGift!.icon, style: const TextStyle(fontSize: 24)),
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFFFD700).withValues(alpha: 0.8), width: 1.5),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: ColorFiltered(
+                          colorFilter: const ColorFilter.matrix(_blackBackgroundFilterMatrix),
+                          child: _currentGift!.icon.startsWith('assets/')
+                              ? Image.asset(
+                                  _currentGift!.icon,
+                                  width: 38,
+                                  height: 38,
+                                  fit: BoxFit.contain,
+                                )
+                              : (_currentGift!.icon.startsWith('http')
+                                  ? Image.network(
+                                      _currentGift!.icon,
+                                      width: 38,
+                                      height: 38,
+                                      fit: BoxFit.contain,
+                                    )
+                                  : Center(child: Text(_currentGift!.icon, style: const TextStyle(fontSize: 20)))),
+                        ),
+                      ),
+                    ),
                     const SizedBox(width: 8),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,

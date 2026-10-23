@@ -6,8 +6,11 @@ import '../../providers/wallet_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/game_provider.dart';
 
+import '../../core/services/socket_service.dart';
+
 class RocketGameSheet extends StatefulWidget {
-  const RocketGameSheet({super.key});
+  final String? roomId;
+  const RocketGameSheet({super.key, this.roomId});
 
   @override
   State<RocketGameSheet> createState() => _RocketGameSheetState();
@@ -74,6 +77,16 @@ class _RocketGameSheetState extends State<RocketGameSheet> with TickerProviderSt
         _showAnnouncement('PREMIUM HIGH-BET: $me bet $amount! 🔥🚀', isPremium: true);
       } else if (amount >= 50000) {
         _showAnnouncement('HIGH-BET: $me bet $amount! 🚀', isPremium: false);
+      }
+
+      if (widget.roomId != null && widget.roomId!.isNotEmpty) {
+        SocketService.instance.emit('room:game_action', {
+          'roomId': widget.roomId,
+          'game': 'rocket',
+          'amount': amount,
+          'senderName': me,
+          'level': currentLevel,
+        });
       }
     });
   }

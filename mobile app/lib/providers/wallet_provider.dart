@@ -15,12 +15,18 @@ class WalletProvider extends ChangeNotifier {
 
   WalletModel? _wallet;
   final List<TransactionModel> _transactions = [];
+  final List<TransactionModel> _coinRecords = [];
   final List<RechargePlanModel> _plans = [];
 
   bool _isLoading = false;
   String? _errorMessage;
   String? _activeUserId;
   final Set<String> _processedIdempotencyKeys = {};
+
+  bool _isLoadingCoinRecords = false;
+  String? _coinRecordsError;
+  int _coinRecordsCurrentPage = 1;
+  int _coinRecordsTotalPages = 1;
 
   WalletModel? get wallet => _wallet;
   int get coins => _wallet?.coinBalance ?? 0;
@@ -30,6 +36,7 @@ class WalletProvider extends ChangeNotifier {
   double get rCoins => (_wallet?.diamondBalance ?? 0) * 0.01;
 
   List<TransactionModel> get transactions => List.unmodifiable(_transactions);
+  List<TransactionModel> get coinRecords => List.unmodifiable(_coinRecords);
   List<RechargePlanModel> get plans => List.unmodifiable(_plans);
   List<TransactionModel> get withdrawals =>
       _transactions.where((t) => t.type.toUpperCase() == 'WITHDRAWAL').toList();
@@ -37,9 +44,14 @@ class WalletProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
 
+  bool get isLoadingCoinRecords => _isLoadingCoinRecords;
+  String? get coinRecordsError => _coinRecordsError;
+  bool get hasMoreCoinRecords => _coinRecordsCurrentPage <= _coinRecordsTotalPages;
+
   WalletProvider() {
     fetchWallet();
     fetchLedger();
+    fetchCoinRecords(refresh: true);
   }
 
   /// Synchronize authoritative wallet state with current authenticated user
@@ -147,6 +159,67 @@ class WalletProvider extends ChangeNotifier {
     } catch (e) {
       _isLoading = false;
       _errorMessage = 'Failed to load transaction ledger';
+      notifyListeners();
+    }
+  }
+
+  /// Authoritative Coin Records: GET /v1/wallet/coin-records
+  Future<void> fetchCoinRecords({
+    bool refresh = false,
+    String? tab,
+    String? type,
+    String? startDate,
+    String? endDate,
+  }) async {
+    if (refresh) {
+      _coinRecordsCurrentPage = 1;
+      _isLoadingCoinRecords = true;
+      _coinRecordsError = null;
+      notifyListeners();
+    } else {
+      if (_isLoadingCoinRecords || _coinRecordsCurrentPage > _coinRecordsTotalPages) return;
+      _isLoadingCoinRecords = true;
+      notifyListeners();
+    }
+
+    try {
+      final res = await _repository.fetchCoinRecords(
+        page: refresh ? 1 : _coinRecordsCurrentPage,
+        limit: 20,
+        tab: tab,
+        type: type,
+        startDate: startDate,
+        endDate: endDate,
+      );
+
+      final items = (res['items'] as List<TransactionModel>?) ?? [];
+      final pagination = (res['pagination'] is Map<String, dynamic>)
+          ? res['pagination'] as Map<String, dynamic>
+          : {};
+
+      _coinRecordsTotalPages = int.tryParse(pagination['totalPages']?.toString() ?? '1') ?? 1;
+
+      if (refresh) {
+        _coinRecords.clear();
+        _coinRecords.addAll(items);
+        _coinRecordsCurrentPage = 2;
+      } else {
+        for (final item in items) {
+          final exists = _coinRecords.any((t) => t.id == item.id);
+          if (!exists) {
+            _coinRecords.add(item);
+          }
+        }
+        _coinRecordsCurrentPage++;
+      }
+
+      _coinRecordsError = null;
+    } on ApiException catch (e) {
+      _coinRecordsError = e.message;
+    } catch (e) {
+      _coinRecordsError = 'Failed to load coin records. Tap to retry.';
+    } finally {
+      _isLoadingCoinRecords = false;
       notifyListeners();
     }
   }

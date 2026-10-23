@@ -644,6 +644,13 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
     );
   }
 
+  static const List<double> _blackBackgroundFilterMatrix = <double>[
+    1.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0, 0.0,
+    0.0, 0.0, 1.0, 0.0, 0.0,
+    3.0, 3.0, 3.0, 0.0, -45.0,
+  ];
+
   Widget _buildGiftIconWidget(GiftModel gift) {
     String iconPath = gift.icon;
     if (!iconPath.startsWith('assets/') &&
@@ -653,11 +660,12 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
       iconPath = gift.svgaAssetUrl!.replaceAll('.mp4', '.png');
     }
 
+    Widget imageWidget;
     if (iconPath.startsWith('assets/')) {
-      return Image.asset(
+      imageWidget = Image.asset(
         iconPath,
-        width: 44,
-        height: 44,
+        width: 62,
+        height: 60,
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => Text(
           gift.icon.length < 4 ? gift.icon : '🎁',
@@ -665,15 +673,21 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
         ),
       );
     } else if (iconPath.startsWith('http')) {
-      return Image.network(
+      imageWidget = Image.network(
         iconPath,
-        width: 44,
-        height: 44,
+        width: 62,
+        height: 60,
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => const Text('🎁', style: TextStyle(fontSize: 26)),
       );
+    } else {
+      return Text(gift.icon, style: const TextStyle(fontSize: 26));
     }
-    return Text(gift.icon, style: const TextStyle(fontSize: 26));
+
+    return ColorFiltered(
+      colorFilter: const ColorFilter.matrix(_blackBackgroundFilterMatrix),
+      child: imageWidget,
+    );
   }
 
   Widget _buildGiftGrid(bool isDark, Color primaryColor, String category, List<GiftModel> catalog) {
@@ -697,9 +711,9 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
       itemCount: displayGifts.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 4,
-        childAspectRatio: 0.82,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
+        childAspectRatio: 0.75,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
       ),
       itemBuilder: (context, index) {
         final gift = displayGifts[index];
@@ -717,7 +731,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
             children: [
               AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.all(4),
+                padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
                 decoration: BoxDecoration(
                   color: isSelected
                       ? primaryColor.withValues(alpha: 0.18)
@@ -734,7 +748,10 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _buildGiftIconWidget(gift),
+                    SizedBox(
+                      height: 60,
+                      child: Center(child: _buildGiftIconWidget(gift)),
+                    ),
                     const SizedBox(height: 2),
                     Text(
                       gift.name,

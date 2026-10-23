@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../../models/live_cohost_invitation_model.dart';
 import 'api_client.dart';
 
 class SocketService {
@@ -36,6 +37,8 @@ class SocketService {
   final _roomRoleUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomMicInviteController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomMicInviteResponseController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomCoHostInviteController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomCoHostInviteResponseController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomFeedClearedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomDetailsUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomSeatLockedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -167,6 +170,10 @@ class SocketService {
   Stream<Map<String, dynamic>> get onRoomRoleUpdated => _roomRoleUpdatedController.stream;
   Stream<Map<String, dynamic>> get onRoomMicInvite => _roomMicInviteController.stream;
   Stream<Map<String, dynamic>> get onRoomMicInviteResponse => _roomMicInviteResponseController.stream;
+  Stream<Map<String, dynamic>> get onRoomCoHostInvite => _roomCoHostInviteController.stream;
+  Stream<Map<String, dynamic>> get onRoomCoHostInviteResponse => _roomCoHostInviteResponseController.stream;
+  Stream<LiveCoHostInvitationModel> get onCoHostInvitationReceived => _roomCoHostInviteController.stream.map((m) => LiveCoHostInvitationModel.fromJson(m));
+  Stream<Map<String, dynamic>> get onCoHostInvitationResponse => _roomCoHostInviteResponseController.stream;
   Stream<Map<String, dynamic>> get onRoomFeedCleared => _roomFeedClearedController.stream;
   Stream<Map<String, dynamic>> get onRoomDetailsUpdated => _roomDetailsUpdatedController.stream;
   Stream<Map<String, dynamic>> get onSeatLocked => _roomSeatLockedController.stream;
@@ -562,6 +569,25 @@ class SocketService {
     _socket!.on('room_mic_invite_response', (data) {
       if (data != null) _roomMicInviteResponseController.add(safeMap(data));
     });
+
+    // Co-host Invitation Realtime Events (NEW-039)
+    void handleCoHostInvite(dynamic data) {
+      if (data != null) _roomCoHostInviteController.add(safeMap(data));
+    }
+    _socket!.off('room:cohost_invite');
+    _socket!.on('room:cohost_invite', handleCoHostInvite);
+    _socket!.off('cohost_invite');
+    _socket!.on('cohost_invite', handleCoHostInvite);
+    _socket!.off('room:cohost_invitation');
+    _socket!.on('room:cohost_invitation', handleCoHostInvite);
+
+    void handleCoHostInviteResponse(dynamic data) {
+      if (data != null) _roomCoHostInviteResponseController.add(safeMap(data));
+    }
+    _socket!.off('room:cohost_invite_response');
+    _socket!.on('room:cohost_invite_response', handleCoHostInviteResponse);
+    _socket!.off('cohost_invite_response');
+    _socket!.on('cohost_invite_response', handleCoHostInviteResponse);
 
     // Room Profile & Details Sync (Item 09)
     void handleDetailsUpdated(dynamic data) {
@@ -1102,6 +1128,48 @@ class SocketService {
         'roomId': roomId,
         'targetUserId': targetUserId,
         'accepted': accepted,
+        if (reason != null) 'reason': reason,
+      });
+    }
+  }
+
+  void sendCoHostInvite({
+    required String roomId,
+    required String targetUserId,
+    required Map<String, dynamic> inviter,
+    String? invitationId,
+    String? roomTitle,
+  }) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('room:cohost_invite', {
+        'invitationId': invitationId ?? 'cohost_${DateTime.now().millisecondsSinceEpoch}_$targetUserId',
+        'id': invitationId ?? 'cohost_${DateTime.now().millisecondsSinceEpoch}_$targetUserId',
+        'roomId': roomId,
+        if (roomTitle != null) 'roomTitle': roomTitle,
+        'targetUserId': targetUserId,
+        'recipientId': targetUserId,
+        'inviter': inviter,
+        'status': 'pending',
+        'timestamp': DateTime.now().toIso8601String(),
+      });
+    }
+  }
+
+  void respondCoHostInvite({
+    required String roomId,
+    required String invitationId,
+    required String targetUserId,
+    required bool accepted,
+    String? reason,
+  }) {
+    if (_socket != null && _isConnected) {
+      _socket!.emit('room:cohost_invite_response', {
+        'invitationId': invitationId,
+        'id': invitationId,
+        'roomId': roomId,
+        'targetUserId': targetUserId,
+        'accepted': accepted,
+        'status': accepted ? 'accepted' : 'declined',
         if (reason != null) 'reason': reason,
       });
     }

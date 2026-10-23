@@ -12,6 +12,7 @@ import '../models/party_message_model.dart';
 import '../models/user_model.dart';
 import '../models/pk_battle_model.dart';
 import '../models/gift_model.dart';
+import '../models/live_cohost_invitation_model.dart';
 import '../core/services/room_config_manager.dart';
 
 class LivePartyProvider extends ChangeNotifier {
@@ -69,12 +70,17 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketSeatLockedSub;
   StreamSubscription? _socketLayoutUpdatedSub;
   StreamSubscription? _socketSendingTotalSub;
+  StreamSubscription? _socketCoHostInviteSub;
+  StreamSubscription? _socketCoHostInviteResponseSub;
 
   DateTime? _feedClearedAt;
   DateTime? get feedClearedAt => _feedClearedAt;
 
   final _incomingMicInviteController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onIncomingMicInvite => _incomingMicInviteController.stream;
+
+  final _incomingCoHostInviteController = StreamController<LiveCoHostInvitationModel>.broadcast();
+  Stream<LiveCoHostInvitationModel> get onIncomingCoHostInvite => _incomingCoHostInviteController.stream;
 
   // Active outgoing pending invitations: targetUserId -> invitation map
   final Map<String, Map<String, dynamic>> _pendingOutgoingInvites = {};
@@ -248,6 +254,91 @@ class LivePartyProvider extends ChangeNotifier {
 
   bool _isSpeakerMuted = false;
   bool get isSpeakerMuted => _isSpeakerMuted;
+
+  // Issue 53: Persistent Room Membership & Roles independent of presence and mic seats
+  final Map<String, List<PartyParticipantModel>> _savedRoomMembers = {};
+  final Map<String, Map<String, ParticipantRole>> _savedRoomRoles = {};
+
+  List<PartyParticipantModel> getSavedRoomMembers(String roomId) {
+    return List.unmodifiable(_savedRoomMembers[roomId] ?? []);
+  }
+
+  int getSavedRoomMemberCount(String roomId) {
+    return (_savedRoomMembers[roomId] ?? []).length;
+  }
+
+  bool isUserRoomMember(String roomId, String userId) {
+    return (_savedRoomMembers[roomId] ?? []).any((p) => p.user.id == userId);
+  }
+
+  void saveExplicitMembership(String roomId, UserModel user, {ParticipantRole role = ParticipantRole.listener}) {
+    final list = _savedRoomMembers.putIfAbsent(roomId, () => []);
+    final existingIdx = list.indexWhere((p) => p.user.id == user.id);
+    final effectiveRole = _savedRoomRoles[roomId]?[user.id] ?? role;
+    if (existingIdx != -1) {
+      list[existingIdx] = list[existingIdx].copyWith(role: effectiveRole);
+    } else {
+      list.add(PartyParticipantModel(
+        user: user,
+        role: effectiveRole,
+        joinedAt: DateTime.now(),
+      ));
+    }
+    notifyListeners();
+  }
+
+  void removeExplicitMembership(String roomId, String userId) {
+    if (_savedRoomMembers.containsKey(roomId)) {
+      _savedRoomMembers[roomId]!.removeWhere((p) => p.user.id == userId);
+      notifyListeners();
+    }
+  }
+
+  void updateSavedMemberRole(String roomId, String userId, ParticipantRole newRole) {
+    final rolesMap = _savedRoomRoles.putIfAbsent(roomId, () => {});
+    rolesMap[userId] = newRole;
+
+    if (_savedRoomMembers.containsKey(roomId)) {
+      final list = _savedRoomMembers[roomId]!;
+      final idx = list.indexWhere((p) => p.user.id == userId);
+      if (idx != -1) {
+        list[idx] = list[idx].copyWith(role: newRole);
+      }
+    }
+    notifyListeners();
+  }
+
+  ParticipantRole? getSavedMemberRole(String roomId, String userId) {
+    return _savedRoomRoles[roomId]?[userId];
+  }
+
+  Future<void> fetchRoomMembers(String roomId) async {
+    try {
+      final membersRes = await _roomRepository.getRoomMembers(roomId);
+      final membersList = membersRes['data'] is List
+          ? (membersRes['data'] as List)
+          : (membersRes['members'] is List ? (membersRes['members'] as List) : []);
+
+      final savedList = _savedRoomMembers.putIfAbsent(roomId, () => []);
+
+      for (final m in membersList) {
+        if (m is! Map) continue;
+        final participant = PartyParticipantModel.fromMemberJson(Map<String, dynamic>.from(m));
+        final idx = savedList.indexWhere((p) => p.user.id == participant.user.id);
+        if (idx != -1) {
+          savedList[idx] = participant;
+        } else {
+          savedList.add(participant);
+        }
+        if (participant.role == ParticipantRole.moderator || participant.role == ParticipantRole.host) {
+          _savedRoomRoles.putIfAbsent(roomId, () => {})[participant.user.id] = participant.role;
+        }
+      }
+      notifyListeners();
+    } catch (err) {
+      debugPrint('[LivePartyProvider] fetchRoomMembers error: $err');
+    }
+  }
 
   bool _isHostAbsent = false;
   bool get isHostAbsent => _isHostAbsent;
@@ -498,34 +589,43 @@ class LivePartyProvider extends ChangeNotifier {
         final membersList = membersRes['data'] is List
             ? (membersRes['data'] as List)
             : (membersRes['members'] is List ? (membersRes['members'] as List) : []);
+
+        // Issue 53: Populate authoritative persistent room members
+        final savedList = _savedRoomMembers.putIfAbsent(room.id, () => []);
+        if (!savedList.any((p) => p.user.id == room.host.id)) {
+          savedList.add(PartyParticipantModel(
+            user: room.host,
+            role: ParticipantRole.host,
+            joinedAt: DateTime.now(),
+          ));
+        }
+
         for (final m in membersList) {
           if (m is! Map) continue;
-          final userMap = m['user'] is Map ? (m['user'] as Map) : m;
-          final uId = userMap['id']?.toString() ?? userMap['userId']?.toString();
-          final uUsername = userMap['username']?.toString() ?? '';
-          final isHostUser = (uId != null && (uId == room.host.id || uId == room.creatorUserId)) ||
+          final mJson = Map<String, dynamic>.from(m);
+          final participantModel = PartyParticipantModel.fromMemberJson(mJson);
+          final uId = participantModel.user.id;
+          final uUsername = participantModel.user.username;
+          final isHostUser = (uId.isNotEmpty && (uId == room.host.id || uId == room.creatorUserId)) ||
               (room.host.username.isNotEmpty && uUsername.isNotEmpty && uUsername.toLowerCase() == room.host.username.toLowerCase());
-          if (uId == null || uId.isEmpty || uId == currentUser.id || isHostUser) continue;
+          if (uId.isEmpty || uId == currentUser.id || isHostUser) continue;
+
+          final savedIdx = savedList.indexWhere((p) => p.user.id == uId);
+          if (savedIdx != -1) {
+            savedList[savedIdx] = participantModel;
+          } else {
+            savedList.add(participantModel);
+          }
+
+          if (participantModel.role == ParticipantRole.moderator || participantModel.role == ParticipantRole.host) {
+            _savedRoomRoles.putIfAbsent(room.id, () => {})[uId] = participantModel.role;
+          }
+
           final existing = _participants.any((p) =>
               p.user.id == uId ||
               (uUsername.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == uUsername.toLowerCase()));
-          if (!existing) {
-            final uName = userMap['displayName']?.toString() ??
-                userMap['name']?.toString() ??
-                (uUsername.isNotEmpty ? uUsername : 'Viewer');
-            _participants.add(PartyParticipantModel(
-              user: UserModel(
-                id: uId,
-                username: uUsername.isNotEmpty ? uUsername : uName,
-                name: uName,
-                avatarUrl: userMap['avatarUrl']?.toString() ?? '',
-                nobleTitle: userMap['nobleTitle']?.toString() ?? userMap['nobleRank']?.toString(),
-                isVip: userMap['isVip'] == true || (userMap['vipLevel'] is num && (userMap['vipLevel'] as num) > 0),
-              ),
-              role: ParticipantRole.listener,
-              seatNumber: null,
-              joinedAt: DateTime.now(),
-            ));
+          if (!existing && participantModel.inRoom) {
+            _participants.add(participantModel);
           }
         }
       } catch (err) {
@@ -1529,6 +1629,38 @@ class LivePartyProvider extends ChangeNotifier {
       }
     });
 
+    // 15b. Co-Host Invitation Realtime Events (NEW-039)
+    _socketCoHostInviteSub?.cancel();
+    _socketCoHostInviteSub = _socketService.onCoHostInvitationReceived.listen((invitation) {
+      final roomId = invitation.roomId;
+      final isMatchingRoom = _activeRoom == null ||
+          roomId.isEmpty ||
+          roomId == _activeRoom!.id ||
+          _activeRoom!.agoraChannelName == roomId ||
+          _initialRoomId == roomId ||
+          _activeRoom!.id.contains(roomId);
+
+      if (!isMatchingRoom) return;
+
+      final currentId = _currentUser?.id ?? '';
+      final targetUserId = invitation.inviteeUserId;
+      final isSelfTarget = currentId.isNotEmpty && (
+        targetUserId == currentId ||
+        targetUserId.toLowerCase() == currentId.toLowerCase() ||
+        targetUserId.replaceAll('user_', '') == currentId.replaceAll('user_', '')
+      );
+
+      if (isSelfTarget) {
+        _incomingCoHostInviteController.add(invitation);
+      }
+    });
+
+    _socketCoHostInviteResponseSub?.cancel();
+    _socketCoHostInviteResponseSub = _socketService.onCoHostInvitationResponse.listen((data) {
+      debugPrint('[LivePartyProvider] Co-Host invite response received: $data');
+      notifyListeners();
+    });
+
     // 16. Room Feed Cleared Stream (Clear Screen action)
     _socketFeedClearedSub?.cancel();
     _socketFeedClearedSub = _socketService.onRoomFeedCleared.listen((data) {
@@ -1797,11 +1929,18 @@ class LivePartyProvider extends ChangeNotifier {
     if (roomId == null) return;
     try {
       await _roomRepository.updateMemberRole(roomId, targetUserId, newRole);
+      ParticipantRole roleEnum = newRole.toUpperCase() == 'ADMIN'
+          ? ParticipantRole.moderator
+          : ParticipantRole.listener;
+
+      // Update in saved room members
+      updateSavedMemberRole(roomId, targetUserId, roleEnum);
+
       final idx = _participants.indexWhere((p) => p.user.id == targetUserId);
       if (idx != -1) {
-        ParticipantRole roleEnum = newRole.toUpperCase() == 'ADMIN'
-            ? ParticipantRole.moderator
-            : (_participants[idx].seatNumber != null ? ParticipantRole.speaker : ParticipantRole.listener);
+        if (_participants[idx].seatNumber != null && roleEnum == ParticipantRole.listener) {
+          roleEnum = ParticipantRole.speaker;
+        }
         _participants[idx] = _participants[idx].copyWith(role: roleEnum);
         notifyListeners();
       }
@@ -1853,6 +1992,8 @@ class LivePartyProvider extends ChangeNotifier {
     _socketRoleUpdatedSub?.cancel();
     _socketMicInviteSub?.cancel();
     _socketMicInviteResponseSub?.cancel();
+    _socketCoHostInviteSub?.cancel();
+    _socketCoHostInviteResponseSub?.cancel();
     _socketFeedClearedSub?.cancel();
     _socketDetailsUpdatedSub?.cancel();
     _socketSeatLockedSub?.cancel();
@@ -2884,6 +3025,10 @@ class LivePartyProvider extends ChangeNotifier {
       );
       RoomConfigManager.instance.saveRoomLayout(_activeRoom!.id, capacity: capacity, roomType: roomType);
       _socketService.emitRoomLayoutUpdate(_activeRoom!.id, capacity, roomType);
+      _roomRepository.updateRoomLayout(_activeRoom!.id, seatCapacity: capacity, roomType: roomType).catchError((err) {
+        debugPrint('[LivePartyProvider] updateRoomLayout API notice: $err');
+        return <String, dynamic>{};
+      });
       sendSystemMessage('⚙️ Room mode changed to $roomType ($capacity seats).');
       notifyListeners();
     }
@@ -3011,6 +3156,7 @@ class LivePartyProvider extends ChangeNotifier {
       }
       if (capacity != null || roomType != null) {
         _socketService.emitRoomLayoutUpdate(_activeRoom!.id, updatedCapacity, updatedRoomType);
+        _roomRepository.updateRoomLayout(_activeRoom!.id, seatCapacity: updatedCapacity, roomType: updatedRoomType).catchError((_) => <String, dynamic>{});
       }
 
       // Persist to backend database via REST API (Issue 09)
@@ -3164,9 +3310,46 @@ class LivePartyProvider extends ChangeNotifier {
     }
   }
 
+  // ── Co-Host Invitation Methods (NEW-039) ──
+  void sendCoHostInvite(String targetUserId) {
+    if (_activeRoom == null || _currentUser == null) return;
+    _socketService.sendCoHostInvite(
+      roomId: _activeRoom!.id,
+      targetUserId: targetUserId,
+      inviter: {
+        'id': _currentUser!.id,
+        'name': _currentUser!.displayName,
+        'avatarUrl': _currentUser!.avatarUrl,
+      },
+      roomTitle: _activeRoom!.title,
+    );
+  }
+
+  void respondToCoHostInvitation(String hostUserId, bool accept, {String? invitationId}) {
+    if (_activeRoom == null || _currentUser == null) return;
+    _socketService.respondCoHostInvite(
+      roomId: _activeRoom!.id,
+      invitationId: invitationId ?? 'cohost_${_activeRoom!.id}_${_currentUser!.id}',
+      targetUserId: _currentUser!.id,
+      accepted: accept,
+    );
+  }
+
+  // ── Agora RTC Music Mixing Delegation (NEW-033) ──
+  Future<void> startMusicMixing(String filePath, {double volume = 0.8}) =>
+      _agoraService.startAudioMixing(filePath: filePath, volume: volume);
+  Future<void> pauseMusicMixing() => _agoraService.pauseAudioMixing();
+  Future<void> resumeMusicMixing() => _agoraService.resumeAudioMixing();
+  Future<void> stopMusicMixing() => _agoraService.stopAudioMixing();
+  Future<void> setMusicMixingVolume(double volume) => _agoraService.setAudioMixingVolume(volume);
+  bool get isAudioMixing => _agoraService.isAudioMixing;
+  bool get isAudioMixingPaused => _agoraService.isAudioMixingPaused;
+  double get audioMixingVolume => _agoraService.audioMixingVolume;
+
   @override
   void dispose() {
     leaveParty();
+    _incomingCoHostInviteController.close();
     _agoraService.dispose();
     super.dispose();
   }

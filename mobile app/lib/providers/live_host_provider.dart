@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/live_host_application_model.dart';
 import '../models/live_host_model.dart';
 import '../models/hosting_eligibility_model.dart';
+import '../models/host_target_summary_model.dart';
 import '../core/policy/live_host_policy.dart';
 import '../core/services/api_client.dart';
 
@@ -11,14 +12,20 @@ class LiveHostProvider extends ChangeNotifier {
   final List<LiveHostApplicationModel> _applications = [];
   final List<Map<String, dynamic>> _auditLogs = [];
   HostingEligibilityModel? _eligibility;
+  HostTargetSummaryModel? _targetSummary;
   bool _isLoading = false;
+  bool _isLoadingTarget = false;
+  String? _targetError;
   Timer? _heartbeatTimer;
 
   LiveHostModel? get activeLiveHost => _activeLiveHost;
   List<LiveHostApplicationModel> get applications => List.unmodifiable(_applications);
   List<Map<String, dynamic>> get auditLogs => List.unmodifiable(_auditLogs);
   HostingEligibilityModel? get eligibility => _eligibility;
+  HostTargetSummaryModel? get targetSummary => _targetSummary;
   bool get isLoading => _isLoading;
+  bool get isLoadingTarget => _isLoadingTarget;
+  String? get targetError => _targetError;
 
   LiveHostProvider() {
     // Clean initial state for authentic live host data
@@ -38,6 +45,30 @@ class LiveHostProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('[LiveHostProvider] fetchEligibility error: $e');
+    }
+    return null;
+  }
+
+  Future<HostTargetSummaryModel?> fetchHostTargetSummary({DateTime? date}) async {
+    _isLoadingTarget = true;
+    _targetError = null;
+    notifyListeners();
+
+    try {
+      final query = date != null ? {'date': date.toIso8601String()} : null;
+      final res = await ApiClient.instance.get('/v1/hosts/targets/summary', queryParameters: query);
+      if (res.statusCode == 200 && res.data != null && res.data['data'] != null) {
+        _targetSummary = HostTargetSummaryModel.fromJson(res.data['data'] as Map<String, dynamic>);
+        _isLoadingTarget = false;
+        notifyListeners();
+        return _targetSummary;
+      }
+    } catch (e) {
+      debugPrint('[LiveHostProvider] fetchHostTargetSummary error: $e');
+      _targetError = e.toString();
+    } finally {
+      _isLoadingTarget = false;
+      notifyListeners();
     }
     return null;
   }

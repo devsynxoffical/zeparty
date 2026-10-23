@@ -46,10 +46,11 @@ class UserProfileDetailsScreen extends StatefulWidget {
   final UserModel? user;
 
   UserProfileDetailsScreen({super.key, String? userId, this.user})
-      : userId = userId ?? user?.id ?? '';
+    : userId = userId ?? user?.id ?? '';
 
   @override
-  State<UserProfileDetailsScreen> createState() => _UserProfileDetailsScreenState();
+  State<UserProfileDetailsScreen> createState() =>
+      _UserProfileDetailsScreenState();
 }
 
 class _ExpandedMessagePlayerState extends State<_ExpandedMessagePlayer> {
@@ -87,20 +88,44 @@ class _ExpandedMessagePlayerState extends State<_ExpandedMessagePlayer> {
           // Waveform bars
           Row(
             children: List.generate(14, (i) {
-              final heights = [8, 14, 22, 10, 18, 26, 12, 20, 16, 24, 10, 18, 12, 8];
+              final heights = [
+                8,
+                14,
+                22,
+                10,
+                18,
+                26,
+                12,
+                20,
+                16,
+                24,
+                10,
+                18,
+                12,
+                8,
+              ];
               return Container(
                 width: 3,
                 height: heights[i % heights.length].toDouble(),
                 margin: const EdgeInsets.symmetric(horizontal: 1.5),
                 decoration: BoxDecoration(
-                  color: isPlaying ? AppColors.getPrimary(isDark) : AppColors.getMuted(isDark),
+                  color: isPlaying
+                      ? AppColors.getPrimary(isDark)
+                      : AppColors.getMuted(isDark),
                   borderRadius: BorderRadius.circular(1.5),
                 ),
               );
             }),
           ),
           const SizedBox(width: 10),
-          Text('12"', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12, fontWeight: FontWeight.bold)),
+          Text(
+            '12"',
+            style: TextStyle(
+              color: AppColors.getTextSecondary(isDark),
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -114,7 +139,8 @@ class _ExpandedMessagePlayer extends StatefulWidget {
   State<_ExpandedMessagePlayer> createState() => _ExpandedMessagePlayerState();
 }
 
-class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> with SingleTickerProviderStateMixin {
+class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   bool _isLoading = true;
   UserModel? _user;
@@ -140,10 +166,20 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       final targetUserId = data['userId']?.toString();
       final currentTargetId = _user?.id ?? widget.userId;
       if (targetUserId != null && targetUserId == currentTargetId) {
-        final status = data['presenceStatus']?.toString().toUpperCase() ?? data['status']?.toString().toUpperCase();
-        final isOnline = data['isOnline'] == true || status == 'ONLINE' || status == 'IN_ROOM';
-        final isInRoom = data['isInRoom'] == true || status == 'IN_ROOM' || (data['currentRoomId'] != null && data['currentRoomId'].toString().isNotEmpty);
-        final roomId = data['currentRoomId']?.toString() ?? data['roomId']?.toString();
+        final status =
+            data['presenceStatus']?.toString().toUpperCase() ??
+            data['status']?.toString().toUpperCase();
+        final isOnline =
+            data['isOnline'] == true ||
+            status == 'ONLINE' ||
+            status == 'IN_ROOM';
+        final isInRoom =
+            data['isInRoom'] == true ||
+            status == 'IN_ROOM' ||
+            (data['currentRoomId'] != null &&
+                data['currentRoomId'].toString().isNotEmpty);
+        final roomId =
+            data['currentRoomId']?.toString() ?? data['roomId']?.toString();
         if (mounted && _user != null) {
           setState(() {
             _user = _user!.copyWith(
@@ -164,7 +200,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     super.dispose();
   }
 
-
   Future<void> _loadUser() async {
     setState(() => _isLoading = true);
     final auth = context.read<AuthProvider>();
@@ -172,27 +207,44 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     if (user != null && user.id.isNotEmpty && user.id != auth.currentUser.id) {
       try {
         SocialRepository.instance.recordProfileVisit(user.id);
-        final profileRes = await SocialRepository.instance.getSocialProfile(user.id);
-        final profileData = profileRes['data'] is Map<String, dynamic> ? profileRes['data'] as Map<String, dynamic> : profileRes;
+        final profileRes = await SocialRepository.instance.getSocialProfile(
+          user.id,
+        );
+        final profileData = profileRes['data'] is Map<String, dynamic>
+            ? profileRes['data'] as Map<String, dynamic>
+            : profileRes;
         final isFollowing = profileData['isFollowing'] == true;
-        final fCount = profileData['followersCount'] is int ? profileData['followersCount'] as int : user.followers;
-        final followingCount = profileData['followingCount'] is int ? profileData['followingCount'] as int : user.following;
+        final fCount = profileData['followersCount'] is int
+            ? profileData['followersCount'] as int
+            : user.followers;
+        final followingCount = profileData['followingCount'] is int
+            ? profileData['followingCount'] as int
+            : user.following;
 
-        final isLiveVal = profileData['isLive'] == true ||
+        final isLiveVal =
+            profileData['isLive'] == true ||
             profileData['isInRoom'] == true ||
             (profileData['currentRoom'] != null &&
                 profileData['currentRoom'] is Map &&
-                (profileData['currentRoom']['id'] != null || profileData['currentRoom']['roomId'] != null)) ||
-            (profileData['currentRoomId'] != null && profileData['currentRoomId'].toString().isNotEmpty) ||
-            (profileData['liveRoomId'] != null && profileData['liveRoomId'].toString().isNotEmpty);
+                (profileData['currentRoom']['id'] != null ||
+                    profileData['currentRoom']['roomId'] != null)) ||
+            (profileData['currentRoomId'] != null &&
+                profileData['currentRoomId'].toString().isNotEmpty) ||
+            (profileData['liveRoomId'] != null &&
+                profileData['liveRoomId'].toString().isNotEmpty);
 
-        final liveRoomIdVal = profileData['liveRoomId']?.toString() ??
+        final liveRoomIdVal =
+            profileData['liveRoomId']?.toString() ??
             profileData['currentRoomId']?.toString() ??
             (profileData['currentRoom'] is Map
-                ? (profileData['currentRoom']['id']?.toString() ?? profileData['currentRoom']['roomId']?.toString())
+                ? (profileData['currentRoom']['id']?.toString() ??
+                      profileData['currentRoom']['roomId']?.toString())
                 : null);
 
-        final isOnlineVal = profileData['isOnline'] == true || profileData['online'] == true || isLiveVal;
+        final isOnlineVal =
+            profileData['isOnline'] == true ||
+            profileData['online'] == true ||
+            isLiveVal;
 
         user = user.copyWith(
           followers: fCount,
@@ -212,7 +264,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     try {
       final targetUserId = user?.id ?? widget.userId;
       if (targetUserId.isNotEmpty) {
-        final rel = await SocialRepository.instance.getUserRelationship(targetUserId);
+        final rel = await SocialRepository.instance.getUserRelationship(
+          targetUserId,
+        );
         if (mounted) {
           setState(() {
             _relationData = rel;
@@ -253,7 +307,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
       LiveRoomModel? targetRoom;
       try {
-        final res = await ApiClient.instance.get<Map<String, dynamic>>('/v1/rooms/$effectiveRoomId');
+        final res = await ApiClient.instance.get<Map<String, dynamic>>(
+          '/v1/rooms/$effectiveRoomId',
+        );
         final data = res.data?['data'];
         if (data is Map<String, dynamic>) {
           targetRoom = LiveRoomModel.fromJson(data);
@@ -268,16 +324,27 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       // Validate room status
       if (targetRoom == null || targetRoom.status.toUpperCase() != 'LIVE') {
         try {
-          final activeRooms = await RoomRepository.instance.getActiveRooms(limit: 50);
-          final currentActive = activeRooms.where((r) =>
-            r.creatorUserId == _user!.id || r.host.id == _user!.id ||
-            (_user!.username.isNotEmpty && r.host.username.toLowerCase() == _user!.username.toLowerCase())
-          ).firstOrNull;
+          final activeRooms = await RoomRepository.instance.getActiveRooms(
+            limit: 50,
+          );
+          final currentActive = activeRooms
+              .where(
+                (r) =>
+                    r.creatorUserId == _user!.id ||
+                    r.host.id == _user!.id ||
+                    (_user!.username.isNotEmpty &&
+                        r.host.username.toLowerCase() ==
+                            _user!.username.toLowerCase()),
+              )
+              .firstOrNull;
           if (currentActive != null) {
             targetRoom = currentActive;
             if (mounted) {
               setState(() {
-                _user = _user?.copyWith(isLive: true, liveRoomId: currentActive.id);
+                _user = _user?.copyWith(
+                  isLive: true,
+                  liveRoomId: currentActive.id,
+                );
               });
             }
           }
@@ -300,7 +367,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         return;
       }
 
-      final isVoiceParty = targetRoom.roomType == 'AUDIO_PARTY' ||
+      final isVoiceParty =
+          targetRoom.roomType == 'AUDIO_PARTY' ||
           targetRoom.roomType == 'AUDIO' ||
           targetRoom.category.toLowerCase() == 'party' ||
           targetRoom.id.startsWith('party_');
@@ -310,7 +378,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       if (isVoiceParty) {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: targetRoom!)),
+          MaterialPageRoute(
+            builder: (_) => LivePartyRoomScreen(room: targetRoom!),
+          ),
         ).then((_) {
           if (mounted) _loadUser();
         });
@@ -347,7 +417,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
     // 1. Determine active room connection
     String? activeRoomId = user.liveRoomId ?? user.currentRoomId;
-    bool isInActiveRoom = (user.isLive || user.isInRoom || user.presenceStatus == 'IN_ROOM') && activeRoomId != null && activeRoomId.isNotEmpty;
+    bool isInActiveRoom =
+        (user.isLive || user.isInRoom || user.presenceStatus == 'IN_ROOM') &&
+        activeRoomId != null &&
+        activeRoomId.isNotEmpty;
 
     // Real-time synchronization with active room on device (minimized room or participant list)
     if (isMe) {
@@ -386,7 +459,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.pinkAccent.withValues(alpha: 0.8), width: 1.0),
+            border: Border.all(
+              color: Colors.pinkAccent.withValues(alpha: 0.8),
+              width: 1.0,
+            ),
             boxShadow: [
               BoxShadow(
                 color: Colors.pinkAccent.withValues(alpha: 0.35),
@@ -411,7 +487,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 ),
               ),
               const SizedBox(width: 3),
-              const Icon(Icons.arrow_forward_ios_rounded, size: 9, color: Colors.white70),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 9,
+                color: Colors.white70,
+              ),
             ],
           ),
         ),
@@ -431,14 +511,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircleAvatar(
-              radius: 4,
-              backgroundColor: Color(0xFF00FF88),
-            ),
+            CircleAvatar(radius: 4, backgroundColor: Color(0xFF00FF88)),
             SizedBox(width: 5),
             Text(
               'Online',
-              style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
@@ -457,14 +538,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          CircleAvatar(
-            radius: 4,
-            backgroundColor: Colors.grey.shade500,
-          ),
+          CircleAvatar(radius: 4, backgroundColor: Colors.grey.shade500),
           const SizedBox(width: 5),
           Text(
             user.lastActiveText,
-            style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),
@@ -472,7 +554,12 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   }
 
   // Diagram C & Section 12: Three-Dot Safety Menu (REPORT â†’ BLOCK â†’ CANCEL)
-  void _showOverflowMenu(BuildContext context, bool isOtherUser, bool isDark, AuthProvider auth) {
+  void _showOverflowMenu(
+    BuildContext context,
+    bool isOtherUser,
+    bool isDark,
+    AuthProvider auth,
+  ) {
     if (!isOtherUser) {
       Navigator.push(
         context,
@@ -514,7 +601,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     color: Colors.orange.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.flag_rounded, color: Colors.orangeAccent, size: 20),
+                  child: const Icon(
+                    Icons.flag_rounded,
+                    color: Colors.orangeAccent,
+                    size: 20,
+                  ),
                 ),
                 title: Text(
                   'REPORT',
@@ -525,7 +616,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     color: AppColors.getTextPrimary(isDark),
                   ),
                 ),
-                subtitle: const Text('Report inappropriate content or policy violations', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                subtitle: const Text(
+                  'Report inappropriate content or policy violations',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showReportDialog(context, isDark);
@@ -542,7 +636,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     color: Colors.red.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.block_rounded, color: Colors.redAccent, size: 20),
+                  child: const Icon(
+                    Icons.block_rounded,
+                    color: Colors.redAccent,
+                    size: 20,
+                  ),
                 ),
                 title: const Text(
                   'BLOCK',
@@ -553,7 +651,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     color: Colors.redAccent,
                   ),
                 ),
-                subtitle: const Text('Prevent interaction, messages, and content sharing', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                subtitle: const Text(
+                  'Prevent interaction, messages, and content sharing',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
                 onTap: () {
                   Navigator.pop(ctx);
                   _showBlockConfirmDialog(context, isDark, auth);
@@ -570,7 +671,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     color: AppColors.getMuted(isDark).withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(Icons.close_rounded, color: AppColors.getTextSecondary(isDark), size: 20),
+                  child: Icon(
+                    Icons.close_rounded,
+                    color: AppColors.getTextSecondary(isDark),
+                    size: 20,
+                  ),
                 ),
                 title: Text(
                   'CANCEL',
@@ -601,7 +706,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   }
 
   // Block Confirmation Dialog Flow
-  void _showBlockConfirmDialog(BuildContext context, bool isDark, AuthProvider auth) {
+  void _showBlockConfirmDialog(
+    BuildContext context,
+    bool isDark,
+    AuthProvider auth,
+  ) {
     showDialog(
       context: context,
       builder: (dlgCtx) => AlertDialog(
@@ -609,47 +718,76 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.redAccent,
+              size: 24,
+            ),
             const SizedBox(width: 8),
-            Text('Block ${_user!.name}?', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
+            Text(
+              'Block ${_user!.name}?',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppColors.getTextPrimary(isDark),
+              ),
+            ),
           ],
         ),
         content: Text(
           'Are you sure you want to block this user? You will no longer see their posts, messages, or relationship status.',
-          style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
+          style: TextStyle(
+            color: AppColors.getTextSecondary(isDark),
+            fontSize: 13,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dlgCtx),
-            child: Text('Cancel', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () {
               Navigator.pop(dlgCtx);
-              auth.blockUser(_user!.id).then((_) {
-                if (mounted) setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('${_user!.name} has been blocked successfully.'),
-                    backgroundColor: Colors.redAccent,
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              }).catchError((e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Failed to block user: $e'),
-                    backgroundColor: Colors.red,
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              });
+              auth
+                  .blockUser(_user!.id)
+                  .then((_) {
+                    if (mounted) setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          '${_user!.name} has been blocked successfully.',
+                        ),
+                        backgroundColor: Colors.redAccent,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  })
+                  .catchError((e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to block user: $e'),
+                        backgroundColor: Colors.red,
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  });
             },
-            child: const Text('Block User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Block User',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -670,10 +808,20 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     final targetId = _user?.id ?? widget.userId;
     final targetUsername = _user?.username.toLowerCase() ?? '';
     final targetName = _user?.name.toLowerCase() ?? '';
-    final isMyProfile = (targetId.isNotEmpty && (targetId == currentUserId || targetId == 'me')) ||
-        (targetUsername.isNotEmpty && currentUsername.isNotEmpty && targetUsername == currentUsername) ||
-        (targetName.isNotEmpty && currentName.isNotEmpty && targetName == currentName) ||
-        (widget.userId.isNotEmpty && (widget.userId == currentUserId || widget.userId == 'me' || (currentUsername.isNotEmpty && widget.userId.toLowerCase() == currentUsername)));
+    final isMyProfile =
+        (targetId.isNotEmpty &&
+            (targetId == currentUserId || targetId == 'me')) ||
+        (targetUsername.isNotEmpty &&
+            currentUsername.isNotEmpty &&
+            targetUsername == currentUsername) ||
+        (targetName.isNotEmpty &&
+            currentName.isNotEmpty &&
+            targetName == currentName) ||
+        (widget.userId.isNotEmpty &&
+            (widget.userId == currentUserId ||
+                widget.userId == 'me' ||
+                (currentUsername.isNotEmpty &&
+                    widget.userId.toLowerCase() == currentUsername)));
     final isOtherUser = !isMyProfile;
     final isFollowing = _user != null && auth.isFollowing(_user!.id);
     final isUserBlocked = _user != null && auth.isBlocked(_user!.id);
@@ -683,100 +831,160 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _user == null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.person_off_rounded, size: 64, color: AppColors.getMuted(isDark)),
-                      const SizedBox(height: 12),
-                      Text('User profile not found', style: TextStyle(color: primaryText, fontSize: 16, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Go Back'),
-                      ),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.person_off_rounded,
+                    size: 64,
+                    color: AppColors.getMuted(isDark),
                   ),
-                )
-              : Stack(
-                  children: [
-                    // Scrollable Diagram B Hierarchy with pull-to-refresh
-                    RefreshIndicator(
-                      onRefresh: _loadUser,
-                      color: Colors.purpleAccent,
-                      child: SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                          // 1. TOP BAR & COVER + IDENTITY
-                          _buildCoverAndIdentityHeader(context, isDark, svip, isFollowing),
-
-                          const SizedBox(height: 16),
-
-                          // If User is Blocked, show Block Banner
-                          if (isUserBlocked)
-                            Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color: Colors.redAccent.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.5)),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.block_rounded, color: Colors.redAccent),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      'You have blocked this user. Unblock to view interactions.',
-                                      style: TextStyle(color: primaryText, fontSize: 13, fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
-                                  TextButton(
-                                    onPressed: () {
-                                      auth.unblockUser(_user!.id).then((_) {
-                                        if (mounted) setState(() {});
-                                      });
-                                    },
-                                    child: const Text('Unblock', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                          // 2. MEDAL GALLERY (Featured Medals max 5 | Total Count)
-                          _buildMedalGallery(isDark),
-
-                          const SizedBox(height: 20),
-
-                          // 3. BADGE GALLERY
-                          _buildBadgeGallery(isDark, svip),
-
-                          const SizedBox(height: 20),
-
-                          // 4. RELATIONSHIP + HONOR
-                          _buildRelationshipAndHonor(isDark),
-
-                          const SizedBox(height: 20),
-
-                          // 5. PROFILE TABS & CONTENT
-                          _buildProfileContent(isDark),
-
-                          const SizedBox(height: 100), // Bottom padding for sticky action bar
-                        ],
-                      ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'User profile not found',
+                    style: TextStyle(
+                      color: primaryText,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Go Back'),
+                  ),
+                ],
+              ),
+            )
+          : Stack(
+              children: [
+                // Scrollable Diagram B Hierarchy with pull-to-refresh
+                RefreshIndicator(
+                  onRefresh: _loadUser,
+                  color: Colors.purpleAccent,
+                  child: SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics(),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 1. TOP BAR & COVER + IDENTITY
+                        _buildCoverAndIdentityHeader(
+                          context,
+                          isDark,
+                          svip,
+                          isFollowing,
+                        ),
 
-                    // Top Floating Navigation Bar (Safe Area Compliant)
-                    SafeArea(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        const SizedBox(height: 16),
+
+                        // If User is Blocked, show Block Banner
+                        if (isUserBlocked)
+                          Container(
+                            margin: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.redAccent.withValues(alpha: 0.5),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.block_rounded,
+                                  color: Colors.redAccent,
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'You have blocked this user. Unblock to view interactions.',
+                                    style: TextStyle(
+                                      color: primaryText,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    auth.unblockUser(_user!.id).then((_) {
+                                      if (mounted) setState(() {});
+                                    });
+                                  },
+                                  child: const Text(
+                                    'Unblock',
+                                    style: TextStyle(
+                                      color: Colors.redAccent,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                        // 2. MEDAL GALLERY (Featured Medals max 5 | Total Count)
+                        _buildMedalGallery(isDark),
+
+                        const SizedBox(height: 20),
+
+                        // 3. BADGE GALLERY
+                        _buildBadgeGallery(isDark, svip),
+
+                        const SizedBox(height: 20),
+
+                        // 4. RELATIONSHIP + HONOR
+                        _buildRelationshipAndHonor(isDark),
+
+                        const SizedBox(height: 20),
+
+                        // 5. PROFILE TABS & CONTENT
+                        _buildProfileContent(isDark),
+
+                        const SizedBox(
+                          height: 100,
+                        ), // Bottom padding for sticky action bar
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Top Floating Navigation Bar (Safe Area Compliant)
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        IconButton(
+                          icon: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.4),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.arrow_back_ios_new_rounded,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                          ),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
                               icon: Container(
@@ -785,103 +993,121 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                   color: Colors.black.withValues(alpha: 0.4),
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Colors.white),
-                              ),
-                              onPressed: () => Navigator.pop(context),
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.4),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(Icons.more_horiz_rounded, size: 20, color: Colors.white),
-                                  ),
-                                  onPressed: () => _showOverflowMenu(context, isOtherUser, isDark, auth),
+                                child: const Icon(
+                                  Icons.more_horiz_rounded,
+                                  size: 20,
+                                  color: Colors.white,
                                 ),
-                                const SizedBox(height: 2),
-                                if (_isLoading && _user == null) ...[
-                                  Container(
-                                    margin: const EdgeInsets.only(right: 6),
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withValues(alpha: 0.35),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const SizedBox(
-                                      width: 12,
-                                      height: 12,
-                                      child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.white38),
-                                    ),
-                                  ),
-                                ] else if (_user != null) ...[
-                                  _buildProfilePresenceBadge(context, _user!, livePartyProv, liveProv, auth),
-                                ],
-                              ],
+                              ),
+                              onPressed: () => _showOverflowMenu(
+                                context,
+                                isOtherUser,
+                                isDark,
+                                auth,
+                              ),
                             ),
+                            const SizedBox(height: 2),
+                            if (_isLoading && _user == null) ...[
+                              Container(
+                                margin: const EdgeInsets.only(right: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.35),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.5,
+                                    color: Colors.white38,
+                                  ),
+                                ),
+                              ),
+                            ] else if (_user != null) ...[
+                              _buildProfilePresenceBadge(
+                                context,
+                                _user!,
+                                livePartyProv,
+                                liveProv,
+                                auth,
+                              ),
+                            ],
                           ],
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
+              ],
+            ),
 
       // 8. ACTIONS: Edit Profile for Owner | Follow/Message/Gift for Visitors
       bottomNavigationBar: _user == null
           ? null
           : !isOtherUser
-              ? Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.getCard(isDark),
-                    border: Border(top: BorderSide(color: AppColors.getBorder(isDark))),
-                    boxShadow: AppColors.cardShadow,
-                  ),
-                  child: SafeArea(
-                    child: SizedBox(
-                      height: 46,
-                      child: ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.getPrimary(isDark),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)),
+          ? Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.getCard(isDark),
+                border: Border(
+                  top: BorderSide(color: AppColors.getBorder(isDark)),
+                ),
+                boxShadow: AppColors.cardShadow,
+              ),
+              child: SafeArea(
+                child: SizedBox(
+                  height: 46,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.getPrimary(isDark),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(23),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const EditProfileScreen(),
                         ),
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const EditProfileScreen()),
-                          ).then((_) {
-                            if (mounted) setState(() {});
-                          });
-                        },
-                        icon: Icon(Icons.edit_rounded, color: AppColors.onPrimary(isDark: isDark), size: 18),
-                        label: Text(
-                          'Edit Profile',
-                          style: TextStyle(
-                            color: AppColors.onPrimary(isDark: isDark),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
+                      ).then((_) {
+                        if (mounted) setState(() {});
+                      });
+                    },
+                    icon: Icon(
+                      Icons.edit_rounded,
+                      color: AppColors.onPrimary(isDark: isDark),
+                      size: 18,
+                    ),
+                    label: Text(
+                      'Edit Profile',
+                      style: TextStyle(
+                        color: AppColors.onPrimary(isDark: isDark),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
                       ),
                     ),
                   ),
-                )
-              : Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.getCard(isDark),
-                    border: Border(top: BorderSide(color: AppColors.getBorder(isDark))),
-                    boxShadow: AppColors.cardShadow,
-                  ),
-                  child: SafeArea(
-                    child: Row(
-                      children: [
+                ),
+              ),
+            )
+          : Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: AppColors.getCard(isDark),
+                border: Border(
+                  top: BorderSide(color: AppColors.getBorder(isDark)),
+                ),
+                boxShadow: AppColors.cardShadow,
+              ),
+              child: SafeArea(
+                child: Row(
+                  children: [
                     // Follow / Following Button
                     Expanded(
                       flex: 3,
@@ -894,7 +1120,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 : AppColors.getPrimary(isDark),
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(horizontal: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(23),
+                            ),
                           ),
                           onPressed: () {
                             AuthGuard.require(context, () {
@@ -902,21 +1130,29 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 auth.unfollowUser(_user!.id);
                                 if (_user != null) {
                                   setState(() {
-                                    _user = _user!.copyWith(followers: (_user!.followers > 0 ? _user!.followers - 1 : 0));
+                                    _user = _user!.copyWith(
+                                      followers: (_user!.followers > 0
+                                          ? _user!.followers - 1
+                                          : 0),
+                                    );
                                   });
                                 }
                               } else {
                                 auth.followUser(_user!.id);
                                 if (_user != null) {
                                   setState(() {
-                                    _user = _user!.copyWith(followers: _user!.followers + 1);
+                                    _user = _user!.copyWith(
+                                      followers: _user!.followers + 1,
+                                    );
                                   });
                                 }
                               }
                             });
                           },
                           icon: Icon(
-                            isFollowing ? Icons.check_rounded : Icons.person_add_rounded,
+                            isFollowing
+                                ? Icons.check_rounded
+                                : Icons.person_add_rounded,
                             color: isFollowing
                                 ? AppColors.getTextPrimary(isDark)
                                 : AppColors.onPrimary(isDark: isDark),
@@ -948,20 +1184,30 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         height: 46,
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: isDark ? const Color(0xFF2A233D) : const Color(0xFFEBE8F3),
+                            backgroundColor: isDark
+                                ? const Color(0xFF2A233D)
+                                : const Color(0xFFEBE8F3),
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(horizontal: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(23),
+                            ),
                           ),
                           onPressed: () {
                             AuthGuard.require(context, () {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(builder: (_) => ChatScreen(user: _user!)),
+                                MaterialPageRoute(
+                                  builder: (_) => ChatScreen(user: _user!),
+                                ),
                               );
                             });
                           },
-                          icon: Icon(Icons.chat_bubble_rounded, color: AppColors.getTextPrimary(isDark), size: 18),
+                          icon: Icon(
+                            Icons.chat_bubble_rounded,
+                            color: AppColors.getTextPrimary(isDark),
+                            size: 18,
+                          ),
                           label: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
@@ -987,7 +1233,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                           backgroundColor: Colors.pinkAccent,
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(horizontal: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(23)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(23),
+                          ),
                         ),
                         onPressed: () {
                           AuthGuard.require(context, () {
@@ -1002,7 +1250,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                             );
                           });
                         },
-                        icon: const Icon(Icons.card_giftcard_rounded, color: Colors.white, size: 18),
+                        icon: const Icon(
+                          Icons.card_giftcard_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
                         label: const FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(
@@ -1024,11 +1276,40 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   }
 
   // 1 & 2. DIAGRAM B: COVER + IDENTITY & TOP BAR
-  Widget _buildCoverAndIdentityHeader(BuildContext context, bool isDark, SVIPProvider svip, bool isFollowing) {
+  Widget _buildCoverAndIdentityHeader(
+    BuildContext context,
+    bool isDark,
+    SVIPProvider svip,
+    bool isFollowing,
+  ) {
+    final auth = context.read<AuthProvider>();
+    final currentUserId = auth.currentUser.id;
+    final currentUsername = auth.currentUser.username.toLowerCase();
+    final currentName = auth.currentUser.name.toLowerCase();
+    final targetId = _user?.id ?? widget.userId;
+    final targetUsername = _user?.username.toLowerCase() ?? '';
+    final targetName = _user?.name.toLowerCase() ?? '';
+    final isMyProfile =
+        (targetId.isNotEmpty &&
+            (targetId == currentUserId || targetId == 'me')) ||
+        (targetUsername.isNotEmpty &&
+            currentUsername.isNotEmpty &&
+            targetUsername == currentUsername) ||
+        (targetName.isNotEmpty &&
+            currentName.isNotEmpty &&
+            targetName == currentName) ||
+        (widget.userId.isNotEmpty &&
+            (widget.userId == currentUserId ||
+                widget.userId == 'me' ||
+                (currentUsername.isNotEmpty &&
+                    widget.userId.toLowerCase() == currentUsername)));
+
     final displayFollowers = _user!.followers;
     final coverUrl = _user!.effectiveCoverUrl;
     bool isLocalFile = false;
-    if (coverUrl.startsWith('/') || coverUrl.contains('\\') || coverUrl.startsWith('file:')) {
+    if (coverUrl.startsWith('/') ||
+        coverUrl.contains('\\') ||
+        coverUrl.startsWith('file:')) {
       try {
         final f = File(coverUrl);
         isLocalFile = f.existsSync() && f.lengthSync() > 0;
@@ -1042,11 +1323,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     final ImageProvider coverImageProvider = isLocalFile
         ? FileImage(File(coverUrl))
         : (coverUrl.startsWith('http://') || coverUrl.startsWith('https://')
-            ? NetworkImage(coverUrl)
-            : const NetworkImage('https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80'));
+              ? NetworkImage(coverUrl)
+              : const NetworkImage(
+                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&q=80',
+                ));
 
     // CP Partner Mini-Avatar Decoration when active
-    final hasCpPartner = _user!.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty;
+    final hasCpPartner =
+        _user!.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1080,8 +1364,6 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               ),
             ),
 
-
-
             // Avatar with Crown Frame + CP Mini-Avatar Decoration & Followers Count
             Positioned(
               bottom: 0,
@@ -1096,36 +1378,63 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     children: [
                       Builder(
                         builder: (ctx) {
-                          String? effAvatar = _user!.avatarUrl.isNotEmpty ? _user!.avatarUrl : null;
+                          String? effAvatar = _user!.avatarUrl.isNotEmpty
+                              ? _user!.avatarUrl
+                              : null;
                           if (effAvatar == null || effAvatar.isEmpty) {
                             try {
                               final social = ctx.watch<SocialProvider>();
-                              final myPost = social.posts.cast<PostModel?>().firstWhere(
-                                (p) => p != null && (
-                                  (_user!.id.isNotEmpty && p.author.id == _user!.id) ||
-                                  (_user!.displayName.isNotEmpty && p.author.displayName.toLowerCase() == _user!.displayName.toLowerCase()) ||
-                                  (_user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase())
-                                ),
-                                orElse: () => null,
-                              );
-                              if (myPost != null && myPost.author.avatarUrl.isNotEmpty) {
+                              final myPost = social.posts
+                                  .cast<PostModel?>()
+                                  .firstWhere(
+                                    (p) =>
+                                        p != null &&
+                                        ((_user!.id.isNotEmpty &&
+                                                p.author.id == _user!.id) ||
+                                            (_user!.displayName.isNotEmpty &&
+                                                p.author.displayName
+                                                        .toLowerCase() ==
+                                                    _user!.displayName
+                                                        .toLowerCase()) ||
+                                            (_user!.username.isNotEmpty &&
+                                                p.author.username
+                                                        .toLowerCase() ==
+                                                    _user!.username
+                                                        .toLowerCase())),
+                                    orElse: () => null,
+                                  );
+                              if (myPost != null &&
+                                  myPost.author.avatarUrl.isNotEmpty) {
                                 effAvatar = myPost.author.avatarUrl;
                               }
                             } catch (_) {}
                           }
 
-                          final bool isInActiveRoom = _user != null && _user!.isLive && (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty);
+                          final bool isInActiveRoom =
+                              _user != null &&
+                              _user!.isLive &&
+                              (_user!.liveRoomId != null &&
+                                  _user!.liveRoomId!.isNotEmpty);
 
                           Widget avatarWidget = UserAvatar(
                             imageUrl: effAvatar,
                             name: _user!.displayName,
                             radius: 38,
                             showVipFrame: _user!.isVip,
-                            frameAsset: _user?.avatarFrame != null && _user!.avatarFrame.isNotEmpty && _user!.avatarFrame != 'none'
+                            frameAsset:
+                                _user?.avatarFrame != null &&
+                                    _user!.avatarFrame.isNotEmpty &&
+                                    _user!.avatarFrame != 'none'
                                 ? _user!.avatarFrame
                                 : (_user?.nobleTitle != null
-                                    ? NobleBadgeHelper.getFrameAsset(_user!.nobleTitle)
-                                    : (_user != null && _user!.svipLevel > 0 ? NobleBadgeHelper.getFrameAsset('SVIP ${_user!.svipLevel}') : null)),
+                                      ? NobleBadgeHelper.getFrameAsset(
+                                          _user!.nobleTitle,
+                                        )
+                                      : (_user != null && _user!.svipLevel > 0
+                                            ? NobleBadgeHelper.getFrameAsset(
+                                                'SVIP ${_user!.svipLevel}',
+                                              )
+                                            : null)),
                           );
 
                           // Active room glowing ring on DP
@@ -1144,7 +1453,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 ),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: const Color(0xFFE91E63).withValues(alpha: 0.6),
+                                    color: const Color(
+                                      0xFFE91E63,
+                                    ).withValues(alpha: 0.6),
                                     blurRadius: 10,
                                     spreadRadius: 2,
                                   ),
@@ -1179,11 +1490,20 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               color: Colors.pinkAccent,
-                              border: Border.all(color: Colors.white, width: 1.5),
-                              boxShadow: const [BoxShadow(color: Colors.pinkAccent, blurRadius: 6)],
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 1.5,
+                              ),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.pinkAccent,
+                                  blurRadius: 6,
+                                ),
+                              ],
                             ),
                             child: const UserAvatar(
-                              imageUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+                              imageUrl:
+                                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
                               radius: 13,
                             ),
                           ),
@@ -1199,25 +1519,33 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         mainAxisAlignment: MainAxisAlignment.end,
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          // Footprints / Visitors Button
-                          IconButton(
-                            icon: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.purple.withValues(alpha: 0.15),
-                                shape: BoxShape.circle,
+                          // Footprints / Visitors Button - ONLY FOR PROFILE OWNER (Issue 57)
+                          if (isMyProfile) ...[
+                            IconButton(
+                              icon: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.withValues(alpha: 0.15),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.directions_walk_rounded,
+                                  size: 16,
+                                  color: Colors.purpleAccent,
+                                ),
                               ),
-                              child: const Icon(Icons.directions_walk_rounded, size: 16, color: Colors.purpleAccent),
+                              tooltip: 'Profile Visitors',
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const VisitorsScreen(),
+                                  ),
+                                );
+                              },
                             ),
-                            tooltip: 'Profile Visitors',
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => VisitorsScreen()),
-                              );
-                            },
-                          ),
-                          const SizedBox(width: 2),
+                            const SizedBox(width: 2),
+                          ],
                           // Followers Tap
                           GestureDetector(
                             onTap: () {
@@ -1233,9 +1561,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 children: [
                                   Text(
                                     '${AppFormatters.formatNumber(displayFollowers)} ',
-                                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: primaryText),
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      color: primaryText,
+                                    ),
                                   ),
-                                  Text('Followers', style: TextStyle(fontSize: 12, color: secondaryText)),
+                                  Text(
+                                    'Followers',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: secondaryText,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -1256,9 +1594,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 children: [
                                   Text(
                                     '${AppFormatters.formatNumber(_isMe ? context.read<AuthProvider>().followingUserIds.length : (_user?.following ?? 0))} ',
-                                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: primaryText),
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      color: primaryText,
+                                    ),
                                   ),
-                                  Text('Following', style: TextStyle(fontSize: 12, color: secondaryText)),
+                                  Text(
+                                    'Following',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: secondaryText,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -1270,29 +1618,57 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                               int calculatedLikes = _user?.likesReceived ?? 0;
                               try {
                                 final social = context.read<SocialProvider>();
-                                final userPosts = social.posts.where((p) =>
-                                    (_user != null && _user!.id.isNotEmpty && p.author.id == _user!.id) ||
-                                    (_user != null && _user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase())
-                                ).toList();
-                                final pLikes = userPosts.fold(0, (acc, p) => acc + p.likes);
-                                if (pLikes > calculatedLikes) calculatedLikes = pLikes;
+                                final userPosts = social.posts
+                                    .where(
+                                      (p) =>
+                                          (_user != null &&
+                                              _user!.id.isNotEmpty &&
+                                              p.author.id == _user!.id) ||
+                                          (_user != null &&
+                                              _user!.username.isNotEmpty &&
+                                              p.author.username.toLowerCase() ==
+                                                  _user!.username
+                                                      .toLowerCase()),
+                                    )
+                                    .toList();
+                                final pLikes = userPosts.fold(
+                                  0,
+                                  (acc, p) => acc + p.likes,
+                                );
+                                if (pLikes > calculatedLikes)
+                                  calculatedLikes = pLikes;
                               } catch (_) {}
 
                               final auth = context.read<AuthProvider>();
-                              final isMe = _user != null && (_user!.id == auth.currentUser.id || _user!.username == auth.currentUser.username);
+                              final isMe =
+                                  _user != null &&
+                                  (_user!.id == auth.currentUser.id ||
+                                      _user!.username ==
+                                          auth.currentUser.username);
 
                               showDialog(
                                 context: context,
                                 builder: (ctx) => AlertDialog(
                                   backgroundColor: AppColors.getCard(isDark),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
                                   title: Row(
                                     children: [
-                                      const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 24),
+                                      const Icon(
+                                        Icons.favorite_rounded,
+                                        color: Colors.pinkAccent,
+                                        size: 24,
+                                      ),
                                       const SizedBox(width: 8),
                                       Text(
                                         'Total Likes',
-                                        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.getTextPrimary(
+                                            isDark,
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -1300,16 +1676,31 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                     isMe
                                         ? 'You have total $calculatedLikes likes across all your videos and posts.'
                                         : '${_user?.name ?? 'User'} has total $calculatedLikes likes across all videos and posts.',
-                                    style: TextStyle(fontSize: 14, color: AppColors.getTextSecondary(isDark)),
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: AppColors.getTextSecondary(isDark),
+                                    ),
                                   ),
                                   actions: [
                                     ElevatedButton(
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: AppColors.getPrimary(isDark),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        backgroundColor: AppColors.getPrimary(
+                                          isDark,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
                                       ),
                                       onPressed: () => Navigator.pop(ctx),
-                                      child: const Text('OK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                      child: const Text(
+                                        'OK',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -1323,45 +1714,91 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                     () {
                                       int count = _user?.likesReceived ?? 0;
                                       try {
-                                        final social = context.read<SocialProvider>();
-                                        final userPosts = social.posts.where((p) =>
-                                            (_user != null && _user!.id.isNotEmpty && p.author.id == _user!.id) ||
-                                            (_user != null && _user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase())
-                                        ).toList();
-                                        final pLikes = userPosts.fold(0, (acc, p) => acc + p.likes);
+                                        final social = context
+                                            .read<SocialProvider>();
+                                        final userPosts = social.posts
+                                            .where(
+                                              (p) =>
+                                                  (_user != null &&
+                                                      _user!.id.isNotEmpty &&
+                                                      p.author.id ==
+                                                          _user!.id) ||
+                                                  (_user != null &&
+                                                      _user!
+                                                          .username
+                                                          .isNotEmpty &&
+                                                      p.author.username
+                                                              .toLowerCase() ==
+                                                          _user!.username
+                                                              .toLowerCase()),
+                                            )
+                                            .toList();
+                                        final pLikes = userPosts.fold(
+                                          0,
+                                          (acc, p) => acc + p.likes,
+                                        );
                                         if (pLikes > count) count = pLikes;
                                       } catch (_) {}
-                                      if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M ';
-                                      if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}K ';
+                                      if (count >= 1000000)
+                                        return '${(count / 1000000).toStringAsFixed(1)}M ';
+                                      if (count >= 1000)
+                                        return '${(count / 1000).toStringAsFixed(1)}K ';
                                       return '$count ';
                                     }(),
-                                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: primaryText),
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      color: primaryText,
+                                    ),
                                   ),
-                                  Text('Likes', style: TextStyle(fontSize: 12, color: secondaryText)),
+                                  Text(
+                                    'Likes',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: secondaryText,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
                           ),
 
                           // In Room Action Button in the Circled Area
-                          if (_user != null && _user!.isLive && (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty)) ...[
+                          if (_user != null &&
+                              _user!.isLive &&
+                              (_user!.liveRoomId != null &&
+                                  _user!.liveRoomId!.isNotEmpty)) ...[
                             const SizedBox(width: 10),
                             GestureDetector(
-                              onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
+                              onTap: () => _openUserActiveRoom(
+                                context,
+                                _user!.liveRoomId,
+                              ),
                               child: Container(
                                 margin: const EdgeInsets.only(bottom: 2),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 5,
+                                ),
                                 decoration: BoxDecoration(
                                   gradient: const LinearGradient(
-                                    colors: [Color(0xFFE91E63), Color(0xFF9C27B0)],
+                                    colors: [
+                                      Color(0xFFE91E63),
+                                      Color(0xFF9C27B0),
+                                    ],
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
                                   ),
                                   borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.2),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.8),
+                                    width: 1.2,
+                                  ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: const Color(0xFFE91E63).withValues(alpha: 0.5),
+                                      color: const Color(
+                                        0xFFE91E63,
+                                      ).withValues(alpha: 0.5),
                                       blurRadius: 8,
                                       spreadRadius: 1,
                                     ),
@@ -1370,14 +1807,26 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                                 child: const Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 13),
+                                    Icon(
+                                      Icons.graphic_eq_rounded,
+                                      color: Colors.white,
+                                      size: 13,
+                                    ),
                                     SizedBox(width: 4),
                                     Text(
                                       'In Room',
-                                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                     SizedBox(width: 2),
-                                    Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 9),
+                                    Icon(
+                                      Icons.arrow_forward_ios_rounded,
+                                      color: Colors.white,
+                                      size: 9,
+                                    ),
                                   ],
                                 ),
                               ),
@@ -1407,7 +1856,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     child: Text(
                       _user!.name.isNotEmpty
                           ? _user!.name
-                          : (_user!.displayName.isNotEmpty ? _user!.displayName : 'User ${_user!.id}'),
+                          : (_user!.displayName.isNotEmpty
+                                ? _user!.displayName
+                                : 'User ${_user!.id}'),
                       style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
@@ -1425,7 +1876,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
                   // Gender & Age Pill (â™‚ 21 / â™€ 22)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFF3897F0),
                       borderRadius: BorderRadius.circular(12),
@@ -1434,26 +1888,39 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _user!.gender.toLowerCase() == 'female' ? Icons.female_rounded : Icons.male_rounded,
+                          _user!.gender.toLowerCase() == 'female'
+                              ? Icons.female_rounded
+                              : Icons.male_rounded,
                           size: 12,
                           color: Colors.white,
                         ),
                         const SizedBox(width: 3),
                         Text(
                           _user!.age > 0 ? '${_user!.age}' : _user!.gender,
-                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ],
                     ),
                   ),
 
                   // Live Tag Badge (only shown when user is actually live)
-                  if (_user != null && _user!.isLive && (_user!.liveRoomId != null && _user!.liveRoomId!.isNotEmpty)) ...[
+                  if (_user != null &&
+                      _user!.isLive &&
+                      (_user!.liveRoomId != null &&
+                          _user!.liveRoomId!.isNotEmpty)) ...[
                     const SizedBox(width: 6),
                     GestureDetector(
-                      onTap: () => _openUserActiveRoom(context, _user!.liveRoomId),
+                      onTap: () =>
+                          _openUserActiveRoom(context, _user!.liveRoomId),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
                             colors: [Color(0xFFFF1744), Color(0xFFFF5252)],
@@ -1501,7 +1968,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   Flexible(
                     child: Text(
                       'ID: ${_user!.id}',
-                      style: TextStyle(color: secondaryText, fontSize: 13, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: secondaryText,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1511,13 +1982,22 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     onTap: () {
                       Clipboard.setData(ClipboardData(text: _user!.id));
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('User ID copied to clipboard!')),
+                        const SnackBar(
+                          content: Text('User ID copied to clipboard!'),
+                        ),
                       );
                     },
-                    child: Icon(Icons.copy_rounded, color: secondaryText, size: 14),
+                    child: Icon(
+                      Icons.copy_rounded,
+                      color: secondaryText,
+                      size: 14,
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  Text(_user!.countryFlag, style: const TextStyle(fontSize: 15)), // Country Flag
+                  Text(
+                    _user!.countryFlag,
+                    style: const TextStyle(fontSize: 15),
+                  ), // Country Flag
 
                   const SizedBox(width: 8),
 
@@ -1550,20 +2030,26 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       ),
       child: Text(
         text,
-        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
 
-
   // Tag Badges Section -- shows only real earned level indicators & assigned custom titles
   Widget _buildProfileTags(bool isDark, SVIPProvider svip) {
-    final svipLvl = svip.currentLevel > 0 ? svip.currentLevel : (_user?.svipLevel ?? 0);
+    final svipLvl = svip.currentLevel > 0
+        ? svip.currentLevel
+        : (_user?.svipLevel ?? 0);
     final wealthLvl = _user?.computedWealthLevel ?? 0;
     final charmLvl = _user?.computedCharmLevel ?? 0;
     final gameLvl = _user?.computedGameLevel ?? 0;
     final accountLvl = _user?.computedAccountLevel ?? 0;
-    final hasNobleTitle = _user?.nobleTitle != null && _user!.nobleTitle!.isNotEmpty;
+    final hasNobleTitle =
+        _user?.nobleTitle != null && _user!.nobleTitle!.isNotEmpty;
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -1577,7 +2063,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               color: const Color(0xFFFFD700),
               bgColor: const Color(0xFF2E2715),
               borderColor: const Color(0xFFFFD700),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen())),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SVIPCenterScreen()),
+              ),
             ),
             const SizedBox(width: 6),
           ],
@@ -1587,7 +2076,12 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             color: const Color(0xFF00E5FF),
             bgColor: const Color(0xFF321A4C),
             borderColor: const Color(0xFF9042F5),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 0))),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LevelCenterScreen(initialTab: 0),
+              ),
+            ),
           ),
           const SizedBox(width: 6),
           _buildTagChip(
@@ -1596,7 +2090,12 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             color: const Color(0xFFFF4081),
             bgColor: const Color(0xFF42152E),
             borderColor: const Color(0xFFFF4081),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 1))),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LevelCenterScreen(initialTab: 1),
+              ),
+            ),
           ),
           const SizedBox(width: 6),
           _buildTagChip(
@@ -1605,7 +2104,12 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             color: const Color(0xFFB388FF),
             bgColor: const Color(0xFF261842),
             borderColor: const Color(0xFF7C4DFF),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 2))),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LevelCenterScreen(initialTab: 2),
+              ),
+            ),
           ),
           const SizedBox(width: 6),
           _buildTagChip(
@@ -1614,7 +2118,12 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             color: const Color(0xFF00E676),
             bgColor: const Color(0xFF0E3D1E),
             borderColor: const Color(0xFF00E676),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LevelCenterScreen(initialTab: 3))),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const LevelCenterScreen(initialTab: 3),
+              ),
+            ),
           ),
           if (hasNobleTitle) ...[
             const SizedBox(width: 6),
@@ -1624,7 +2133,12 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               color: const Color(0xFFFFD700),
               bgColor: const Color(0xFF3B2E05),
               borderColor: const Color(0xFFFFD700),
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AristocracyCenterScreen())),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const AristocracyCenterScreen(),
+                ),
+              ),
             ),
           ],
         ],
@@ -1657,10 +2171,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           mainAxisSize: MainAxisSize.min,
           children: [
             if (imagePath != null)
-              Image.asset(imagePath, width: 16, height: 16,
+              Image.asset(
+                imagePath,
+                width: 16,
+                height: 16,
                 errorBuilder: (_, __, ___) => icon != null
                     ? Icon(icon, size: 12, color: color)
-                    : const SizedBox.shrink())
+                    : const SizedBox.shrink(),
+              )
             else if (icon != null) ...[
               Icon(icon, size: 12, color: color),
             ],
@@ -1685,7 +2203,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     final primaryText = AppColors.getTextPrimary(isDark);
     // Filter earned medals based on isEarned flag or user milestone achievements
     final earnedMedals = MedalModel.defaultMedals.where((m) {
-      if (_user != null && m.isUnlockedForLevel(_user!.wealthLevel)) return true;
+      if (_user != null && m.isUnlockedForLevel(_user!.wealthLevel))
+        return true;
       if (m.isEarned) return true;
       return false;
     }).toList();
@@ -1699,14 +2218,35 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Medal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: primaryText)),
+              Text(
+                'Medal',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: primaryText,
+                ),
+              ),
               GestureDetector(
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const MedalScreen())),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const MedalScreen()),
+                ),
                 child: Row(
                   children: [
-                    Text('$medalsCount medals', style: const TextStyle(fontSize: 13, color: Color(0xFF8C38FF), fontWeight: FontWeight.bold)),
+                    Text(
+                      '$medalsCount medals',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF8C38FF),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(width: 2),
-                    const Icon(Icons.chevron_right_rounded, size: 16, color: Color(0xFF8C38FF)),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: Color(0xFF8C38FF),
+                    ),
                   ],
                 ),
               ),
@@ -1721,12 +2261,17 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF161224) : Colors.grey[100],
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                border: Border.all(
+                  color: isDark ? Colors.white10 : Colors.black12,
+                ),
               ),
               child: Center(
                 child: Text(
                   'No medals assigned yet',
-                  style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(isDark)),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.getTextSecondary(isDark),
+                  ),
                 ),
               ),
             )
@@ -1754,7 +2299,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       decoration: BoxDecoration(
         color: Colors.amber.withValues(alpha: 0.15),
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.amber.withValues(alpha: 0.7), width: 1.5),
+        border: Border.all(
+          color: Colors.amber.withValues(alpha: 0.7),
+          width: 1.5,
+        ),
         boxShadow: [
           BoxShadow(color: Colors.amber.withValues(alpha: 0.25), blurRadius: 8),
         ],
@@ -1762,7 +2310,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       child: Image.asset(
         assetPath,
         fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => const Icon(Icons.emoji_events_rounded, size: 26, color: Colors.amber),
+        errorBuilder: (_, __, ___) => const Icon(
+          Icons.emoji_events_rounded,
+          size: 26,
+          color: Colors.amber,
+        ),
       ),
     );
   }
@@ -1770,45 +2322,81 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   // BADGE GALLERY (Shows ONLY active assigned badges & real count)
   Widget _buildBadgeGallery(bool isDark, SVIPProvider svip) {
     final primaryText = AppColors.getTextPrimary(isDark);
-    
+
     // Collect ONLY active assigned badges for this user
     final List<Map<String, dynamic>> activeBadges = [];
 
     if (_user != null) {
       if (_user!.role == UserRole.admin) {
-        activeBadges.add({'asset': 'assets/roles/super_admin_tag.webp', 'label': 'Super Admin', 'color': Colors.redAccent});
+        activeBadges.add({
+          'asset': 'assets/roles/super_admin_tag.webp',
+          'label': 'Super Admin',
+          'color': Colors.redAccent,
+        });
       } else if (_user!.isAgency) {
-        activeBadges.add({'asset': 'assets/roles/agency_tag.webp', 'label': 'Agency', 'color': Colors.cyan});
+        activeBadges.add({
+          'asset': 'assets/roles/agency_tag.webp',
+          'label': 'Agency',
+          'color': Colors.cyan,
+        });
       } else if (_user!.isBd) {
-        activeBadges.add({'asset': 'assets/roles/bd_tag.webp', 'label': 'BD Manager', 'color': Colors.teal});
+        activeBadges.add({
+          'asset': 'assets/roles/bd_tag.webp',
+          'label': 'BD Manager',
+          'color': Colors.teal,
+        });
       }
 
       if (_user!.nobleTitle != null && _user!.nobleTitle!.isNotEmpty) {
         final nobleBadge = NobleBadgeHelper.getBadgeAsset(_user!.nobleTitle);
         if (nobleBadge != null) {
-          activeBadges.add({'asset': nobleBadge, 'label': _user!.nobleTitle!, 'color': const Color(0xFFFFD700)});
+          activeBadges.add({
+            'asset': nobleBadge,
+            'label': _user!.nobleTitle!,
+            'color': const Color(0xFFFFD700),
+          });
         }
       }
 
-      final currentSvip = svip.currentLevel > 0 ? svip.currentLevel : _user!.svipLevel;
+      final currentSvip = svip.currentLevel > 0
+          ? svip.currentLevel
+          : _user!.svipLevel;
       if (currentSvip > 0) {
         final svipBadge = NobleBadgeHelper.getBadgeAsset('SVIP $currentSvip');
         if (svipBadge != null) {
-          activeBadges.add({'asset': svipBadge, 'label': 'SVIP $currentSvip', 'color': Colors.amber});
+          activeBadges.add({
+            'asset': svipBadge,
+            'label': 'SVIP $currentSvip',
+            'color': Colors.amber,
+          });
         }
       }
 
       if (_user!.isHost) {
-        activeBadges.add({'asset': 'assets/roles/host_badge.webp', 'label': 'Official Host', 'color': Colors.orangeAccent});
+        activeBadges.add({
+          'asset': 'assets/roles/host_badge.webp',
+          'label': 'Official Host',
+          'color': Colors.orangeAccent,
+        });
       }
 
       if (_user!.isSeller) {
-        activeBadges.add({'asset': 'assets/roles/coins_saller_tag.webp', 'label': 'Coin Seller', 'color': Colors.lightGreenAccent});
+        activeBadges.add({
+          'asset': 'assets/roles/coins_saller_tag.webp',
+          'label': 'Coin Seller',
+          'color': Colors.lightGreenAccent,
+        });
       }
 
       if (_user!.badge.isNotEmpty && _user!.badge != 'none') {
-        final badgeAsset = NobleBadgeHelper.getBadgeAsset(_user!.badge) ?? 'assets/badges/${_user!.badge}.webp';
-        activeBadges.add({'asset': badgeAsset, 'label': _user!.badge, 'color': Colors.amberAccent});
+        final badgeAsset =
+            NobleBadgeHelper.getBadgeAsset(_user!.badge) ??
+            'assets/badges/${_user!.badge}.webp';
+        activeBadges.add({
+          'asset': badgeAsset,
+          'label': _user!.badge,
+          'color': Colors.amberAccent,
+        });
       }
     }
 
@@ -1822,14 +2410,32 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Badge & Role Gallery', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: primaryText)),
+              Text(
+                'Badge & Role Gallery',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: primaryText,
+                ),
+              ),
               GestureDetector(
                 onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
                 child: Row(
                   children: [
-                    Text('$badgeCount Badges', style: const TextStyle(fontSize: 13, color: Color(0xFF8C38FF), fontWeight: FontWeight.bold)),
+                    Text(
+                      '$badgeCount Badges',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF8C38FF),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(width: 2),
-                    const Icon(Icons.chevron_right_rounded, size: 16, color: Color(0xFF8C38FF)),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: Color(0xFF8C38FF),
+                    ),
                   ],
                 ),
               ),
@@ -1844,12 +2450,17 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF161224) : Colors.grey[100],
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                border: Border.all(
+                  color: isDark ? Colors.white10 : Colors.black12,
+                ),
               ),
               child: Center(
                 child: Text(
                   'No active badges or SVIP assigned',
-                  style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(isDark)),
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.getTextSecondary(isDark),
+                  ),
                 ),
               ),
             )
@@ -1865,7 +2476,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       fallbackLabel: b['label'] as String,
                       fallbackColor: b['color'] as Color,
                       isDark: isDark,
-                      onTap: () => _showAllBadgesAndRolesSheet(context, isDark, svip),
+                      onTap: () =>
+                          _showAllBadgesAndRolesSheet(context, isDark, svip),
                     ),
                     const SizedBox(width: 8),
                   ],
@@ -1892,7 +2504,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         decoration: BoxDecoration(
           color: isDark ? const Color(0xFF221A36) : const Color(0xFFF3EDF7),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: fallbackColor.withValues(alpha: 0.35), width: 1.2),
+          border: Border.all(
+            color: fallbackColor.withValues(alpha: 0.35),
+            width: 1.2,
+          ),
           boxShadow: [
             BoxShadow(
               color: fallbackColor.withValues(alpha: 0.15),
@@ -1914,7 +2529,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             ),
             child: Text(
               fallbackLabel,
-              style: TextStyle(color: fallbackColor, fontSize: 12, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: fallbackColor,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ),
@@ -1922,7 +2541,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     );
   }
 
-  void _showAllBadgesAndRolesSheet(BuildContext context, bool isDark, SVIPProvider svip) {
+  void _showAllBadgesAndRolesSheet(
+    BuildContext context,
+    bool isDark,
+    SVIPProvider svip,
+  ) {
     final primaryText = AppColors.getTextPrimary(isDark);
 
     showModalBottomSheet(
@@ -1941,7 +2564,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           builder: (_, scrollController) {
             return SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
                 child: ListView(
                   controller: scrollController,
                   physics: const BouncingScrollPhysics(),
@@ -1960,7 +2586,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Nobles, Roles & SVIP Badges', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: primaryText)),
+                        Text(
+                          'Nobles, Roles & SVIP Badges',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: primaryText,
+                          ),
+                        ),
                         IconButton(
                           icon: const Icon(Icons.close_rounded),
                           onPressed: () => Navigator.pop(ctx),
@@ -1972,20 +2605,95 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     // SECTION 1: NOBLE ARISTOCRACY
                     _buildSectionHeader('Aristocracy Nobles', () {
                       Navigator.pop(ctx);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const AristocracyCenterScreen()));
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AristocracyCenterScreen(),
+                        ),
+                      );
                     }),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _buildBadgeModalItem('Emperor', 'assets/nobles/emperor_badge.webp', 'assets/nobles/emperor_frame.webp', const Color(0xFFFFD700), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('emperor') == true),
-                        _buildBadgeModalItem('King', 'assets/nobles/king_badge.webp', 'assets/nobles/king_frame.webp', const Color(0xFFD4AF37), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('king') == true),
-                        _buildBadgeModalItem('Duke', 'assets/nobles/duke_badge.webp', 'assets/nobles/duke_frame.webp', const Color(0xFF8E24AA), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('duke') == true),
-                        _buildBadgeModalItem('Marquis', 'assets/nobles/marquis_badge.webp', 'assets/nobles/marquis_frame.webp', const Color(0xFFC2185B), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('marquis') == true),
-                        _buildBadgeModalItem('Count', 'assets/nobles/count_badge.webp', 'assets/nobles/count_frame.webp', const Color(0xFF1E88E5), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('count') == true),
-                        _buildBadgeModalItem('Viscount', 'assets/nobles/viscount_badge.webp', 'assets/nobles/viscount_frame.webp', const Color(0xFFFB8C00), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('viscount') == true),
-                        _buildBadgeModalItem('Baron', 'assets/nobles/baron_badge.webp', 'assets/nobles/baron_frame.webp', const Color(0xFF78909C), isUnlocked: _user?.nobleTitle?.toLowerCase().contains('baron') == true),
+                        _buildBadgeModalItem(
+                          'Emperor',
+                          'assets/nobles/emperor_badge.webp',
+                          'assets/nobles/emperor_frame.webp',
+                          const Color(0xFFFFD700),
+                          isUnlocked:
+                              _user?.nobleTitle?.toLowerCase().contains(
+                                'emperor',
+                              ) ==
+                              true,
+                        ),
+                        _buildBadgeModalItem(
+                          'King',
+                          'assets/nobles/king_badge.webp',
+                          'assets/nobles/king_frame.webp',
+                          const Color(0xFFD4AF37),
+                          isUnlocked:
+                              _user?.nobleTitle?.toLowerCase().contains(
+                                'king',
+                              ) ==
+                              true,
+                        ),
+                        _buildBadgeModalItem(
+                          'Duke',
+                          'assets/nobles/duke_badge.webp',
+                          'assets/nobles/duke_frame.webp',
+                          const Color(0xFF8E24AA),
+                          isUnlocked:
+                              _user?.nobleTitle?.toLowerCase().contains(
+                                'duke',
+                              ) ==
+                              true,
+                        ),
+                        _buildBadgeModalItem(
+                          'Marquis',
+                          'assets/nobles/marquis_badge.webp',
+                          'assets/nobles/marquis_frame.webp',
+                          const Color(0xFFC2185B),
+                          isUnlocked:
+                              _user?.nobleTitle?.toLowerCase().contains(
+                                'marquis',
+                              ) ==
+                              true,
+                        ),
+                        _buildBadgeModalItem(
+                          'Count',
+                          'assets/nobles/count_badge.webp',
+                          'assets/nobles/count_frame.webp',
+                          const Color(0xFF1E88E5),
+                          isUnlocked:
+                              _user?.nobleTitle?.toLowerCase().contains(
+                                'count',
+                              ) ==
+                              true,
+                        ),
+                        _buildBadgeModalItem(
+                          'Viscount',
+                          'assets/nobles/viscount_badge.webp',
+                          'assets/nobles/viscount_frame.webp',
+                          const Color(0xFFFB8C00),
+                          isUnlocked:
+                              _user?.nobleTitle?.toLowerCase().contains(
+                                'viscount',
+                              ) ==
+                              true,
+                        ),
+                        _buildBadgeModalItem(
+                          'Baron',
+                          'assets/nobles/baron_badge.webp',
+                          'assets/nobles/baron_frame.webp',
+                          const Color(0xFF78909C),
+                          isUnlocked:
+                              _user?.nobleTitle?.toLowerCase().contains(
+                                'baron',
+                              ) ==
+                              true,
+                        ),
                       ],
                     ),
 
@@ -1998,16 +2706,81 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _buildBadgeModalItem('Super Admin', 'assets/roles/super_admin_tag.webp', 'assets/roles/super_admin_frame.webp', Colors.redAccent, isUnlocked: _user?.role == UserRole.admin),
-                        _buildBadgeModalItem('Admin', 'assets/roles/admin_badge.webp', 'assets/roles/admin_frame.webp', Colors.deepOrangeAccent, isUnlocked: _user?.role == UserRole.admin),
-                        _buildBadgeModalItem('Agency', 'assets/roles/agency_tag.webp', 'assets/roles/agency_frame.webp', Colors.cyan, isUnlocked: _user?.isAgency == true),
-                        _buildBadgeModalItem('BD Manager', 'assets/roles/bd_tag.webp', 'assets/roles/bd_frame.webp', Colors.teal, isUnlocked: _user?.isBd == true),
-                        _buildBadgeModalItem('Game Master', 'assets/roles/game_master_badge.webp', 'assets/roles/game_master_frame.webp', Colors.amber, isUnlocked: _user?.role == UserRole.admin),
-                        _buildBadgeModalItem('Official Host', 'assets/roles/host_badge.webp', 'assets/roles/host_frame.webp', Colors.orange, isUnlocked: _user?.isHost == true),
-                        _buildBadgeModalItem('Coin Merchant', 'assets/roles/marchent_badge.webp', 'assets/roles/marchent_frame.webp', Colors.blue, isUnlocked: _user?.isSeller == true),
-                        _buildBadgeModalItem('Customer Service', 'assets/roles/cs_badge.webp', 'assets/roles/cs_frame.webp', Colors.lightGreen, isUnlocked: _user?.role == UserRole.admin),
-                        _buildBadgeModalItem('CP Lover', 'assets/roles/lover_tag.webp', 'assets/roles/lover_frame.webp', Colors.pinkAccent, isUnlocked: _user?.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty),
-                        _buildBadgeModalItem('Top Fan', 'assets/roles/top_fan_badge.webp', 'assets/roles/top_fan_frame.webp', Colors.purpleAccent, isUnlocked: _user != null && (_user!.wealthLevel >= 3 || _user!.charmLevel >= 3)),
+                        _buildBadgeModalItem(
+                          'Super Admin',
+                          'assets/roles/super_admin_tag.webp',
+                          'assets/roles/super_admin_frame.webp',
+                          Colors.redAccent,
+                          isUnlocked: _user?.role == UserRole.admin,
+                        ),
+                        _buildBadgeModalItem(
+                          'Admin',
+                          'assets/roles/admin_badge.webp',
+                          'assets/roles/admin_frame.webp',
+                          Colors.deepOrangeAccent,
+                          isUnlocked: _user?.role == UserRole.admin,
+                        ),
+                        _buildBadgeModalItem(
+                          'Agency',
+                          'assets/roles/agency_tag.webp',
+                          'assets/roles/agency_frame.webp',
+                          Colors.cyan,
+                          isUnlocked: _user?.isAgency == true,
+                        ),
+                        _buildBadgeModalItem(
+                          'BD Manager',
+                          'assets/roles/bd_tag.webp',
+                          'assets/roles/bd_frame.webp',
+                          Colors.teal,
+                          isUnlocked: _user?.isBd == true,
+                        ),
+                        _buildBadgeModalItem(
+                          'Game Master',
+                          'assets/roles/game_master_badge.webp',
+                          'assets/roles/game_master_frame.webp',
+                          Colors.amber,
+                          isUnlocked: _user?.role == UserRole.admin,
+                        ),
+                        _buildBadgeModalItem(
+                          'Official Host',
+                          'assets/roles/host_badge.webp',
+                          'assets/roles/host_frame.webp',
+                          Colors.orange,
+                          isUnlocked: _user?.isHost == true,
+                        ),
+                        _buildBadgeModalItem(
+                          'Coin Merchant',
+                          'assets/roles/marchent_badge.webp',
+                          'assets/roles/marchent_frame.webp',
+                          Colors.blue,
+                          isUnlocked: _user?.isSeller == true,
+                        ),
+                        _buildBadgeModalItem(
+                          'Customer Service',
+                          'assets/roles/cs_badge.webp',
+                          'assets/roles/cs_frame.webp',
+                          Colors.lightGreen,
+                          isUnlocked: _user?.role == UserRole.admin,
+                        ),
+                        _buildBadgeModalItem(
+                          'CP Lover',
+                          'assets/roles/lover_tag.webp',
+                          'assets/roles/lover_frame.webp',
+                          Colors.pinkAccent,
+                          isUnlocked:
+                              _user?.cpPartnerId != null &&
+                              _user!.cpPartnerId!.isNotEmpty,
+                        ),
+                        _buildBadgeModalItem(
+                          'Top Fan',
+                          'assets/roles/top_fan_badge.webp',
+                          'assets/roles/top_fan_frame.webp',
+                          Colors.purpleAccent,
+                          isUnlocked:
+                              _user != null &&
+                              (_user!.wealthLevel >= 3 ||
+                                  _user!.charmLevel >= 3),
+                        ),
                       ],
                     ),
 
@@ -2016,21 +2789,74 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     // SECTION 3: SVIP TIERS
                     _buildSectionHeader('SVIP Royalty Tiers ⭐', () {
                       Navigator.pop(ctx);
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen()));
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SVIPCenterScreen(),
+                        ),
+                      );
                     }),
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 12,
                       runSpacing: 12,
                       children: [
-                        _buildBadgeModalItem('SVIP 15', 'assets/svip/svip15_badge.webp', 'assets/svip/svip15_frame.webp', const Color(0xFFFFD700), isUnlocked: (_user?.svipLevel ?? 0) >= 15),
-                        _buildBadgeModalItem('SVIP 14', 'assets/svip/svip14_badge.webp', 'assets/svip/svip14_frame.webp', const Color(0xFF26C6DA), isUnlocked: (_user?.svipLevel ?? 0) >= 14),
-                        _buildBadgeModalItem('SVIP 12', 'assets/svip/svip12_badge.webp', 'assets/svip/svip12_frame.webp', const Color(0xFF7E57C2), isUnlocked: (_user?.svipLevel ?? 0) >= 12),
-                        _buildBadgeModalItem('SVIP 10', 'assets/svip/svip10_badge.webp', 'assets/svip/svip10_frame.webp', const Color(0xFFE91E63), isUnlocked: (_user?.svipLevel ?? 0) >= 10),
-                        _buildBadgeModalItem('SVIP 8', 'assets/svip/svip8_badge.webp', 'assets/svip/svip8_frame.webp', const Color(0xFFFFA726), isUnlocked: (_user?.svipLevel ?? 0) >= 8),
-                        _buildBadgeModalItem('SVIP 6', 'assets/svip/svip6_badge.webp', 'assets/svip/svip6_frame.webp', const Color(0xFFAB47BC), isUnlocked: (_user?.svipLevel ?? 0) >= 6),
-                        _buildBadgeModalItem('SVIP 3', 'assets/svip/svip3_badge.webp', null, const Color(0xFF42A5F5), isUnlocked: (_user?.svipLevel ?? 0) >= 3),
-                        _buildBadgeModalItem('SVIP 1', 'assets/svip/svip1_badge.webp', null, const Color(0xFF9E9E9E), isUnlocked: (_user?.svipLevel ?? 0) >= 1),
+                        _buildBadgeModalItem(
+                          'SVIP 15',
+                          'assets/svip/svip15_badge.webp',
+                          'assets/svip/svip15_frame.webp',
+                          const Color(0xFFFFD700),
+                          isUnlocked: (_user?.svipLevel ?? 0) >= 15,
+                        ),
+                        _buildBadgeModalItem(
+                          'SVIP 14',
+                          'assets/svip/svip14_badge.webp',
+                          'assets/svip/svip14_frame.webp',
+                          const Color(0xFF26C6DA),
+                          isUnlocked: (_user?.svipLevel ?? 0) >= 14,
+                        ),
+                        _buildBadgeModalItem(
+                          'SVIP 12',
+                          'assets/svip/svip12_badge.webp',
+                          'assets/svip/svip12_frame.webp',
+                          const Color(0xFF7E57C2),
+                          isUnlocked: (_user?.svipLevel ?? 0) >= 12,
+                        ),
+                        _buildBadgeModalItem(
+                          'SVIP 10',
+                          'assets/svip/svip10_badge.webp',
+                          'assets/svip/svip10_frame.webp',
+                          const Color(0xFFE91E63),
+                          isUnlocked: (_user?.svipLevel ?? 0) >= 10,
+                        ),
+                        _buildBadgeModalItem(
+                          'SVIP 8',
+                          'assets/svip/svip8_badge.webp',
+                          'assets/svip/svip8_frame.webp',
+                          const Color(0xFFFFA726),
+                          isUnlocked: (_user?.svipLevel ?? 0) >= 8,
+                        ),
+                        _buildBadgeModalItem(
+                          'SVIP 6',
+                          'assets/svip/svip6_badge.webp',
+                          'assets/svip/svip6_frame.webp',
+                          const Color(0xFFAB47BC),
+                          isUnlocked: (_user?.svipLevel ?? 0) >= 6,
+                        ),
+                        _buildBadgeModalItem(
+                          'SVIP 3',
+                          'assets/svip/svip3_badge.webp',
+                          null,
+                          const Color(0xFF42A5F5),
+                          isUnlocked: (_user?.svipLevel ?? 0) >= 3,
+                        ),
+                        _buildBadgeModalItem(
+                          'SVIP 1',
+                          'assets/svip/svip1_badge.webp',
+                          null,
+                          const Color(0xFF9E9E9E),
+                          isUnlocked: (_user?.svipLevel ?? 0) >= 1,
+                        ),
                       ],
                     ),
                     const SizedBox(height: 30),
@@ -2050,15 +2876,30 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       children: [
         Text(
           title,
-          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Color(0xFFEDEDF2)),
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+            color: Color(0xFFEDEDF2),
+          ),
         ),
         if (onMore != null)
           GestureDetector(
             onTap: onMore,
             child: const Row(
               children: [
-                Text('Open Center', style: TextStyle(color: Color(0xFF8C38FF), fontSize: 12, fontWeight: FontWeight.bold)),
-                Icon(Icons.arrow_forward_ios_rounded, color: Color(0xFF8C38FF), size: 10),
+                Text(
+                  'Open Center',
+                  style: TextStyle(
+                    color: Color(0xFF8C38FF),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: Color(0xFF8C38FF),
+                  size: 10,
+                ),
               ],
             ),
           ),
@@ -2066,17 +2907,34 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     );
   }
 
-  Widget _buildBadgeModalItem(String name, String badgeAsset, String? frameAsset, Color accentColor, {bool isUnlocked = false}) {
+  Widget _buildBadgeModalItem(
+    String name,
+    String badgeAsset,
+    String? frameAsset,
+    Color accentColor, {
+    bool isUnlocked = false,
+  }) {
     final resolvedAsset = NobleBadgeHelper.getBadgeAsset(name) ?? badgeAsset;
     return Container(
       width: 100,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
       decoration: BoxDecoration(
-        color: isUnlocked ? accentColor.withValues(alpha: 0.15) : Colors.black.withValues(alpha: 0.35),
+        color: isUnlocked
+            ? accentColor.withValues(alpha: 0.15)
+            : Colors.black.withValues(alpha: 0.35),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: isUnlocked ? accentColor : accentColor.withValues(alpha: 0.25), width: isUnlocked ? 1.5 : 1.0),
+        border: Border.all(
+          color: isUnlocked ? accentColor : accentColor.withValues(alpha: 0.25),
+          width: isUnlocked ? 1.5 : 1.0,
+        ),
         boxShadow: isUnlocked
-            ? [BoxShadow(color: accentColor.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 1)]
+            ? [
+                BoxShadow(
+                  color: accentColor.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  spreadRadius: 1,
+                ),
+              ]
             : null,
       ),
       child: Column(
@@ -2090,7 +2948,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   resolvedAsset,
                   height: 36,
                   fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Icon(Icons.shield_rounded, color: accentColor, size: 32),
+                  errorBuilder: (_, __, ___) =>
+                      Icon(Icons.shield_rounded, color: accentColor, size: 32),
                 ),
               ),
               if (!isUnlocked)
@@ -2099,8 +2958,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   bottom: 0,
                   child: Container(
                     padding: const EdgeInsets.all(2),
-                    decoration: const BoxDecoration(color: Colors.black87, shape: BoxShape.circle),
-                    child: const Icon(Icons.lock_outline_rounded, size: 12, color: Colors.white54),
+                    decoration: const BoxDecoration(
+                      color: Colors.black87,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.lock_outline_rounded,
+                      size: 12,
+                      color: Colors.white54,
+                    ),
                   ),
                 ),
             ],
@@ -2127,7 +2993,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               ),
               child: const Text(
                 'UNLOCKED',
-                style: TextStyle(color: Colors.black, fontSize: 8, fontWeight: FontWeight.w900),
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 8,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
           ],
@@ -2153,14 +3023,35 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Relationship & Honor', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: primaryText)),
+              Text(
+                'Relationship & Honor',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: primaryText,
+                ),
+              ),
               GestureDetector(
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RelationshipScreen())),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const RelationshipScreen()),
+                ),
                 child: const Row(
                   children: [
-                    Text('View All', style: TextStyle(fontSize: 13, color: Color(0xFF8C38FF), fontWeight: FontWeight.bold)),
+                    Text(
+                      'View All',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF8C38FF),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     SizedBox(width: 2),
-                    Icon(Icons.chevron_right_rounded, size: 16, color: Color(0xFF8C38FF)),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      size: 16,
+                      color: Color(0xFF8C38FF),
+                    ),
                   ],
                 ),
               ),
@@ -2186,7 +3077,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       color: Colors.pinkAccent.withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 22),
+                    child: const Icon(
+                      Icons.favorite_rounded,
+                      color: Colors.pinkAccent,
+                      size: 22,
+                    ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -2195,7 +3090,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       children: [
                         Text(
                           'Active CP Relationship',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: primaryText),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: primaryText,
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -2208,7 +3107,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 ],
               ),
             ),
-            
+
           if (hasCustomTitles)
             Wrap(
               spacing: 8,
@@ -2219,13 +3118,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   height: 36,
                   fit: BoxFit.contain,
                   errorBuilder: (c, e, s) => Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.getCard(isDark),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: AppColors.getBorder(isDark)),
                     ),
-                    child: Text('Custom Title', style: TextStyle(color: primaryText, fontSize: 12)),
+                    child: Text(
+                      'Custom Title',
+                      style: TextStyle(color: primaryText, fontSize: 12),
+                    ),
                   ),
                 );
               }).toList(),
@@ -2253,8 +3158,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             indicatorWeight: 3,
             labelColor: primaryText,
             unselectedLabelColor: Colors.grey,
-            labelStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
-            unselectedLabelStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            labelStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
             dividerColor: Colors.transparent,
             tabs: const [
               Tab(text: 'Post'),
@@ -2293,29 +3204,58 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     final primaryText = AppColors.getTextPrimary(isDark);
     final secondaryText = AppColors.getTextSecondary(isDark);
     final auth = context.watch<AuthProvider>();
-    final isMe = auth.currentUser.id.isNotEmpty && (
-      auth.currentUser.id == _user!.id ||
-      auth.currentUser.username == _user!.username ||
-      (auth.currentUser.name.isNotEmpty && _user!.name.isNotEmpty && auth.currentUser.name.toLowerCase() == _user!.name.toLowerCase()) ||
-      (auth.currentUser.displayName.isNotEmpty && _user!.displayName.isNotEmpty && auth.currentUser.displayName.toLowerCase() == _user!.displayName.toLowerCase())
-    );
+    final isMe =
+        auth.currentUser.id.isNotEmpty &&
+        (auth.currentUser.id == _user!.id ||
+            auth.currentUser.username == _user!.username ||
+            (auth.currentUser.name.isNotEmpty &&
+                _user!.name.isNotEmpty &&
+                auth.currentUser.name.toLowerCase() ==
+                    _user!.name.toLowerCase()) ||
+            (auth.currentUser.displayName.isNotEmpty &&
+                _user!.displayName.isNotEmpty &&
+                auth.currentUser.displayName.toLowerCase() ==
+                    _user!.displayName.toLowerCase()));
 
     final social = context.watch<SocialProvider>();
     final userPosts = social.posts.where((p) {
-      if (p.author.id.isNotEmpty && _user!.id.isNotEmpty && p.author.id == _user!.id) return true;
-      if (p.author.username.isNotEmpty && _user!.username.isNotEmpty && p.author.username.toLowerCase() == _user!.username.toLowerCase()) return true;
-      if (p.author.displayName.isNotEmpty && _user!.displayName.isNotEmpty && p.author.displayName.toLowerCase() == _user!.displayName.toLowerCase()) return true;
+      if (p.author.id.isNotEmpty &&
+          _user!.id.isNotEmpty &&
+          p.author.id == _user!.id)
+        return true;
+      if (p.author.username.isNotEmpty &&
+          _user!.username.isNotEmpty &&
+          p.author.username.toLowerCase() == _user!.username.toLowerCase())
+        return true;
+      if (p.author.displayName.isNotEmpty &&
+          _user!.displayName.isNotEmpty &&
+          p.author.displayName.toLowerCase() ==
+              _user!.displayName.toLowerCase())
+        return true;
       return false;
     }).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Bio', style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.w500)),
+        const Text(
+          'Bio',
+          style: TextStyle(
+            color: Colors.grey,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 6),
         Text(
-          _user!.bio.isNotEmpty ? _user!.bio : 'Welcome to my official ZeParty profile! âœ¨',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: primaryText),
+          _user!.bio.isNotEmpty
+              ? _user!.bio
+              : 'Welcome to my official ZeParty profile! âœ¨',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: primaryText,
+          ),
         ),
 
         const SizedBox(height: 24),
@@ -2334,12 +3274,20 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     color: const Color(0xFF8C38FF).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.video_collection_rounded, color: Color(0xFF8C38FF), size: 18),
+                  child: const Icon(
+                    Icons.video_collection_rounded,
+                    color: Color(0xFF8C38FF),
+                    size: 18,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   isMe ? 'My Posts & Videos' : 'Posts & Videos',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: primaryText),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: primaryText,
+                  ),
                 ),
               ],
             ),
@@ -2352,7 +3300,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               ),
               child: Text(
                 '${userPosts.length} items',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: secondaryText),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: secondaryText,
+                ),
               ),
             ),
           ],
@@ -2371,15 +3323,27 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             ),
             child: Column(
               children: [
-                Icon(Icons.video_library_outlined, size: 40, color: Colors.grey.withValues(alpha: 0.6)),
+                Icon(
+                  Icons.video_library_outlined,
+                  size: 40,
+                  color: Colors.grey.withValues(alpha: 0.6),
+                ),
                 const SizedBox(height: 10),
                 Text(
-                  isMe ? 'You haven\'t uploaded any posts yet' : 'No posts uploaded yet',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: primaryText),
+                  isMe
+                      ? 'You haven\'t uploaded any posts yet'
+                      : 'No posts uploaded yet',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: primaryText,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  isMe ? 'Share videos, photos and moments from the Feed tab!' : 'When this creator uploads videos or photos, they will appear here.',
+                  isMe
+                      ? 'Share videos, photos and moments from the Feed tab!'
+                      : 'When this creator uploads videos or photos, they will appear here.',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, color: secondaryText),
                 ),
@@ -2407,17 +3371,20 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
   }
 
   Widget _buildUserPostGridItem(PostModel post, bool isMe, bool isDark) {
-    final hasMedia = post.imageUrls.isNotEmpty && post.imageUrls.first.isNotEmpty;
+    final hasMedia =
+        post.imageUrls.isNotEmpty && post.imageUrls.first.isNotEmpty;
     final mediaPath = hasMedia ? post.imageUrls.first : '';
     final cleanPath = mediaPath.replaceFirst('file://', '');
     final lower = cleanPath.toLowerCase();
-    final isVideo = lower.endsWith('.mp4') ||
+    final isVideo =
+        lower.endsWith('.mp4') ||
         lower.endsWith('.mov') ||
         lower.endsWith('.m4v') ||
         lower.endsWith('.webm') ||
         cleanPath.contains('/videos/');
 
-    final isLocal = !cleanPath.startsWith('http://') && !cleanPath.startsWith('https://');
+    final isLocal =
+        !cleanPath.startsWith('http://') && !cleanPath.startsWith('https://');
     final localFile = isLocal && cleanPath.isNotEmpty ? File(cleanPath) : null;
 
     return GestureDetector(
@@ -2434,7 +3401,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           fit: StackFit.expand,
           children: [
             // Media thumbnail or Gradient Fallback
-            if (hasMedia && isLocal && localFile != null && localFile.existsSync())
+            if (hasMedia &&
+                isLocal &&
+                localFile != null &&
+                localFile.existsSync())
               Image.file(
                 localFile,
                 fit: BoxFit.cover,
@@ -2455,7 +3425,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 top: 8,
                 right: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.65),
                     borderRadius: BorderRadius.circular(8),
@@ -2463,9 +3436,20 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.play_arrow_rounded, color: Colors.white, size: 14),
+                      Icon(
+                        Icons.play_arrow_rounded,
+                        color: Colors.white,
+                        size: 14,
+                      ),
                       SizedBox(width: 2),
-                      Text('VIDEO', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900)),
+                      Text(
+                        'VIDEO',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -2509,22 +3493,40 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       children: [
                         Row(
                           children: [
-                            const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 13),
+                            const Icon(
+                              Icons.favorite_rounded,
+                              color: Colors.pinkAccent,
+                              size: 13,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               '${post.likes}',
-                              style: const TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ],
                         ),
                         if (isMe)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.redAccent.withValues(alpha: 0.8),
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: const Text('Manage', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                            child: const Text(
+                              'Manage',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                       ],
                     ),
@@ -2566,20 +3568,28 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     );
   }
 
-  void _showPostDetailModal(BuildContext context, PostModel post, bool isMe, bool isDark) {
+  void _showPostDetailModal(
+    BuildContext context,
+    PostModel post,
+    bool isMe,
+    bool isDark,
+  ) {
     final primaryText = AppColors.getTextPrimary(isDark);
     final secondaryText = AppColors.getTextSecondary(isDark);
-    final hasMedia = post.imageUrls.isNotEmpty && post.imageUrls.first.isNotEmpty;
+    final hasMedia =
+        post.imageUrls.isNotEmpty && post.imageUrls.first.isNotEmpty;
     final mediaPath = hasMedia ? post.imageUrls.first : '';
     final cleanPath = mediaPath.replaceFirst('file://', '');
     final lower = cleanPath.toLowerCase();
-    final isVideo = lower.endsWith('.mp4') ||
+    final isVideo =
+        lower.endsWith('.mp4') ||
         lower.endsWith('.mov') ||
         lower.endsWith('.m4v') ||
         lower.endsWith('.webm') ||
         cleanPath.contains('/videos/');
 
-    final isLocal = !cleanPath.startsWith('http://') && !cleanPath.startsWith('https://');
+    final isLocal =
+        !cleanPath.startsWith('http://') && !cleanPath.startsWith('https://');
     final localFile = isLocal && cleanPath.isNotEmpty ? File(cleanPath) : null;
 
     showModalBottomSheet(
@@ -2613,7 +3623,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               Row(
                 children: [
                   UserAvatar(
-                    imageUrl: post.author.avatarUrl.isNotEmpty ? post.author.avatarUrl : _user?.avatarUrl,
+                    imageUrl: post.author.avatarUrl.isNotEmpty
+                        ? post.author.avatarUrl
+                        : _user?.avatarUrl,
                     name: post.author.displayName,
                     radius: 20,
                   ),
@@ -2623,8 +3635,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          post.author.displayName.isNotEmpty ? post.author.displayName : (_user?.displayName ?? 'Creator'),
-                          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: primaryText),
+                          post.author.displayName.isNotEmpty
+                              ? post.author.displayName
+                              : (_user?.displayName ?? 'Creator'),
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: primaryText,
+                          ),
                         ),
                         Text(
                           AppFormatters.formatTimeAgo(post.createdAt),
@@ -2649,8 +3667,18 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   child: isVideo
                       ? _ProfileVideoPlayerWidget(videoUrl: cleanPath)
                       : (isLocal && localFile != null && localFile.existsSync()
-                          ? Image.file(localFile, width: double.infinity, height: 260, fit: BoxFit.cover)
-                          : Image.network(cleanPath, width: double.infinity, height: 260, fit: BoxFit.cover)),
+                            ? Image.file(
+                                localFile,
+                                width: double.infinity,
+                                height: 260,
+                                fit: BoxFit.cover,
+                              )
+                            : Image.network(
+                                cleanPath,
+                                width: double.infinity,
+                                height: 260,
+                                fit: BoxFit.cover,
+                              )),
                 ),
                 const SizedBox(height: 14),
               ],
@@ -2659,14 +3687,21 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
               if (post.content.isNotEmpty) ...[
                 Text(
                   post.content,
-                  style: TextStyle(fontSize: 14, height: 1.4, color: primaryText),
+                  style: TextStyle(
+                    fontSize: 14,
+                    height: 1.4,
+                    color: primaryText,
+                  ),
                 ),
                 const SizedBox(height: 14),
               ],
 
               // Stats Row (Likes, Comments, Shares)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.getSurface(isDark),
                   borderRadius: BorderRadius.circular(14),
@@ -2677,23 +3712,56 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 18),
+                        const Icon(
+                          Icons.favorite_rounded,
+                          color: Colors.pinkAccent,
+                          size: 18,
+                        ),
                         const SizedBox(width: 6),
-                        Text('${post.likes} Likes', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: primaryText)),
+                        Text(
+                          '${post.likes} Likes',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: primaryText,
+                          ),
+                        ),
                       ],
                     ),
                     Row(
                       children: [
-                        const Icon(Icons.chat_bubble_outline_rounded, color: Colors.blueAccent, size: 18),
+                        const Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          color: Colors.blueAccent,
+                          size: 18,
+                        ),
                         const SizedBox(width: 6),
-                        Text('${post.comments} Comments', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: primaryText)),
+                        Text(
+                          '${post.comments} Comments',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: primaryText,
+                          ),
+                        ),
                       ],
                     ),
                     Row(
                       children: [
-                        const Icon(Icons.share_outlined, color: Colors.greenAccent, size: 18),
+                        const Icon(
+                          Icons.share_outlined,
+                          color: Colors.greenAccent,
+                          size: 18,
+                        ),
                         const SizedBox(width: 6),
-                        Text('${post.shares} Shares', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: primaryText)),
+                        Text(
+                          '${post.shares} Shares',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: primaryText,
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -2711,13 +3779,18 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       backgroundColor: Colors.redAccent,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                       elevation: 0,
                     ),
                     icon: const Icon(Icons.delete_outline_rounded, size: 20),
                     label: const Text(
                       'Delete This Upload',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     onPressed: () {
                       Navigator.pop(ctx);
@@ -2742,9 +3815,16 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Row(
           children: [
-            Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.redAccent,
+              size: 24,
+            ),
             SizedBox(width: 8),
-            Text('Delete Upload?', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            Text(
+              'Delete Upload?',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
           ],
         ),
         content: const Text(
@@ -2760,7 +3840,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () async {
               Navigator.pop(d);
@@ -2788,7 +3870,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 }
               }
             },
-            child: const Text('Delete Permanently', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Delete Permanently',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -2799,12 +3884,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
     final primaryText = AppColors.getTextPrimary(isDark);
     final secondaryText = AppColors.getTextSecondary(isDark);
     final cardBg = isDark ? const Color(0xFF1E1F28) : Colors.white;
-    final borderColor = isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.06);
+    final borderColor = isDark
+        ? Colors.white.withOpacity(0.08)
+        : Colors.black.withOpacity(0.06);
 
     final rel = _relationData ?? {};
     final hasRelationship = rel['hasRelationship'] == true;
-    final partner = rel['partner'] is Map<String, dynamic> ? rel['partner'] as Map<String, dynamic> : null;
-    final partnerName = partner?['displayName']?.toString() ?? partner?['username']?.toString() ?? 'CP Partner';
+    final partner = rel['partner'] is Map<String, dynamic>
+        ? rel['partner'] as Map<String, dynamic>
+        : null;
+    final partnerName =
+        partner?['displayName']?.toString() ??
+        partner?['username']?.toString() ??
+        'CP Partner';
     final partnerAvatar = partner?['avatarUrl']?.toString() ?? '';
     final partnerId = partner?['id']?.toString() ?? '';
     final daysTogether = rel['daysTogether']?.toString() ?? '1';
@@ -2813,11 +3905,21 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
 
     final agency = rel['agency'] is Map<String, dynamic>
         ? rel['agency'] as Map<String, dynamic>
-        : (rel['agencyInfo'] is Map<String, dynamic> ? rel['agencyInfo'] as Map<String, dynamic> : null);
-    final agencyName = agency?['agencyName']?.toString() ?? agency?['name']?.toString() ?? 'ZeParty Official Talent';
-    final agencyId = agency?['agencyId']?.toString() ?? agency?['id']?.toString() ?? 'ZP-AG-01';
+        : (rel['agencyInfo'] is Map<String, dynamic>
+              ? rel['agencyInfo'] as Map<String, dynamic>
+              : null);
+    final agencyName =
+        agency?['agencyName']?.toString() ??
+        agency?['name']?.toString() ??
+        'ZeParty Official Talent';
+    final agencyId =
+        agency?['agencyId']?.toString() ??
+        agency?['id']?.toString() ??
+        'ZP-AG-01';
 
-    final sponsors = (rel['sponsors'] is List ? rel['sponsors'] as List : (rel['topSponsors'] is List ? rel['topSponsors'] as List : []));
+    final sponsors = (rel['sponsors'] is List
+        ? rel['sponsors'] as List
+        : (rel['topSponsors'] is List ? rel['topSponsors'] as List : []));
 
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -2831,7 +3933,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
             decoration: BoxDecoration(
               color: cardBg,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: hasRelationship ? Colors.pinkAccent.withOpacity(0.3) : borderColor),
+              border: Border.all(
+                color: hasRelationship
+                    ? Colors.pinkAccent.withOpacity(0.3)
+                    : borderColor,
+              ),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.04),
@@ -2851,7 +3957,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         color: Colors.pinkAccent.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 18),
+                      child: const Icon(
+                        Icons.favorite_rounded,
+                        color: Colors.pinkAccent,
+                        size: 18,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -2865,7 +3975,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     const Spacer(),
                     if (hasRelationship)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
                             colors: [Color(0xFFFF416C), Color(0xFFFF4B2B)],
@@ -2874,7 +3987,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         ),
                         child: Text(
                           'LV.$cpLevel CP',
-                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                   ],
@@ -2886,16 +4003,30 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                       // User DP
                       CircleAvatar(
                         radius: 24,
-                        backgroundColor: AppColors.getPrimary(isDark).withOpacity(0.2),
-                        backgroundImage: (_user?.avatarUrl != null && _user!.avatarUrl.isNotEmpty)
+                        backgroundColor: AppColors.getPrimary(
+                          isDark,
+                        ).withOpacity(0.2),
+                        backgroundImage:
+                            (_user?.avatarUrl != null &&
+                                _user!.avatarUrl.isNotEmpty)
                             ? NetworkImage(_user!.avatarUrl)
                             : null,
-                        child: (_user?.avatarUrl == null || _user!.avatarUrl.isEmpty)
-                            ? Text((_user?.name ?? 'U').substring(0, 1).toUpperCase())
+                        child:
+                            (_user?.avatarUrl == null ||
+                                _user!.avatarUrl.isEmpty)
+                            ? Text(
+                                (_user?.name ?? 'U')
+                                    .substring(0, 1)
+                                    .toUpperCase(),
+                              )
                             : null,
                       ),
                       const SizedBox(width: 8),
-                      const Icon(Icons.favorite, color: Colors.pinkAccent, size: 20),
+                      const Icon(
+                        Icons.favorite,
+                        color: Colors.pinkAccent,
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       // Partner DP
                       GestureDetector(
@@ -2904,7 +4035,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => UserProfileDetailsScreen(userId: partnerId),
+                                builder: (_) =>
+                                    UserProfileDetailsScreen(userId: partnerId),
                               ),
                             );
                           }
@@ -2912,9 +4044,16 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         child: CircleAvatar(
                           radius: 24,
                           backgroundColor: Colors.pinkAccent.withOpacity(0.2),
-                          backgroundImage: partnerAvatar.isNotEmpty ? NetworkImage(partnerAvatar) : null,
+                          backgroundImage: partnerAvatar.isNotEmpty
+                              ? NetworkImage(partnerAvatar)
+                              : null,
                           child: partnerAvatar.isEmpty
-                              ? Text(partnerName.substring(0, 1).toUpperCase(), style: const TextStyle(color: Colors.pinkAccent))
+                              ? Text(
+                                  partnerName.substring(0, 1).toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Colors.pinkAccent,
+                                  ),
+                                )
                               : null,
                         ),
                       ),
@@ -2925,14 +4064,21 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                           children: [
                             Text(
                               partnerName,
-                              style: TextStyle(color: primaryText, fontWeight: FontWeight.bold, fontSize: 13),
+                              style: TextStyle(
+                                color: primaryText,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 2),
                             Text(
                               '$daysTogether days together • $ringBadge',
-                              style: TextStyle(color: secondaryText, fontSize: 11),
+                              style: TextStyle(
+                                color: secondaryText,
+                                fontSize: 11,
+                              ),
                             ),
                           ],
                         ),
@@ -2946,10 +4092,16 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         width: 44,
                         height: 44,
                         decoration: BoxDecoration(
-                          color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.04),
+                          color: isDark
+                              ? Colors.white.withOpacity(0.05)
+                              : Colors.black.withOpacity(0.04),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(Icons.favorite_border_rounded, color: secondaryText, size: 22),
+                        child: Icon(
+                          Icons.favorite_border_rounded,
+                          color: secondaryText,
+                          size: 22,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -2958,12 +4110,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                           children: [
                             Text(
                               'No Active Couple Partner',
-                              style: TextStyle(color: primaryText, fontWeight: FontWeight.w600, fontSize: 13),
+                              style: TextStyle(
+                                color: primaryText,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
                             ),
                             const SizedBox(height: 2),
                             Text(
                               'Send relationship cards in room or feed to pair up.',
-                              style: TextStyle(color: secondaryText, fontSize: 11),
+                              style: TextStyle(
+                                color: secondaryText,
+                                fontSize: 11,
+                              ),
                             ),
                           ],
                         ),
@@ -3003,7 +4162,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     ),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.apartment_rounded, color: Colors.white, size: 22),
+                  child: const Icon(
+                    Icons.apartment_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -3012,7 +4175,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                     children: [
                       Text(
                         agencyName,
-                        style: TextStyle(color: primaryText, fontWeight: FontWeight.bold, fontSize: 13),
+                        style: TextStyle(
+                          color: primaryText,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -3025,7 +4192,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.getPrimary(isDark).withOpacity(0.12),
                     borderRadius: BorderRadius.circular(20),
@@ -3072,7 +4242,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                         color: Colors.amber.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(Icons.military_tech_rounded, color: Colors.amber, size: 18),
+                      child: const Icon(
+                        Icons.military_tech_rounded,
+                        color: Colors.amber,
+                        size: 18,
+                      ),
                     ),
                     const SizedBox(width: 8),
                     Text(
@@ -3104,9 +4278,17 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                 else
                   Column(
                     children: List.generate(sponsors.length.clamp(0, 5), (i) {
-                      final item = sponsors[i] is Map<String, dynamic> ? sponsors[i] as Map<String, dynamic> : {};
-                      final sName = item['displayName']?.toString() ?? item['username']?.toString() ?? 'Sponsor #${i + 1}';
-                      final sCoins = item['coins']?.toString() ?? item['totalCoins']?.toString() ?? '0';
+                      final item = sponsors[i] is Map<String, dynamic>
+                          ? sponsors[i] as Map<String, dynamic>
+                          : {};
+                      final sName =
+                          item['displayName']?.toString() ??
+                          item['username']?.toString() ??
+                          'Sponsor #${i + 1}';
+                      final sCoins =
+                          item['coins']?.toString() ??
+                          item['totalCoins']?.toString() ??
+                          '0';
                       final sAvatar = item['avatarUrl']?.toString() ?? '';
 
                       return Padding(
@@ -3116,7 +4298,11 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                             Text(
                               '${i + 1}',
                               style: TextStyle(
-                                color: i == 0 ? Colors.amber : (i == 1 ? Colors.grey[400] : secondaryText),
+                                color: i == 0
+                                    ? Colors.amber
+                                    : (i == 1
+                                          ? Colors.grey[400]
+                                          : secondaryText),
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13,
                               ),
@@ -3125,25 +4311,45 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
                             CircleAvatar(
                               radius: 16,
                               backgroundColor: Colors.amber.withOpacity(0.2),
-                              backgroundImage: sAvatar.isNotEmpty ? NetworkImage(sAvatar) : null,
+                              backgroundImage: sAvatar.isNotEmpty
+                                  ? NetworkImage(sAvatar)
+                                  : null,
                               child: sAvatar.isEmpty
-                                  ? Text(sName.substring(0, 1).toUpperCase(), style: const TextStyle(fontSize: 10, color: Colors.amber))
+                                  ? Text(
+                                      sName.substring(0, 1).toUpperCase(),
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.amber,
+                                      ),
+                                    )
                                   : null,
                             ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
                                 sName,
-                                style: TextStyle(color: primaryText, fontSize: 12, fontWeight: FontWeight.w600),
+                                style: TextStyle(
+                                  color: primaryText,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const Icon(Icons.monetization_on_rounded, color: Colors.amber, size: 14),
+                            const Icon(
+                              Icons.monetization_on_rounded,
+                              color: Colors.amber,
+                              size: 14,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               sCoins,
-                              style: const TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                color: Colors.amber,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ],
                         ),
@@ -3165,14 +4371,25 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
       alignment: Alignment.center,
       child: Column(
         children: [
-          const Icon(Icons.workspace_premium_rounded, size: 44, color: Colors.amber),
+          const Icon(
+            Icons.workspace_premium_rounded,
+            size: 44,
+            color: Colors.amber,
+          ),
           const SizedBox(height: 10),
           Text(
             'ZeParty Honor Hall of Fame',
-            style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16),
+            style: TextStyle(
+              color: AppColors.getTextPrimary(isDark),
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
           ),
           const SizedBox(height: 4),
-          const Text('Top Supporter & Special Seasonal Honors', style: TextStyle(color: Colors.grey, fontSize: 12)),
+          const Text(
+            'Top Supporter & Special Seasonal Honors',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
         ],
       ),
     );
@@ -3188,10 +4405,17 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen> wit
           const SizedBox(height: 10),
           Text(
             'ZeParty Seasonal Glory Titles',
-            style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16),
+            style: TextStyle(
+              color: AppColors.getTextPrimary(isDark),
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
           ),
           const SizedBox(height: 4),
-          const Text('Authorized Ranking Badges & Distinctive Badges', style: TextStyle(color: Colors.grey, fontSize: 12)),
+          const Text(
+            'Authorized Ranking Badges & Distinctive Badges',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
         ],
       ),
     );
@@ -3203,7 +4427,8 @@ class _ProfileVideoPlayerWidget extends StatefulWidget {
   const _ProfileVideoPlayerWidget({required this.videoUrl});
 
   @override
-  State<_ProfileVideoPlayerWidget> createState() => _ProfileVideoPlayerWidgetState();
+  State<_ProfileVideoPlayerWidget> createState() =>
+      _ProfileVideoPlayerWidgetState();
 }
 
 class _ProfileVideoPlayerWidgetState extends State<_ProfileVideoPlayerWidget> {
@@ -3261,7 +4486,10 @@ class _ProfileVideoPlayerWidgetState extends State<_ProfileVideoPlayerWidget> {
             children: [
               Icon(Icons.videocam_off_rounded, color: Colors.grey, size: 36),
               SizedBox(height: 6),
-              Text('Video unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
+              Text(
+                'Video unavailable',
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
             ],
           ),
         ),
@@ -3274,7 +4502,10 @@ class _ProfileVideoPlayerWidgetState extends State<_ProfileVideoPlayerWidget> {
         height: 240,
         color: Colors.black54,
         child: const Center(
-          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF8C38FF)),
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: Color(0xFF8C38FF),
+          ),
         ),
       );
     }
@@ -3282,7 +4513,9 @@ class _ProfileVideoPlayerWidgetState extends State<_ProfileVideoPlayerWidget> {
     return GestureDetector(
       onTap: () {
         setState(() {
-          _controller!.value.isPlaying ? _controller!.pause() : _controller!.play();
+          _controller!.value.isPlaying
+              ? _controller!.pause()
+              : _controller!.play();
         });
       },
       child: Stack(
@@ -3308,7 +4541,11 @@ class _ProfileVideoPlayerWidgetState extends State<_ProfileVideoPlayerWidget> {
                 color: Colors.black.withValues(alpha: 0.5),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 36),
+              child: const Icon(
+                Icons.play_arrow_rounded,
+                color: Colors.white,
+                size: 36,
+              ),
             ),
         ],
       ),

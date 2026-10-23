@@ -6,18 +6,32 @@ import 'animated_room_reaction.dart';
 class EmojiReactionOverlay extends StatelessWidget {
   final String roomId;
   final Offset? fallbackPosition;
+  final bool isLiveRoom;
 
   const EmojiReactionOverlay({
     super.key,
     required this.roomId,
     this.fallbackPosition,
+    this.isLiveRoom = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final size = mediaQuery.size;
-    final defaultFallback = fallbackPosition ?? Offset(size.width * 0.5, size.height * 0.48);
+    final keyboardHeight = mediaQuery.viewInsets.bottom;
+    final topPadding = mediaQuery.padding.top;
+
+    // Calculate central stage bounds accounting for safe insets, header, and keyboard
+    final headerBottom = topPadding + 64.0;
+    final bottomControlsHeight = keyboardHeight > 0 ? 0.0 : (64.0 + mediaQuery.padding.bottom);
+    final visibleStageTop = headerBottom;
+    final visibleStageBottom = size.height - keyboardHeight - bottomControlsHeight;
+    final liveCenterY = visibleStageTop + ((visibleStageBottom - visibleStageTop) / 2);
+    final liveCenterX = size.width / 2;
+    final liveStageCenter = Offset(liveCenterX, liveCenterY);
+
+    final defaultFallback = fallbackPosition ?? (isLiveRoom ? liveStageCenter : Offset(size.width * 0.5, size.height * 0.48));
 
     return IgnorePointer(
       child: Consumer<EmojiReactionProvider>(
@@ -28,27 +42,33 @@ class EmojiReactionOverlay extends StatelessWidget {
           return Stack(
             clipBehavior: Clip.none,
             children: activeReactions.map((reaction) {
-              // 1. Try position by seatId anchor (Party Room)
-              Offset? startPos;
+              Offset startPos;
               bool isSeated = false;
-              if (reaction.seatId != null) {
-                startPos = provider.getAnchorPosition('party_seat_${reaction.seatId}');
-                if (startPos != null) isSeated = true;
+
+              if (isLiveRoom) {
+                // In live rooms, center reaction by its visual center on the central live room stage
+                startPos = liveStageCenter;
+              } else {
+                // 1. Try position by seatId anchor (Party Room)
+                Offset? seatPos;
+                if (reaction.seatId != null) {
+                  seatPos = provider.getAnchorPosition('party_seat_${reaction.seatId}');
+                  if (seatPos != null) isSeated = true;
+                }
+
+                // 2. Try position by senderId anchor
+                if (seatPos == null) {
+                  seatPos = provider.getAnchorPosition('user_${reaction.senderId}');
+                  if (seatPos != null) isSeated = true;
+                }
+
+                // 3. Fallback position for audience / non-seated
+                startPos = seatPos ?? defaultFallback;
               }
 
-              // 2. Try position by senderId anchor
-              if (startPos == null) {
-                startPos = provider.getAnchorPosition('user_${reaction.senderId}');
-                if (startPos != null) isSeated = true;
-              }
-
-              // 3. Try host anchor fallback
-              startPos ??= provider.getAnchorPosition('live_host_avatar');
-
-              // 4. Default screen position fallback (audience reaction above chat)
-              startPos ??= defaultFallback;
-
-              final double reactionSize = isSeated ? 100.0 : 120.0;
+              final double reactionSize = isLiveRoom
+                  ? (size.width * 0.35).clamp(120.0, 140.0)
+                  : (isSeated ? 100.0 : 120.0);
 
               return Positioned(
                 left: startPos.dx - (reactionSize / 2),

@@ -269,11 +269,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       context.read<LiveGiftProvider>().setActiveRoom(widget.room.id);
       final emojiProv = context.read<EmojiReactionProvider>();
       emojiProv.setActiveRoom(widget.room.id);
-      emojiProv.registerAnchor('live_host_avatar', _hostAvatarKey);
-      emojiProv.registerAnchor('user_${widget.room.host.id}', _hostAvatarKey);
-      
-      // Mock SVIP entry for demonstration
-      emojiProv.registerAnchor('user_${currentUser.id}', _hostAvatarKey);
 
       _liveProvClosedSub = liveProv.onRoomClosed.listen((data) {
         final closedRoomId = data['roomId']?.toString();
@@ -1720,13 +1715,161 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     );
 
     if (action == 'close' && mounted) {
+      final duration = _streamDurationSeconds;
+      final peakViewers = liveProvider.viewers.length > (liveProvider.activeRoom?.viewerCount ?? widget.room.viewerCount)
+          ? liveProvider.viewers.length
+          : (liveProvider.activeRoom?.viewerCount ?? widget.room.viewerCount);
+      final coinsEarned = liveProvider.giftPoints;
+
       try {
         await liveProvider.closeRoom();
       } catch (_) {}
+
       if (mounted) {
-        Navigator.pop(context);
+        await _showHostStreamSummaryDialog(
+          context,
+          durationSeconds: duration,
+          viewersCount: peakViewers,
+          coinsEarned: coinsEarned,
+        );
+        if (mounted) {
+          Navigator.pop(context);
+        }
       }
     }
+  }
+
+  Future<void> _showHostStreamSummaryDialog(
+    BuildContext context, {
+    required int durationSeconds,
+    required int viewersCount,
+    required int coinsEarned,
+  }) async {
+    final hours = durationSeconds ~/ 3600;
+    final minutes = (durationSeconds % 3600) ~/ 60;
+    final seconds = durationSeconds % 60;
+    final durationStr = hours > 0
+        ? '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}'
+        : '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF18132B),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          contentPadding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFFF9100), Color(0xFFFF3D00)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF9100).withValues(alpha: 0.35),
+                      blurRadius: 16,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.emoji_events_rounded, color: Colors.white, size: 36),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Broadcast Ended',
+                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Here is a summary of your live stream session:',
+                style: TextStyle(color: Colors.white60, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildSummaryStat(
+                      icon: Icons.timer_rounded,
+                      iconColor: Colors.cyanAccent,
+                      label: 'Duration',
+                      value: durationStr,
+                    ),
+                    Container(width: 1, height: 36, color: Colors.white12),
+                    _buildSummaryStat(
+                      icon: Icons.people_alt_rounded,
+                      iconColor: Colors.amberAccent,
+                      label: 'Viewers',
+                      value: viewersCount.toString(),
+                    ),
+                    Container(width: 1, height: 36, color: Colors.white12),
+                    _buildSummaryStat(
+                      icon: Icons.monetization_on_rounded,
+                      iconColor: Colors.pinkAccent,
+                      label: 'Coins/Gifts',
+                      value: coinsEarned.toString(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFB524E4),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    elevation: 0,
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Back to Home', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryStat({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required String value,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: iconColor, size: 20),
+        const SizedBox(height: 6),
+        Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 2),
+        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+      ],
+    );
   }
 
   @override
@@ -2165,6 +2308,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               chatBubble: equippedBubble,
                               isSystem: isSystem,
                               isGift: msg.isGift,
+                              giftId: msg.gift?.id,
+                              giftName: msg.gift?.name,
+                              giftIcon: msg.gift?.icon,
                             );
                           },
                         ),
@@ -2553,8 +2699,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
           // TikTok User Join Entrance Banner
           TikTokUserJoinBanner(roomId: widget.room.id, bottomOffset: 240),
 
-          // Realtime Animated Emoji Reaction Overlay (Top of Stack)
-          EmojiReactionOverlay(roomId: widget.room.id),
+          // Realtime Animated Emoji Reaction Overlay (Top of Stack) - Issue 45 Centered in Live Stage
+          EmojiReactionOverlay(roomId: widget.room.id, isLiveRoom: true),
 
           // Onscreen 3D Gift Animation Overlay
           GiftAnimationOverlay(key: _giftOverlayKey),
@@ -3115,7 +3261,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           context: context,
                           isScrollControlled: true,
                           backgroundColor: Colors.transparent,
-                          builder: (_) => const RocketGameSheet(),
+                          builder: (_) => RocketGameSheet(roomId: widget.room.id),
                         );
                       },
                     ),

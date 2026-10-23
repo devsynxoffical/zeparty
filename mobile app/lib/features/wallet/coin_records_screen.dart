@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
@@ -8,6 +9,7 @@ import '../../providers/wallet_provider.dart';
 
 class CoinRecordItem {
   final String id;
+  final String? referenceId;
   final String category;
   final String description;
   final int amount; // positive for credit/income, negative for debit/expense
@@ -19,6 +21,7 @@ class CoinRecordItem {
 
   const CoinRecordItem({
     required this.id,
+    this.referenceId,
     required this.category,
     required this.description,
     required this.amount,
@@ -30,6 +33,7 @@ class CoinRecordItem {
   });
 
   bool get isIncome => amount > 0;
+  String get displayTransactionId => (referenceId != null && referenceId!.isNotEmpty) ? referenceId! : id;
 }
 
 class CoinRecordsScreen extends StatefulWidget {
@@ -54,16 +58,18 @@ class _CoinRecordsScreenState extends State<CoinRecordsScreen> with SingleTicker
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<WalletProvider>().fetchLedger();
+      context.read<WalletProvider>().fetchCoinRecords(refresh: true);
     });
   }
 
   List<CoinRecordItem> _getRecordsFromWallet(WalletProvider wallet) {
-    if (wallet.transactions.isNotEmpty) {
-      return wallet.transactions.map((tx) {
+    final list = wallet.coinRecords.isNotEmpty ? wallet.coinRecords : wallet.transactions;
+    if (list.isNotEmpty) {
+      return list.map((tx) {
         final amt = tx.amount.round();
         return CoinRecordItem(
           id: tx.id,
+          referenceId: tx.referenceId,
           category: tx.type,
           description: tx.title,
           amount: amt,
@@ -149,7 +155,7 @@ class _CoinRecordsScreenState extends State<CoinRecordsScreen> with SingleTicker
 
               const SizedBox(height: 20),
 
-              _buildDetailRow('Transaction ID', record.id, isDark),
+              _buildDetailRow('Transaction ID', record.displayTransactionId, isDark),
               _buildDetailRow('Category', record.category, isDark),
               _buildDetailRow('Status', record.status, isDark, isHighlight: true),
               _buildDetailRow('Party / Recipient', record.senderOrReceiver, isDark),
@@ -167,9 +173,10 @@ class _CoinRecordsScreenState extends State<CoinRecordsScreen> with SingleTicker
                 icon: const Icon(Icons.copy_rounded, size: 18),
                 label: const Text('Copy Transaction ID'),
                 onPressed: () {
+                  Clipboard.setData(ClipboardData(text: record.displayTransactionId));
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Copied TX ID: ${record.id}')),
+                    SnackBar(content: Text('Copied TX ID: ${record.displayTransactionId}')),
                   );
                 },
               ),
@@ -319,55 +326,103 @@ class _CoinRecordsScreenState extends State<CoinRecordsScreen> with SingleTicker
 
   Widget _buildRecordsList(int tabIndex, bool isDark) {
     final wallet = context.watch<WalletProvider>();
+
+    if (wallet.isLoadingCoinRecords && wallet.coinRecords.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (wallet.coinRecordsError != null && wallet.coinRecords.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.wifi_off_rounded, size: 48, color: Colors.redAccent),
+              const SizedBox(height: 12),
+              Text(
+                wallet.coinRecordsError!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.getPrimary(isDark),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => wallet.fetchCoinRecords(refresh: true),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final records = _filterRecords(tabIndex, wallet);
 
     if (records.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      return RefreshIndicator(
+        onRefresh: () => wallet.fetchCoinRecords(refresh: true),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           children: [
-            const Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey),
-            const SizedBox(height: 12),
-            Text('No Coin Records Found', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
-            const SizedBox(height: 4),
-            Text('Try adjusting the date range or category filters.', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark))),
+            SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey),
+                  const SizedBox(height: 12),
+                  Text('No Coin Records Found', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
+                  const SizedBox(height: 4),
+                  Text('Try adjusting the date range or category filters.', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark))),
+                ],
+              ),
+            ),
           ],
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: records.length,
-      itemBuilder: (ctx, idx) {
-        final record = records[idx];
-        return Card(
-          color: AppColors.getCard(isDark),
-          margin: const EdgeInsets.only(bottom: 10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          child: ListTile(
-            onTap: () => _showRecordReceiptModal(context, record, isDark),
-            leading: CircleAvatar(
-              backgroundColor: (record.isIncome ? Colors.green : Colors.red).withValues(alpha: 0.15),
-              child: Icon(
-                record.isIncome ? Icons.download_rounded : Icons.upload_rounded,
-                color: record.isIncome ? Colors.greenAccent : Colors.redAccent,
-                size: 20,
+    return RefreshIndicator(
+      onRefresh: () => wallet.fetchCoinRecords(refresh: true),
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: records.length,
+        itemBuilder: (ctx, idx) {
+          final record = records[idx];
+          return Card(
+            color: AppColors.getCard(isDark),
+            margin: const EdgeInsets.only(bottom: 10),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            child: ListTile(
+              onTap: () => _showRecordReceiptModal(context, record, isDark),
+              leading: CircleAvatar(
+                backgroundColor: (record.isIncome ? Colors.green : Colors.red).withValues(alpha: 0.15),
+                child: Icon(
+                  record.isIncome ? Icons.download_rounded : Icons.upload_rounded,
+                  color: record.isIncome ? Colors.greenAccent : Colors.redAccent,
+                  size: 20,
+                ),
+              ),
+              title: Text(record.description, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.getTextPrimary(isDark))),
+              subtitle: Text('${record.category} • ${record.senderOrReceiver}\nRef: ${record.displayTransactionId}', style: TextStyle(fontSize: 10.5, color: AppColors.getTextSecondary(isDark))),
+              trailing: Text(
+                '${record.isIncome ? '+' : ''}${AppFormatters.formatNumber(record.amount)} 🪙',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                  color: record.isIncome ? Colors.greenAccent : Colors.redAccent,
+                ),
               ),
             ),
-            title: Text(record.description, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.getTextPrimary(isDark))),
-            subtitle: Text('${record.category} • ${record.senderOrReceiver}', style: TextStyle(fontSize: 10.5, color: AppColors.getTextSecondary(isDark))),
-            trailing: Text(
-              '${record.isIncome ? '+' : ''}${AppFormatters.formatNumber(record.amount)} 🪙',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-                color: record.isIncome ? Colors.greenAccent : Colors.redAccent,
-              ),
-            ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

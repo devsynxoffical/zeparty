@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/constants/room_emoji_catalog.dart';
+import '../core/constants/animated_gifts_catalog.dart';
+import '../models/gift_model.dart';
 import '../core/utils/noble_badge_helper.dart';
 import 'user_avatar.dart';
 
@@ -13,6 +15,9 @@ class AnimatedLiveCommentItem extends StatefulWidget {
   final bool isVip;
   final bool isSystem;
   final bool isGift;
+  final String? giftId;
+  final String? giftName;
+  final String? giftIcon;
   final String? nobleTitle;
   final String? avatarFrame;
   final String? chatBubble;
@@ -30,6 +35,9 @@ class AnimatedLiveCommentItem extends StatefulWidget {
     this.isVip = false,
     this.isSystem = false,
     this.isGift = false,
+    this.giftId,
+    this.giftName,
+    this.giftIcon,
     this.nobleTitle,
     this.avatarFrame,
     this.chatBubble,
@@ -339,6 +347,128 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                                 ),
                               ];
                             }
+
+                            // Issue 54 Requirement D: Replace generic gift box emoji with actual sent gift artwork
+                            if (widget.isGift || widget.text.contains('🎁')) {
+                              // 1. Resolve matching gift from explicit params or text regex
+                              GiftModel? matchedGift;
+                              if (widget.giftId != null && widget.giftId!.isNotEmpty) {
+                                matchedGift = AnimatedGiftsCatalog.allGifts.where(
+                                  (g) => g.id.toLowerCase() == widget.giftId!.toLowerCase(),
+                                ).firstOrNull;
+                              }
+                              if (matchedGift == null && widget.giftName != null && widget.giftName!.isNotEmpty) {
+                                final searchName = widget.giftName!.toLowerCase();
+                                matchedGift = AnimatedGiftsCatalog.allGifts.where(
+                                  (g) => g.name.toLowerCase() == searchName || g.id.toLowerCase() == searchName,
+                                ).firstOrNull;
+                              }
+
+                              String? extractedName;
+                              final xMatch = RegExp(r'×\s*(.+?)(?:\s*🎁|\s*to|\s*!|$)', caseSensitive: false).firstMatch(widget.text);
+                              if (xMatch != null) {
+                                extractedName = xMatch.group(1)?.trim();
+                              } else {
+                                final sentMatch = RegExp(r'sent\s+\d*\s*×?\s*(.+?)(?:\s*🎁|\s*to|\s*!|$)', caseSensitive: false).firstMatch(widget.text);
+                                if (sentMatch != null) {
+                                  extractedName = sentMatch.group(1)?.trim();
+                                }
+                              }
+
+                              if (matchedGift == null && extractedName != null && extractedName.isNotEmpty) {
+                                final searchName = extractedName.toLowerCase();
+                                matchedGift = AnimatedGiftsCatalog.allGifts.where(
+                                  (g) => g.name.toLowerCase() == searchName || g.id.toLowerCase() == searchName,
+                                ).firstOrNull;
+                              }
+
+                              final String? iconPath = matchedGift?.icon ?? widget.giftIcon;
+
+                              Widget buildActualGiftWidget() {
+                                if (iconPath != null && iconPath.isNotEmpty) {
+                                  const blackMatrix = <double>[
+                                    1.0, 0.0, 0.0, 0.0, 0.0,
+                                    0.0, 1.0, 0.0, 0.0, 0.0,
+                                    0.0, 0.0, 1.0, 0.0, 0.0,
+                                    3.0, 3.0, 3.0, 0.0, -45.0,
+                                  ];
+                                  final img = iconPath.startsWith('assets/')
+                                      ? Image.asset(
+                                          iconPath,
+                                          width: 24,
+                                          height: 24,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (ctx, err, stack) => const Text('🎁', style: TextStyle(fontSize: 14)),
+                                        )
+                                      : (iconPath.startsWith('http')
+                                          ? Image.network(
+                                              iconPath,
+                                              width: 24,
+                                              height: 24,
+                                              fit: BoxFit.contain,
+                                              errorBuilder: (ctx, err, stack) => const Text('🎁', style: TextStyle(fontSize: 14)),
+                                            )
+                                          : Text(iconPath, style: const TextStyle(fontSize: 14)));
+
+                                  return ColorFiltered(
+                                    colorFilter: const ColorFilter.matrix(blackMatrix),
+                                    child: img,
+                                  );
+                                }
+                                return const Text('🎁', style: TextStyle(fontSize: 14));
+                              }
+
+                              if (widget.text.contains('🎁')) {
+                                final parts = widget.text.split('🎁');
+                                final prefix = parts[0];
+                                final suffix = parts.sublist(1).join('🎁');
+
+                                return [
+                                  TextSpan(
+                                    text: prefix,
+                                    style: const TextStyle(
+                                      color: Colors.yellowAccent,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                                      child: buildActualGiftWidget(),
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: suffix,
+                                    style: const TextStyle(
+                                      color: Colors.yellowAccent,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                                ];
+                              } else if (widget.isGift) {
+                                return [
+                                  TextSpan(
+                                    text: widget.text,
+                                    style: const TextStyle(
+                                      color: Colors.yellowAccent,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                                  WidgetSpan(
+                                    alignment: PlaceholderAlignment.middle,
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(left: 4),
+                                      child: buildActualGiftWidget(),
+                                    ),
+                                  ),
+                                ];
+                              }
+                            }
+
                             return [
                               TextSpan(
                                 text: widget.text,

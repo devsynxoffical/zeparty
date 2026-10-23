@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/repositories/social_repository.dart';
 import '../../models/user_model.dart';
+import '../../providers/auth_provider.dart';
 import '../messages/chat_screen.dart';
 import 'user_profile_details_screen.dart';
 
@@ -27,7 +29,10 @@ class VisitRecord {
       u = UserModel(
         id: json['visitorId']?.toString() ?? json['id']?.toString() ?? '',
         username: json['username']?.toString() ?? 'user',
-        name: json['name']?.toString() ?? json['displayName']?.toString() ?? 'ZeParty User',
+        name:
+            json['name']?.toString() ??
+            json['displayName']?.toString() ??
+            'ZeParty User',
         avatarUrl: json['avatarUrl']?.toString() ?? '',
       );
     }
@@ -44,18 +49,33 @@ class VisitRecord {
 }
 
 class VisitorsScreen extends StatefulWidget {
-  const VisitorsScreen({super.key});
+  final String? targetUserId;
+  const VisitorsScreen({super.key, this.targetUserId});
 
   @override
   State<VisitorsScreen> createState() => _VisitorsScreenState();
 }
 
-class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProviderStateMixin {
+class _VisitorsScreenState extends State<VisitorsScreen>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   List<VisitRecord> _whosSeenMe = [];
   List<VisitRecord> _whoIveSeen = [];
   bool _isLoading = false;
+
+  bool _isAuthorized(AuthProvider auth) {
+    if (!auth.isAuthenticated || auth.currentUser.id.isEmpty) return false;
+    final currentId = auth.currentUser.id;
+    final currentUsername = auth.currentUser.username.toLowerCase();
+    if (widget.targetUserId == null ||
+        widget.targetUserId!.isEmpty ||
+        widget.targetUserId == 'me') {
+      return true;
+    }
+    final target = widget.targetUserId!.toLowerCase();
+    return target == currentId.toLowerCase() || target == currentUsername;
+  }
 
   @override
   void initState() {
@@ -71,6 +91,18 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
   }
 
   Future<void> _loadVisitors() async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    if (!_isAuthorized(auth)) {
+      if (mounted) {
+        setState(() {
+          _whosSeenMe = [];
+          _whoIveSeen = [];
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
       final results = await Future.wait([
@@ -81,8 +113,12 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
       final rawVisitors = results[0];
       final rawVisited = results[1];
 
-      final List<VisitRecord> visitors = rawVisitors.map(VisitRecord.fromJson).toList();
-      final List<VisitRecord> visited = rawVisited.map(VisitRecord.fromJson).toList();
+      final List<VisitRecord> visitors = rawVisitors
+          .map(VisitRecord.fromJson)
+          .toList();
+      final List<VisitRecord> visited = rawVisited
+          .map(VisitRecord.fromJson)
+          .toList();
 
       if (mounted) {
         setState(() {
@@ -108,11 +144,87 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = AppColors.getPrimary(isDark);
+    final auth = context.watch<AuthProvider>();
+
+    // Route / Deep Link Security: Deny access if unauthorized or viewing another user's visitors
+    if (!_isAuthorized(auth)) {
+      return Scaffold(
+        backgroundColor: AppColors.getBackground(isDark),
+        appBar: AppBar(
+          title: const Text(
+            'Profile Visitors',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          backgroundColor: AppColors.getBackground(isDark),
+          elevation: 0,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.lock_rounded,
+                    size: 48,
+                    color: Colors.amber,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Private Visitor History',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.getTextPrimary(isDark),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Visitor history is strictly private and can only be accessed by the account owner.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.getTextSecondary(isDark),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primary,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                  child: const Text(
+                    'Go Back',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
       appBar: AppBar(
-        title: const Text('Profile Visitors', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Profile Visitors',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         backgroundColor: AppColors.getBackground(isDark),
         elevation: 0,
         actions: [
@@ -126,7 +238,10 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
           indicatorColor: primary,
           labelColor: primary,
           unselectedLabelColor: AppColors.getTextSecondary(isDark),
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          labelStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
           tabs: [
             Tab(text: "Who's seen me (${_whosSeenMe.length})"),
             Tab(text: "Who I've seen (${_whoIveSeen.length})"),
@@ -134,12 +249,29 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2))
+          ? const Center(
+              child: CircularProgressIndicator(
+                color: AppColors.primary,
+                strokeWidth: 2,
+              ),
+            )
           : TabBarView(
               controller: _tabController,
               children: [
-                _buildVisitList(context, _whosSeenMe, isIncoming: true, isDark: isDark, primary: primary),
-                _buildVisitList(context, _whoIveSeen, isIncoming: false, isDark: isDark, primary: primary),
+                _buildVisitList(
+                  context,
+                  _whosSeenMe,
+                  isIncoming: true,
+                  isDark: isDark,
+                  primary: primary,
+                ),
+                _buildVisitList(
+                  context,
+                  _whoIveSeen,
+                  isIncoming: false,
+                  isDark: isDark,
+                  primary: primary,
+                ),
               ],
             ),
     );
@@ -164,18 +296,31 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.directions_walk_rounded, size: 56, color: AppColors.getTextSecondary(isDark)),
+                  Icon(
+                    Icons.directions_walk_rounded,
+                    size: 56,
+                    color: AppColors.getTextSecondary(isDark),
+                  ),
                   const SizedBox(height: 12),
                   Text(
-                    isIncoming ? 'No profile visitors yet' : 'You haven\'t visited any profiles yet',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.getTextPrimary(isDark)),
+                    isIncoming
+                        ? 'No profile visitors yet'
+                        : 'You haven\'t visited any profiles yet',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: AppColors.getTextPrimary(isDark),
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     isIncoming
                         ? 'Users who view your profile will appear here'
                         : 'Profiles you check out will show up here',
-                    style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(isDark)),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.getTextSecondary(isDark),
+                    ),
                   ),
                 ],
               ),
@@ -209,7 +354,10 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
                   CircleAvatar(
                     radius: 22,
                     backgroundColor: Colors.amber.shade200,
-                    child: const Icon(Icons.privacy_tip_rounded, color: Colors.black),
+                    child: const Icon(
+                      Icons.privacy_tip_rounded,
+                      color: Colors.black,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -231,7 +379,10 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
                         const SizedBox(height: 2),
                         Text(
                           'Used stealth profile visit • ${_formatTimeAgo(rec.visitedAt)}',
-                          style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark)),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.getTextSecondary(isDark),
+                          ),
                         ),
                       ],
                     ),
@@ -247,7 +398,9 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => UserProfileDetailsScreen(userId: u.id)),
+                MaterialPageRoute(
+                  builder: (_) => UserProfileDetailsScreen(userId: u.id),
+                ),
               );
             },
             borderRadius: BorderRadius.circular(16),
@@ -262,8 +415,12 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
                 children: [
                   CircleAvatar(
                     radius: 22,
-                    backgroundImage: u.avatarUrl.isNotEmpty ? NetworkImage(u.avatarUrl) : null,
-                    child: u.avatarUrl.isEmpty ? const Icon(Icons.person, color: Colors.white) : null,
+                    backgroundImage: u.avatarUrl.isNotEmpty
+                        ? NetworkImage(u.avatarUrl)
+                        : null,
+                    child: u.avatarUrl.isEmpty
+                        ? const Icon(Icons.person, color: Colors.white)
+                        : null,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -276,7 +433,11 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
                               child: Text(
                                 u.displayName.isNotEmpty
                                     ? u.displayName
-                                    : (u.name.isNotEmpty ? u.name : (u.id.isNotEmpty ? 'User ${u.id}' : 'User')),
+                                    : (u.name.isNotEmpty
+                                          ? u.name
+                                          : (u.id.isNotEmpty
+                                                ? 'User ${u.id}'
+                                                : 'User')),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
@@ -288,18 +449,29 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
                             ),
                             if (u.isVip) ...[
                               const SizedBox(width: 4),
-                              const Icon(Icons.workspace_premium_rounded, size: 14, color: AppColors.gold),
+                              const Icon(
+                                Icons.workspace_premium_rounded,
+                                size: 14,
+                                color: AppColors.gold,
+                              ),
                             ],
                             const SizedBox(width: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.purple.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 'Lv.${u.accountLevel}',
-                                style: const TextStyle(color: Colors.purpleAccent, fontSize: 10, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  color: Colors.purpleAccent,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ],
@@ -307,7 +479,10 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
                         const SizedBox(height: 2),
                         Text(
                           'ID: ${u.id} • ${_formatTimeAgo(rec.visitedAt)}',
-                          style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark)),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.getTextSecondary(isDark),
+                          ),
                         ),
                       ],
                     ),
@@ -316,11 +491,18 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
                     const SizedBox(width: 8),
                     ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+                        backgroundColor: AppColors.primary.withValues(
+                          alpha: 0.15,
+                        ),
                         foregroundColor: AppColors.primary,
                         elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 6,
+                        ),
                         minimumSize: const Size(0, 32),
                       ),
                       onPressed: () {
@@ -331,7 +513,13 @@ class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProvid
                           ),
                         );
                       },
-                      child: const Text('Chat', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      child: const Text(
+                        'Chat',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                   ],
                 ],

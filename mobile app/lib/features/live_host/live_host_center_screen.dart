@@ -21,20 +21,19 @@ class _LiveHostCenterScreenState extends State<LiveHostCenterScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = context.read<AuthProvider>().currentUser;
-      if (user != null) {
-        context.read<LiveHostProvider>().fetchHostProfile(user.id);
-      }
+      context.read<LiveHostProvider>().fetchHostProfile(user.id);
+      context.read<LiveHostProvider>().fetchHostTargetSummary();
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = AppColors.getPrimary(isDark);
     final authUser = context.watch<AuthProvider>().currentUser;
     final liveHostProv = context.watch<LiveHostProvider>();
 
     final liveHost = liveHostProv.activeLiveHost;
+    final targetSummary = liveHostProv.targetSummary;
 
     if (liveHost == null) {
       return Scaffold(
@@ -43,17 +42,20 @@ class _LiveHostCenterScreenState extends State<LiveHostCenterScreen> {
       );
     }
 
-    final currentPolicy = LiveHostPolicy.getLevelForDiamonds(liveHost.achievedDiamonds);
-    final nextPolicy = LiveHostPolicy.getNextLevel(currentPolicy.level);
+    final currentLevel = targetSummary?.currentTier?.level ??
+        LiveHostPolicy.getLevelForDiamonds(liveHost.achievedDiamonds).level;
+    final achievedCoins = targetSummary?.achievedCoins ?? 0;
+    final nextTargetCoins = targetSummary?.nextTargetCoins ?? 100000;
+    final remainingCoins = targetSummary?.remainingCoins ?? (nextTargetCoins > achievedCoins ? nextTargetCoins - achievedCoins : 0);
+    final progressPct = targetSummary?.progressPercent ??
+        (nextTargetCoins > 0 ? (achievedCoins / nextTargetCoins).clamp(0.0, 1.0) : 1.0);
 
-    final progressPct = nextPolicy != null
-        ? (liveHost.achievedDiamonds / nextPolicy.diamondTarget).clamp(0.0, 1.0)
-        : 1.0;
+    final currentPolicy = LiveHostPolicy.getLevelForDiamonds(liveHost.achievedDiamonds);
 
     final isEligibleForPay = LiveHostPolicy.isTargetEligible(
       achievedDiamonds: liveHost.achievedDiamonds,
       completedValidDays: liveHost.completedValidDays,
-      targetLevel: currentPolicy.level,
+      targetLevel: currentLevel,
     );
 
     return Scaffold(
@@ -75,82 +77,108 @@ class _LiveHostCenterScreenState extends State<LiveHostCenterScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Live Host Profile Header Card
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFFFF416C), Color(0xFFFF4B2B)]),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [BoxShadow(color: const Color(0xFFFF416C).withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 4))],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 24,
-                        backgroundImage: NetworkImage(liveHost.avatarUrl),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    liveHost.displayName,
-                                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.verified, color: Colors.blueAccent, size: 16),
-                              ],
-                            ),
-                            Text('ID: ${liveHost.userId} • Live Host ID: ${liveHost.liveHostId}', style: const TextStyle(color: Colors.white70, fontSize: 11)),
-                            Text('Region: ${liveHost.countryCode} • Status: ${liveHost.status}', style: const TextStyle(color: Colors.white60, fontSize: 10)),
-                          ],
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await Future.wait([
+            liveHostProv.fetchHostProfile(authUser.id),
+            liveHostProv.fetchHostTargetSummary(),
+          ]);
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Live Host Profile Header Card
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [Color(0xFFFF416C), Color(0xFFFF4B2B)]),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [BoxShadow(color: const Color(0xFFFF416C).withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 4))],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 24,
+                          backgroundImage: NetworkImage(liveHost.avatarUrl),
                         ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(12)),
-                        child: Text('Level ${currentPolicy.level}', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11)),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Achieved: ${liveHost.achievedDiamonds} 💎', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                      Text(nextPolicy != null ? 'Next Target: ${nextPolicy.diamondTarget} 💎' : 'MAX LEVEL', style: const TextStyle(color: Colors.amberAccent, fontSize: 11)),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
-                      value: progressPct,
-                      minHeight: 10,
-                      backgroundColor: Colors.white24,
-                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      liveHost.displayName,
+                                      style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.verified, color: Colors.blueAccent, size: 16),
+                                ],
+                              ),
+                              Text('ID: ${liveHost.userId} • Live Host ID: ${liveHost.liveHostId}', style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                              Text('Region: ${liveHost.countryCode} • Status: ${liveHost.status}', style: const TextStyle(color: Colors.white60, fontSize: 10)),
+                              if (targetSummary?.cycleIdentifier != null)
+                                Text('Cycle: ${targetSummary!.cycleIdentifier}', style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(12)),
+                          child: Text('Level $currentLevel', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11)),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Target Achieved: $achievedCoins 🪙', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                        Text(targetSummary?.nextTier != null ? 'Next Target: $nextTargetCoins 🪙' : (nextTargetCoins > achievedCoins ? 'Target: $nextTargetCoins 🪙' : 'MAX LEVEL'), style: const TextStyle(color: Colors.amberAccent, fontSize: 11)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: progressPct,
+                        minHeight: 10,
+                        backgroundColor: Colors.white24,
+                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Progress: ${(progressPct * 100).toStringAsFixed(1)}%', style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                        Text('Remaining: $remainingCoins 🪙', style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                      ],
+                    ),
+                    if (targetSummary?.formula != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Target Formula: ${targetSummary!.formula}',
+                        style: const TextStyle(color: Colors.white60, fontSize: 9, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
+
 
             // Direct Salary Policy Breakdown Card
             Card(
@@ -371,8 +399,9 @@ class _LiveHostCenterScreenState extends State<LiveHostCenterScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildGridOption(BuildContext context, String label, IconData icon, Color color, VoidCallback onTap) {
     return InkWell(

@@ -46,6 +46,8 @@ class NotificationProvider extends ChangeNotifier {
         _unreadCount++;
         notifyListeners();
       }
+      // Authoritative REST refresh to prevent treating socket payload alone as financial proof
+      refreshNotifications();
     });
 
     _notifReadSub = _socketService.onNotificationRead.listen((data) {

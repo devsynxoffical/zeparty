@@ -42,6 +42,50 @@ class WalletRepository {
         .toList();
   }
 
+  /// Fetch user's authoritative coin records from GET /v1/wallet/coin-records
+  Future<Map<String, dynamic>> fetchCoinRecords({
+    int page = 1,
+    int limit = 20,
+    String? tab,
+    String? type,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final queryParams = <String, dynamic>{
+      'page': page,
+      'limit': limit,
+      if (tab != null && tab.isNotEmpty) 'tab': tab,
+      if (type != null && type.isNotEmpty && type != 'All Types') 'type': type,
+      if (startDate != null && startDate.isNotEmpty) 'startDate': startDate,
+      if (endDate != null && endDate.isNotEmpty) 'endDate': endDate,
+    };
+
+    final response = await _apiClient.get(
+      '/v1/wallet/coin-records',
+      queryParameters: queryParams,
+    );
+
+    final raw = (response.data is Map<String, dynamic>)
+        ? response.data as Map<String, dynamic>
+        : {};
+    final data = (raw['data'] is Map<String, dynamic>)
+        ? raw['data'] as Map<String, dynamic>
+        : raw;
+
+    final itemsRaw = (data['items'] as List?) ?? (data['records'] as List?) ?? [];
+    final items = itemsRaw
+        .whereType<Map<String, dynamic>>()
+        .map((item) => TransactionModel.fromLedgerJson(item))
+        .toList();
+
+    return {
+      'items': items,
+      'pagination': data['pagination'] ?? {},
+      'tabs': data['tabs'] ?? [],
+      'activeTab': data['activeTab'] ?? tab ?? 'ALL',
+    };
+  }
+
   /// Fetch active recharge packages configured by Admin
   Future<List<RechargePlanModel>> fetchRechargePlans() async {
     final response = await _apiClient.get('/v1/recharge/plans');

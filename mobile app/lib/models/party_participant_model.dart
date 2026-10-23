@@ -10,6 +10,8 @@ class PartyParticipantModel {
   final MicStatus micStatus;
   final DateTime joinedAt;
   final bool isSpeaking; // Managed by Agora active speaker callback
+  final bool isOnline;
+  final bool inRoom;
 
   const PartyParticipantModel({
     required this.user,
@@ -18,6 +20,8 @@ class PartyParticipantModel {
     this.micStatus = MicStatus.muted,
     required this.joinedAt,
     this.isSpeaking = false,
+    this.isOnline = true,
+    this.inRoom = true,
   });
 
   bool get isMuted => micStatus == MicStatus.muted;
@@ -46,6 +50,8 @@ class PartyParticipantModel {
       micStatus: isLocked ? MicStatus.locked : (isMuted ? MicStatus.muted : MicStatus.on),
       joinedAt: DateTime.now(),
       isSpeaking: false,
+      isOnline: true,
+      inRoom: true,
     );
   }
 
@@ -63,8 +69,15 @@ class PartyParticipantModel {
     final roleStr = json['role']?.toString().toUpperCase() ?? 'LISTENER';
     ParticipantRole role = ParticipantRole.listener;
     if (roleStr == 'HOST') role = ParticipantRole.host;
-    if (roleStr == 'MODERATOR') role = ParticipantRole.moderator;
+    if (roleStr == 'MODERATOR' || roleStr == 'ADMIN') role = ParticipantRole.moderator;
     if (roleStr == 'SPEAKER') role = ParticipantRole.speaker;
+
+    final isOnline = json['isOnline'] is bool
+        ? json['isOnline'] as bool
+        : (json['isOnline'] != null ? json['isOnline'].toString().toLowerCase() == 'true' : true);
+    final inRoom = json['inRoom'] is bool
+        ? json['inRoom'] as bool
+        : (json['inRoom'] != null ? json['inRoom'].toString().toLowerCase() == 'true' : isOnline);
 
     return PartyParticipantModel(
       user: user,
@@ -73,6 +86,8 @@ class PartyParticipantModel {
       micStatus: MicStatus.muted,
       joinedAt: json['joinedAt'] != null ? (DateTime.tryParse(json['joinedAt'].toString()) ?? DateTime.now()) : DateTime.now(),
       isSpeaking: false,
+      isOnline: isOnline,
+      inRoom: inRoom,
     );
   }
 
@@ -85,6 +100,8 @@ class PartyParticipantModel {
     MicStatus? micStatus,
     DateTime? joinedAt,
     bool? isSpeaking,
+    bool? isOnline,
+    bool? inRoom,
     bool clearSeat = false,
   }) {
     int? resolvedSeatNumber;
@@ -103,6 +120,8 @@ class PartyParticipantModel {
       micStatus: micStatus ?? this.micStatus,
       joinedAt: joinedAt ?? this.joinedAt,
       isSpeaking: isSpeaking ?? this.isSpeaking,
+      isOnline: isOnline ?? this.isOnline,
+      inRoom: inRoom ?? this.inRoom,
     );
   }
 }

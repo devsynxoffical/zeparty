@@ -24,6 +24,7 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<AgencyProvider>().fetchAllAgencies();
       context.read<AgencyProvider>().fetchEligibility();
+      context.read<AgencyProvider>().fetchHostTargetSummary();
     });
   }
 
@@ -308,12 +309,16 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
       );
     }
 
-    final currentPolicy = AgencyHostPolicy.getLevelForDiamonds(audioHost.achievedDiamonds);
-    final nextPolicy = AgencyHostPolicy.getNextLevel(currentPolicy.level);
+    final targetSummary = agencyProv.targetSummary;
+    final currentLevel = targetSummary?.currentTier?.level ??
+        AgencyHostPolicy.getLevelForDiamonds(audioHost.achievedDiamonds).level;
+    final achievedCoins = targetSummary?.achievedCoins ?? 0;
+    final nextTargetCoins = targetSummary?.nextTargetCoins ?? 100000;
+    final remainingCoins = targetSummary?.remainingCoins ?? (nextTargetCoins > achievedCoins ? nextTargetCoins - achievedCoins : 0);
+    final progressPct = targetSummary?.progressPercent ??
+        (nextTargetCoins > 0 ? (achievedCoins / nextTargetCoins).clamp(0.0, 1.0) : 1.0);
 
-    final progressPct = nextPolicy != null
-        ? (audioHost.achievedDiamonds / nextPolicy.diamondTarget).clamp(0.0, 1.0)
-        : 1.0;
+    final currentPolicy = AgencyHostPolicy.getLevelForDiamonds(audioHost.achievedDiamonds);
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -322,68 +327,97 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
         backgroundColor: AppColors.getBackground(isDark),
         elevation: 0,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Host Header Card
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [primary, Colors.deepPurple.shade900]),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(audioHost.userName, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(12)),
-                        child: Text('Level ${currentPolicy.level}', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12)),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          await Future.wait([
+            agencyProv.fetchAllAgencies(),
+            agencyProv.fetchEligibility(),
+            agencyProv.fetchHostTargetSummary(),
+          ]);
+        },
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Host Header Card
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [primary, Colors.deepPurple.shade900]),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(audioHost.userName, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(12)),
+                          child: Text('Level $currentLevel', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Builder(builder: (_) {
+                      final hasRealAgency = audioHost.agencyName.isNotEmpty &&
+                          !audioHost.agencyName.toLowerCase().contains('dummy') &&
+                          audioHost.agencyName != 'ZeParty Agency' &&
+                          audioHost.agencyName != 'ZeParty Royal Agency';
+                      final agencyLabel = hasRealAgency
+                          ? 'Agency: ${audioHost.agencyName}${audioHost.agencyId.isNotEmpty ? ' (ID: ${audioHost.agencyId})' : ''}'
+                          : 'Independent Audio Host';
+                      return Text(agencyLabel, style: const TextStyle(color: Colors.white70, fontSize: 12));
+                    }),
+                    if (targetSummary?.cycleIdentifier != null) ...[
+                      const SizedBox(height: 2),
+                      Text('Cycle: ${targetSummary!.cycleIdentifier}', style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
+                    ],
+                    const SizedBox(height: 14),
+
+                    // Progress Bar
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Target Achieved: $achievedCoins 🪙', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+                        Text(targetSummary?.nextTier != null ? 'Next Target: $nextTargetCoins 🪙' : (nextTargetCoins > achievedCoins ? 'Target: $nextTargetCoins 🪙' : 'MAX LEVEL'), style: const TextStyle(color: Colors.amberAccent, fontSize: 11)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: progressPct,
+                        minHeight: 10,
+                        backgroundColor: Colors.white24,
+                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Progress: ${(progressPct * 100).toStringAsFixed(1)}%', style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                        Text('Remaining: $remainingCoins 🪙', style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                      ],
+                    ),
+                    if (targetSummary?.formula != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Target Formula: ${targetSummary!.formula}',
+                        style: const TextStyle(color: Colors.white60, fontSize: 9, fontStyle: FontStyle.italic),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 6),
-                  Builder(builder: (_) {
-                    final hasRealAgency = audioHost.agencyName.isNotEmpty &&
-                        !audioHost.agencyName.toLowerCase().contains('dummy') &&
-                        audioHost.agencyName != 'ZeParty Agency' &&
-                        audioHost.agencyName != 'ZeParty Royal Agency';
-                    final agencyLabel = hasRealAgency
-                        ? 'Agency: ${audioHost.agencyName}${audioHost.agencyId.isNotEmpty ? ' (ID: ${audioHost.agencyId})' : ''}'
-                        : 'Independent Audio Host';
-                    return Text(agencyLabel, style: const TextStyle(color: Colors.white70, fontSize: 12));
-                  }),
-                  const SizedBox(height: 14),
-
-                  // Progress Bar
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Achieved: ${audioHost.achievedDiamonds} 💎', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                      Text(nextPolicy != null ? 'Next Target: ${nextPolicy.diamondTarget} 💎' : 'MAX LEVEL', style: const TextStyle(color: Colors.amberAccent, fontSize: 11)),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: LinearProgressIndicator(
-                      value: progressPct,
-                      minHeight: 10,
-                      backgroundColor: Colors.white24,
-                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: 20),
+
 
             // Salary Breakdown Card (Shared Policy Module 14)
             Card(
@@ -604,8 +638,9 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // ignore: unused_element
   void _showHostWithdrawalDialog(BuildContext context, UsdBalanceProvider usdProv, String hostName, String hostId, String agencyName) {
@@ -691,7 +726,7 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                   const Text('Select Authorized Recipient', style: TextStyle(fontSize: 12, color: Colors.white70)),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<SellerMerchantRecipient>(
-                    value: selectedRecipient,
+                    initialValue: selectedRecipient,
                     dropdownColor: const Color(0xFF1E1B2E),
                     style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(border: OutlineInputBorder()),

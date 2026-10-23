@@ -9,6 +9,7 @@ import '../models/agency_invitation_model.dart';
 import '../models/audio_host_model.dart';
 import '../models/agency_application_model.dart';
 import '../models/hosting_eligibility_model.dart';
+import '../models/host_target_summary_model.dart';
 
 class AgencyHostRequest {
   final String id;
@@ -54,6 +55,36 @@ class AgencyProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   HostingEligibilityModel? _eligibility;
   HostingEligibilityModel? get eligibility => _eligibility;
+  HostTargetSummaryModel? _targetSummary;
+  HostTargetSummaryModel? get targetSummary => _targetSummary;
+  bool _isLoadingTarget = false;
+  bool get isLoadingTarget => _isLoadingTarget;
+  String? _targetError;
+  String? get targetError => _targetError;
+
+  Future<HostTargetSummaryModel?> fetchHostTargetSummary({DateTime? date}) async {
+    _isLoadingTarget = true;
+    _targetError = null;
+    notifyListeners();
+
+    try {
+      final query = date != null ? {'date': date.toIso8601String()} : null;
+      final res = await _apiClient.get('/v1/hosts/targets/summary', queryParameters: query);
+      if (res.statusCode == 200 && res.data != null && res.data['data'] != null) {
+        _targetSummary = HostTargetSummaryModel.fromJson(res.data['data'] as Map<String, dynamic>);
+        _isLoadingTarget = false;
+        notifyListeners();
+        return _targetSummary;
+      }
+    } catch (e) {
+      debugPrint('[AgencyProvider] fetchHostTargetSummary error: $e');
+      _targetError = e.toString();
+    } finally {
+      _isLoadingTarget = false;
+      notifyListeners();
+    }
+    return null;
+  }
 
   Future<HostingEligibilityModel?> fetchEligibility() async {
     try {

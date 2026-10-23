@@ -41,7 +41,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveCapacity = [10, 15, 20, 30].contains(capacity) ? capacity : 10;
+    final effectiveCapacity = [8, 10, 12, 15, 20, 30].contains(capacity) ? capacity : (capacity <= 8 ? 8 : (capacity <= 12 ? 12 : 10));
     final scale = _getPresetScale();
 
     return FittedBox(
@@ -61,7 +61,37 @@ class MultiRoleSeatGrid extends StatelessWidget {
     final hostRad = 28.0 * scale;
     final seatRad = 24.0 * scale;
 
-    if (totalSeats <= 10) {
+    if (totalSeats <= 8) {
+      return [
+        // Row 1: Host & Co-Host
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildSeat(context, 0, 'Host', hostRad, true),
+              _buildSeat(context, 1, 'Co-Host', hostRad, true),
+            ],
+          ),
+        ),
+        // Row 2: 3 Seats (1 to 3)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(3, (i) => _buildSeat(context, i + 2, '${i + 1}', seatRad, false)),
+          ),
+        ),
+        // Row 3: 3 Seats (4 to 6)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(3, (i) => _buildSeat(context, i + 5, '${i + 4}', seatRad, false)),
+          ),
+        ),
+      ];
+    } else if (totalSeats <= 10) {
       return [
         // Row 1: Host & Co-Host
         Padding(
@@ -88,6 +118,36 @@ class MultiRoleSeatGrid extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: List.generate(4, (i) => _buildSeat(context, i + 6, '${i + 5}', seatRad, false)),
+          ),
+        ),
+      ];
+    } else if (totalSeats <= 12) {
+      return [
+        // Row 1: Host & Co-Host
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildSeat(context, 0, 'Host', hostRad, true),
+              _buildSeat(context, 1, 'Co-Host', hostRad, true),
+            ],
+          ),
+        ),
+        // Row 2: 5 Seats (1 to 5)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(5, (i) => _buildSeat(context, i + 2, '${i + 1}', 22.0 * scale, false)),
+          ),
+        ),
+        // Row 3: 5 Seats (6 to 10)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(5, (i) => _buildSeat(context, i + 7, '${i + 6}', 22.0 * scale, false)),
           ),
         ),
       ];

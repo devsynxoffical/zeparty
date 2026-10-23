@@ -21,7 +21,7 @@ class _RoomTypeSelectorSheetState extends State<RoomTypeSelectorSheet> {
   late String _selectedRoomType;
   late int _selectedCapacity;
 
-  final List<int> _capacityOptions = [10, 15, 20, 30];
+  final List<int> _capacityOptions = [8, 10, 12, 15, 20, 30];
 
   @override
   void initState() {
@@ -29,7 +29,7 @@ class _RoomTypeSelectorSheetState extends State<RoomTypeSelectorSheet> {
     _selectedRoomType = widget.initialRoomType;
     _selectedCapacity = widget.initialCapacity;
     if (!_capacityOptions.contains(_selectedCapacity)) {
-      _selectedCapacity = 10;
+      _selectedCapacity = _capacityOptions.contains(widget.initialCapacity) ? widget.initialCapacity : 10;
     }
   }
 

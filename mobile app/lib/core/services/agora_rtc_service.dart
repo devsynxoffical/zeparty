@@ -226,6 +226,7 @@ class AgoraRtcService {
     try {
       _remoteUids.clear();
       _remoteUsersController.add(Set.from(_remoteUids));
+      await _engine?.stopAudioMixing();
       await _engine?.stopPreview();
       await _engine?.leaveChannel();
     } catch (_) {}
@@ -251,6 +252,82 @@ class AgoraRtcService {
     try {
       await _engine?.muteLocalVideoStream(muted);
     } catch (_) {}
+  }
+
+  // ── Audio Mixing (NEW-033) ──
+  bool _isAudioMixing = false;
+  bool _isAudioMixingPaused = false;
+  double _audioMixingVolume = 0.8;
+
+  bool get isAudioMixing => _isAudioMixing;
+  bool get isAudioMixingPaused => _isAudioMixingPaused;
+  double get audioMixingVolume => _audioMixingVolume;
+
+  Future<bool> startAudioMixing({
+    required String filePath,
+    bool loopback = false,
+    int cycle = 1,
+    int startPos = 0,
+    double? volume,
+  }) async {
+    if (_engine == null) return false;
+    try {
+      await _engine!.startAudioMixing(
+        filePath: filePath,
+        loopback: loopback,
+        cycle: cycle,
+        startPos: startPos,
+      );
+      _isAudioMixing = true;
+      _isAudioMixingPaused = false;
+      if (volume != null) {
+        await setAudioMixingVolume(volume);
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[AgoraRtcService] startAudioMixing error: $e');
+      return false;
+    }
+  }
+
+  Future<void> stopAudioMixing() async {
+    try {
+      await _engine?.stopAudioMixing();
+      _isAudioMixing = false;
+      _isAudioMixingPaused = false;
+    } catch (e) {
+      debugPrint('[AgoraRtcService] stopAudioMixing error: $e');
+    }
+  }
+
+  Future<void> pauseAudioMixing() async {
+    try {
+      await _engine?.pauseAudioMixing();
+      _isAudioMixingPaused = true;
+    } catch (e) {
+      debugPrint('[AgoraRtcService] pauseAudioMixing error: $e');
+    }
+  }
+
+  Future<void> resumeAudioMixing() async {
+    try {
+      await _engine?.resumeAudioMixing();
+      _isAudioMixingPaused = false;
+    } catch (e) {
+      debugPrint('[AgoraRtcService] resumeAudioMixing error: $e');
+    }
+  }
+
+  Future<void> setAudioMixingVolume(double volume) async {
+    _audioMixingVolume = volume.clamp(0.0, 1.0);
+    final int vol = (_audioMixingVolume * 100).round();
+    try {
+      await _engine?.adjustAudioMixingVolume(vol);
+      await _engine?.adjustAudioMixingPublishVolume(vol);
+      await _engine?.adjustAudioMixingPlayoutVolume(vol);
+    } catch (e) {
+      debugPrint('[AgoraRtcService] setAudioMixingVolume error: $e');
+    }
   }
 
   Widget buildLocalVideoView() {

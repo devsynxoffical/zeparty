@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../core/services/api_client.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/formatters.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/recharge_agency_provider.dart';
+import '../../models/recharge_agency_model.dart';
 import '../../providers/usd_balance_provider.dart';
 import '../../widgets/user_avatar.dart';
 
@@ -15,30 +19,54 @@ class RechargeAgencyScreen extends StatefulWidget {
   State<RechargeAgencyScreen> createState() => _RechargeAgencyScreenState();
 }
 
-class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with SingleTickerProviderStateMixin {
+class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with TickerProviderStateMixin {
   late TabController _tabController;
   final TextEditingController _userIdController = TextEditingController();
   final TextEditingController _coinsController = TextEditingController();
   final TextEditingController _pinController = TextEditingController();
+  final ScrollController _historyScrollController = ScrollController();
 
-  Map<String, dynamic>? _verifiedRecipient;
+  late AnimationController _shakeAnimationController;
+  late Animation<double> _shakeAnimation;
+
+  VerifiedRecipientModel? _verifiedRecipient;
   String? _verificationError;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+
+    _shakeAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _shakeAnimation = Tween<double>(begin: 0, end: 10)
+        .chain(CurveTween(curve: Curves.elasticIn))
+        .animate(_shakeAnimationController);
+
+    _historyScrollController.addListener(() {
+      if (_historyScrollController.position.pixels >=
+          _historyScrollController.position.maxScrollExtent - 200) {
+        context.read<RechargeAgencyProvider>().fetchRechargeHistory();
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final auth = context.read<AuthProvider>();
       final user = auth.currentUser;
       final wallet = context.read<WalletProvider>();
-      context.read<RechargeAgencyProvider>().syncForSeller(
+      final agencyProv = context.read<RechargeAgencyProvider>();
+
+      agencyProv.syncForSeller(
         sellerId: user.id,
         sellerName: user.displayName.isNotEmpty ? '${user.displayName} Recharge Agency' : 'Coin Reseller Agency',
         countryCode: user.region.isNotEmpty ? user.region : 'GLOBAL',
         initialCoins: user.sellerBalance > 0 ? user.sellerBalance : wallet.sellerBalance,
       );
+
+      agencyProv.fetchRechargeHistory(refresh: true);
     });
   }
 
@@ -48,6 +76,8 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
     _userIdController.dispose();
     _coinsController.dispose();
     _pinController.dispose();
+    _historyScrollController.dispose();
+    _shakeAnimationController.dispose();
     super.dispose();
   }
 
@@ -200,9 +230,14 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
                 child: TextField(
                   controller: _userIdController,
                   style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-                  decoration: const InputDecoration(labelText: 'Enter Recipient User ID (e.g. user_1002)', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'Enter Recipient User ID (e.g. user_1002)',
+                    hintText: 'Enter public user ID or username',
+                    border: OutlineInputBorder(),
+                  ),
                   onChanged: (_) {
-                    if (_verifiedRecipient != null) {
+                    prov.clearVerifiedRecipient();
+                    if (_verifiedRecipient != null || _verificationError != null) {
                       setState(() {
                         _verifiedRecipient = null;
                         _verificationError = null;
@@ -213,29 +248,50 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
               ),
               const SizedBox(width: 8),
               ElevatedButton.icon(
-                icon: const Icon(Icons.search),
+                icon: prov.isVerifyingRecipient
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.search),
                 label: const Text('Verify'),
                 style: ElevatedButton.styleFrom(backgroundColor: primary, foregroundColor: Colors.white),
-                onPressed: () {
-                  final uid = _userIdController.text.trim();
-                  final res = prov.verifyUser(uid);
-                  setState(() {
-                    if (res != null && res.containsKey('error')) {
-                      _verificationError = res['error'] as String;
-                      _verifiedRecipient = null;
-                    } else {
-                      _verificationError = null;
-                      _verifiedRecipient = res;
-                    }
-                  });
-                },
+                onPressed: prov.isVerifyingRecipient
+                    ? null
+                    : () async {
+                        final uid = _userIdController.text.trim();
+                        final res = await prov.verifyRecipient(uid);
+                        if (!mounted) return;
+                        setState(() {
+                          _verifiedRecipient = res;
+                          _verificationError = prov.verificationError;
+                        });
+                      },
               ),
             ],
           ),
           if (_verificationError != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text('❌ $_verificationError', style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _verificationError!,
+                      style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
             ),
 
           // Step 3: Verified Recipient Card
@@ -243,10 +299,35 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
             const SizedBox(height: 16),
             Card(
               color: AppColors.getCard(isDark),
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.greenAccent.withValues(alpha: 0.4)),
+              ),
               child: ListTile(
-                leading: UserAvatar(imageUrl: _verifiedRecipient!['avatarUrl'] as String, radius: 20),
-                title: Text(_verifiedRecipient!['name'] as String, style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text('ID: ${_verifiedRecipient!['userId']} • Status: ${_verifiedRecipient!['status']}', style: const TextStyle(fontSize: 11, color: Colors.greenAccent)),
+                leading: UserAvatar(
+                  imageUrl: _verifiedRecipient!.profileImage,
+                  name: _verifiedRecipient!.nickname,
+                  radius: 20,
+                ),
+                title: Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        _verifiedRecipient!.nickname,
+                        style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark)),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    if (_verifiedRecipient!.isVerified)
+                      const Icon(Icons.verified, color: Colors.blueAccent, size: 16),
+                  ],
+                ),
+                subtitle: Text(
+                  'ID: ${_verifiedRecipient!.publicUserId} • ${_verifiedRecipient!.isVerified ? "Verified User" : "Unverified"} (${_verifiedRecipient!.countryCode})',
+                  style: const TextStyle(fontSize: 11, color: Colors.greenAccent),
+                ),
                 trailing: const Icon(Icons.check_circle_rounded, color: Colors.greenAccent),
               ),
             ),
@@ -261,12 +342,40 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
             ),
             const SizedBox(height: 14),
 
+            // Step 4 & 5: Enter Amount & 6-digit Security PIN
             TextField(
-              controller: _pinController,
-              obscureText: true,
+              controller: _coinsController,
               keyboardType: TextInputType.number,
               style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-              decoration: const InputDecoration(labelText: 'Seller Security PIN (Default: 1234)', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                labelText: 'Coin Amount to Recharge',
+                hintText: 'e.g. 5000',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            AnimatedBuilder(
+              animation: _shakeAnimation,
+              builder: (context, child) {
+                return Transform.translate(
+                  offset: Offset(_shakeAnimation.value, 0),
+                  child: child,
+                );
+              },
+              child: TextField(
+                controller: _pinController,
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                style: TextStyle(color: AppColors.getTextPrimary(isDark)),
+                decoration: const InputDecoration(
+                  labelText: '6-Digit Seller Security PIN',
+                  hintText: 'Enter 6-digit security PIN',
+                  border: OutlineInputBorder(),
+                  counterText: '',
+                ),
+              ),
             ),
             const SizedBox(height: 20),
 
@@ -275,32 +384,233 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
               width: double.infinity,
               height: 48,
               child: ElevatedButton.icon(
-                icon: const Icon(Icons.flash_on_rounded),
-                label: const Text('Confirm & Recharge Coins', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
-                onPressed: () {
-                  final coins = int.tryParse(_coinsController.text.trim()) ?? 0;
-                  final pin = _pinController.text.trim();
-                  final err = prov.executeRecharge(
-                    recipientUserId: _verifiedRecipient!['userId'] as String,
-                    recipientName: _verifiedRecipient!['name'] as String,
-                    recipientAvatarUrl: _verifiedRecipient!['avatarUrl'] as String,
-                    coins: coins,
-                    pin: pin,
-                  );
+                icon: prov.isExecutingTransfer
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.flash_on_rounded),
+                label: Text(
+                  prov.isExecutingTransfer ? 'Processing Transfer...' : 'Confirm & Recharge Coins',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: prov.isExecutingTransfer ? Colors.grey : Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: prov.isExecutingTransfer
+                    ? null
+                    : () async {
+                        final coins = int.tryParse(_coinsController.text.trim()) ?? 0;
+                        final pin = _pinController.text.trim();
 
-                  if (err == null) {
-                    _coinsController.clear();
-                    _pinController.clear();
-                    setState(() => _verifiedRecipient = null);
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('🎉 Successfully recharged $coins coins!'), backgroundColor: Colors.green));
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('❌ $err'), backgroundColor: Colors.redAccent));
-                  }
-                },
+                        if (coins <= 0) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please enter a valid coin amount greater than 0.')),
+                          );
+                          return;
+                        }
+
+                        if (pin.isEmpty) {
+                          _shakePinField();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Please enter your 6-digit security PIN.')),
+                          );
+                          return;
+                        }
+
+                        final authUser = context.read<AuthProvider>().currentUser;
+                        final walletProv = context.read<WalletProvider>();
+
+                        try {
+                          final result = await prov.executeRechargeTransfer(
+                            recipientIdentifier: _verifiedRecipient!.accountId,
+                            coins: coins,
+                            pin: pin,
+                          );
+
+                          if (!mounted) return;
+                          _coinsController.clear();
+                          _pinController.clear();
+                          setState(() => _verifiedRecipient = null);
+
+                          // Invalidate/refresh wallet balance if self recharge
+                          if (result.recipientPublicId == authUser.username || result.transactionId.contains(authUser.id)) {
+                            walletProv.fetchWallet();
+                          }
+
+                          _showTransferSuccessDialog(result, isDark);
+                        } catch (e) {
+                          if (!mounted) return;
+                          _handleTransferError(e);
+                        }
+                      },
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  void _shakePinField() {
+    _shakeAnimationController.forward(from: 0.0);
+  }
+
+  void _handleTransferError(dynamic error) {
+    String code = '';
+    String message = 'Transfer failed. Please check your inputs and try again.';
+    if (error is ApiException) {
+      code = error.code ?? '';
+      message = error.message;
+    }
+
+    if (code == 'USER_NOT_FOUND') {
+      setState(() {
+        _verificationError = 'Recipient user ID does not exist. Please check the ID.';
+      });
+    } else if (code == 'INSUFFICIENT_SELLER_COINS' ||
+        code == 'INSUFFICIENT_SELLER_BALANCE' ||
+        message.toLowerCase().contains('insufficient')) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.inventory_2_outlined, color: Colors.orangeAccent),
+              SizedBox(width: 8),
+              Text('Insufficient Inventory'),
+            ],
+          ),
+          content: const Text(
+            'Insufficient inventory. Your reseller balance is lower than the transfer amount.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } else if (code == 'INVALID_SECURITY_PIN' || code == 'INVALID_PIN' || code == 'INCORRECT_PIN') {
+      _shakePinField();
+      _pinController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Incorrect security PIN. Please try again.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    } else if (code == 'SELLER_SUSPENDED' ||
+        code == 'SELLER_ACCOUNT_INACTIVE' ||
+        code == 'SELLER_NOT_ACTIVE') {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.block_rounded, color: Colors.redAccent),
+              SizedBox(width: 8),
+              Text('Account Suspended'),
+            ],
+          ),
+          content: const Text(
+            'Seller account is suspended or inactive. Please contact support.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Contact Support'),
+            ),
+          ],
+        ),
+      );
+    } else if (code == 'RATE_LIMIT_EXCEEDED' ||
+        code == 'TOO_MANY_REQUESTS' ||
+        (error is ApiException && error.statusCode == 429)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Too many requests. Please wait a moment before trying again.'),
+          backgroundColor: Colors.orangeAccent,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
+  }
+
+  void _showTransferSuccessDialog(SellerRechargeResult result, bool isDark) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.getCard(isDark),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 28),
+            SizedBox(width: 8),
+            Text('Recharge Successful!'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Successfully transferred ${AppFormatters.formatNumber(result.coins)} Coins to ${result.recipientName.isNotEmpty ? result.recipientName : "Recipient"}.',
+              style: TextStyle(color: AppColors.getTextPrimary(isDark)),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.black26,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Authoritative Reference ID:', style: TextStyle(color: Colors.white70, fontSize: 11)),
+                  const SizedBox(height: 4),
+                  SelectableText(
+                    result.referenceId,
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amberAccent, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Remaining Balance: ${AppFormatters.formatNumber(result.remainingSellerBalanceCoins)} Coins',
+                    style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy_rounded, size: 16),
+            label: const Text('Copy Ref ID'),
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: result.referenceId));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Transaction reference copied to clipboard!')),
+              );
+            },
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text('Done', style: TextStyle(color: Colors.white)),
+          ),
         ],
       ),
     );
@@ -342,11 +652,18 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
                     trailing: IconButton(
                       icon: const Icon(Icons.flash_on_rounded, color: Colors.greenAccent),
                       tooltip: 'Select & Recharge',
-                      onPressed: () {
+                      onPressed: () async {
                         setState(() {
                           _userIdController.text = c.linkedUserId;
-                          _verifiedRecipient = prov.verifyUser(c.linkedUserId);
+                          _verifiedRecipient = null;
+                          _verificationError = null;
                           _tabController.animateTo(0);
+                        });
+                        final res = await prov.verifyRecipient(c.linkedUserId);
+                        if (!mounted) return;
+                        setState(() {
+                          _verifiedRecipient = res;
+                          _verificationError = prov.verificationError;
                         });
                       },
                     ),
@@ -362,31 +679,112 @@ class _RechargeAgencyScreenState extends State<RechargeAgencyScreen> with Single
 
   // ── Tab 3: History ──
   Widget _buildHistoryTab(BuildContext context, RechargeAgencyProvider prov, bool isDark, Color primary) {
-    final txs = prov.transactions;
+    if (prov.isLoadingHistory && prov.transactions.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: txs.length,
-      itemBuilder: (ctx, idx) {
-        final tx = txs[idx];
-        return Card(
-          color: AppColors.getCard(isDark),
-          margin: const EdgeInsets.only(bottom: 10),
-          child: ListTile(
-            leading: UserAvatar(imageUrl: tx.recipientAvatarUrl, radius: 18),
-            title: Text('Recharged ${tx.coins} Coins', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
-            subtitle: Text('To: ${tx.recipientName} (${tx.recipientUserId})\nTx ID: ${tx.transactionId}', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark))),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(tx.status, style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 11)),
-                Text('${tx.timestamp.hour}:${tx.timestamp.minute}', style: TextStyle(fontSize: 10, color: AppColors.getMuted(isDark))),
-              ],
-            ),
+    if (prov.historyError != null && prov.transactions.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.wifi_off_rounded, size: 48, color: Colors.redAccent),
+              const SizedBox(height: 12),
+              Text(prov.historyError!, textAlign: TextAlign.center, style: TextStyle(color: AppColors.getTextSecondary(isDark))),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(backgroundColor: primary, foregroundColor: Colors.white),
+                onPressed: () => prov.fetchRechargeHistory(refresh: true),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      );
+    }
+
+    final txs = prov.transactions;
+    if (txs.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () => prov.fetchRechargeHistory(refresh: true),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.history_toggle_off_rounded, size: 48, color: Colors.grey),
+                  const SizedBox(height: 12),
+                  Text('No Agency Transactions Yet', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
+                  const SizedBox(height: 4),
+                  Text('Pull down to refresh or perform a coin recharge.', style: TextStyle(fontSize: 12, color: AppColors.getTextSecondary(isDark))),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => prov.fetchRechargeHistory(refresh: true),
+      child: ListView.builder(
+        controller: _historyScrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        itemCount: txs.length + (prov.isLoadingMoreHistory ? 1 : 0),
+        itemBuilder: (ctx, idx) {
+          if (idx == txs.length) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final tx = txs[idx];
+          return Card(
+            color: AppColors.getCard(isDark),
+            margin: const EdgeInsets.only(bottom: 10),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            child: ListTile(
+              leading: UserAvatar(imageUrl: tx.recipientAvatarUrl, name: tx.recipientName, radius: 18),
+              title: Text('Recharged ${AppFormatters.formatNumber(tx.coins)} Coins', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
+              subtitle: Text('To: ${tx.recipientName} (@${tx.recipientUserId})\nRef: ${tx.transactionId}', style: TextStyle(fontSize: 11, color: AppColors.getTextSecondary(isDark))),
+              trailing: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    tx.status,
+                    style: TextStyle(
+                      color: tx.status.toLowerCase() == 'successful'
+                          ? Colors.greenAccent
+                          : (tx.status.toLowerCase() == 'pending' ? Colors.orangeAccent : Colors.redAccent),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${tx.timestamp.hour.toString().padLeft(2, '0')}:${tx.timestamp.minute.toString().padLeft(2, '0')}',
+                    style: TextStyle(fontSize: 10, color: AppColors.getMuted(isDark)),
+                  ),
+                ],
+              ),
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: tx.transactionId));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Copied Ref: ${tx.transactionId}')),
+                );
+              },
+            ),
+          );
+        },
+      ),
     );
   }
 

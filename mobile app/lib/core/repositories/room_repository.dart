@@ -199,5 +199,61 @@ class RoomRepository {
     );
     return response.data?['data'] as Map<String, dynamic>? ?? {};
   }
+
+  /// Persist room seat capacity and layout mode (NEW-034)
+  Future<Map<String, dynamic>> updateRoomLayout(
+    String roomId, {
+    required int seatCapacity,
+    String? layout,
+    String? roomType,
+  }) async {
+    final response = await _apiClient.put(
+      '/v1/rooms/$roomId/layout',
+      data: {
+        'layout': layout ?? (seatCapacity == 12 ? '12_SEAT' : '${seatCapacity}_SEAT'),
+        'seatCapacity': seatCapacity,
+        'capacity': seatCapacity,
+        if (roomType != null) 'roomType': roomType,
+      },
+    );
+    return response.data?['data'] as Map<String, dynamic>? ?? {};
+  }
+
+  /// Fetch list of banned users for room moderation (NEW-054)
+  Future<List<Map<String, dynamic>>> getBannedUsers(String roomId) async {
+    try {
+      final response = await _apiClient.get('/v1/rooms/$roomId/banned');
+      final resData = response.data;
+      List<dynamic> rawList = [];
+      if (resData is Map) {
+        if (resData['data'] is List) {
+          rawList = resData['data'] as List;
+        } else if (resData['bannedUsers'] is List) {
+          rawList = resData['bannedUsers'] as List;
+        }
+      }
+      return rawList.whereType<Map<String, dynamic>>().toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Unban user from room (NEW-054)
+  Future<bool> unbanUser(String roomId, String targetUserId) async {
+    try {
+      final response = await _apiClient.post(
+        '/v1/rooms/$roomId/moderation/unban',
+        data: {'targetUserId': targetUserId},
+      );
+      return response.data?['success'] == true;
+    } catch (_) {
+      try {
+        final fallback = await _apiClient.delete('/v1/rooms/$roomId/banned/$targetUserId');
+        return fallback.data?['success'] == true;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
 }
 

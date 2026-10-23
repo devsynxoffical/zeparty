@@ -31,6 +31,7 @@ import '../../widgets/gift_animation_overlay.dart';
 import '../../widgets/tiktok_gift_overlay.dart';
 import '../../providers/live_gift_provider.dart';
 import '../games/game_center_sheet.dart';
+import '../games/rocket_game_sheet.dart';
 import '../pk_battle/pk_match_screen.dart';
 import '../../models/pk_battle_model.dart';
 import 'widgets/room_info_sheet.dart';
@@ -55,6 +56,9 @@ import '../../providers/emoji_reaction_provider.dart';
 import '../profile/user_profile_details_screen.dart';
 import '../messages/chat_screen.dart';
 import '../live/widgets/live_viewers_sheet.dart';
+import '../../core/services/agora_rtc_service.dart';
+import '../../core/repositories/room_repository.dart';
+import '../../models/live_cohost_invitation_model.dart';
 
 class LivePartyRoomScreen extends StatefulWidget {
   final LiveRoomModel room;
@@ -88,11 +92,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   int _currentTrackIndex = 0;
   double _musicVolume = 0.8;
   final List<Map<String, String>> _musicPlaylist = [
-    {'title': 'Lo-Fi Chill Beats', 'genre': 'Chillout / Beats', 'duration': '2:45'},
-    {'title': 'Nightdrive Synthwave', 'genre': 'Electronic / Upbeat', 'duration': '3:12'},
-    {'title': 'Acoustic Sunset Lounge', 'genre': 'Acoustic / Relax', 'duration': '3:05'},
-    {'title': 'Deep House Party Mix', 'genre': 'Dance / Club', 'duration': '4:20'},
-    {'title': 'Smooth Jazz Cafe', 'genre': 'Instrumental Jazz', 'duration': '2:58'},
+    {'title': 'Lo-Fi Chill Beats', 'genre': 'Chillout / Beats', 'duration': '2:45', 'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'},
+    {'title': 'Nightdrive Synthwave', 'genre': 'Electronic / Upbeat', 'duration': '3:12', 'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3'},
+    {'title': 'Acoustic Sunset Lounge', 'genre': 'Acoustic / Relax', 'duration': '3:05', 'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3'},
+    {'title': 'Deep House Party Mix', 'genre': 'Dance / Club', 'duration': '4:20', 'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3'},
+    {'title': 'Smooth Jazz Cafe', 'genre': 'Instrumental Jazz', 'duration': '2:58', 'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3'},
   ];
 
   // Room Settings State
@@ -105,29 +109,52 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   StreamSubscription? _partyRoomClosedSub;
   StreamSubscription? _kickedSub;
   StreamSubscription? _micInviteSub;
+  StreamSubscription? _coHostInviteSub;
   StreamSubscription? _pkInviteSub;
   StreamSubscription? _pkResultSub;
   bool _isPartyEndedDialogShown = false;
   bool _isConnectionErrorDialogShown = false;
   bool _isMicInviteDialogShown = false;
+  bool _isCoHostInviteDialogShown = false;
   bool _isClearScreenMode = false;
 
   void _toggleClearScreenMode() {
-    if (mounted) {
-      setState(() {
-        _isClearScreenMode = !_isClearScreenMode;
-      });
-      ScaffoldMessenger.of(context).clearSnackBars();
-      if (_isClearScreenMode) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✨ Clear Screen: Comments cleared. Double tap again to restore.'),
-            backgroundColor: Color(0xFF6A11CB),
-            duration: Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+    if (!mounted) return;
+    final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+    final provider = Provider.of<LivePartyProvider>(context, listen: false);
+    final isHost = widget.room.host.id == currentUser.id ||
+        widget.room.creatorUserId == currentUser.id ||
+        (currentUser.username.isNotEmpty && widget.room.host.username.toLowerCase() == currentUser.username.toLowerCase()) ||
+        provider.isHost;
+    final isAdmin = currentUser.role == UserRole.admin || currentUser.id == 'admin';
+    final isMod = provider.participants.any((p) => p.user.id == currentUser.id && p.role == ParticipantRole.moderator);
+    final canManage = isHost || isAdmin || isMod;
+
+    if (!canManage && !_isClearScreenMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Only room owner or admin can activate Clear Screen.'),
+          backgroundColor: Colors.redAccent,
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isClearScreenMode = !_isClearScreenMode;
+    });
+    ScaffoldMessenger.of(context).clearSnackBars();
+    if (_isClearScreenMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✨ Clear Screen: Comments cleared. Double tap again to restore.'),
+          backgroundColor: Color(0xFF6A11CB),
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -407,6 +434,12 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         _showIncomingMicInvitePrompt(data);
       });
 
+      _coHostInviteSub?.cancel();
+      _coHostInviteSub = partyProv.onIncomingCoHostInvite.listen((invitation) {
+        if (!mounted) return;
+        _showIncomingCoHostInvitePrompt(invitation);
+      });
+
       _pkInviteSub?.cancel();
       _pkInviteSub = partyProv.onPkInvitation.listen((data) {
         if (mounted) _showIncomingPKInvitationDialog(data);
@@ -439,12 +472,101 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     _partyRoomClosedSub?.cancel();
     _kickedSub?.cancel();
     _micInviteSub?.cancel();
+    _coHostInviteSub?.cancel();
     _pkInviteSub?.cancel();
     _pkResultSub?.cancel();
     _chatController.dispose();
     _chatScrollController.dispose();
     _chatFocusNode.dispose();
+    AgoraRtcService().stopAudioMixing();
     super.dispose();
+  }
+
+  void _showIncomingCoHostInvitePrompt(LiveCoHostInvitationModel invitation) {
+    if (_isCoHostInviteDialogShown || !mounted) return;
+    _isCoHostInviteDialogShown = true;
+
+    final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+    final inviterName = invitation.inviterName.isNotEmpty ? invitation.inviterName : 'The Host';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dContext) => PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          _isCoHostInviteDialogShown = false;
+          Navigator.pop(dContext);
+          partyProv.respondToCoHostInvitation(invitation.hostUserId, false, invitationId: invitation.id);
+        },
+        child: AlertDialog(
+          backgroundColor: const Color(0xFF1E1B2E),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+            side: BorderSide(color: Colors.amber.withValues(alpha: 0.3)),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFA000)]),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.star_rounded, color: Colors.black, size: 22),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Co-Host Invitation',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            '$inviterName has invited you to become a Co-Host of this room. As co-host, you will have speaker and moderation privileges.',
+            style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
+          ),
+          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          actions: [
+            TextButton(
+              onPressed: () {
+                _isCoHostInviteDialogShown = false;
+                Navigator.pop(dContext);
+                partyProv.respondToCoHostInvitation(invitation.hostUserId, false, invitationId: invitation.id);
+              },
+              child: const Text('Decline', style: TextStyle(color: Colors.white60, fontSize: 14)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFFFD700),
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              onPressed: () {
+                _isCoHostInviteDialogShown = false;
+                Navigator.pop(dContext);
+                partyProv.respondToCoHostInvitation(invitation.hostUserId, true, invitationId: invitation.id);
+                final authUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+                partyProv.takeMicSeat(1, authUser);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('⭐ You accepted the Co-Host invitation!'),
+                    backgroundColor: Color(0xFF6A11CB),
+                  ),
+                );
+              },
+              child: const Text('Accept', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            ),
+          ],
+        ),
+      ),
+    ).then((_) {
+      _isCoHostInviteDialogShown = false;
+    });
   }
 
   void _showIncomingMicInvitePrompt(Map<String, dynamic> data) {
@@ -617,6 +739,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             TextButton(
               onPressed: () async {
                 Navigator.pop(d);
+                AgoraRtcService().stopAudioMixing();
                 await provider.closeRoom();
                 if (mounted) {
                   Navigator.pop(context);
@@ -633,6 +756,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             onPressed: () async {
               Navigator.pop(d);
               // Leave without closing room so other users can stay inside
+              AgoraRtcService().stopAudioMixing();
               await provider.leaveParty();
               if (mounted) {
                 Navigator.pop(context);
@@ -767,7 +891,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           Positioned.fill(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onDoubleTap: _toggleClearScreenMode,
+              onDoubleTap: canManage ? _toggleClearScreenMode : null,
               onTap: () {
                 if (_isClearScreenMode) {
                   _toggleClearScreenMode();
@@ -2312,6 +2436,9 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           isVip: isVip,
           isSystem: isSystem,
           isGift: msg.isGiftMessage,
+          giftId: msg.giftId,
+          giftName: msg.giftName,
+          giftIcon: msg.giftIcon,
           nobleTitle: msg.sender.nobleTitle,
           avatarFrame: equippedFrame,
           chatBubble: equippedBubble,
@@ -2792,14 +2919,19 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                         imageAsset: 'assets/images/party_tool_seat.png',
                       ),
                       _buildRoomToolBtn(
-                        Icons.cleaning_services_rounded,
-                        'Clear Screen',
-                        Colors.tealAccent,
+                        Icons.rocket_launch_rounded,
+                        'Rocket Game',
+                        Colors.indigoAccent,
                         () {
                           Navigator.pop(ctx);
-                          _toggleClearScreenMode();
+                          showModalBottomSheet(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: Colors.transparent,
+                            builder: (_) => RocketGameSheet(roomId: widget.room.id),
+                          );
                         },
-                        imageAsset: 'assets/images/party_tool_clear_screen.png',
+                        imageAsset: 'assets/images/party_rocket_icon.jpg',
                       ),
 
                       // Management Controls (CR 38 - Strictly Gated to Owner & Admins)
@@ -2998,6 +3130,16 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                             _handleClearScreen(provider);
                           },
                           imageAsset: 'assets/images/party_tool_clear_screen.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.block_rounded,
+                          'Banned Users',
+                          Colors.redAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            _showBannedUsersSheet(context, provider);
+                          },
+                          imageAsset: 'assets/images/party_tool_kick.png',
                         ),
                       ],
                     ],
@@ -4117,6 +4259,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                             inactiveColor: Colors.white24,
                             onChanged: (val) {
                               setState(() => _musicVolume = val);
+                              AgoraRtcService().setAudioMixingVolume(val);
                               setMusicModalState(() {});
                             },
                           ),
@@ -4154,12 +4297,21 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                               trailing: IconButton(
                                 icon: Icon(isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded, color: Colors.pinkAccent, size: 28),
                                 onPressed: () {
+                                  final rtc = AgoraRtcService();
                                   setState(() {
                                     if (_currentTrackIndex == idx) {
-                                      _isPlayingMusic = !_isPlayingMusic;
+                                      if (_isPlayingMusic) {
+                                        rtc.pauseAudioMixing();
+                                        _isPlayingMusic = false;
+                                      } else {
+                                        rtc.resumeAudioMixing();
+                                        _isPlayingMusic = true;
+                                      }
                                     } else {
                                       _currentTrackIndex = idx;
                                       _isPlayingMusic = true;
+                                      final url = song['url'] ?? '';
+                                      rtc.startAudioMixing(filePath: url, volume: _musicVolume);
                                     }
                                   });
                                   setMusicModalState(() {});
@@ -4247,12 +4399,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                   );
 
                                   if (mounted) {
+                                    final trackUrl = uploadRes.url.isNotEmpty ? uploadRes.url : filePath;
+                                    AgoraRtcService().startAudioMixing(filePath: trackUrl, volume: _musicVolume);
                                     setState(() {
                                       _musicPlaylist.add({
                                         'title': cleanTitle,
                                         'genre': 'Device Music',
                                         'duration': '3:45',
-                                        'url': uploadRes.url.isNotEmpty ? uploadRes.url : filePath,
+                                        'url': trackUrl,
                                       });
                                       _currentTrackIndex = _musicPlaylist.length - 1;
                                       _isPlayingMusic = true;
@@ -4497,6 +4651,185 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showBannedUsersSheet(BuildContext ctx, LivePartyProvider provider) {
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (mCtx) => DraggableScrollableSheet(
+        initialChildSize: 0.65,
+        minChildSize: 0.35,
+        maxChildSize: 0.85,
+        builder: (bCtx, scrollCtrl) => Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF18132B),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            boxShadow: [BoxShadow(color: Colors.black87, blurRadius: 20)],
+          ),
+          child: StatefulBuilder(
+            builder: (context, setSheetState) {
+              return FutureBuilder<List<Map<String, dynamic>>>(
+                future: RoomRepository.instance.getBannedUsers(widget.room.id),
+                builder: (context, snapshot) {
+                  return Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+                        child: Column(
+                          children: [
+                            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.white30, borderRadius: BorderRadius.circular(2))),
+                            const SizedBox(height: 16),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(Icons.block_rounded, color: Colors.redAccent, size: 20),
+                                ),
+                                const SizedBox(width: 12),
+                                const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Banned Users', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white)),
+                                    Text('Manage users blocked from entering this room', style: TextStyle(fontSize: 12, color: Colors.white60)),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(color: Colors.white10, height: 1),
+                      Expanded(
+                        child: Builder(
+                          builder: (context) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const Center(child: CircularProgressIndicator(color: Colors.redAccent));
+                            }
+                            if (snapshot.hasError) {
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.info_outline, color: Colors.white38, size: 40),
+                                      const SizedBox(height: 12),
+                                      const Text(
+                                        'Unable to fetch banned users roster.',
+                                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${snapshot.error}',
+                                        style: const TextStyle(color: Colors.white30, fontSize: 11),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }
+                            final list = snapshot.data ?? <Map<String, dynamic>>[];
+
+                            if (list.isEmpty) {
+                              return Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.05),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.gavel_rounded, color: Colors.white38, size: 36),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    const Text('No banned users', style: TextStyle(color: Colors.white70, fontSize: 15, fontWeight: FontWeight.w600)),
+                                    const SizedBox(height: 4),
+                                    const Text('Users banned from this room will appear here.', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                                  ],
+                                ),
+                              );
+                            }
+
+                            return ListView.separated(
+                              controller: scrollCtrl,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              itemCount: list.length,
+                              separatorBuilder: (_, __) => const Divider(color: Colors.white10, height: 1),
+                              itemBuilder: (context, idx) {
+                                final item = list[idx];
+                                final userMap = item['user'] is Map ? Map<String, dynamic>.from(item['user'] as Map) : item;
+                                final userId = userMap['id']?.toString() ?? userMap['userId']?.toString() ?? '';
+                                final name = userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'User';
+                                final avatar = userMap['avatarUrl']?.toString() ?? '';
+                                final reason = item['reason']?.toString() ?? 'Violation of room rules';
+
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                                  leading: CircleAvatar(
+                                    radius: 20,
+                                    backgroundColor: Colors.white12,
+                                    backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+                                    child: avatar.isEmpty ? const Icon(Icons.person, color: Colors.white54) : null,
+                                  ),
+                                  title: Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                                  subtitle: Text(reason, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                                  trailing: OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.tealAccent,
+                                      side: const BorderSide(color: Colors.tealAccent),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                    ),
+                                    onPressed: () async {
+                                      try {
+                                        await RoomRepository.instance.unbanUser(widget.room.id, userId);
+                                        setSheetState(() {});
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('Unbanned $name successfully.'),
+                                              backgroundColor: Colors.teal,
+                                            ),
+                                          );
+                                        }
+                                      } catch (e) {
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: Text('Failed to unban: $e'),
+                                              backgroundColor: Colors.redAccent,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                                    child: const Text('Unban', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        ),
       ),
     );
   }
