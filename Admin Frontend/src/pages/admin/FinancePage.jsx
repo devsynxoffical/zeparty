@@ -20,11 +20,15 @@ import {
   getSettlements,
   updateSettlementStatus
 } from '../../services/modules/finance.service';
-import {
-  financeDashboardMock,
-  financeRevenueChartMock,
-  financeSettlementsMock,
-} from '../../mocks/finance.mock';
+
+const EMPTY_STATS = {
+  grossRechargeRevenue: 0,
+  netPlatformRevenue: 0,
+  hostEarnings: 0,
+  agencyCommission: 0,
+  platformProfit: 0,
+  pendingSettlement: 0,
+};
 
 const ChartTooltip = ({ active, payload, label }) => {
   if (active && payload && payload.length) {
@@ -42,42 +46,57 @@ const ChartTooltip = ({ active, payload, label }) => {
 
 export function FinancePage() {
   const { addLog } = useAuditLog();
-  const [stats, setStats] = useState(financeDashboardMock);
-  const [chartData, setChartData] = useState(financeRevenueChartMock);
-  const [settlements, setSettlements] = useState(financeSettlementsMock);
-  const [isLoading, setIsLoading] = useState(false);
+  const [stats, setStats] = useState(EMPTY_STATS);
+  const [chartData, setChartData] = useState([]);
+  const [settlements, setSettlements] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedSettlement, setSelectedSettlement] = useState(null);
-  const [rejectTarget, setRejectTarget] = useState(null);
   const [feedback, setFeedback] = useState(null);
   const [chartPeriod, setChartPeriod] = useState('Week');
 
+  const loadAll = async (period = chartPeriod) => {
+    setLoadError(null);
+    const [s, c, setts] = await Promise.all([
+      getFinanceDashboard(),
+      getRevenueChart(period),
+      getSettlements(),
+    ]);
+    setStats(s || EMPTY_STATS);
+    setChartData(Array.isArray(c) ? c : []);
+    setSettlements(Array.isArray(setts) ? setts : []);
+  };
+
   useEffect(() => {
     let isMounted = true;
-    Promise.all([
-      getFinanceDashboard().catch(() => financeDashboardMock),
-      getRevenueChart().catch(() => financeRevenueChartMock),
-      getSettlements().catch(() => financeSettlementsMock),
-    ])
-      .then(([s, c, setts]) => {
-        if (!isMounted) return;
-        setStats(s || financeDashboardMock);
-        if (Array.isArray(c) && c.length > 0) setChartData(c);
-        if (Array.isArray(setts) && setts.length > 0) setSettlements(setts);
-      })
+    setIsLoading(true);
+    loadAll('Week')
       .catch((err) => {
         console.warn('[FinancePage] Failed to load finance data:', err);
+        if (isMounted) setLoadError(err?.response?.data?.message || err?.message || 'Failed to load finance data from the server.');
       })
       .finally(() => {
         if (isMounted) setIsLoading(false);
       });
-
     return () => {
       isMounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const safeStats = stats || financeDashboardMock;
+  const handlePeriodChange = async (period) => {
+    setChartPeriod(period);
+    try {
+      const c = await getRevenueChart(period);
+      setChartData(Array.isArray(c) ? c : []);
+    } catch (err) {
+      setChartData([]);
+      setLoadError(err?.response?.data?.message || err?.message || 'Failed to load revenue chart.');
+    }
+  };
+
+  const safeStats = stats || EMPTY_STATS;
 
   const filteredSettlements = useMemo(() => {
     return settlements.filter(s => statusFilter === 'ALL' || s.status === statusFilter);
@@ -116,20 +135,15 @@ export function FinancePage() {
   };
 
   const handleApproveSettlement = async (id, entity) => {
-    const updated = await updateSettlementStatus(id, 'APPROVED');
-    setSettlements(settlements.map(s => s.id === id ? updated : s));
-    addLog('SETTLEMENT_APPROVED', id, 'Finance', `Approved settlement ${id} for ${entity}`);
-    setFeedback(`Settlement ${id} approved for ${entity}.`);
-    setTimeout(() => setFeedback(null), 3000);
-  };
-
-  const handleRejectSettlement = async (id, entity) => {
-    const updated = await updateSettlementStatus(id, 'REJECTED');
-    setSettlements(settlements.map(s => s.id === id ? updated : s));
-    addLog('SETTLEMENT_REJECTED', id, 'Finance', `Rejected settlement ${id} for ${entity}`);
-    setRejectTarget(null);
-    setFeedback(`Settlement ${id} rejected.`);
-    setTimeout(() => setFeedback(null), 3000);
+    try {
+      await updateSettlementStatus(id, 'APPROVED');
+      await loadAll();
+      addLog('SETTLEMENT_APPROVED', id, 'Finance', `Approved settlement ${id} for ${entity}`);
+      setFeedback(`Settlement ${id} approved for ${entity}.`);
+    } catch (err) {
+      setFeedback(`Failed to approve settlement: ${err?.response?.data?.error?.message || err?.response?.data?.message || err?.message}`);
+    }
+    setTimeout(() => setFeedback(null), 4000);
   };
 
   const columns = [
@@ -143,20 +157,12 @@ export function FinancePage() {
     { key: 'actions', header: 'Actions', render: (row) => (
       <div className="flex gap-2">
         {row.status === 'PENDING' && (
-          <>
-            <button
-              onClick={() => handleApproveSettlement(row.id, row.entity)}
-              className="text-xs text-emerald-400 hover:underline font-bold"
-            >
-              Approve
-            </button>
-            <button
-              onClick={() => setRejectTarget(row)}
-              className="text-xs text-red-400 hover:underline font-bold"
-            >
-              Reject
-            </button>
-          </>
+          <button
+            onClick={() => handleApproveSettlement(row.id, row.entity)}
+            className="text-xs text-emerald-400 hover:underline font-bold"
+          >
+            Approve
+          </button>
         )}
         <button
           onClick={() => setSelectedSettlement(row)}
@@ -188,6 +194,12 @@ export function FinancePage() {
         </button>
       </div>
 
+      {loadError && (
+        <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/40 text-red-400 text-xs font-bold">
+          {loadError}
+        </div>
+      )}
+
       {feedback && (
         <div className="p-3.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-bold flex items-center justify-between">
           <span>{feedback}</span>
@@ -210,7 +222,7 @@ export function FinancePage() {
               {['Day', 'Week', 'Month'].map(t => (
                 <button
                   key={t}
-                  onClick={() => setChartPeriod(t)}
+                  onClick={() => handlePeriodChange(t)}
                   className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${t === chartPeriod ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
                 >
                   {t}
@@ -219,15 +231,19 @@ export function FinancePage() {
             </div>
           </CardHeader>
           <div className="p-4 h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={formatCompact} />
-                <Tooltip content={<ChartTooltip />} />
-                <Bar dataKey="revenue" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={40} />
-              </BarChart>
-            </ResponsiveContainer>
+            {chartData.length === 0 || chartData.every((d) => !Number(d.revenue)) ? (
+              <div className="h-full flex items-center justify-center text-sm text-slate-500">No revenue recorded for this period.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={formatCompact} />
+                  <Tooltip content={<ChartTooltip />} />
+                  <Bar dataKey="revenue" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={40} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </Card>
 
@@ -271,7 +287,11 @@ export function FinancePage() {
             </select>
           </div>
         </CardHeader>
-        <DataTable columns={columns} data={filteredSettlements} isLoading={false} />
+        {filteredSettlements.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-500">No settlement records found.</div>
+        ) : (
+          <DataTable columns={columns} data={filteredSettlements} isLoading={false} />
+        )}
       </Card>
 
       {/* Settlement Details Modal */}
@@ -291,20 +311,7 @@ export function FinancePage() {
         </Modal>
       )}
 
-      {/* Reject Confirmation Modal */}
-      {rejectTarget && (
-        <Modal isOpen={true} onClose={() => setRejectTarget(null)} title={`Reject Settlement: ${rejectTarget.id}`}>
-          <div className="space-y-4 text-xs text-slate-300">
-            <p>Are you sure you want to reject settlement <strong className="text-white">{rejectTarget.id}</strong> for <strong className="text-white">{rejectTarget.entity}</strong>?</p>
-            <div className="flex justify-end gap-3 pt-2">
-              <button onClick={() => setRejectTarget(null)} className="px-4 py-2 text-sm text-slate-400">Cancel</button>
-              <button onClick={() => handleRejectSettlement(rejectTarget.id, rejectTarget.entity)} className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-bold">
-                Confirm Rejection
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
+
     </div>
   );
 }

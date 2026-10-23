@@ -317,12 +317,16 @@ export async function createWithdrawalRequest(req, res, next) {
 // --- Finance Dashboard & Revenue Statistics ---
 export async function getFinanceDashboard(req, res, next) {
   try {
+    const emptySum = { _sum: { amountUSD: 0, netPayableUSD: 0, grossEarningsUSD: 0, commissionUSD: 0, totalCoins: 0n, hostDiamonds: 0n } };
+    const settledStatuses = ['APPROVED', 'PROCESSING', 'PAID'];
     const [
       onlineRechargeAgg,
       offlineRechargeAgg,
       walletStats,
       pendingSettlementsAgg,
       giftVolumeAgg,
+      hostSettlementAgg,
+      agencySettlementAgg,
     ] = await Promise.all([
       prisma.onlineRecharge ? prisma.onlineRecharge.aggregate({
         where: { status: 'SUCCESS' },
@@ -340,23 +344,33 @@ export async function getFinanceDashboard(req, res, next) {
       prisma.giftTransaction ? prisma.giftTransaction.aggregate({
         _sum: { totalCoins: true, hostDiamonds: true },
       }).catch(() => ({ _sum: { totalCoins: 0n, hostDiamonds: 0n } })) : { _sum: { totalCoins: 0n, hostDiamonds: 0n } },
+      prisma.settlementRecord ? prisma.settlementRecord.aggregate({
+        where: { recipientType: 'HOST', status: { in: settledStatuses } },
+        _sum: { netPayableUSD: true },
+      }).catch(() => emptySum) : emptySum,
+      prisma.settlementRecord ? prisma.settlementRecord.aggregate({
+        where: { recipientType: 'AGENCY', status: { in: settledStatuses } },
+        _sum: { netPayableUSD: true },
+      }).catch(() => emptySum) : emptySum,
     ]);
 
     const onlineUSD = Number(onlineRechargeAgg._sum?.amountUSD || 0);
     const offlineUSD = Number(offlineRechargeAgg._sum?.amountUSD || 0);
     const walletRechargeUSD = Number(walletStats.totalRechargedUSD || 0);
-    const grossRechargeRevenue = Math.max(onlineUSD + offlineUSD, walletRechargeUSD, 1250000.50);
+    const grossRechargeRevenue = Math.max(onlineUSD + offlineUSD, walletRechargeUSD);
 
     const totalWithdrawnUSD = Number(walletStats.totalWithdrawnUSD || 0);
-    const pendingSettlement = Number(pendingSettlementsAgg._sum?.netPayableUSD || 75000.00);
+    const pendingSettlement = Number(pendingSettlementsAgg._sum?.netPayableUSD || 0);
 
-    const hostEarnings = Math.round(grossRechargeRevenue * 0.48 * 100) / 100;
-    const agencyCommission = Math.round(grossRechargeRevenue * 0.12 * 100) / 100;
+    // Real payouts recorded in settlement records (approved / processing / paid)
+    const hostEarnings = Number(hostSettlementAgg._sum?.netPayableUSD || 0);
+    const agencyCommission = Number(agencySettlementAgg._sum?.netPayableUSD || 0);
     const netPlatformRevenue = Math.round((grossRechargeRevenue - hostEarnings - agencyCommission) * 100) / 100;
     const platformProfit = netPlatformRevenue;
 
-    const giftRevenue = Math.round(grossRechargeRevenue * 0.64 * 100) / 100;
-    const pkGameRevenue = Math.round(grossRechargeRevenue * 0.36 * 100) / 100;
+    // Gift volume is reported in coins / diamonds (real ledger totals), never converted with an assumed ratio
+    const giftCoinsVolume = Number(giftVolumeAgg._sum?.totalCoins || 0n);
+    const giftHostDiamonds = Number(giftVolumeAgg._sum?.hostDiamonds || 0n);
 
     return res.status(200).json({
       success: true,
@@ -367,8 +381,8 @@ export async function getFinanceDashboard(req, res, next) {
         hostEarnings,
         agencyCommission,
         platformProfit,
-        giftRevenue,
-        pkGameRevenue,
+        giftCoinsVolume,
+        giftHostDiamonds,
         pendingSettlement,
         totalRevenueUSD: grossRechargeRevenue,
         totalWithdrawnUSD,
@@ -384,41 +398,47 @@ export async function getFinanceDashboard(req, res, next) {
 
 export async function getRevenueChart(req, res, next) {
   try {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const period = String(req.query?.period || 'Week').toLowerCase();
     const now = new Date();
-    const last7Days = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 86400000);
-      last7Days.push({
-        date: d.toISOString().split('T')[0],
-        label: days[d.getDay()],
+    const isDay = period === 'day';
+    const spanCount = isDay ? 24 : period === 'month' ? 30 : 7;
+    const stepMs = isDay ? 3600000 : 86400000;
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    const keyOf = (d) => (isDay ? d.toISOString().slice(0, 13) : d.toISOString().slice(0, 10));
+    const buckets = [];
+    for (let i = spanCount - 1; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * stepMs);
+      buckets.push({
+        key: keyOf(d),
+        date: d.toISOString(),
+        label: isDay ? `${String(d.getUTCHours()).padStart(2, '0')}:00` : (period === 'month' ? d.toISOString().slice(5, 10) : dayNames[d.getUTCDay()]),
         revenue: 0,
       });
     }
+    const since = new Date(now.getTime() - spanCount * stepMs);
 
-    try {
-      const oneWeekAgo = new Date(now.getTime() - 7 * 86400000);
-      const recharges = await prisma.onlineRecharge.findMany({
-        where: { status: 'SUCCESS', createdAt: { gte: oneWeekAgo } },
-        select: { amountUSD: true, createdAt: true },
-      });
-      for (const r of recharges) {
-        const dateStr = r.createdAt.toISOString().split('T')[0];
-        const bucket = last7Days.find(b => b.date === dateStr);
-        if (bucket) bucket.revenue += Number(r.amountUSD || 0);
-      }
-    } catch (_) {}
+    const [online, offline] = await Promise.all([
+      prisma.onlineRecharge
+        ? prisma.onlineRecharge.findMany({
+            where: { status: 'SUCCESS', createdAt: { gte: since } },
+            select: { amountUSD: true, createdAt: true },
+          })
+        : [],
+      prisma.offlineRecharge
+        ? prisma.offlineRecharge.findMany({
+            where: { status: 'APPROVED', createdAt: { gte: since } },
+            select: { amountUSD: true, createdAt: true },
+          })
+        : [],
+    ]);
 
-    const hasData = last7Days.some(b => b.revenue > 0);
-    const chartData = hasData ? last7Days : [
-      { label: 'Mon', revenue: 15000 },
-      { label: 'Tue', revenue: 18000 },
-      { label: 'Wed', revenue: 16500 },
-      { label: 'Thu', revenue: 22000 },
-      { label: 'Fri', revenue: 28000 },
-      { label: 'Sat', revenue: 35000 },
-      { label: 'Sun', revenue: 32000 },
-    ];
+    for (const r of [...online, ...offline]) {
+      const bucket = buckets.find((b) => b.key === keyOf(r.createdAt));
+      if (bucket) bucket.revenue += Number(r.amountUSD || 0);
+    }
+
+    const chartData = buckets.map(({ key, ...rest }) => rest);
 
     return res.status(200).json({
       success: true,
