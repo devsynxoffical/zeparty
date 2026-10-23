@@ -39,7 +39,19 @@ async function logAudit(
 }
 
 export async function createRoom(
-  { userId, title, coverImageUrl, backgroundImageUrl, roomType, category, isPrivate, roomPin, forceNew = false },
+  {
+    userId,
+    title,
+    coverImageUrl,
+    backgroundImageUrl,
+    roomType,
+    category,
+    isPrivate,
+    roomPin,
+    forceNew = false,
+    capacity,
+    seatCapacity,
+  },
   db = prisma
 ) {
   // 1. Any user can start live broadcast or audio party room freely without host registration requirement
@@ -47,22 +59,80 @@ export async function createRoom(
     where: { userId },
   });
 
-  // Bug #27: Check if the user already has an active LIVE room session to resume rather than destroying it
+  // Bug #27 & Bug #34: Check if the user already has a persistent room to resume or reopen rather than recreating a new room
   if (!forceNew) {
     try {
-      const existingRoom = await db.room.findFirst({
+      // Find the user's most recent room (prioritizing LIVE room if active, otherwise latest room)
+      let existingRoom = await db.room.findFirst({
         where: { creatorUserId: userId, status: 'LIVE' },
         orderBy: { createdAt: 'desc' },
+        include: {
+          seats: {
+            orderBy: { seatIndex: 'asc' },
+          },
+        },
       });
+
+      if (!existingRoom) {
+        existingRoom = await db.room.findFirst({
+          where: { creatorUserId: userId },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            seats: {
+              orderBy: { seatIndex: 'asc' },
+            },
+          },
+        });
+      }
+
       if (existingRoom) {
         clearHostAbsentTimer(existingRoom.id);
         const updateData = {};
-        if (title && title !== existingRoom.title) updateData.title = title;
-        if (coverImageUrl && coverImageUrl !== existingRoom.coverImageUrl) updateData.coverImageUrl = coverImageUrl;
-        if (backgroundImageUrl !== undefined && backgroundImageUrl !== existingRoom.backgroundImageUrl) updateData.backgroundImageUrl = backgroundImageUrl;
+        if (title && typeof title === 'string' && title.trim() && title.trim() !== existingRoom.title) {
+          updateData.title = title.trim();
+        }
+        if (coverImageUrl && typeof coverImageUrl === 'string' && coverImageUrl.trim() && coverImageUrl.trim() !== existingRoom.coverImageUrl) {
+          updateData.coverImageUrl = coverImageUrl.trim();
+        }
+        // Bug #34: Only update backgroundImageUrl if a non-empty string is explicitly provided.
+        // NEVER overwrite a valid saved background with null, undefined, or empty string on resume/reopen!
+        if (backgroundImageUrl && typeof backgroundImageUrl === 'string' && backgroundImageUrl.trim() !== '' && backgroundImageUrl.trim() !== existingRoom.backgroundImageUrl) {
+          updateData.backgroundImageUrl = backgroundImageUrl.trim();
+        }
         if (category && category !== existingRoom.category) updateData.category = category;
         if (isPrivate !== undefined && isPrivate !== existingRoom.isPrivate) updateData.isPrivate = isPrivate;
         if (roomPin !== undefined && roomPin !== existingRoom.roomPin) updateData.roomPin = roomPin;
+
+        const isRevivingEndedRoom = existingRoom.status !== 'LIVE';
+        if (isRevivingEndedRoom) {
+          updateData.status = 'LIVE';
+          updateData.endedAt = null;
+          updateData.currentViewersCount = 0;
+          updateData.agoraChannelName = `room_${crypto.randomUUID().replace(/-/g, '')}`;
+
+          // Clear temporary live session seat occupants
+          await db.roomSeat.updateMany({
+            where: { roomId: existingRoom.id },
+            data: {
+              occupiedUserId: null,
+              isMuted: false,
+              isMutedByModerator: false,
+            },
+          });
+
+          // Place host on Seat 0 for AUDIO_PARTY
+          const effectiveRoomType = (updateData.roomType || existingRoom.roomType);
+          if (effectiveRoomType === 'AUDIO_PARTY') {
+            await db.roomSeat.updateMany({
+              where: { roomId: existingRoom.id, seatIndex: 0 },
+              data: {
+                occupiedUserId: userId,
+                isMuted: false,
+                isMutedByModerator: false,
+              },
+            });
+          }
+        }
 
         if (Object.keys(updateData).length > 0) {
           await db.room.update({
@@ -70,7 +140,31 @@ export async function createRoom(
             data: updateData,
           });
         }
-        return await roomRepository.findRoomById(existingRoom.id, db);
+
+        // Bug #34: If capacity or seatCapacity was explicitly requested, update layout
+        const requestedCap = parseInt(seatCapacity || capacity, 10);
+        if (requestedCap && requestedCap >= 8 && requestedCap <= 30 && requestedCap !== existingRoom.seats.length) {
+          await roomRepository.updateRoomLayoutTx({
+            roomId: existingRoom.id,
+            capacity: requestedCap,
+            roomType: updateData.roomType || existingRoom.roomType,
+          }, db);
+        }
+
+        const refreshedRoom = await roomRepository.findRoomById(existingRoom.id, db);
+
+        if (isRevivingEndedRoom) {
+          try {
+            socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CREATED, refreshedRoom);
+            socketEmitter.broadcastGlobal('room:created', refreshedRoom);
+            socketEmitter.broadcastGlobal('room_created', refreshedRoom);
+            socketEmitter.broadcastGlobal('room:started', refreshedRoom);
+          } catch (err) {
+            console.error('Failed to broadcast room revived socket event:', err);
+          }
+        }
+
+        return refreshedRoom;
       }
     } catch (err) {
       console.warn('[RoomService] Error resuming existing room:', err?.message);
@@ -108,12 +202,14 @@ export async function createRoom(
       creatorUserId: userId,
       title,
       coverImageUrl,
-      backgroundImageUrl: backgroundImageUrl || null,
+      backgroundImageUrl: backgroundImageUrl && typeof backgroundImageUrl === 'string' && backgroundImageUrl.trim() ? backgroundImageUrl.trim() : null,
       roomType,
       category,
       isPrivate,
       roomPin,
       agoraChannelName,
+      capacity: parseInt(seatCapacity || capacity, 10) || 10,
+      seatCapacity: parseInt(seatCapacity || capacity, 10) || 10,
     },
     db
   );
@@ -273,6 +369,8 @@ export async function getRoomDetails(roomId, db = prisma) {
     peakViewers: peakViewers > 0 ? peakViewers : viewerCount,
     backgroundImageUrl: room.backgroundImageUrl || null,
     background: room.backgroundImageUrl || null,
+    themeUrl: room.backgroundImageUrl || null,
+    theme: room.backgroundImageUrl || null,
     giftsReceivedCoins: totalGiftCoins,
     totalGifts: totalGiftCoins,
     roomSendingTotal: dailyGiftCoins,
@@ -1858,9 +1956,13 @@ export async function updateRoomLayout(roomId, userId, { capacity, seatCapacity,
 
   try {
     socketEmitter.emitToRoom(room.id, 'room:layout_updated', payload);
+    socketEmitter.emitToRoom(room.id, 'room_layout_updated', payload);
     socketEmitter.emitToRoom(room.id, 'room:update_layout', payload);
+    socketEmitter.emitToRoom(room.id, 'room:mic_count_updated', payload);
+    socketEmitter.emitToRoom(room.id, 'room:seats_updated', payload);
     if (room.id !== roomId) {
       socketEmitter.emitToRoom(roomId, 'room:layout_updated', payload);
+      socketEmitter.emitToRoom(roomId, 'room_layout_updated', payload);
       socketEmitter.emitToRoom(roomId, 'room:update_layout', payload);
     }
   } catch (_) {}
@@ -2023,6 +2125,8 @@ export async function updateRoomBackground(roomId, userId, { backgroundImageUrl,
     roomId: room.id,
     backgroundImageUrl: updatedRoom.backgroundImageUrl || null,
     background: updatedRoom.backgroundImageUrl || null,
+    themeUrl: updatedRoom.backgroundImageUrl || null,
+    theme: updatedRoom.backgroundImageUrl || null,
     updatedBy: userId,
     timestamp: new Date().toISOString(),
   };
@@ -2031,6 +2135,13 @@ export async function updateRoomBackground(roomId, userId, { backgroundImageUrl,
     socketEmitter.emitToRoom(room.id, 'room:background_updated', payload);
     socketEmitter.emitToRoom(room.id, 'room_background_updated', payload);
     socketEmitter.emitToRoom(room.id, 'room:update_background', payload);
+    socketEmitter.emitToRoom(room.id, 'room:theme_updated', payload);
+    socketEmitter.emitToRoom(room.id, 'room_theme_updated', payload);
+    if (room.id !== roomId) {
+      socketEmitter.emitToRoom(roomId, 'room:background_updated', payload);
+      socketEmitter.emitToRoom(roomId, 'room_background_updated', payload);
+      socketEmitter.emitToRoom(roomId, 'room:theme_updated', payload);
+    }
   } catch (_) {}
 
   return {
@@ -2039,6 +2150,8 @@ export async function updateRoomBackground(roomId, userId, { backgroundImageUrl,
     roomId: room.id,
     backgroundImageUrl: updatedRoom.backgroundImageUrl || null,
     background: updatedRoom.backgroundImageUrl || null,
+    themeUrl: updatedRoom.backgroundImageUrl || null,
+    theme: updatedRoom.backgroundImageUrl || null,
   };
 }
 

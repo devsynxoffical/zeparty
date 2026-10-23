@@ -113,6 +113,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     status: room.status,
     backgroundImageUrl: room.backgroundImageUrl || null,
     background: room.backgroundImageUrl || null,
+    themeUrl: room.backgroundImageUrl || null,
+    theme: room.backgroundImageUrl || null,
     coverImageUrl: room.coverImageUrl || null,
     coverUrl: room.coverImageUrl || null,
     isPinned: Boolean(room.isPinned),
@@ -1565,6 +1567,8 @@ export async function onUpdateRoomBackground(io, socket, data, callback) {
       roomId: result.roomId,
       backgroundImageUrl: result.backgroundImageUrl,
       background: result.background,
+      themeUrl: result.themeUrl || result.backgroundImageUrl || null,
+      theme: result.theme || result.background || null,
       updatedBy: userId,
       timestamp: new Date().toISOString(),
     };
@@ -1573,6 +1577,8 @@ export async function onUpdateRoomBackground(io, socket, data, callback) {
     broadcastTarget.emit('room:background_updated', payload);
     broadcastTarget.emit('room_background_updated', payload);
     broadcastTarget.emit('room:update_background', payload);
+    broadcastTarget.emit('room:theme_updated', payload);
+    broadcastTarget.emit('room_theme_updated', payload);
 
     if (typeof callback === 'function') {
       return callback({ success: true, data: result });
@@ -2144,7 +2150,9 @@ export async function onUpdateRoomLayout(io, socket, data, callback) {
     const roomType = data?.roomType;
     const result = await roomService.updateRoomLayout(roomId, actorUserId, { capacity, roomType });
     if (typeof callback === 'function') return callback(result);
-    return socket.emit('room:layout_updated', result?.data || result);
+    socket.emit('room:layout_updated', result?.data || result);
+    socket.emit('room_layout_updated', result?.data || result);
+    socket.emit('room:mic_count_updated', result?.data || result);
   } catch (err) {
     const errorResponse = {
       success: false,

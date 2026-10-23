@@ -36,8 +36,8 @@ export async function createRoomWithSeats(
     console.warn('[RoomRepository] Could not archive previous rooms:', err?.message);
   }
 
-  // Initialize seats (defaults to 10 seats: host + co-host + 8 mic seats for standard layout)
-  const totalSeats = Math.max(10, parseInt(seatCapacity || capacity, 10) || 10);
+  // Initialize seats (defaults to 10 seats: host + co-host + 8 mic seats for standard layout; supports 8 to 30)
+  const totalSeats = Math.max(8, Math.min(30, parseInt(seatCapacity || capacity, 10) || 10));
   const seatsData = Array.from({ length: totalSeats }, (_, i) => ({
     seatIndex: i,
     occupiedUserId: i === 0 && roomType === 'AUDIO_PARTY' ? creatorUserId : null,
@@ -1325,7 +1325,9 @@ export async function updateRoomDetails({ roomId, title, coverImageUrl, category
     data.category = String(category).toUpperCase();
   }
   if (roomType !== undefined && roomType !== null) data.roomType = roomType;
-  if (backgroundImageUrl !== undefined) data.backgroundImageUrl = backgroundImageUrl;
+  if (backgroundImageUrl && typeof backgroundImageUrl === 'string' && backgroundImageUrl.trim() !== '') {
+    data.backgroundImageUrl = backgroundImageUrl.trim();
+  }
 
   return await db.room.update({
     where: { id: resolvedRoomId },

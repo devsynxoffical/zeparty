@@ -88,6 +88,10 @@ export async function startHostAbsentTimer(roomId, roomType, hostUserId, io) {
     }
   }, durationMs);
 
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+
   hostAbsentTimers.set(roomId, {
     timer,
     type: roomType || 'AUDIO_PARTY',

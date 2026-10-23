@@ -24,6 +24,8 @@ export const createRoomSchema = z.object({
   isPrivate: z.boolean().default(false),
   roomPin: z.string().max(10).optional().or(z.literal('')),
   forceNew: z.boolean().optional().default(false),
+  capacity: z.preprocess((val) => (val !== undefined && val !== null && val !== '' ? parseInt(val, 10) : undefined), z.number().int().min(8).max(50).optional()),
+  seatCapacity: z.preprocess((val) => (val !== undefined && val !== null && val !== '' ? parseInt(val, 10) : undefined), z.number().int().min(8).max(50).optional()),
 });
 
 export const updateRoomBackgroundSchema = z.object({
