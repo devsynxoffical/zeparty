@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+.dart_tool/
+.flutter-plugins*
+pubspec.lock
+*.iml
+.idea/
+coverage/
+backend/.env

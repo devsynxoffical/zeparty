@@ -1,0 +1,15 @@
+name: zeparty_game_core
+description: Shared contracts for ZeParty mini games - identity, room, match, catalog, launcher bridge, graphics quality.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.8.0
+  flutter: ">=3.35.0"
+dependencies:
+  flutter:
+    sdk: flutter
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

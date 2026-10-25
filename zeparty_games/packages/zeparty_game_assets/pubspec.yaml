@@ -1,0 +1,78 @@
+name: zeparty_game_assets
+description: Bundled art, audio and animation assets for all ZeParty mini games plus the asset manifest and loader.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.8.0
+  flutter: ">=3.35.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  zeparty_game_core:
+    path: ../zeparty_game_core
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  assets:
+    - assets/common/audio/
+    - assets/common/avatars/
+    - assets/common/backgrounds/
+    - assets/common/icons/
+    - assets/common/particles/
+    - assets/common/ui/
+    - assets/games/air_hockey/audio/
+    - assets/games/air_hockey/backgrounds/
+    - assets/games/air_hockey/boards/
+    - assets/games/air_hockey/pieces/
+    - assets/games/air_hockey/ui/
+    - assets/games/carrom_masters/audio/
+    - assets/games/carrom_masters/backgrounds/
+    - assets/games/carrom_masters/boards/
+    - assets/games/carrom_masters/pieces/
+    - assets/games/carrom_masters/ui/
+    - assets/games/chess_legends/audio/
+    - assets/games/chess_legends/backgrounds/
+    - assets/games/chess_legends/boards/
+    - assets/games/chess_legends/pieces/
+    - assets/games/chess_legends/ui/
+    - assets/games/color_clash/audio/
+    - assets/games/color_clash/backgrounds/
+    - assets/games/color_clash/cards/
+    - assets/games/color_clash/ui/
+    - assets/games/connect4_galaxy/audio/
+    - assets/games/connect4_galaxy/backgrounds/
+    - assets/games/connect4_galaxy/boards/
+    - assets/games/connect4_galaxy/discs/
+    - assets/games/connect4_galaxy/ui/
+    - assets/games/darts_arena/audio/
+    - assets/games/darts_arena/backgrounds/
+    - assets/games/darts_arena/boards/
+    - assets/games/darts_arena/pieces/
+    - assets/games/darts_arena/ui/
+    - assets/games/ludo_royale/audio/
+    - assets/games/ludo_royale/backgrounds/
+    - assets/games/ludo_royale/boards/
+    - assets/games/ludo_royale/dice/
+    - assets/games/ludo_royale/effects/
+    - assets/games/ludo_royale/tokens/
+    - assets/games/ludo_royale/ui/
+    - assets/games/mini_golf_paradise/audio/
+    - assets/games/mini_golf_paradise/backgrounds/
+    - assets/games/mini_golf_paradise/boards/
+    - assets/games/mini_golf_paradise/pieces/
+    - assets/games/mini_golf_paradise/ui/
+    - assets/games/pool_elite/audio/
+    - assets/games/pool_elite/backgrounds/
+    - assets/games/pool_elite/balls/
+    - assets/games/pool_elite/boards/
+    - assets/games/pool_elite/cues/
+    - assets/games/pool_elite/ui/
+    - assets/games/snake_ladder_kingdom/audio/
+    - assets/games/snake_ladder_kingdom/backgrounds/
+    - assets/games/snake_ladder_kingdom/boards/
+    - assets/games/snake_ladder_kingdom/characters/
+    - assets/games/snake_ladder_kingdom/ui/
+    - assets/manifest.json

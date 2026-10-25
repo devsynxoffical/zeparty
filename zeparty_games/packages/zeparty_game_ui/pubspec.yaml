@@ -1,0 +1,26 @@
+name: zeparty_game_ui
+description: ZeParty premium game design system, shared screens (lobby, rooms, matchmaking, results, store, wallet, leaderboards) and the game launcher.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.8.0
+  flutter: ">=3.35.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  google_fonts: ">=6.2.1 <10.0.0"
+  flutter_animate: ^4.5.2
+  uuid: ^4.6.0
+  zeparty_game_core:
+    path: ../zeparty_game_core
+  zeparty_game_network:
+    path: ../zeparty_game_network
+  zeparty_game_wallet:
+    path: ../zeparty_game_wallet
+  zeparty_game_assets:
+    path: ../zeparty_game_assets
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

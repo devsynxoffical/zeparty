@@ -1,0 +1,46 @@
+name: zeparty_games_demo
+description: Standalone demo shell that runs every ZeParty mini game against the games backend without the host app.
+publish_to: none
+version: 0.1.0
+resolution: workspace
+environment:
+  sdk: ^3.8.0
+  flutter: ">=3.35.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.5.6
+  zeparty_game_core:
+    path: ../../packages/zeparty_game_core
+  zeparty_game_ui:
+    path: ../../packages/zeparty_game_ui
+  zeparty_game_network:
+    path: ../../packages/zeparty_game_network
+  zeparty_game_assets:
+    path: ../../packages/zeparty_game_assets
+  ludo_royale:
+    path: ../../games/ludo_royale
+  color_clash:
+    path: ../../games/color_clash
+  chess_legends:
+    path: ../../games/chess_legends
+  connect4_galaxy:
+    path: ../../games/connect4_galaxy
+  snake_ladder_kingdom:
+    path: ../../games/snake_ladder_kingdom
+  pool_elite:
+    path: ../../games/pool_elite
+  carrom_masters:
+    path: ../../games/carrom_masters
+  mini_golf_paradise:
+    path: ../../games/mini_golf_paradise
+  air_hockey:
+    path: ../../games/air_hockey
+  darts_arena:
+    path: ../../games/darts_arena
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true

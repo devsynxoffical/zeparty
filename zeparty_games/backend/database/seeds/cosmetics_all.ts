@@ -1,0 +1,25 @@
+import type { Cosmetic } from '../../src/wallet/types.js';
+
+/** Cosmetics for the nine games added after Ludo Royale. Merged by seedCosmetics(). */
+export const GAME_COSMETICS: Cosmetic[] = [
+  { cosmeticId: 'connect4_galaxy.disc.classic', gameId: 'connect4_galaxy', category: 'disc', name: 'Energy Discs', description: 'Blue and gold plasma discs.', price: 0, previewAsset: 'games/connect4_galaxy/discs/disc_blue.webp', enabled: true },
+  { cosmeticId: 'connect4_galaxy.disc.plasma', gameId: 'connect4_galaxy', category: 'disc', name: 'Overcharged Plasma', description: 'Brighter, hotter plasma cores.', price: 250, previewAsset: 'games/connect4_galaxy/discs/disc_plasma_blue.webp', enabled: true },
+  { cosmeticId: 'snake_ladder_kingdom.character.knight', gameId: 'snake_ladder_kingdom', category: 'character', name: 'Royal Knights', description: 'The kingdom knights.', price: 0, previewAsset: 'games/snake_ladder_kingdom/characters/knight_red.webp', enabled: true },
+  { cosmeticId: 'chess_legends.board.obsidian', gameId: 'chess_legends', category: 'board', name: 'Obsidian Board', description: 'Obsidian and ivory marble.', price: 0, previewAsset: 'games/chess_legends/boards/tex_obsidian.webp', enabled: true },
+  { cosmeticId: 'chess_legends.board.ivory', gameId: 'chess_legends', category: 'board', name: 'Ivory Hall', description: 'Light ivory board with gold lines.', price: 300, previewAsset: 'games/chess_legends/boards/tex_ivory.webp', enabled: true },
+  { cosmeticId: 'chess_legends.pieces.crystal', gameId: 'chess_legends', category: 'pieces', name: 'Crystal Legends', description: 'Crystal white, gunmetal black.', price: 0, previewAsset: 'games/chess_legends/pieces/white_knight.webp', enabled: true },
+  { cosmeticId: 'chess_legends.pieces.onyx', gameId: 'chess_legends', category: 'pieces', name: 'Onyx Collection', description: 'Dark onyx tint for both sides.', price: 450, previewAsset: 'games/chess_legends/pieces/black_knight.webp', enabled: true },
+  { cosmeticId: 'color_clash.deck.holo', gameId: 'color_clash', category: 'deck', name: 'Holographic Deck', description: 'The arena deck.', price: 0, previewAsset: 'games/color_clash/cards/card_back.webp', enabled: true },
+  { cosmeticId: 'carrom_masters.striker.ivory', gameId: 'carrom_masters', category: 'striker', name: 'Ivory Striker', description: 'Club standard striker.', price: 0, previewAsset: 'games/carrom_masters/pieces/striker.webp', enabled: true },
+  { cosmeticId: 'carrom_masters.striker.gold', gameId: 'carrom_masters', category: 'striker', name: 'Gold Striker', description: 'Gold ring striker.', price: 200, previewAsset: 'games/carrom_masters/pieces/striker.webp', enabled: true },
+  { cosmeticId: 'carrom_masters.board.walnut', gameId: 'carrom_masters', category: 'board', name: 'Walnut Board', description: 'Heritage walnut.', price: 0, previewAsset: 'games/carrom_masters/boards/walnut_frame.webp', enabled: true },
+  { cosmeticId: 'pool_elite.cue.classic', gameId: 'pool_elite', category: 'cue', name: 'Classic Maple', description: 'Maple cue with walnut butt.', price: 0, previewAsset: 'games/pool_elite/cues/cue_classic.webp', enabled: true },
+  { cosmeticId: 'pool_elite.cue.ebony', gameId: 'pool_elite', category: 'cue', name: 'Ebony & Gold', description: 'Black ebony with gold rings.', price: 350, previewAsset: 'games/pool_elite/cues/cue_ebony.webp', enabled: true },
+  { cosmeticId: 'pool_elite.table.emerald', gameId: 'pool_elite', category: 'table', name: 'Emerald Lounge', description: 'Classic emerald felt.', price: 0, previewAsset: 'games/pool_elite/boards/table_felt.webp', enabled: true },
+  { cosmeticId: 'pool_elite.table.ruby', gameId: 'pool_elite', category: 'table', name: 'Ruby Lounge', description: 'Ruby red felt.', price: 400, previewAsset: 'games/pool_elite/boards/table_felt.webp', enabled: true },
+  { cosmeticId: 'air_hockey.paddle.neon', gameId: 'air_hockey', category: 'paddle', name: 'Neon Paddles', description: 'Cyan and magenta.', price: 0, previewAsset: 'games/air_hockey/pieces/paddle_cyan.webp', enabled: true },
+  { cosmeticId: 'darts_arena.dart.steel', gameId: 'darts_arena', category: 'dart', name: 'Steel Darts', description: 'Brushed steel, red flights.', price: 0, previewAsset: 'games/darts_arena/pieces/dart_steel.webp', enabled: true },
+  { cosmeticId: 'darts_arena.dart.gold', gameId: 'darts_arena', category: 'dart', name: 'Gold Darts', description: 'Gold rings and champagne flights.', price: 250, previewAsset: 'games/darts_arena/pieces/dart_gold.webp', enabled: true },
+  { cosmeticId: 'mini_golf_paradise.ball.white', gameId: 'mini_golf_paradise', category: 'ball', name: 'Resort Ball', description: 'Classic white.', price: 0, previewAsset: 'games/mini_golf_paradise/pieces/ball_white.webp', enabled: true },
+  { cosmeticId: 'mini_golf_paradise.ball.gold', gameId: 'mini_golf_paradise', category: 'ball', name: 'Gold Ball', description: 'Metallic gold.', price: 300, previewAsset: 'games/mini_golf_paradise/pieces/ball_gold.webp', enabled: true },
+];

@@ -1,69 +1,38 @@
-import prisma from '../config/database.js';
-import { CANONICAL_GAMES, getCanonicalGame, isValidGameId, DAILY_RP_CAP, MAX_ENERGY, ENERGY_REFILL_MINUTES } from '../constants/game.constants.js';
+import { CANONICAL_GAMES, getCanonicalGame } from '../constants/game.constants.js';
 
+/**
+ * Catalog view of the ten ZeParty premium games. Match state, rooms, wallets
+ * and leaderboards live in the games service (`zeparty_games/backend`); this
+ * repository only exposes the static catalog in the shape the mobile app and
+ * the admin portal expect.
+ */
 class GameRepository {
-  /**
-   * Returns list of canonical 6 games with runtime status & configs
-   */
-  async getCatalog({ activeOnly = false } = {}) {
-    let dbGames = [];
-    try {
-      dbGames = await prisma.game.findMany();
-    } catch (err) {
-      dbGames = [];
-    }
-
-    const dbMap = new Map();
-    dbGames.forEach((g) => {
-      dbMap.set(g.gameKey, g);
-    });
-
-    return CANONICAL_GAMES.map((canonical) => {
-      const dbRecord = dbMap.get(canonical.gameKey);
-      return {
-        ...canonical,
-        dbId: dbRecord?.id || null,
-        isActive: dbRecord ? dbRecord.isActive : canonical.isActive,
-      };
-    }).filter((g) => (activeOnly ? g.isActive : true));
+  _toCatalogRow(game) {
+    return {
+      ...game,
+      type: game.category,
+      status: game.isActive ? 'active' : 'inactive',
+      // Entertainment-only games: no entry fee, no prize pool.
+      entryFee: 0,
+      totalRounds: 0,
+      totalPaidOut: 0,
+      houseEdge: 0,
+      minPrize: 0,
+      maxPrize: 0,
+      specificationStatus: 'live',
+    };
   }
 
-  /**
-   * Find canonical game by ID or GameKey
-   */
+  async getCatalog({ activeOnly = false } = {}) {
+    return CANONICAL_GAMES
+      .map((g) => this._toCatalogRow(g))
+      .filter((g) => (activeOnly ? g.isActive : true));
+  }
+
   async findById(gameId) {
     const canonical = getCanonicalGame(gameId);
     if (!canonical) return null;
-
-    try {
-      const dbRecord = await prisma.game.findFirst({
-        where: { gameKey: canonical.gameKey },
-      });
-
-      return {
-        ...canonical,
-        dbId: dbRecord?.id || null,
-        isActive: dbRecord ? dbRecord.isActive : canonical.isActive,
-      };
-    } catch (err) {
-      return { ...canonical, dbId: null };
-    }
-  }
-
-  /**
-   * Toggle Game Active State in DB
-   */
-  async setGameStatus(gameKey, isActive) {
-    return prisma.game.upsert({
-      where: { gameKey },
-      update: { isActive },
-      create: {
-        gameKey,
-        name: getCanonicalGame(gameKey)?.name || gameKey,
-        category: getCanonicalGame(gameKey)?.category || 'Skill',
-        isActive,
-      },
-    });
+    return this._toCatalogRow(canonical);
   }
 }
 

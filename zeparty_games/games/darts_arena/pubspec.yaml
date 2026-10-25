@@ -1,0 +1,24 @@
+name: darts_arena
+description: Darts Arena - premium competitive sports lounge darts for ZeParty built with Flame. 501/301, cricket and around the clock, server-authoritative throws.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.8.0
+  flutter: ">=3.35.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  flame: ^1.38.2
+  flame_audio: ^2.12.2
+  flutter_animate: ^4.5.2
+  zeparty_game_core:
+    path: ../../packages/zeparty_game_core
+  zeparty_game_ui:
+    path: ../../packages/zeparty_game_ui
+  zeparty_game_assets:
+    path: ../../packages/zeparty_game_assets
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
