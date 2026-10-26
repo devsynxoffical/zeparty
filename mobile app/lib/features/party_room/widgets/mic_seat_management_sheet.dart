@@ -5,6 +5,7 @@ import '../../../models/user_model.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/live_party_provider.dart';
 import '../../../widgets/user_avatar.dart';
+import '../../../core/utils/noble_badge_helper.dart';
 
 class MicSeatManagementSheet extends StatefulWidget {
   final int micIndex;
@@ -56,12 +57,15 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
     final occupant = widget.occupant ?? provider.participants.where((p) => p.seatNumber == micIndex).firstOrNull;
     final isOccupied = occupant != null;
     final isLocked = provider.isSeatLocked(micIndex);
-    final isMuted = provider.isSeatMuted(micIndex);
-    final volume = provider.getSeatVolume(micIndex);
-
     final isHost = provider.activeRoom?.host.id == authUser.id || provider.activeRoom?.creatorUserId == authUser.id;
     final isModerator = provider.participants.any((p) => p.user.id == authUser.id && p.role == ParticipantRole.moderator);
     final canManageSeats = isHost || isModerator || authUser.role == UserRole.admin;
+
+    final isSeatMutedByMod = provider.isSeatMutedByModerator(micIndex);
+    final isMuted = canManageSeats && occupant?.user.id != authUser.id
+        ? isSeatMutedByMod
+        : provider.isSeatMuted(micIndex);
+    final volume = provider.getSeatVolume(micIndex);
     final micLabel = micIndex == 0
         ? 'Host Mic'
         : micIndex == 1
@@ -192,7 +196,13 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.purpleAccent, width: 2),
                       ),
-                      child: UserAvatar(imageUrl: occupant.user.avatarUrl, radius: 22),
+                      child: UserAvatar(
+                        imageUrl: occupant.user.avatarUrl,
+                        radius: 22,
+                        frameAsset: occupant.user.avatarFrame.isNotEmpty && occupant.user.avatarFrame != 'none'
+                            ? occupant.user.avatarFrame
+                            : null,
+                      ),
                     ),
                 ],
               ),
@@ -452,7 +462,13 @@ class _MicSeatManagementSheetState extends State<MicSeatManagementSheet> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: ListTile(
-                        leading: UserAvatar(imageUrl: p.user.avatarUrl, radius: 18),
+                        leading: UserAvatar(
+                          imageUrl: p.user.avatarUrl,
+                          radius: 18,
+                          frameAsset: p.user.avatarFrame.isNotEmpty && p.user.avatarFrame != 'none'
+                              ? p.user.avatarFrame
+                              : null,
+                        ),
                         title: Text(p.user.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                         subtitle: Text('ID: ${p.user.id}', style: const TextStyle(color: Colors.white60, fontSize: 11)),
                         trailing: ElevatedButton(

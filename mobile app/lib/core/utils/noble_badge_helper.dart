@@ -91,7 +91,7 @@ class NobleBadgeHelper {
     if (lower.contains('marquis')) return 'assets/nobles/marquis_frame.webp';
     if (lower.contains('viscount')) return 'assets/nobles/viscount_frame.webp';
     if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_frame.webp';
-    if (lower.contains('baron')) return 'assets/nobles/baron_frame.webp';
+    if (lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/baron_frame.webp';
 
     // SVIP Frames
     if (lower.contains('svip')) {
@@ -199,7 +199,7 @@ class NobleBadgeHelper {
     if (lower.contains('marquis')) return 'assets/nobles/tier-4-marquis_profilecard.webp';
     if (lower.contains('viscount')) return 'assets/nobles/viscount_card.webp';
     if (lower.contains('count') || lower.contains('earl')) return 'assets/nobles/count_card.webp';
-    if (lower.contains('baron') || lower.contains('knight')) return 'assets/nobles/viscount_badge.webp';
+    if (lower.contains('baron') || lower.contains('knight')) return null;
 
     // SVIP Cards
     if (lower.contains('svip')) {

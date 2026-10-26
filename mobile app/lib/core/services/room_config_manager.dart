@@ -20,6 +20,7 @@ class RoomConfigManager extends ChangeNotifier {
   final Map<String, String> _customRoomTypes = {};
   final Map<String, Set<int>> _lockedSeats = {};
   final Map<String, num> _roomSendingTotals = {};
+  final Map<String, String> _customBackgrounds = {};
 
   bool _isLoaded = false;
   bool get isLoaded => _isLoaded;
@@ -32,6 +33,7 @@ class RoomConfigManager extends ChangeNotifier {
     _customRoomTypes.clear();
     _lockedSeats.clear();
     _roomSendingTotals.clear();
+    _customBackgrounds.clear();
     _isLoaded = false;
   }
 
@@ -66,6 +68,10 @@ class RoomConfigManager extends ChangeNotifier {
           final id = key.replaceFirst('zeparty_room_sending_total_', '');
           final val = prefs.getDouble(key);
           if (val != null) _roomSendingTotals[id] = val;
+        } else if (key.startsWith('zeparty_room_background_')) {
+          final id = key.replaceFirst('zeparty_room_background_', '');
+          final val = prefs.getString(key);
+          if (val != null && val.isNotEmpty) _customBackgrounds[id] = val;
         }
       }
       _isLoaded = true;
@@ -88,6 +94,22 @@ class RoomConfigManager extends ChangeNotifier {
     if (coverUrl != null && coverUrl.trim().isNotEmpty) {
       _customCovers[roomId] = coverUrl.trim();
       await prefs.setString('zeparty_room_cover_$roomId', coverUrl.trim());
+    }
+    notifyListeners();
+  }
+
+  // ── Room Background (Item 34) ─────────────────────────────────────────────
+  String? getCustomBackground(String roomId) => _customBackgrounds[roomId];
+
+  Future<void> saveRoomBackground(String roomId, String backgroundImageUrl) async {
+    final trimmed = backgroundImageUrl.trim();
+    final prefs = await SharedPreferences.getInstance();
+    if (trimmed.isNotEmpty) {
+      _customBackgrounds[roomId] = trimmed;
+      await prefs.setString('zeparty_room_background_$roomId', trimmed);
+    } else {
+      _customBackgrounds.remove(roomId);
+      await prefs.remove('zeparty_room_background_$roomId');
     }
     notifyListeners();
   }
@@ -129,8 +151,10 @@ class RoomConfigManager extends ChangeNotifier {
       return;
     }
     _roomSendingTotals[roomId] = total;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('zeparty_room_sending_total_$roomId', total.toDouble());
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble('zeparty_room_sending_total_$roomId', total.toDouble());
+    } catch (_) {}
     notifyListeners();
   }
 
@@ -145,13 +169,19 @@ class RoomConfigManager extends ChangeNotifier {
     String cover = _customCovers[room.id] ?? room.coverUrl;
     int capacity = _customCapacities[room.id] ?? room.seatCapacity;
     String roomType = _customRoomTypes[room.id] ?? room.roomType;
+    String? background = _customBackgrounds[room.id] ?? room.backgroundImageUrl;
 
-    if (title != room.title || cover != room.coverUrl || capacity != room.seatCapacity || roomType != room.roomType) {
+    if (title != room.title ||
+        cover != room.coverUrl ||
+        capacity != room.seatCapacity ||
+        roomType != room.roomType ||
+        background != room.backgroundImageUrl) {
       return room.copyWith(
         title: title,
         coverUrl: cover,
         seatCapacity: capacity,
         roomType: roomType,
+        backgroundImageUrl: background,
       );
     }
     return room;

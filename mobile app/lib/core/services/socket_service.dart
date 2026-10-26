@@ -47,6 +47,7 @@ class SocketService {
   final _roomLockUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomHostAbsentController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomHostReturnedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomBackgroundUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Social realtime event streams
   final _postCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -117,6 +118,33 @@ class SocketService {
   final _luckyBagClaimedController = StreamController<Map<String, dynamic>>.broadcast();
   final _worldGlobalEventController = StreamController<Map<String, dynamic>>.broadcast();
 
+  // Host & Agency Target Streams (NEW 10)
+  final _hostTargetUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _agencyTargetUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _reconnectController = StreamController<void>.broadcast();
+
+  // Wallet Balance Real-time Stream (Item 20)
+  final _walletBalanceUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+
+  Stream<Map<String, dynamic>> get onHostTargetUpdated => _hostTargetUpdatedController.stream;
+  Stream<Map<String, dynamic>> get onAgencyTargetUpdated => _agencyTargetUpdatedController.stream;
+  Stream<void> get onReconnect => _reconnectController.stream;
+
+  /// Emits whenever the backend pushes a wallet:balance_updated event
+  Stream<Map<String, dynamic>> get onWalletBalanceUpdated => _walletBalanceUpdatedController.stream;
+
+  // User & Seller Role Revocation Streams (Item 41)
+  final _userRoleUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onUserRoleUpdated => _userRoleUpdatedController.stream;
+
+  // Authoritative Stage Streams (Item 49)
+  final _roomStageUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onRoomStageUpdated => _roomStageUpdatedController.stream;
+
+  // Rocket Launch Stream (Item 44)
+  final _rocketLaunchedController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onRocketLaunched => _rocketLaunchedController.stream;
+
   // Getters - PK Battle
   Stream<Map<String, dynamic>> get onPkCreated => _pkCreatedController.stream;
   Stream<Map<String, dynamic>> get onPkParticipantJoined => _pkParticipantJoinedController.stream;
@@ -182,6 +210,7 @@ class SocketService {
   Stream<Map<String, dynamic>> get onRoomLockUpdated => _roomLockUpdatedController.stream;
   Stream<Map<String, dynamic>> get onRoomHostAbsent => _roomHostAbsentController.stream;
   Stream<Map<String, dynamic>> get onRoomHostReturned => _roomHostReturnedController.stream;
+  Stream<Map<String, dynamic>> get onRoomBackgroundUpdated => _roomBackgroundUpdatedController.stream;
 
   // Stream aliases for backwards compatibility
   Stream<Map<String, dynamic>> get roomCreatedStream => onRoomCreated;
@@ -303,6 +332,16 @@ class SocketService {
       if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
         _connectCompleter!.complete();
       }
+      _reconnectController.add(null);
+      if (_currentRoomId != null) {
+        joinRoomSubscription(_currentRoomId!, user: _cachedUserData);
+      }
+    });
+
+    _socket!.onReconnect((_) {
+      _isConnected = true;
+      debugPrint('[SocketService] Reconnected to backend realtime server ($baseUrl)');
+      _reconnectController.add(null);
       if (_currentRoomId != null) {
         joinRoomSubscription(_currentRoomId!, user: _cachedUserData);
       }
@@ -540,6 +579,24 @@ class SocketService {
     _socket!.on('room_user_muted', (data) {
       if (data != null) _roomUserMutedController.add(safeMap(data));
     });
+    _socket!.on('room:user_unmuted', (data) {
+      if (data != null) _roomUserMutedController.add(safeMap(data));
+    });
+    _socket!.on('room_user_unmuted', (data) {
+      if (data != null) _roomUserMutedController.add(safeMap(data));
+    });
+    _socket!.on('room:seat_muted', (data) {
+      if (data != null) _roomUserMutedController.add(safeMap(data));
+    });
+    _socket!.on('room:seat_unmuted', (data) {
+      if (data != null) _roomUserMutedController.add(safeMap(data));
+    });
+    _socket!.on('seat_muted', (data) {
+      if (data != null) _roomUserMutedController.add(safeMap(data));
+    });
+    _socket!.on('seat_unmuted', (data) {
+      if (data != null) _roomUserMutedController.add(safeMap(data));
+    });
     // Emoji reactions broadcast from backend
     _socket!.on('room:emoji', (data) {
       if (data != null) _roomEmojiController.add(safeMap(data));
@@ -589,6 +646,59 @@ class SocketService {
     _socket!.off('cohost_invite_response');
     _socket!.on('cohost_invite_response', handleCoHostInviteResponse);
 
+    // Item 41: User Role Updated & Seller Status Updated
+    void handleRoleUpdate(dynamic data) {
+      if (data != null) _userRoleUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('user:role_updated');
+    _socket!.on('user:role_updated', handleRoleUpdate);
+    _socket!.off('seller:status_updated');
+    _socket!.on('seller:status_updated', handleRoleUpdate);
+    _socket!.off('seller:revoked');
+    _socket!.on('seller:revoked', handleRoleUpdate);
+
+    // Item 49: Authoritative Stage State & Mic Synchronization
+    void handleStageUpdate(dynamic data) {
+      if (data != null) _roomStageUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('room:stage_updated');
+    _socket!.on('room:stage_updated', handleStageUpdate);
+    _socket!.off('stage:updated');
+    _socket!.on('stage:updated', handleStageUpdate);
+    _socket!.off('room:stage_snapshot');
+    _socket!.on('room:stage_snapshot', handleStageUpdate);
+
+    // Item 44: Rocket Tool Realtime Events
+    void handleRocket(dynamic data) {
+      if (data != null) _rocketLaunchedController.add(safeMap(data));
+    }
+    _socket!.off('room:rocket_launched');
+    _socket!.on('room:rocket_launched', handleRocket);
+    _socket!.off('rocket:launched');
+    _socket!.on('rocket:launched', handleRocket);
+
+    // Item 45: Emoji Effects
+    _socket!.off('room:emoji_effect');
+    _socket!.on('room:emoji_effect', (data) {
+      if (data != null) _roomEmojiController.add(safeMap(data));
+    });
+
+    // Item 35: Lucky Bag Spawned / Claimed Events
+    _socket!.off('room:lucky_bag_spawned');
+    _socket!.on('room:lucky_bag_spawned', (data) {
+      if (data != null) _luckyBagCreatedController.add(safeMap(data));
+    });
+    _socket!.off('room:lucky_bag_claimed');
+    _socket!.on('room:lucky_bag_claimed', (data) {
+      if (data != null) _luckyBagClaimedController.add(safeMap(data));
+    });
+
+    // Item 52: Admin Promoted
+    _socket!.off('room:admin_promoted');
+    _socket!.on('room:admin_promoted', (data) {
+      if (data != null) _roomRoleUpdatedController.add(safeMap(data));
+    });
+
     // Room Profile & Details Sync (Item 09)
     void handleDetailsUpdated(dynamic data) {
       if (data != null) _roomDetailsUpdatedController.add(safeMap(data));
@@ -635,6 +745,17 @@ class SocketService {
     _socket!.on('room:lock_updated', handleLockUpdated);
     _socket!.off('room:lock_status');
     _socket!.on('room:lock_status', handleLockUpdated);
+
+    // Room Background Sync (Item 34)
+    void handleBackgroundUpdated(dynamic data) {
+      if (data != null) _roomBackgroundUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('room:background_updated');
+    _socket!.on('room:background_updated', handleBackgroundUpdated);
+    _socket!.off('room_background_updated');
+    _socket!.on('room_background_updated', handleBackgroundUpdated);
+    _socket!.off('room:update_background');
+    _socket!.on('room:update_background', handleBackgroundUpdated);
 
     // Host Presence & Grace Period Lifecycle (Bug 06)
     _socket!.off('room:host_absent');
@@ -848,6 +969,32 @@ class SocketService {
     _socket!.on('global:announcement', (data) {
       if (data != null) _worldGlobalEventController.add(safeMap(data));
     });
+
+    // Wallet Balance Real-time Events (Item 20)
+    void handleWalletBalanceUpdated(dynamic data) {
+      if (data != null) _walletBalanceUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('wallet:balance_updated');
+    _socket!.on('wallet:balance_updated', handleWalletBalanceUpdated);
+    _socket!.off('wallet_balance_updated');
+    _socket!.on('wallet_balance_updated', handleWalletBalanceUpdated);
+
+    // Host & Agency Target Realtime Events (NEW 10)
+    void handleHostTargetUpdated(dynamic data) {
+      if (data != null) _hostTargetUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('host:target_updated');
+    _socket!.on('host:target_updated', handleHostTargetUpdated);
+    _socket!.off('host_target_updated');
+    _socket!.on('host_target_updated', handleHostTargetUpdated);
+
+    void handleAgencyTargetUpdated(dynamic data) {
+      if (data != null) _agencyTargetUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('agency:target_updated');
+    _socket!.on('agency:target_updated', handleAgencyTargetUpdated);
+    _socket!.off('agency_target_updated');
+    _socket!.on('agency_target_updated', handleAgencyTargetUpdated);
 
     _socket!.connect();
     return _connectCompleter?.future ?? Future.value();
@@ -1222,6 +1369,44 @@ class SocketService {
     emit('room:seat_locked_status', payload);
   }
 
+  /// Broadcast Moderator Mic Seat Mute Action (Item 32)
+  void emitRoomSeatMute(String roomId, int seatIndex, bool isMuted, {String? targetUserId, String? reason}) {
+    final payload = {
+      'roomId': roomId,
+      'seatIndex': seatIndex,
+      'seatNumber': seatIndex,
+      'isMuted': isMuted,
+      if (targetUserId != null && targetUserId.isNotEmpty) 'targetUserId': targetUserId,
+      if (targetUserId != null && targetUserId.isNotEmpty) 'userId': targetUserId,
+      if (reason != null && reason.isNotEmpty) 'reason': reason,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    emit('room:mute_seat', payload);
+    emit('seat_mute', payload);
+    emit('room:toggle_mute', payload);
+  }
+
+  /// Alias for seat mute action (Item 32)
+  void muteSeat({
+    required String roomId,
+    required int seatIndex,
+    required bool isMuted,
+    String? targetUserId,
+    String? reason,
+  }) => emitRoomSeatMute(roomId, seatIndex, isMuted, targetUserId: targetUserId, reason: reason);
+
+  /// Broadcast Room Background Update (Item 34)
+  void emitRoomBackgroundUpdate(String roomId, String backgroundImageUrl) {
+    final payload = {
+      'roomId': roomId,
+      'backgroundImageUrl': backgroundImageUrl,
+      'background': backgroundImageUrl,
+      'timestamp': DateTime.now().toIso8601String(),
+    };
+    emit('room:update_background', payload);
+    emit('room:background_updated', payload);
+  }
+
   /// Broadcast Room Capacity & Layout Updates (Item 11)
   void emitRoomLayoutUpdate(String roomId, int capacity, String roomType) {
     final payload = {
@@ -1347,6 +1532,56 @@ class SocketService {
       'roomId': roomId,
       'timestamp': DateTime.now().toIso8601String(),
     });
+  }
+
+  @visibleForTesting
+  void emitHostTargetUpdatedForTesting([Map<String, dynamic>? data]) {
+    _hostTargetUpdatedController.add(data ?? const {'type': 'host:target_updated'});
+  }
+
+  @visibleForTesting
+  void emitAgencyTargetUpdatedForTesting([Map<String, dynamic>? data]) {
+    _agencyTargetUpdatedController.add(data ?? const {'type': 'agency:target_updated'});
+  }
+
+  @visibleForTesting
+  void emitReconnectForTesting() {
+    _reconnectController.add(null);
+  }
+
+  @visibleForTesting
+  void emitGiftSentForTesting(Map<String, dynamic> data) {
+    _giftSentController.add(data);
+  }
+
+  @visibleForTesting
+  void emitSeatOccupiedForTesting(Map<String, dynamic> data) {
+    _seatOccupiedController.add(data);
+  }
+
+  @visibleForTesting
+  void emitSeatReleasedForTesting(Map<String, dynamic> data) {
+    _seatReleasedController.add(data);
+  }
+
+  @visibleForTesting
+  void emitRoomSnapshotForTesting(Map<String, dynamic> data) {
+    _roomSnapshotController.add(data);
+  }
+
+  @visibleForTesting
+  void emitRoomSendingTotalForTesting(Map<String, dynamic> data) {
+    _roomSendingTotalController.add(data);
+  }
+
+  @visibleForTesting
+  void emitRoomBackgroundUpdatedForTesting(Map<String, dynamic> data) {
+    _roomBackgroundUpdatedController.add(data);
+  }
+
+  @visibleForTesting
+  void emitRoomUserMutedForTesting(Map<String, dynamic> data) {
+    _roomUserMutedController.add(data);
   }
 
   /// Disconnect socket cleanly

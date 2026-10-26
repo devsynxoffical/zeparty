@@ -24,6 +24,57 @@ class HostTargetTier {
   }
 }
 
+class HostTargetCycle {
+  final String hostType;
+  final int cycleDays;
+  final int cycleIndex;
+  final int totalCycles;
+  final int startDay;
+  final int endDay;
+  final DateTime? cycleStartDate;
+  final DateTime? cycleEndDate;
+  final int daysRemaining;
+  final String cycleIdentifier;
+  final String formattedCycle;
+  final String formattedLabel;
+
+  const HostTargetCycle({
+    required this.hostType,
+    required this.cycleDays,
+    required this.cycleIndex,
+    required this.totalCycles,
+    required this.startDay,
+    required this.endDay,
+    this.cycleStartDate,
+    this.cycleEndDate,
+    required this.daysRemaining,
+    required this.cycleIdentifier,
+    required this.formattedCycle,
+    required this.formattedLabel,
+  });
+
+  factory HostTargetCycle.fromJson(Map<String, dynamic> json, {String defaultHostType = 'LIVE_HOST'}) {
+    final type = (json['hostType'] ?? defaultHostType).toString();
+    final defaultDays = type == 'LIVE_HOST' ? 10 : 15;
+    final cDays = int.tryParse(json['cycleDays']?.toString() ?? '') ?? defaultDays;
+
+    return HostTargetCycle(
+      hostType: type,
+      cycleDays: cDays,
+      cycleIndex: int.tryParse(json['cycleIndex']?.toString() ?? '1') ?? 1,
+      totalCycles: int.tryParse(json['totalCycles']?.toString() ?? (cDays == 10 ? '3' : '2')) ?? (cDays == 10 ? 3 : 2),
+      startDay: int.tryParse(json['startDay']?.toString() ?? '1') ?? 1,
+      endDay: int.tryParse(json['endDay']?.toString() ?? '$cDays') ?? cDays,
+      cycleStartDate: json['cycleStartDate'] != null ? DateTime.tryParse(json['cycleStartDate'].toString()) : null,
+      cycleEndDate: json['cycleEndDate'] != null ? DateTime.tryParse(json['cycleEndDate'].toString()) : null,
+      daysRemaining: int.tryParse(json['daysRemaining']?.toString() ?? '0') ?? 0,
+      cycleIdentifier: json['cycleIdentifier']?.toString() ?? '',
+      formattedCycle: json['formattedCycle']?.toString() ?? '',
+      formattedLabel: json['formattedLabel']?.toString() ?? 'Cycle ($cDays days)',
+    );
+  }
+}
+
 class HostTargetSummaryModel {
   final bool isHost;
   final bool isHostActive;
@@ -37,6 +88,12 @@ class HostTargetSummaryModel {
   final String? agencyName;
   final String? cycleIdentifier;
   final String? formula;
+  final HostTargetCycle? cycle;
+
+  int get cycleDays => cycle?.cycleDays ?? (hostType == 'LIVE_HOST' ? 10 : 15);
+  String get cycleBadge => '$cycleDays-Day Settlement Cycle';
+  String get cycleDateRange => cycle?.formattedCycle ?? (cycle?.formattedLabel ?? 'Current Cycle');
+  int get countdownDays => cycle?.daysRemaining ?? 0;
 
   const HostTargetSummaryModel({
     required this.isHost,
@@ -51,11 +108,13 @@ class HostTargetSummaryModel {
     this.agencyName,
     this.cycleIdentifier,
     this.formula,
+    this.cycle,
   });
 
   factory HostTargetSummaryModel.fromJson(Map<String, dynamic> json) {
     final metrics = json['metrics'] is Map<String, dynamic> ? json['metrics'] as Map<String, dynamic> : null;
-    final cycle = json['cycle'] is Map<String, dynamic> ? json['cycle'] as Map<String, dynamic> : null;
+    final cycleMap = json['cycle'] is Map<String, dynamic> ? json['cycle'] as Map<String, dynamic> : null;
+    final hType = (json['hostType'] ?? 'LIVE_HOST').toString();
 
     final achieved = int.tryParse(
             json['achievedCoins']?.toString() ?? metrics?['achievedCoins']?.toString() ?? json['currentCoins']?.toString() ?? '0') ??
@@ -84,10 +143,14 @@ class HostTargetSummaryModel {
 
     final finalTarget = nextTarget > 0 ? nextTarget : (nTier?.targetCoins ?? (cTier?.targetCoins ?? achieved));
 
+    final parsedCycle = cycleMap != null
+        ? HostTargetCycle.fromJson(cycleMap, defaultHostType: hType)
+        : null;
+
     return HostTargetSummaryModel(
       isHost: json['isHost'] == true,
       isHostActive: json['isHostActive'] == true,
-      hostType: (json['hostType'] ?? 'LIVE_HOST').toString(),
+      hostType: hType,
       achievedCoins: achieved,
       nextTargetCoins: finalTarget,
       remainingCoins: remaining,
@@ -95,8 +158,9 @@ class HostTargetSummaryModel {
       currentTier: cTier,
       nextTier: nTier,
       agencyName: json['agencyName']?.toString(),
-      cycleIdentifier: cycle?['cycleIdentifier']?.toString() ?? json['cycleIdentifier']?.toString(),
+      cycleIdentifier: parsedCycle?.cycleIdentifier ?? cycleMap?['cycleIdentifier']?.toString() ?? json['cycleIdentifier']?.toString(),
       formula: json['formula']?.toString() ?? '100% normal gift coins + 10% lucky gift coins',
+      cycle: parsedCycle,
     );
   }
 }

@@ -16,7 +16,7 @@ class AgencyCenterScreen extends StatefulWidget {
   State<AgencyCenterScreen> createState() => _AgencyCenterScreenState();
 }
 
-class _AgencyCenterScreenState extends State<AgencyCenterScreen> with SingleTickerProviderStateMixin {
+class _AgencyCenterScreenState extends State<AgencyCenterScreen> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _addHostIdController = TextEditingController();
@@ -29,10 +29,28 @@ class _AgencyCenterScreenState extends State<AgencyCenterScreen> with SingleTick
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this);
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadData();
+    }
+  }
+
+  void _loadData() {
+    if (!mounted) return;
+    context.read<AgencyProvider>().fetchAllAgencies();
+    context.read<AgencyProvider>().fetchHostTargetSummary();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tabController.dispose();
     _searchController.dispose();
     _addHostIdController.dispose();

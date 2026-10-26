@@ -104,8 +104,8 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
             : null);
 
     final isTargetOnMic = targetSeatNumber != null;
-    final isTargetMuted = targetParticipant.micStatus == MicStatus.muted ||
-        (targetSeatNumber != null && liveProvider.isSeatMuted(targetSeatNumber));
+    final isTargetMuted = targetParticipant.isMutedByModerator ||
+        (targetSeatNumber != null && liveProvider.isSeatMutedByModerator(targetSeatNumber));
 
     // Target User owner status
     final isTargetRoomOwner = (activeRoom != null && (
@@ -161,13 +161,28 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     final giftWallCount = user.likesReceived > 0 ? user.likesReceived.clamp(0, 23) : 0;
     final outfitCount = user.customTitles.length;
 
+    final skinUrl = user.profileSkinUrl;
+    final hasSkin = skinUrl != null && skinUrl.isNotEmpty;
+
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF141024),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: [
+      decoration: BoxDecoration(
+        color: const Color(0xFF141024),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: const [
           BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
         ],
+        image: hasSkin
+            ? DecorationImage(
+                image: (skinUrl.startsWith('http://') || skinUrl.startsWith('https://'))
+                    ? NetworkImage(skinUrl)
+                    : AssetImage(skinUrl) as ImageProvider,
+                fit: BoxFit.cover,
+                colorFilter: ColorFilter.mode(
+                  Colors.black.withValues(alpha: 0.45),
+                  BlendMode.darken,
+                ),
+              )
+            : null,
       ),
       child: SafeArea(
         top: false,
@@ -248,12 +263,14 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                                 imageUrl: user.avatarUrl,
                                 radius: 30,
                                 showVipFrame: user.isVip,
-                                frameAsset: NobleBadgeHelper.getFrameAsset(
-                                  user.nobleTitle ??
-                                      (user.svipLevel > 0
-                                          ? 'SVIP ${user.svipLevel}'
-                                          : user.role.name),
-                                ),
+                                frameAsset: (user.avatarFrame.isNotEmpty && user.avatarFrame != 'none')
+                                    ? user.avatarFrame
+                                    : NobleBadgeHelper.getFrameAsset(
+                                        user.nobleTitle ??
+                                            (user.svipLevel > 0
+                                                ? 'SVIP ${user.svipLevel}'
+                                                : user.role.name),
+                                      ),
                               ),
                             ],
                           ),

@@ -9,6 +9,7 @@ import '../../models/live_room_model.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/live_provider.dart';
+import '../../providers/live_host_provider.dart';
 import '../../providers/room_overlay_provider.dart';
 import '../../widgets/animated_live_comment_item.dart';
 import '../../widgets/gift_dialog.dart';
@@ -21,6 +22,7 @@ import '../pk_battle/pk_battle_screen.dart';
 import '../../models/pk_battle_model.dart';
 import '../../core/services/api_client.dart';
 import '../../core/services/socket_service.dart';
+import '../party_room/widgets/lucky_bag_sheet.dart';
 import '../games/game_center_sheet.dart';
 import '../../widgets/emoji_reaction_overlay.dart';
 import '../../widgets/tiktok_user_join_banner.dart';
@@ -34,6 +36,7 @@ import '../../core/services/room_share_service.dart';
 import '../../core/services/agora_rtc_service.dart';
 import '../../widgets/user_avatar.dart';
 import '../../models/party_participant_model.dart';
+import '../../models/live_cohost_invitation_model.dart';
 import 'widgets/live_viewers_sheet.dart';
 
 class FloatingHeart {
@@ -41,7 +44,11 @@ class FloatingHeart {
   final Offset position;
   final Color color;
 
-  FloatingHeart({required this.id, required this.position, required this.color});
+  FloatingHeart({
+    required this.id,
+    required this.position,
+    required this.color,
+  });
 }
 
 class LiveRoomScreen extends StatefulWidget {
@@ -54,7 +61,8 @@ class LiveRoomScreen extends StatefulWidget {
   State<LiveRoomScreen> createState() => _LiveRoomScreenState();
 }
 
-class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStateMixin {
+class _LiveRoomScreenState extends State<LiveRoomScreen>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final TextEditingController _chatController = TextEditingController();
   final GlobalKey _hostAvatarKey = GlobalKey();
   int? _remoteHostUid;
@@ -64,7 +72,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   int _streamDurationSeconds = 0;
 
   final List<FloatingHeart> _hearts = [];
-  final GlobalKey<GiftAnimationOverlayState> _giftOverlayKey = GlobalKey<GiftAnimationOverlayState>();
+  final GlobalKey<GiftAnimationOverlayState> _giftOverlayKey =
+      GlobalKey<GiftAnimationOverlayState>();
 
   StreamSubscription? _socketLikeSub;
   StreamSubscription? _remoteUsersSub;
@@ -74,10 +83,168 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   StreamSubscription? _pkStartedSub;
   StreamSubscription? _roomClosedSub;
   StreamSubscription? _liveProvClosedSub;
+  StreamSubscription? _coHostInviteSub;
+  StreamSubscription? _coHostResponseSub;
+  StreamSubscription? _stageUpdatedSub;
+  int _stageVersion = 0;
   bool _isEndedDialogShown = false;
+  bool _isCoHostInviteDialogShown = false;
 
   late AnimationController _vsPulseController;
   late Animation<double> _vsScale;
+
+  void _inviteViewerToCoHost(UserModel viewer) async {
+    final currentUser = context.read<AuthProvider>().currentUser;
+    SocketService.instance.sendCoHostInvite(
+      roomId: widget.room.id,
+      targetUserId: viewer.id,
+      inviter: currentUser.toJson(),
+      roomTitle: widget.room.title,
+    );
+    try {
+      await ApiClient.instance.dio.post('/v1/rooms/${widget.room.id}/cohost/invite', data: {
+        'targetUserId': viewer.id,
+      });
+    } catch (e) {
+      debugPrint('[LiveRoom] REST cohost invite notice: $e');
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('📨 Co-Host invitation sent to ${viewer.name}!'),
+          backgroundColor: const Color(0xFF00E5FF),
+        ),
+      );
+    }
+  }
+
+  void _showCoHostInvitationDialog(LiveCoHostInvitationModel invitation) {
+    if (_isCoHostInviteDialogShown || !mounted) return;
+    _isCoHostInviteDialogShown = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1F1F2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.video_camera_front_rounded, color: Colors.cyanAccent),
+            SizedBox(width: 8),
+            Text('Co-Host Invitation', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: Text(
+          '${invitation.inviterName.isNotEmpty ? invitation.inviterName : "The Host"} has invited you to join the stage as Co-Host in "${widget.room.title}"!',
+          style: const TextStyle(color: Colors.white70, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              _isCoHostInviteDialogShown = false;
+              Navigator.pop(ctx);
+              SocketService.instance.respondCoHostInvite(
+                roomId: widget.room.id,
+                invitationId: invitation.id,
+                targetUserId: context.read<AuthProvider>().currentUser.id,
+                accepted: false,
+                reason: 'Declined by user',
+              );
+              try {
+                ApiClient.instance.dio.post('/v1/rooms/${widget.room.id}/cohost/respond', data: {
+                  'invitationId': invitation.id,
+                  'accepted': false,
+                });
+              } catch (_) {}
+            },
+            child: const Text('Decline', style: TextStyle(color: Colors.white60)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00E5FF)),
+            onPressed: () async {
+              _isCoHostInviteDialogShown = false;
+              Navigator.pop(ctx);
+              final myUser = context.read<AuthProvider>().currentUser;
+              SocketService.instance.respondCoHostInvite(
+                roomId: widget.room.id,
+                invitationId: invitation.id,
+                targetUserId: myUser.id,
+                accepted: true,
+              );
+              try {
+                await ApiClient.instance.dio.post('/v1/rooms/${widget.room.id}/cohost/respond', data: {
+                  'invitationId': invitation.id,
+                  'accepted': true,
+                });
+              } catch (_) {}
+
+              try {
+                await AgoraRtcService.instance.switchRole(isHost: true);
+                await AgoraRtcService.instance.muteLocalAudio(false);
+                await AgoraRtcService.instance.muteLocalVideo(false);
+              } catch (e) {
+                debugPrint('[LiveRoom] Agora co-host switchRole error: $e');
+              }
+
+              if (mounted) {
+                setState(() {
+                  _coHostUser = myUser;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('🎉 You are now live on stage as Co-Host!'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            child: const Text('Accept', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _fetchInitialStageState() async {
+    try {
+      final res = await ApiClient.instance.dio.get('/v1/rooms/${widget.room.id}/stage');
+      final data = res.data?['data'];
+      if (data is Map<String, dynamic> && mounted) {
+        final version = (data['version'] is num) ? (data['version'] as num).toInt() : 0;
+        if (version >= _stageVersion) {
+          _stageVersion = version;
+          _handleStageUpdatePayload(data);
+        }
+      }
+    } catch (e) {
+      debugPrint('[LiveRoom] Initial stage fetch note: $e');
+    }
+  }
+
+  void _handleStageUpdatePayload(Map<String, dynamic> data) {
+    final cohostsList = data['cohosts'] is List
+        ? (data['cohosts'] as List)
+        : (data['stage'] is List ? (data['stage'] as List) : []);
+
+    UserModel? foundCoHost;
+    for (final ch in cohostsList) {
+      if (ch is Map) {
+        final uMap = ch['user'] is Map ? Map<String, dynamic>.from(ch['user'] as Map) : Map<String, dynamic>.from(ch);
+        final chId = uMap['id']?.toString() ?? uMap['userId']?.toString();
+        if (chId != null && chId != widget.room.host.id && chId != widget.room.creatorUserId) {
+          foundCoHost = UserModel.fromJson(uMap);
+          break;
+        }
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _coHostUser = foundCoHost;
+      });
+    }
+  }
 
   Future<void> _shiftCoHostToPK(LiveRoomModel activeRoom) async {
     if (_coHostUser == null) return;
@@ -91,11 +258,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
       // 1. Shift Room Category to PK on Backend
       try {
-        await ApiClient.instance.post('/v1/pk/create', data: {
-          'hostRoomId': activeRoom.id,
-          'opponentUserId': _coHostUser!.id,
-          'durationMinutes': 5,
-        });
+        await ApiClient.instance.post(
+          '/v1/pk/create',
+          data: {
+            'hostRoomId': activeRoom.id,
+            'opponentUserId': _coHostUser!.id,
+            'durationMinutes': 5,
+          },
+        );
       } catch (e) {
         debugPrint('[LiveRoom] PK create error: $e');
       }
@@ -113,9 +283,40 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     }
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted) return;
+    try {
+      final currentUser = context.read<AuthProvider>().currentUser;
+      final isEffectiveHost =
+          widget.isHost ||
+          (widget.room.host.id == currentUser.id) ||
+          (widget.room.creatorUserId == currentUser.id);
+
+      if (isEffectiveHost) {
+        final isSuspendedOrHidden = state == AppLifecycleState.paused ||
+            state == AppLifecycleState.detached ||
+            state == AppLifecycleState.inactive ||
+            state == AppLifecycleState.hidden;
+
+        if (isSuspendedOrHidden) {
+          context.read<LiveHostProvider>().stopBroadcastHeartbeat();
+        } else if (state == AppLifecycleState.resumed && !_isEndedDialogShown) {
+          context.read<LiveHostProvider>().startBroadcastHeartbeat(
+            widget.room.id,
+          );
+        }
+      }
+    } catch (_) {}
+  }
+
   void _handleStreamEnded([String? reason]) {
     if (_isEndedDialogShown || !mounted) return;
     _isEndedDialogShown = true;
+
+    try {
+      context.read<LiveHostProvider>().stopBroadcastHeartbeat();
+    } catch (_) {}
 
     try {
       context.read<LiveProvider>().leaveRoom();
@@ -138,12 +339,20 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 color: Colors.redAccent.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.videocam_off_rounded, color: Colors.redAccent, size: 24),
+              child: const Icon(
+                Icons.videocam_off_rounded,
+                color: Colors.redAccent,
+                size: 24,
+              ),
             ),
             const SizedBox(width: 12),
             const Text(
               'Live Ended',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
@@ -158,7 +367,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             const SizedBox(height: 12),
             Text(
               widget.room.host.name,
-              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 6),
             Text(
@@ -166,11 +379,18 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   ? reason
                   : 'The host has ended this live broadcast.',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                height: 1.4,
+              ),
             ),
           ],
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        actionsPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 14,
+        ),
         actions: [
           SizedBox(
             width: double.infinity,
@@ -178,7 +398,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.live,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
               onPressed: () {
@@ -187,7 +409,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   Navigator.pop(context);
                 }
               },
-              child: const Text('Back to Discover', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              child: const Text(
+                'Back to Discover',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
             ),
           ),
         ],
@@ -200,7 +425,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     if (liveProv.isRoomMuted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('⚠️ Room microphone is currently locked by admin moderation.'),
+          content: Text(
+            '⚠️ Room microphone is currently locked by admin moderation.',
+          ),
           duration: Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
         ),
@@ -225,6 +452,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _startDurationTimer();
 
     _vsPulseController = AnimationController(
@@ -250,7 +478,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       }
     });
 
-    _firstFrameSub = AgoraRtcService().firstRemoteVideoFrameStream.listen((uid) {
+    _firstFrameSub = AgoraRtcService().firstRemoteVideoFrameStream.listen((
+      uid,
+    ) {
       if (mounted) {
         setState(() {
           _remoteHostUid = uid;
@@ -261,9 +491,18 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentUser = context.read<AuthProvider>().currentUser;
       final liveProv = context.read<LiveProvider>();
-      final isEffectiveHost = widget.isHost ||
+      final isEffectiveHost =
+          widget.isHost ||
           (widget.room.host.id == currentUser.id) ||
           (widget.room.creatorUserId == currentUser.id);
+
+      if (isEffectiveHost) {
+        try {
+          context.read<LiveHostProvider>().startBroadcastHeartbeat(
+            widget.room.id,
+          );
+        } catch (_) {}
+      }
 
       liveProv.joinRoom(widget.room, currentUser: currentUser);
       context.read<LiveGiftProvider>().setActiveRoom(widget.room.id);
@@ -306,11 +545,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 children: [
                   Icon(Icons.shield, color: Colors.amber),
                   SizedBox(width: 8),
-                  Text('Room Alert', style: TextStyle(color: Colors.white, fontSize: 16)),
+                  Text(
+                    'Room Alert',
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
                 ],
               ),
               content: Text(
-                reason.isNotEmpty ? reason : 'You were removed from this room by the host.',
+                reason.isNotEmpty
+                    ? reason
+                    : 'You were removed from this room by the host.',
                 style: const TextStyle(color: Colors.white70),
               ),
               actions: [
@@ -319,7 +563,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     Navigator.pop(ctx);
                     Navigator.pop(context);
                   },
-                  child: const Text('OK', style: TextStyle(color: AppColors.live)),
+                  child: const Text(
+                    'OK',
+                    style: TextStyle(color: AppColors.live),
+                  ),
                 ),
               ],
             ),
@@ -329,11 +576,21 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
       _pkInviteSub = liveProv.onPkInvitationReceived.listen((data) {
         if (!mounted) return;
-        final inviterUser = data['inviterUser'] is Map ? Map<String, dynamic>.from(data['inviterUser']) : {};
-        final inviterName = inviterUser['name'] ?? inviterUser['displayName'] ?? inviterUser['username'] ?? 'Live Host';
+        final inviterUser = data['inviterUser'] is Map
+            ? Map<String, dynamic>.from(data['inviterUser'])
+            : {};
+        final inviterName =
+            inviterUser['name'] ??
+            inviterUser['displayName'] ??
+            inviterUser['username'] ??
+            'Live Host';
         final inviterAvatar = inviterUser['avatarUrl'] ?? '';
         final invitationId = data['invitationId'] ?? data['id'] ?? '';
-        _showIncomingPKInvitationDialog(invitationId.toString(), inviterName.toString(), inviterAvatar.toString());
+        _showIncomingPKInvitationDialog(
+          invitationId.toString(),
+          inviterName.toString(),
+          inviterAvatar.toString(),
+        );
       });
 
       _pkStartedSub = SocketService.instance.onPkStarted.listen((data) {
@@ -346,9 +603,42 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
         }
       });
 
+      // Item #48: Recipient Co-Host Invitation Listener
+      _coHostInviteSub = SocketService.instance.onCoHostInvitationReceived.listen((invitation) {
+        if (!mounted) return;
+        final myId = context.read<AuthProvider>().currentUser.id;
+        if (invitation.targetUserId != myId && invitation.recipientId != myId) return;
+        if (invitation.roomId != widget.room.id) return;
+        _showCoHostInvitationDialog(invitation);
+      });
+
+      _coHostResponseSub = SocketService.instance.onRoomCoHostInviteResponse.listen((data) {
+        if (!mounted) return;
+        final accepted = data['accepted'] == true || data['status'] == 'accepted';
+        final name = data['userName'] ?? data['targetUserName'] ?? 'User';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(accepted ? '🎉 $name accepted the Co-Host invitation!' : 'ℹ️ $name declined the Co-Host invitation.'),
+            backgroundColor: accepted ? Colors.green : Colors.orange,
+          ),
+        );
+      });
+
+      // Item #49: Authoritative Stage Synchronization with Versioning
+      _fetchInitialStageState();
+      _stageUpdatedSub = SocketService.instance.onRoomStageUpdated.listen((data) {
+        if (!mounted) return;
+        final version = (data['version'] is num) ? (data['version'] as num).toInt() : int.tryParse(data['version']?.toString() ?? '0') ?? 0;
+        if (version > 0 && version < _stageVersion) return; // Suppress stale state
+        if (version > 0) _stageVersion = version;
+        _handleStageUpdatePayload(data);
+      });
+
       if (mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (currentUser.isVip || (currentUser.nobleTitle != null && currentUser.nobleTitle!.isNotEmpty)) {
+          if (currentUser.isVip ||
+              (currentUser.nobleTitle != null &&
+                  currentUser.nobleTitle!.isNotEmpty)) {
             SvipEntryManager().showEntry(currentUser);
           }
         });
@@ -368,8 +658,20 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final rand = Random();
     final colors = isDark
-        ? [AppColors.live, AppColors.warmGold, AppColors.lightGold, AppColors.metallicGold, AppColors.goldHighlight]
-        : [AppColors.live, AppColors.royalBlue, AppColors.lightBlue, AppColors.metallicBlue, AppColors.cyan];
+        ? [
+            AppColors.live,
+            AppColors.warmGold,
+            AppColors.lightGold,
+            AppColors.metallicGold,
+            AppColors.goldHighlight,
+          ]
+        : [
+            AppColors.live,
+            AppColors.royalBlue,
+            AppColors.lightBlue,
+            AppColors.metallicBlue,
+            AppColors.cyan,
+          ];
 
     final heart = FloatingHeart(
       id: UniqueKey(),
@@ -411,7 +713,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
     final bgUrl = (equippedTheme != null && equippedTheme.isNotEmpty)
         ? equippedTheme
-        : (widget.room.coverUrl.isNotEmpty ? widget.room.coverUrl : widget.room.host.avatarUrl);
+        : (widget.room.coverUrl.isNotEmpty
+              ? widget.room.coverUrl
+              : widget.room.host.avatarUrl);
 
     return Container(
       decoration: BoxDecoration(
@@ -430,29 +734,38 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
           if (bgUrl.isNotEmpty)
             Positioned.fill(
               child: Opacity(
-                opacity: (equippedTheme != null && equippedTheme.isNotEmpty) ? 0.75 : 0.45,
-                child: (bgUrl.startsWith('http://') || bgUrl.startsWith('https://'))
+                opacity: (equippedTheme != null && equippedTheme.isNotEmpty)
+                    ? 0.75
+                    : 0.45,
+                child:
+                    (bgUrl.startsWith('http://') ||
+                        bgUrl.startsWith('https://'))
                     ? Image.network(
                         bgUrl,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(color: Colors.black26),
+                        errorBuilder: (context, error, stackTrace) =>
+                            Container(color: Colors.black26),
                       )
                     : (bgUrl.startsWith('assets/'))
-                        ? Image.asset(
-                            bgUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(color: Colors.black26),
-                          )
-                        : Container(
-                            decoration: BoxDecoration(
-                              gradient: RadialGradient(
-                                colors: [
-                                  (isDark ? AppColors.warmGold : AppColors.royalBlue).withValues(alpha: 0.3),
-                                  Colors.black,
-                                ],
-                              ),
-                            ),
+                    ? Image.asset(
+                        bgUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            Container(color: Colors.black26),
+                      )
+                    : Container(
+                        decoration: BoxDecoration(
+                          gradient: RadialGradient(
+                            colors: [
+                              (isDark
+                                      ? AppColors.warmGold
+                                      : AppColors.royalBlue)
+                                  .withValues(alpha: 0.3),
+                              Colors.black,
+                            ],
                           ),
+                        ),
+                      ),
               ),
             ),
 
@@ -465,7 +778,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 shape: BoxShape.circle,
                 gradient: RadialGradient(
                   colors: [
-                    (isDark ? AppColors.warmGold : AppColors.royalBlue).withValues(alpha: 0.22),
+                    (isDark ? AppColors.warmGold : AppColors.royalBlue)
+                        .withValues(alpha: 0.22),
                     Colors.transparent,
                   ],
                 ),
@@ -482,10 +796,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: isDark ? AppColors.metallicGoldGradient : AppColors.metallicBlueGradient,
+                    gradient: isDark
+                        ? AppColors.metallicGoldGradient
+                        : AppColors.metallicBlueGradient,
                     boxShadow: [
                       BoxShadow(
-                        color: (isDark ? AppColors.metallicGold : AppColors.royalBlue).withValues(alpha: 0.4),
+                        color:
+                            (isDark
+                                    ? AppColors.metallicGold
+                                    : AppColors.royalBlue)
+                                .withValues(alpha: 0.4),
                         blurRadius: 24,
                         spreadRadius: 2,
                       ),
@@ -510,11 +830,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 ),
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -529,7 +854,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        widget.room.roomType == 'AUDIO_PARTY' ? 'VOICE PARTY LIVE' : 'LIVE BROADCASTING',
+                        widget.room.roomType == 'AUDIO_PARTY'
+                            ? 'VOICE PARTY LIVE'
+                            : 'LIVE BROADCASTING',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 11,
@@ -574,13 +901,17 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       }
     } else {
       // Audience Viewer
-      final targetUid = _remoteHostUid ?? (agora.remoteUids.isNotEmpty ? agora.remoteUids.first : null);
+      final targetUid =
+          _remoteHostUid ??
+          (agora.remoteUids.isNotEmpty ? agora.remoteUids.first : null);
       if (agora.engine != null && targetUid != null) {
         return AgoraVideoView(
           controller: VideoViewController.remote(
             rtcEngine: agora.engine!,
             canvas: VideoCanvas(uid: targetUid),
-            connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+            connection: RtcConnection(
+              channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+            ),
           ),
         );
       }
@@ -598,7 +929,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   ) {
     final agora = AgoraRtcService.instance;
     final remoteUids = agora.remoteUids.toList();
-    final firstRemoteUid = _remoteHostUid ?? (remoteUids.isNotEmpty ? remoteUids.first : null);
+    final firstRemoteUid =
+        _remoteHostUid ?? (remoteUids.isNotEmpty ? remoteUids.first : null);
 
     Widget? videoWidgetLeft;
     Widget? videoWidgetRight;
@@ -617,7 +949,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               controller: VideoViewController.remote(
                 rtcEngine: agora.engine!,
                 canvas: VideoCanvas(uid: firstRemoteUid),
-                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+                connection: RtcConnection(
+                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                ),
               ),
             )
           : null;
@@ -627,7 +961,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               controller: VideoViewController.remote(
                 rtcEngine: agora.engine!,
                 canvas: VideoCanvas(uid: firstRemoteUid),
-                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+                connection: RtcConnection(
+                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                ),
               ),
             )
           : null;
@@ -647,24 +983,39 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.4)),
+                border: Border.all(
+                  color: const Color(0xFF00E5FF).withValues(alpha: 0.4),
+                ),
               ),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [Color(0xFF00E5FF), Color(0xFF00B0FF)]),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF00E5FF), Color(0xFF00B0FF)],
+                      ),
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.people_rounded, color: Colors.black, size: 13),
+                        Icon(
+                          Icons.people_rounded,
+                          color: Colors.black,
+                          size: 13,
+                        ),
                         SizedBox(width: 4),
                         Text(
                           'CO-HOSTING',
-                          style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w900),
+                          style: TextStyle(
+                            color: Colors.black,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ],
                     ),
@@ -674,13 +1025,20 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   GestureDetector(
                     onTap: () => _shiftCoHostToPK(activeRoom),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [Color(0xFFFF0055), Color(0xFF7928CA)]),
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFF0055), Color(0xFF7928CA)],
+                        ),
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFFF0055).withValues(alpha: 0.4),
+                            color: const Color(
+                              0xFFFF0055,
+                            ).withValues(alpha: 0.4),
                             blurRadius: 8,
                           ),
                         ],
@@ -692,7 +1050,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           SizedBox(width: 4),
                           Text(
                             'Switch to PK',
-                            style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ],
                       ),
@@ -715,11 +1077,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                         child: Stack(
                           children: [
                             Positioned.fill(
-                              child: videoWidgetLeft ??
+                              child:
+                                  videoWidgetLeft ??
                                   Container(
                                     color: Colors.black45,
                                     child: Center(
-                                      child: UserAvatar(imageUrl: activeRoom.host.avatarUrl, name: activeRoom.host.name, radius: 28),
+                                      child: UserAvatar(
+                                        imageUrl: activeRoom.host.avatarUrl,
+                                        name: activeRoom.host.name,
+                                        radius: 28,
+                                      ),
                                     ),
                                   ),
                             ),
@@ -727,14 +1094,21 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               top: 8,
                               left: 8,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.black.withValues(alpha: 0.5),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
                                   'Host: ${activeRoom.host.name}',
-                                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ),
@@ -750,7 +1124,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                         child: Stack(
                           children: [
                             Positioned.fill(
-                              child: videoWidgetRight ??
+                              child:
+                                  videoWidgetRight ??
                                   Container(
                                     color: Colors.black45,
                                     child: Center(
@@ -766,14 +1141,21 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               top: 8,
                               left: 8,
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.black.withValues(alpha: 0.5),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
                                   'Co-Host: ${_coHostUser?.name ?? "Guest"}',
-                                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ),
@@ -785,7 +1167,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                   onTap: () {
                                     setState(() => _coHostUser = null);
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Co-host removed.')),
+                                      const SnackBar(
+                                        content: Text('Co-host removed.'),
+                                      ),
                                     );
                                   },
                                   child: Container(
@@ -794,7 +1178,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                       color: Colors.black54,
                                       shape: BoxShape.circle,
                                     ),
-                                    child: const Icon(Icons.close_rounded, color: Colors.white, size: 14),
+                                    child: const Icon(
+                                      Icons.close_rounded,
+                                      color: Colors.white,
+                                      size: 14,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -823,13 +1211,22 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     final authUser = context.read<AuthProvider>().currentUser;
     final currentUserId = authUser.id;
     final creatorId = activeRoom.creatorUserId ?? activeRoom.host.id;
-    final isHostA = (currentUserId.isNotEmpty && currentUserId == pk.hostA.id) || (isHost && creatorId == pk.hostA.id);
-    final isHostB = (currentUserId.isNotEmpty && currentUserId == pk.hostB.id) || (isHost && creatorId == pk.hostB.id);
+    final isHostA =
+        (currentUserId.isNotEmpty && currentUserId == pk.hostA.id) ||
+        (isHost && creatorId == pk.hostA.id);
+    final isHostB =
+        (currentUserId.isNotEmpty && currentUserId == pk.hostB.id) ||
+        (isHost && creatorId == pk.hostB.id);
 
     final agoraService = AgoraRtcService();
     final remoteUids = agoraService.remoteUids.toList();
-    final firstRemoteUid = _remoteHostUid ?? (remoteUids.isNotEmpty ? remoteUids.first : null);
-    final secondRemoteUid = remoteUids.length > 1 ? remoteUids[1] : (remoteUids.isNotEmpty && remoteUids.first != _remoteHostUid ? remoteUids.first : null);
+    final firstRemoteUid =
+        _remoteHostUid ?? (remoteUids.isNotEmpty ? remoteUids.first : null);
+    final secondRemoteUid = remoteUids.length > 1
+        ? remoteUids[1]
+        : (remoteUids.isNotEmpty && remoteUids.first != _remoteHostUid
+              ? remoteUids.first
+              : null);
 
     Widget? videoWidgetA;
     Widget? videoWidgetB;
@@ -848,7 +1245,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               controller: VideoViewController.remote(
                 rtcEngine: agoraService.engine!,
                 canvas: VideoCanvas(uid: firstRemoteUid),
-                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+                connection: RtcConnection(
+                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                ),
               ),
             )
           : null;
@@ -866,7 +1265,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               controller: VideoViewController.remote(
                 rtcEngine: agoraService.engine!,
                 canvas: VideoCanvas(uid: firstRemoteUid),
-                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+                connection: RtcConnection(
+                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                ),
               ),
             )
           : null;
@@ -876,7 +1277,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               controller: VideoViewController.remote(
                 rtcEngine: agoraService.engine!,
                 canvas: VideoCanvas(uid: firstRemoteUid),
-                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+                connection: RtcConnection(
+                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                ),
               ),
             )
           : null;
@@ -885,7 +1288,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               controller: VideoViewController.remote(
                 rtcEngine: agoraService.engine!,
                 canvas: VideoCanvas(uid: secondRemoteUid),
-                connection: RtcConnection(channelId: activeRoom.agoraChannelName ?? activeRoom.id),
+                connection: RtcConnection(
+                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                ),
               ),
             )
           : null;
@@ -936,7 +1341,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                         teamLabel: 'Team Red',
                         isLeft: false,
                         videoWidget: videoWidgetB,
-                        onSupportTap: () => _openPkGiftSheet(context, false, pk),
+                        onSupportTap: () =>
+                            _openPkGiftSheet(context, false, pk),
                       ),
                     ),
                   ],
@@ -962,7 +1368,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     required Widget? videoWidget,
     required VoidCallback onSupportTap,
   }) {
-    final avatar = host.avatarUrl != null && host.avatarUrl.toString().isNotEmpty
+    final avatar =
+        host.avatarUrl != null && host.avatarUrl.toString().isNotEmpty
         ? host.avatarUrl.toString()
         : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500';
 
@@ -992,7 +1399,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => Container(
                   color: const Color(0xFF1E1035),
-                  child: const Icon(Icons.person, color: Colors.white54, size: 48),
+                  child: const Icon(
+                    Icons.person,
+                    color: Colors.white54,
+                    size: 48,
+                  ),
                 ),
               ),
 
@@ -1022,12 +1433,19 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.65),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: sideColor.withValues(alpha: 0.8), width: 1.0),
+                  border: Border.all(
+                    color: sideColor.withValues(alpha: 0.8),
+                    width: 1.0,
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    UserAvatar(imageUrl: avatar, name: host.name ?? '', radius: 10),
+                    UserAvatar(
+                      imageUrl: avatar,
+                      name: host.name ?? '',
+                      radius: 10,
+                    ),
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
@@ -1053,9 +1471,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 right: isLeft ? 8 : null,
                 left: !isLeft ? 8 : null,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFAB00)]),
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFFD700), Color(0xFFFFAB00)],
+                    ),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Text(
@@ -1096,7 +1519,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(isLeft ? '💙' : '❤️', style: const TextStyle(fontSize: 10)),
+                      Text(
+                        isLeft ? '💙' : '❤️',
+                        style: const TextStyle(fontSize: 10),
+                      ),
                       const SizedBox(width: 3),
                       Flexible(
                         child: Text(
@@ -1133,7 +1559,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
           final currentUser = context.read<AuthProvider>().currentUser;
           final liveGiftProv = context.read<LiveGiftProvider>();
           context.read<LiveProvider>().addPkScore(forHostA, gift.diamondPrice);
-          context.read<LiveProvider>().sendGift(gift, currentUser.name, transactionId: liveGiftProv.lastTransactionId);
+          context.read<LiveProvider>().sendGift(
+            gift,
+            currentUser.name,
+            transactionId: liveGiftProv.lastTransactionId,
+          );
           _giftOverlayKey.currentState?.playGiftAnimation(
             gift,
             senderName: currentUser.name,
@@ -1169,7 +1599,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 decoration: BoxDecoration(
                   color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF00E5FF), width: 1.0),
+                  border: Border.all(
+                    color: const Color(0xFF00E5FF),
+                    width: 1.0,
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -1188,18 +1621,32 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
               // Timer Pill ("⚔️ PK 04:59" or "PK READY")
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   gradient: !isStarted
-                      ? const LinearGradient(colors: [Color(0xFF4A148C), Color(0xFF1E1035)])
+                      ? const LinearGradient(
+                          colors: [Color(0xFF4A148C), Color(0xFF1E1035)],
+                        )
                       : (seconds < 30
-                          ? const LinearGradient(colors: [Color(0xFFFF1744), Color(0xFFD50000)])
-                          : LinearGradient(colors: [Colors.black.withValues(alpha: 0.8), const Color(0xFF1E1035)])),
+                            ? const LinearGradient(
+                                colors: [Color(0xFFFF1744), Color(0xFFD50000)],
+                              )
+                            : LinearGradient(
+                                colors: [
+                                  Colors.black.withValues(alpha: 0.8),
+                                  const Color(0xFF1E1035),
+                                ],
+                              )),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
                     color: !isStarted
                         ? Colors.purpleAccent
-                        : (seconds < 30 ? const Color(0xFFFF5252) : const Color(0xFFFFD700)),
+                        : (seconds < 30
+                              ? const Color(0xFFFF5252)
+                              : const Color(0xFFFFD700)),
                     width: 1.2,
                   ),
                 ),
@@ -1207,8 +1654,12 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      !isStarted ? Icons.hourglass_top_rounded : Icons.flash_on_rounded,
-                      color: !isStarted ? Colors.purpleAccent : const Color(0xFFFFD700),
+                      !isStarted
+                          ? Icons.hourglass_top_rounded
+                          : Icons.flash_on_rounded,
+                      color: !isStarted
+                          ? Colors.purpleAccent
+                          : const Color(0xFFFFD700),
                       size: 12,
                     ),
                     const SizedBox(width: 3),
@@ -1227,7 +1678,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                         onTap: () {
                           context.read<LiveProvider>().endPkBattle();
                         },
-                        child: const Text('End', style: TextStyle(color: Colors.white70, fontSize: 9, fontWeight: FontWeight.bold)),
+                        child: const Text(
+                          'End',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ],
                   ],
@@ -1240,7 +1698,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 decoration: BoxDecoration(
                   color: const Color(0xFFFF4081).withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFFF4081), width: 1.0),
+                  border: Border.all(
+                    color: const Color(0xFFFF4081),
+                    width: 1.0,
+                  ),
                 ),
                 child: Row(
                   children: [
@@ -1273,12 +1734,18 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       AnimatedExpandedBar(
                         widthRatio: ratioA,
                         color: const Color(0xFF00E5FF),
-                        gradientColors: const [Color(0xFF00B0FF), Color(0xFF00E5FF)],
+                        gradientColors: const [
+                          Color(0xFF00B0FF),
+                          Color(0xFF00E5FF),
+                        ],
                       ),
                       AnimatedExpandedBar(
                         widthRatio: 1 - ratioA,
                         color: const Color(0xFFFF4081),
-                        gradientColors: const [Color(0xFFFF4081), Color(0xFFD81B60)],
+                        gradientColors: const [
+                          Color(0xFFFF4081),
+                          Color(0xFFD81B60),
+                        ],
                       ),
                     ],
                   ),
@@ -1287,7 +1754,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 ScaleTransition(
                   scale: _vsScale,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 1,
+                    ),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFFFFD700), Color(0xFFFFAB00)],
@@ -1372,11 +1842,19 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               if (!isDraw) ...[
                 Text(
                   winner.name,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
                 ),
                 Text(
                   'Won with $winScore coins!',
-                  style: const TextStyle(color: Color(0xFF00E5FF), fontSize: 13, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    color: Color(0xFF00E5FF),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ],
               Text(
@@ -1395,7 +1873,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Top Supporters (Coins Spent):', style: TextStyle(color: Colors.white70, fontSize: 11, fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Top Supporters (Coins Spent):',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 6),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1405,17 +1890,37 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(pk.sideA?.displayName ?? pk.hostA.name, style: const TextStyle(color: Color(0xFF2196F3), fontWeight: FontWeight.bold, fontSize: 10)),
+                              Text(
+                                pk.sideA?.displayName ?? pk.hostA.name,
+                                style: const TextStyle(
+                                  color: Color(0xFF2196F3),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 10,
+                                ),
+                              ),
                               const SizedBox(height: 2),
                               if (supportersA.isEmpty)
-                                const Text('No gifts', style: TextStyle(color: Colors.white38, fontSize: 9))
+                                const Text(
+                                  'No gifts',
+                                  style: TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 9,
+                                  ),
+                                )
                               else
-                                ...supportersA.take(3).map((s) => Text(
-                                      '#${s.rank} ${s.displayName}: ${s.totalCoins}',
-                                      style: const TextStyle(color: Colors.white60, fontSize: 9),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    )),
+                                ...supportersA
+                                    .take(3)
+                                    .map(
+                                      (s) => Text(
+                                        '#${s.rank} ${s.displayName}: ${s.totalCoins}',
+                                        style: const TextStyle(
+                                          color: Colors.white60,
+                                          fontSize: 9,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
                             ],
                           ),
                         ),
@@ -1427,17 +1932,37 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(pk.sideB?.displayName ?? pk.hostB.name, style: const TextStyle(color: Color(0xFFF44336), fontWeight: FontWeight.bold, fontSize: 10)),
+                                Text(
+                                  pk.sideB?.displayName ?? pk.hostB.name,
+                                  style: const TextStyle(
+                                    color: Color(0xFFF44336),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 10,
+                                  ),
+                                ),
                                 const SizedBox(height: 2),
                                 if (supportersB.isEmpty)
-                                  const Text('No gifts', style: TextStyle(color: Colors.white38, fontSize: 9))
+                                  const Text(
+                                    'No gifts',
+                                    style: TextStyle(
+                                      color: Colors.white38,
+                                      fontSize: 9,
+                                    ),
+                                  )
                                 else
-                                  ...supportersB.take(3).map((s) => Text(
-                                        '#${s.rank} ${s.displayName}: ${s.totalCoins}',
-                                        style: const TextStyle(color: Colors.white60, fontSize: 9),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      )),
+                                  ...supportersB
+                                      .take(3)
+                                      .map(
+                                        (s) => Text(
+                                          '#${s.rank} ${s.displayName}: ${s.totalCoins}',
+                                          style: const TextStyle(
+                                            color: Colors.white60,
+                                            fontSize: 9,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
                               ],
                             ),
                           ),
@@ -1455,13 +1980,18 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     child: OutlinedButton(
                       style: OutlinedButton.styleFrom(
                         side: const BorderSide(color: Colors.white38),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 10),
                       ),
                       onPressed: () {
                         context.read<LiveProvider>().endPkBattle();
                       },
-                      child: const Text('Close', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                      child: const Text(
+                        'Close',
+                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -1469,14 +1999,23 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFE91E63),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 10),
                       ),
                       onPressed: () {
                         context.read<LiveProvider>().requestPkRematch();
                         context.read<LiveProvider>().endPkBattle();
                       },
-                      child: const Text('Rematch ⚔️', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                      child: const Text(
+                        'Rematch ⚔️',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -1498,16 +2037,27 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     _pkStartedSub?.cancel();
     _roomClosedSub?.cancel();
     _liveProvClosedSub?.cancel();
+    _coHostInviteSub?.cancel();
+    _coHostResponseSub?.cancel();
+    _stageUpdatedSub?.cancel();
     _vsPulseController.dispose();
     _durationTimer?.cancel();
     _chatController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    try {
+      context.read<LiveHostProvider>().stopBroadcastHeartbeat();
+    } catch (_) {}
     try {
       context.read<LiveProvider>().leaveRoom();
     } catch (_) {}
     super.dispose();
   }
 
-  void _showIncomingPKInvitationDialog(String invitationId, String inviterName, String inviterAvatar) {
+  void _showIncomingPKInvitationDialog(
+    String invitationId,
+    String inviterName,
+    String inviterAvatar,
+  ) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -1522,15 +2072,25 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             Container(
               padding: const EdgeInsets.all(8),
               decoration: const BoxDecoration(
-                gradient: LinearGradient(colors: [Color(0xFF00E5FF), Color(0xFFFF4081)]),
+                gradient: LinearGradient(
+                  colors: [Color(0xFF00E5FF), Color(0xFFFF4081)],
+                ),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.flash_on_rounded, color: Colors.white, size: 22),
+              child: const Icon(
+                Icons.flash_on_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
             ),
             const SizedBox(width: 12),
             const Text(
               'PK Challenge!',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
@@ -1542,7 +2102,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             Text(
               '$inviterName challenged you to a live PK Battle!',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 6),
             const Text(
@@ -1552,28 +2116,42 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             ),
           ],
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actionsPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
         actions: [
           TextButton(
             onPressed: () async {
               Navigator.pop(ctx);
               try {
-                await context.read<LiveProvider>().respondToPKInvite(invitationId, false);
+                await context.read<LiveProvider>().respondToPKInvite(
+                  invitationId,
+                  false,
+                );
               } catch (_) {}
             },
-            child: const Text('Decline', style: TextStyle(color: Colors.white60, fontSize: 14)),
+            child: const Text(
+              'Decline',
+              style: TextStyle(color: Colors.white60, fontSize: 14),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFF4081),
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             ),
             onPressed: () async {
               Navigator.pop(ctx);
               try {
-                await context.read<LiveProvider>().respondToPKInvite(invitationId, true);
+                await context.read<LiveProvider>().respondToPKInvite(
+                  invitationId,
+                  true,
+                );
               } catch (e) {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -1582,16 +2160,26 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 }
               }
             },
-            child: const Text('Accept ⚔️', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Accept ⚔️',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Future<void> _handleExitConfirmation(BuildContext context, bool isHost, LiveProvider liveProvider) async {
+  Future<void> _handleExitConfirmation(
+    BuildContext context,
+    bool isHost,
+    LiveProvider liveProvider,
+  ) async {
     final currentUser = context.read<AuthProvider>().currentUser;
-    final effectiveIsHost = isHost || (widget.room.host.id == currentUser.id) || (widget.room.creatorUserId == currentUser.id);
+    final effectiveIsHost =
+        isHost ||
+        (widget.room.host.id == currentUser.id) ||
+        (widget.room.creatorUserId == currentUser.id);
 
     if (!effectiveIsHost) {
       final shouldLeave = await showDialog<bool>(
@@ -1620,7 +2208,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               const SizedBox(width: 12),
               const Text(
                 'Leave Live Stream?',
-                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -1628,21 +2220,35 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             'Are you sure you want to leave this live stream?',
             style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
           ),
-          actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          actionsPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(color: Colors.white60, fontSize: 15)),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Colors.white60, fontSize: 15),
+              ),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.live,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 10,
+                ),
               ),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Leave', style: TextStyle(fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Leave',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
           ],
         ),
@@ -1686,7 +2292,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             const SizedBox(width: 12),
             const Text(
               'End Live Stream?',
-              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ],
         ),
@@ -1694,21 +2304,32 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
           'Ending the live broadcast will close the stream for all viewers and participants.',
           style: TextStyle(color: Colors.white70, fontSize: 14, height: 1.4),
         ),
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        actionsPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, 'cancel'),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white60, fontSize: 14)),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.white60, fontSize: 14),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
               foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             ),
             onPressed: () => Navigator.pop(ctx, 'close'),
-            child: const Text('End Stream for All', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            child: const Text(
+              'End Stream for All',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
           ),
         ],
       ),
@@ -1716,10 +2337,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
     if (action == 'close' && mounted) {
       final duration = _streamDurationSeconds;
-      final peakViewers = liveProvider.viewers.length > (liveProvider.activeRoom?.viewerCount ?? widget.room.viewerCount)
+      final peakViewers =
+          liveProvider.viewers.length >
+              (liveProvider.activeRoom?.viewerCount ?? widget.room.viewerCount)
           ? liveProvider.viewers.length
           : (liveProvider.activeRoom?.viewerCount ?? widget.room.viewerCount);
       final coinsEarned = liveProvider.giftPoints;
+
+      try {
+        context.read<LiveHostProvider>().stopBroadcastHeartbeat();
+      } catch (_) {}
 
       try {
         await liveProvider.closeRoom();
@@ -1785,12 +2412,20 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     ),
                   ],
                 ),
-                child: const Icon(Icons.emoji_events_rounded, color: Colors.white, size: 36),
+                child: const Icon(
+                  Icons.emoji_events_rounded,
+                  color: Colors.white,
+                  size: 36,
+                ),
               ),
               const SizedBox(height: 16),
               const Text(
                 'Broadcast Ended',
-                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 6),
               const Text(
@@ -1800,11 +2435,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               ),
               const SizedBox(height: 20),
               Container(
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 16,
+                  horizontal: 12,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -1839,12 +2479,17 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFB524E4),
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     elevation: 0,
                   ),
                   onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Back to Home', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  child: const Text(
+                    'Back to Home',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
                 ),
               ),
             ],
@@ -1865,9 +2510,19 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       children: [
         Icon(icon, color: iconColor, size: 20),
         const SizedBox(height: 6),
-        Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
         const SizedBox(height: 2),
-        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white54, fontSize: 11),
+        ),
       ],
     );
   }
@@ -1878,10 +2533,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     final liveProvider = context.watch<LiveProvider>();
     final activeRoom = liveProvider.activeRoom ?? widget.room;
     final currentUser = context.read<AuthProvider>().currentUser;
-    final isHost = widget.isHost ||
+    final isHost =
+        widget.isHost ||
         (activeRoom.host.id == currentUser.id) ||
         (activeRoom.creatorUserId == currentUser.id) ||
-        (currentUser.name.trim().isNotEmpty && currentUser.name.trim().toLowerCase() == activeRoom.host.name.trim().toLowerCase());
+        (currentUser.name.trim().isNotEmpty &&
+            currentUser.name.trim().toLowerCase() ==
+                activeRoom.host.name.trim().toLowerCase());
 
     return PopScope(
       canPop: false,
@@ -1910,393 +2568,502 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               ),
             ),
 
-          // Dark Overlay
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      AppColors.black.withValues(alpha: 0.6),
-                      AppColors.transparent,
-                      AppColors.black.withValues(alpha: 0.85),
-                    ],
-                    stops: const [0.0, 0.4, 1.0],
+            // Dark Overlay
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        AppColors.black.withValues(alpha: 0.6),
+                        AppColors.transparent,
+                        AppColors.black.withValues(alpha: 0.85),
+                      ],
+                      stops: const [0.0, 0.4, 1.0],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
 
-          // High Value Announcement Overlay
-          const HighValueAnnouncementOverlay(),
-          const SvipEntryBanner(),
+            // High Value Announcement Overlay
+            const HighValueAnnouncementOverlay(),
+            const SvipEntryBanner(),
+            const WorldLuckyBagBanner(),
 
-          // TikTok-Style Live Gifting Animation Overlay
-          TikTokGiftOverlay(roomId: widget.room.id),
+            // TikTok-Style Live Gifting Animation Overlay
+            TikTokGiftOverlay(roomId: widget.room.id),
 
-          // Real-time Moderation Warning Banner Overlay
-          if (liveProvider.activeWarningMessage != null)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 70,
-              left: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFD97706), Color(0xFFB45309)],
+            // Real-time Moderation Warning Banner Overlay
+            if (liveProvider.activeWarningMessage != null)
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 70,
+                left: 16,
+                right: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
                   ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.amber.withValues(alpha: 0.4),
-                      blurRadius: 16,
-                      spreadRadius: 2,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFD97706), Color(0xFFB45309)],
                     ),
-                  ],
-                  border: Border.all(color: Colors.amberAccent, width: 1.5),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'MODERATION WARNING',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 12,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            liveProvider.activeWarningMessage!,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.amber.withValues(alpha: 0.4),
+                        blurRadius: 16,
+                        spreadRadius: 2,
                       ),
-                    ),
-                  ],
+                    ],
+                    border: Border.all(color: Colors.amberAccent, width: 1.5),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.warning_amber_rounded,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'MODERATION WARNING',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 12,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              liveProvider.activeWarningMessage!,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
 
-          // Floating Hearts Stack
-          for (final heart in _hearts)
-            Positioned(
-              key: heart.id,
-              left: heart.position.dx - 20,
-              top: heart.position.dy - 40,
-              child: _AnimatedFloatingHeart(color: heart.color),
-            ),
+            // Floating Hearts Stack
+            for (final heart in _hearts)
+              Positioned(
+                key: heart.id,
+                left: heart.position.dx - 20,
+                top: heart.position.dy - 40,
+                child: _AnimatedFloatingHeart(color: heart.color),
+              ),
 
-          // Header Overlay Controls
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Column(
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Room Profile Area (Avatar, Name, ID)
-                      Flexible(
-                        child: GestureDetector(
-                          onTap: () {
-                            showModalBottomSheet(
-                              context: context,
-                              isScrollControlled: true,
-                              backgroundColor: Colors.transparent,
-                              builder: (_) => RoomInfoSheet(
-                                room: widget.room,
-                                canManage: widget.room.host.id == context.read<AuthProvider>().currentUser.id,
-                                isDark: isDark,
-                                participants: liveProvider.viewers.map((u) => PartyParticipantModel(
-                                  user: u,
-                                  role: ParticipantRole.listener,
-                                  joinedAt: DateTime.now(),
-                                )).toList(),
+            // Header Overlay Controls
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Room Profile Area (Avatar, Name, ID)
+                        Flexible(
+                          child: GestureDetector(
+                            onTap: () {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (_) => RoomInfoSheet(
+                                  room: widget.room,
+                                  canManage:
+                                      widget.room.host.id ==
+                                      context
+                                          .read<AuthProvider>()
+                                          .currentUser
+                                          .id,
+                                  isDark: isDark,
+                                  participants: liveProvider.viewers
+                                      .map(
+                                        (u) => PartyParticipantModel(
+                                          user: u,
+                                          role: ParticipantRole.listener,
+                                          joinedAt: DateTime.now(),
+                                        ),
+                                      )
+                                      .toList(),
+                                ),
+                              );
+                            },
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ClipRRect(
+                                  key: _hostAvatarKey,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    widget.room.coverUrl,
+                                    width: 34,
+                                    height: 34,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => Container(
+                                      width: 34,
+                                      height: 34,
+                                      color: Colors.grey,
+                                      child: const Icon(
+                                        Icons.music_note,
+                                        color: Colors.white,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        widget.room.title,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12.5,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      Text(
+                                        'ID:${widget.room.id.length > 8 ? widget.room.id.substring(0, 8) : widget.room.id}',
+                                        style: TextStyle(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.7,
+                                          ),
+                                          fontSize: 9.5,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+
+                        // Follow Button (Small Purple Pill)
+                        Consumer<AuthProvider>(
+                          builder: (context, auth, _) {
+                            final isFollowing = auth.isFollowing(
+                              widget.room.host.id,
+                            );
+                            return GestureDetector(
+                              onTap: () {
+                                AuthGuard.require(context, () {
+                                  auth.toggleFollow(widget.room.host.id);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        !isFollowing
+                                            ? '✔ Following ${widget.room.host.name}!'
+                                            : 'Unfollowed ${widget.room.host.name}',
+                                      ),
+                                      duration: const Duration(seconds: 1),
+                                    ),
+                                  );
+                                }, reason: 'Sign in to follow hosts');
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isFollowing
+                                      ? AppColors.liveGreen
+                                      : const Color(0xFF9B51E0),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Icon(
+                                  isFollowing
+                                      ? Icons.check_rounded
+                                      : Icons.add_rounded,
+                                  color: Colors.white,
+                                  size: 15,
+                                ),
                               ),
                             );
                           },
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ClipRRect(
-                                key: _hostAvatarKey,
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  widget.room.coverUrl,
-                                  width: 34,
-                                  height: 34,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => Container(
-                                    width: 34, height: 34, color: Colors.grey,
-                                    child: const Icon(Icons.music_note, color: Colors.white, size: 18),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                        ),
+
+                        const SizedBox(width: 6),
+
+                        // Right Controls (Viewers, Likes, Trophy, Settings, Close)
+                        Flexible(
+                          fit: FlexFit.loose,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerRight,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // Viewers, Likes & Trophy Badges
+                                Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
+                                    GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () {
+                                        LiveViewersSheet.show(
+                                          context,
+                                          viewers: liveProvider.viewers,
+                                          roomId: widget.room.id,
+                                          roomTitle: widget.room.title,
+                                          isDark: isDark,
+                                          isHost: widget.isHost,
+                                          onMakeCoHost: _inviteViewerToCoHost,
+                                        );
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 5,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.3,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.remove_red_eye_rounded,
+                                              color: Colors.white,
+                                              size: 13,
+                                            ),
+                                            const SizedBox(width: 3),
+                                            Text(
+                                              '${liveProvider.viewers.isNotEmpty ? liveProvider.viewers.length : (activeRoom.viewerCount > 0 ? activeRoom.viewerCount : 0)}',
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    const Icon(
+                                      Icons.favorite_rounded,
+                                      color: Colors.pinkAccent,
+                                      size: 14,
+                                    ),
+                                    const SizedBox(width: 2.5),
                                     Text(
-                                      widget.room.title,
+                                      liveProvider.likeCountFormatted,
                                       style: const TextStyle(
                                         color: Colors.white,
+                                        fontSize: 11,
                                         fontWeight: FontWeight.bold,
-                                        fontSize: 12.5,
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
                                     ),
+                                    const SizedBox(width: 6),
+                                    const Icon(
+                                      Icons.emoji_events_rounded,
+                                      color: AppColors.gold,
+                                      size: 14,
+                                    ),
+                                    const SizedBox(width: 2.5),
                                     Text(
-                                      'ID:${widget.room.id.length > 8 ? widget.room.id.substring(0, 8) : widget.room.id}',
+                                      liveProvider.pointsFormatted,
                                       style: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.7),
-                                        fontSize: 9.5,
+                                        color: Colors.white.withValues(
+                                          alpha: 0.9,
+                                        ),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
+                                const SizedBox(width: 8),
 
-                      // Follow Button (Small Purple Pill)
-                      Consumer<AuthProvider>(
-                        builder: (context, auth, _) {
-                          final isFollowing = auth.isFollowing(widget.room.host.id);
-                          return GestureDetector(
-                            onTap: () {
-                              AuthGuard.require(context, () {
-                                auth.toggleFollow(widget.room.host.id);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(!isFollowing ? '✔ Following ${widget.room.host.name}!' : 'Unfollowed ${widget.room.host.name}'),
-                                    duration: const Duration(seconds: 1),
-                                  ),
-                                );
-                              }, reason: 'Sign in to follow hosts');
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: isFollowing ? AppColors.liveGreen : const Color(0xFF9B51E0),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Icon(
-                                isFollowing ? Icons.check_rounded : Icons.add_rounded,
-                                color: Colors.white,
-                                size: 15,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      
-                      const SizedBox(width: 6),
-
-                      // Right Controls (Viewers, Likes, Trophy, Settings, Close)
-                      Flexible(
-                        fit: FlexFit.loose,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerRight,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Viewers, Likes & Trophy Badges
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: () {
-                                      LiveViewersSheet.show(
-                                        context,
-                                        viewers: liveProvider.viewers,
-                                        roomId: widget.room.id,
-                                        roomTitle: widget.room.title,
-                                        isDark: isDark,
-                                        isHost: widget.isHost,
-                                        onMakeCoHost: (viewer) {
-                                          setState(() => _coHostUser = viewer);
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('Joined screen with ${viewer.name} as Co-Host!'),
-                                              backgroundColor: const Color(0xFF00E5FF),
-                                            ),
-                                          );
-                                        },
-                                      );
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withValues(alpha: 0.3),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.remove_red_eye_rounded, color: Colors.white, size: 13),
-                                          const SizedBox(width: 3),
-                                          Text(
-                                            '${liveProvider.viewers.isNotEmpty ? liveProvider.viewers.length : (activeRoom.viewerCount > 0 ? activeRoom.viewerCount : 0)}',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ],
+                                // Settings (if authorized)
+                                if (widget.room.host.id ==
+                                    context.read<AuthProvider>().currentUser.id)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: GestureDetector(
+                                      onTap: () =>
+                                          _showRoomTools(context, isDark),
+                                      child: const Icon(
+                                        Icons.settings_outlined,
+                                        color: Colors.white,
+                                        size: 20,
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
-                                  const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 14),
-                                  const SizedBox(width: 2.5),
-                                  Text(
-                                    liveProvider.likeCountFormatted,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  const Icon(Icons.emoji_events_rounded, color: AppColors.gold, size: 14),
-                                  const SizedBox(width: 2.5),
-                                  Text(
-                                    liveProvider.pointsFormatted,
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.9),
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(width: 8),
-                              
-                              // Settings (if authorized)
-                              if (widget.room.host.id == context.read<AuthProvider>().currentUser.id)
+
+                                // Switch Camera
                                 Padding(
                                   padding: const EdgeInsets.only(right: 8),
                                   child: GestureDetector(
-                                    onTap: () => _showRoomTools(context, isDark),
-                                    child: const Icon(Icons.settings_outlined, color: Colors.white, size: 20),
+                                    onTap: _switchCamera,
+                                    child: const Icon(
+                                      Icons.cameraswitch_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
                                   ),
                                 ),
-                                
-                              // Switch Camera
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: GestureDetector(
-                                  onTap: _switchCamera,
-                                  child: const Icon(Icons.cameraswitch_rounded, color: Colors.white, size: 20),
-                                ),
-                              ),
 
-                              // Minimize to Floating Overlay
-                              Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: GestureDetector(
-                                  onTap: () {
-                                    Provider.of<RoomOverlayProvider>(context, listen: false).minimizeRoom(
-                                      roomType: 'LIVE',
-                                      room: widget.room,
-                                    );
-                                    Navigator.pop(context);
-                                  },
-                                  child: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 24),
+                                // Minimize to Floating Overlay
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: GestureDetector(
+                                    onTap: () {
+                                      Provider.of<RoomOverlayProvider>(
+                                        context,
+                                        listen: false,
+                                      ).minimizeRoom(
+                                        roomType: 'LIVE',
+                                        room: widget.room,
+                                      );
+                                      Navigator.pop(context);
+                                    },
+                                    child: const Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      color: Colors.white,
+                                      size: 24,
+                                    ),
+                                  ),
                                 ),
-                              ),
 
-                              // Close
-                              GestureDetector(
-                                onTap: () => _handleExitConfirmation(context, isHost, liveProvider),
-                                child: const Icon(Icons.close_rounded, color: Colors.white, size: 22),
-                              ),
-                            ],
+                                // Close
+                                GestureDetector(
+                                  onTap: () => _handleExitConfirmation(
+                                    context,
+                                    isHost,
+                                    liveProvider,
+                                  ),
+                                  child: const Icon(
+                                    Icons.close_rounded,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                  if (liveProvider.activePkBattle != null && !liveProvider.activePkBattle!.isEnded)
-                    _buildPkScoreAndTimerBar(
-                      liveProvider.activePkBattle!,
-                      liveProvider.pkTimeRemainingSeconds,
-                      isHost,
+                      ],
                     ),
-                ],
+                    if (liveProvider.activePkBattle != null &&
+                        !liveProvider.activePkBattle!.isEnded)
+                      _buildPkScoreAndTimerBar(
+                        liveProvider.activePkBattle!,
+                        liveProvider.pkTimeRemainingSeconds,
+                        isHost,
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
 
-          // Bottom Live Chat & Actions Overlay
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Live Messages List
+            // Bottom Live Chat & Actions Overlay
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Live Messages List
                       SizedBox(
                         height: 190,
                         child: ListView.builder(
                           reverse: true,
                           itemCount: liveProvider.messages.length,
                           itemBuilder: (context, index) {
-                            final msg = liveProvider.messages.reversed.toList()[index];
-                            final isSystem = msg.sender.toLowerCase().contains('system') || msg.sender.contains('🛡️');
-                            final isHostMsg = msg.isHost || msg.sender == widget.room.host.name || (msg.senderId.isNotEmpty && msg.senderId == widget.room.host.id);
-                            final isMeMsg = msg.senderId == currentUser.id || msg.sender == currentUser.name;
-                            final effectiveAvatar = (msg.avatarUrl != null && msg.avatarUrl!.isNotEmpty)
+                            final msg = liveProvider.messages.reversed
+                                .toList()[index];
+                            final isSystem =
+                                msg.sender.toLowerCase().contains('system') ||
+                                msg.sender.contains('🛡️');
+                            final isHostMsg =
+                                msg.isHost ||
+                                msg.sender == widget.room.host.name ||
+                                (msg.senderId.isNotEmpty &&
+                                    msg.senderId == widget.room.host.id);
+                            final isMeMsg =
+                                msg.senderId == currentUser.id ||
+                                msg.sender == currentUser.name;
+                            final effectiveAvatar =
+                                (msg.avatarUrl != null &&
+                                    msg.avatarUrl!.isNotEmpty)
                                 ? msg.avatarUrl
-                                : (isHostMsg ? widget.room.host.avatarUrl : (isMeMsg ? currentUser.avatarUrl : null));
+                                : (isHostMsg
+                                      ? widget.room.host.avatarUrl
+                                      : (isMeMsg
+                                            ? currentUser.avatarUrl
+                                            : null));
                             String? equippedBubble = msg.chatBubble;
                             String? equippedFrame = msg.avatarFrame;
                             try {
-                              final backpack = Provider.of<BackpackProvider>(context, listen: false);
-                              if (isMeMsg && (equippedBubble == null || equippedBubble.isEmpty)) {
+                              final backpack = Provider.of<BackpackProvider>(
+                                context,
+                                listen: false,
+                              );
+                              if (isMeMsg &&
+                                  (equippedBubble == null ||
+                                      equippedBubble.isEmpty)) {
                                 equippedBubble = backpack.equippedBubbleUrl;
                               }
-                              if (isMeMsg && (equippedFrame == null || equippedFrame.isEmpty)) {
+                              if (isMeMsg &&
+                                  (equippedFrame == null ||
+                                      equippedFrame.isEmpty)) {
                                 equippedFrame = currentUser.avatarFrame;
                               }
                             } catch (_) {}
 
                             return AnimatedLiveCommentItem(
-                              key: ValueKey('${msg.sender}_${msg.text}_${msg.id}_$index'),
-                              senderId: msg.senderId.isNotEmpty ? msg.senderId : (isHostMsg ? widget.room.host.id : 'user_$index'),
+                              key: ValueKey(
+                                '${msg.sender}_${msg.text}_${msg.id}_$index',
+                              ),
+                              senderId: msg.senderId.isNotEmpty
+                                  ? msg.senderId
+                                  : (isHostMsg
+                                        ? widget.room.host.id
+                                        : 'user_$index'),
                               senderName: msg.sender,
                               avatarUrl: effectiveAvatar,
                               text: msg.text,
@@ -2316,439 +3083,481 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                         ),
                       ),
 
-                    const SizedBox(height: 12),
+                      const SizedBox(height: 12),
 
-                    // Actions Bar (3D Luxury Toolbar with tight spacing & prominent input)
-                    Row(
-                      children: [
-                        // Far Left: 4-Dot Grid Tools Button (Change 15: Unified Tools Menu)
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => _showRoomTools(context, isDark),
-                          child: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: const RadialGradient(
-                                center: Alignment(-0.3, -0.4),
-                                radius: 0.9,
-                                colors: [
-                                  Color(0xFF3E4450),
-                                  Color(0xFF262A34),
-                                  Color(0xFF14171E),
+                      // Actions Bar (3D Luxury Toolbar with tight spacing & prominent input)
+                      Row(
+                        children: [
+                          // Far Left: 4-Dot Grid Tools Button (Change 15: Unified Tools Menu)
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _showRoomTools(context, isDark),
+                            child: Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: const RadialGradient(
+                                  center: Alignment(-0.3, -0.4),
+                                  radius: 0.9,
+                                  colors: [
+                                    Color(0xFF3E4450),
+                                    Color(0xFF262A34),
+                                    Color(0xFF14171E),
+                                  ],
+                                ),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.25),
+                                  width: 1.2,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.5),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  ),
                                 ],
                               ),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.25),
-                                width: 1.2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.5),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.grid_view_rounded,
+                                  color: Colors.white,
+                                  size: 20,
                                 ),
-                              ],
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.grid_view_rounded, color: Colors.white, size: 20),
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
+                          const SizedBox(width: 6),
 
-                        // Center: Prominent Comment Input Field with 3D Border-Aligned Emoji Button
-                        Expanded(
-                          child: Container(
-                            height: 42,
-                            padding: const EdgeInsets.only(left: 12, right: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.35),
-                              borderRadius: BorderRadius.circular(21),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.18),
-                                width: 1.2,
+                          // Center: Prominent Comment Input Field with 3D Border-Aligned Emoji Button
+                          Expanded(
+                            child: Container(
+                              height: 42,
+                              padding: const EdgeInsets.only(
+                                left: 12,
+                                right: 6,
                               ),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: _chatController,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 13.5,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    cursorColor: const Color(0xFFFF4081),
-                                    textAlignVertical: TextAlignVertical.center,
-                                    decoration: InputDecoration(
-                                      hintText: 'Say something...',
-                                      hintStyle: TextStyle(
-                                        color: Colors.white.withValues(alpha: 0.5),
-                                        fontSize: 13,
-                                      ),
-                                      filled: false,
-                                      isDense: true,
-                                      border: InputBorder.none,
-                                      enabledBorder: InputBorder.none,
-                                      focusedBorder: InputBorder.none,
-                                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                                    ),
-                                    onSubmitted: (_) {
-                                      final text = _chatController.text.trim();
-                                      if (text.isNotEmpty) {
-                                        final currentUser = context.read<AuthProvider>().currentUser;
-                                        liveProvider.sendMessage(text, currentUser.name, user: currentUser);
-                                        _chatController.clear();
-                                        if (mounted) setState(() {});
-                                      }
-                                    },
-                                    onChanged: (val) {
-                                      if (mounted) setState(() {});
-                                    },
-                                  ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.35),
+                                borderRadius: BorderRadius.circular(21),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                  width: 1.2,
                                 ),
-
-                                // 3D Emoji Face Button (positioned nicely at the inner border)
-                                GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onTap: () {
-                                    AuthGuard.require(context, () {
-                                      EmojiPickerSheet.show(context, onEmojiSelected: (emoji) {
-                                        final currentUser = context.read<AuthProvider>().currentUser;
-                                        liveProvider.sendMessage(emoji, currentUser.name);
-                                        context.read<EmojiReactionProvider>().sendReaction(
-                                          roomId: widget.room.id,
-                                          senderId: currentUser.id,
-                                          emoji: emoji,
-                                          senderName: currentUser.name,
-                                        );
-                                      });
-                                    }, reason: 'Sign in to send reactions');
-                                  },
-                                  child: Container(
-                                    width: 28,
-                                    height: 28,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      gradient: const RadialGradient(
-                                        center: Alignment(-0.3, -0.4),
-                                        radius: 0.85,
-                                        colors: [
-                                          Color(0xFFFFE082),
-                                          Color(0xFFFFB300),
-                                          Color(0xFFFF8F00),
-                                          Color(0xFFE65100),
-                                        ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _chatController,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w500,
                                       ),
-                                      border: Border.all(
-                                        color: const Color(0xFFFFF9C4).withValues(alpha: 0.85),
-                                        width: 1.2,
-                                      ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: const Color(0xFFFF8F00).withValues(alpha: 0.5),
-                                          blurRadius: 4,
-                                          offset: const Offset(0, 1.5),
+                                      cursorColor: const Color(0xFFFF4081),
+                                      textAlignVertical:
+                                          TextAlignVertical.center,
+                                      decoration: InputDecoration(
+                                        hintText: 'Say something...',
+                                        hintStyle: TextStyle(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.5,
+                                          ),
+                                          fontSize: 13,
                                         ),
-                                      ],
-                                    ),
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.sentiment_satisfied_alt_rounded,
-                                        color: Color(0xFF5D2800),
-                                        size: 17,
+                                        filled: false,
+                                        isDense: true,
+                                        border: InputBorder.none,
+                                        enabledBorder: InputBorder.none,
+                                        focusedBorder: InputBorder.none,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              vertical: 10,
+                                            ),
                                       ),
+                                      onSubmitted: (_) {
+                                        final text = _chatController.text
+                                            .trim();
+                                        if (text.isNotEmpty) {
+                                          final currentUser = context
+                                              .read<AuthProvider>()
+                                              .currentUser;
+                                          liveProvider.sendMessage(
+                                            text,
+                                            currentUser.name,
+                                            user: currentUser,
+                                          );
+                                          _chatController.clear();
+                                          if (mounted) setState(() {});
+                                        }
+                                      },
+                                      onChanged: (val) {
+                                        if (mounted) setState(() {});
+                                      },
                                     ),
                                   ),
-                                ),
 
-                                if (_chatController.text.isNotEmpty) ...[
-                                  const SizedBox(width: 6),
+                                  // 3D Emoji Face Button (positioned nicely at the inner border)
                                   GestureDetector(
                                     behavior: HitTestBehavior.opaque,
                                     onTap: () {
-                                      final text = _chatController.text.trim();
-                                      if (text.isNotEmpty) {
-                                        final currentUser = context.read<AuthProvider>().currentUser;
-                                        liveProvider.sendMessage(text, currentUser.name, user: currentUser);
-                                        _chatController.clear();
-                                        if (mounted) setState(() {});
-                                      }
+                                      AuthGuard.require(
+                                        context,
+                                        () {
+                                          EmojiPickerSheet.show(
+                                            context,
+                                            onEmojiSelected: (emoji) {
+                                              final currentUser = context
+                                                  .read<AuthProvider>()
+                                                  .currentUser;
+                                              liveProvider.sendMessage(
+                                                emoji,
+                                                currentUser.name,
+                                              );
+                                              context
+                                                  .read<EmojiReactionProvider>()
+                                                  .sendReaction(
+                                                    roomId: widget.room.id,
+                                                    senderId: currentUser.id,
+                                                    emoji: emoji,
+                                                    senderName:
+                                                        currentUser.name,
+                                                  );
+                                            },
+                                          );
+                                        },
+                                        reason: 'Sign in to send reactions',
+                                      );
                                     },
                                     child: Container(
                                       width: 28,
                                       height: 28,
-                                      decoration: const BoxDecoration(
+                                      decoration: BoxDecoration(
                                         shape: BoxShape.circle,
-                                        gradient: LinearGradient(
-                                          colors: [Color(0xFFFF416C), Color(0xFFFF4B2B)],
+                                        gradient: const RadialGradient(
+                                          center: Alignment(-0.3, -0.4),
+                                          radius: 0.85,
+                                          colors: [
+                                            Color(0xFFFFE082),
+                                            Color(0xFFFFB300),
+                                            Color(0xFFFF8F00),
+                                            Color(0xFFE65100),
+                                          ],
                                         ),
+                                        border: Border.all(
+                                          color: const Color(
+                                            0xFFFFF9C4,
+                                          ).withValues(alpha: 0.85),
+                                          width: 1.2,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: const Color(
+                                              0xFFFF8F00,
+                                            ).withValues(alpha: 0.5),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1.5),
+                                          ),
+                                        ],
                                       ),
                                       child: const Center(
-                                        child: Icon(Icons.send_rounded, color: Colors.white, size: 15),
+                                        child: Icon(
+                                          Icons.sentiment_satisfied_alt_rounded,
+                                          color: Color(0xFF5D2800),
+                                          size: 17,
+                                        ),
                                       ),
                                     ),
                                   ),
+
+                                  if (_chatController.text.isNotEmpty) ...[
+                                    const SizedBox(width: 6),
+                                    GestureDetector(
+                                      behavior: HitTestBehavior.opaque,
+                                      onTap: () {
+                                        final text = _chatController.text
+                                            .trim();
+                                        if (text.isNotEmpty) {
+                                          final currentUser = context
+                                              .read<AuthProvider>()
+                                              .currentUser;
+                                          liveProvider.sendMessage(
+                                            text,
+                                            currentUser.name,
+                                            user: currentUser,
+                                          );
+                                          _chatController.clear();
+                                          if (mounted) setState(() {});
+                                        }
+                                      },
+                                      child: Container(
+                                        width: 28,
+                                        height: 28,
+                                        decoration: const BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              Color(0xFFFF416C),
+                                              Color(0xFFFF4B2B),
+                                            ],
+                                          ),
+                                        ),
+                                        child: const Center(
+                                          child: Icon(
+                                            Icons.send_rounded,
+                                            color: Colors.white,
+                                            size: 15,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 6),
+                          const SizedBox(width: 6),
 
-                        // Far Right 3D Action Icons: (1) 3D Gift Box, (2) 3D Mic, (3) 3D Like Heart
-                        // 1. 3D Gift Box
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            AuthGuard.require(context, () {
-                              showModalBottomSheet(
-                                context: context,
-                                backgroundColor: AppColors.transparent,
-                                builder: (c) {
-                                  final currentUser = context.read<AuthProvider>().currentUser;
-                                  final effectiveHost = (widget.room.host.id == currentUser.id && currentUser.avatarUrl.isNotEmpty)
-                                      ? widget.room.host.copyWith(avatarUrl: currentUser.avatarUrl, name: currentUser.name)
-                                      : widget.room.host;
-                                  return GiftDialog(
-                                    streamerName: effectiveHost.name,
-                                    targetReceiver: effectiveHost,
-                                    onGiftSent: (gift) {
-                                      final liveGiftProv = context.read<LiveGiftProvider>();
-                                      liveProvider.sendGift(gift, currentUser.name, transactionId: liveGiftProv.lastTransactionId);
-                                      _giftOverlayKey.currentState?.playGiftAnimation(
-                                        gift,
-                                        senderName: currentUser.name,
-                                        transactionId: liveGiftProv.lastTransactionId,
-                                      );
-                                    },
-                                  );
-                                },
-                              );
-                            }, reason: 'Sign in to send gifts');
-                          },
-                          child: SizedBox(
-                            width: 38,
-                            height: 38,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              clipBehavior: Clip.none,
-                              children: [
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: const Color(0xFFFF4081).withValues(alpha: 0.45),
-                                        blurRadius: 8,
-                                        spreadRadius: 1,
-                                      ),
-                                    ],
-                                  ),
-                                  child: ClipOval(
-                                    child: Image.asset(
-                                      'assets/images/party_gift_box.jpg',
-                                      width: 36,
-                                      height: 36,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (context, error, stackTrace) => Container(
-                                        color: const Color(0xFFFF4081),
-                                        child: const Icon(Icons.card_giftcard_rounded, color: Colors.white, size: 20),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Positioned(
-                                  bottom: -2,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
+                          // Far Right 3D Action Icons: (1) 3D Gift Box, (2) 3D Mic, (3) 3D Like Heart
+                          // 1. 3D Gift Box
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              AuthGuard.require(context, () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  backgroundColor: AppColors.transparent,
+                                  builder: (c) {
+                                    final currentUser = context
+                                        .read<AuthProvider>()
+                                        .currentUser;
+                                    final effectiveHost =
+                                        (widget.room.host.id ==
+                                                currentUser.id &&
+                                            currentUser.avatarUrl.isNotEmpty)
+                                        ? widget.room.host.copyWith(
+                                            avatarUrl: currentUser.avatarUrl,
+                                            name: currentUser.name,
+                                          )
+                                        : widget.room.host;
+                                    return GiftDialog(
+                                      streamerName: effectiveHost.name,
+                                      targetReceiver: effectiveHost,
+                                      onGiftSent: (gift) {
+                                        final liveGiftProv = context
+                                            .read<LiveGiftProvider>();
+                                        liveProvider.sendGift(
+                                          gift,
+                                          currentUser.name,
+                                          transactionId:
+                                              liveGiftProv.lastTransactionId,
+                                        );
+                                        _giftOverlayKey.currentState
+                                            ?.playGiftAnimation(
+                                              gift,
+                                              senderName: currentUser.name,
+                                              transactionId: liveGiftProv
+                                                  .lastTransactionId,
+                                            );
+                                      },
+                                    );
+                                  },
+                                );
+                              }, reason: 'Sign in to send gifts');
+                            },
+                            child: SizedBox(
+                              width: 38,
+                              height: 38,
+                              child: Stack(
+                                alignment: Alignment.center,
+                                clipBehavior: Clip.none,
+                                children: [
+                                  Container(
+                                    width: 36,
+                                    height: 36,
                                     decoration: BoxDecoration(
-                                      gradient: const LinearGradient(
-                                        colors: [Color(0xFFFFB300), Color(0xFFFF8F00)],
-                                      ),
-                                      borderRadius: BorderRadius.circular(6),
+                                      shape: BoxShape.circle,
                                       boxShadow: [
-                                        BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 2),
+                                        BoxShadow(
+                                          color: const Color(
+                                            0xFFFF4081,
+                                          ).withValues(alpha: 0.45),
+                                          blurRadius: 8,
+                                          spreadRadius: 1,
+                                        ),
                                       ],
                                     ),
-                                    child: const Text(
-                                      'GIFT',
-                                      style: TextStyle(
-                                        color: Colors.black,
-                                        fontSize: 6.5,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: 0.3,
+                                    child: ClipOval(
+                                      child: Image.asset(
+                                        'assets/images/party_gift_box.jpg',
+                                        width: 36,
+                                        height: 36,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) =>
+                                                Container(
+                                                  color: const Color(
+                                                    0xFFFF4081,
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.card_giftcard_rounded,
+                                                    color: Colors.white,
+                                                    size: 20,
+                                                  ),
+                                                ),
                                       ),
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-
-                        // 2. 3D Microphone Toggle Button
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _toggleMic,
-                          child: Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: RadialGradient(
-                                center: const Alignment(-0.3, -0.4),
-                                radius: 0.9,
-                                colors: liveProvider.isMicMuted
-                                    ? [
-                                        const Color(0xFFFF8A80),
-                                        const Color(0xFFFF1744),
-                                        const Color(0xFFD50000),
-                                        const Color(0xFF880E4F),
-                                      ]
-                                    : [
-                                        const Color(0xFF69F0AE),
-                                        const Color(0xFF00E676),
-                                        const Color(0xFF00C853),
-                                        const Color(0xFF1B5E20),
-                                      ],
-                              ),
-                              border: Border.all(
-                                color: (liveProvider.isMicMuted ? const Color(0xFFFFEBEE) : const Color(0xFFE8F5E9))
-                                    .withValues(alpha: 0.8),
-                                width: 1.2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: (liveProvider.isMicMuted ? const Color(0xFFFF1744) : const Color(0xFF00E676))
-                                      .withValues(alpha: 0.5),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Icon(
-                                liveProvider.isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                                color: Colors.white,
-                                size: 19,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-
-                        // 3. 3D Heart / Like Button
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            AuthGuard.require(context, () {
-                              _triggerFloatingHeart();
-                            }, reason: 'Sign in to send likes');
-                          },
-                          child: Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: const RadialGradient(
-                                center: Alignment(-0.3, -0.4),
-                                radius: 0.9,
-                                colors: [
-                                  Color(0xFFFF80AB),
-                                  Color(0xFFFF4081),
-                                  Color(0xFFF50057),
-                                  Color(0xFF880E4F),
+                                  Positioned(
+                                    bottom: -2,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 4,
+                                        vertical: 0.5,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        gradient: const LinearGradient(
+                                          colors: [
+                                            Color(0xFFFFB300),
+                                            Color(0xFFFF8F00),
+                                          ],
+                                        ),
+                                        borderRadius: BorderRadius.circular(6),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.5,
+                                            ),
+                                            blurRadius: 2,
+                                          ),
+                                        ],
+                                      ),
+                                      child: const Text(
+                                        'GIFT',
+                                        style: TextStyle(
+                                          color: Colors.black,
+                                          fontSize: 6.5,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 0.3,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ),
-                              border: Border.all(
-                                color: const Color(0xFFFCE4EC).withValues(alpha: 0.8),
-                                width: 1.2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: const Color(0xFFFF4081).withValues(alpha: 0.55),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+
+                          // 2. 3D Microphone Toggle Button
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _toggleMic,
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  center: const Alignment(-0.3, -0.4),
+                                  radius: 0.9,
+                                  colors: liveProvider.isMicMuted
+                                      ? [
+                                          const Color(0xFFFF8A80),
+                                          const Color(0xFFFF1744),
+                                          const Color(0xFFD50000),
+                                          const Color(0xFF880E4F),
+                                        ]
+                                      : [
+                                          const Color(0xFF69F0AE),
+                                          const Color(0xFF00E676),
+                                          const Color(0xFF00C853),
+                                          const Color(0xFF1B5E20),
+                                        ],
                                 ),
-                              ],
-                            ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.favorite_rounded,
-                                color: Colors.white,
-                                size: 19,
+                                border: Border.all(
+                                  color:
+                                      (liveProvider.isMicMuted
+                                              ? const Color(0xFFFFEBEE)
+                                              : const Color(0xFFE8F5E9))
+                                          .withValues(alpha: 0.8),
+                                  width: 1.2,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color:
+                                        (liveProvider.isMicMuted
+                                                ? const Color(0xFFFF1744)
+                                                : const Color(0xFF00E676))
+                                            .withValues(alpha: 0.5),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Icon(
+                                  liveProvider.isMicMuted
+                                      ? Icons.mic_off_rounded
+                                      : Icons.mic_rounded,
+                                  color: Colors.white,
+                                  size: 19,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+                          const SizedBox(width: 6),
 
-          // TikTok User Join Entrance Banner
-          TikTokUserJoinBanner(roomId: widget.room.id, bottomOffset: 240),
-
-          // Realtime Animated Emoji Reaction Overlay (Top of Stack) - Issue 45 Centered in Live Stage
-          EmojiReactionOverlay(roomId: widget.room.id, isLiveRoom: true),
-
-          // Onscreen 3D Gift Animation Overlay
-          GiftAnimationOverlay(key: _giftOverlayKey),
-
-          // PK 3-Second Countdown Overlay (Section 1)
-          if (liveProvider.isPkCountdown)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black.withValues(alpha: 0.65),
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        'PK BATTLE STARTING IN',
-                        style: TextStyle(
-                          color: Color(0xFF00E5FF),
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        width: 90,
-                        height: 90,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFFE91E63), Color(0xFFFF4081)],
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.pinkAccent.withValues(alpha: 0.6),
-                              blurRadius: 25,
-                              spreadRadius: 4,
+                          // 3. 3D Heart / Like Button
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              AuthGuard.require(context, () {
+                                _triggerFloatingHeart();
+                              }, reason: 'Sign in to send likes');
+                            },
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: const RadialGradient(
+                                  center: Alignment(-0.3, -0.4),
+                                  radius: 0.9,
+                                  colors: [
+                                    Color(0xFFFF80AB),
+                                    Color(0xFFFF4081),
+                                    Color(0xFFF50057),
+                                    Color(0xFF880E4F),
+                                  ],
+                                ),
+                                border: Border.all(
+                                  color: const Color(
+                                    0xFFFCE4EC,
+                                  ).withValues(alpha: 0.8),
+                                  width: 1.2,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(
+                                      0xFFFF4081,
+                                    ).withValues(alpha: 0.55),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.favorite_rounded,
+                                  color: Colors.white,
+                                  size: 19,
+                                ),
+                              ),
                             ),
-                          ],
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          '${liveProvider.pkCountdown}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 44,
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
@@ -2756,14 +3565,77 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               ),
             ),
 
-          // PK Victory Celebration Overlay
-          if (liveProvider.activePkBattle != null && (liveProvider.activePkBattle!.isEnded || liveProvider.pkTimeRemainingSeconds == 0))
-            Positioned.fill(
-              child: _buildPkVictoryOverlay(liveProvider.activePkBattle!),
-            ),
-        ],
+            // TikTok User Join Entrance Banner
+            TikTokUserJoinBanner(roomId: widget.room.id, bottomOffset: 240),
+
+            // Realtime Animated Emoji Reaction Overlay (Top of Stack) - Issue 45 Centered in Live Stage
+            EmojiReactionOverlay(roomId: widget.room.id, isLiveRoom: true),
+
+            // Onscreen 3D Gift Animation Overlay
+            GiftAnimationOverlay(key: _giftOverlayKey),
+
+            // PK 3-Second Countdown Overlay (Section 1)
+            if (liveProvider.isPkCountdown)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'PK BATTLE STARTING IN',
+                          style: TextStyle(
+                            color: Color(0xFF00E5FF),
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                            letterSpacing: 2,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: 90,
+                          height: 90,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFE91E63), Color(0xFFFF4081)],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.pinkAccent.withValues(alpha: 0.6),
+                                blurRadius: 25,
+                                spreadRadius: 4,
+                              ),
+                            ],
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            '${liveProvider.pkCountdown}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 44,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // PK Victory Celebration Overlay
+            if (liveProvider.activePkBattle != null &&
+                (liveProvider.activePkBattle!.isEnded ||
+                    liveProvider.pkTimeRemainingSeconds == 0))
+              Positioned.fill(
+                child: _buildPkVictoryOverlay(liveProvider.activePkBattle!),
+              ),
+          ],
+        ),
       ),
-    ));
+    );
   }
 
   Widget _buildQuickActionBtn(
@@ -2784,51 +3656,66 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
 
     final lower = label.toLowerCase();
     if (lower.contains('lucky') || lower.contains('claim')) {
-      gradientColors = customGradient ?? const [
-        Color(0xFFFF5252),
-        Color(0xFFFF1744),
-        Color(0xFFD50000),
-        Color(0xFF880E4F),
-      ];
+      gradientColors =
+          customGradient ??
+          const [
+            Color(0xFFFF5252),
+            Color(0xFFFF1744),
+            Color(0xFFD50000),
+            Color(0xFF880E4F),
+          ];
       glowColor = customGlow ?? const Color(0xFFFF1744);
-      borderColor = customBorder ?? const Color(0xFFFFCDD2).withValues(alpha: 0.85);
+      borderColor =
+          customBorder ?? const Color(0xFFFFCDD2).withValues(alpha: 0.85);
     } else if (lower.contains('game')) {
-      gradientColors = customGradient ?? const [
-        Color(0xFFB388FF),
-        Color(0xFF7C4DFF),
-        Color(0xFF651FFF),
-        Color(0xFF311B92),
-      ];
+      gradientColors =
+          customGradient ??
+          const [
+            Color(0xFFB388FF),
+            Color(0xFF7C4DFF),
+            Color(0xFF651FFF),
+            Color(0xFF311B92),
+          ];
       glowColor = customGlow ?? const Color(0xFF7C4DFF);
-      borderColor = customBorder ?? const Color(0xFFEDE7F6).withValues(alpha: 0.85);
+      borderColor =
+          customBorder ?? const Color(0xFFEDE7F6).withValues(alpha: 0.85);
     } else if (lower.contains('viewer')) {
-      gradientColors = customGradient ?? const [
-        Color(0xFF69F0AE),
-        Color(0xFF00E676),
-        Color(0xFF00BFA5),
-        Color(0xFF004D40),
-      ];
+      gradientColors =
+          customGradient ??
+          const [
+            Color(0xFF69F0AE),
+            Color(0xFF00E676),
+            Color(0xFF00BFA5),
+            Color(0xFF004D40),
+          ];
       glowColor = customGlow ?? const Color(0xFF00E676);
-      borderColor = customBorder ?? const Color(0xFFE8F5E9).withValues(alpha: 0.85);
+      borderColor =
+          customBorder ?? const Color(0xFFE8F5E9).withValues(alpha: 0.85);
     } else if (lower.contains('share')) {
-      gradientColors = customGradient ?? const [
-        Color(0xFF80D8FF),
-        Color(0xFF00B0FF),
-        Color(0xFF0091EA),
-        Color(0xFF01579B),
-      ];
+      gradientColors =
+          customGradient ??
+          const [
+            Color(0xFF80D8FF),
+            Color(0xFF00B0FF),
+            Color(0xFF0091EA),
+            Color(0xFF01579B),
+          ];
       glowColor = customGlow ?? const Color(0xFF00B0FF);
-      borderColor = customBorder ?? const Color(0xFFE1F5FE).withValues(alpha: 0.85);
+      borderColor =
+          customBorder ?? const Color(0xFFE1F5FE).withValues(alpha: 0.85);
     } else {
       // More / Tools
-      gradientColors = customGradient ?? const [
-        Color(0xFF84FFFF),
-        Color(0xFF00E5FF),
-        Color(0xFF00B8D4),
-        Color(0xFF006064),
-      ];
+      gradientColors =
+          customGradient ??
+          const [
+            Color(0xFF84FFFF),
+            Color(0xFF00E5FF),
+            Color(0xFF00B8D4),
+            Color(0xFF006064),
+          ];
       glowColor = customGlow ?? const Color(0xFF00E5FF);
-      borderColor = customBorder ?? const Color(0xFFE0F7FA).withValues(alpha: 0.85);
+      borderColor =
+          customBorder ?? const Color(0xFFE0F7FA).withValues(alpha: 0.85);
     }
 
     return GestureDetector(
@@ -2847,10 +3734,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 radius: 0.9,
                 colors: gradientColors,
               ),
-              border: Border.all(
-                color: borderColor,
-                width: 1.3,
-              ),
+              border: Border.all(color: borderColor, width: 1.3),
               boxShadow: [
                 BoxShadow(
                   color: glowColor.withValues(alpha: 0.45),
@@ -2859,13 +3743,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 ),
               ],
             ),
-            child: Center(
-              child: Icon(
-                icon,
-                color: Colors.white,
-                size: 20,
-              ),
-            ),
+            child: Center(child: Icon(icon, color: Colors.white, size: 20)),
           ),
           const SizedBox(height: 4),
           Text(
@@ -2874,9 +3752,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
               color: Colors.white,
               fontSize: 10,
               fontWeight: FontWeight.bold,
-              shadows: [
-                Shadow(color: Colors.black, blurRadius: 4),
-              ],
+              shadows: [Shadow(color: Colors.black, blurRadius: 4)],
             ),
           ),
         ],
@@ -2887,7 +3763,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   void _showRoomTools(BuildContext context, bool isDark) {
     final liveProvider = context.read<LiveProvider>();
     final currentUser = context.read<AuthProvider>().currentUser;
-    final isHost = widget.isHost || widget.room.host.id == currentUser.id || widget.room.creatorUserId == currentUser.id;
+    final isHost =
+        widget.isHost ||
+        widget.room.host.id == currentUser.id ||
+        widget.room.creatorUserId == currentUser.id;
     final isAdmin = currentUser.role == UserRole.admin;
     final canModerate = isHost || isAdmin;
 
@@ -2895,7 +3774,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.getCard(isDark),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
       builder: (c) => SafeArea(
         child: ConstrainedBox(
           constraints: BoxConstraints(
@@ -2932,7 +3813,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                         ),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.grid_view_rounded, color: Colors.white, size: 18),
+                      child: const Icon(
+                        Icons.grid_view_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -2946,7 +3831,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       ),
                     ),
                     IconButton(
-                      icon: Icon(Icons.close_rounded, color: AppColors.getTextSecondary(isDark), size: 22),
+                      icon: Icon(
+                        Icons.close_rounded,
+                        color: AppColors.getTextSecondary(isDark),
+                        size: 22,
+                      ),
                       onPressed: () => Navigator.pop(c),
                     ),
                   ],
@@ -2979,13 +3868,21 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       children: [
                         _buildToolItem(
                           icon: Icons.card_giftcard_rounded,
-                          label: liveProvider.luckyBagActive ? 'Claim!' : 'Lucky',
-                          color: liveProvider.luckyBagActive ? Colors.orangeAccent : AppColors.liveRed,
+                          label: liveProvider.luckyBagActive
+                              ? 'Claim!'
+                              : 'Lucky',
+                          color: liveProvider.luckyBagActive
+                              ? Colors.orangeAccent
+                              : AppColors.liveRed,
                           isDark: isDark,
                           imageAsset: 'assets/images/party_tool_luckybag.png',
                           onTap: () {
                             Navigator.pop(c);
-                            _showLuckyBagQuickActionDialog(context, isDark, liveProvider);
+                            _showLuckyBagQuickActionDialog(
+                              context,
+                              isDark,
+                              liveProvider,
+                            );
                           },
                         ),
                         if (liveProvider.luckyBagActive)
@@ -2993,12 +3890,22 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                             top: 0,
                             right: 8,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.redAccent,
                                 borderRadius: BorderRadius.circular(10),
                               ),
-                              child: const Text('Active', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold)),
+                              child: const Text(
+                                'Active',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ),
                       ],
@@ -3033,15 +3940,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           roomTitle: widget.room.title,
                           isDark: isDark,
                           isHost: widget.isHost,
-                          onMakeCoHost: (viewer) {
-                            setState(() => _coHostUser = viewer);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Joined screen with ${viewer.name} as Co-Host!'),
-                                backgroundColor: const Color(0xFF00E5FF),
-                              ),
-                            );
-                          },
+                          onMakeCoHost: _inviteViewerToCoHost,
                         );
                       },
                     ),
@@ -3064,27 +3963,35 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       },
                     ),
 
-                    // 5. PK Match
-                    _buildToolItem(
-                      icon: Icons.flash_on_rounded,
-                      label: 'PK Match',
-                      color: Colors.orangeAccent,
-                      isDark: isDark,
-                      imageAsset: 'assets/images/party_tool_pk_match.png',
-                      onTap: () async {
-                        Navigator.pop(c);
-                        final result = await Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id, roomType: 'VIDEO')),
-                        );
-                        if (result == true && mounted) {
-                          final liveProv = context.read<LiveProvider>();
-                          if (liveProv.activePkBattle == null) {
-                            liveProv.startHostPKBattle(currentHost: widget.room.host);
+                    // 5. PK Match (Item #47: Owner-only)
+                    if (isHost)
+                      _buildToolItem(
+                        icon: Icons.flash_on_rounded,
+                        label: 'PK Match',
+                        color: Colors.orangeAccent,
+                        isDark: isDark,
+                        imageAsset: 'assets/images/party_tool_pk_match.png',
+                        onTap: () async {
+                          Navigator.pop(c);
+                          final result = await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => PkMatchScreen(
+                                currentRoomId: widget.room.id,
+                                roomType: 'VIDEO',
+                              ),
+                            ),
+                          );
+                          if (result == true && mounted) {
+                            final liveProv = context.read<LiveProvider>();
+                            if (liveProv.activePkBattle == null) {
+                              liveProv.startHostPKBattle(
+                                currentHost: widget.room.host,
+                              );
+                            }
                           }
-                        }
-                      },
-                    ),
+                        },
+                      ),
 
                     // 6. Super Wheel
                     _buildToolItem(
@@ -3095,40 +4002,75 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       imageAsset: 'assets/images/party_tool_superwheel.png',
                       onTap: () {
                         Navigator.pop(c);
-                        final participants = ['Sophia', 'Alex', 'Elena', 'Marcus', 'Zayn', 'Aisha'];
+                        final participants = [
+                          'Sophia',
+                          'Alex',
+                          'Elena',
+                          'Marcus',
+                          'Zayn',
+                          'Aisha',
+                        ];
                         showDialog(
                           context: context,
                           builder: (d) => AlertDialog(
                             backgroundColor: AppColors.getCard(isDark),
-                            title: Row(children: [
-                              const Icon(Icons.casino_rounded, color: Colors.purple),
-                              const SizedBox(width: 8),
-                              Text('Super Wheel', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                            ]),
+                            title: Row(
+                              children: [
+                                const Icon(
+                                  Icons.casino_rounded,
+                                  color: Colors.purple,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Super Wheel',
+                                  style: TextStyle(
+                                    color: AppColors.getTextPrimary(isDark),
+                                  ),
+                                ),
+                              ],
+                            ),
                             content: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Text('Spin to pick a random winner from ${participants.length} viewers!',
-                                    style: TextStyle(color: AppColors.getTextSecondary(isDark))),
+                                Text(
+                                  'Spin to pick a random winner from ${participants.length} viewers!',
+                                  style: TextStyle(
+                                    color: AppColors.getTextSecondary(isDark),
+                                  ),
+                                ),
                                 const SizedBox(height: 16),
-                                const Icon(Icons.rotate_right_rounded, size: 64, color: Colors.purple),
+                                const Icon(
+                                  Icons.rotate_right_rounded,
+                                  size: 64,
+                                  color: Colors.purple,
+                                ),
                               ],
                             ),
                             actions: [
-                              TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
+                              TextButton(
+                                onPressed: () => Navigator.pop(d),
+                                child: const Text('Cancel'),
+                              ),
                               ElevatedButton(
-                                style: ElevatedButton.styleFrom(backgroundColor: Colors.purple),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.purple,
+                                ),
                                 onPressed: () {
                                   Navigator.pop(d);
                                   liveProvider.spinSuperWheel(participants);
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                      content: Text('Spinning the wheel for ${participants.length} participants...'),
+                                      content: Text(
+                                        'Spinning the wheel for ${participants.length} participants...',
+                                      ),
                                       backgroundColor: Colors.purple,
                                     ),
                                   );
                                 },
-                                child: const Text('Spin!', style: TextStyle(color: Colors.white)),
+                                child: const Text(
+                                  'Spin!',
+                                  style: TextStyle(color: Colors.white),
+                                ),
                               ),
                             ],
                           ),
@@ -3156,36 +4098,82 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                         showModalBottomSheet(
                           context: context,
                           backgroundColor: AppColors.getCard(isDark),
-                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(20),
+                            ),
+                          ),
                           builder: (m) => SafeArea(
                             child: Padding(
                               padding: const EdgeInsets.all(16),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text('Background Music', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
+                                  Text(
+                                    'Background Music',
+                                    style: TextStyle(
+                                      color: AppColors.getTextPrimary(isDark),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
                                   const SizedBox(height: 4),
-                                  Text('Current: ${liveProvider.isMusicPlaying ? liveProvider.currentMusicTrack! : "Off"}',
-                                      style: const TextStyle(color: Colors.blue, fontSize: 12)),
+                                  Text(
+                                    'Current: ${liveProvider.isMusicPlaying ? liveProvider.currentMusicTrack! : "Off"}',
+                                    style: const TextStyle(
+                                      color: Colors.blue,
+                                      fontSize: 12,
+                                    ),
+                                  ),
                                   const SizedBox(height: 12),
-                                  ...tracks.map((t) => ListTile(
-                                    leading: Icon(Icons.music_note_rounded, color: liveProvider.currentMusicTrack == t ? Colors.blue : Colors.grey),
-                                    title: Text(t, style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                                    trailing: liveProvider.currentMusicTrack == t
-                                        ? const Icon(Icons.equalizer_rounded, color: Colors.blue)
-                                        : null,
-                                    onTap: () {
-                                      Navigator.pop(m);
-                                      liveProvider.playMusic(t);
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(content: Text('Now playing: $t'), backgroundColor: Colors.blue),
-                                      );
-                                    },
-                                  )),
+                                  ...tracks.map(
+                                    (t) => ListTile(
+                                      leading: Icon(
+                                        Icons.music_note_rounded,
+                                        color:
+                                            liveProvider.currentMusicTrack == t
+                                            ? Colors.blue
+                                            : Colors.grey,
+                                      ),
+                                      title: Text(
+                                        t,
+                                        style: TextStyle(
+                                          color: AppColors.getTextPrimary(
+                                            isDark,
+                                          ),
+                                        ),
+                                      ),
+                                      trailing:
+                                          liveProvider.currentMusicTrack == t
+                                          ? const Icon(
+                                              Icons.equalizer_rounded,
+                                              color: Colors.blue,
+                                            )
+                                          : null,
+                                      onTap: () {
+                                        Navigator.pop(m);
+                                        liveProvider.playMusic(t);
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Now playing: $t'),
+                                            backgroundColor: Colors.blue,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
                                   if (liveProvider.isMusicPlaying)
                                     ListTile(
-                                      leading: const Icon(Icons.stop_rounded, color: Colors.red),
-                                      title: const Text('Stop Music', style: TextStyle(color: Colors.red)),
+                                      leading: const Icon(
+                                        Icons.stop_rounded,
+                                        color: Colors.red,
+                                      ),
+                                      title: const Text(
+                                        'Stop Music',
+                                        style: TextStyle(color: Colors.red),
+                                      ),
                                       onTap: () {
                                         Navigator.pop(m);
                                         liveProvider.stopMusic();
@@ -3199,54 +4187,103 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       },
                     ),
 
-                    // 8. YouTube Video Share
-                    _buildToolItem(
-                      icon: Icons.play_circle_fill_rounded,
-                      label: 'YouTube',
-                      color: Colors.red,
-                      isDark: isDark,
-                      imageAsset: 'assets/images/party_tool_youtube.png',
-                      onTap: () {
-                        Navigator.pop(c);
-                        showDialog(
-                          context: context,
-                          builder: (d) {
-                            final ctrl = TextEditingController();
-                            return AlertDialog(
-                              backgroundColor: AppColors.getCard(isDark),
-                              title: Text('Share YouTube', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                              content: TextField(
-                                controller: ctrl,
-                                style: TextStyle(color: AppColors.getTextPrimary(isDark)),
-                                decoration: InputDecoration(
-                                  hintText: 'Paste YouTube URL...',
-                                  hintStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
-                                  filled: true,
-                                  fillColor: AppColors.getBackground(isDark),
-                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    // 8. YouTube Video Share (Item #47: Owner-only verified API)
+                    if (isHost)
+                      _buildToolItem(
+                        icon: Icons.play_circle_fill_rounded,
+                        label: 'YouTube',
+                        color: Colors.red,
+                        isDark: isDark,
+                        imageAsset: 'assets/images/party_tool_youtube.png',
+                        onTap: () {
+                          Navigator.pop(c);
+                          showDialog(
+                            context: context,
+                            builder: (d) {
+                              final ctrl = TextEditingController();
+                              return AlertDialog(
+                                backgroundColor: AppColors.getCard(isDark),
+                                title: Text(
+                                  'Share YouTube',
+                                  style: TextStyle(
+                                    color: AppColors.getTextPrimary(isDark),
+                                  ),
                                 ),
-                              ),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
-                                ElevatedButton(
-                                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-                                  onPressed: () {
-                                    Navigator.pop(d);
-                                    if (ctrl.text.isNotEmpty) {
-                                      liveProvider.sendMessage('Sharing video: ${ctrl.text}', 'Host');
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(content: Text('YouTube video shared with viewers!')),
-                                      );
-                                    }
-                                  },
-                                  child: const Text('Share', style: TextStyle(color: Colors.white)),
+                                content: TextField(
+                                  controller: ctrl,
+                                  style: TextStyle(
+                                    color: AppColors.getTextPrimary(isDark),
+                                  ),
+                                  decoration: InputDecoration(
+                                    hintText: 'Paste YouTube URL...',
+                                    hintStyle: TextStyle(
+                                      color: AppColors.getTextSecondary(isDark),
+                                    ),
+                                    filled: true,
+                                    fillColor: AppColors.getBackground(isDark),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                  ),
                                 ),
-                              ],
-                            );
-                          },
-                        );
-                      },
-                    ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(d),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                    ),
+                                    onPressed: () async {
+                                      Navigator.pop(d);
+                                      final url = ctrl.text.trim();
+                                      if (url.isNotEmpty) {
+                                        try {
+                                          await ApiClient.instance.dio.post(
+                                            '/v1/rooms/${widget.room.id}/youtube',
+                                            data: {
+                                              'action': 'START',
+                                              'videoUrl': url,
+                                              'videoTitle': 'Shared Video',
+                                            },
+                                          );
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(
+                                                content: Text(
+                                                  '🎉 YouTube playback synchronized with viewers!',
+                                                ),
+                                                backgroundColor: Colors.green,
+                                              ),
+                                            );
+                                          }
+                                        } catch (e) {
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  'Failed to sync YouTube: $e',
+                                                ),
+                                                backgroundColor: Colors.redAccent,
+                                              ),
+                                            );
+                                          }
+                                        }
+                                      }
+                                    },
+                                    child: const Text(
+                                      'Share',
+                                      style: TextStyle(color: Colors.white),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        },
+                      ),
 
                     // 9. Rocket Game
                     _buildToolItem(
@@ -3261,7 +4298,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           context: context,
                           isScrollControlled: true,
                           backgroundColor: Colors.transparent,
-                          builder: (_) => RocketGameSheet(roomId: widget.room.id),
+                          builder: (_) =>
+                              RocketGameSheet(roomId: widget.room.id),
                         );
                       },
                     ),
@@ -3272,51 +4310,110 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                       label: 'Effects',
                       color: Colors.pink,
                       isDark: isDark,
-                      imageAsset: 'assets/images/party_tool_effects_settings.png',
+                      imageAsset:
+                          'assets/images/party_tool_effects_settings.png',
                       onTap: () {
                         Navigator.pop(c);
-                        final effects = ['None', 'Beauty', 'Blur BG', 'Vintage', 'Neon Glow', 'Black & White'];
+                        final effects = [
+                          'None',
+                          'Beauty',
+                          'Blur BG',
+                          'Vintage',
+                          'Neon Glow',
+                          'Black & White',
+                        ];
                         showModalBottomSheet(
                           context: context,
                           backgroundColor: AppColors.getCard(isDark),
-                          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.vertical(
+                              top: Radius.circular(20),
+                            ),
+                          ),
                           builder: (m) => SafeArea(
                             child: Padding(
                               padding: const EdgeInsets.all(16),
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Text('Visual Effects', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
+                                  Text(
+                                    'Visual Effects',
+                                    style: TextStyle(
+                                      color: AppColors.getTextPrimary(isDark),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
+                                  ),
                                   const SizedBox(height: 4),
-                                  Text('Active: ${liveProvider.activeEffect}', style: const TextStyle(color: Colors.pink, fontSize: 12)),
+                                  Text(
+                                    'Active: ${liveProvider.activeEffect}',
+                                    style: const TextStyle(
+                                      color: Colors.pink,
+                                      fontSize: 12,
+                                    ),
+                                  ),
                                   const SizedBox(height: 12),
                                   Wrap(
                                     spacing: 10,
                                     runSpacing: 10,
-                                    children: effects.map((ef) => GestureDetector(
-                                      onTap: () {
-                                        liveProvider.setEffect(ef);
-                                        Navigator.pop(m);
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('Effect applied: $ef'), backgroundColor: Colors.pink),
-                                        );
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                        decoration: BoxDecoration(
-                                          color: liveProvider.activeEffect == ef
-                                              ? Colors.pink
-                                              : Colors.pink.withValues(alpha: 0.12),
-                                          borderRadius: BorderRadius.circular(20),
-                                          border: Border.all(color: Colors.pink.withValues(alpha: 0.4)),
-                                        ),
-                                        child: Text(ef, style: TextStyle(
-                                          color: liveProvider.activeEffect == ef ? Colors.white : AppColors.getTextPrimary(isDark),
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                        )),
-                                      ),
-                                    )).toList(),
+                                    children: effects
+                                        .map(
+                                          (ef) => GestureDetector(
+                                            onTap: () {
+                                              liveProvider.setEffect(ef);
+                                              Navigator.pop(m);
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    'Effect applied: $ef',
+                                                  ),
+                                                  backgroundColor: Colors.pink,
+                                                ),
+                                              );
+                                            },
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                    vertical: 10,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color:
+                                                    liveProvider.activeEffect ==
+                                                        ef
+                                                    ? Colors.pink
+                                                    : Colors.pink.withValues(
+                                                        alpha: 0.12,
+                                                      ),
+                                                borderRadius:
+                                                    BorderRadius.circular(20),
+                                                border: Border.all(
+                                                  color: Colors.pink.withValues(
+                                                    alpha: 0.4,
+                                                  ),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                ef,
+                                                style: TextStyle(
+                                                  color:
+                                                      liveProvider
+                                                              .activeEffect ==
+                                                          ef
+                                                      ? Colors.white
+                                                      : AppColors.getTextPrimary(
+                                                          isDark,
+                                                        ),
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        )
+                                        .toList(),
                                   ),
                                 ],
                               ),
@@ -3369,8 +4466,12 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     children: [
                       // Lock / Unlock Room
                       _buildToolItem(
-                        icon: liveProvider.isRoomLocked ? Icons.lock_rounded : Icons.lock_open_rounded,
-                        label: liveProvider.isRoomLocked ? 'Unlock Room' : 'Lock Room',
+                        icon: liveProvider.isRoomLocked
+                            ? Icons.lock_rounded
+                            : Icons.lock_open_rounded,
+                        label: liveProvider.isRoomLocked
+                            ? 'Unlock Room'
+                            : 'Lock Room',
                         color: Colors.redAccent,
                         isDark: isDark,
                         imageAsset: 'assets/images/party_tool_lockroom.png',
@@ -3379,9 +4480,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           liveProvider.toggleRoomLock();
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text(liveProvider.isRoomLocked
-                                  ? 'Room locked. No new viewers can join.'
-                                  : 'Room unlocked.'),
+                              content: Text(
+                                liveProvider.isRoomLocked
+                                    ? 'Room locked. No new viewers can join.'
+                                    : 'Room unlocked.',
+                              ),
                               backgroundColor: Colors.redAccent,
                             ),
                           );
@@ -3401,7 +4504,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           liveProvider.clearMessages();
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text('Chat and lower room feed cleared!'),
+                              content: Text(
+                                'Chat and lower room feed cleared!',
+                              ),
                               behavior: SnackBarBehavior.floating,
                               backgroundColor: Color(0xFF00E5FF),
                             ),
@@ -3422,7 +4527,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           showModalBottomSheet(
                             context: context,
                             backgroundColor: AppColors.getCard(isDark),
-                            shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(
+                                top: Radius.circular(20),
+                              ),
+                            ),
                             builder: (m) => SafeArea(
                               child: Padding(
                                 padding: const EdgeInsets.all(16),
@@ -3430,20 +4539,67 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                   mainAxisSize: MainAxisSize.min,
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text('Mic Status', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
+                                    Text(
+                                      'Mic Status',
+                                      style: TextStyle(
+                                        color: AppColors.getTextPrimary(isDark),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
                                     const SizedBox(height: 12),
-                                    ...['Host Mic', 'Seat 1', 'Seat 2', 'Seat 3', 'Seat 4'].asMap().entries.map((e) {
+                                    ...[
+                                      'Host Mic',
+                                      'Seat 1',
+                                      'Seat 2',
+                                      'Seat 3',
+                                      'Seat 4',
+                                    ].asMap().entries.map((e) {
                                       final isOn = e.key == 0;
                                       return ListTile(
-                                        leading: Icon(isOn ? Icons.mic_rounded : Icons.mic_off_rounded, color: isOn ? Colors.green : Colors.red),
-                                        title: Text(e.value, style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                                        trailing: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: isOn ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
-                                            borderRadius: BorderRadius.circular(10),
+                                        leading: Icon(
+                                          isOn
+                                              ? Icons.mic_rounded
+                                              : Icons.mic_off_rounded,
+                                          color: isOn
+                                              ? Colors.green
+                                              : Colors.red,
+                                        ),
+                                        title: Text(
+                                          e.value,
+                                          style: TextStyle(
+                                            color: AppColors.getTextPrimary(
+                                              isDark,
+                                            ),
                                           ),
-                                          child: Text(isOn ? 'ON' : 'OFF', style: TextStyle(color: isOn ? Colors.green : Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
+                                        ),
+                                        trailing: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 4,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isOn
+                                                ? Colors.green.withValues(
+                                                    alpha: 0.15,
+                                                  )
+                                                : Colors.red.withValues(
+                                                    alpha: 0.15,
+                                                  ),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            isOn ? 'ON' : 'OFF',
+                                            style: TextStyle(
+                                              color: isOn
+                                                  ? Colors.green
+                                                  : Colors.red,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12,
+                                            ),
+                                          ),
                                         ),
                                       );
                                     }),
@@ -3453,12 +4609,21 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                                       child: ElevatedButton.icon(
                                         icon: const Icon(Icons.mic_off_rounded),
                                         label: const Text('Mute All'),
-                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                        ),
                                         onPressed: () {
                                           Navigator.pop(m);
-                                          lp.sendMessage('Host muted all microphones.', 'System');
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            const SnackBar(content: Text('All mics muted!')),
+                                          lp.sendMessage(
+                                            'Host muted all microphones.',
+                                            'System',
+                                          );
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('All mics muted!'),
+                                            ),
                                           );
                                         },
                                       ),
@@ -3488,43 +4653,99 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                               return StatefulBuilder(
                                 builder: (d, setSt) => AlertDialog(
                                   backgroundColor: AppColors.getCard(isDark),
-                                  title: Row(children: [
-                                    const Icon(Icons.settings_rounded, color: Colors.grey),
-                                    const SizedBox(width: 8),
-                                    Text('Live Settings', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                                  ]),
+                                  title: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.settings_rounded,
+                                        color: Colors.grey,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        'Live Settings',
+                                        style: TextStyle(
+                                          color: AppColors.getTextPrimary(
+                                            isDark,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                   content: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       SwitchListTile(
-                                        title: Text('Allow Comments', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
+                                        title: Text(
+                                          'Allow Comments',
+                                          style: TextStyle(
+                                            color: AppColors.getTextPrimary(
+                                              isDark,
+                                            ),
+                                          ),
+                                        ),
                                         value: allowComments,
-                                        activeThumbColor: AppColors.getPrimary(isDark),
-                                        onChanged: (v) => setSt(() => allowComments = v),
+                                        activeThumbColor: AppColors.getPrimary(
+                                          isDark,
+                                        ),
+                                        onChanged: (v) =>
+                                            setSt(() => allowComments = v),
                                       ),
                                       SwitchListTile(
-                                        title: Text('Gift Animations', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
+                                        title: Text(
+                                          'Gift Animations',
+                                          style: TextStyle(
+                                            color: AppColors.getTextPrimary(
+                                              isDark,
+                                            ),
+                                          ),
+                                        ),
                                         value: showGiftAnimations,
-                                        activeThumbColor: AppColors.getPrimary(isDark),
-                                        onChanged: (v) => setSt(() => showGiftAnimations = v),
+                                        activeThumbColor: AppColors.getPrimary(
+                                          isDark,
+                                        ),
+                                        onChanged: (v) =>
+                                            setSt(() => showGiftAnimations = v),
                                       ),
                                       ListTile(
-                                        title: Text('Stream Quality', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                                        trailing: const Text('HD', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                                        title: Text(
+                                          'Stream Quality',
+                                          style: TextStyle(
+                                            color: AppColors.getTextPrimary(
+                                              isDark,
+                                            ),
+                                          ),
+                                        ),
+                                        trailing: const Text(
+                                          'HD',
+                                          style: TextStyle(
+                                            color: Colors.blue,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
                                         onTap: () {},
                                       ),
                                     ],
                                   ),
                                   actions: [
                                     ElevatedButton(
-                                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.getPrimary(isDark)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.getPrimary(
+                                          isDark,
+                                        ),
+                                      ),
                                       onPressed: () {
                                         Navigator.pop(d);
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Settings saved!')),
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Settings saved!'),
+                                          ),
                                         );
                                       },
-                                      child: const Text('Save', style: TextStyle(color: Colors.white)),
+                                      child: const Text(
+                                        'Save',
+                                        style: TextStyle(color: Colors.white),
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -3544,7 +4765,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                           isDanger: true,
                           onTap: () {
                             Navigator.pop(c);
-                            _handleExitConfirmation(context, isHost, liveProvider);
+                            _handleExitConfirmation(
+                              context,
+                              isHost,
+                              liveProvider,
+                            );
                           },
                         ),
                     ],
@@ -3559,13 +4784,19 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     );
   }
 
-  void _showLuckyBagQuickActionDialog(BuildContext context, bool isDark, LiveProvider liveProvider) {
+  void _showLuckyBagQuickActionDialog(
+    BuildContext context,
+    bool isDark,
+    LiveProvider liveProvider,
+  ) {
     if (liveProvider.luckyBagActive) {
       // Claim if active
       final randomDiamonds = 5 + Random().nextInt(15);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('🎉 Claimed $randomDiamonds diamonds from the Lucky Bag!'),
+          content: Text(
+            '🎉 Claimed $randomDiamonds diamonds from the Lucky Bag!',
+          ),
           backgroundColor: Colors.green,
           behavior: SnackBarBehavior.floating,
         ),
@@ -3584,44 +4815,74 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             children: [
               const Icon(Icons.card_giftcard_rounded, color: Colors.orange),
               const SizedBox(width: 8),
-              Text('Lucky Bag', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
+              Text(
+                'Lucky Bag',
+                style: TextStyle(color: AppColors.getTextPrimary(isDark)),
+              ),
             ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Choose diamond amount to drop:', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
+              Text(
+                'Choose diamond amount to drop:',
+                style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+              ),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8,
-                children: amounts.map((a) => GestureDetector(
-                  onTap: () => setSt(() => selected = a),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: selected == a ? Colors.orange : Colors.grey.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text('$a', style: TextStyle(
-                      color: selected == a ? Colors.white : AppColors.getTextPrimary(isDark),
-                      fontWeight: FontWeight.bold,
-                    )),
-                  ),
-                )).toList(),
+                children: amounts
+                    .map(
+                      (a) => GestureDetector(
+                        onTap: () => setSt(() => selected = a),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: selected == a
+                                ? Colors.orange
+                                : Colors.grey.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(
+                            '$a',
+                            style: TextStyle(
+                              color: selected == a
+                                  ? Colors.white
+                                  : AppColors.getTextPrimary(isDark),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Icon(Icons.diamond_rounded, color: Colors.purpleAccent, size: 16),
+                  const Icon(
+                    Icons.diamond_rounded,
+                    color: Colors.purpleAccent,
+                    size: 16,
+                  ),
                   const SizedBox(width: 4),
-                  Text('$selected diamonds for 12 seconds', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
+                  Text(
+                    '$selected diamonds for 12 seconds',
+                    style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                  ),
                 ],
               ),
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(d), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () => Navigator.pop(d),
+              child: const Text('Cancel'),
+            ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
               onPressed: () {
@@ -3629,13 +4890,18 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                 liveProvider.startLuckyBag(selected);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('Lucky Bag dropped! $selected diamonds available! 🎁'),
+                    content: Text(
+                      'Lucky Bag dropped! $selected diamonds available! 🎁',
+                    ),
                     backgroundColor: Colors.orange,
                     behavior: SnackBarBehavior.floating,
                   ),
                 );
               },
-              child: const Text('Drop Bag!', style: TextStyle(color: Colors.white)),
+              child: const Text(
+                'Drop Bag!',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ],
         ),
@@ -3648,7 +4914,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.getCard(isDark),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (c) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -3658,32 +4926,73 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
             children: [
               Center(
                 child: Container(
-                  width: 36, height: 4,
-                  decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(2)),
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
-              Text('Room Details', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 18, fontWeight: FontWeight.bold)),
+              Text(
+                'Room Details',
+                style: TextStyle(
+                  color: AppColors.getTextPrimary(isDark),
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               const SizedBox(height: 16),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Icon(Icons.live_tv_rounded, color: AppColors.getPrimary(isDark)),
-                title: Text(widget.room.title, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold)),
-                subtitle: Text('ID: ${widget.room.id} • Host: ${widget.room.host.name}', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
+                leading: Icon(
+                  Icons.live_tv_rounded,
+                  color: AppColors.getPrimary(isDark),
+                ),
+                title: Text(
+                  widget.room.title,
+                  style: TextStyle(
+                    color: AppColors.getTextPrimary(isDark),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                subtitle: Text(
+                  'ID: ${widget.room.id} • Host: ${widget.room.host.name}',
+                  style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                ),
               ),
               const Divider(),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.speed_rounded, color: Colors.green),
-                title: Text('Stream Quality & Latency', style: TextStyle(color: AppColors.getTextPrimary(isDark))),
-                subtitle: const Text('Quality: Ultra HD (1080p) • Ping: 18ms (Stable)', style: TextStyle(color: Colors.green)),
+                title: Text(
+                  'Stream Quality & Latency',
+                  style: TextStyle(color: AppColors.getTextPrimary(isDark)),
+                ),
+                subtitle: const Text(
+                  'Quality: Ultra HD (1080p) • Ping: 18ms (Stable)',
+                  style: TextStyle(color: Colors.green),
+                ),
               ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.people_rounded, color: Colors.blue),
-                title: Text('Viewers List (${liveProv.viewers.length})', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold)),
-                subtitle: Text('${liveProv.viewers.isNotEmpty ? liveProv.viewers.length : widget.room.viewerCount} active viewers • Tap to view all profiles', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
-                trailing: const Icon(Icons.chevron_right_rounded, color: Colors.white70),
+                title: Text(
+                  'Viewers List (${liveProv.viewers.length})',
+                  style: TextStyle(
+                    color: AppColors.getTextPrimary(isDark),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                subtitle: Text(
+                  '${liveProv.viewers.isNotEmpty ? liveProv.viewers.length : widget.room.viewerCount} active viewers • Tap to view all profiles',
+                  style: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                ),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: Colors.white70,
+                ),
                 onTap: () {
                   Navigator.pop(c);
                   LiveViewersSheet.show(
@@ -3693,15 +5002,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     roomTitle: widget.room.title,
                     isDark: isDark,
                     isHost: widget.isHost,
-                    onMakeCoHost: (viewer) {
-                      setState(() => _coHostUser = viewer);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Joined screen with ${viewer.name} as Co-Host!'),
-                          backgroundColor: const Color(0xFF00E5FF),
-                        ),
-                      );
-                    },
+                    onMakeCoHost: _inviteViewerToCoHost,
                   );
                 },
               ),
@@ -3712,7 +5013,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.getPrimary(isDark),
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   onPressed: () => Navigator.pop(c),
                   child: const Text('Close'),
@@ -3726,9 +5029,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
   }
 
   Widget _buildToolItem({
-    required IconData icon, 
-    required String label, 
-    required Color color, 
+    required IconData icon,
+    required String label,
+    required Color color,
     required bool isDark,
     required VoidCallback onTap,
     String? imageAsset,
@@ -3753,7 +5056,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                     fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) => Container(
                       decoration: BoxDecoration(
-                        color: isDanger ? const Color(0xFF2E1C1E) : Colors.white.withValues(alpha: 0.08),
+                        color: isDanger
+                            ? const Color(0xFF2E1C1E)
+                            : Colors.white.withValues(alpha: 0.08),
                         shape: BoxShape.circle,
                       ),
                       child: Icon(icon, color: color, size: 26),
@@ -3761,7 +5066,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen> with TickerProviderStat
                   )
                 : Container(
                     decoration: BoxDecoration(
-                      color: isDanger ? const Color(0xFF2E1C1E) : Colors.white.withValues(alpha: 0.08),
+                      color: isDanger
+                          ? const Color(0xFF2E1C1E)
+                          : Colors.white.withValues(alpha: 0.08),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(icon, color: color, size: 26),
@@ -3794,7 +5101,8 @@ class _AnimatedFloatingHeart extends StatefulWidget {
   State<_AnimatedFloatingHeart> createState() => _AnimatedFloatingHeartState();
 }
 
-class _AnimatedFloatingHeartState extends State<_AnimatedFloatingHeart> with SingleTickerProviderStateMixin {
+class _AnimatedFloatingHeartState extends State<_AnimatedFloatingHeart>
+    with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
   late Animation<double> _translateY;
   late Animation<double> _opacity;
@@ -3803,10 +5111,22 @@ class _AnimatedFloatingHeartState extends State<_AnimatedFloatingHeart> with Sin
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400));
-    _translateY = Tween<double>(begin: 0, end: -200).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
-    _opacity = Tween<double>(begin: 1.0, end: 0.0).animate(CurvedAnimation(parent: _ctrl, curve: const Interval(0.5, 1.0)));
-    _scale = Tween<double>(begin: 0.6, end: 1.3).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack));
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    _translateY = Tween<double>(
+      begin: 0,
+      end: -200,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+    _opacity = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: const Interval(0.5, 1.0)));
+    _scale = Tween<double>(
+      begin: 0.6,
+      end: 1.3,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack));
 
     _ctrl.forward();
   }
@@ -3828,7 +5148,11 @@ class _AnimatedFloatingHeartState extends State<_AnimatedFloatingHeart> with Sin
             scale: _scale.value,
             child: Opacity(
               opacity: _opacity.value,
-              child: Icon(Icons.favorite_rounded, color: widget.color, size: 28),
+              child: Icon(
+                Icons.favorite_rounded,
+                color: widget.color,
+                size: 28,
+              ),
             ),
           ),
         );

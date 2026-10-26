@@ -6,11 +6,13 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../../core/services/media_upload_service.dart';
 import '../../core/services/room_share_service.dart';
 import 'package:provider/provider.dart';
 import '../../core/services/room_lock_manager.dart';
 import '../../core/services/room_config_manager.dart';
+import '../../core/services/socket_service.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../models/live_room_model.dart';
 import '../../models/user_model.dart';
@@ -89,8 +91,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
   // Music Player State
   bool _isPlayingMusic = false;
+  bool _isMusicLoading = false;
   int _currentTrackIndex = 0;
   double _musicVolume = 0.8;
+  int _musicPositionMs = 0;
+  int _musicDurationMs = 0;
+  String? _musicPlaybackError;
+  Timer? _musicProgressTimer;
+  StreamSubscription<AudioMixingStateChange>? _audioMixingSub;
   final List<Map<String, String>> _musicPlaylist = [
     {'title': 'Lo-Fi Chill Beats', 'genre': 'Chillout / Beats', 'duration': '2:45', 'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'},
     {'title': 'Nightdrive Synthwave', 'genre': 'Electronic / Upbeat', 'duration': '3:12', 'url': 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3'},
@@ -126,14 +134,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         widget.room.creatorUserId == currentUser.id ||
         (currentUser.username.isNotEmpty && widget.room.host.username.toLowerCase() == currentUser.username.toLowerCase()) ||
         provider.isHost;
-    final isAdmin = currentUser.role == UserRole.admin || currentUser.id == 'admin';
-    final isMod = provider.participants.any((p) => p.user.id == currentUser.id && p.role == ParticipantRole.moderator);
-    final canManage = isHost || isAdmin || isMod;
 
-    if (!canManage && !_isClearScreenMode) {
+    if (!isHost && !_isClearScreenMode) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('⚠️ Only room owner or admin can activate Clear Screen.'),
+          content: Text('⚠️ Only room owner can activate Clear Screen.'),
           backgroundColor: Colors.redAccent,
           duration: Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
@@ -361,6 +366,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     _roomEntrySessionId = 'session_${widget.room.id}_${DateTime.now().millisecondsSinceEpoch}';
     _requestMicPermission();
 
+    final savedBg = RoomConfigManager.instance.getCustomBackground(widget.room.id) ?? widget.room.backgroundImageUrl;
+    if (savedBg != null && savedBg.isNotEmpty) {
+      _customBackgroundPath = savedBg;
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
       final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
@@ -450,15 +460,76 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         if (mounted) _showPkResultDialog(result);
       });
       
-      // Mock SVIP entry for demonstration
-      if (user.isVip) {
-        Future.delayed(const Duration(seconds: 2), () {
+      // Local VIP or Noble entry banner trigger
+      if (user.isVip || (user.nobleTitle != null && user.nobleTitle!.isNotEmpty)) {
+        Future.delayed(const Duration(seconds: 1), () {
           if (mounted) {
             SvipEntryManager().showEntry(user);
           }
         });
       }
     });
+
+    _audioMixingSub?.cancel();
+    _audioMixingSub = AgoraRtcService().audioMixingStateStream.listen((event) {
+      if (!mounted) return;
+      if (event.state == AudioMixingStateType.audioMixingStatePlaying) {
+        setState(() {
+          _isPlayingMusic = true;
+          _isMusicLoading = false;
+          _musicPlaybackError = null;
+        });
+        _startMusicProgressTicker();
+      } else if (event.state == AudioMixingStateType.audioMixingStatePaused) {
+        setState(() {
+          _isPlayingMusic = false;
+          _isMusicLoading = false;
+        });
+        _stopMusicProgressTicker();
+      } else if (event.state == AudioMixingStateType.audioMixingStateStopped) {
+        setState(() {
+          _isPlayingMusic = false;
+          _isMusicLoading = false;
+          _musicPositionMs = 0;
+        });
+        _stopMusicProgressTicker();
+      } else if (event.state == AudioMixingStateType.audioMixingStateFailed) {
+        setState(() {
+          _isPlayingMusic = false;
+          _isMusicLoading = false;
+          _musicPlaybackError = 'Audio playback failed. Please check format or file path.';
+        });
+        _stopMusicProgressTicker();
+      }
+    });
+  }
+
+  void _startMusicProgressTicker() {
+    _stopMusicProgressTicker();
+    _musicProgressTimer = Timer.periodic(const Duration(milliseconds: 500), (_) async {
+      if (!_isPlayingMusic || !mounted) return;
+      final pos = await AgoraRtcService().getAudioMixingCurrentPosition();
+      final dur = await AgoraRtcService().getAudioMixingDuration();
+      if (mounted) {
+        setState(() {
+          _musicPositionMs = pos;
+          if (dur > 0) _musicDurationMs = dur;
+        });
+      }
+    });
+  }
+
+  void _stopMusicProgressTicker() {
+    _musicProgressTimer?.cancel();
+    _musicProgressTimer = null;
+  }
+
+  String _formatDuration(int ms) {
+    if (ms <= 0) return '00:00';
+    final totalSecs = (ms / 1000).floor();
+    final mins = (totalSecs / 60).floor().toString().padLeft(2, '0');
+    final secs = (totalSecs % 60).toString().padLeft(2, '0');
+    return '$mins:$secs';
   }
 
   Future<void> _requestMicPermission() async {
@@ -475,6 +546,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     _coHostInviteSub?.cancel();
     _pkInviteSub?.cancel();
     _pkResultSub?.cancel();
+    _audioMixingSub?.cancel();
+    _stopMusicProgressTicker();
     _chatController.dispose();
     _chatScrollController.dispose();
     _chatFocusNode.dispose();
@@ -789,10 +862,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
     final myParticipant = partyProv.participants.where((p) => (p.user.id == user.id || p.user.username == user.username)).firstOrNull;
     final mySeatNumber = myParticipant?.seatNumber;
-    final isMySeatMuted = mySeatNumber != null && partyProv.isSeatMuted(mySeatNumber);
-    final isPersonallyMuted = myParticipant?.micStatus == MicStatus.muted || isMySeatMuted;
+    final isSeatMutedByMod = mySeatNumber != null && partyProv.isSeatMutedByModerator(mySeatNumber);
+    final isModeratorRestricted = partyProv.isRoomMuted ||
+        (myParticipant?.isMutedByModerator == true) ||
+        isSeatMutedByMod;
 
-    if (partyProv.isRoomMuted || isPersonallyMuted) {
+    final isCurrentlyMuted = _isMicMuted || (myParticipant?.micStatus == MicStatus.muted) || isModeratorRestricted;
+
+    if (isCurrentlyMuted && isModeratorRestricted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('⚠️ Your microphone has been muted by moderation and cannot be toggled.'),
@@ -802,8 +879,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       );
       return;
     }
-    setState(() => _isMicMuted = !_isMicMuted);
-    partyProv.muteLocalMic(_isMicMuted);
+
+    final targetMuted = !isCurrentlyMuted;
+    setState(() => _isMicMuted = targetMuted);
+    partyProv.muteLocalMic(targetMuted);
   }
 
   void _sendChatMessage() {
@@ -900,8 +979,18 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               child: Builder(
               builder: (context) {
                 final equippedTheme = context.watch<BackpackProvider>().equippedThemeUrl;
-                final bgImage = _customBackgroundPath != null
-                    ? FileImage(File(_customBackgroundPath!)) as ImageProvider
+                final partyProv = context.watch<LivePartyProvider>();
+                final roomBackground = _customBackgroundPath ??
+                    partyProv.activeRoom?.backgroundImageUrl ??
+                    RoomConfigManager.instance.getCustomBackground(widget.room.id) ??
+                    widget.room.backgroundImageUrl;
+
+                final bgImage = (roomBackground != null && roomBackground.isNotEmpty)
+                    ? ((roomBackground.startsWith('http://') || roomBackground.startsWith('https://'))
+                        ? NetworkImage(roomBackground) as ImageProvider
+                        : (roomBackground.startsWith('assets/') || roomBackground.startsWith('packages/')
+                            ? AssetImage(roomBackground) as ImageProvider
+                            : FileImage(File(roomBackground)) as ImageProvider))
                     : (equippedTheme != null && equippedTheme.isNotEmpty
                         ? ((equippedTheme.startsWith('http://') || equippedTheme.startsWith('https://'))
                             ? NetworkImage(equippedTheme) as ImageProvider
@@ -2446,7 +2535,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           onTap: () {
             final participant = provider.participants.where((p) => p.user.id == msg.sender.id).firstOrNull ??
                 PartyParticipantModel(user: msg.sender, joinedAt: DateTime.now());
-            _showParticipantSheet(context, participant, provider, Theme.of(context).brightness == Brightness.dark, canManage);
+            _showParticipantSheet(context, participant, provider, Theme.of(context).brightness == Brightness.dark, canManage, isHost: isHost);
           },
         );
       },
@@ -2934,8 +3023,8 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                         imageAsset: 'assets/images/party_rocket_icon.jpg',
                       ),
 
-                      // Management Controls (CR 38 - Strictly Gated to Owner & Admins)
-                      if (canManage) ...[
+                      // Owner-Only Management Controls (Gated strictly to Room Host)
+                      if (isHost) ...[
                         _buildRoomToolBtn(
                           Icons.dashboard_customize_rounded,
                           'Room Type',
@@ -2957,41 +3046,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                             );
                           },
                           imageAsset: 'assets/images/party_tool_room_type.png',
-                        ),
-                        _buildRoomToolBtn(
-                          Icons.flash_on_rounded,
-                          provider.isPkActive ? 'End PK' : 'PK Match',
-                          Colors.deepOrangeAccent,
-                          () {
-                            Navigator.pop(ctx);
-                            if (provider.isPkActive) {
-                              provider.endPk();
-                            } else {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id, roomType: 'AUDIO')),
-                              ).then((res) {
-                                if (res == true && mounted && !provider.isPkActive) {
-                                  final opponent = DummyData.popularUsers.firstWhere(
-                                    (u) => u.id != widget.room.host.id,
-                                    orElse: () => DummyData.popularUsers.first,
-                                  );
-                                  provider.startPk(opponent);
-                                }
-                              });
-                            }
-                          },
-                          imageAsset: 'assets/images/party_tool_pk_match.png',
-                        ),
-                        _buildRoomToolBtn(
-                          Icons.group_rounded,
-                          'Members',
-                          Colors.teal,
-                          () {
-                            Navigator.pop(ctx);
-                            _showManagementPanel(context, isDark, provider);
-                          },
-                          imageAsset: 'assets/images/party_tool_members.png',
                         ),
                         _buildRoomToolBtn(
                           Icons.lock_rounded,
@@ -3034,6 +3088,76 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           imageAsset: 'assets/images/party_tool_themes.png',
                         ),
                         _buildRoomToolBtn(
+                          Icons.settings_suggest_outlined,
+                          'Settings',
+                          Colors.orange,
+                          () {
+                            Navigator.pop(ctx);
+                            _showRoomSettings(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_settings.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.lock_rounded,
+                          'Lock Room',
+                          Colors.cyanAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            _showLockRoomControlDialog(context);
+                          },
+                          imageAsset: 'assets/images/party_tool_lockroom.png',
+                        ),
+                        // Item #42: Clear Screen strictly restricted to room owner
+                        _buildRoomToolBtn(
+                          Icons.cleaning_services_rounded,
+                          'Clear Screen',
+                          Colors.tealAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            _handleClearScreen(provider);
+                          },
+                          imageAsset: 'assets/images/party_tool_clear_screen.png',
+                        ),
+                      ],
+
+                      // Moderation & Shared Controls (Accessible to Owner & Room Admins)
+                      if (canManage) ...[
+                        _buildRoomToolBtn(
+                          Icons.flash_on_rounded,
+                          provider.isPkActive ? 'End PK' : 'PK Match',
+                          Colors.deepOrangeAccent,
+                          () {
+                            Navigator.pop(ctx);
+                            if (provider.isPkActive) {
+                              provider.endPk();
+                            } else {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id, roomType: 'AUDIO')),
+                              ).then((res) {
+                                if (res == true && mounted && !provider.isPkActive) {
+                                  final opponent = DummyData.popularUsers.firstWhere(
+                                    (u) => u.id != widget.room.host.id,
+                                    orElse: () => DummyData.popularUsers.first,
+                                  );
+                                  provider.startPk(opponent);
+                                }
+                              });
+                            }
+                          },
+                          imageAsset: 'assets/images/party_tool_pk_match.png',
+                        ),
+                        _buildRoomToolBtn(
+                          Icons.group_rounded,
+                          'Members',
+                          Colors.teal,
+                          () {
+                            Navigator.pop(ctx);
+                            _showManagementPanel(context, isDark, provider);
+                          },
+                          imageAsset: 'assets/images/party_tool_members.png',
+                        ),
+                        _buildRoomToolBtn(
                           Icons.music_note_rounded,
                           'Music Player',
                           Colors.pink,
@@ -3060,26 +3184,16 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           () {
                             Navigator.pop(ctx);
                             final authUser = context.read<AuthProvider>().currentUser;
-                            final isHost = widget.room.host.id == authUser.id;
+                            final isOwner = widget.room.host.id == authUser.id;
                             final isAdmin = authUser.role == UserRole.admin || authUser.id == 'admin';
                             RoomAnnouncementEditDialog.show(
                               context,
                               roomId: widget.room.id,
-                              isHost: isHost,
+                              isHost: isOwner,
                               isAdmin: isAdmin,
                             );
                           },
                           imageAsset: 'assets/images/party_tool_announcement.png',
-                        ),
-                        _buildRoomToolBtn(
-                          Icons.settings_suggest_outlined,
-                          'Settings',
-                          Colors.orange,
-                          () {
-                            Navigator.pop(ctx);
-                            _showRoomSettings(context);
-                          },
-                          imageAsset: 'assets/images/party_tool_settings.png',
                         ),
                         _buildRoomToolBtn(
                           Icons.play_circle_fill_rounded,
@@ -3111,25 +3225,21 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           },
                           imageAsset: 'assets/images/party_tool_luckybag.png',
                         ),
+                        // Item #44: Rocket Tool for Audio/Party Room
                         _buildRoomToolBtn(
-                          Icons.lock_rounded,
-                          'Lock Room',
-                          Colors.cyanAccent,
+                          Icons.rocket_launch_rounded,
+                          'Rocket Tool',
+                          Colors.indigoAccent,
                           () {
                             Navigator.pop(ctx);
-                            _showLockRoomControlDialog(context);
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => RocketGameSheet(roomId: widget.room.id),
+                            );
                           },
-                          imageAsset: 'assets/images/party_tool_lockroom.png',
-                        ),
-                        _buildRoomToolBtn(
-                          Icons.cleaning_services_rounded,
-                          'Clear Screen',
-                          Colors.tealAccent,
-                          () {
-                            Navigator.pop(ctx);
-                            _handleClearScreen(provider);
-                          },
-                          imageAsset: 'assets/images/party_tool_clear_screen.png',
+                          imageAsset: 'assets/images/party_rocket_icon.jpg',
                         ),
                         _buildRoomToolBtn(
                           Icons.block_rounded,
@@ -3158,14 +3268,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     final isHost = widget.room.host.id == currentUser.id ||
         widget.room.creatorUserId == currentUser.id ||
         (currentUser.username.isNotEmpty && widget.room.host.username.toLowerCase() == currentUser.username.toLowerCase());
-    final isAdmin = currentUser.role == UserRole.admin || currentUser.id == 'admin';
-    final isMod = provider.participants.any((p) => p.user.id == currentUser.id && p.role == ParticipantRole.moderator);
-    final canManage = isHost || isAdmin || isMod;
 
-    if (!canManage) {
+    if (!isHost) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('⚠️ Only room owner or admin can clear the room feed.'),
+          content: Text('⚠️ Only room owner can clear the room feed.'),
           backgroundColor: Colors.redAccent,
         ),
       );
@@ -3196,8 +3303,9 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     PartyParticipantModel p,
     LivePartyProvider provider,
     bool isDark,
-    bool canManage,
-  ) {
+    bool canManage, {
+    bool isHost = false,
+  }) {
     final isMuted = p.micStatus == MicStatus.muted;
     final isHostP = p.role == ParticipantRole.host;
     final isModP = p.role == ParticipantRole.moderator;
@@ -3273,12 +3381,12 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               ],
             ),
             
-            // Admin Tools
+            // Moderation Tools (Permitted for Owner & Room Admins; Mod promotion/demotion strictly for Owner)
             if (canManage && !isHostP) ...[
               const SizedBox(height: 20),
               const Divider(color: Colors.white24),
               const SizedBox(height: 10),
-              Text('Admin Tools', style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12, fontWeight: FontWeight.bold)),
+              Text(isHost ? 'Owner & Moderation Tools' : 'Moderation Tools', style: TextStyle(color: isDark ? Colors.white54 : Colors.black54, fontSize: 12, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 12,
@@ -3295,20 +3403,21 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       provider.kickFromSeat(p.user.id);
                       Navigator.pop(ctx);
                     }),
-                  if (canManage && !isModP)
+                  if (isHost && !isModP)
                     _buildAdminBtn(Icons.shield_outlined, 'Make Mod', Colors.blue, () {
                       provider.promoteToModerator(p.user.id);
                       Navigator.pop(ctx);
                     }),
-                  if (canManage && isModP)
+                  if (isHost && isModP)
                     _buildAdminBtn(Icons.remove_moderator, 'Remove Mod', Colors.blueGrey, () {
                       provider.demoteModerator(p.user.id);
                       Navigator.pop(ctx);
                     }),
-                  _buildAdminBtn(Icons.block, 'Kick Room', Colors.red, () {
-                    provider.removeParticipant(p.user.id);
-                    Navigator.pop(ctx);
-                  }),
+                  if (isHost || !isModP)
+                    _buildAdminBtn(Icons.block, 'Kick Room', Colors.red, () {
+                      provider.removeParticipant(p.user.id);
+                      Navigator.pop(ctx);
+                    }),
                 ],
               ),
             ]
@@ -3683,9 +3792,32 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                             final picker = ImagePicker();
                             final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
                             if (image != null) {
-                              setState(() {
-                                _customBackgroundPath = image.path;
-                              });
+                              String bgToSave = image.path;
+                              try {
+                                final uploadRes = await MediaUploadService.instance.uploadFile(
+                                  filePath: image.path,
+                                  folder: 'room_backgrounds',
+                                );
+                                if (uploadRes.url.isNotEmpty) {
+                                  bgToSave = uploadRes.url;
+                                }
+                              } catch (e) {
+                                debugPrint('[RoomBackground] Upload note: using local path $e');
+                              }
+
+                              try {
+                                await RoomRepository.instance.updateRoomBackground(widget.room.id, bgToSave);
+                              } catch (e) {
+                                debugPrint('[RoomBackground] Remote update note: $e');
+                              }
+                              await RoomConfigManager.instance.saveRoomBackground(widget.room.id, bgToSave);
+                              SocketService.instance.emitRoomBackgroundUpdate(widget.room.id, bgToSave);
+
+                              if (mounted) {
+                                setState(() {
+                                  _customBackgroundPath = bgToSave;
+                                });
+                              }
                               gameProv.completeRoomThemeUpload(txId);
                               if (bCtx.mounted) {
                                 ScaffoldMessenger.of(bCtx).showSnackBar(
@@ -3732,9 +3864,32 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                             final picker = ImagePicker();
                             final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
                             if (image != null) {
-                              setState(() {
-                                _customBackgroundPath = image.path;
-                              });
+                              String bgToSave = image.path;
+                              try {
+                                final uploadRes = await MediaUploadService.instance.uploadFile(
+                                  filePath: image.path,
+                                  folder: 'room_backgrounds',
+                                );
+                                if (uploadRes.url.isNotEmpty) {
+                                  bgToSave = uploadRes.url;
+                                }
+                              } catch (e) {
+                                debugPrint('[RoomBackground] Upload note: using local path $e');
+                              }
+
+                              try {
+                                await RoomRepository.instance.updateRoomBackground(widget.room.id, bgToSave);
+                              } catch (e) {
+                                debugPrint('[RoomBackground] Remote update note: $e');
+                              }
+                              await RoomConfigManager.instance.saveRoomBackground(widget.room.id, bgToSave);
+                              SocketService.instance.emitRoomBackgroundUpdate(widget.room.id, bgToSave);
+
+                              if (mounted) {
+                                setState(() {
+                                  _customBackgroundPath = bgToSave;
+                                });
+                              }
                               if (bCtx.mounted) {
                                 ScaffoldMessenger.of(bCtx).showSnackBar(
                                   const SnackBar(
@@ -3789,6 +3944,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       setState(() {
                         _customBackgroundPath = null;
                       });
+                      RoomConfigManager.instance.saveRoomBackground(widget.room.id, '');
+                      try {
+                        RoomRepository.instance.updateRoomBackground(widget.room.id, '');
+                      } catch (_) {}
+                      SocketService.instance.emitRoomBackgroundUpdate(widget.room.id, '');
                       Navigator.pop(bCtx);
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Restored Default Gradient Background')),
@@ -4197,7 +4357,64 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     );
   }
 
+  Future<void> _playTrack(int idx, String url, StateSetter setModalState) async {
+    if (url.isEmpty) {
+      setState(() {
+        _musicPlaybackError = 'Invalid audio source: track URL or file path is missing.';
+        _isPlayingMusic = false;
+        _isMusicLoading = false;
+      });
+      setModalState(() {});
+      return;
+    }
+
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      final file = File(url);
+      if (!file.existsSync() || file.lengthSync() == 0) {
+        setState(() {
+          _musicPlaybackError = 'Audio file not found or empty on device storage.';
+          _isPlayingMusic = false;
+          _isMusicLoading = false;
+        });
+        setModalState(() {});
+        return;
+      }
+    }
+
+    setState(() {
+      _currentTrackIndex = idx;
+      _isMusicLoading = true;
+      _isPlayingMusic = false;
+      _musicPlaybackError = null;
+      _musicPositionMs = 0;
+      _musicDurationMs = 0;
+    });
+    setModalState(() {});
+
+    final success = await AgoraRtcService().startAudioMixing(
+      filePath: url,
+      volume: _musicVolume,
+    );
+
+    if (!success && mounted) {
+      setState(() {
+        _isMusicLoading = false;
+        _isPlayingMusic = false;
+        _musicPlaybackError = 'Audio engine failed to initialize playback for this source.';
+      });
+      setModalState(() {});
+    }
+  }
+
   void _showMusicLibrary(BuildContext context) {
+    final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+    final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+    final isAuthorized = widget.room.host.id == currentUser.id ||
+        widget.room.creatorUserId == currentUser.id ||
+        (currentUser.username.isNotEmpty && widget.room.host.username.toLowerCase() == currentUser.username.toLowerCase()) ||
+        partyProv.isHost ||
+        partyProv.isSpeaker(currentUser.id);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -4224,6 +4441,15 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                     // Host Add Music from Storage Button
                     GestureDetector(
                       onTap: () {
+                        if (!isAuthorized) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('⚠️ Only the room host or speakers on mic can import music.'),
+                              backgroundColor: Colors.orangeAccent,
+                            ),
+                          );
+                          return;
+                        }
                         _showImportMusicDialog(context, setMusicModalState);
                       },
                       child: Container(
@@ -4240,7 +4466,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                             Icon(Icons.library_music_rounded, color: Colors.white, size: 20),
                             SizedBox(width: 8),
                             Text(
-                              'Import Music from Storage / Gallery',
+                              'Import Music from Storage (MP3, M4A, WAV)',
                               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                             ),
                           ],
@@ -4248,6 +4474,38 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                       ),
                     ),
                     const SizedBox(height: 14),
+                    // Playback error banner if any
+                    if (_musicPlaybackError != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _musicPlaybackError!,
+                                style: const TextStyle(color: Colors.redAccent, fontSize: 11),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                if (_currentTrackIndex < _musicPlaylist.length) {
+                                  final song = _musicPlaylist[_currentTrackIndex];
+                                  _playTrack(_currentTrackIndex, song['url'] ?? '', setMusicModalState);
+                                }
+                              },
+                              child: const Text('Retry', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                            ),
+                          ],
+                        ),
+                      ),
                     // Volume Slider
                     Row(
                       children: [
@@ -4274,15 +4532,17 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                         itemCount: _musicPlaylist.length,
                         itemBuilder: (context, idx) {
                           final song = _musicPlaylist[idx];
-                          final isPlaying = _currentTrackIndex == idx && _isPlayingMusic;
+                          final isCurrent = _currentTrackIndex == idx;
+                          final isPlaying = isCurrent && _isPlayingMusic;
+                          final isLoading = isCurrent && _isMusicLoading;
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
                             child: ListTile(
-                              tileColor: isPlaying ? Colors.pinkAccent.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.04),
+                              tileColor: isCurrent ? Colors.pinkAccent.withValues(alpha: 0.15) : Colors.white.withValues(alpha: 0.04),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(color: isPlaying ? Colors.pinkAccent : Colors.transparent),
+                                side: BorderSide(color: isCurrent ? Colors.pinkAccent : Colors.transparent),
                               ),
                               leading: Container(
                                 padding: const EdgeInsets.all(8),
@@ -4293,30 +4553,55 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                 child: Icon(isPlaying ? Icons.graphic_eq_rounded : Icons.music_note_rounded, color: Colors.white, size: 18),
                               ),
                               title: Text(song['title']!, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-                              subtitle: Text('${song['genre']} • ${song['duration']}', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11)),
-                              trailing: IconButton(
-                                icon: Icon(isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded, color: Colors.pinkAccent, size: 28),
-                                onPressed: () {
-                                  final rtc = AgoraRtcService();
-                                  setState(() {
-                                    if (_currentTrackIndex == idx) {
-                                      if (_isPlayingMusic) {
-                                        rtc.pauseAudioMixing();
-                                        _isPlayingMusic = false;
-                                      } else {
-                                        rtc.resumeAudioMixing();
-                                        _isPlayingMusic = true;
-                                      }
-                                    } else {
-                                      _currentTrackIndex = idx;
-                                      _isPlayingMusic = true;
-                                      final url = song['url'] ?? '';
-                                      rtc.startAudioMixing(filePath: url, volume: _musicVolume);
-                                    }
-                                  });
-                                  setMusicModalState(() {});
-                                },
+                              subtitle: Text(
+                                isCurrent && (_isPlayingMusic || _musicPositionMs > 0)
+                                    ? '${song['genre']} • ${_formatDuration(_musicPositionMs)} / ${_musicDurationMs > 0 ? _formatDuration(_musicDurationMs) : song['duration']}'
+                                    : '${song['genre']} • ${song['duration']}',
+                                style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 11),
                               ),
+                              trailing: isLoading
+                                  ? const SizedBox(
+                                      width: 28,
+                                      height: 28,
+                                      child: Padding(
+                                        padding: EdgeInsets.all(4.0),
+                                        child: CircularProgressIndicator(color: Colors.pinkAccent, strokeWidth: 2.5),
+                                      ),
+                                    )
+                                  : IconButton(
+                                      icon: Icon(
+                                        isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
+                                        color: Colors.pinkAccent,
+                                        size: 28,
+                                      ),
+                                      onPressed: () {
+                                        if (!isAuthorized) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(
+                                              content: Text('⚠️ Only the room host or speakers on mic can play music.'),
+                                              backgroundColor: Colors.orangeAccent,
+                                            ),
+                                          );
+                                          return;
+                                        }
+
+                                        final rtc = AgoraRtcService();
+                                        if (_currentTrackIndex == idx) {
+                                          if (_isPlayingMusic) {
+                                            rtc.pauseAudioMixing();
+                                            setState(() => _isPlayingMusic = false);
+                                            setMusicModalState(() {});
+                                          } else {
+                                            rtc.resumeAudioMixing();
+                                            setState(() => _isPlayingMusic = true);
+                                            setMusicModalState(() {});
+                                          }
+                                        } else {
+                                          final url = song['url'] ?? '';
+                                          _playTrack(idx, url, setMusicModalState);
+                                        }
+                                      },
+                                    ),
                             ),
                           );
                         },
@@ -4333,7 +4618,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   }
 
   void _showImportMusicDialog(BuildContext context, StateSetter setParentState) {
-    final titleController = TextEditingController();
     bool isUploading = false;
 
     showDialog(
@@ -4346,7 +4630,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             children: const [
               Icon(Icons.sd_storage_rounded, color: Colors.pinkAccent, size: 22),
               SizedBox(width: 8),
-              Text('Host Audio Storage', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              Text('Import Room Music', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
             ],
           ),
           content: SizedBox(
@@ -4356,7 +4640,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Select audio file from phone storage:', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  const Text('Select an audio file from your device storage:', style: TextStyle(color: Colors.white70, fontSize: 12)),
                   const SizedBox(height: 12),
                   
                   // Real System Audio File Picker Button
@@ -4373,7 +4657,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                           : const Icon(Icons.folder_open_rounded, size: 20),
                       label: Text(
-                        isUploading ? 'Uploading Audio Track...' : 'Browse Phone Audio (MP3, M4A, WAV)',
+                        isUploading ? 'Validating Audio Track...' : 'Browse Audio Files (MP3, M4A, WAV, FLAC)',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                       ),
                       onPressed: isUploading
@@ -4383,74 +4667,87 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                 setDialogState(() => isUploading = true);
                                 final result = await FilePicker.platform.pickFiles(
                                   type: FileType.custom,
-                                  allowedExtensions: ['mp3', 'm4a', 'wav', 'flac'],
+                                  allowedExtensions: ['mp3', 'm4a', 'wav', 'aac', 'flac', 'ogg', 'mp4', 'm4v', '3gp'],
                                 );
 
                                 if (result != null && result.files.single.path != null) {
                                   final pickedFile = result.files.single;
                                   final filePath = pickedFile.path!;
                                   final fileName = pickedFile.name;
-                                  final cleanTitle = fileName.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '');
+                                  final file = File(filePath);
 
-                                  // Upload file via MediaUploadService
-                                  final uploadRes = await MediaUploadService.instance.uploadFile(
-                                    filePath: filePath,
-                                    folder: 'room_music',
-                                  );
+                                  if (!file.existsSync()) {
+                                    throw Exception('Selected file could not be read from storage.');
+                                  }
+
+                                  final fileSize = await file.length();
+                                  if (fileSize == 0) {
+                                    throw Exception('Selected audio file is empty (0 bytes).');
+                                  }
+
+                                  final ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+                                  const supportedAudio = ['mp3', 'm4a', 'wav', 'aac', 'flac', 'ogg'];
+                                  if (!supportedAudio.contains(ext)) {
+                                    throw Exception(
+                                      'Unsupported media format ($ext). Video files (such as $fileName) are not directly supported by the audio mixer. Please select a valid audio file (MP3, M4A, WAV, AAC, FLAC).',
+                                    );
+                                  }
+
+                                  // Durable persistent storage: copy into app documents directory so it remains accessible
+                                  final appDir = await getApplicationDocumentsDirectory();
+                                  final musicStorageDir = Directory('${appDir.path}/room_music');
+                                  if (!await musicStorageDir.exists()) {
+                                    await musicStorageDir.create(recursive: true);
+                                  }
+                                  final cleanTitle = fileName.replaceAll(RegExp(r'\.[a-zA-Z0-9]+$'), '');
+                                  final persistentPath = '${musicStorageDir.path}/${DateTime.now().millisecondsSinceEpoch}_$fileName';
+                                  await file.copy(persistentPath);
 
                                   if (mounted) {
-                                    final trackUrl = uploadRes.url.isNotEmpty ? uploadRes.url : filePath;
-                                    AgoraRtcService().startAudioMixing(filePath: trackUrl, volume: _musicVolume);
+                                    final newIdx = _musicPlaylist.length;
                                     setState(() {
                                       _musicPlaylist.add({
                                         'title': cleanTitle,
-                                        'genre': 'Device Music',
-                                        'duration': '3:45',
-                                        'url': trackUrl,
+                                        'genre': 'Device Music (${ext.toUpperCase()})',
+                                        'duration': '00:00',
+                                        'url': persistentPath,
                                       });
-                                      _currentTrackIndex = _musicPlaylist.length - 1;
-                                      _isPlayingMusic = true;
                                     });
                                     setParentState(() {});
-                                    Navigator.pop(dCtx);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('🎵 Playing Imported Audio: $cleanTitle'),
-                                        backgroundColor: Colors.pinkAccent,
-                                      ),
-                                    );
+                                    if (dCtx.mounted) {
+                                      Navigator.pop(dCtx);
+                                    }
+
+                                    // Start playback with real audio engine verification
+                                    _playTrack(newIdx, persistentPath, setParentState);
+
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('🎵 Imported Audio: $cleanTitle'),
+                                          backgroundColor: Colors.pinkAccent,
+                                        ),
+                                      );
+                                    }
                                   }
                                 } else {
                                   setDialogState(() => isUploading = false);
                                 }
                               } catch (e) {
                                 setDialogState(() => isUploading = false);
-                                if (mounted) {
+                                if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('❌ Failed to import audio: $e'), backgroundColor: Colors.redAccent),
+                                    SnackBar(content: Text('❌ Import rejected: $e'), backgroundColor: Colors.redAccent),
                                   );
                                 }
                               }
                             },
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  const Divider(color: Colors.white24),
-                  const SizedBox(height: 10),
-
-                  const Text('Or Enter Custom Track Title:', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: titleController,
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                    decoration: InputDecoration(
-                      hintText: 'e.g. My Favorite Banger',
-                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 13),
-                      filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.06),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Note: Only valid audio files (MP3, M4A, WAV, FLAC, AAC) are supported. Imported tracks are copied to app storage so they remain playable at all times.',
+                    style: TextStyle(color: Colors.white38, fontSize: 11),
                   ),
                 ],
               ),
@@ -4460,29 +4757,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             TextButton(
               onPressed: () => Navigator.pop(dCtx),
               child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.purpleAccent),
-              onPressed: () {
-                final title = titleController.text.trim();
-                if (title.isNotEmpty) {
-                  setState(() {
-                    _musicPlaylist.add({
-                      'title': title,
-                      'genre': 'Custom Track',
-                      'duration': '3:30',
-                    });
-                    _currentTrackIndex = _musicPlaylist.length - 1;
-                    _isPlayingMusic = true;
-                  });
-                  setParentState(() {});
-                  Navigator.pop(dCtx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('🎵 Added "$title" to playlist!')),
-                  );
-                }
-              },
-              child: const Text('Add & Play', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -4835,6 +5109,13 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   }
 
   void _showManagementPanel(BuildContext ctx, bool isDark, LivePartyProvider provider) {
+    final authUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+    final isHost = widget.room.host.id == authUser.id ||
+        widget.room.creatorUserId == authUser.id ||
+        (authUser.username.isNotEmpty && widget.room.host.username.toLowerCase() == authUser.username.toLowerCase());
+    final isMod = provider.participants.any((p) => p.user.id == authUser.id && p.role == ParticipantRole.moderator);
+    final canManage = isHost || isMod;
+
     showModalBottomSheet(
       context: ctx,
       backgroundColor: Colors.transparent,
@@ -4983,7 +5264,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                 ],
                               ],
                             ),
-                            onTap: pIsHost ? null : () => _showParticipantSheet(ctx, p, provider, isDark, true),
+                            onTap: pIsHost ? null : () => _showParticipantSheet(ctx, p, provider, isDark, canManage, isHost: isHost),
                           );
                         },
                       ),

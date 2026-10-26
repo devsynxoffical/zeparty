@@ -4,7 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/repositories/social_repository.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
-import '../messages/chat_screen.dart';
+import '../../widgets/user_avatar.dart';
 import 'user_profile_details_screen.dart';
 
 class VisitRecord {
@@ -25,14 +25,15 @@ class VisitRecord {
     UserModel u;
     if (rawUser is Map<String, dynamic>) {
       u = UserModel.fromJson(rawUser);
+    } else if (rawUser is UserModel) {
+      u = rawUser;
     } else {
+      final pid = (json['publicUserId'] ?? json['publicId'] ?? json['visitorId'] ?? json['id'] ?? '').toString();
       u = UserModel(
         id: json['visitorId']?.toString() ?? json['id']?.toString() ?? '',
+        publicUserId: pid,
         username: json['username']?.toString() ?? 'user',
-        name:
-            json['name']?.toString() ??
-            json['displayName']?.toString() ??
-            'ZeParty User',
+        name: json['name']?.toString() ?? json['displayName']?.toString() ?? 'ZeParty User',
         avatarUrl: json['avatarUrl']?.toString() ?? '',
       );
     }
@@ -41,7 +42,7 @@ class VisitRecord {
       id: json['id']?.toString() ?? '',
       user: u,
       visitedAt: json['visitedAt'] != null
-          ? DateTime.tryParse(json['visitedAt'].toString()) ?? DateTime.now()
+          ? (DateTime.tryParse(json['visitedAt'].toString()) ?? DateTime.now())
           : DateTime.now(),
       isMystery: json['isMystery'] == true,
     );
@@ -56,17 +57,21 @@ class VisitorsScreen extends StatefulWidget {
   State<VisitorsScreen> createState() => _VisitorsScreenState();
 }
 
-class _VisitorsScreenState extends State<VisitorsScreen>
-    with SingleTickerProviderStateMixin {
+class _VisitorsScreenState extends State<VisitorsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   List<VisitRecord> _whosSeenMe = [];
   List<VisitRecord> _whoIveSeen = [];
+  int _totalVisitors = 0;
+  int _totalVisited = 0;
   bool _isLoading = false;
+  String? _errorMessage;
+  int _requestId = 0;
 
   bool _isAuthorized(AuthProvider auth) {
     if (!auth.isAuthenticated || auth.currentUser.id.isEmpty) return false;
     final currentId = auth.currentUser.id;
+    final currentPublicId = auth.currentUser.publicUserId;
     final currentUsername = auth.currentUser.username.toLowerCase();
     if (widget.targetUserId == null ||
         widget.targetUserId!.isEmpty ||
@@ -74,7 +79,9 @@ class _VisitorsScreenState extends State<VisitorsScreen>
       return true;
     }
     final target = widget.targetUserId!.toLowerCase();
-    return target == currentId.toLowerCase() || target == currentUsername;
+    return target == currentId.toLowerCase() ||
+        (currentPublicId.isNotEmpty && target == currentPublicId.toLowerCase()) ||
+        target == currentUsername;
   }
 
   @override
@@ -97,38 +104,98 @@ class _VisitorsScreenState extends State<VisitorsScreen>
         setState(() {
           _whosSeenMe = [];
           _whoIveSeen = [];
+          _totalVisitors = 0;
+          _totalVisited = 0;
           _isLoading = false;
+          _errorMessage = null;
         });
       }
       return;
     }
 
-    setState(() => _isLoading = true);
+    final currentRequestId = ++_requestId;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
+      final myId = auth.currentUser.id;
+      final myPublicId = auth.currentUser.publicUserId;
+
       final results = await Future.wait([
-        SocialRepository.instance.fetchVisitors(),
-        SocialRepository.instance.fetchVisited(),
+        SocialRepository.instance.fetchVisitorsEnvelope(userId: widget.targetUserId),
+        SocialRepository.instance.fetchVisitedEnvelope(userId: widget.targetUserId),
       ]);
 
-      final rawVisitors = results[0];
-      final rawVisited = results[1];
+      if (_requestId != currentRequestId || !mounted) return;
 
-      final List<VisitRecord> visitors = rawVisitors
-          .map(VisitRecord.fromJson)
-          .toList();
-      final List<VisitRecord> visited = rawVisited
-          .map(VisitRecord.fromJson)
-          .toList();
+      final visitorsRes = results[0];
+      final visitedRes = results[1];
 
-      if (mounted) {
-        setState(() {
-          _whosSeenMe = visitors;
-          _whoIveSeen = visited;
-          _isLoading = false;
-        });
+      final rawVisitors = visitorsRes['data'] ?? visitorsRes['visitors'] ?? [];
+      final rawVisited = visitedRes['data'] ?? visitedRes['visited'] ?? [];
+
+      final List<VisitRecord> visitors = [];
+      final Set<String> seenVisitorUserIds = {};
+
+      if (rawVisitors is List) {
+        for (final item in rawVisitors) {
+          if (item is Map<String, dynamic>) {
+            final rec = VisitRecord.fromJson(item);
+            // Self-visit filter: never display a user's visit to their own profile
+            final uId = rec.user.id;
+            final uPid = rec.user.publicUserId;
+            if (uId == myId || (myPublicId.isNotEmpty && uPid == myPublicId)) {
+              continue;
+            }
+            final dedupeKey = uPid.isNotEmpty ? uPid : uId;
+            if (!seenVisitorUserIds.contains(dedupeKey)) {
+              seenVisitorUserIds.add(dedupeKey);
+              visitors.add(rec);
+            }
+          }
+        }
       }
-    } catch (_) {
-      if (mounted) setState(() => _isLoading = false);
+
+      final List<VisitRecord> visited = [];
+      final Set<String> seenVisitedUserIds = {};
+
+      if (rawVisited is List) {
+        for (final item in rawVisited) {
+          if (item is Map<String, dynamic>) {
+            final rec = VisitRecord.fromJson(item);
+            final uId = rec.user.id;
+            final uPid = rec.user.publicUserId;
+            if (uId == myId || (myPublicId.isNotEmpty && uPid == myPublicId)) {
+              continue;
+            }
+            final dedupeKey = uPid.isNotEmpty ? uPid : uId;
+            if (!seenVisitedUserIds.contains(dedupeKey)) {
+              seenVisitedUserIds.add(dedupeKey);
+              visited.add(rec);
+            }
+          }
+        }
+      }
+
+      final visitorsTotal = visitorsRes['pagination']?['total'] ?? visitors.length;
+      final visitedTotal = visitedRes['pagination']?['total'] ?? visited.length;
+
+      setState(() {
+        _whosSeenMe = visitors;
+        _whoIveSeen = visited;
+        _totalVisitors = visitorsTotal is int ? visitorsTotal : (int.tryParse(visitorsTotal.toString()) ?? visitors.length);
+        _totalVisited = visitedTotal is int ? visitedTotal : (int.tryParse(visitedTotal.toString()) ?? visited.length);
+        _isLoading = false;
+        _errorMessage = null;
+      });
+    } catch (e) {
+      if (_requestId != currentRequestId || !mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Failed to load visitor history. Please try again.';
+      });
     }
   }
 
@@ -151,10 +218,7 @@ class _VisitorsScreenState extends State<VisitorsScreen>
       return Scaffold(
         backgroundColor: AppColors.getBackground(isDark),
         appBar: AppBar(
-          title: const Text(
-            'Profile Visitors',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
+          title: const Text('Profile Visitors', style: TextStyle(fontWeight: FontWeight.bold)),
           backgroundColor: AppColors.getBackground(isDark),
           elevation: 0,
         ),
@@ -170,11 +234,7 @@ class _VisitorsScreenState extends State<VisitorsScreen>
                     color: Colors.amber.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(
-                    Icons.lock_rounded,
-                    size: 48,
-                    color: Colors.amber,
-                  ),
+                  child: const Icon(Icons.lock_rounded, size: 48, color: Colors.amber),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -199,17 +259,9 @@ class _VisitorsScreenState extends State<VisitorsScreen>
                   onPressed: () => Navigator.pop(context),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: primary,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                   ),
-                  child: const Text(
-                    'Go Back',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  child: const Text('Go Back', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -218,13 +270,13 @@ class _VisitorsScreenState extends State<VisitorsScreen>
       );
     }
 
+    final displayVisitorsCount = _totalVisitors > 0 ? _totalVisitors : _whosSeenMe.length;
+    final displayVisitedCount = _totalVisited > 0 ? _totalVisited : _whoIveSeen.length;
+
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
       appBar: AppBar(
-        title: const Text(
-          'Profile Visitors',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Profile Visitors', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: AppColors.getBackground(isDark),
         elevation: 0,
         actions: [
@@ -238,42 +290,64 @@ class _VisitorsScreenState extends State<VisitorsScreen>
           indicatorColor: primary,
           labelColor: primary,
           unselectedLabelColor: AppColors.getTextSecondary(isDark),
-          labelStyle: const TextStyle(
-            fontWeight: FontWeight.bold,
-            fontSize: 15,
-          ),
+          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
           tabs: [
-            Tab(text: "Who's seen me (${_whosSeenMe.length})"),
-            Tab(text: "Who I've seen (${_whoIveSeen.length})"),
+            Tab(text: "Who's seen me ($displayVisitorsCount)"),
+            Tab(text: "Who I've seen ($displayVisitedCount)"),
           ],
         ),
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(
-                color: AppColors.primary,
-                strokeWidth: 2,
-              ),
+              child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
             )
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildVisitList(
-                  context,
-                  _whosSeenMe,
-                  isIncoming: true,
-                  isDark: isDark,
-                  primary: primary,
+          : _errorMessage != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.wifi_off_rounded, size: 52, color: AppColors.getTextSecondary(isDark)),
+                        const SizedBox(height: 12),
+                        Text(
+                          _errorMessage!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 14),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          onPressed: _loadVisitors,
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text('Retry'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildVisitList(
+                      context,
+                      _whosSeenMe,
+                      isIncoming: true,
+                      isDark: isDark,
+                      primary: primary,
+                    ),
+                    _buildVisitList(
+                      context,
+                      _whoIveSeen,
+                      isIncoming: false,
+                      isDark: isDark,
+                      primary: primary,
+                    ),
+                  ],
                 ),
-                _buildVisitList(
-                  context,
-                  _whoIveSeen,
-                  isIncoming: false,
-                  isDark: isDark,
-                  primary: primary,
-                ),
-              ],
-            ),
     );
   }
 
@@ -303,9 +377,7 @@ class _VisitorsScreenState extends State<VisitorsScreen>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    isIncoming
-                        ? 'No profile visitors yet'
-                        : 'You haven\'t visited any profiles yet',
+                    isIncoming ? 'No profile visitors yet' : 'You haven\'t visited any profiles yet',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -337,7 +409,7 @@ class _VisitorsScreenState extends State<VisitorsScreen>
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         itemCount: records.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        separatorBuilder: (context, index) => const SizedBox(height: 10),
         itemBuilder: (context, idx) {
           final rec = records[idx];
 
@@ -354,27 +426,20 @@ class _VisitorsScreenState extends State<VisitorsScreen>
                   CircleAvatar(
                     radius: 22,
                     backgroundColor: Colors.amber.shade200,
-                    child: const Icon(
-                      Icons.privacy_tip_rounded,
-                      color: Colors.black,
-                    ),
+                    child: const Icon(Icons.privacy_tip_rounded, color: Colors.black),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Text(
-                              'Mystery Visitor',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: AppColors.getTextPrimary(isDark),
-                              ),
-                            ),
-                          ],
+                        Text(
+                          'Mystery Visitor',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: AppColors.getTextPrimary(isDark),
+                          ),
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -399,7 +464,7 @@ class _VisitorsScreenState extends State<VisitorsScreen>
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => UserProfileDetailsScreen(userId: u.id),
+                  builder: (_) => UserProfileDetailsScreen(userId: u.effectivePublicId),
                 ),
               );
             },
@@ -413,15 +478,7 @@ class _VisitorsScreenState extends State<VisitorsScreen>
               ),
               child: Row(
                 children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundImage: u.avatarUrl.isNotEmpty
-                        ? NetworkImage(u.avatarUrl)
-                        : null,
-                    child: u.avatarUrl.isEmpty
-                        ? const Icon(Icons.person, color: Colors.white)
-                        : null,
-                  ),
+                  UserAvatar(imageUrl: u.avatarUrl, radius: 22, isLive: u.isLive),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -434,10 +491,8 @@ class _VisitorsScreenState extends State<VisitorsScreen>
                                 u.displayName.isNotEmpty
                                     ? u.displayName
                                     : (u.name.isNotEmpty
-                                          ? u.name
-                                          : (u.id.isNotEmpty
-                                                ? 'User ${u.id}'
-                                                : 'User')),
+                                        ? u.name
+                                        : (u.id.isNotEmpty ? 'User ${u.id}' : 'User')),
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 14,
@@ -447,38 +502,30 @@ class _VisitorsScreenState extends State<VisitorsScreen>
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            if (u.isVip) ...[
-                              const SizedBox(width: 4),
-                              const Icon(
-                                Icons.workspace_premium_rounded,
-                                size: 14,
-                                color: AppColors.gold,
-                              ),
-                            ],
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.purple.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                'Lv.${u.accountLevel}',
-                                style: const TextStyle(
-                                  color: Colors.purpleAccent,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
+                            if (u.svipLevel > 0) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: Colors.amber, width: 0.8),
+                                ),
+                                child: Text(
+                                  'SVIP ${u.svipLevel}',
+                                  style: const TextStyle(
+                                    color: Colors.amber,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'ID: ${u.id} • ${_formatTimeAgo(rec.visitedAt)}',
+                          'ID: ${u.effectivePublicId} • ${_formatTimeAgo(rec.visitedAt)}',
                           style: TextStyle(
                             fontSize: 11,
                             color: AppColors.getTextSecondary(isDark),
@@ -487,41 +534,7 @@ class _VisitorsScreenState extends State<VisitorsScreen>
                       ],
                     ),
                   ),
-                  if (isIncoming) ...[
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary.withValues(
-                          alpha: 0.15,
-                        ),
-                        foregroundColor: AppColors.primary,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 6,
-                        ),
-                        minimumSize: const Size(0, 32),
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => ChatScreen(user: u),
-                          ),
-                        );
-                      },
-                      child: const Text(
-                        'Chat',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                  ],
+                  Icon(Icons.chevron_right_rounded, color: AppColors.getTextSecondary(isDark), size: 20),
                 ],
               ),
             ),

@@ -294,9 +294,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                         glowColor: isHostUser ? Colors.amber : const Color(0xFF00E676),
                         frameAsset: participant.user.avatarFrame.isNotEmpty && participant.user.avatarFrame != 'none'
                             ? participant.user.avatarFrame
-                            : (participant.user.nobleTitle != null && participant.user.nobleTitle!.isNotEmpty
-                                ? NobleBadgeHelper.getFrameAsset(participant.user.nobleTitle)
-                                : (participant.user.svipLevel > 0 ? NobleBadgeHelper.getFrameAsset('SVIP ${participant.user.svipLevel}') : null)),
+                            : null,
                       )
                     : Container(
                         decoration: BoxDecoration(
@@ -320,9 +318,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                           radius: radius,
                           frameAsset: participant.user.avatarFrame.isNotEmpty && participant.user.avatarFrame != 'none'
                               ? participant.user.avatarFrame
-                              : (participant.user.nobleTitle != null && participant.user.nobleTitle!.isNotEmpty
-                                  ? NobleBadgeHelper.getFrameAsset(participant.user.nobleTitle)
-                                  : (participant.user.svipLevel > 0 ? NobleBadgeHelper.getFrameAsset('SVIP ${participant.user.svipLevel}') : null)),
+                              : null,
                         ),
                       ),
                 if (activeReaction != null)

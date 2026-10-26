@@ -15,6 +15,9 @@ class UserModel {
   final bool profileCompleted;
   final int followers;
   final int following;
+  final int visitorsCount;
+  final int roomCount;
+  final String publicUserId;
   final int diamonds;
   final int coins;
   final double rCoins;
@@ -65,10 +68,14 @@ class UserModel {
   final bool isPrivate;
   final DateTime? lastActiveAt;
 
+  final String? profileSkinUrl;
+
   bool get isInRoom => (isLive && liveRoomId != null && liveRoomId!.isNotEmpty) || (status == 'IN_ROOM');
   String? get currentRoomId => liveRoomId;
   bool get online => isOnline;
   Map<String, dynamic>? get currentRoom => (liveRoomId != null && liveRoomId!.isNotEmpty) ? {'id': liveRoomId} : null;
+
+  String get effectivePublicId => publicUserId.isNotEmpty ? publicUserId : id;
 
   String get presenceStatus {
     if (isInRoom) return 'IN_ROOM';
@@ -114,6 +121,9 @@ class UserModel {
     bio: '',
     followers: 0,
     following: 0,
+    visitorsCount: 0,
+    roomCount: 0,
+    publicUserId: '',
     diamonds: 0,
     coins: 0,
     rCoins: 0.0,
@@ -163,6 +173,9 @@ class UserModel {
     this.profileCompleted = true,
     this.followers = 0,
     this.following = 0,
+    this.visitorsCount = 0,
+    this.roomCount = 0,
+    this.publicUserId = '',
     this.diamonds = 0,
     this.coins = 0,
     this.rCoins = 0.0,
@@ -202,6 +215,7 @@ class UserModel {
     this.isPrivate = false,
     this.lastActiveAt,
     this.customTitles = const [],
+    this.profileSkinUrl,
   });
 
   /// Automatically calculate exact age from date of birth securely
@@ -298,6 +312,9 @@ class UserModel {
     final sellerBalance = int.tryParse(wallet['sellerBalanceCoins']?.toString() ?? '') ?? (json['sellerBalance'] is int ? json['sellerBalance'] as int : 0);
     final followers = profile['followersCount'] is int ? profile['followersCount'] as int : (json['followers'] is int ? json['followers'] as int : 0);
     final following = profile['followingCount'] is int ? profile['followingCount'] as int : (json['following'] is int ? json['following'] as int : 0);
+    final visitorsCount = UserModel._parseIntSafe(profile['visitorsCount'] ?? json['visitorsCount'] ?? json['visitorCount']);
+    final roomCount = UserModel._parseIntSafe(profile['roomCount'] ?? profile['joinedRoomsCount'] ?? json['roomCount'] ?? json['joinedRoomsCount']);
+    final publicUserId = (json['publicUserId'] ?? json['publicId'] ?? profile['publicUserId'] ?? profile['publicId'] ?? id).toString();
 
     final rawRole = json['role']?.toString().toLowerCase();
     final userType = json['userType']?.toString().toUpperCase();
@@ -306,13 +323,14 @@ class UserModel {
     final bool isUserTypeHost = userType == 'HOST' || json['isHost'] == true || rawRole == 'host';
 
     UserRole role = UserRole.user;
-    if (isUserTypeHost || isHostStatusActive || (hostProfile != null && hostRawStatus != 'REJECTED')) role = UserRole.host;
+    // Item #46: Never promote pending or rejected host applicants to approved hosts. Require explicit authoritative approval.
+    if (isHostStatusActive || (isUserTypeHost && hostRawStatus != 'REJECTED' && hostRawStatus != 'PENDING')) role = UserRole.host;
     if (userType == 'SELLER' || rawRole == 'seller') role = UserRole.seller;
     if (userType == 'AGENCY' || rawRole == 'agency') role = UserRole.agency;
     if (userType == 'BD' || rawRole == 'bd') role = UserRole.bd;
     if (userType == 'ADMIN' || rawRole == 'admin') role = UserRole.admin;
 
-    final bool effectiveIsHost = isHostStatusActive || isUserTypeHost || role == UserRole.host;
+    final bool effectiveIsHost = isHostStatusActive || (isUserTypeHost && hostRawStatus != 'REJECTED' && hostRawStatus != 'PENDING') || role == UserRole.host;
 
     // Detect Coins Seller from authoritative fields, secondary roles, permissions, or assigned badges
     final List<dynamic> rawRolesList = (json['roles'] is List) ? json['roles'] as List : [];
@@ -328,22 +346,31 @@ class UserModel {
     final List<dynamic> rawTitlesList = (json['customTitles'] is List) ? json['customTitles'] as List : [];
     final bool hasSellerTitle = rawTitlesList.any((t) => t.toString().toLowerCase().contains('seller'));
 
-    final bool isSellerActive = json['isSeller'] == true ||
+    // Item #41: Authoritative seller role revocation. A positive balance must NOT override an authoritative revoked role.
+    final rawSellerStatus = json['sellerStatus']?.toString().toUpperCase();
+    final bool isSellerExplicitlyRevoked = json['isSeller'] == false ||
+        rawSellerStatus == 'REVOKED' ||
+        rawSellerStatus == 'SUSPENDED' ||
+        rawSellerStatus == 'INACTIVE';
+
+    final bool isSellerActive = !isSellerExplicitlyRevoked && (
+        json['isSeller'] == true ||
         json['isCoinsSeller'] == true ||
         json['hasSellerPortal'] == true ||
+        rawSellerStatus == 'ACTIVE' ||
         userType == 'SELLER' ||
         rawRole == 'seller' ||
         hasSellerInRoles ||
         hasSellerBadge ||
         hasSellerTitle ||
-        role == UserRole.seller ||
-        sellerBalance > 0;
+        role == UserRole.seller
+    );
     String hostAppStatus = 'none';
     if (hostRawStatus != null && hostRawStatus.isNotEmpty) {
       hostAppStatus = hostRawStatus.toLowerCase();
     } else if (json['hostApplicationStatus'] != null) {
       hostAppStatus = json['hostApplicationStatus'].toString().toLowerCase();
-    } else if (effectiveIsHost) {
+    } else if (effectiveIsHost && isHostStatusActive) {
       hostAppStatus = 'approved';
     }
 
@@ -399,11 +426,18 @@ class UserModel {
           (username.isNotEmpty && !username.startsWith('user_')),
       followers: followers,
       following: following,
+      visitorsCount: visitorsCount,
+      roomCount: roomCount,
+      publicUserId: publicUserId,
       diamonds: diamonds,
       coins: coins,
       rCoins: (json['rCoins'] as num?)?.toDouble() ?? 0.0,
-      isVip: isVipUser,
-      vipLevel: isVipUser ? (json['vipLevel']?.toString() ?? 'VIP 1') : 'None',
+      isVip: isVipUser || (profile['svipLevel'] != null && _parseIntSafe(profile['svipLevel']) > 0) || (json['svipLevel'] != null && _parseIntSafe(json['svipLevel']) > 0),
+      vipLevel: profile['svipLevel'] != null && _parseIntSafe(profile['svipLevel']) > 0
+          ? 'SVIP ${_parseIntSafe(profile['svipLevel'])}'
+          : (json['svipLevel'] != null && _parseIntSafe(json['svipLevel']) > 0
+              ? 'SVIP ${_parseIntSafe(json['svipLevel'])}'
+              : (json['vipLevel']?.toString() ?? profile['vipLevel']?.toString() ?? (isVipUser ? 'VIP 1' : 'None'))),
       isHost: effectiveIsHost,
       isAgency: role == UserRole.agency,
       isSeller: isSellerActive,
@@ -463,6 +497,7 @@ class UserModel {
                           ? DateTime.tryParse(profile['lastActiveAt'].toString())
                           : null)))),
       customTitles: json['customTitles'] != null ? List<String>.from(json['customTitles']) : [],
+      profileSkinUrl: profile['profileSkinUrl']?.toString() ?? profile['skinUrl']?.toString() ?? json['profileSkinUrl']?.toString() ?? json['skinUrl']?.toString(),
     );
   }
 
@@ -613,6 +648,9 @@ class UserModel {
     bool? profileCompleted,
     int? followers,
     int? following,
+    int? visitorsCount,
+    int? roomCount,
+    String? publicUserId,
     int? diamonds,
     int? coins,
     double? rCoins,
@@ -651,6 +689,7 @@ class UserModel {
     bool? isCountryLocked,
     bool? isPrivate,
     List<String>? customTitles,
+    String? profileSkinUrl,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -667,6 +706,9 @@ class UserModel {
       profileCompleted: profileCompleted ?? this.profileCompleted,
       followers: followers ?? this.followers,
       following: following ?? this.following,
+      visitorsCount: visitorsCount ?? this.visitorsCount,
+      roomCount: roomCount ?? this.roomCount,
+      publicUserId: publicUserId ?? this.publicUserId,
       diamonds: diamonds ?? this.diamonds,
       coins: coins ?? this.coins,
       rCoins: rCoins ?? this.rCoins,
@@ -705,6 +747,7 @@ class UserModel {
       isCountryLocked: isCountryLocked ?? this.isCountryLocked,
       isPrivate: isPrivate ?? this.isPrivate,
       customTitles: customTitles ?? this.customTitles,
+      profileSkinUrl: profileSkinUrl ?? this.profileSkinUrl,
     );
   }
 }

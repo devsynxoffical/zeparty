@@ -585,7 +585,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _buildStatItem(
-          '0',
+          AppFormatters.formatNumber(user.roomCount),
           'Room',
           isDark,
           () {
@@ -593,11 +593,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
           },
         ),
         _buildStatItem(
-          '0',
+          AppFormatters.formatNumber(user.visitorsCount),
           'Visitors',
           isDark,
           () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const VisitorsScreen()));
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => VisitorsScreen(targetUserId: user.effectivePublicId),
+              ),
+            );
           },
         ),
         _buildStatItem(
@@ -605,7 +610,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'Following',
           isDark,
           () {
-            UserListSheet.show(context, 'Following', userId: user.id);
+            UserListSheet.show(context, 'Following', userId: user.effectivePublicId);
           },
         ),
         _buildStatItem(
@@ -613,7 +618,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'Followers',
           isDark,
           () {
-            UserListSheet.show(context, 'Followers', userId: user.id);
+            UserListSheet.show(context, 'Followers', userId: user.effectivePublicId);
           },
         ),
       ],

@@ -10,7 +10,6 @@ import '../../../../models/party_participant_model.dart';
 import '../../../../providers/live_party_provider.dart';
 import '../../../../providers/auth_provider.dart';
 import '../../../../providers/wallet_provider.dart';
-import '../../../../core/services/room_share_service.dart';
 import '../../../../core/services/media_upload_service.dart';
 import '../../recharge/recharge_screen.dart';
 import '../room_settings_screen.dart';
@@ -46,6 +45,11 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
     _tabController = TabController(length: 2, vsync: this);
     _currentTitle = widget.room.title;
     _currentCoverUrl = widget.room.coverUrl;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<LivePartyProvider>().fetchRoomMembers(widget.room.id);
+      }
+    });
   }
 
   @override
@@ -67,10 +71,11 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
   }
 
   void _copyRoomId() {
-    Clipboard.setData(ClipboardData(text: widget.room.id));
+    final copyId = widget.room.displayId;
+    Clipboard.setData(ClipboardData(text: copyId));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Room ID copied to clipboard'),
+      SnackBar(
+        content: Text('Room ID ($copyId) copied to clipboard'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -566,7 +571,7 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  'Room ID: ${widget.room.id.length > 8 ? widget.room.id.substring(0, 8) : widget.room.id}',
+                  'Room ID: ${widget.room.displayId}',
                   style: TextStyle(fontSize: 13, color: secondaryColor, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(width: 4),
@@ -748,9 +753,15 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
     );
     final canManageRoles = isOwner || isViewerAdmin;
 
-    final allMembers = livePartyProv.participants.isNotEmpty
-        ? livePartyProv.participants
-        : (widget.participants ?? []);
+    final savedMembers = livePartyProv.getSavedRoomMembers(widget.room.id);
+    final activeParticipants = livePartyProv.participants;
+    final fallbackParticipants = widget.participants ?? [];
+
+    final allMembers = <PartyParticipantModel>[
+      ...activeParticipants,
+      ...savedMembers,
+      ...fallbackParticipants,
+    ];
 
     // Deduplicate members by unique user ID/username so each user only appears once
     final seenIds = <String>{};
@@ -1009,7 +1020,7 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
                                 }
                               },
                               itemBuilder: (ctx) => [
-                                if (!isTargetAdmin)
+                                if (isOwner && !isTargetAdmin)
                                   const PopupMenuItem(
                                     value: 'appoint_admin',
                                     child: Row(
@@ -1020,7 +1031,7 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
                                       ],
                                     ),
                                   )
-                                else
+                                else if (isOwner && isTargetAdmin)
                                   const PopupMenuItem(
                                     value: 'remove_admin',
                                     child: Row(

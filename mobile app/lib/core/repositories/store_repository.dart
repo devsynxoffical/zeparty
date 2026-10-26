@@ -859,9 +859,11 @@ class StoreRepository {
         options: headers.isNotEmpty ? Options(headers: headers) : null,
       );
 
-      return response.data?['data'] as Map<String, dynamic>? ?? {};
-    } catch (_) {
-      return {'status': 'success', 'assetId': assetId};
+      return response.data?['data'] as Map<String, dynamic>? ?? {'status': 'success', 'assetId': assetId};
+    } on DioException catch (dioErr) {
+      final data = dioErr.response?.data;
+      final msg = data is Map ? (data['message'] ?? data['error'])?.toString() : null;
+      throw Exception(msg ?? dioErr.message ?? 'Purchase authorization failed');
     }
   }
 }

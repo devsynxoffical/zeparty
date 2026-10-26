@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../core/services/socket_service.dart';
+import '../models/user_model.dart';
+import '../core/utils/noble_badge_helper.dart';
+import 'svip_entry_banner.dart';
 import 'user_avatar.dart';
 
 class TikTokUserJoinBanner extends StatefulWidget {
@@ -80,7 +83,27 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
       final displayName = userObj['displayName']?.toString() ?? userObj['name']?.toString() ?? userObj['username']?.toString() ?? data['name']?.toString() ?? 'Viewer';
       final avatarUrl = userObj['avatarUrl']?.toString() ?? data['avatarUrl']?.toString() ?? '';
       final isVip = userObj['isVip'] == true || data['isVip'] == true;
-      final nobleLevel = userObj['nobleLevel']?.toString();
+      final nobleLevel = userObj['nobleLevel']?.toString() ?? userObj['nobleTitle']?.toString() ?? data['nobleLevel']?.toString() ?? data['nobleTitle']?.toString();
+      final vipLevel = userObj['vipLevel']?.toString() ?? data['vipLevel']?.toString();
+      final entryEffect = (data['entryEffect'] is Map)
+          ? Map<String, dynamic>.from(data['entryEffect'] as Map)
+          : ((data['equippedRide'] is Map) ? Map<String, dynamic>.from(data['equippedRide'] as Map) : null);
+      final dedupKey = data['dedupKey']?.toString() ?? data['eventId']?.toString() ?? data['entryEventId']?.toString();
+
+      // If user is VIP, Noble, or has equipped an Entry Effect / Ride
+      if (isVip || (nobleLevel != null && nobleLevel.isNotEmpty) || (vipLevel != null && vipLevel.isNotEmpty) || entryEffect != null) {
+        final entrant = UserModel(
+          id: userId,
+          username: userObj['username']?.toString() ?? displayName,
+          name: displayName,
+          avatarUrl: avatarUrl,
+          nobleTitle: nobleLevel,
+          vipLevel: vipLevel ?? 'None',
+          isVip: isVip,
+        );
+        SvipEntryManager().showEntry(entrant, entryEffect: entryEffect, dedupKey: dedupKey);
+        return;
+      }
 
       _queueJoin({
         'userId': userId,
@@ -244,7 +267,17 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (isVip || nobleLevel != null)
+                              if (isVip || nobleLevel != null) ...[
+                                if (NobleBadgeHelper.getBadgeAsset(nobleLevel ?? (isVip ? 'Baron' : null)) != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 3),
+                                    child: Image.asset(
+                                      NobleBadgeHelper.getBadgeAsset(nobleLevel ?? (isVip ? 'Baron' : null))!,
+                                      height: 12,
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                                    ),
+                                  ),
                                 Container(
                                   margin: const EdgeInsets.only(right: 4),
                                   padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0.5),
@@ -261,6 +294,7 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
                                     ),
                                   ),
                                 ),
+                              ],
                               Flexible(
                                 child: Text(
                                   name,

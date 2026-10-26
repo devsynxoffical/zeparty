@@ -235,30 +235,48 @@ class SocialRepository {
     } catch (_) {}
   }
 
-  /// GET /v1/users/me/visitors
-  Future<List<Map<String, dynamic>>> fetchVisitors({int limit = 50}) async {
-    final response = await _client.get<Map<String, dynamic>>(
-      '/v1/users/me/visitors',
-      queryParameters: {'limit': limit},
-    );
-    final data = response.data?['data'];
+  /// GET /v1/users/me/visitors or /v1/users/:id/visitors
+  Future<List<Map<String, dynamic>>> fetchVisitors({String? userId, int page = 1, int limit = 50}) async {
+    final res = await fetchVisitorsEnvelope(userId: userId, page: page, limit: limit);
+    final data = res['data'] ?? res['visitors'];
     if (data is List) {
-      return List<Map<String, dynamic>>.from(data);
+      return List<Map<String, dynamic>>.from(data.whereType<Map<String, dynamic>>());
     }
     return [];
   }
 
-  /// GET /v1/users/me/visited
-  Future<List<Map<String, dynamic>>> fetchVisited({int limit = 50}) async {
+  /// GET /v1/users/me/visitors or /v1/users/:id/visitors (full response with pagination)
+  Future<Map<String, dynamic>> fetchVisitorsEnvelope({String? userId, int page = 1, int limit = 20}) async {
+    final endpoint = (userId == null || userId.isEmpty || userId == 'me')
+        ? '/v1/users/me/visitors'
+        : '/v1/users/$userId/visitors';
     final response = await _client.get<Map<String, dynamic>>(
-      '/v1/users/me/visited',
-      queryParameters: {'limit': limit},
+      endpoint,
+      queryParameters: {'page': page, 'limit': limit},
     );
-    final data = response.data?['data'];
+    return response.data ?? {};
+  }
+
+  /// GET /v1/users/me/visited or /v1/users/:id/visited
+  Future<List<Map<String, dynamic>>> fetchVisited({String? userId, int page = 1, int limit = 50}) async {
+    final res = await fetchVisitedEnvelope(userId: userId, page: page, limit: limit);
+    final data = res['data'] ?? res['visited'];
     if (data is List) {
-      return List<Map<String, dynamic>>.from(data);
+      return List<Map<String, dynamic>>.from(data.whereType<Map<String, dynamic>>());
     }
     return [];
+  }
+
+  /// GET /v1/users/me/visited or /v1/users/:id/visited (full response with pagination)
+  Future<Map<String, dynamic>> fetchVisitedEnvelope({String? userId, int page = 1, int limit = 20}) async {
+    final endpoint = (userId == null || userId.isEmpty || userId == 'me')
+        ? '/v1/users/me/visited'
+        : '/v1/users/$userId/visited';
+    final response = await _client.get<Map<String, dynamic>>(
+      endpoint,
+      queryParameters: {'page': page, 'limit': limit},
+    );
+    return response.data ?? {};
   }
 
   // ─── User Profile & Search ───────────────────────────────────────────────────
@@ -330,24 +348,98 @@ class SocialRepository {
     await _client.patch<Map<String, dynamic>>('/v1/messages/$targetUserId/read');
   }
 
-  /// GET /v1/users/:id/relationship or /v1/relationship/me (Item 08)
+  /// GET /v1/social/users/:id/relationship or /v1/social/relationship/me (Item 08, 56, 59)
   Future<Map<String, dynamic>?> getUserRelationship(String userId) async {
-    try {
-      final response = await _client.get<Map<String, dynamic>>('/v1/users/$userId/relationship');
-      if (response.data != null && response.data!['data'] is Map<String, dynamic>) {
-        return response.data!['data'] as Map<String, dynamic>;
-      }
-      return response.data;
-    } catch (_) {
+    final endpoints = [
+      '/v1/social/users/$userId/relationship',
+      '/v1/users/$userId/relationship',
+      '/v1/social/relationship/me',
+      '/v1/relationship/me',
+    ];
+    for (final ep in endpoints) {
       try {
-        final fallback = await _client.get<Map<String, dynamic>>('/v1/relationship/me');
-        if (fallback.data != null && fallback.data!['data'] is Map<String, dynamic>) {
-          return fallback.data!['data'] as Map<String, dynamic>;
+        final response = await _client.get<Map<String, dynamic>>(ep);
+        if (response.data != null) {
+          if (response.data!['data'] is Map<String, dynamic>) {
+            return response.data!['data'] as Map<String, dynamic>;
+          }
+          return response.data;
         }
-        return fallback.data;
-      } catch (_) {
-        return null;
-      }
+      } catch (_) {}
     }
+    return null;
+  }
+
+  /// GET /v1/social/relationship/cards
+  Future<List<dynamic>> fetchRelationshipCards() async {
+    try {
+      final response = await _client.get<Map<String, dynamic>>('/v1/social/relationship/cards');
+      if (response.data != null && response.data!['data'] is List) {
+        return response.data!['data'] as List<dynamic>;
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// POST /v1/social/relationship/purchase-and-send
+  Future<Map<String, dynamic>> purchaseAndSendRelationshipCard({
+    required String recipientUserId,
+    required String cardType,
+    bool deductCoins = true,
+  }) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      '/v1/social/relationship/purchase-and-send',
+      data: {
+        'recipientUserId': recipientUserId,
+        'cardType': cardType,
+        'deductCoins': deductCoins,
+      },
+    );
+    return response.data ?? {};
+  }
+
+  /// POST /v1/social/relationship/request
+  Future<Map<String, dynamic>> requestRelationship({
+    required String targetUserId,
+    required String relationType,
+    String? message,
+  }) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      '/v1/social/relationship/request',
+      data: {
+        'targetUserId': targetUserId,
+        'relationType': relationType,
+        if (message != null) 'message': message,
+      },
+    );
+    return response.data ?? {};
+  }
+
+  /// POST /v1/social/relationship/respond
+  Future<Map<String, dynamic>> respondRelationship({
+    required String targetUserId,
+    required bool accept,
+  }) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      '/v1/social/relationship/respond',
+      data: {
+        'targetUserId': targetUserId,
+        'accept': accept,
+      },
+    );
+    return response.data ?? {};
+  }
+
+  /// POST /v1/social/relationship/dissolve
+  Future<Map<String, dynamic>> dissolveRelationship({String? reason}) async {
+    final response = await _client.post<Map<String, dynamic>>(
+      '/v1/social/relationship/dissolve',
+      data: {
+        if (reason != null) 'reason': reason,
+      },
+    );
+    return response.data ?? {};
   }
 }
