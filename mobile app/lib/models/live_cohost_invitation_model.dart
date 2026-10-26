@@ -36,6 +36,7 @@ class LiveCoHostInvitationModel {
   });
 
   String get inviteeUserId => recipientId;
+  String get targetUserId => recipientId;
   String get hostUserId => inviterId;
   String get hostName => inviterName;
 

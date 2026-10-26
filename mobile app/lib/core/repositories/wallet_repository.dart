@@ -144,4 +144,49 @@ class WalletRepository {
 
     return response.data?['data'] as Map<String, dynamic>? ?? {};
   }
+
+  /// Fetch real eligible recipients from GET /v1/wallet/transfer-receivers
+  Future<Map<String, dynamic>> fetchTransferReceivers({
+    String type = 'ALL',
+    String? search,
+  }) async {
+    final queryParams = <String, dynamic>{
+      'type': type,
+      if (search != null && search.trim().isNotEmpty) 'search': search.trim(),
+    };
+
+    final response = await _apiClient.get(
+      '/v1/wallet/transfer-receivers',
+      queryParameters: queryParams,
+    );
+
+    return (response.data?['data'] is Map<String, dynamic>)
+        ? response.data['data'] as Map<String, dynamic>
+        : (response.data is Map<String, dynamic> ? response.data as Map<String, dynamic> : {});
+  }
+
+  /// Execute Diamond Transfer via POST /v1/wallet/diamonds/transfer
+  Future<Map<String, dynamic>> transferDiamonds({
+    required String recipientUserId,
+    required int diamondAmount,
+    String? idempotencyKey,
+  }) async {
+    final headers = <String, dynamic>{};
+    if (idempotencyKey != null && idempotencyKey.isNotEmpty) {
+      headers['idempotency-key'] = idempotencyKey;
+    }
+
+    final response = await _apiClient.post(
+      '/v1/wallet/diamonds/transfer',
+      data: {
+        'recipientUserId': recipientUserId,
+        'diamondAmount': diamondAmount,
+      },
+      options: headers.isNotEmpty ? Options(headers: headers) : null,
+    );
+
+    return (response.data is Map<String, dynamic>)
+        ? response.data as Map<String, dynamic>
+        : {};
+  }
 }

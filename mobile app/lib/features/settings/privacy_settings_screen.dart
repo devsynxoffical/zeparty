@@ -20,11 +20,22 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = context.read<AuthProvider>();
-      context.read<PrivacySettingsProvider>().initFromUser(auth.currentUser);
+      final privacy = context.read<PrivacySettingsProvider>();
+      privacy.initFromUser(auth.currentUser);
+      privacy.fetchEligibility();
     });
   }
 
-  void _showUnlockModal(BuildContext context, PrivacySettingItem item, int currentSvipLevel, bool isDark) {
+  void _showUnlockModal(
+    BuildContext context,
+    PrivacySettingItem item,
+    int currentSvipLevel,
+    bool isDark, {
+    String? customReason,
+  }) {
+    final reasonText = customReason ??
+        'Enabling "${item.title}" requires SVIP Tier ${item.requiredSvipLevel} or ${item.requiredNobleTier} Noble Status.';
+
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
@@ -47,7 +58,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Enabling "${item.title}" requires SVIP Tier ${item.requiredSvipLevel} or ${item.requiredNobleTier} Noble Status.',
+              reasonText,
               style: TextStyle(fontSize: 13, color: AppColors.getTextSecondary(isDark)),
             ),
             const SizedBox(height: 12),
@@ -67,7 +78,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text('Your Current SVIP Level: SVIP $currentSvipLevel', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.getTextPrimary(isDark))),
-                        Text('Target: SVIP ${item.requiredSvipLevel} Required', style: const TextStyle(fontSize: 10, color: Colors.amberAccent, fontWeight: FontWeight.bold)),
+                        Text(item.requiredSvipLevel > 0 ? 'Target: SVIP ${item.requiredSvipLevel} Required' : 'Elite Status Required', style: const TextStyle(fontSize: 10, color: Colors.amberAccent, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -87,7 +98,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
               Navigator.pop(c);
               Navigator.push(context, MaterialPageRoute(builder: (_) => const SVIPCenterScreen()));
             },
-            child: const Text('Upgrade SVIP Tier', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            child: const Text('Upgrade SVIP / Noble', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -145,7 +156,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
 
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[0], // hide_follow_list
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'hide_follow_list'),
             value: privacy.hideFollowList,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
@@ -169,6 +180,22 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
               }
             },
           ),
+          _buildPrivacyTile(
+            context,
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'gender_privacy'),
+            value: privacy.genderPrivacy,
+            userSvipLevel: userSvipLevel,
+            isDark: isDark,
+            privacy: privacy,
+          ),
+          _buildPrivacyTile(
+            context,
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'invisible_visit'),
+            value: privacy.invisibleVisit,
+            userSvipLevel: userSvipLevel,
+            isDark: isDark,
+            privacy: privacy,
+          ),
 
           const SizedBox(height: 20),
           Text('ROOM & STREAMING PRIVACY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.getPrimary(isDark), letterSpacing: 1.2)),
@@ -176,7 +203,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
 
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[1], // stealth_entry
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'stealth_entry'),
             value: privacy.stealthRoomEntry,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
@@ -184,8 +211,16 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
           ),
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[2], // anonymous_gifting
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'anonymous_gifting'),
             value: privacy.anonymousGifting,
+            userSvipLevel: userSvipLevel,
+            isDark: isDark,
+            privacy: privacy,
+          ),
+          _buildPrivacyTile(
+            context,
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'rank_invisible'),
+            value: privacy.rankInvisible,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
             privacy: privacy,
@@ -197,7 +232,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
 
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[3], // hide_online
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'hide_online'),
             value: privacy.hideOnlinePresence,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
@@ -205,7 +240,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
           ),
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[4], // hide_levels
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'hide_levels'),
             value: privacy.hideLevelBadges,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
@@ -213,7 +248,23 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
           ),
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[6], // hide_cp_relationship
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'svip_hidden'),
+            value: privacy.svipHidden,
+            userSvipLevel: userSvipLevel,
+            isDark: isDark,
+            privacy: privacy,
+          ),
+          _buildPrivacyTile(
+            context,
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'mystery'),
+            value: privacy.mystery,
+            userSvipLevel: userSvipLevel,
+            isDark: isDark,
+            privacy: privacy,
+          ),
+          _buildPrivacyTile(
+            context,
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'hide_cp_relationship'),
             value: privacy.hideCpRelationship,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
@@ -226,11 +277,56 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
 
           _buildPrivacyTile(
             context,
-            item: PrivacySettingsProvider.privacyCatalog[5], // block_strangers_dm
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'block_strangers_dm'),
             value: privacy.blockStrangersDm,
             userSvipLevel: userSvipLevel,
             isDark: isDark,
             privacy: privacy,
+          ),
+
+          const SizedBox(height: 20),
+          Text('ADVANCED ACCOUNT PRIVACY & STEALTH', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.getPrimary(isDark), letterSpacing: 1.2)),
+          const SizedBox(height: 8),
+
+          _buildPrivacyTile(
+            context,
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'anti_follow'),
+            value: privacy.antiFollow,
+            userSvipLevel: userSvipLevel,
+            isDark: isDark,
+            privacy: privacy,
+            onToggle: (newVal) async {
+              final ok = await privacy.toggleAntiFollow(newVal);
+              if (context.mounted && ok) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: newVal ? Colors.teal : Colors.blueGrey,
+                    content: Text(newVal ? '🛡️ Anti-Follow Shield enabled.' : 'Anti-Follow Shield disabled.'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+          ),
+          _buildPrivacyTile(
+            context,
+            item: PrivacySettingsProvider.privacyCatalog.firstWhere((i) => i.key == 'failed_to_find'),
+            value: privacy.failedToFind,
+            userSvipLevel: userSvipLevel,
+            isDark: isDark,
+            privacy: privacy,
+            onToggle: (newVal) async {
+              final ok = await privacy.toggleFailedToFind(newVal);
+              if (context.mounted && ok) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    backgroundColor: newVal ? Colors.teal : Colors.blueGrey,
+                    content: Text(newVal ? '🔍 Failed to Find Stealth enabled.' : 'Failed to Find Stealth disabled.'),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
           ),
         ],
       ),
@@ -247,6 +343,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
     ValueChanged<bool>? onToggle,
   }) {
     final canEnable = privacy.canEnable(item.key, userSvipLevel);
+    final ineligibilityReason = !canEnable ? privacy.getIneligibilityReason(item.key) : null;
 
     return Card(
       color: AppColors.getCard(isDark),
@@ -282,7 +379,10 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
                   children: [
                     const Icon(Icons.lock_rounded, size: 10, color: Colors.orangeAccent),
                     const SizedBox(width: 3),
-                    Text('SVIP ${item.requiredSvipLevel}', style: const TextStyle(color: Colors.orangeAccent, fontSize: 9, fontWeight: FontWeight.bold)),
+                    Text(
+                      item.requiredSvipLevel > 0 ? 'SVIP ${item.requiredSvipLevel}' : 'LOCKED',
+                      style: const TextStyle(color: Colors.orangeAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                    ),
                   ],
                 ),
               ),
@@ -297,7 +397,7 @@ class _PrivacySettingsScreenState extends State<PrivacySettingsScreen> {
           activeThumbColor: AppColors.getPrimary(isDark),
           onChanged: (newVal) {
             if (!canEnable) {
-              _showUnlockModal(context, item, userSvipLevel, isDark);
+              _showUnlockModal(context, item, userSvipLevel, isDark, customReason: ineligibilityReason);
             } else if (onToggle != null) {
               onToggle(newVal);
             } else {

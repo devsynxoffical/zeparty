@@ -52,8 +52,8 @@ class _CumulativeRechargeScreenState extends State<CumulativeRechargeScreen> {
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to claim this milestone. Threshold not met or already claimed.'),
+          SnackBar(
+            content: Text(recharge.errorMessage ?? 'Unable to claim this milestone. Threshold not met or already claimed.'),
             backgroundColor: Colors.redAccent,
           ),
         );

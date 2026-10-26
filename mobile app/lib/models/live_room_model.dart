@@ -31,6 +31,16 @@ class LiveRoomModel {
   final bool allowAdminChangeMode;
   final String closeRoomEffect;
   final List<String> bannedUserIds;
+  final String? backgroundImageUrl;
+  final String? numericRoomId;
+  final String? shortId;
+
+  bool get isLive => status.toUpperCase() == 'LIVE' || status.toUpperCase() == 'ACTIVE';
+  String get displayId => (numericRoomId != null && numericRoomId!.isNotEmpty)
+      ? numericRoomId!
+      : ((shortId != null && shortId!.isNotEmpty)
+          ? shortId!
+          : (id.length > 8 ? id.substring(0, 8) : id));
 
   const LiveRoomModel({
     required this.id,
@@ -61,6 +71,9 @@ class LiveRoomModel {
     this.allowAdminChangeMode = false,
     this.closeRoomEffect = 'Standard',
     this.bannedUserIds = const [],
+    this.backgroundImageUrl,
+    this.numericRoomId,
+    this.shortId,
   });
 
   factory LiveRoomModel.fromJson(Map<String, dynamic> json) {
@@ -110,7 +123,7 @@ class LiveRoomModel {
       nobleTitle: json['nobleTitle']?.toString() ?? (hostUser.nobleTitle ?? (hostUser.svipLevel > 0 ? 'SVIP ${hostUser.svipLevel}' : '')),
       agoraChannelName: json['agoraChannelName']?.toString(),
       creatorUserId: json['creatorUserId']?.toString() ?? hostUser.id,
-      status: json['status']?.toString() ?? 'LIVE',
+      status: json['status']?.toString() ?? (json['isLive'] == true ? 'LIVE' : (json['isLive'] == false ? 'OFFLINE' : 'LIVE')),
       isPinnedTop: json['isPinnedTop'] == true,
       isMuted: json['isMuted'] == true,
       seats: json['seats'] is List ? json['seats'] as List : null,
@@ -124,6 +137,9 @@ class LiveRoomModel {
       allowAdminChangeMode: json['allowAdminChangeMode'] ?? false,
       closeRoomEffect: json['closeRoomEffect']?.toString() ?? 'Standard',
       bannedUserIds: rawBanned.map((e) => e.toString()).toList(),
+      backgroundImageUrl: json['backgroundImageUrl']?.toString() ?? json['background']?.toString(),
+      numericRoomId: json['numericRoomId']?.toString() ?? json['roomNumber']?.toString() ?? json['numericId']?.toString(),
+      shortId: json['shortId']?.toString() ?? json['displayId']?.toString(),
     );
   }
 
@@ -153,6 +169,9 @@ class LiveRoomModel {
       'allowAdminChangeMode': allowAdminChangeMode,
       'closeRoomEffect': closeRoomEffect,
       'bannedUserIds': bannedUserIds,
+      if (backgroundImageUrl != null && backgroundImageUrl!.isNotEmpty) 'backgroundImageUrl': backgroundImageUrl,
+      if (numericRoomId != null && numericRoomId!.isNotEmpty) 'numericRoomId': numericRoomId,
+      if (shortId != null && shortId!.isNotEmpty) 'shortId': shortId,
     };
   }
 
@@ -185,6 +204,9 @@ class LiveRoomModel {
     bool? allowAdminChangeMode,
     String? closeRoomEffect,
     List<String>? bannedUserIds,
+    String? backgroundImageUrl,
+    String? numericRoomId,
+    String? shortId,
   }) {
     return LiveRoomModel(
       id: id ?? this.id,
@@ -215,6 +237,9 @@ class LiveRoomModel {
       allowAdminChangeMode: allowAdminChangeMode ?? this.allowAdminChangeMode,
       closeRoomEffect: closeRoomEffect ?? this.closeRoomEffect,
       bannedUserIds: bannedUserIds ?? this.bannedUserIds,
+      backgroundImageUrl: backgroundImageUrl ?? this.backgroundImageUrl,
+      numericRoomId: numericRoomId ?? this.numericRoomId,
+      shortId: shortId ?? this.shortId,
     );
   }
 }

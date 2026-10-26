@@ -1,6 +1,6 @@
 class WalletDateGate {
   static const String restrictionNotice =
-      'IMPORTANT NOTE: Withdrawals, transfers, and exchanges are available only on the 1st and 15th of each month.';
+      'IMPORTANT NOTE: Withdrawals and transfers are available only on the 1st and 15th of each month.';
 
   static const String blockedMessage =
       'Available only on the 1st and 15th of each month.';

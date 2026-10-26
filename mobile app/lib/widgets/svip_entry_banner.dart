@@ -1,20 +1,62 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
+import '../core/utils/noble_badge_helper.dart';
 import 'user_avatar.dart';
+
+class SvipEntryEvent {
+  final UserModel user;
+  final Map<String, dynamic>? entryEffect;
+  final String? dedupKey;
+
+  const SvipEntryEvent({
+    required this.user,
+    this.entryEffect,
+    this.dedupKey,
+  });
+}
 
 class SvipEntryManager {
   static final SvipEntryManager _instance = SvipEntryManager._internal();
   factory SvipEntryManager() => _instance;
   SvipEntryManager._internal();
 
-  final _eventController = StreamController<UserModel>.broadcast();
-  Stream<UserModel> get onEntry => _eventController.stream;
+  final _eventController = StreamController<SvipEntryEvent>.broadcast();
+  Stream<SvipEntryEvent> get onEntry => _eventController.stream;
 
-  void showEntry(UserModel user) {
-    if (user.isVip) {
-      _eventController.add(user);
+  final Map<String, int> _lastShownEntryTimestamp = {};
+  static const int _dedupWindowMs = 8000;
+
+  bool isRecentlyShown(String userId) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final key = userId.trim().toLowerCase();
+    return _lastShownEntryTimestamp.containsKey(key) &&
+        (now - _lastShownEntryTimestamp[key]! < _dedupWindowMs);
+  }
+
+  void showEntry(UserModel user, {Map<String, dynamic>? entryEffect, String? dedupKey}) {
+    final hasVipOrNoble = user.isVip ||
+        (user.nobleTitle != null && user.nobleTitle!.isNotEmpty) ||
+        (user.vipLevel.isNotEmpty && user.vipLevel != 'None') ||
+        (entryEffect != null && entryEffect.isNotEmpty);
+    if (!hasVipOrNoble) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _lastShownEntryTimestamp.removeWhere((_, ts) => now - ts > 30000);
+
+    final key = (dedupKey != null && dedupKey.isNotEmpty)
+        ? dedupKey.trim().toLowerCase()
+        : (user.id.isNotEmpty ? user.id.trim().toLowerCase() : user.name.trim().toLowerCase());
+    if (key.isNotEmpty) {
+      if (_lastShownEntryTimestamp.containsKey(key)) {
+        if (now - _lastShownEntryTimestamp[key]! < _dedupWindowMs) {
+          return; // Suppress duplicate banner during reconnection or rapid events
+        }
+      }
+      _lastShownEntryTimestamp[key] = now;
     }
+
+    _eventController.add(SvipEntryEvent(user: user, entryEffect: entryEffect, dedupKey: dedupKey));
   }
 }
 
@@ -26,8 +68,8 @@ class SvipEntryBanner extends StatefulWidget {
 }
 
 class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderStateMixin {
-  final List<UserModel> _queue = [];
-  UserModel? _currentUser;
+  final List<SvipEntryEvent> _queue = [];
+  SvipEntryEvent? _currentEvent;
   bool _isAnimating = false;
   late StreamSubscription _subscription;
   
@@ -43,8 +85,8 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
       curve: Curves.easeOutBack,
     ));
 
-    _subscription = SvipEntryManager().onEntry.listen((user) {
-      _queue.add(user);
+    _subscription = SvipEntryManager().onEntry.listen((event) {
+      _queue.add(event);
       _processQueue();
     });
   }
@@ -61,24 +103,41 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
 
     setState(() {
       _isAnimating = true;
-      _currentUser = _queue.removeAt(0);
+      _currentEvent = _queue.removeAt(0);
     });
 
     await _slideController.forward();
-    await Future.delayed(const Duration(seconds: 3));
+    await Future.delayed(const Duration(seconds: 4));
     await _slideController.reverse();
 
-    setState(() {
-      _currentUser = null;
-      _isAnimating = false;
-    });
-
-    _processQueue();
+    if (mounted) {
+      setState(() {
+        _currentEvent = null;
+        _isAnimating = false;
+      });
+      _processQueue();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_currentUser == null) return const SizedBox.shrink();
+    if (_currentEvent == null) return const SizedBox.shrink();
+
+    final user = _currentEvent!.user;
+    final effect = _currentEvent!.entryEffect;
+    final effectName = effect?['name']?.toString();
+    final effectMedia = effect?['thumbnailUrl']?.toString() ??
+        effect?['mediaUrl']?.toString() ??
+        effect?['iconUrl']?.toString() ??
+        effect?['animationUrl']?.toString();
+
+    final nobleTitle = user.nobleTitle;
+    final vipLevel = (user.vipLevel.isNotEmpty && user.vipLevel != 'None')
+        ? user.vipLevel
+        : null;
+    final nobleOrVip = nobleTitle ?? vipLevel ?? (user.isVip ? 'Baron' : null);
+    final badgeAsset = NobleBadgeHelper.getBadgeAsset(nobleOrVip);
+    final tierLabel = effectName ?? nobleTitle ?? vipLevel ?? 'VIP';
 
     return IgnorePointer(
       child: SlideTransition(
@@ -98,7 +157,7 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
               Container(
                 padding: const EdgeInsets.all(2),
                 decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-                child: UserAvatar(imageUrl: _currentUser!.avatarUrl, radius: 18),
+                child: UserAvatar(imageUrl: user.avatarUrl, radius: 18),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -106,15 +165,34 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Row(
+                    Row(
                       children: [
-                        Text('SVIP', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10, fontStyle: FontStyle.italic)),
-                        SizedBox(width: 4),
-                        Icon(Icons.flash_on, color: Colors.white, size: 10),
+                        if (badgeAsset != null) ...[
+                          Image.asset(
+                            badgeAsset,
+                            height: 14,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
+                        Text(
+                          tierLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 10,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.flash_on, color: Colors.white, size: 10),
                       ],
                     ),
                     Text(
-                      '${_currentUser!.name} entered!',
+                      effectName != null && effectName.isNotEmpty
+                          ? '${user.name} arrived in $effectName!'
+                          : '${user.name} entered!',
                       style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -122,7 +200,24 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
                 ),
               ),
               const SizedBox(width: 8),
-              const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 24),
+              if (effectMedia != null && effectMedia.isNotEmpty)
+                effectMedia.startsWith('http')
+                    ? Image.network(
+                        effectMedia,
+                        width: 38,
+                        height: 28,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 24),
+                      )
+                    : Image.asset(
+                        effectMedia,
+                        width: 38,
+                        height: 28,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 24),
+                      )
+              else
+                const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 24),
             ],
           ),
         ),

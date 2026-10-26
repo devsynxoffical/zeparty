@@ -15,6 +15,7 @@ import '../../providers/wallet_details_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../providers/coin_agency_provider.dart';
 import '../../models/coin_seller_model.dart';
+import '../../core/repositories/wallet_repository.dart';
 
 class ReceiverAccount {
   final String id;
@@ -91,33 +92,13 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
   final TextEditingController _customAmountController = TextEditingController();
   final TextEditingController _pinController = TextEditingController();
 
-  final List<ReceiverAccount> _allReceivers = const [
-    ReceiverAccount(
-      id: 'merch_9901',
-      linkedUserId: 'user_5001',
-      name: 'ZeParty Global Merchant Desk',
-      avatarUrl: 'https://i.pravatar.cc/150?img=60',
-      type: 'Merchant',
-      country: 'Global',
-      flag: '🌐',
-      ratePerDiamond: 0.008,
-      supportedService: 'Official Merchant Payout',
-    ),
-    ReceiverAccount(
-      id: 'merch_9902',
-      linkedUserId: 'user_5002',
-      name: 'Emirates Prime Merchant',
-      avatarUrl: 'https://i.pravatar.cc/150?img=47',
-      type: 'Merchant',
-      country: 'UAE',
-      flag: '🇦🇪',
-      ratePerDiamond: 0.0082,
-      supportedService: 'Direct Bank Settlement',
-    ),
-  ];
+  bool _isLoadingReceivers = false;
+  String? _receiversError;
+  List<ReceiverAccount> _remoteMerchants = [];
+  List<ReceiverAccount> _remoteSellers = [];
 
   final List<TransferPackage> _packages = const [
-    TransferPackage(diamonds: 25000, usdPayout: 2.0, feeDiamonds: 0),
+    TransferPackage(diamonds: 40000, usdPayout: 3.2, feeDiamonds: 0),
     TransferPackage(diamonds: 50000, usdPayout: 4.0, feeDiamonds: 0),
     TransferPackage(diamonds: 100000, usdPayout: 8.0, feeDiamonds: 0),
     TransferPackage(diamonds: 500000, usdPayout: 40.0, feeDiamonds: 0),
@@ -131,7 +112,8 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
       final userCountry = auth.currentUser.region.isNotEmpty ? auth.currentUser.region : 'Pakistan';
       final coinAgency = context.read<CoinAgencyProvider>();
       coinAgency.setUserCountry(userCountry);
-      coinAgency.fetchSellers(country: userCountry);
+      coinAgency.fetchSellers();
+      _loadTransferReceivers();
     });
   }
 
@@ -193,39 +175,104 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
     return WalletDateGate.isDateAllowed(DateTime.now());
   }
 
+  Future<void> _loadTransferReceivers() async {
+    setState(() {
+      _isLoadingReceivers = true;
+      _receiversError = null;
+    });
+
+    try {
+      final data = await WalletRepository.instance.fetchTransferReceivers();
+      final rawMerchants = (data['merchants'] is List) ? data['merchants'] as List : [];
+      final rawSellers = (data['coinSellers'] is List) ? data['coinSellers'] as List : [];
+
+      final loadedMerchants = <ReceiverAccount>[];
+      for (final m in rawMerchants) {
+        if (m is Map<String, dynamic>) {
+          loadedMerchants.add(ReceiverAccount(
+            id: m['id']?.toString() ?? '',
+            linkedUserId: m['userId']?.toString() ?? m['id']?.toString() ?? '',
+            name: m['name']?.toString() ?? 'Merchant',
+            avatarUrl: m['avatarUrl']?.toString() ?? 'https://i.pravatar.cc/150?img=60',
+            type: 'Merchant',
+            country: m['country']?.toString() ?? 'GLOBAL',
+            flag: '🌐',
+            ratePerDiamond: 0.008,
+            supportedService: m['rateDisplay']?.toString() ?? 'Official Merchant Payout',
+            isApproved: true,
+            isTransferEnabled: true,
+          ));
+        }
+      }
+
+      final loadedSellers = <ReceiverAccount>[];
+      for (final s in rawSellers) {
+        if (s is Map<String, dynamic>) {
+          loadedSellers.add(ReceiverAccount(
+            id: s['id']?.toString() ?? '',
+            linkedUserId: s['userId']?.toString() ?? s['id']?.toString() ?? '',
+            name: s['name']?.toString() ?? 'Authorized Seller',
+            avatarUrl: s['avatarUrl']?.toString() ?? '',
+            type: 'Coin Seller',
+            country: s['region']?.toString() ?? s['country']?.toString() ?? '',
+            flag: CoinAgencyProvider.isCountryMatch(s['region']?.toString(), 'pakistan') ? '🇵🇰' : '🌐',
+            ratePerDiamond: 1.00,
+            supportedService: s['rateDisplay']?.toString() ?? 'Instant P2P Liquidity',
+            isApproved: true,
+            isTransferEnabled: true,
+          ));
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _remoteMerchants = loadedMerchants;
+          _remoteSellers = loadedSellers;
+          _isLoadingReceivers = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _receiversError = e.toString();
+          _isLoadingReceivers = false;
+        });
+      }
+    }
+  }
+
   List<ReceiverAccount> get _filteredReceivers {
     final targetType = _selectedReceiverType == 'Coin Sellers' ? 'Coin Seller' : 'Merchant';
     final auth = Provider.of<AuthProvider>(context, listen: false);
     final userCountry = auth.currentUser.region.isNotEmpty ? auth.currentUser.region : 'Pakistan';
 
+    List<ReceiverAccount> sourceList;
     if (targetType == 'Coin Seller') {
-      final coinAgency = Provider.of<CoinAgencyProvider>(context);
-      final sellers = coinAgency.getSellersForCountry(userCountry);
-      return sellers.map((s) => ReceiverAccount(
-        id: s.id,
-        linkedUserId: s.userId,
-        name: s.name,
-        avatarUrl: s.avatarUrl,
-        type: 'Coin Seller',
-        country: s.region,
-        flag: CoinAgencyProvider.isCountryMatch(s.region, 'pakistan') ? '🇵🇰' : '🌐',
-        ratePerDiamond: 1.00,
-        isApproved: s.status == SellerStatus.approved,
-        isTransferEnabled: s.isVisible,
-        supportedService: s.paymentMethods.join(' • '),
-      )).where((r) {
-        if (_searchQuery.trim().isEmpty) return true;
-        final q = _searchQuery.toLowerCase();
-        return r.name.toLowerCase().contains(q) ||
-            r.id.toLowerCase().contains(q) ||
-            r.linkedUserId.toLowerCase().contains(q) ||
-            r.country.toLowerCase().contains(q);
-      }).toList();
+      if (_remoteSellers.isNotEmpty) {
+        sourceList = _remoteSellers;
+      } else {
+        final coinAgency = Provider.of<CoinAgencyProvider>(context);
+        final sellers = coinAgency.getSellersForCountry(userCountry);
+        sourceList = sellers.map((s) => ReceiverAccount(
+          id: s.id,
+          linkedUserId: s.userId,
+          name: s.name,
+          avatarUrl: s.avatarUrl,
+          type: 'Coin Seller',
+          country: s.region,
+          flag: CoinAgencyProvider.isCountryMatch(s.region, 'pakistan') ? '🇵🇰' : '🌐',
+          ratePerDiamond: 1.00,
+          isApproved: s.status == SellerStatus.approved,
+          isTransferEnabled: s.isVisible,
+          supportedService: s.paymentMethods.join(' • '),
+        )).toList();
+      }
+    } else {
+      sourceList = _remoteMerchants;
     }
 
-    return _allReceivers.where((r) {
-      if (r.type != targetType) return false;
-      if (!r.isApproved || !r.isTransferEnabled) return false; // Filter unapproved/disabled
+    return sourceList.where((r) {
+      if (!r.isApproved || !r.isTransferEnabled) return false;
       if (_searchQuery.trim().isEmpty) return true;
       final q = _searchQuery.toLowerCase();
       return r.name.toLowerCase().contains(q) ||
@@ -305,6 +352,19 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
 
   void _executeAtomicTransfer() async {
     if (_isSubmitting) return;
+    if (_selectedReceiver == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select an eligible receiver.')),
+      );
+      return;
+    }
+    if (_effectiveDiamonds < 40000) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Minimum 40,000 Diamonds required for transfer.')),
+      );
+      return;
+    }
+
     setState(() => _isSubmitting = true);
 
     // Show loading progress
@@ -317,24 +377,23 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
     final wallet = context.read<WalletProvider>();
     final detailsProv = context.read<WalletDetailsProvider>();
 
-    final totalDeduction = _effectiveDiamonds + _effectiveFee.toInt();
     final balanceBefore = wallet.diamonds.toDouble();
+    final targetUserId = _selectedReceiver!.linkedUserId.isNotEmpty
+        ? _selectedReceiver!.linkedUserId
+        : _selectedReceiver!.id;
 
-    await Future.delayed(const Duration(milliseconds: 600)); // Server validation
+    final success = await wallet.executeDiamondTransfer(
+      recipientUserId: targetUserId,
+      diamondAmount: _effectiveDiamonds,
+      idempotencyKey: 'idemp_trf_${DateTime.now().millisecondsSinceEpoch}',
+    );
 
     if (mounted) {
       Navigator.pop(context); // Close loading dialog
 
-      // Perform atomic deduction in WalletProvider
-      final success = wallet.transferDiamonds(
-        totalDeduction,
-        _selectedReceiver!.id,
-        _selectedReceiver!.type,
-      );
-
       if (success) {
         final balanceAfter = wallet.diamonds.toDouble();
-        final txId = 'trf_${DateTime.now().millisecondsSinceEpoch}';
+        final txId = 'TR_${DateTime.now().millisecondsSinceEpoch}';
 
         // Add ledger record to WalletDetailsProvider under Transfer category
         final ledgerTx = CategorizedTransactionModel(
@@ -361,7 +420,10 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
         _showSuccessReceipt(txId, ledgerTx, balanceBefore, balanceAfter);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Transfer failed: Insufficient wallet balance.')),
+          SnackBar(
+            content: Text(wallet.transferError ?? 'Transfer failed: Insufficient wallet balance or invalid recipient.'),
+            backgroundColor: Colors.red[800],
+          ),
         );
       }
 
@@ -616,32 +678,52 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
 
             SizedBox(
               height: 155.h,
-              child: _filteredReceivers.isEmpty
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24),
-                        child: Text(
-                          _selectedReceiverType == 'Coin Sellers'
-                              ? 'No authorized coin sellers available in your country'
-                              : 'No approved merchants found.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: AppColors.getTextSecondary(isDark),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+              child: _isLoadingReceivers
+                  ? Center(child: CircularProgressIndicator(color: primary))
+                  : (_receiversError != null && _filteredReceivers.isEmpty)
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Failed to load recipients: $_receiversError',
+                                style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton(
+                                onPressed: _loadTransferReceivers,
+                                child: const Text('Retry'),
+                              ),
+                            ],
                           ),
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _filteredReceivers.length,
-                      itemBuilder: (ctx, idx) {
-                        final rec = _filteredReceivers[idx];
-                        final isSel = _selectedReceiver?.id == rec.id;
-                        return _buildReceiverCard(rec, isSel, isDark);
-                      },
-                    ),
+                        )
+                      : _filteredReceivers.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 24),
+                                child: Text(
+                                  _selectedReceiverType == 'Coin Sellers'
+                                      ? 'No authorized coin sellers available in your country'
+                                      : 'No approved merchants found.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: AppColors.getTextSecondary(isDark),
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: _filteredReceivers.length,
+                              itemBuilder: (ctx, idx) {
+                                final rec = _filteredReceivers[idx];
+                                final isSel = _selectedReceiver?.id == rec.id;
+                                return _buildReceiverCard(rec, isSel, isDark);
+                              },
+                            ),
             ),
             const SizedBox(height: 20),
 
@@ -703,7 +785,7 @@ class _DiamondTransferScreenState extends State<DiamondTransferScreen> {
                     disabledBackgroundColor: Colors.grey.shade800,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
-                  onPressed: (!_isDateAllowed || _effectiveDiamonds <= 0 || wallet.diamonds < (_effectiveDiamonds + _effectiveFee))
+                  onPressed: (!_isDateAllowed || _effectiveDiamonds < 40000 || wallet.diamonds < (_effectiveDiamonds + _effectiveFee))
                       ? null
                       : _promptSecureConfirmation,
                 ),

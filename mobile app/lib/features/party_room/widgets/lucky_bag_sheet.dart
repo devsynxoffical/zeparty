@@ -128,6 +128,7 @@ class LuckyBagService extends ChangeNotifier {
   StreamSubscription? _bagCreatedSub;
   StreamSubscription? _bagClaimedSub;
   StreamSubscription? _worldEventSub;
+  Timer? _worldBagAutoDismissTimer;
 
   LuckyBagService._internal() {
     _bagCreatedSub = SocketService.instance.onLuckyBagCreated.listen((data) {
@@ -149,6 +150,11 @@ class LuckyBagService extends ChangeNotifier {
       final bag = LuckyBagModel.fromJson(data);
       if (bag.mode == LuckyBagMode.world) {
         _worldBag = bag;
+        _worldBagAutoDismissTimer?.cancel();
+        _worldBagAutoDismissTimer = Timer(const Duration(seconds: 5), () {
+          _worldBag = null;
+          notifyListeners();
+        });
       }
       if (bag.sourceRoomId.isNotEmpty) {
         _roomBags[bag.sourceRoomId] = bag;
@@ -916,6 +922,7 @@ class _LuckyBagClaimSheetState extends State<LuckyBagClaimSheet> {
       if (res['success'] == true) {
         _claimedCoins = res['coins'] as int?;
         context.read<WalletProvider>().earnCoins(_claimedCoins ?? 0, 'Lucky Bag Reward');
+        context.read<WalletProvider>().fetchWallet();
       }
     });
 

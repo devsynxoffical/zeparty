@@ -7,11 +7,17 @@ import 'wallet_provider.dart';
 
 class CumulativeRechargeProvider extends ChangeNotifier {
   bool _isLoading = false;
+  String? _errorMessage;
   double _cumulativeRechargeUsd = 0.00;
   String? _activeUserId;
   final Set<int> _claimedMilestoneLevels = {};
 
+  /// Optional claim reward API override for deterministic test verification
+  Future<Map<String, dynamic>?> Function({required String eventId, required int milestoneLevel})?
+      claimRewardApiOverride;
+
   bool get isLoading => _isLoading;
+  String? get errorMessage => _errorMessage;
   double get cumulativeRechargeUsd => _cumulativeRechargeUsd;
 
   static const List<RechargeMilestone> _templateMilestones = [
@@ -124,6 +130,7 @@ class CumulativeRechargeProvider extends ChangeNotifier {
   /// Reset to clean zero starting state
   void resetUserProgress() {
     _activeUserId = null;
+    _errorMessage = null;
     _cumulativeRechargeUsd = 0.00;
     _claimedMilestoneLevels.clear();
     _refreshEventState();
@@ -224,41 +231,73 @@ class CumulativeRechargeProvider extends ChangeNotifier {
   }
 
   Future<bool> claimMilestone(int milestoneLevel, WalletProvider wallet) async {
+    _errorMessage = null;
     final index = _currentEvent.milestones.indexWhere((m) => m.level == milestoneLevel);
-    if (index == -1) return false;
+    if (index == -1) {
+      _errorMessage = 'Invalid milestone level.';
+      return false;
+    }
 
     final target = _currentEvent.milestones[index];
     if (_cumulativeRechargeUsd < target.thresholdUsd) {
+      _errorMessage = 'Milestone threshold not met.';
       return false; // Threshold not met
     }
     if (_claimedMilestoneLevels.contains(milestoneLevel)) {
+      _errorMessage = 'Milestone has already been claimed.';
       return false; // Prevent duplicate claims
     }
 
     _isLoading = true;
     notifyListeners();
 
-    // Call backend API to record claim authoritatively in PostgreSQL (Change 22)
     try {
-      await ApiClient.instance.post<Map<String, dynamic>>(
-        '/v1/recharge/rewards/claim',
-        data: {
-          'eventId': _currentEvent.id,
-          'milestoneLevel': milestoneLevel,
-        },
-      );
-    } catch (_) {}
+      Map<String, dynamic>? data;
+      if (claimRewardApiOverride != null) {
+        data = await claimRewardApiOverride!(
+          eventId: _currentEvent.id,
+          milestoneLevel: milestoneLevel,
+        );
+      } else {
+        final response = await ApiClient.instance.post<Map<String, dynamic>>(
+          '/v1/recharge/rewards/claim',
+          data: {
+            'eventId': _currentEvent.id,
+            'milestoneLevel': milestoneLevel,
+          },
+        );
+        data = response.data;
+      }
 
-    // Award rewards
-    wallet.rechargeCoins(target.bonusCoins, 0.0);
-    _claimedMilestoneLevels.add(milestoneLevel);
+      final success = data != null && (data['success'] == true || data['status'] == 'success');
+      if (!success) {
+        _errorMessage = data?['message']?.toString() ?? 'Server rejected milestone claim.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
 
-    _refreshEventState();
-    await _persistUserProgress();
+      // Authoritative claim succeeded on backend
+      wallet.rechargeCoins(target.bonusCoins, 0.0);
+      _claimedMilestoneLevels.add(milestoneLevel);
 
-    _isLoading = false;
-    notifyListeners();
-    return true;
+      _refreshEventState();
+      await _persistUserProgress();
+
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } on ApiException catch (e) {
+      _errorMessage = e.message;
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = e.toString().replaceFirst('Exception: ', '');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
   }
 
   /// Increments progress strictly from confirmed eligible recharge transactions

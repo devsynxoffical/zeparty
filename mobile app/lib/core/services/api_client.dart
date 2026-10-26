@@ -72,6 +72,10 @@ class ApiClient {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          // Normalize path if caller prefixed with '/api/' when baseUrl already includes '/api'
+          if (options.path.startsWith('/api/')) {
+            options.path = options.path.substring(4);
+          }
           // Attach Access Token if available
           final token = await getAccessToken();
           if (token != null && token.isNotEmpty) {

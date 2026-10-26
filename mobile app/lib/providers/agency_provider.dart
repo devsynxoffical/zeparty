@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/services/api_client.dart';
+import '../core/services/socket_service.dart';
 import '../models/agency_model.dart';
 import '../models/agency_member_model.dart';
 import '../models/agency_wallet_ledger_model.dart';
@@ -61,6 +63,52 @@ class AgencyProvider extends ChangeNotifier {
   bool get isLoadingTarget => _isLoadingTarget;
   String? _targetError;
   String? get targetError => _targetError;
+
+  StreamSubscription? _hostTargetSubscription;
+  StreamSubscription? _agencyTargetSubscription;
+  StreamSubscription? _reconnectSubscription;
+
+  AgencyProvider({SocketService? socketService}) {
+    initRealtimeListeners(socketService: socketService);
+    loadSavedApplication();
+    fetchMyAgency();
+    fetchAllAgencies();
+  }
+
+  void initRealtimeListeners({SocketService? socketService}) {
+    final socket = socketService ?? SocketService.instance;
+    _hostTargetSubscription?.cancel();
+    _agencyTargetSubscription?.cancel();
+    _reconnectSubscription?.cancel();
+
+    _hostTargetSubscription = socket.onHostTargetUpdated.listen((_) {
+      debugPrint('[AgencyProvider] host:target_updated received -> invalidating cache & refetching REST target summary');
+      invalidateTargetCache();
+      fetchHostTargetSummary();
+    });
+
+    _agencyTargetSubscription = socket.onAgencyTargetUpdated.listen((_) {
+      debugPrint('[AgencyProvider] agency:target_updated received -> invalidating cache & refetching REST target summary');
+      invalidateTargetCache();
+      fetchHostTargetSummary();
+    });
+
+    _reconnectSubscription = socket.onReconnect.listen((_) {
+      debugPrint('[AgencyProvider] network/socket reconnected -> refreshing target summary');
+      fetchHostTargetSummary();
+    });
+  }
+
+  void invalidateTargetCache() {
+    _targetSummary = null;
+    _targetError = null;
+    notifyListeners();
+  }
+
+  Future<HostTargetSummaryModel?> refreshTargetSummary() async {
+    invalidateTargetCache();
+    return fetchHostTargetSummary();
+  }
 
   Future<HostTargetSummaryModel?> fetchHostTargetSummary({DateTime? date}) async {
     _isLoadingTarget = true;
@@ -397,12 +445,6 @@ class AgencyProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
-  AgencyProvider() {
-    loadSavedApplication();
-    fetchMyAgency();
-    fetchAllAgencies();
-  }
-
   /// Apply/Register Agency on backend database
   Future<bool> registerAgencyBackend({
     required String agencyName,
@@ -709,5 +751,23 @@ class AgencyProvider extends ChangeNotifier {
       'newValue': newValue ?? '',
       'timestamp': DateTime.now().toIso8601String(),
     });
+  }
+
+  bool _isDisposed = false;
+
+  @override
+  void notifyListeners() {
+    if (!_isDisposed) {
+      super.notifyListeners();
+    }
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    _hostTargetSubscription?.cancel();
+    _agencyTargetSubscription?.cancel();
+    _reconnectSubscription?.cancel();
+    super.dispose();
   }
 }

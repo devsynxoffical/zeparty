@@ -12,6 +12,7 @@ class PartyParticipantModel {
   final bool isSpeaking; // Managed by Agora active speaker callback
   final bool isOnline;
   final bool inRoom;
+  final bool isMutedByModerator;
 
   const PartyParticipantModel({
     required this.user,
@@ -22,6 +23,7 @@ class PartyParticipantModel {
     this.isSpeaking = false,
     this.isOnline = true,
     this.inRoom = true,
+    this.isMutedByModerator = false,
   });
 
   bool get isMuted => micStatus == MicStatus.muted;
@@ -42,6 +44,8 @@ class PartyParticipantModel {
 
     final isMuted = json['isMuted'] == true;
     final isLocked = json['isLocked'] == true;
+    final isMutedByModerator = json['isMutedByModerator'] == true ||
+        (isMuted && json['moderatedByUserId'] != null);
 
     return PartyParticipantModel(
       user: user,
@@ -52,6 +56,7 @@ class PartyParticipantModel {
       isSpeaking: false,
       isOnline: true,
       inRoom: true,
+      isMutedByModerator: isMutedByModerator,
     );
   }
 
@@ -78,6 +83,7 @@ class PartyParticipantModel {
     final inRoom = json['inRoom'] is bool
         ? json['inRoom'] as bool
         : (json['inRoom'] != null ? json['inRoom'].toString().toLowerCase() == 'true' : isOnline);
+    final isMutedByModerator = json['isMutedByModerator'] == true;
 
     return PartyParticipantModel(
       user: user,
@@ -88,6 +94,7 @@ class PartyParticipantModel {
       isSpeaking: false,
       isOnline: isOnline,
       inRoom: inRoom,
+      isMutedByModerator: isMutedByModerator,
     );
   }
 
@@ -102,6 +109,7 @@ class PartyParticipantModel {
     bool? isSpeaking,
     bool? isOnline,
     bool? inRoom,
+    bool? isMutedByModerator,
     bool clearSeat = false,
   }) {
     int? resolvedSeatNumber;
@@ -122,6 +130,7 @@ class PartyParticipantModel {
       isSpeaking: isSpeaking ?? this.isSpeaking,
       isOnline: isOnline ?? this.isOnline,
       inRoom: inRoom ?? this.inRoom,
+      isMutedByModerator: isMutedByModerator ?? this.isMutedByModerator,
     );
   }
 }

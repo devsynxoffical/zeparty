@@ -7,6 +7,7 @@ import '../../models/party_room_model.dart';
 import '../../models/user_model.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/gift_dialog.dart';
+import '../../core/utils/noble_badge_helper.dart';
 
 class PartyRoomScreen extends StatefulWidget {
   final PartyRoomModel? partyRoom;
@@ -338,7 +339,14 @@ class _PartyRoomScreenState extends State<PartyRoomScreen> with SingleTickerProv
                   shape: BoxShape.circle,
                   boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.3), blurRadius: 8, spreadRadius: 2)],
                 ),
-                child: UserAvatar(imageUrl: seat.user!.avatarUrl, radius: 28, showVipFrame: true),
+                child: UserAvatar(
+                  imageUrl: seat.user!.avatarUrl,
+                  radius: 28,
+                  showVipFrame: true,
+                  frameAsset: (seat.user!.avatarFrame.isNotEmpty && seat.user!.avatarFrame != 'none')
+                      ? seat.user!.avatarFrame
+                      : null,
+                ),
               ),
               if (seat.isMuted)
                 Positioned(

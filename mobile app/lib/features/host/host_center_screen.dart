@@ -5,6 +5,7 @@ import '../../providers/agency_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/usd_balance_provider.dart';
 import '../../core/policy/agency_host_policy.dart';
+import '../wallet/authorized_sellers_screen.dart';
 import '../wallet/diamond_transfer_screen.dart';
 
 class HostCenterScreen extends StatefulWidget {
@@ -14,22 +15,37 @@ class HostCenterScreen extends StatefulWidget {
   State<HostCenterScreen> createState() => _HostCenterScreenState();
 }
 
-class _HostCenterScreenState extends State<HostCenterScreen> {
+class _HostCenterScreenState extends State<HostCenterScreen>
+    with WidgetsBindingObserver {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<AgencyProvider>().fetchAllAgencies();
-      context.read<AgencyProvider>().fetchEligibility();
-      context.read<AgencyProvider>().fetchHostTargetSummary();
+      _loadData();
     });
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadData();
+    }
+  }
+
+  void _loadData() {
+    if (!mounted) return;
+    context.read<AgencyProvider>().fetchAllAgencies();
+    context.read<AgencyProvider>().fetchEligibility();
+    context.read<AgencyProvider>().fetchHostTargetSummary();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     super.dispose();
   }
@@ -43,8 +59,11 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
 
     final audioHost = agencyProv.getAudioHostByUserId(authUser.id);
     final eligibility = agencyProv.eligibility;
-    final hasRoleConflict = eligibility != null && (!eligibility.canJoinAudioHost || eligibility.hasConflict);
-    final conflictMessage = eligibility?.conflictMessage ??
+    final hasRoleConflict =
+        eligibility != null &&
+        (!eligibility.canJoinAudioHost || eligibility.hasConflict);
+    final conflictMessage =
+        eligibility?.conflictMessage ??
         'You already have an active Live Host role that restricts joining an Agency as Audio Host.';
 
     if (audioHost == null) {
@@ -71,12 +90,18 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                   decoration: BoxDecoration(
                     color: Colors.red.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.6)),
+                    border: Border.all(
+                      color: Colors.redAccent.withValues(alpha: 0.6),
+                    ),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.block_flipped, color: Colors.redAccent, size: 24),
+                      const Icon(
+                        Icons.block_flipped,
+                        color: Colors.redAccent,
+                        size: 24,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -84,7 +109,11 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                           children: [
                             const Text(
                               'Audio Hosting Restriction',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.redAccent),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: Colors.redAccent,
+                              ),
                             ),
                             const SizedBox(height: 4),
                             Text(
@@ -124,7 +153,9 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                 style: TextStyle(color: AppColors.getTextPrimary(isDark)),
                 decoration: InputDecoration(
                   hintText: 'Search Agency by ID or Name...',
-                  hintStyle: TextStyle(color: AppColors.getTextSecondary(isDark)),
+                  hintStyle: TextStyle(
+                    color: AppColors.getTextSecondary(isDark),
+                  ),
                   prefixIcon: Icon(Icons.search_rounded, color: primary),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
@@ -151,12 +182,16 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                   decoration: BoxDecoration(
                     color: existingReq.status == 'Pending'
                         ? Colors.amber.withValues(alpha: 0.15)
-                        : (existingReq.status == 'Accepted' ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15)),
+                        : (existingReq.status == 'Accepted'
+                              ? Colors.green.withValues(alpha: 0.15)
+                              : Colors.red.withValues(alpha: 0.15)),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: existingReq.status == 'Pending'
                           ? Colors.amber
-                          : (existingReq.status == 'Accepted' ? Colors.green : Colors.red),
+                          : (existingReq.status == 'Accepted'
+                                ? Colors.green
+                                : Colors.red),
                     ),
                   ),
                   child: Row(
@@ -164,10 +199,14 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                       Icon(
                         existingReq.status == 'Pending'
                             ? Icons.hourglass_top_rounded
-                            : (existingReq.status == 'Accepted' ? Icons.check_circle_rounded : Icons.cancel_rounded),
+                            : (existingReq.status == 'Accepted'
+                                  ? Icons.check_circle_rounded
+                                  : Icons.cancel_rounded),
                         color: existingReq.status == 'Pending'
                             ? Colors.amber
-                            : (existingReq.status == 'Accepted' ? Colors.green : Colors.red),
+                            : (existingReq.status == 'Accepted'
+                                  ? Colors.green
+                                  : Colors.red),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -176,7 +215,10 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                           children: [
                             Text(
                               'Application Status: ${existingReq.status}',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
                             ),
                             Text(
                               'Agency: ${existingReq.agencyName} (${existingReq.agencyId})',
@@ -222,14 +264,19 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                   separatorBuilder: (_, _) => const SizedBox(height: 12),
                   itemBuilder: (context, idx) {
                     final agency = matchingAgencies[idx];
-                    final isPendingThis = existingReq != null && existingReq.agencyId == agency.id && existingReq.status == 'Pending';
+                    final isPendingThis =
+                        existingReq != null &&
+                        existingReq.agencyId == agency.id &&
+                        existingReq.status == 'Pending';
 
                     return Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: AppColors.getCard(isDark),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: primary.withValues(alpha: 0.2)),
+                        border: Border.all(
+                          color: primary.withValues(alpha: 0.2),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -263,7 +310,9 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                                   agency.description,
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: AppColors.getTextSecondary(isDark).withValues(alpha: 0.8),
+                                    color: AppColors.getTextSecondary(
+                                      isDark,
+                                    ).withValues(alpha: 0.8),
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -274,19 +323,24 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                           const SizedBox(width: 10),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: isPendingThis ? Colors.grey : primary,
+                              backgroundColor: isPendingThis
+                                  ? Colors.grey
+                                  : primary,
                               foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                             onPressed: (isPendingThis || hasRoleConflict)
                                 ? null
                                 : () {
-                                    final res = agencyProv.submitHostJoinRequest(
-                                      agencyId: agency.id,
-                                      userId: authUser.id,
-                                      userName: authUser.name,
-                                      userAvatar: authUser.avatarUrl,
-                                    );
+                                    final res = agencyProv
+                                        .submitHostJoinRequest(
+                                          agencyId: agency.id,
+                                          userId: authUser.id,
+                                          userName: authUser.name,
+                                          userAvatar: authUser.avatarUrl,
+                                        );
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(res),
@@ -310,15 +364,23 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
     }
 
     final targetSummary = agencyProv.targetSummary;
-    final currentLevel = targetSummary?.currentTier?.level ??
+    final currentLevel =
+        targetSummary?.currentTier?.level ??
         AgencyHostPolicy.getLevelForDiamonds(audioHost.achievedDiamonds).level;
     final achievedCoins = targetSummary?.achievedCoins ?? 0;
     final nextTargetCoins = targetSummary?.nextTargetCoins ?? 100000;
-    final remainingCoins = targetSummary?.remainingCoins ?? (nextTargetCoins > achievedCoins ? nextTargetCoins - achievedCoins : 0);
-    final progressPct = targetSummary?.progressPercent ??
-        (nextTargetCoins > 0 ? (achievedCoins / nextTargetCoins).clamp(0.0, 1.0) : 1.0);
+    final remainingCoins =
+        targetSummary?.remainingCoins ??
+        (nextTargetCoins > achievedCoins ? nextTargetCoins - achievedCoins : 0);
+    final progressPct =
+        targetSummary?.progressPercent ??
+        (nextTargetCoins > 0
+            ? (achievedCoins / nextTargetCoins).clamp(0.0, 1.0)
+            : 1.0);
 
-    final currentPolicy = AgencyHostPolicy.getLevelForDiamonds(audioHost.achievedDiamonds);
+    final currentPolicy = AgencyHostPolicy.getLevelForDiamonds(
+      audioHost.achievedDiamonds,
+    );
 
     return Scaffold(
       backgroundColor: AppColors.getBackground(isDark),
@@ -345,9 +407,17 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [primary, Colors.deepPurple.shade900]),
+                  gradient: LinearGradient(
+                    colors: [primary, Colors.deepPurple.shade900],
+                  ),
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
+                  boxShadow: [
+                    BoxShadow(
+                      color: primary.withValues(alpha: 0.3),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -355,37 +425,144 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(audioHost.userName, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                        Text(
+                          audioHost.userName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(color: Colors.black38, borderRadius: BorderRadius.circular(12)),
-                          child: Text('Level $currentLevel', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 12)),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black38,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Level $currentLevel',
+                            style: const TextStyle(
+                              color: Colors.amber,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Builder(builder: (_) {
-                      final hasRealAgency = audioHost.agencyName.isNotEmpty &&
-                          !audioHost.agencyName.toLowerCase().contains('dummy') &&
-                          audioHost.agencyName != 'ZeParty Agency' &&
-                          audioHost.agencyName != 'ZeParty Royal Agency';
-                      final agencyLabel = hasRealAgency
-                          ? 'Agency: ${audioHost.agencyName}${audioHost.agencyId.isNotEmpty ? ' (ID: ${audioHost.agencyId})' : ''}'
-                          : 'Independent Audio Host';
-                      return Text(agencyLabel, style: const TextStyle(color: Colors.white70, fontSize: 12));
-                    }),
-                    if (targetSummary?.cycleIdentifier != null) ...[
-                      const SizedBox(height: 2),
-                      Text('Cycle: ${targetSummary!.cycleIdentifier}', style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold)),
-                    ],
-                    const SizedBox(height: 14),
+                    Builder(
+                      builder: (_) {
+                        final hasRealAgency =
+                            audioHost.agencyName.isNotEmpty &&
+                            !audioHost.agencyName.toLowerCase().contains(
+                              'dummy',
+                            ) &&
+                            audioHost.agencyName != 'ZeParty Agency' &&
+                            audioHost.agencyName != 'ZeParty Royal Agency';
+                        final agencyLabel = hasRealAgency
+                            ? 'Agency: ${audioHost.agencyName}${audioHost.agencyId.isNotEmpty ? ' (ID: ${audioHost.agencyId})' : ''}'
+                            : 'Independent Audio Host';
+                        return Text(
+                          agencyLabel,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.calendar_month,
+                                color: Colors.amberAccent,
+                                size: 15,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                targetSummary?.cycleBadge ??
+                                    '15-Day Settlement Cycle',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            targetSummary?.cycleDateRange ??
+                                (targetSummary?.cycleIdentifier ??
+                                    'Cycle 1-15'),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 10,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.amberAccent.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '${targetSummary?.countdownDays ?? 0}d left',
+                              style: const TextStyle(
+                                color: Colors.amberAccent,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
 
                     // Progress Bar
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Target Achieved: $achievedCoins 🪙', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                        Text(targetSummary?.nextTier != null ? 'Next Target: $nextTargetCoins 🪙' : (nextTargetCoins > achievedCoins ? 'Target: $nextTargetCoins 🪙' : 'MAX LEVEL'), style: const TextStyle(color: Colors.amberAccent, fontSize: 11)),
+                        Text(
+                          'Target Achieved: $achievedCoins 🪙',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          targetSummary?.nextTier != null
+                              ? 'Next Target: $nextTargetCoins 🪙'
+                              : (nextTargetCoins > achievedCoins
+                                    ? 'Target: $nextTargetCoins 🪙'
+                                    : 'MAX LEVEL'),
+                          style: const TextStyle(
+                            color: Colors.amberAccent,
+                            fontSize: 11,
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -395,22 +572,40 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                         value: progressPct,
                         minHeight: 10,
                         backgroundColor: Colors.white24,
-                        valueColor: const AlwaysStoppedAnimation<Color>(Colors.greenAccent),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                          Colors.greenAccent,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 6),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('Progress: ${(progressPct * 100).toStringAsFixed(1)}%', style: const TextStyle(color: Colors.white70, fontSize: 10)),
-                        Text('Remaining: $remainingCoins 🪙', style: const TextStyle(color: Colors.white70, fontSize: 10)),
+                        Text(
+                          'Progress: ${(progressPct * 100).toStringAsFixed(1)}%',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 10,
+                          ),
+                        ),
+                        Text(
+                          'Remaining: $remainingCoins 🪙',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 10,
+                          ),
+                        ),
                       ],
                     ),
                     if (targetSummary?.formula != null) ...[
                       const SizedBox(height: 4),
                       Text(
                         'Target Formula: ${targetSummary!.formula}',
-                        style: const TextStyle(color: Colors.white60, fontSize: 9, fontStyle: FontStyle.italic),
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 9,
+                          fontStyle: FontStyle.italic,
+                        ),
                       ),
                     ],
                   ],
@@ -418,235 +613,506 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
               ),
               const SizedBox(height: 20),
 
-
-            // Salary Breakdown Card (Shared Policy Module 14)
-            Card(
-              color: AppColors.getCard(isDark),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('15-Day Cycle Salary & Policy Breakdown', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Basic Total Salary:'),
-                        Text('\$${currentPolicy.basicTotalSalaryUsd.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    const Divider(),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Host Basic Salary (You):', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
-                        Text('\$${currentPolicy.hostBasicSalaryUsd.toStringAsFixed(2)}', style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Agency Share:', style: TextStyle(color: Colors.amberAccent)),
-                        Text('\$${currentPolicy.agencySalaryUsd.toStringAsFixed(2)}', style: const TextStyle(color: Colors.amberAccent)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Special ID Bonus:', style: TextStyle(color: Colors.purpleAccent)),
-                        Text(currentPolicy.specialIdBonus, style: const TextStyle(color: Colors.purpleAccent, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ],
+              // Salary Breakdown Card (Shared Policy Module 14)
+              Card(
+                color: AppColors.getCard(isDark),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
                 ),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Valid Days Tracker Card (Audio Host 2-Hour Daily Unmuted Requirement)
-            Card(
-              color: AppColors.getCard(isDark),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Valid Days Tracker (2 Hours/Day Requirement)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Audio Hosts require 2 hours (120 mins) online & unmuted in room per valid day.',
-                      style: TextStyle(fontSize: 11, color: Colors.white70),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Required Valid Days: ${currentPolicy.validDaysRequired} days',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '15-Day Cycle Salary & Policy Breakdown',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.getTextPrimary(isDark),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Basic Total Salary:'),
+                          Text(
+                            '\$${currentPolicy.basicTotalSalaryUsd.toStringAsFixed(2)}',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Completed: ${audioHost.completedValidDays} / ${currentPolicy.validDaysRequired}',
-                          style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(audioHost.isTodayValid ? Icons.check_circle_rounded : Icons.access_time_filled_rounded, color: audioHost.isTodayValid ? Colors.greenAccent : Colors.orangeAccent, size: 20),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            audioHost.isTodayValid
-                                ? 'Today Status: VALID (${audioHost.dailyOnlineMinutes} mins completed)'
-                                : 'Today Status: IN PROGRESS (${audioHost.dailyOnlineMinutes} / 120 mins)',
-                            style: TextStyle(color: audioHost.isTodayValid ? Colors.greenAccent : Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Host Personal USD Salary & Withdrawal Card (Change Request 11)
-            Consumer<UsdBalanceProvider>(
-              builder: (context, usdProv, _) {
-                return Card(
-                  color: AppColors.getCard(isDark),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('Host Personal USD Salary', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
-                              child: const Text('15-Day Payout Eligible', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 11)),
+                        ],
+                      ),
+                      const Divider(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Host Basic Salary (You):',
+                            style: TextStyle(
+                              color: Colors.greenAccent,
+                              fontWeight: FontWeight.bold,
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(colors: [Colors.green.shade900, Colors.teal.shade900]),
-                            borderRadius: BorderRadius.circular(14),
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Available Host Salary', style: TextStyle(color: Colors.white70, fontSize: 11)),
-                                  Text('\$${usdProv.audioHostAvailableBalance.toStringAsFixed(2)} USD', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 22)),
-                                ],
-                              ),
-                              // Transfer Action Button (Withdraw removed per Change 19)
-                              OutlinedButton.icon(
-                                icon: const Icon(Icons.swap_horiz_rounded, size: 18),
-                                label: const Text('Transfer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.white,
-                                  side: const BorderSide(color: Colors.white70, width: 1.5),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                ),
-                                onPressed: () {
-                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const DiamondTransferScreen()));
-                                },
-                              ),
-                            ],
+                          Text(
+                            '\$${currentPolicy.hostBasicSalaryUsd.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                              color: Colors.greenAccent,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 16),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Agency Share:',
+                            style: TextStyle(color: Colors.amberAccent),
+                          ),
+                          Text(
+                            '\$${currentPolicy.agencySalaryUsd.toStringAsFixed(2)}',
+                            style: const TextStyle(color: Colors.amberAccent),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Special ID Bonus:',
+                            style: TextStyle(color: Colors.purpleAccent),
+                          ),
+                          Text(
+                            currentPolicy.specialIdBonus,
+                            style: const TextStyle(
+                              color: Colors.purpleAccent,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
 
-                        // 15-Day Payout Periods Table
-                        Text('15-Day Payout Periods', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
-                        const SizedBox(height: 8),
-                        if (usdProv.audioHostSalaryPeriods.isEmpty)
-                          const Text('No salary payout periods recorded yet.', style: TextStyle(fontSize: 11, color: Colors.white60))
-                        else
-                          ...usdProv.audioHostSalaryPeriods.map((period) => Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              // Valid Days Tracker Card (Audio Host 2-Hour Daily Unmuted Requirement)
+              Card(
+                color: AppColors.getCard(isDark),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Valid Days Tracker (2 Hours/Day Requirement)',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.getTextPrimary(isDark),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Audio Hosts require 2 hours (120 mins) online & unmuted in room per valid day.',
+                        style: TextStyle(fontSize: 11, color: Colors.white70),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Required Valid Days: ${currentPolicy.validDaysRequired} days',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
                           ),
-                          child: Row(
+                          const SizedBox(width: 8),
+                          Text(
+                            'Completed: ${audioHost.completedValidDays} / ${currentPolicy.validDaysRequired}',
+                            style: const TextStyle(
+                              color: Colors.greenAccent,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            audioHost.isTodayValid
+                                ? Icons.check_circle_rounded
+                                : Icons.access_time_filled_rounded,
+                            color: audioHost.isTodayValid
+                                ? Colors.greenAccent
+                                : Colors.orangeAccent,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              audioHost.isTodayValid
+                                  ? 'Today Status: VALID (${audioHost.dailyOnlineMinutes} mins completed)'
+                                  : 'Today Status: IN PROGRESS (${audioHost.dailyOnlineMinutes} / 120 mins)',
+                              style: TextStyle(
+                                color: audioHost.isTodayValid
+                                    ? Colors.greenAccent
+                                    : Colors.orangeAccent,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Host Personal USD Salary & Withdrawal Card (Change Request 11)
+              Consumer<UsdBalanceProvider>(
+                builder: (context, usdProv, _) {
+                  return Card(
+                    color: AppColors.getCard(isDark),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(period.periodLabel, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                                  Text('Earned: \$${period.earnedAmount.toStringAsFixed(2)} | Pending: \$${period.pendingAmount.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white60, fontSize: 10)),
-                                ],
+                              Text(
+                                'Host Personal USD Salary',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.getTextPrimary(isDark),
+                                ),
                               ),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: period.status == 'Eligible' ? Colors.green.withValues(alpha: 0.2) : Colors.blue.withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(8),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
                                 ),
-                                child: Text(period.status, style: TextStyle(color: period.status == 'Eligible' ? Colors.greenAccent : Colors.lightBlueAccent, fontWeight: FontWeight.bold, fontSize: 11)),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  '15-Day Payout Eligible',
+                                  style: TextStyle(
+                                    color: Colors.greenAccent,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
-                        )),
-                        const SizedBox(height: 12),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.green.shade900,
+                                  Colors.teal.shade900,
+                                ],
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Available Host Salary',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                    Text(
+                                      '\$${usdProv.audioHostAvailableBalance.toStringAsFixed(2)} USD',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 22,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    OutlinedButton.icon(
+                                      icon: const Icon(
+                                        Icons.swap_horiz_rounded,
+                                        size: 16,
+                                      ),
+                                      label: const Text(
+                                        'Transfer',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.white,
+                                        side: const BorderSide(
+                                          color: Colors.white70,
+                                          width: 1.2,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const DiamondTransferScreen(),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                    ElevatedButton.icon(
+                                      icon: const Icon(
+                                        Icons.storefront_rounded,
+                                        size: 16,
+                                      ),
+                                      label: const Text(
+                                        'Withdraw',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.green,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 8,
+                                        ),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                const AuthorizedSellersScreen(),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
 
-                        // Withdrawal History
-                        Text('Host Withdrawal History', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.getTextPrimary(isDark))),
-                        const SizedBox(height: 8),
-                        if (usdProv.audioHostWithdrawalHistory.isEmpty)
-                          const Text('No withdrawal requests yet.', style: TextStyle(fontSize: 11, color: Colors.white60))
-                        else
-                          ...usdProv.audioHostWithdrawalHistory.map((tx) => ListTile(
-                            dense: true,
-                            contentPadding: EdgeInsets.zero,
-                            leading: Icon(tx.recipientType == 'Coin Seller' ? Icons.storefront_rounded : Icons.business_center_rounded, color: Colors.amberAccent),
-                            title: Text('\$${tx.usdAmount.toStringAsFixed(2)} USD ➔ ${tx.recipientName}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                            subtitle: Text('Recipient Type: ${tx.recipientType}\nPeriod: ${tx.payoutPeriod} | Ref: ${tx.referenceId}', style: const TextStyle(color: Colors.white54, fontSize: 10)),
-                            trailing: Text(tx.status, style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold, fontSize: 11)),
-                          )),
-                      ],
+                          // 15-Day Payout Periods Table
+                          Text(
+                            '15-Day Payout Periods',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.getTextPrimary(isDark),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (usdProv.audioHostSalaryPeriods.isEmpty)
+                            const Text(
+                              'No salary payout periods recorded yet.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.white60,
+                              ),
+                            )
+                          else
+                            ...usdProv.audioHostSalaryPeriods.map(
+                              (period) => Container(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.1),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          period.periodLabel,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Earned: \$${period.earnedAmount.toStringAsFixed(2)} | Pending: \$${period.pendingAmount.toStringAsFixed(2)}',
+                                          style: const TextStyle(
+                                            color: Colors.white60,
+                                            fontSize: 10,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: period.status == 'Eligible'
+                                            ? Colors.green.withValues(
+                                                alpha: 0.2,
+                                              )
+                                            : Colors.blue.withValues(
+                                                alpha: 0.2,
+                                              ),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        period.status,
+                                        style: TextStyle(
+                                          color: period.status == 'Eligible'
+                                              ? Colors.greenAccent
+                                              : Colors.lightBlueAccent,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 11,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          const SizedBox(height: 12),
+
+                          // Withdrawal History
+                          Text(
+                            'Host Withdrawal History',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.getTextPrimary(isDark),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (usdProv.audioHostWithdrawalHistory.isEmpty)
+                            const Text(
+                              'No withdrawal requests yet.',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.white60,
+                              ),
+                            )
+                          else
+                            ...usdProv.audioHostWithdrawalHistory.map(
+                              (tx) => ListTile(
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                leading: Icon(
+                                  tx.recipientType == 'Coin Seller'
+                                      ? Icons.storefront_rounded
+                                      : Icons.business_center_rounded,
+                                  color: Colors.amberAccent,
+                                ),
+                                title: Text(
+                                  '\$${tx.usdAmount.toStringAsFixed(2)} USD ➔ ${tx.recipientName}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                subtitle: Text(
+                                  'Recipient Type: ${tx.recipientType}\nPeriod: ${tx.payoutPeriod} | Ref: ${tx.referenceId}',
+                                  style: const TextStyle(
+                                    color: Colors.white54,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                                trailing: Text(
+                                  tx.status,
+                                  style: const TextStyle(
+                                    color: Colors.greenAccent,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
-          ],
+                  );
+                },
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   // ignore: unused_element
-  void _showHostWithdrawalDialog(BuildContext context, UsdBalanceProvider usdProv, String hostName, String hostId, String agencyName) {
+  void _showHostWithdrawalDialog(
+    BuildContext context,
+    UsdBalanceProvider usdProv,
+    String hostName,
+    String hostId,
+    String agencyName,
+  ) {
     String recipientType = 'Coin Seller'; // 'Coin Seller' or 'Merchant'
     SellerMerchantRecipient? selectedRecipient = usdProv.coinSellers.first;
-    final amountController = TextEditingController(text: usdProv.audioHostAvailableBalance.toStringAsFixed(2));
+    final amountController = TextEditingController(
+      text: usdProv.audioHostAvailableBalance.toStringAsFixed(2),
+    );
 
     showModalBottomSheet(
       context: context,
@@ -655,7 +1121,9 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setSheetState) {
           final isDark = Theme.of(context).brightness == Brightness.dark;
-          final availableRecipients = recipientType == 'Coin Seller' ? usdProv.coinSellers : usdProv.merchants;
+          final availableRecipients = recipientType == 'Coin Seller'
+              ? usdProv.coinSellers
+              : usdProv.merchants;
           if (!availableRecipients.contains(selectedRecipient)) {
             selectedRecipient = availableRecipients.first;
           }
@@ -669,7 +1137,9 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
             ),
             decoration: BoxDecoration(
               color: AppColors.getCard(isDark),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(24),
+              ),
             ),
             child: SingleChildScrollView(
               child: Column(
@@ -679,12 +1149,25 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Withdraw Host USD Salary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
-                      IconButton(icon: const Icon(Icons.close, color: Colors.white70), onPressed: () => Navigator.pop(context)),
+                      const Text(
+                        'Withdraw Host USD Salary',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                        onPressed: () => Navigator.pop(context),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
-                  const Text('Select Recipient Type', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                  const Text(
+                    'Select Recipient Type',
+                    style: TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
@@ -723,17 +1206,29 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  const Text('Select Authorized Recipient', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                  const Text(
+                    'Select Authorized Recipient',
+                    style: TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
                   const SizedBox(height: 6),
                   DropdownButtonFormField<SellerMerchantRecipient>(
                     initialValue: selectedRecipient,
                     dropdownColor: const Color(0xFF1E1B2E),
                     style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(border: OutlineInputBorder()),
-                    items: availableRecipients.map((r) => DropdownMenuItem(
-                      value: r,
-                      child: Text('${r.name} (${r.agencyName})', style: const TextStyle(fontSize: 13)),
-                    )).toList(),
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                    ),
+                    items: availableRecipients
+                        .map(
+                          (r) => DropdownMenuItem(
+                            value: r,
+                            child: Text(
+                              '${r.name} (${r.agencyName})',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        )
+                        .toList(),
                     onChanged: (val) {
                       setSheetState(() {
                         selectedRecipient = val;
@@ -742,16 +1237,22 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  const Text('Enter Withdrawal Amount (USD)', style: TextStyle(fontSize: 12, color: Colors.white70)),
+                  const Text(
+                    'Enter Withdrawal Amount (USD)',
+                    style: TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
                   const SizedBox(height: 6),
                   TextField(
                     controller: amountController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
                     style: const TextStyle(color: Colors.white),
                     decoration: InputDecoration(
                       prefixText: '\$ ',
                       suffixText: 'USD',
-                      hintText: 'Available: \$${usdProv.audioHostAvailableBalance.toStringAsFixed(2)}',
+                      hintText:
+                          'Available: \$${usdProv.audioHostAvailableBalance.toStringAsFixed(2)}',
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -762,13 +1263,21 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                     height: 48,
                     child: ElevatedButton.icon(
                       icon: const Icon(Icons.check_circle_rounded),
-                      label: const Text('Confirm Withdrawal Request', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      label: const Text(
+                        'Confirm Withdrawal Request',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
                         foregroundColor: Colors.white,
                       ),
                       onPressed: () {
-                        final amt = double.tryParse(amountController.text.trim()) ?? 0.0;
+                        final amt =
+                            double.tryParse(amountController.text.trim()) ??
+                            0.0;
                         if (selectedRecipient == null) return;
 
                         final err = usdProv.requestAudioHostWithdrawal(
@@ -783,11 +1292,19 @@ class _HostCenterScreenState extends State<HostCenterScreen> {
                         if (err == null) {
                           Navigator.pop(context);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('🎉 Withdrawal of \$$amt USD to ${selectedRecipient!.name} requested successfully!'), backgroundColor: Colors.green),
+                            SnackBar(
+                              content: Text(
+                                '🎉 Withdrawal of \$$amt USD to ${selectedRecipient!.name} requested successfully!',
+                              ),
+                              backgroundColor: Colors.green,
+                            ),
                           );
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('❌ $err'), backgroundColor: Colors.redAccent),
+                            SnackBar(
+                              content: Text('❌ $err'),
+                              backgroundColor: Colors.redAccent,
+                            ),
                           );
                         }
                       },

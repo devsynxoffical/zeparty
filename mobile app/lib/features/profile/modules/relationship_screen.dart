@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../providers/auth_provider.dart';
 import '../../../../core/repositories/backend_repository.dart';
+import '../../../../core/repositories/social_repository.dart';
 import '../../../../widgets/user_avatar.dart';
 import '../../../../models/user_model.dart';
 import '../../../../models/relationship_card_model.dart';
@@ -264,7 +265,7 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
           TextButton(onPressed: () => Navigator.pop(d), child: Text('Cancel', style: TextStyle(color: AppColors.getTextSecondary(isDark)))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent),
-            onPressed: () {
+            onPressed: () async {
               final wallet = context.read<WalletProvider>();
               final success = wallet.spendCoins(card.coinPrice, 'Relationship Card: ${card.name}');
               if (!success) {
@@ -276,14 +277,23 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
 
               final auth = context.read<AuthProvider>();
               auth.sendCpRequest(targetUser.id);
+              try {
+                await SocialRepository.instance.purchaseAndSendRelationshipCard(
+                  recipientUserId: targetUser.id,
+                  cardType: card.type,
+                  deductCoins: false,
+                );
+              } catch (_) {}
 
-              Navigator.pop(d);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('📩 Purchased ${card.name}! Invitation sent to ${targetUser.name}. Pending acceptance.'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+              if (context.mounted) {
+                Navigator.pop(d);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('📩 Purchased ${card.name}! Invitation sent to ${targetUser.name}. Pending acceptance.'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
             },
             child: const Text('Purchase & Send Invitation', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),

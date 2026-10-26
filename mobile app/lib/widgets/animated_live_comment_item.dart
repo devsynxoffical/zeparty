@@ -106,6 +106,12 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
     if (isEntryNotice) {
       final senderAccent = _getSenderColor(widget.senderId);
       final isEntered = widget.text.contains('entered the room');
+      final badgeAsset = NobleBadgeHelper.getBadgeAsset(
+        widget.nobleTitle ?? (widget.isVip ? 'Baron' : null),
+      );
+      final hasAvatar = widget.avatarUrl != null &&
+          widget.avatarUrl!.isNotEmpty &&
+          widget.senderId != 'system';
 
       return FadeTransition(
         opacity: _fadeAnimation,
@@ -128,37 +134,62 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                       width: 0.8,
                     ),
                   ),
-                  child: isEntered
-                      ? RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(
-                                text: widget.senderName.isNotEmpty ? widget.senderName : widget.senderId,
-                                style: TextStyle(
-                                  color: senderAccent,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const TextSpan(
-                                text: ' entered the room',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : Text(
-                          widget.text,
-                          style: const TextStyle(
-                            color: Color(0xFFFFE082),
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                          ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (hasAvatar) ...[
+                        UserAvatar(
+                          imageUrl: widget.avatarUrl!,
+                          name: widget.senderName,
+                          radius: 9,
+                          showVipFrame: widget.isVip,
                         ),
+                        const SizedBox(width: 5),
+                      ],
+                      if (badgeAsset != null) ...[
+                        Image.asset(
+                          badgeAsset,
+                          height: 14,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Flexible(
+                        child: isEntered
+                            ? RichText(
+                                text: TextSpan(
+                                  children: [
+                                    TextSpan(
+                                      text: widget.senderName.isNotEmpty ? widget.senderName : widget.senderId,
+                                      style: TextStyle(
+                                        color: senderAccent,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const TextSpan(
+                                      text: ' entered the room',
+                                      style: TextStyle(
+                                        color: Colors.white70,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : Text(
+                                widget.text,
+                                style: const TextStyle(
+                                  color: Color(0xFFFFE082),
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

@@ -1539,7 +1539,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => const VisitorsScreen(),
+                                    builder: (_) => VisitorsScreen(targetUserId: _user?.effectivePublicId ?? widget.userId),
                                   ),
                                 );
                               },
@@ -1552,7 +1552,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                               UserListSheet.show(
                                 context,
                                 'Followers',
-                                userId: _user?.id ?? widget.userId,
+                                userId: _user?.effectivePublicId ?? widget.userId,
                               );
                             },
                             child: Padding(
@@ -1585,7 +1585,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                               UserListSheet.show(
                                 context,
                                 'Following',
-                                userId: _user?.id ?? widget.userId,
+                                userId: _user?.effectivePublicId ?? widget.userId,
                               );
                             },
                             child: Padding(
@@ -3008,10 +3008,25 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
 
   // 6. DIAGRAM B: RELATIONSHIP + HONOR
   Widget _buildRelationshipAndHonor(bool isDark) {
-    final hasCp = _user!.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty;
+    final cpFromRelation = _relationData != null &&
+        (_relationData!['hasCp'] == true ||
+            _relationData!['partner'] != null ||
+            _relationData!['relationship'] != null);
+    final hasCp = (_user!.cpPartnerId != null && _user!.cpPartnerId!.isNotEmpty) || cpFromRelation;
     final hasCustomTitles = _user!.customTitles.isNotEmpty;
     final primaryText = AppColors.getTextPrimary(isDark);
     final secondaryText = AppColors.getTextSecondary(isDark);
+
+    String partnerInfo = 'Partner Assigned';
+    if (_relationData != null) {
+      final pMap = _relationData!['partner'] ?? _relationData!['relationship'];
+      if (pMap is Map) {
+        final pName = (pMap['name'] ?? pMap['displayName'] ?? pMap['username'])?.toString();
+        if (pName != null && pName.isNotEmpty) {
+          partnerInfo = 'Partner: $pName';
+        }
+      }
+    }
 
     if (!hasCp && !hasCustomTitles) return const SizedBox.shrink();
 
@@ -3098,7 +3113,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'CP Level ${_user!.cpPoints ~/ 100 + 1} • Partner Assigned',
+                          'CP Level ${_user!.cpPoints ~/ 100 + 1} • $partnerInfo',
                           style: TextStyle(fontSize: 11, color: secondaryText),
                         ),
                       ],

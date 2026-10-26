@@ -127,14 +127,26 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
   void playGiftAnimation(GiftModel gift, {String senderName = '', int quantity = 1, String? transactionId}) {
     if (!mounted) return;
 
-    if (transactionId != null && transactionId.isNotEmpty) {
-      if (_processedTxIds.contains(transactionId)) {
+    if (transactionId != null && transactionId.trim().isNotEmpty) {
+      final cleanTxId = transactionId.trim();
+      if (_processedTxIds.contains(cleanTxId)) {
         return; // Prevent duplicate execution of the exact same gift transaction
       }
-      _processedTxIds.add(transactionId);
+      _processedTxIds.add(cleanTxId);
       if (_processedTxIds.length > 250) {
-        _processedTxIds.clear();
+        _processedTxIds.remove(_processedTxIds.first);
       }
+    }
+
+    // Resolve authoritative catalog record if the passed model is missing the animation asset
+    final catalogGift = GiftModel.findById(gift.id) ?? GiftModel.findById(gift.name);
+    final effectiveGift = catalogGift ?? gift;
+
+    final isMp4 = effectiveGift.svgaAssetUrl != null && effectiveGift.svgaAssetUrl!.toLowerCase().endsWith('.mp4');
+
+    // Video gifts are owned by GiftAnimationOverlay; non-video gifts are owned exclusively by TikTokGiftOverlay
+    if (!isMp4) {
+      return;
     }
 
     _animController.stop();
@@ -143,26 +155,7 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
     _videoController?.dispose();
     _videoController = null;
 
-    // Resolve authoritative catalog record if the passed model is missing the animation asset
-    final catalogGift = GiftModel.findById(gift.id) ?? GiftModel.findById(gift.name);
-    final effectiveGift = catalogGift ?? gift;
-
-    final isMp4 = effectiveGift.svgaAssetUrl != null && effectiveGift.svgaAssetUrl!.toLowerCase().endsWith('.mp4');
-
-    if (isMp4) {
-      _playMp4Gift(effectiveGift, senderName: senderName, quantity: quantity);
-    } else {
-      // ONLY show static overlay if the gift genuinely has NO video animation
-      setState(() {
-        _currentGift = effectiveGift;
-        _giftSenderName = senderName;
-        _giftQuantity = quantity;
-        _isVideoPlaying = false;
-      });
-      _animController.forward(from: 0.0).then((_) {
-        if (mounted) clearAnimation();
-      });
-    }
+    _playMp4Gift(effectiveGift, senderName: senderName, quantity: quantity);
   }
 
   void _playMp4Gift(GiftModel gift, {String senderName = '', int quantity = 1}) async {

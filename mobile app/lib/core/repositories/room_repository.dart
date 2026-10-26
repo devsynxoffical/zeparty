@@ -36,6 +36,7 @@ class RoomRepository {
       'roomType': normType,
       'category': normCat,
       'isPrivate': isPrivate,
+      'forceNew': false,
       if (roomPin != null && roomPin.isNotEmpty) 'roomPin': roomPin,
     };
 
@@ -219,6 +220,21 @@ class RoomRepository {
     return response.data?['data'] as Map<String, dynamic>? ?? {};
   }
 
+  /// Persist room background image / wallpaper (Item 34)
+  Future<Map<String, dynamic>> updateRoomBackground(
+    String roomId,
+    String backgroundImageUrl,
+  ) async {
+    final response = await _apiClient.put(
+      '/v1/rooms/$roomId/background',
+      data: {
+        'backgroundImageUrl': backgroundImageUrl,
+        'background': backgroundImageUrl,
+      },
+    );
+    return response.data?['data'] as Map<String, dynamic>? ?? {};
+  }
+
   /// Fetch list of banned users for room moderation (NEW-054)
   Future<List<Map<String, dynamic>>> getBannedUsers(String roomId) async {
     try {
@@ -250,6 +266,40 @@ class RoomRepository {
       try {
         final fallback = await _apiClient.delete('/v1/rooms/$roomId/banned/$targetUserId');
         return fallback.data?['success'] == true;
+      } catch (_) {
+        return false;
+      }
+    }
+  }
+
+  /// Get joined rooms for user:
+  /// Current user: GET /v1/rooms/joined?page=1&limit=20
+  /// Another user: GET /v1/rooms/user/:userId/joined?page=1&limit=20
+  Future<Map<String, dynamic>> getJoinedRooms({
+    String? userId,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final endpoint = (userId == null || userId.isEmpty || userId == 'me')
+        ? '/v1/rooms/joined'
+        : '/v1/rooms/user/$userId/joined';
+    final response = await _apiClient.get(
+      endpoint,
+      queryParameters: {'page': page, 'limit': limit},
+    );
+    return response.data as Map<String, dynamic>? ?? {};
+  }
+
+  /// Explicit unjoin room:
+  /// POST /v1/rooms/:id/unjoin (fallback DELETE /v1/rooms/:id/join)
+  Future<bool> unjoinRoom(String roomId) async {
+    try {
+      final response = await _apiClient.post('/v1/rooms/$roomId/unjoin');
+      return response.data?['success'] == true || response.statusCode == 200;
+    } catch (_) {
+      try {
+        final fallback = await _apiClient.delete('/v1/rooms/$roomId/join');
+        return fallback.data?['success'] == true || fallback.statusCode == 200;
       } catch (_) {
         return false;
       }

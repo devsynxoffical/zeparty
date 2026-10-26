@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
@@ -8,6 +9,7 @@ import '../models/transaction_model.dart';
 import '../models/recharge_plan_model.dart';
 import '../core/repositories/wallet_repository.dart';
 import '../core/services/api_client.dart';
+import '../core/services/socket_service.dart';
 import '../core/utils/performance_utils.dart';
 
 class WalletProvider extends ChangeNotifier {
@@ -23,10 +25,19 @@ class WalletProvider extends ChangeNotifier {
   String? _activeUserId;
   final Set<String> _processedIdempotencyKeys = {};
 
+  /// Single subscription to wallet:balance_updated socket events (Item 20)
+  StreamSubscription<Map<String, dynamic>>? _walletSocketSub;
+
   bool _isLoadingCoinRecords = false;
   String? _coinRecordsError;
   int _coinRecordsCurrentPage = 1;
   int _coinRecordsTotalPages = 1;
+
+  bool _isTransferring = false;
+  String? _transferError;
+
+  bool get isTransferring => _isTransferring;
+  String? get transferError => _transferError;
 
   WalletModel? get wallet => _wallet;
   int get coins => _wallet?.coinBalance ?? 0;
@@ -52,6 +63,39 @@ class WalletProvider extends ChangeNotifier {
     fetchWallet();
     fetchLedger();
     fetchCoinRecords(refresh: true);
+    _initSocketListener();
+  }
+
+  /// Subscribe once to server-pushed wallet:balance_updated events.
+  /// Applies the inline balance snapshot immediately, then always re-fetches
+  /// the authoritative value from GET /v1/wallet/balance to eliminate stale cache.
+  void _initSocketListener() {
+    _walletSocketSub?.cancel();
+    _walletSocketSub = SocketService.instance.onWalletBalanceUpdated.listen((data) {
+      debugPrint('[WalletProvider] wallet:balance_updated received: $data');
+      // Apply inline snapshot if payload includes balance fields
+      final rawCoin = data['coinBalance'] ?? data['coins'];
+      final rawDiamond = data['diamondBalance'] ?? data['diamonds'];
+      if (rawCoin != null || rawDiamond != null) {
+        final newCoin = rawCoin != null ? (int.tryParse(rawCoin.toString()) ?? _wallet?.coinBalance) : _wallet?.coinBalance;
+        final newDiamond = rawDiamond != null ? (int.tryParse(rawDiamond.toString()) ?? _wallet?.diamondBalance) : _wallet?.diamondBalance;
+        if (_wallet != null) {
+          _wallet = _wallet!.copyWith(
+            coinBalance: newCoin ?? _wallet!.coinBalance,
+            diamondBalance: newDiamond ?? _wallet!.diamondBalance,
+          );
+          notifyListeners();
+        }
+      }
+      // Always fetch authoritative value from backend after any push
+      fetchWallet();
+    });
+  }
+
+  @visibleForTesting
+  void setWalletForTesting(WalletModel wallet) {
+    _wallet = wallet;
+    notifyListeners();
   }
 
   /// Synchronize authoritative wallet state with current authenticated user
@@ -94,6 +138,12 @@ class WalletProvider extends ChangeNotifier {
 
     // Always fetch latest authoritative balance from backend
     fetchWallet();
+  }
+
+  @override
+  void dispose() {
+    _walletSocketSub?.cancel();
+    super.dispose();
   }
 
   /// Clear or isolate cached balance data on account switches / logout
@@ -344,10 +394,67 @@ class WalletProvider extends ChangeNotifier {
     return true;
   }
 
-  bool transferDiamonds(int amount, String receiverId, String receiverType) {
-    if (amount <= 0 || diamonds < amount) return false;
-    fetchWallet();
-    return true;
+  /// Authoritative Diamond Transfer to recipient via POST /v1/wallet/diamonds/transfer
+  Future<bool> executeDiamondTransfer({
+    required String recipientUserId,
+    required int diamondAmount,
+    String? idempotencyKey,
+  }) async {
+    if (_isTransferring) return false;
+    if (diamondAmount < 40000) {
+      _transferError = 'Minimum 40,000 Diamonds required for transfer.';
+      notifyListeners();
+      return false;
+    }
+    if (diamonds < diamondAmount) {
+      _transferError = 'Insufficient Diamonds. You have $diamonds Diamonds.';
+      notifyListeners();
+      return false;
+    }
+
+    _isTransferring = true;
+    _transferError = null;
+    notifyListeners();
+
+    try {
+      final res = await _repository.transferDiamonds(
+        recipientUserId: recipientUserId,
+        diamondAmount: diamondAmount,
+        idempotencyKey: idempotencyKey,
+      );
+
+      if (res['success'] == true) {
+        // Authoritative backend sync after confirmed success
+        await fetchWallet();
+        _isTransferring = false;
+        _transferError = null;
+        notifyListeners();
+        return true;
+      } else {
+        _isTransferring = false;
+        _transferError = res['message']?.toString() ?? 'Diamond transfer failed.';
+        notifyListeners();
+        return false;
+      }
+    } on ApiException catch (e) {
+      _isTransferring = false;
+      _transferError = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _isTransferring = false;
+      _transferError = 'Transfer failed: $e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Compatibility wrapper for diamond transfers
+  Future<bool> transferDiamonds(int amount, String receiverId, [String? receiverType]) async {
+    return executeDiamondTransfer(
+      recipientUserId: receiverId,
+      diamondAmount: amount,
+    );
   }
 
   /// Prohibited per Item 21: Diamonds are for display within ZeParty only.

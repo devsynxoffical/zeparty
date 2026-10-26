@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+export 'package:agora_rtc_engine/agora_rtc_engine.dart'
+    show AudioMixingStateType, AudioMixingReasonType;
+
 class AgoraRtcService {
   static final AgoraRtcService instance = AgoraRtcService._internal();
   factory AgoraRtcService() => instance;
@@ -18,11 +21,13 @@ class AgoraRtcService {
   final _activeSpeakerController = StreamController<int>.broadcast();
   final _remoteUsersController = StreamController<Set<int>>.broadcast();
   final _firstRemoteVideoFrameController = StreamController<int>.broadcast();
+  final _audioMixingStateController = StreamController<AudioMixingStateChange>.broadcast();
   final Set<int> _remoteUids = <int>{};
 
   Stream<int> get activeSpeakerStream => _activeSpeakerController.stream;
   Stream<Set<int>> get remoteUsersStream => _remoteUsersController.stream;
   Stream<int> get firstRemoteVideoFrameStream => _firstRemoteVideoFrameController.stream;
+  Stream<AudioMixingStateChange> get audioMixingStateStream => _audioMixingStateController.stream;
   Set<int> get remoteUids => Set.unmodifiable(_remoteUids);
 
   RtcEngineEx? get engine => _engine;
@@ -30,6 +35,16 @@ class AgoraRtcService {
   bool get isVideoEnabled => _isVideoEnabled;
   int? get currentUid => _currentUid;
   String? get currentChannel => _currentChannel;
+  bool? _lastBroadcasterRole;
+  bool? _lastMutedAudio;
+  bool? get lastBroadcasterRole => _lastBroadcasterRole;
+  bool? get lastMutedAudio => _lastMutedAudio;
+
+  @visibleForTesting
+  void resetForTesting() {
+    _lastBroadcasterRole = null;
+    _lastMutedAudio = null;
+  }
 
   Future<void> initialize({String? appId, bool enableVideo = true}) async {
     final targetAppId = (appId != null && appId.isNotEmpty) ? appId : _currentAppId;
@@ -81,6 +96,10 @@ class AgoraRtcService {
           },
           onError: (ErrorCodeType err, String msg) {
             debugPrint('[AgoraRtcService] Agora Engine Error: $err, $msg');
+          },
+          onAudioMixingStateChanged: (AudioMixingStateType state, AudioMixingReasonType reason) {
+            debugPrint('[AgoraRtcService] onAudioMixingStateChanged: state=$state, reason=$reason');
+            _handleAudioMixingStateChanged(state, reason);
           },
         ),
       );
@@ -202,6 +221,7 @@ class AgoraRtcService {
   }
 
   Future<void> switchRole({required bool isHost, bool isVideo = false}) async {
+    _lastBroadcasterRole = isHost;
     try {
       await _engine?.setClientRole(
         role: isHost ? ClientRoleType.clientRoleBroadcaster : ClientRoleType.clientRoleAudience,
@@ -223,6 +243,8 @@ class AgoraRtcService {
   }
 
   Future<void> leaveChannel() async {
+    _lastBroadcasterRole = false;
+    _lastMutedAudio = true;
     try {
       _remoteUids.clear();
       _remoteUsersController.add(Set.from(_remoteUids));
@@ -243,6 +265,7 @@ class AgoraRtcService {
   }
 
   Future<void> muteLocalAudio(bool muted) async {
+    _lastMutedAudio = muted;
     try {
       await _engine?.muteLocalAudioStream(muted);
     } catch (_) {}
@@ -328,6 +351,49 @@ class AgoraRtcService {
     } catch (e) {
       debugPrint('[AgoraRtcService] setAudioMixingVolume error: $e');
     }
+  }
+
+  Future<int> getAudioMixingDuration() async {
+    try {
+      return await _engine?.getAudioMixingDuration() ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<int> getAudioMixingCurrentPosition() async {
+    try {
+      return await _engine?.getAudioMixingCurrentPosition() ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  Future<void> setAudioMixingPosition(int pos) async {
+    try {
+      await _engine?.setAudioMixingPosition(pos);
+    } catch (_) {}
+  }
+
+  void _handleAudioMixingStateChanged(AudioMixingStateType state, AudioMixingReasonType reason) {
+    if (state == AudioMixingStateType.audioMixingStatePlaying) {
+      _isAudioMixing = true;
+      _isAudioMixingPaused = false;
+    } else if (state == AudioMixingStateType.audioMixingStatePaused) {
+      _isAudioMixingPaused = true;
+    } else if (state == AudioMixingStateType.audioMixingStateStopped) {
+      _isAudioMixing = false;
+      _isAudioMixingPaused = false;
+    } else if (state == AudioMixingStateType.audioMixingStateFailed) {
+      _isAudioMixing = false;
+      _isAudioMixingPaused = false;
+    }
+    _audioMixingStateController.add(AudioMixingStateChange(state: state, reason: reason));
+  }
+
+  @visibleForTesting
+  void emitAudioMixingStateForTesting(AudioMixingStateType state, AudioMixingReasonType reason) {
+    _handleAudioMixingStateChanged(state, reason);
   }
 
   Widget buildLocalVideoView() {
@@ -431,4 +497,11 @@ class AgoraRtcService {
     _currentUid = null;
   }
 }
+
+class AudioMixingStateChange {
+  final AudioMixingStateType state;
+  final AudioMixingReasonType reason;
+  const AudioMixingStateChange({required this.state, required this.reason});
+}
+
 

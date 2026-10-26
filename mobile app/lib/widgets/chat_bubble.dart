@@ -8,6 +8,7 @@ import '../models/message_model.dart';
 import '../core/utils/formatters.dart';
 import '../features/social/short_videos_screen.dart';
 import '../providers/backpack_provider.dart';
+import '../models/gift_model.dart';
 
 class ChatBubble extends StatefulWidget {
   final MessageModel message;
@@ -333,52 +334,93 @@ class _ChatBubbleState extends State<ChatBubble> {
                 ),
               ],
             ] else if (isGift) ...[
-              // ─── Gift Bubble ───
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      widget.message.mediaUrl ?? '🎁',
-                      style: const TextStyle(fontSize: 24),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              // ─── Gift Bubble (Item #40: Real gift artwork and structured details) ───
+              Builder(
+                builder: (context) {
+                  final media = widget.message.mediaUrl;
+                  GiftModel? matchedGift = GiftModel.findById(media) ??
+                      GiftModel.findById(widget.message.text.replaceAll('🎁', '').replaceAll('Sent', '').replaceAll('!', '').trim());
+
+                  final resolvedIcon = matchedGift?.icon ?? media;
+                  final giftCoinPrice = matchedGift?.priceCoins;
+
+                  Widget artworkWidget;
+                  if (resolvedIcon != null && (resolvedIcon.startsWith('http://') || resolvedIcon.startsWith('https://'))) {
+                    artworkWidget = Image.network(
+                      resolvedIcon,
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Text('🎁', style: TextStyle(fontSize: 28)),
+                    );
+                  } else if (resolvedIcon != null && (resolvedIcon.startsWith('assets/') || resolvedIcon.contains('/'))) {
+                    artworkWidget = Image.asset(
+                      resolvedIcon,
+                      width: 44,
+                      height: 44,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => const Text('🎁', style: TextStyle(fontSize: 28)),
+                    );
+                  } else {
+                    artworkWidget = const Text('🎁', style: TextStyle(fontSize: 28));
+                  }
+
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        widget.message.text,
-                        style: TextStyle(
-                          color: isDark ? Colors.amberAccent : Colors.deepPurple,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        width: 52,
+                        height: 52,
+                        padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
-                          color: Colors.purpleAccent.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(8),
+                          color: Colors.purple.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.6), width: 1.5),
                         ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.diamond_rounded, size: 10, color: Colors.cyanAccent),
-                            SizedBox(width: 3),
-                            Text('Special Gift Sent', style: TextStyle(color: Colors.purpleAccent, fontSize: 10, fontWeight: FontWeight.bold)),
-                          ],
-                        ),
+                        child: Center(child: artworkWidget),
+                      ),
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            matchedGift != null ? '🎁 Sent ${matchedGift.name}' : widget.message.text,
+                            style: TextStyle(
+                              color: isDark ? Colors.amberAccent : Colors.deepPurple,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.purpleAccent.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.monetization_on_rounded, size: 12, color: Colors.amber),
+                                const SizedBox(width: 4),
+                                Text(
+                                  giftCoinPrice != null && giftCoinPrice > 0
+                                      ? '$giftCoinPrice Coins'
+                                      : 'Gift Sent',
+                                  style: const TextStyle(
+                                    color: Colors.purpleAccent,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
                     ],
-                  ),
-                ],
+                  );
+                },
               ),
             ] else if (isVoice) ...[
               // ─── Playable Voice Note Bubble ───
