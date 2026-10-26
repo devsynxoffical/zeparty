@@ -881,17 +881,25 @@ export async function findProfileVisitors(visitedId, { page = 1, limit = 50, vie
   const blockedIds = blocks.map(b => (b.blockerId === target.id ? b.blockedId : b.blockerId));
 
   const isOwner = Boolean(viewerUserId && (viewerUserId === target.id || viewerUserId === target.username));
+  if (!isOwner) {
+    return {
+      data: [],
+      visitors: [],
+      pagination: {
+        page: Math.max(1, Number(page) || 1),
+        limit: Math.min(100, Math.max(1, Number(limit) || 50)),
+        total: 0,
+        totalPages: 0,
+        hasMore: false,
+      },
+    };
+  }
 
   const where = {
     visitedId: target.id,
     visitor: { status: { not: 'DELETED' } },
     ...(blockedIds.length > 0 ? { visitorId: { notIn: blockedIds } } : {}),
   };
-
-  // If third party is viewing, exclude invisible / mystery visits
-  if (!isOwner) {
-    where.isMystery = false;
-  }
 
   const pageNum = Math.max(1, Number(page) || 1);
   const limitNum = Math.min(100, Math.max(1, Number(limit) || 50));
@@ -989,6 +997,21 @@ export async function findProfileVisited(visitorId, { page = 1, limit = 50, view
     },
   });
   const blockedIds = blocks.map(b => (b.blockerId === target.id ? b.blockedId : b.blockerId));
+
+  const isOwner = Boolean(viewerUserId && (viewerUserId === target.id || viewerUserId === target.username));
+  if (!isOwner) {
+    return {
+      data: [],
+      visited: [],
+      pagination: {
+        page: Math.max(1, Number(page) || 1),
+        limit: Math.min(100, Math.max(1, Number(limit) || 50)),
+        total: 0,
+        totalPages: 0,
+        hasMore: false,
+      },
+    };
+  }
 
   const where = {
     visitorId: target.id,

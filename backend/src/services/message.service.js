@@ -46,18 +46,22 @@ export async function sendDirectMessage(senderId, targetUserId, { content, type 
     throw error;
   }
 
+  const trimmedContent = content.trim();
+  const isGift = type === 'gift' || trimmedContent.includes('🎁');
+  const effectiveType = isGift ? 'gift' : (type || 'text');
+
   const message = await messageRepository.createMessage({
     senderId: resolvedSenderId,
     recipientId: resolvedTargetId,
-    content: content.trim(),
-    type: type || 'text',
+    content: trimmedContent,
+    type: effectiveType,
     mediaUrl: mediaUrl || null,
     durationSeconds: durationSeconds ? parseInt(durationSeconds, 10) : null,
   });
 
   const payload = {
     ...message,
-    type: type || message.type || 'text',
+    type: effectiveType,
     mediaUrl: message.mediaUrl || mediaUrl || null,
     durationSeconds: message.durationSeconds || durationSeconds || null,
     isMediaDeleted: false,

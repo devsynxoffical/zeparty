@@ -2,35 +2,36 @@ import leaderboardService from '../services/leaderboard.service.js';
 
 export async function getRankings(req, res, next) {
   try {
+    const viewerUserId = req.auth?.userId || null;
     const { category = 'wealth', period = 'daily', limit = 30 } = req.query;
     let data = [];
 
     switch ((category || '').toLowerCase()) {
       case 'room':
-        data = await leaderboardService.getRoomRankings({ period, limit });
+        data = await leaderboardService.getRoomRankings({ period, limit, viewerUserId });
         break;
       case 'charm':
-        data = await leaderboardService.getCharmRankings({ period, limit });
+        data = await leaderboardService.getCharmRankings({ period, limit, viewerUserId });
         break;
       case 'cp':
       case 'couple':
-        data = await leaderboardService.getCpRankings({ period, limit });
+        data = await leaderboardService.getCpRankings({ period, limit, viewerUserId });
         break;
       case 'svip':
       case 'vip':
-        data = await leaderboardService.getSvipRankings({ limit });
+        data = await leaderboardService.getSvipRankings({ limit, viewerUserId });
         break;
       case 'aristocratic':
       case 'aristocracy':
       case 'noble':
-        data = await leaderboardService.getAristocraticRankings({ limit });
+        data = await leaderboardService.getAristocraticRankings({ limit, viewerUserId });
         break;
       case 'lucky':
-        data = await leaderboardService.getLuckyRankings({ period, limit });
+        data = await leaderboardService.getLuckyRankings({ period, limit, viewerUserId });
         break;
       case 'wealth':
       default:
-        data = await leaderboardService.getWealthRankings({ period, limit });
+        data = await leaderboardService.getWealthRankings({ period, limit, viewerUserId });
         break;
     }
 

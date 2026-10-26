@@ -1,5 +1,6 @@
 import prisma from '../config/database.js';
 import userRepository from '../repositories/user.repository.js';
+import userAssetRepository from '../repositories/userAsset.repository.js';
 import { resolveEffectiveCountryCode } from '../utils/geo.util.js';
 import { hashPassword } from '../utils/crypto.util.js';
 import { sanitizeFinancial } from '../utils/bigint.util.js';
@@ -235,8 +236,8 @@ export async function getSelfProfile(userId, db = prisma) {
     };
   }
 
-  const isHost = user.userType === 'HOST' || (user.hostProfile && user.hostProfile.hostStatus === 'ACTIVE');
-  const hostAppStatus = (user.hostProfile && user.hostProfile.hostStatus === 'ACTIVE')
+  const isHost = Boolean(user.hostProfile && user.hostProfile.hostStatus === 'ACTIVE');
+  const hostAppStatus = isHost
     ? 'approved'
     : (user.hostProfile?.hostStatus?.toLowerCase() || 'none');
 
@@ -245,7 +246,7 @@ export async function getSelfProfile(userId, db = prisma) {
   }
 
   // Parse equipped items from database
-  let avatarFrame = '';
+  let avatarFrame = null;
   let equippedBubble = '';
   let equippedRide = '';
   let equippedTheme = '';
@@ -270,11 +271,8 @@ export async function getSelfProfile(userId, db = prisma) {
     }
   }
 
-  // Default fallback frame for hosts/nobles if no custom frame is equipped
-  if (!avatarFrame) {
-    if (isHost) avatarFrame = 'assets/roles/host_frame.webp';
-    else if (user.profile?.nobleRank) avatarFrame = `assets/nobles/${user.profile.nobleRank.toLowerCase()}_frame.webp`;
-  }
+  // BUG #43 FIX: Never substitute role, host, or noble fallback frame.
+  // An avatar frame is ONLY returned if explicitly equipped in userAssets; otherwise null.
 
   const presence = await presenceService.getUserPresence(userId, db);
 
@@ -326,8 +324,10 @@ export async function getSelfProfile(userId, db = prisma) {
   const diamondBalanceNum = user.wallet?.diamondBalance != null ? Number(user.wallet.diamondBalance) : 0;
 
   // Authoritative Coins Seller & Portal evaluation
+  // BUG #41 FIX: Coins Seller capabilities are derived STRICTLY from an active CoinSeller portal record.
+  // Stale userType claims or revoked portals immediately revoke seller capabilities across effective permissions.
   const hasActiveSellerPortal = Boolean(user.coinSeller && user.coinSeller.sellerStatus === 'ACTIVE');
-  const isSeller = hasActiveSellerPortal || user.userType === 'COIN_SELLER';
+  const isSeller = hasActiveSellerPortal;
   const isCoinsSeller = isSeller;
   const hasSellerPortal = hasActiveSellerPortal;
   const sellerStatus = user.coinSeller ? user.coinSeller.sellerStatus : null;
@@ -346,8 +346,7 @@ export async function getSelfProfile(userId, db = prisma) {
   }
   if (user.merchant && user.merchant.status === 'ACTIVE') userRoles.push('MERCHANT');
   if (user.ownedAgencies && user.ownedAgencies.length > 0) userRoles.push('AGENCY_OWNER');
-  if (user.managedBDCenters && user.managedBDCenters.length > 0) userRoles.push('BD_AGENT');
-  if (user.userType && !userRoles.includes(user.userType)) userRoles.push(user.userType);
+  if (user.userType && user.userType !== 'COIN_SELLER' && user.userType !== 'HOST' && !userRoles.includes(user.userType)) userRoles.push(user.userType);
   const roles = Array.from(new Set(userRoles));
 
   const coinSellerData = user.coinSeller ? {
@@ -377,8 +376,8 @@ export async function getSelfProfile(userId, db = prisma) {
     publicId,
     zePartyId: publicId,
     profile: profileWithPresence ? sanitizeFinancial(profileWithPresence) : profileWithPresence,
-    avatarFrame,
-    equippedFrame: avatarFrame,
+    avatarFrame: avatarFrame || null,
+    equippedFrame: avatarFrame || null,
     equippedBubble,
     equippedRide,
     equippedTheme,
@@ -490,7 +489,7 @@ export async function getPublicProfile(userId, db = prisma) {
     };
   }
 
-  let avatarFrame = '';
+  let avatarFrame = null;
   let equippedBubble = '';
   let equippedRide = '';
   let equippedTheme = '';
@@ -515,13 +514,11 @@ export async function getPublicProfile(userId, db = prisma) {
     }
   }
 
-  if (!avatarFrame) {
-    if (publicUser.userType === 'HOST') avatarFrame = 'assets/roles/host_frame.webp';
-    else if (publicUser.profile?.nobleRank) avatarFrame = `assets/nobles/${publicUser.profile.nobleRank.toLowerCase()}_frame.webp`;
-  }
+  // BUG #43 FIX: Never substitute role, host, or noble fallback frame.
+  // An avatar frame is ONLY returned if explicitly equipped in userAssets; otherwise null.
 
-  const isHost = publicUser.userType === 'HOST' || (publicUser.hostProfile && publicUser.hostProfile.hostStatus === 'ACTIVE');
-  const hostAppStatus = (publicUser.hostProfile && publicUser.hostProfile.hostStatus === 'ACTIVE')
+  const isHost = Boolean(publicUser.hostProfile && publicUser.hostProfile.hostStatus === 'ACTIVE');
+  const hostAppStatus = isHost
     ? 'approved'
     : (publicUser.hostProfile?.hostStatus?.toLowerCase() || 'none');
 
@@ -579,8 +576,8 @@ export async function getPublicProfile(userId, db = prisma) {
     publicId,
     zePartyId: publicId,
     profile: profileWithPresence,
-    avatarFrame,
-    equippedFrame: avatarFrame,
+    avatarFrame: avatarFrame || null,
+    equippedFrame: avatarFrame || null,
     equippedBubble,
     equippedRide,
     equippedTheme,
@@ -1263,8 +1260,38 @@ export async function revokeUniqueItemFromUser(
   return { success: true, userId, itemType: normalizedType, itemId };
 }
 
-export async function searchUsers(query, options = {}) {
-  return await userRepository.searchUsers(query, options);
+export async function searchUsers(query, options = {}, db = prisma) {
+  const users = await userRepository.searchUsers(query, options, db);
+  const viewerUserId = options.viewerUserId || options.currentUserId || options.excludeUserId || null;
+
+  // Filter out users who have FAILED_TO_FIND enabled and are eligible
+  const filteredUsers = [];
+  for (const user of users) {
+    if (viewerUserId && viewerUserId === user.id) {
+      filteredUsers.push(user);
+      continue;
+    }
+
+    try {
+      const prefs = await privacyEligibilityService.getUserPreferences(user.id, db);
+      if (prefs.FAILED_TO_FIND) {
+        const eligibility = await privacyEligibilityService.checkUserEligibility(user.id, 'FAILED_TO_FIND', db);
+        if (eligibility.isEligible) {
+          // Excluded from third-party search
+          continue;
+        }
+      }
+
+      // Check gender privacy
+      if (prefs.GENDER_PRIVACY) {
+        user.gender = null;
+      }
+    } catch (_) {}
+
+    filteredUsers.push(user);
+  }
+
+  return filteredUsers;
 }
 
 /**
@@ -1318,52 +1345,146 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
 
   const presence = await presenceService.getUserPresence(targetUserId, db);
 
+  // BUG #43 FIX: Authoritative cosmetic frame resolution for room half profile.
+  // Returns explicit frame ONLY if validly equipped; otherwise returns null (no decorative fallback).
+  let equippedFrame = null;
+  try {
+    const frameAssetRecord = await userAssetRepository.findEquippedAssetByType(targetUserId, 'FRAME', db);
+    if (frameAssetRecord && !frameAssetRecord.isExpired && new Date(frameAssetRecord.expiresAt) > new Date()) {
+      equippedFrame = frameAssetRecord.asset?.thumbnailUrl || frameAssetRecord.asset?.staticFileUrl || frameAssetRecord.asset?.animationFileUrl || frameAssetRecord.asset?.name || null;
+    }
+  } catch (_) {}
+
+  const isOwner = Boolean(viewerUserId && (viewerUserId === targetUserId || viewerUserId === user.username));
+
+  let targetPreferences = {};
+  try {
+    targetPreferences = await privacyEligibilityService.getUserPreferences(targetUserId, db);
+  } catch (_) {}
+
+  let effectiveSvipLevel = user.profile?.svipLevel || 0;
+  let effectiveWealthLevel = user.profile?.level || 1;
+  let effectiveWealthXp = Number(user.profile?.experiencePoints || 0n);
+  let effectiveCharm = Math.max(1, Math.floor(Number(user.profile?.totalEarnedDiamonds || 0n) / 10000) + 1);
+  let effectiveCharmXp = Number(user.profile?.totalEarnedDiamonds || 0n);
+
+  let effectivePresence = presence;
+  let effectiveIsOnline = Boolean(presence.isOnline);
+  let effectiveIsInRoom = Boolean(presence.isInRoom);
+  let effectiveRoomId = presence.currentRoomId || null;
+  let effectiveCurrentRoomTitle = presence.currentRoomTitle || null;
+  let effectiveCurrentRoomSessionId = presence.currentRoomSessionId || null;
+  let effectiveCurrentRoom = presence.currentRoom || null;
+  let effectivePresenceStatus = presence.presenceStatus;
+  let effectiveLastSeenAt = presence.lastSeenAt;
+
+  if (!isOwner) {
+    // 1. Hide Online Status
+    if (targetPreferences.HIDE_ONLINE) {
+      try {
+        const el = await privacyEligibilityService.checkUserEligibility(targetUserId, 'HIDE_ONLINE', db);
+        if (el.isEligible) {
+          effectiveIsOnline = false;
+          effectiveIsInRoom = false;
+          effectiveRoomId = null;
+          effectiveCurrentRoomTitle = null;
+          effectiveCurrentRoomSessionId = null;
+          effectiveCurrentRoom = null;
+          effectivePresenceStatus = 'OFFLINE';
+          effectiveLastSeenAt = null;
+          effectivePresence = {
+            userId: targetUserId,
+            presenceStatus: 'OFFLINE',
+            isOnline: false,
+            online: false,
+            isInRoom: false,
+            currentRoomId: null,
+            currentRoomTitle: null,
+            currentRoomSessionId: null,
+            currentRoom: null,
+            inRoomAvailable: false,
+            lastSeenAt: null,
+            lastActiveAt: null,
+            lastSeen: null,
+          };
+        }
+      } catch (_) {}
+    }
+
+    // 2. Hide SVIP Identity
+    if (targetPreferences.SVIP_HIDDEN) {
+      try {
+        const el = await privacyEligibilityService.checkUserEligibility(targetUserId, 'SVIP_HIDDEN', db);
+        if (el.isEligible) {
+          effectiveSvipLevel = 0;
+        }
+      } catch (_) {}
+    }
+
+    // 3. Hide Wealth Level
+    if (targetPreferences.HIDE_WEALTH) {
+      try {
+        const el = await privacyEligibilityService.checkUserEligibility(targetUserId, 'HIDE_WEALTH', db);
+        if (el.isEligible) {
+          effectiveWealthLevel = 1;
+          effectiveWealthXp = 0;
+          effectiveCharm = 1;
+          effectiveCharmXp = 0;
+        }
+      } catch (_) {}
+    }
+  }
+
   return {
     user: {
       id: user.id,
       username: user.username,
       displayName: user.profile?.displayName || user.username,
       avatarUrl: user.avatarUrl,
+      avatarFrame: equippedFrame,
+      equippedFrame: equippedFrame,
       country: user.countryCode || 'GLOBAL',
       vipLevel: user.profile?.vipLevel || 0,
-      svipLevel: user.profile?.svipLevel || 0,
+      svipLevel: effectiveSvipLevel,
       nobleRank: user.profile?.nobleRank || 'NONE',
-      presenceStatus: presence.presenceStatus,
-      currentRoomId: presence.currentRoomId,
-      currentRoomTitle: presence.currentRoomTitle,
-      inRoomAvailable: Boolean(presence.inRoomAvailable),
-      isOnline: Boolean(presence.isOnline),
-      online: Boolean(presence.isOnline),
-      isInRoom: Boolean(presence.isInRoom),
-      lastSeenAt: presence.lastSeenAt,
-      lastActiveAt: presence.lastActiveAt || presence.lastSeenAt,
-      lastSeen: presence.lastSeen || presence.lastSeenAt,
-      isLive: Boolean(presence.isInRoom),
-      liveRoomId: presence.currentRoomId || null,
-      roomId: presence.currentRoomId || null,
+      presenceStatus: effectivePresenceStatus,
+      currentRoomId: effectiveRoomId,
+      currentRoomTitle: effectiveCurrentRoomTitle,
+      inRoomAvailable: Boolean(effectivePresence.inRoomAvailable),
+      isOnline: effectiveIsOnline,
+      online: effectiveIsOnline,
+      isInRoom: effectiveIsInRoom,
+      lastSeenAt: effectiveLastSeenAt,
+      lastActiveAt: effectivePresence.lastActiveAt || effectiveLastSeenAt,
+      lastSeen: effectivePresence.lastSeen || effectiveLastSeenAt,
+      isLive: effectiveIsInRoom,
+      liveRoomId: effectiveRoomId,
+      roomId: effectiveRoomId,
     },
-    presenceStatus: presence.presenceStatus,
-    currentRoomId: presence.currentRoomId,
-    currentRoomTitle: presence.currentRoomTitle,
-    currentRoomSessionId: presence.currentRoomSessionId,
-    inRoomAvailable: Boolean(presence.inRoomAvailable),
-    isOnline: Boolean(presence.isOnline),
-    online: Boolean(presence.isOnline),
-    isInRoom: Boolean(presence.isInRoom),
-    lastSeenAt: presence.lastSeenAt,
-    lastActiveAt: presence.lastActiveAt || presence.lastSeenAt,
-    lastSeen: presence.lastSeen || presence.lastSeenAt,
-    isLive: Boolean(presence.isInRoom),
-    liveRoomId: presence.currentRoomId || null,
-    roomId: presence.currentRoomId || null,
-    presence,
+    avatarFrame: equippedFrame,
+    equippedFrame: equippedFrame,
+    presenceStatus: effectivePresenceStatus,
+    currentRoomId: effectiveRoomId,
+    currentRoomTitle: effectiveCurrentRoomTitle,
+    currentRoomSessionId: effectiveCurrentRoomSessionId,
+    inRoomAvailable: Boolean(effectivePresence.inRoomAvailable),
+    isOnline: effectiveIsOnline,
+    online: effectiveIsOnline,
+    isInRoom: effectiveIsInRoom,
+    lastSeenAt: effectiveLastSeenAt,
+    lastActiveAt: effectivePresence.lastActiveAt || effectiveLastSeenAt,
+    lastSeen: effectivePresence.lastSeen || effectiveLastSeenAt,
+    isLive: effectiveIsInRoom,
+    liveRoomId: effectiveRoomId,
+    roomId: effectiveRoomId,
+    presence: effectivePresence,
     levels: {
-      wealth: user.profile?.level || 1,
-      wealthXp: Number(user.profile?.experiencePoints || 0n),
-      charm: Math.max(1, Math.floor(Number(user.profile?.totalEarnedDiamonds || 0n) / 10000) + 1),
-      charmXp: Number(user.profile?.totalEarnedDiamonds || 0n),
+      wealth: effectiveWealthLevel,
+      wealthXp: effectiveWealthXp,
+      charm: effectiveCharm,
+      charmXp: effectiveCharmXp,
       game: 1,
-      overall: user.profile?.level || 1,
+      overall: effectiveWealthLevel,
     },
     achievements: {
       giftWallCount: 0,
@@ -1385,16 +1506,41 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
 /**
  * Module 25: User Level Strip (SVIP -> Wealth -> Charm -> Game)
  */
-export async function getUserLevelStrip(userId, db = prisma) {
+export async function getUserLevelStrip(userId, viewerUserId = null, db = prisma) {
   const user = await db.user.findUnique({
     where: { id: userId },
     include: { profile: true },
   });
 
-  const wealthLvl = user?.profile?.level || 1;
-  const wealthXp = Number(user?.profile?.experiencePoints || 0n);
-  const charmLvl = Math.max(1, Math.floor(Number(user?.profile?.totalEarnedDiamonds || 0n) / 10000) + 1);
-  const svipLvl = user?.profile?.svipLevel || 0;
+  const isOwner = Boolean(viewerUserId && (viewerUserId === userId || viewerUserId === user?.username));
+  let targetPreferences = {};
+  try {
+    targetPreferences = await privacyEligibilityService.getUserPreferences(userId, db);
+  } catch (_) {}
+
+  let wealthLvl = user?.profile?.level || 1;
+  let wealthXp = Number(user?.profile?.experiencePoints || 0n);
+  let charmLvl = Math.max(1, Math.floor(Number(user?.profile?.totalEarnedDiamonds || 0n) / 10000) + 1);
+  let svipLvl = user?.profile?.svipLevel || 0;
+
+  if (!isOwner) {
+    if (targetPreferences.SVIP_HIDDEN) {
+      try {
+        const el = await privacyEligibilityService.checkUserEligibility(userId, 'SVIP_HIDDEN', db);
+        if (el.isEligible) svipLvl = 0;
+      } catch (_) {}
+    }
+    if (targetPreferences.HIDE_WEALTH) {
+      try {
+        const el = await privacyEligibilityService.checkUserEligibility(userId, 'HIDE_WEALTH', db);
+        if (el.isEligible) {
+          wealthLvl = 1;
+          wealthXp = 0;
+          charmLvl = 1;
+        }
+      } catch (_) {}
+    }
+  }
 
   return {
     userId,
@@ -1454,26 +1600,78 @@ export async function editOwnProfile(userId, { nickname, personalNote, gender, b
  * Module 28: Tier-Based Privacy Settings Unlocks
  */
 export async function getUserPrivacySettings(userId, db = prisma) {
-  const [userProfile, userPreferences, antiFollowEligibility, failedToFindEligibility] = await Promise.all([
+  if (!userId) {
+    const error = new Error('User authentication is required');
+    error.statusCode = 401;
+    error.code = 'UNAUTHORIZED';
+    throw error;
+  }
+
+  const [
+    userProfile,
+    userPreferences,
+    antiFollowEligibility,
+    failedToFindEligibility,
+    invisibleVisitEligibility,
+    hideOnlineEligibility,
+    hideGiftRecordEligibility,
+    rankInvisibleEligibility,
+    roomInvisibleEligibility,
+    svipHiddenEligibility,
+    mysteryEligibility,
+    hideWealthEligibility,
+  ] = await Promise.all([
     db.userProfile.findUnique({ where: { userId } }),
     privacyEligibilityService.getUserPreferences(userId, db),
     privacyEligibilityService.checkUserEligibility(userId, 'ANTI_FOLLOW', db),
     privacyEligibilityService.checkUserEligibility(userId, 'FAILED_TO_FIND', db),
+    privacyEligibilityService.checkUserEligibility(userId, 'INVISIBLE_VISIT', db),
+    privacyEligibilityService.checkUserEligibility(userId, 'HIDE_ONLINE', db),
+    privacyEligibilityService.checkUserEligibility(userId, 'HIDE_GIFT_RECORD', db),
+    privacyEligibilityService.checkUserEligibility(userId, 'RANK_INVISIBLE', db),
+    privacyEligibilityService.checkUserEligibility(userId, 'ROOM_INVISIBLE', db),
+    privacyEligibilityService.checkUserEligibility(userId, 'SVIP_HIDDEN', db),
+    privacyEligibilityService.checkUserEligibility(userId, 'MYSTERY', db),
+    privacyEligibilityService.checkUserEligibility(userId, 'HIDE_WEALTH', db),
   ]);
 
-  const svipLevel = Number(userProfile?.svipLevel || 0);
+  const isProfilePrivate = Boolean(userProfile?.isPrivate);
+  const viewListsEnabled = userPreferences.VIEW_LISTS !== undefined
+    ? Boolean(userPreferences.VIEW_LISTS)
+    : !isProfilePrivate;
+  const hideFollowListEnabled = userPreferences.HIDE_FOLLOW_LIST !== undefined
+    ? Boolean(userPreferences.HIDE_FOLLOW_LIST)
+    : isProfilePrivate;
 
   return {
     userId,
+    isPrivate: isProfilePrivate,
+    viewLists: viewListsEnabled,
+    hideFollowList: hideFollowListEnabled,
+    hideOnline: Boolean(userPreferences.HIDE_ONLINE),
+    blockStrangersDm: Boolean(userPreferences.BLOCK_STRANGERS_DM),
+    genderPrivacy: Boolean(userPreferences.GENDER_PRIVACY),
+    antiFollow: Boolean(userPreferences.ANTI_FOLLOW),
+    failedToFind: Boolean(userPreferences.FAILED_TO_FIND),
+    stealthEntry: Boolean(userPreferences.ROOM_INVISIBLE),
+    anonymousGifting: Boolean(userPreferences.HIDE_GIFT_RECORD),
+    rankInvisible: Boolean(userPreferences.RANK_INVISIBLE),
+    roomInvisible: Boolean(userPreferences.ROOM_INVISIBLE),
+    svipHidden: Boolean(userPreferences.SVIP_HIDDEN),
+    invisibleVisit: Boolean(userPreferences.INVISIBLE_VISIT),
+    mystery: Boolean(userPreferences.MYSTERY),
+    hideWealth: Boolean(userPreferences.HIDE_WEALTH),
+    preferences: userPreferences,
     items: [
-      { key: 'GENDER_PRIVACY', label: 'Gender Privacy', requiredTier: 'Standard', isLocked: false, isEnabled: userPreferences.GENDER_PRIVACY !== false },
-      { key: 'VIEW_LISTS', label: 'View Lists Related to Me', requiredTier: 'Standard', isLocked: false, isEnabled: userPreferences.VIEW_LISTS !== false },
-      { key: 'INVISIBLE_VISIT', label: 'Invisible Profile Visit', requiredTier: 'SVIP 9', isLocked: svipLevel < 9, isEnabled: svipLevel >= 9 && Boolean(userPreferences.INVISIBLE_VISIT) },
-      { key: 'HIDE_ONLINE', label: 'Hide Online Status', requiredTier: 'SVIP 10', isLocked: svipLevel < 10, isEnabled: svipLevel >= 10 && Boolean(userPreferences.HIDE_ONLINE) },
-      { key: 'HIDE_GIFT_RECORD', label: 'Hide Gift Record', requiredTier: 'SVIP 10', isLocked: svipLevel < 10, isEnabled: svipLevel >= 10 && Boolean(userPreferences.HIDE_GIFT_RECORD) },
-      { key: 'RANK_INVISIBLE', label: 'Rank Invisible', requiredTier: 'SVIP 11', isLocked: svipLevel < 11, isEnabled: svipLevel >= 11 && Boolean(userPreferences.RANK_INVISIBLE) },
-      { key: 'ROOM_INVISIBLE', label: 'Room Invisible', requiredTier: 'SVIP 12', isLocked: svipLevel < 12, isEnabled: svipLevel >= 12 && Boolean(userPreferences.ROOM_INVISIBLE) },
-      { key: 'SVIP_HIDDEN', label: 'SVIP Identity Hidden', requiredTier: 'SVIP 13', isLocked: svipLevel < 13, isEnabled: svipLevel >= 13 && Boolean(userPreferences.SVIP_HIDDEN) },
+      { key: 'GENDER_PRIVACY', label: 'Gender Privacy', requiredTier: 'Standard', isLocked: false, isEnabled: Boolean(userPreferences.GENDER_PRIVACY) },
+      { key: 'VIEW_LISTS', label: 'View Lists Related to Me', requiredTier: 'Standard', isLocked: false, isEnabled: viewListsEnabled },
+      { key: 'HIDE_FOLLOW_LIST', label: 'Private Followers & Following', requiredTier: 'Standard', isLocked: false, isEnabled: hideFollowListEnabled },
+      { key: 'INVISIBLE_VISIT', label: 'Invisible Profile Visit', requiredTier: 'SVIP 9 / Configurable', isLocked: !invisibleVisitEligibility.isEligible, isEnabled: invisibleVisitEligibility.isEligible && Boolean(userPreferences.INVISIBLE_VISIT), eligibilityReason: invisibleVisitEligibility.reason },
+      { key: 'HIDE_ONLINE', label: 'Hide Online Status', requiredTier: 'SVIP 5+ / Viscount / Configurable', isLocked: !hideOnlineEligibility.isEligible, isEnabled: hideOnlineEligibility.isEligible && Boolean(userPreferences.HIDE_ONLINE), eligibilityReason: hideOnlineEligibility.reason },
+      { key: 'HIDE_GIFT_RECORD', label: 'Hide Gift Record', requiredTier: 'SVIP 3+ / Baron / Configurable', isLocked: !hideGiftRecordEligibility.isEligible, isEnabled: hideGiftRecordEligibility.isEligible && Boolean(userPreferences.HIDE_GIFT_RECORD), eligibilityReason: hideGiftRecordEligibility.reason },
+      { key: 'RANK_INVISIBLE', label: 'Rank Invisible', requiredTier: 'SVIP 11 / Configurable', isLocked: !rankInvisibleEligibility.isEligible, isEnabled: rankInvisibleEligibility.isEligible && Boolean(userPreferences.RANK_INVISIBLE), eligibilityReason: rankInvisibleEligibility.reason },
+      { key: 'ROOM_INVISIBLE', label: 'Room Invisible', requiredTier: 'SVIP 6+ / Count / Configurable', isLocked: !roomInvisibleEligibility.isEligible, isEnabled: roomInvisibleEligibility.isEligible && Boolean(userPreferences.ROOM_INVISIBLE), eligibilityReason: roomInvisibleEligibility.reason },
+      { key: 'SVIP_HIDDEN', label: 'SVIP Identity Hidden', requiredTier: 'SVIP 13 / Configurable', isLocked: !svipHiddenEligibility.isEligible, isEnabled: svipHiddenEligibility.isEligible && Boolean(userPreferences.SVIP_HIDDEN), eligibilityReason: svipHiddenEligibility.reason },
       {
         key: 'ANTI_FOLLOW',
         label: 'Anti-Follow',
@@ -1490,42 +1688,153 @@ export async function getUserPrivacySettings(userId, db = prisma) {
         isEnabled: failedToFindEligibility.isEligible && Boolean(userPreferences.FAILED_TO_FIND),
         eligibilityReason: failedToFindEligibility.reason,
       },
-      { key: 'MYSTERY', label: 'Mystery', requiredTier: 'Admin Configured', isLocked: true, isEnabled: Boolean(userPreferences.MYSTERY) },
-      { key: 'HIDE_WEALTH', label: 'Hide Wealth Level', requiredTier: 'Admin Configured', isLocked: true, isEnabled: Boolean(userPreferences.HIDE_WEALTH) },
+      { key: 'MYSTERY', label: 'Mystery', requiredTier: 'Admin Configured or Grant', isLocked: !mysteryEligibility.isEligible, isEnabled: mysteryEligibility.isEligible && Boolean(userPreferences.MYSTERY), eligibilityReason: mysteryEligibility.reason },
+      { key: 'HIDE_WEALTH', label: 'Hide Wealth Level', requiredTier: 'SVIP 2+ / Knight / Configurable', isLocked: !hideWealthEligibility.isEligible, isEnabled: hideWealthEligibility.isEligible && Boolean(userPreferences.HIDE_WEALTH), eligibilityReason: hideWealthEligibility.reason },
     ],
   };
 }
 
-export async function updateUserPrivacySettings(userId, { key, isEnabled }, db = prisma) {
-  const upperKey = String(key || '').toUpperCase();
-  const willEnable = Boolean(isEnabled);
+export async function updateUserPrivacySettings(userId, payload, authUserId = null, db = prisma) {
+  if (!userId) {
+    const error = new Error('User authentication is required');
+    error.statusCode = 401;
+    error.code = 'UNAUTHORIZED';
+    throw error;
+  }
 
-  // Authoritative eligibility check for configurable Phase 2 features (NEW-058)
-  if (upperKey === 'ANTI_FOLLOW' || upperKey === 'FAILED_TO_FIND') {
-    if (willEnable) {
-      const eligibility = await privacyEligibilityService.checkUserEligibility(userId, upperKey, db);
+  let effectiveDb = db;
+  let effectiveAuthUserId = authUserId;
+  if (authUserId && typeof authUserId === 'object' && authUserId.userProfile) {
+    effectiveDb = authUserId;
+    effectiveAuthUserId = null;
+  }
+
+  if (effectiveAuthUserId && effectiveAuthUserId !== userId) {
+    const error = new Error('Unauthorized to modify another user privacy settings');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  const gatedKeys = [
+    'ANTI_FOLLOW',
+    'FAILED_TO_FIND',
+    'INVISIBLE_VISIT',
+    'HIDE_ONLINE',
+    'HIDE_GIFT_RECORD',
+    'RANK_INVISIBLE',
+    'ROOM_INVISIBLE',
+    'SVIP_HIDDEN',
+    'MYSTERY',
+    'HIDE_WEALTH',
+  ];
+
+  // 1. Single setting toggle: { key, isEnabled }
+  if (payload && payload.key !== undefined) {
+    const rawKey = String(payload.key || '').toUpperCase();
+    const willEnable = Boolean(payload.isEnabled);
+
+    let canonicalKey = rawKey;
+    if (rawKey === 'STEALTH_ENTRY') canonicalKey = 'ROOM_INVISIBLE';
+    if (rawKey === 'ANONYMOUS_GIFTING') canonicalKey = 'HIDE_GIFT_RECORD';
+    if (rawKey === 'HIDE_LEVELS') canonicalKey = 'HIDE_WEALTH';
+    if (rawKey === 'IS_PRIVATE' || rawKey === 'ISPRIVATE') canonicalKey = 'HIDE_FOLLOW_LIST';
+
+    if (gatedKeys.includes(canonicalKey) && willEnable) {
+      const eligibility = await privacyEligibilityService.checkUserEligibility(userId, canonicalKey, effectiveDb);
       if (!eligibility.isEligible) {
-        const error = new Error(`User is not eligible to enable ${upperKey}. Requires configured SVIP tier, Noble rank, or explicit individual grant.`);
+        const error = new Error(`User is not eligible to enable ${canonicalKey}. Requires configured SVIP tier, Noble rank, or explicit individual grant.`);
         error.statusCode = 403;
         error.code = 'PRIVACY_FEATURE_INELIGIBLE';
-        error.featureKey = upperKey;
+        error.featureKey = canonicalKey;
+        throw error;
+      }
+    }
+
+    const prefsToUpdate = { [canonicalKey]: willEnable };
+    if (canonicalKey === 'HIDE_FOLLOW_LIST' || canonicalKey === 'VIEW_LISTS') {
+      const isPrivate = canonicalKey === 'HIDE_FOLLOW_LIST' ? willEnable : !willEnable;
+      prefsToUpdate.HIDE_FOLLOW_LIST = isPrivate;
+      prefsToUpdate.VIEW_LISTS = !isPrivate;
+      await effectiveDb.userProfile.update({ where: { userId }, data: { isPrivate: Boolean(isPrivate) } });
+    }
+
+    const updatedPrefs = await privacyEligibilityService.setUserPreferences(userId, prefsToUpdate, effectiveDb);
+    return {
+      success: true,
+      key: canonicalKey,
+      isEnabled: willEnable,
+      preferences: updatedPrefs,
+      updatedAt: new Date().toISOString(),
+      ...updatedPrefs,
+    };
+  }
+
+  // 2. Batch settings payload: { isPrivate, hideOnline, ... }
+  const settings = payload || {};
+  let isPrivate = settings.isPrivate !== undefined
+    ? Boolean(settings.isPrivate)
+    : settings.hideFollowList !== undefined
+    ? Boolean(settings.hideFollowList)
+    : undefined;
+
+  const keyMap = {
+    antiFollow: 'ANTI_FOLLOW',
+    failedToFind: 'FAILED_TO_FIND',
+    invisibleVisit: 'INVISIBLE_VISIT',
+    hideOnline: 'HIDE_ONLINE',
+    hideGiftRecord: 'HIDE_GIFT_RECORD',
+    anonymousGifting: 'HIDE_GIFT_RECORD',
+    rankInvisible: 'RANK_INVISIBLE',
+    roomInvisible: 'ROOM_INVISIBLE',
+    stealthEntry: 'ROOM_INVISIBLE',
+    svipHidden: 'SVIP_HIDDEN',
+    mystery: 'MYSTERY',
+    hideWealth: 'HIDE_WEALTH',
+    hideLevels: 'HIDE_WEALTH',
+    blockStrangersDm: 'BLOCK_STRANGERS_DM',
+    genderPrivacy: 'GENDER_PRIVACY',
+    hideCpRelationship: 'HIDE_CP_RELATIONSHIP',
+    viewLists: 'VIEW_LISTS',
+    hideFollowList: 'HIDE_FOLLOW_LIST',
+  };
+
+  const prefsToPersist = {};
+  for (const [k, v] of Object.entries(settings)) {
+    const canonical = keyMap[k] || (typeof k === 'string' ? k.toUpperCase() : null);
+    if (canonical) {
+      prefsToPersist[canonical] = Boolean(v);
+    }
+  }
+
+  if (isPrivate !== undefined) {
+    prefsToPersist.HIDE_FOLLOW_LIST = isPrivate;
+    prefsToPersist.VIEW_LISTS = !isPrivate;
+  }
+
+  for (const gatedKey of gatedKeys) {
+    if (prefsToPersist[gatedKey] === true) {
+      const eligibility = await privacyEligibilityService.checkUserEligibility(userId, gatedKey, effectiveDb);
+      if (!eligibility.isEligible) {
+        const error = new Error(`User is not eligible to enable ${gatedKey}. Requires configured tier or explicit grant.`);
+        error.statusCode = 403;
+        error.code = 'PRIVACY_FEATURE_INELIGIBLE';
+        error.featureKey = gatedKey;
         throw error;
       }
     }
   }
 
-  // Persist preference
-  const updatedPrefs = await privacyEligibilityService.setUserPreferences(
-    userId,
-    { [upperKey]: willEnable },
-    db
-  );
+  if (isPrivate !== undefined) {
+    await effectiveDb.userProfile.update({ where: { userId }, data: { isPrivate: Boolean(isPrivate) } });
+  }
 
+  const updatedPrefs = await privacyEligibilityService.setUserPreferences(userId, prefsToPersist, effectiveDb);
   return {
     success: true,
-    key: upperKey,
-    isEnabled: willEnable,
     preferences: updatedPrefs,
+    isPrivate,
+    ...updatedPrefs,
     updatedAt: new Date().toISOString(),
   };
 }

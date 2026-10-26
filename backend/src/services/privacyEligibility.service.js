@@ -33,6 +33,62 @@ const DEFAULT_ELIGIBILITY_CONFIG = {
     eligibleNobleRanks: ['SOVEREIGN'],
     individualUserGrants: [], // List of user IDs with explicit grants
   },
+  INVISIBLE_VISIT: {
+    featureKey: 'INVISIBLE_VISIT',
+    label: 'Invisible Profile Visit',
+    eligibleSvipLevels: [9, 10, 11, 12, 13],
+    eligibleNobleRanks: ['EMPEROR', 'SOVEREIGN'],
+    individualUserGrants: [],
+  },
+  HIDE_ONLINE: {
+    featureKey: 'HIDE_ONLINE',
+    label: 'Hide Online Status',
+    eligibleSvipLevels: [5, 6, 7, 8, 9, 10, 11, 12, 13],
+    eligibleNobleRanks: ['VISCOUNT', 'COUNT', 'MARQUIS', 'DUKE', 'PRINCE', 'KING', 'EMPEROR', 'SOVEREIGN'],
+    individualUserGrants: [],
+  },
+  HIDE_GIFT_RECORD: {
+    featureKey: 'HIDE_GIFT_RECORD',
+    label: 'Hide Gift Record / Anonymous Gifting',
+    eligibleSvipLevels: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+    eligibleNobleRanks: ['BARON', 'VISCOUNT', 'COUNT', 'MARQUIS', 'DUKE', 'PRINCE', 'KING', 'EMPEROR', 'SOVEREIGN'],
+    individualUserGrants: [],
+  },
+  RANK_INVISIBLE: {
+    featureKey: 'RANK_INVISIBLE',
+    label: 'Rank Invisible',
+    eligibleSvipLevels: [11, 12, 13],
+    eligibleNobleRanks: ['EMPEROR', 'SOVEREIGN'],
+    individualUserGrants: [],
+  },
+  ROOM_INVISIBLE: {
+    featureKey: 'ROOM_INVISIBLE',
+    label: 'Room Invisible / Stealth Entry',
+    eligibleSvipLevels: [6, 7, 8, 9, 10, 11, 12, 13],
+    eligibleNobleRanks: ['COUNT', 'MARQUIS', 'DUKE', 'PRINCE', 'KING', 'EMPEROR', 'SOVEREIGN'],
+    individualUserGrants: [],
+  },
+  SVIP_HIDDEN: {
+    featureKey: 'SVIP_HIDDEN',
+    label: 'SVIP Identity Hidden',
+    eligibleSvipLevels: [13],
+    eligibleNobleRanks: ['EMPEROR', 'SOVEREIGN'],
+    individualUserGrants: [],
+  },
+  MYSTERY: {
+    featureKey: 'MYSTERY',
+    label: 'Mystery Mode',
+    eligibleSvipLevels: [10, 11, 12, 13],
+    eligibleNobleRanks: ['EMPEROR', 'SOVEREIGN'],
+    individualUserGrants: [],
+  },
+  HIDE_WEALTH: {
+    featureKey: 'HIDE_WEALTH',
+    label: 'Hide Wealth & Charm Levels',
+    eligibleSvipLevels: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+    eligibleNobleRanks: ['KNIGHT', 'BARON', 'VISCOUNT', 'COUNT', 'MARQUIS', 'DUKE', 'PRINCE', 'KING', 'EMPEROR', 'SOVEREIGN'],
+    individualUserGrants: [],
+  },
 };
 
 /**
@@ -64,7 +120,7 @@ export async function getPrivacyEligibilityPolicy(db = prisma) {
  * Updates the privacy feature eligibility policy (Admin only).
  *
  * @param {Object} params
- * @param {string} params.featureKey - 'ANTI_FOLLOW' | 'FAILED_TO_FIND'
+ * @param {string} params.featureKey
  * @param {Array<number>} [params.eligibleSvipLevels]
  * @param {Array<string>} [params.eligibleNobleRanks]
  * @param {Array<string>} [params.individualUserGrants]
@@ -78,8 +134,9 @@ export async function updatePrivacyEligibilityPolicy(
   db = prisma
 ) {
   const upperKey = String(featureKey || '').toUpperCase();
-  if (upperKey !== 'ANTI_FOLLOW' && upperKey !== 'FAILED_TO_FIND') {
-    const error = new Error('Invalid privacy feature key. Must be ANTI_FOLLOW or FAILED_TO_FIND.');
+  const validKeys = Object.keys(DEFAULT_ELIGIBILITY_CONFIG);
+  if (!validKeys.includes(upperKey)) {
+    const error = new Error(`Invalid privacy feature key. Must be one of: ${validKeys.join(', ')}`);
     error.statusCode = 400;
     error.code = 'INVALID_FEATURE_KEY';
     throw error;

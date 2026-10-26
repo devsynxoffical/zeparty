@@ -10,6 +10,8 @@ import * as attendanceService from './attendance.service.js';
 import wheelService from './wheel.service.js';
 import luckyBagService from './luckyBag.service.js';
 import bcrypt from 'bcryptjs';
+import stageService from './stage.service.js';
+import roomRoleAuditService from './roomRoleAudit.service.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -385,8 +387,8 @@ export async function getRoomDetails(roomId, db = prisma) {
   };
 }
 
-export async function joinRoom(roomId, userId, { pin = null, isApproved = false } = {}, db = prisma) {
-  const result = await roomRepository.joinRoomTx({ roomId, userId, pin, isApproved }, db);
+export async function joinRoom(roomId, userId, { pin = null, isApproved = false, attemptId = null, isVisitor = false, explicit = false } = {}, db = prisma) {
+  const result = await roomRepository.joinRoomTx({ roomId, userId, pin, isApproved, attemptId, isVisitor, explicit }, db);
   if (result) {
     if (result.creatorUserId === userId) {
       try {
@@ -411,6 +413,50 @@ export async function joinRoom(roomId, userId, { pin = null, isApproved = false 
       socketEmitter.emitToRoom(roomId, 'room:viewer_count_changed', payload);
       socketEmitter.emitToRoom(roomId, 'room:viewer_count', payload);
       socketEmitter.emitToRoom(roomId, 'viewer_count_changed', payload);
+    } catch (_) {}
+  }
+  return result;
+}
+
+export async function visitRoom(roomId, userId, options = {}, db = prisma) {
+  return await joinRoom(roomId, userId, { ...options, isVisitor: true, explicit: false }, db);
+}
+
+export async function joinRoomMembership(roomId, userId, options = {}, db = prisma) {
+  const result = await joinRoom(roomId, userId, { ...options, explicit: true, isVisitor: false }, db);
+  if (result) {
+    const payload = {
+      roomId: result.id || roomId,
+      userId,
+      role: 'MEMBER',
+      joinedAt: new Date().toISOString(),
+      timestamp: new Date().toISOString(),
+    };
+    try {
+      socketEmitter.emitToRoom(roomId, 'room:member_joined', payload);
+      socketEmitter.emitToRoom(roomId, 'room:role_updated', payload);
+    } catch (_) {}
+  }
+  return {
+    success: true,
+    room: result,
+    data: result,
+    ...result,
+  };
+}
+
+export async function removeRoomMember(roomId, actorUserId, targetUserId, db = prisma) {
+  const result = await roomRepository.removeRoomMemberTx({ roomId, actorUserId, targetUserId }, db);
+  if (result) {
+    const payload = {
+      roomId,
+      targetUserId,
+      removedByUserId: actorUserId,
+      timestamp: new Date().toISOString(),
+    };
+    try {
+      socketEmitter.emitToRoom(roomId, 'room:member_removed', payload);
+      socketEmitter.emitToUser(targetUserId, 'room:member_removed', payload);
     } catch (_) {}
   }
   return result;
@@ -1108,15 +1154,25 @@ export async function adminUpdateRoomDp(
   return updatedRoom;
 }
 
-export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
+export async function getRoomMembers(roomId, { search, page = 1, limit = 50 } = {}, db = prisma) {
   let room = await db.room.findUnique({
     where: { id: roomId },
-    select: { id: true, creatorUserId: true },
+    include: {
+      creator: {
+        include: { profile: true },
+      },
+      seats: true,
+    },
   });
   if (!room && roomId && roomId.length <= 16) {
     room = await db.room.findFirst({
       where: { id: { startsWith: roomId, mode: 'insensitive' } },
-      select: { id: true, creatorUserId: true },
+      include: {
+        creator: {
+          include: { profile: true },
+        },
+        seats: true,
+      },
     });
   }
   if (!room) {
@@ -1127,44 +1183,45 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
   }
 
   const resolvedRoomId = room.id;
-  const hostSeat = await db.roomSeat.findFirst({
-    where: {
-      roomId: resolvedRoomId,
-      occupiedUserId: room.creatorUserId,
-    },
-  });
-  const hostIsOccupyingSeat = Boolean(hostSeat);
 
-  const where = {
-    roomId: resolvedRoomId,
-  };
-  if (hostIsOccupyingSeat) {
-    where.userId = { not: room.creatorUserId };
-  }
+  // Active socket presence
+  let activePresenceUserIds = new Set();
+  try {
+    const activePresence = await presenceService.getRoomActiveUsers(resolvedRoomId);
+    activePresenceUserIds = new Set(activePresence.map((p) => p.userId).filter(Boolean));
+  } catch (_) {}
 
-  if (search && search.trim() !== '') {
-    const q = search.trim();
-    const searchFilter = {
-      OR: [
-        { userId: { equals: q } },
-        { user: { username: { contains: q, mode: 'insensitive' } } },
-        { user: { profile: { displayName: { contains: q, mode: 'insensitive' } } } },
-      ],
-    };
-    if (hostIsOccupyingSeat) {
-      where.AND = [
-        { userId: { not: room.creatorUserId } },
-        searchFilter,
-      ];
-      delete where.userId;
-    } else {
-      where.AND = [searchFilter];
+  // Current mic seats map
+  const seatedUserMap = new Map();
+  if (Array.isArray(room.seats)) {
+    for (const seat of room.seats) {
+      if (seat.occupiedUserId) {
+        seatedUserMap.set(seat.occupiedUserId, {
+          seatIndex: seat.seatIndex,
+          isMuted: Boolean(seat.isMuted || seat.isMutedByModerator),
+        });
+      }
     }
   }
 
-  const members = await db.roomMember.findMany({
+  // Load all durable saved room members
+  // If search query is provided, search across full saved roster
+  const where = {
+    roomId: resolvedRoomId,
+  };
+
+  const cleanSearch = typeof search === 'string' ? search.trim() : '';
+  if (cleanSearch) {
+    where.OR = [
+      { userId: { equals: cleanSearch } },
+      { userId: { contains: cleanSearch, mode: 'insensitive' } },
+      { user: { username: { contains: cleanSearch, mode: 'insensitive' } } },
+      { user: { profile: { displayName: { contains: cleanSearch, mode: 'insensitive' } } } },
+    ];
+  }
+
+  const rawMembers = await db.roomMember.findMany({
     where,
-    orderBy: { joinedAt: 'asc' },
     include: {
       user: {
         select: {
@@ -1172,11 +1229,14 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
           username: true,
           avatarUrl: true,
           lastLoginAt: true,
+          updatedAt: true,
           profile: {
             select: {
               displayName: true,
               level: true,
               vipLevel: true,
+              svipLevel: true,
+              nobleRank: true,
             },
           },
         },
@@ -1184,141 +1244,187 @@ export async function getRoomMembers(roomId, { search } = {}, db = prisma) {
     },
   });
 
-  let activePresenceUserIds = new Set();
-  let activePresence = [];
-  try {
-    activePresence = await presenceService.getRoomActiveUsers(resolvedRoomId);
-    activePresenceUserIds = new Set(activePresence.map((p) => p.userId).filter(Boolean));
-  } catch (_) {}
+  // Ensure Room Creator/Owner is included in the roster
+  const creatorUserId = room.creatorUserId;
+  let ownerMember = rawMembers.find((m) => m.userId === creatorUserId);
 
-  const formatted = members
-    .filter((m) => !(hostIsOccupyingSeat && m.userId === room.creatorUserId))
-    .map((m) => {
-      const isHost = m.userId === room.creatorUserId;
-      let role = isHost ? 'HOST' : 'MEMBER';
-      if (m.role === 'ADMIN') {
-        role = 'ADMIN';
-      }
-      const isOnline = activePresenceUserIds.has(m.userId);
-      return {
-        id: m.id,
-        userId: m.userId,
-        role,
-        isHost,
-        isOwner: isHost,
-        isOnline,
-        inRoom: isOnline,
-        joinedAt: m.joinedAt,
+  if (!ownerMember && room.creator) {
+    // Check if search matches creator
+    let matchesSearch = true;
+    if (cleanSearch) {
+      const q = cleanSearch.toLowerCase();
+      const u = room.creator;
+      const dName = u.profile?.displayName || '';
+      matchesSearch = (
+        u.id.toLowerCase().includes(q) ||
+        u.username.toLowerCase().includes(q) ||
+        dName.toLowerCase().includes(q)
+      );
+    }
+
+    if (matchesSearch) {
+      ownerMember = {
+        id: `host_member_${creatorUserId}`,
+        roomId: resolvedRoomId,
+        userId: creatorUserId,
+        role: 'HOST',
+        joinedAt: room.createdAt || new Date(0),
         user: {
-          id: m.user.id,
-          username: m.user.username,
-          displayName: m.user.profile?.displayName || m.user.username,
-          avatarUrl: m.user.avatarUrl || '',
-          lastSeenAt: m.user.lastLoginAt,
+          id: room.creator.id,
+          username: room.creator.username,
+          avatarUrl: room.creator.avatarUrl || '',
+          lastLoginAt: room.creator.lastLoginAt,
+          updatedAt: room.creator.updatedAt,
+          profile: room.creator.profile,
         },
       };
-    });
-
-  const existingIds = new Set(formatted.map((m) => m.userId));
-
-  // If host is NOT occupying a mic seat, show host in the audience exactly once
-  if (!hostIsOccupyingSeat && room.creatorUserId && !existingIds.has(room.creatorUserId)) {
-    try {
-      const creatorUser = await db.user.findUnique({
-        where: { id: room.creatorUserId },
-        select: {
-          id: true,
-          username: true,
-          avatarUrl: true,
-          lastLoginAt: true,
-          profile: { select: { displayName: true } },
-        },
-      });
-      if (creatorUser) {
-        const hostIsOnline = activePresenceUserIds.has(room.creatorUserId);
-        formatted.unshift({
-          id: `host_member_${room.creatorUserId}`,
-          userId: room.creatorUserId,
-          role: 'HOST',
-          isHost: true,
-          isOwner: true,
-          isOnline: hostIsOnline,
-          inRoom: hostIsOnline,
-          joinedAt: new Date().toISOString(),
-          user: {
-            id: creatorUser.id,
-            username: creatorUser.username,
-            displayName: creatorUser.profile?.displayName || creatorUser.username,
-            avatarUrl: creatorUser.avatarUrl || '',
-            lastSeenAt: creatorUser.lastLoginAt,
-          },
-        });
-        existingIds.add(room.creatorUserId);
-      }
-    } catch (_) {}
+      rawMembers.unshift(ownerMember);
+    }
   }
 
-  const totalMembers = formatted.length;
+  // Format and determine role
+  const formattedList = rawMembers.map((m) => {
+    const isOwner = m.userId === creatorUserId;
+    let role = isOwner ? 'HOST' : 'MEMBER';
+    if (!isOwner && (m.role === 'ADMIN' || m.role === 'MODERATOR')) {
+      role = 'ADMIN';
+    }
 
-  // Merge active guest participants from realtime presence
+    const isOnline = activePresenceUserIds.has(m.userId);
+    const seatInfo = seatedUserMap.get(m.userId) || null;
+    const displayName = m.user?.profile?.displayName || m.user?.username || m.userId;
+    const publicId = m.user?.username || m.user?.id || m.userId;
+
+    return {
+      id: m.id || `member_${m.userId}`,
+      userId: m.userId,
+      publicUserId: publicId,
+      publicId,
+      username: m.user?.username || m.userId,
+      name: displayName,
+      displayName,
+      avatarUrl: m.user?.avatarUrl || '',
+      role,
+      isHost: isOwner,
+      isOwner,
+      isAdmin: role === 'ADMIN',
+      isMember: true,
+      joinedAt: m.joinedAt || room.createdAt,
+      level: m.user?.profile?.level || 1,
+      vipLevel: m.user?.profile?.vipLevel || 0,
+      svipLevel: m.user?.profile?.svipLevel || 0,
+      nobleRank: m.user?.profile?.nobleRank || null,
+      isOnline,
+      inRoom: isOnline,
+      presenceStatus: isOnline ? 'IN_ROOM' : 'OFFLINE',
+      lastSeenAt: m.user?.lastLoginAt || m.user?.updatedAt || null,
+      seatIndex: seatInfo ? seatInfo.seatIndex : null,
+      isOnMic: Boolean(seatInfo),
+      isMutedOnMic: seatInfo ? seatInfo.isMuted : false,
+      user: {
+        id: m.user?.id || m.userId,
+        username: m.user?.username || m.userId,
+        displayName,
+        avatarUrl: m.user?.avatarUrl || '',
+        level: m.user?.profile?.level || 1,
+        vipLevel: m.user?.profile?.vipLevel || 0,
+        svipLevel: m.user?.profile?.svipLevel || 0,
+        lastSeenAt: m.user?.lastLoginAt || null,
+      },
+    };
+  });
+
+  // Strict Roster Ordering:
+  // 1. Owner first (weight 0)
+  // 2. Room Admins next (weight 1)
+  // 3. Ordinary Members after admins (weight 2)
+  // Stable deterministic tie-breaker within each group: joinedAt asc, then userId asc
+  formattedList.sort((a, b) => {
+    const weightA = a.role === 'HOST' ? 0 : (a.role === 'ADMIN' ? 1 : 2);
+    const weightB = b.role === 'HOST' ? 0 : (b.role === 'ADMIN' ? 1 : 2);
+    if (weightA !== weightB) {
+      return weightA - weightB;
+    }
+    const timeA = new Date(a.joinedAt || 0).getTime();
+    const timeB = new Date(b.joinedAt || 0).getTime();
+    if (timeA !== timeB) {
+      return timeA - timeB;
+    }
+    return String(a.userId).localeCompare(String(b.userId));
+  });
+
+  // Total saved membership count
+  const totalCount = formattedList.length;
+
+  // Pagination
+  const pageNum = Math.max(1, Number(page) || 1);
+  const limitNum = Math.min(200, Math.max(1, Number(limit) || 50));
+  const skip = (pageNum - 1) * limitNum;
+  const paginatedMembers = formattedList.slice(skip, skip + limitNum);
+
+  // Decorate with mic invite status
+  let decorated = paginatedMembers;
   try {
-    for (const p of activePresence) {
-      if (p.userId && !existingIds.has(p.userId)) {
-        if (p.userId === room.creatorUserId && hostIsOccupyingSeat) continue;
-        if (search && search.trim() !== '') {
-          const q = search.trim().toLowerCase();
-          const match = p.userId.toLowerCase().includes(q) || (p.displayName && p.displayName.toLowerCase().includes(q));
-          if (!match) continue;
-        }
-        const guestName = p.displayName || `User_${String(p.userId).replace('guest_', '').substring(0, 5)}`;
-        formatted.push({
-          id: `guest_member_${p.userId}`,
-          userId: p.userId,
-          role: 'MEMBER',
-          isOnline: true,
-          inRoom: true,
-          joinedAt: p.joinedAt || new Date().toISOString(),
-          user: {
-            id: p.userId,
-            username: guestName,
-            displayName: guestName,
-            avatarUrl: p.avatarUrl || '',
-            lastSeenAt: new Date().toISOString(),
-          },
-        });
-        existingIds.add(p.userId);
-      }
+    decorated = await micInviteService.decorateMembersWithMicInviteStatus(resolvedRoomId, paginatedMembers, db);
+  } catch (_) {}
+
+  // Online viewer count from presence
+  let viewerCount = typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 0;
+  try {
+    const presCount = await presenceService.getRoomViewerCount(resolvedRoomId, room.creatorUserId);
+    if (typeof presCount === 'number' && presCount >= 0) {
+      viewerCount = presCount;
     }
   } catch (_) {}
 
-  const decorated = await micInviteService.decorateMembersWithMicInviteStatus(resolvedRoomId, formatted, db);
-
   return {
     members: decorated,
-    totalCount: decorated.length,
+    data: decorated,
+    totalCount,
+    total: totalCount,
+    savedMemberCount: totalCount,
+    viewerCount,
+    capacity: room.capacity || 200,
+    pagination: {
+      page: pageNum,
+      limit: limitNum,
+      total: totalCount,
+      totalPages: Math.ceil(totalCount / limitNum) || 1,
+      hasMore: skip + paginatedMembers.length < totalCount,
+    },
   };
 }
 
 export async function updateMemberRole(roomId, actorUserId, targetUserId, { role }, db = prisma) {
-  const room = await db.room.findUnique({
+  let resolvedRoomId = roomId;
+  let room = await db.room.findUnique({
     where: { id: roomId },
     select: { id: true, creatorUserId: true },
   });
+
+  if (!room && roomId && roomId.length <= 16) {
+    room = await db.room.findFirst({
+      where: { id: { startsWith: roomId, mode: 'insensitive' } },
+      select: { id: true, creatorUserId: true },
+    });
+  }
+
   if (!room) {
     const error = new Error('Room not found');
     error.statusCode = 404;
     error.code = 'ROOM_NOT_FOUND';
     throw error;
   }
+  resolvedRoomId = room.id;
 
   // Permission check: actor must be creator or admin
   const isOwner = room.creatorUserId === actorUserId;
   let isAdmin = false;
   if (!isOwner) {
     const actorMember = await db.roomMember.findUnique({
-      where: { roomId_userId: { roomId, userId: actorUserId } },
+      where: { roomId_userId: { roomId: resolvedRoomId, userId: actorUserId } },
     });
-    if (actorMember && actorMember.role === 'ADMIN') {
+    if (actorMember && (actorMember.role === 'ADMIN' || actorMember.role === 'MODERATOR')) {
       isAdmin = true;
     }
   }
@@ -1338,27 +1444,50 @@ export async function updateMemberRole(roomId, actorUserId, targetUserId, { role
     throw error;
   }
 
-  const targetMember = await db.roomMember.findUnique({
-    where: { roomId_userId: { roomId, userId: targetUserId } },
-  });
-  if (!targetMember) {
-    const error = new Error('User is not a member of this room');
-    error.statusCode = 404;
-    error.code = 'MEMBER_NOT_FOUND';
+  // Only owner can promote someone to ADMIN
+  if (!isOwner && role === 'ADMIN') {
+    const error = new Error('Only the room owner can assign room admin roles');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
     throw error;
   }
 
-  if (!isOwner && targetMember.role === 'ADMIN' && role !== 'ADMIN') {
+  const targetMember = await db.roomMember.findUnique({
+    where: { roomId_userId: { roomId: resolvedRoomId, userId: targetUserId } },
+  });
+
+  if (!isOwner && targetMember && (targetMember.role === 'ADMIN' || targetMember.role === 'MODERATOR') && role !== 'ADMIN') {
     const error = new Error('Admins cannot revoke other admins; only the room owner can');
     error.statusCode = 403;
     error.code = 'FORBIDDEN';
     throw error;
   }
 
+  // Verify target user existence
+  const targetUserExists = await db.user.findUnique({
+    where: { id: targetUserId },
+    select: { id: true },
+  });
+  if (!targetUserExists) {
+    const error = new Error('Target user not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
   const updatedRole = role === 'ADMIN' ? 'ADMIN' : 'MEMBER';
-  const updatedMember = await db.roomMember.update({
-    where: { roomId_userId: { roomId, userId: targetUserId } },
-    data: { role: updatedRole },
+
+  // Durably write and commit role assignment
+  const updatedMember = await db.roomMember.upsert({
+    where: { roomId_userId: { roomId: resolvedRoomId, userId: targetUserId } },
+    create: {
+      roomId: resolvedRoomId,
+      userId: targetUserId,
+      role: updatedRole,
+    },
+    update: {
+      role: updatedRole,
+    },
     include: {
       user: {
         select: { id: true, username: true, avatarUrl: true, profile: true },
@@ -1366,12 +1495,34 @@ export async function updateMemberRole(roomId, actorUserId, targetUserId, { role
     },
   });
 
+  // Record audit trail
   try {
-    socketEmitter.emitToRoom(roomId, 'room:role_updated', {
-      roomId,
+    await roomRoleAuditService.recordRoleChange({
+      roomId: resolvedRoomId,
+      actorUserId,
       targetUserId,
+      action: updatedRole === 'ADMIN' ? 'ROOM_ADMIN_PROMOTED' : 'ROOM_ADMIN_DEMOTED',
       role: updatedRole,
-    });
+      outcome: 'SUCCESS',
+    }, db);
+  } catch (_) {}
+
+  // Publish realtime role update events
+  const rolePayload = {
+    roomId: resolvedRoomId,
+    targetUserId,
+    role: updatedRole,
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    socketEmitter.emitToRoom(resolvedRoomId, 'room:role_updated', rolePayload);
+    socketEmitter.emitToRoom(resolvedRoomId, 'room:member_role_changed', rolePayload);
+    if (updatedRole === 'ADMIN') {
+      socketEmitter.emitToRoom(resolvedRoomId, 'room:admin_promoted', rolePayload);
+    } else {
+      socketEmitter.emitToRoom(resolvedRoomId, 'room:admin_demoted', rolePayload);
+    }
   } catch (err) {
     console.error('Failed to emit room:role_updated event:', err);
   }
@@ -2421,6 +2572,17 @@ export async function removeRoomUserFromMic(roomId, actorUserId, { targetUserId,
   socketEmitter.emitToUser(targetUserId, 'room:seat_left', seatPayload);
   socketEmitter.emitToUser(targetUserId, 'seat_released', seatPayload);
 
+  // Authoritative stage release notification
+  try {
+    await stageService.notifyStageReleased({
+      roomId: room.id,
+      seatIndex: occupiedSeat.seatIndex,
+      userId: targetUserId,
+      releasedByUserId: actorUserId,
+      reason: reason || 'REMOVED_FROM_MIC',
+    }, db);
+  } catch (_) {}
+
   await logAudit(
     {
       adminId: actorUserId,
@@ -2514,6 +2676,14 @@ export async function moderateRoomUserMute(roomId, actorUserId, { targetUserId, 
     socketEmitter.emitToRoom(room.id, shouldMute ? 'room:seat_muted' : 'room:seat_unmuted', mutePayload);
     socketEmitter.emitToRoom(room.id, shouldMute ? 'seat_muted' : 'seat_unmuted', mutePayload);
 
+    try {
+      await stageService.broadcastStageUpdate(room.id, shouldMute ? 'MIC_MUTED' : 'MIC_UNMUTED', {
+        seatIndex: occupiedSeat.seatIndex,
+        userId: targetUserId,
+        isMuted: shouldMute,
+      }, db);
+    } catch (_) {}
+
     return {
       success: true,
       message: shouldMute ? 'Microphone muted' : 'Microphone unmuted',
@@ -2598,6 +2768,14 @@ export async function moderateRoomUserMute(roomId, actorUserId, { targetUserId, 
   socketEmitter.emitToUser(targetUserId, eventName, mutePayload);
   socketEmitter.emitToUser(targetUserId, shouldMute ? 'room:user_muted' : 'room:user_unmuted', mutePayload);
   socketEmitter.emitToUser(targetUserId, 'room:seat_updated', mutePayload);
+
+  try {
+    await stageService.broadcastStageUpdate(room.id, shouldMute ? 'MIC_MUTED' : 'MIC_UNMUTED', {
+      seatIndex: occupiedSeat?.seatIndex,
+      userId: targetUserId,
+      isMuted: shouldMute,
+    }, db);
+  } catch (_) {}
 
   await logAudit(
     {

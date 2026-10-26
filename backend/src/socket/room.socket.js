@@ -1,7 +1,9 @@
 import roomRepository from '../repositories/room.repository.js';
 import userRepository from '../repositories/user.repository.js';
+import userAssetRepository from '../repositories/userAsset.repository.js';
 import roomService from '../services/room.service.js';
 import micInviteService from '../services/micInvite.service.js';
+import cohostInviteService from '../services/cohostInvite.service.js';
 import presenceService from './presence.service.js';
 import prisma from '../config/database.js';
 import { startHostAbsentTimer, clearHostAbsentTimer } from './roomTimer.manager.js';
@@ -9,6 +11,8 @@ import { deriveAgoraUid } from '../utils/agoraToken.util.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
 import { withRateLimit } from './rateLimiter.socket.js';
 import * as attendanceService from '../services/attendance.service.js';
+import stageService from '../services/stage.service.js';
+import privacyEligibilityService from '../services/privacyEligibility.service.js';
 
 /**
  * Builds a safe, public room snapshot containing no sensitive admin or private fields.
@@ -37,9 +41,10 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       const mid = m.userId || u.id;
       const isHost = mid === hostUserId;
       const displayName = u.profile?.displayName || u.displayName || u.username || (isHost ? 'Host' : 'User');
+      const isRoomAdmin = (m.role === 'ADMIN' || m.role === 'MODERATOR');
       return {
         userId: mid,
-        role: isHost ? 'HOST' : (m.role || 'LISTENER'),
+        role: isHost ? 'HOST' : (isRoomAdmin ? 'ADMIN' : (m.role || 'LISTENER')),
         isHost,
         isOwner: isHost,
         user: {
@@ -161,6 +166,25 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
         } : null,
       };
     }),
+    coHost: (() => {
+      const coHostSeat = (room.seats || []).find((s) => s.seatIndex === 1 && s.occupiedUserId);
+      const coHostUser = coHostSeat ? (coHostSeat.occupiedUser || coHostSeat.user) : null;
+      if (!coHostUser) return null;
+      const dName = coHostUser.profile?.displayName || coHostUser.displayName || coHostUser.username || 'Co-Host';
+      return {
+        id: coHostUser.id,
+        userId: coHostUser.id,
+        username: coHostUser.username,
+        displayName: dName,
+        name: dName,
+        avatarUrl: coHostUser.profile?.avatarUrl || coHostUser.avatarUrl || null,
+        seatIndex: 1,
+        seatNumber: 1,
+        isCoHost: true,
+        role: 'CO_HOST',
+      };
+    })(),
+    isCoHosting: Boolean((room.seats || []).some((s) => s.seatIndex === 1 && s.occupiedUserId)),
     members: membersList,
     createdAt: room.createdAt,
   };
@@ -199,11 +223,12 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     }
 
     const userId = socket.userId;
+    const attemptId = data?.attemptId || null;
 
     // 1. Authoritative Room Existence and Lifecycle Check
     let room = await roomRepository.findRoomById(roomId, db || prisma);
     if (!room) {
-      const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_FOUND, message: 'Room not found' } };
+      const err = { success: false, attemptId, error: { code: SOCKET_ERRORS.ROOM_NOT_FOUND, message: 'Room not found', stage: 'ROOM_LIFECYCLE', recoverable: false } };
       if (typeof callback === 'function') return callback(err);
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
@@ -228,7 +253,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       }
 
       if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
-        const err = { success: false, error: { code: SOCKET_ERRORS.ROOM_NOT_LIVE, message: 'Room is not available or has ended' } };
+        const err = { success: false, attemptId, error: { code: SOCKET_ERRORS.ROOM_NOT_LIVE, message: 'Room is not available or has ended', stage: 'ROOM_LIFECYCLE', recoverable: false } };
         if (typeof callback === 'function') return callback(err);
         return socket.emit(SOCKET_EVENTS.ERROR, err);
       }
@@ -250,14 +275,17 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     try {
       const pin = data?.pin || data?.password || data?.roomPin;
       const isApproved = Boolean(data?.isApproved);
-      joinResult = await roomService.joinRoom(room.id, userId, { pin, isApproved }, db || prisma);
+      joinResult = await roomService.joinRoom(room.id, userId, { pin, isApproved, attemptId }, db || prisma);
     } catch (joinErr) {
       if (['ROOM_LOCKED_PIN_REQUIRED', 'INVALID_ROOM_PIN', 'ROOM_APPROVAL_REQUIRED'].includes(joinErr.code)) {
         const errPayload = {
           success: false,
+          attemptId,
           error: {
             code: joinErr.code,
             message: joinErr.message,
+            stage: 'ROOM_AUTH',
+            recoverable: false,
           },
         };
         if (typeof callback === 'function') return callback(errPayload);
@@ -377,6 +405,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     room.trophyCoins = dailySendingTotal;
 
     const snapshot = buildRoomSnapshot(room, currentCount, activeUsers);
+    snapshot.attemptId = attemptId;
     snapshot.feedClearedAt = feedClearedAt;
     snapshot.recentGifts = recentGifts;
     snapshot.dailySendingTotal = dailySendingTotal;
@@ -394,6 +423,13 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       recentGifts,
     });
 
+    try {
+      const stageSnap = await stageService.getStageSnapshot(room.id, db || prisma);
+      socket.emit('room:stage_snapshot', stageSnap);
+      socket.emit('stage:snapshot', stageSnap);
+      socket.emit('room:stage_updated', stageSnap);
+    } catch (_) {}
+
     // 6. Broadcast user joined event ONLY on genuine initial entry (not reconnects/pings)
     if (isFirstSocket) {
       const targetRoomIds = Array.from(new Set([String(roomId), String(room.id)]));
@@ -405,11 +441,57 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       const entryTimestamp = new Date().toISOString();
       const entryEventId = `entry_${room.id}_${effectiveJoinedId}_${Date.now()}`;
 
+      // Check if user has ROOM_INVISIBLE / stealth_entry enabled and eligible
+      let isStealthEntry = false;
+      if (!isGuestUser && effectiveJoinedId) {
+        try {
+          const prefs = await privacyEligibilityService.getUserPreferences(effectiveJoinedId, prisma);
+          if (prefs.ROOM_INVISIBLE || prefs.STEALTH_ENTRY) {
+            const eligibility = await privacyEligibilityService.checkUserEligibility(effectiveJoinedId, 'ROOM_INVISIBLE', prisma);
+            if (eligibility.isEligible) {
+              isStealthEntry = true;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Resolve equipped room-entry effect (e.g. Car / Ride / Entry effect)
+      let equippedEntryEffect = null;
+      if (!isGuestUser && effectiveJoinedId && !isStealthEntry) {
+        try {
+          const equippedRecord = await userAssetRepository.findEquippedEntryEffect(effectiveJoinedId, prisma);
+          if (equippedRecord?.asset) {
+            const a = equippedRecord.asset;
+            equippedEntryEffect = {
+              id: a.id,
+              assetId: a.id,
+              name: a.name,
+              assetType: a.assetType,
+              assetSubcategory: a.assetSubcategory,
+              category: a.assetType === 'VEHICLE' ? 'Cars' : (a.assetSubcategory === 'BACKGROUND' ? 'Background' : 'Cars'),
+              categoryName: a.assetType === 'VEHICLE' ? 'Cars' : (a.assetSubcategory === 'BACKGROUND' ? 'Background' : 'Cars'),
+              thumbnailUrl: a.thumbnailUrl,
+              iconUrl: a.thumbnailUrl,
+              previewUrl: a.thumbnailUrl,
+              animationUrl: a.animationFileUrl || null,
+              videoUrl: a.animationFileUrl || null,
+              mediaUrl: a.animationFileUrl || a.thumbnailUrl,
+              soundUrl: a.soundFileUrl || null,
+              durationSeconds: a.durationSeconds || 5,
+              defaultVolumePercent: a.defaultVolumePercent || 100,
+              userAssetId: equippedRecord.id,
+              expiresAt: equippedRecord.expiresAt ? equippedRecord.expiresAt.toISOString() : null,
+            };
+          }
+        } catch (_) {}
+      }
+
       const userPayload = {
         id: entryEventId,
         eventId: entryEventId,
         entryId: entryEventId,
         entryEventId,
+        dedupKey: `${room.id}:${effectiveJoinedId}:${entryEventId}`,
         roomId: room.id,
         clientRoomId: roomId,
         room: room.id,
@@ -426,16 +508,23 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           nobleTitle: effectiveJoinedNoble,
           isGuest: isGuestUser,
         },
+        entryEffect: equippedEntryEffect,
+        equippedRide: equippedEntryEffect,
+        entryEffectId: equippedEntryEffect?.id || null,
+        entryEffectName: equippedEntryEffect?.name || null,
         viewerCount: currentCount,
         count: currentCount,
         currentViewersCount: currentCount,
         timestamp: entryTimestamp,
+        isStealth: isStealthEntry,
       };
 
-      broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
-      broadcastTarget.emit('user_joined', userPayload);
-      broadcastTarget.emit('user:joined', userPayload);
-      broadcastTarget.emit('room_user_joined', userPayload);
+      if (!isStealthEntry) {
+        broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
+        broadcastTarget.emit('user_joined', userPayload);
+        broadcastTarget.emit('user:joined', userPayload);
+        broadcastTarget.emit('room_user_joined', userPayload);
+      }
 
       const viewerPayload = {
         roomId: room.id,
@@ -487,6 +576,10 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           nobleTitle: effectiveJoinedNoble,
           isGuest: isGuestUser,
         },
+        dedupKey: `${room.id}:${effectiveJoinedId}:${entryEventId}`,
+        entryEffect: equippedEntryEffect,
+        equippedRide: equippedEntryEffect,
+        entryEffectId: equippedEntryEffect?.id || null,
         text: entryText,
         message: entryText,
         content: entryText,
@@ -495,10 +588,12 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         timestamp: entryTimestamp,
       };
 
-      broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
-      broadcastTarget.emit('room:chat', chatPayload);
-      broadcastTarget.emit('chat_message', chatPayload);
-      broadcastTarget.emit('room_chat_message', chatPayload);
+      if (!isStealthEntry) {
+        broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
+        broadcastTarget.emit('room:chat', chatPayload);
+        broadcastTarget.emit('chat_message', chatPayload);
+        broadcastTarget.emit('room_chat_message', chatPayload);
+      }
 
       // Ensure the entering user socket receives both events reliably if room broadcast didn't include socket
       if (socket && typeof socket.emit === 'function') {
@@ -526,14 +621,19 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       return callback({
         success: true,
         data: snapshot,
+        attemptId: attemptId || data?.attemptId,
+        room: snapshot,
       });
     }
   } catch (err) {
     const errorResponse = {
       success: false,
+      attemptId: data?.attemptId || null,
       error: {
         code: err.code || SOCKET_ERRORS.INTERNAL_ERROR,
         message: err.message || 'Failed to join room',
+        stage: 'ROOM_JOIN',
+        recoverable: !['ROOM_LOCKED_PIN_REQUIRED', 'INVALID_ROOM_PIN', 'ROOM_APPROVAL_REQUIRED', 'ROOM_NOT_LIVE', 'ROOM_KICKED', 'ROOM_BANNED', 'FORBIDDEN'].includes(err.code),
       },
     };
     if (typeof callback === 'function') return callback(errorResponse);
@@ -1933,6 +2033,80 @@ export function registerRoomHandlers(io, socket) {
   socket.on('room:mic_invite_response', handleMicInviteResponse);
   socket.on('room_mic_invite_response', handleMicInviteResponse);
 
+  // Bug #48: Live Co-Host Invitation Realtime Handlers
+  const handleCoHostInvite = async (data, callback) => {
+    try {
+      const roomId = data?.roomId;
+      const targetUserId = data?.targetUserId || data?.recipientId;
+      if (!roomId || !targetUserId) {
+        if (typeof callback === 'function') callback({ success: false, error: 'roomId and targetUserId are required' });
+        return;
+      }
+
+      const inviterUserId = socket.userId || data?.inviter?.id || data?.inviter?.userId;
+      const invitation = await cohostInviteService.createCoHostInvite({
+        roomId,
+        actorUserId: inviterUserId,
+        targetUserId: String(targetUserId),
+        seatIndex: data?.seatIndex || 1,
+      });
+
+      if (typeof callback === 'function') {
+        callback({ success: true, invitation });
+      }
+    } catch (err) {
+      console.warn('[RoomSocket] handleCoHostInvite error:', err.message);
+      if (typeof callback === 'function') {
+        callback({ success: false, error: err.message, code: err.code });
+      }
+    }
+  };
+
+  socket.on('room:cohost_invite', handleCoHostInvite);
+  socket.on('cohost_invite', handleCoHostInvite);
+
+  const handleCoHostInviteResponse = async (data, callback) => {
+    try {
+      const roomId = data?.roomId;
+      const invitationId = data?.invitationId || data?.id;
+      const accepted = data?.accepted === true || data?.status === 'accepted';
+      const userId = socket.userId || data?.targetUserId;
+
+      if (!roomId) {
+        if (typeof callback === 'function') callback({ success: false, error: 'roomId is required' });
+        return;
+      }
+
+      let result;
+      if (accepted) {
+        result = await cohostInviteService.acceptCoHostInvite({
+          roomId,
+          invitationId,
+          userId,
+        });
+      } else {
+        result = await cohostInviteService.declineCoHostInvite({
+          roomId,
+          invitationId,
+          userId,
+          reason: data?.reason,
+        });
+      }
+
+      if (typeof callback === 'function') {
+        callback({ success: true, ...result });
+      }
+    } catch (err) {
+      console.warn('[RoomSocket] handleCoHostInviteResponse error:', err.message);
+      if (typeof callback === 'function') {
+        callback({ success: false, error: err.message, code: err.code });
+      }
+    }
+  };
+
+  socket.on('room:cohost_invite_response', handleCoHostInviteResponse);
+  socket.on('cohost_invite_response', handleCoHostInviteResponse);
+
   // Authoritative Active Rooms Snapshot Request for newly connected or reconnecting clients
   socket.on(
     'rooms:get_active',
@@ -2066,6 +2240,17 @@ export function registerRoomHandlers(io, socket) {
   socket.on('room:layout_updated', (d, cb) => onUpdateRoomLayout(io, socket, d, cb));
   socket.on('room:change_layout', (d, cb) => onUpdateRoomLayout(io, socket, d, cb));
 
+  // Bug #49: Authoritative Stage State Realtime Synchronization
+  socket.on('stage:get', (d, cb) => onGetStageSnapshot(io, socket, d, cb));
+  socket.on('room:stage_snapshot', (d, cb) => onGetStageSnapshot(io, socket, d, cb));
+  socket.on('stage:snapshot', (d, cb) => onGetStageSnapshot(io, socket, d, cb));
+
+  socket.on('stage:mic_toggle', (d, cb) => onStageMicToggle(io, socket, d, cb));
+  socket.on('room:stage_mic_toggle', (d, cb) => onStageMicToggle(io, socket, d, cb));
+
+  socket.on('stage:camera_toggle', (d, cb) => onStageCameraToggle(io, socket, d, cb));
+  socket.on('room:stage_camera_toggle', (d, cb) => onStageCameraToggle(io, socket, d, cb));
+
   // Handle both disconnecting (before leaveAll) and disconnect (as safety fallback)
   socket.on('disconnecting', () => onSocketDisconnect(io, socket));
   socket.on(SOCKET_EVENTS.DISCONNECT, () => onSocketDisconnect(io, socket));
@@ -2163,6 +2348,84 @@ export async function onUpdateRoomLayout(io, socket, data, callback) {
   }
 }
 
+export async function onGetStageSnapshot(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId;
+    if (!roomId) {
+      const err = { success: false, error: { code: 'INVALID_ROOM_ID', message: 'roomId is required' } };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit('stage:error', err);
+    }
+    const snapshot = await stageService.getStageSnapshot(roomId);
+    if (typeof callback === 'function') {
+      return callback({ success: true, data: snapshot });
+    }
+    return socket.emit('room:stage_snapshot', snapshot);
+  } catch (err) {
+    const errPayload = { success: false, error: err.message || 'Failed to get stage snapshot' };
+    if (typeof callback === 'function') return callback(errPayload);
+    return socket.emit('stage:error', errPayload);
+  }
+}
+
+export async function onStageMicToggle(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId;
+    const actorUserId = socket.userId;
+    const targetUserId = data?.targetUserId || actorUserId;
+    const isMuted = data?.isMuted !== undefined ? Boolean(data.isMuted) : true;
+    const reason = data?.reason || null;
+
+    if (!roomId) {
+      const err = { success: false, error: { code: 'INVALID_ROOM_ID', message: 'roomId is required' } };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit('stage:error', err);
+    }
+
+    const result = await stageService.updateStageMicState({
+      roomId,
+      actorUserId,
+      targetUserId,
+      isMuted,
+      reason,
+    });
+
+    if (typeof callback === 'function') return callback(result);
+    return socket.emit('stage:mic_updated', result);
+  } catch (err) {
+    const errPayload = { success: false, error: err.message || 'Failed to update mic state' };
+    if (typeof callback === 'function') return callback(errPayload);
+    return socket.emit('stage:error', errPayload);
+  }
+}
+
+export async function onStageCameraToggle(io, socket, data, callback) {
+  try {
+    const roomId = data?.roomId;
+    const actorUserId = socket.userId;
+    const isCameraOn = data?.isCameraOn !== undefined ? Boolean(data.isCameraOn) : true;
+
+    if (!roomId) {
+      const err = { success: false, error: { code: 'INVALID_ROOM_ID', message: 'roomId is required' } };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit('stage:error', err);
+    }
+
+    const result = await stageService.updateStageCameraState({
+      roomId,
+      actorUserId,
+      isCameraOn,
+    });
+
+    if (typeof callback === 'function') return callback(result);
+    return socket.emit('stage:camera_updated', result);
+  } catch (err) {
+    const errPayload = { success: false, error: err.message || 'Failed to update camera state' };
+    if (typeof callback === 'function') return callback(errPayload);
+    return socket.emit('stage:error', errPayload);
+  }
+}
+
 export default {
   buildRoomSnapshot,
   onJoinRoom,
@@ -2187,5 +2450,8 @@ export default {
   onUpdateRoomLock,
   onUpdateRoomDetails,
   onUpdateRoomLayout,
+  onGetStageSnapshot,
+  onStageMicToggle,
+  onStageCameraToggle,
   registerRoomHandlers,
 };

@@ -23,9 +23,26 @@ userRoomRouter.post('/:id/seats/:seatIndex/occupy', authenticate, roomController
 userRoomRouter.post('/:id/seats/:seatIndex/leave', authenticate, roomController.leaveSeat);
 userRoomRouter.post('/:id/leave-mic', authenticate, roomController.leaveMic);
 userRoomRouter.post('/:id/seats/leave', authenticate, roomController.leaveMic);
+
+// Bug #49: Authoritative Stage & Mic State Synchronization
+userRoomRouter.get('/:id/stage', roomController.getStageSnapshot);
+userRoomRouter.get('/:id/seats', roomController.getStageSnapshot);
+userRoomRouter.put('/:id/stage/mic', authenticate, roomController.updateStageMic);
+userRoomRouter.post('/:id/stage/mic', authenticate, roomController.updateStageMic);
+userRoomRouter.put('/:id/stage/camera', authenticate, roomController.updateStageCamera);
+userRoomRouter.post('/:id/stage/camera', authenticate, roomController.updateStageCamera);
+
+// Bug #53: Authoritative Saved Room Membership & Roster
+userRoomRouter.post('/:id/visit', authenticate, roomController.visitRoom);
 userRoomRouter.get('/:id/members', roomController.getRoomMembers);
+userRoomRouter.post('/:id/members', authenticate, roomController.joinRoomMembership);
+userRoomRouter.post('/:id/members/join', authenticate, roomController.joinRoomMembership);
+userRoomRouter.delete('/:id/members', authenticate, roomController.unjoinRoom);
+userRoomRouter.delete('/:id/members/:targetUserId', authenticate, roomController.removeRoomMember);
+userRoomRouter.post('/:id/members/:targetUserId/remove', authenticate, roomController.removeRoomMember);
 userRoomRouter.get('/:id/viewers', roomController.getRoomViewers);
 userRoomRouter.put('/:id/members/:targetUserId/role', authenticate, roomController.updateMemberRole);
+userRoomRouter.get('/:id/roles/audit', authenticate, roomController.getRoomRoleAudit);
 userRoomRouter.get('/:id/rankings', roomController.getRoomSendingRankings);
 userRoomRouter.post('/:id/agora-token', authenticate, agoraController.getAgoraToken);
 userRoomRouter.post('/:id/agora-token/refresh', authenticate, agoraController.postRefreshAgoraToken);
@@ -104,6 +121,20 @@ userRoomRouter.post('/:id/mic/invite/decline', authenticate, roomController.decl
 userRoomRouter.delete('/:id/mic/invitations/:invitationId', authenticate, roomController.cancelMicInvite);
 userRoomRouter.delete('/:id/mic/invite/:invitationId', authenticate, roomController.cancelMicInvite);
 
+// Bug #48: Live Co-Host Invitation Routes
+userRoomRouter.post('/:id/cohost/invite', authenticate, roomController.inviteCoHost);
+userRoomRouter.post('/:id/invite-cohost', authenticate, roomController.inviteCoHost);
+userRoomRouter.get('/:id/cohost/invitations', authenticate, roomController.getRoomCoHostInvitations);
+userRoomRouter.get('/cohost/invitations/pending', authenticate, roomController.getMyPendingCoHostInvitations);
+userRoomRouter.post('/:id/cohost/invitations/:invitationId/accept', authenticate, roomController.acceptCoHostInvite);
+userRoomRouter.post('/:id/cohost/invite/:invitationId/accept', authenticate, roomController.acceptCoHostInvite);
+userRoomRouter.post('/:id/cohost/invite/accept', authenticate, roomController.acceptCoHostInvite);
+userRoomRouter.post('/:id/cohost/invitations/:invitationId/decline', authenticate, roomController.declineCoHostInvite);
+userRoomRouter.post('/:id/cohost/invite/:invitationId/decline', authenticate, roomController.declineCoHostInvite);
+userRoomRouter.post('/:id/cohost/invite/decline', authenticate, roomController.declineCoHostInvite);
+userRoomRouter.delete('/:id/cohost/invitations/:invitationId', authenticate, roomController.cancelCoHostInvite);
+userRoomRouter.delete('/:id/cohost/invite/:invitationId', authenticate, roomController.cancelCoHostInvite);
+
 // Issue 28: Clear Screen / Lower Room Feed
 userRoomRouter.post('/:id/clear-feed', authenticate, roomController.clearRoomFeed);
 userRoomRouter.post('/:id/clear-screen', authenticate, roomController.clearRoomFeed);
@@ -113,6 +144,8 @@ adminRoomRouter.use(authenticate);
 adminRoomRouter.get('/pinned-positions', requirePermission('view_live_rooms'), roomController.getAdminPinnedPositions);
 adminRoomRouter.get('/', requirePermission('view_live_rooms'), roomController.getAdminRooms);
 adminRoomRouter.get('/:id', requirePermission('view_live_rooms'), roomController.getAdminRoomById);
+adminRoomRouter.get('/:id/diagnostics', requirePermission('view_live_rooms'), roomController.getAdminRoomDiagnostics);
+adminRoomRouter.get('/:id/roles/audit', requirePermission('view_live_rooms'), roomController.getRoomRoleAudit);
 adminRoomRouter.get('/:id/summary', requirePermission('view_live_rooms'), roomController.getAdminLiveSessionSummary);
 adminRoomRouter.get('/:id/agora-token', requirePermission('view_live_rooms'), roomController.getAdminAgoraToken);
 adminRoomRouter.post('/:id/pin', requirePermission('view_live_rooms'), roomController.postAdminPinRoom);

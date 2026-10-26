@@ -28,12 +28,16 @@ export async function getSocialProfile(req, res, next) {
 export async function putPrivacySettings(req, res, next) {
   try {
     const userId = req.auth?.userId;
-    const validatedData = privacySettingsSchema.parse(req.body);
-    const isPrivate = validatedData.isPrivate !== undefined
-      ? validatedData.isPrivate
-      : (validatedData.hideFollowList !== undefined ? validatedData.hideFollowList : false);
+    if (!userId) {
+      const error = new Error('User authentication is required');
+      error.statusCode = 401;
+      error.code = 'UNAUTHORIZED';
+      throw error;
+    }
 
-    const result = await socialService.updatePrivacySettings(userId, isPrivate);
+    const validatedData = privacySettingsSchema.parse(req.body);
+    const result = await socialService.updatePrivacySettings(userId, validatedData);
+    const isPrivate = Boolean(result?.isPrivate);
 
     return res.status(200).json({
       success: true,
@@ -195,14 +199,37 @@ export async function recordProfileVisit(req, res, next) {
 
 export async function getProfileVisitors(req, res, next) {
   try {
-    const targetUserId = req.params.id || req.params.userId || req.auth?.userId;
+    const authenticatedUserId = req.auth?.userId;
+    if (!authenticatedUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required to view visitor history',
+        code: 'UNAUTHORIZED',
+        error: { code: 'UNAUTHORIZED', statusCode: 401 },
+      });
+    }
+
+    const requestedId = req.params.id || req.params.userId || req.query.userId || req.query.targetUserId;
+    if (requestedId && requestedId !== 'me' && requestedId !== authenticatedUserId) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You are not authorized to view another user's visitor history",
+        code: 'FORBIDDEN',
+        error: { code: 'FORBIDDEN', statusCode: 403 },
+      });
+    }
+
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
-    const result = await socialService.getProfileVisitors(targetUserId, {
+    const result = await socialService.getProfileVisitors(authenticatedUserId, {
       page,
       limit,
-      viewerUserId: req.auth?.userId,
+      viewerUserId: authenticatedUserId,
     });
+
+    res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
 
     return res.status(200).json({
       success: true,
@@ -218,14 +245,37 @@ export async function getProfileVisitors(req, res, next) {
 
 export async function getProfileVisited(req, res, next) {
   try {
-    const targetUserId = req.params.id || req.params.userId || req.auth?.userId;
+    const authenticatedUserId = req.auth?.userId;
+    if (!authenticatedUserId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required to view visited profiles',
+        code: 'UNAUTHORIZED',
+        error: { code: 'UNAUTHORIZED', statusCode: 401 },
+      });
+    }
+
+    const requestedId = req.params.id || req.params.userId || req.query.userId || req.query.targetUserId;
+    if (requestedId && requestedId !== 'me' && requestedId !== authenticatedUserId) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden: You are not authorized to view another user's visited profiles",
+        code: 'FORBIDDEN',
+        error: { code: 'FORBIDDEN', statusCode: 403 },
+      });
+    }
+
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
-    const result = await socialService.getProfileVisited(targetUserId, {
+    const result = await socialService.getProfileVisited(authenticatedUserId, {
       page,
       limit,
-      viewerUserId: req.auth?.userId,
+      viewerUserId: authenticatedUserId,
     });
+
+    res.setHeader('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
 
     return res.status(200).json({
       success: true,

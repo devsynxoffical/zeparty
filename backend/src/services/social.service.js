@@ -770,8 +770,17 @@ export async function getFollowers(userId, { viewerUserId = null, page = 1, limi
 
   const isOwner = Boolean(viewerUserId && (viewerUserId === targetUser.id || viewerUserId === targetUser.username));
 
+  // Determine authoritative list privacy: checked from UserProfile.isPrivate and UserPreferences
+  let isPrivate = Boolean(targetUser.profile?.isPrivate);
+  try {
+    const prefs = await privacyEligibilityService.getUserPreferences(targetUser.id, db);
+    if (prefs.VIEW_LISTS === false || prefs.HIDE_FOLLOW_LIST === true) {
+      isPrivate = true;
+    }
+  } catch (_) {}
+
   // If user turned on private / hidden follow list and viewer is not the profile owner
-  if (targetUser.profile?.isPrivate && !isOwner) {
+  if (isPrivate && !isOwner) {
     const totalCount = await db.follow.count({
       where: {
         followingId: targetUser.id,
@@ -782,6 +791,7 @@ export async function getFollowers(userId, { viewerUserId = null, page = 1, limi
 
     return {
       followers: [],
+      total: totalCount,
       isPrivate: true,
       message: 'This user has set their followers list to private',
       pagination: {
@@ -796,7 +806,8 @@ export async function getFollowers(userId, { viewerUserId = null, page = 1, limi
   const result = await socialRepository.findFollowers(targetUser.id, { viewerUserId, page, limit }, db);
   return {
     ...result,
-    isPrivate: false,
+    total: result.pagination?.total ?? result.followers?.length ?? 0,
+    isPrivate,
   };
 }
 
@@ -822,8 +833,17 @@ export async function getFollowing(userId, { viewerUserId = null, page = 1, limi
 
   const isOwner = Boolean(viewerUserId && (viewerUserId === targetUser.id || viewerUserId === targetUser.username));
 
+  // Determine authoritative list privacy: checked from UserProfile.isPrivate and UserPreferences
+  let isPrivate = Boolean(targetUser.profile?.isPrivate);
+  try {
+    const prefs = await privacyEligibilityService.getUserPreferences(targetUser.id, db);
+    if (prefs.VIEW_LISTS === false || prefs.HIDE_FOLLOW_LIST === true) {
+      isPrivate = true;
+    }
+  } catch (_) {}
+
   // If user turned on private / hidden follow list and viewer is not the profile owner
-  if (targetUser.profile?.isPrivate && !isOwner) {
+  if (isPrivate && !isOwner) {
     const totalCount = await db.follow.count({
       where: {
         followerId: targetUser.id,
@@ -834,6 +854,7 @@ export async function getFollowing(userId, { viewerUserId = null, page = 1, limi
 
     return {
       following: [],
+      total: totalCount,
       isPrivate: true,
       message: 'This user has set their following list to private',
       pagination: {
@@ -848,7 +869,8 @@ export async function getFollowing(userId, { viewerUserId = null, page = 1, limi
   const result = await socialRepository.findFollowing(targetUser.id, { viewerUserId, page, limit }, db);
   return {
     ...result,
-    isPrivate: false,
+    total: result.pagination?.total ?? result.following?.length ?? 0,
+    isPrivate,
   };
 }
 
@@ -894,8 +916,18 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     db.follow.count({ where: { followerId: canonicalTargetId, status: 'ACCEPTED', following: { status: { not: 'DELETED' } } } }),
   ]);
 
-  const isPrivate = Boolean(user.profile?.isPrivate);
-  const canViewPosts = !isPrivate || isFollowing || viewerUserId === canonicalTargetId;
+  let targetPreferences = {};
+  try {
+    targetPreferences = await privacyEligibilityService.getUserPreferences(canonicalTargetId, db);
+  } catch (_) {}
+
+  let isPrivate = Boolean(user.profile?.isPrivate);
+  if (!isPrivate && (targetPreferences.VIEW_LISTS === false || targetPreferences.HIDE_FOLLOW_LIST === true)) {
+    isPrivate = true;
+  }
+
+  const isOwner = Boolean(viewerUserId && (viewerUserId === canonicalTargetId || viewerUserId === user.username));
+  const canViewPosts = !isPrivate || isFollowing || isOwner;
 
   let presence = null;
   try {
@@ -918,12 +950,68 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     };
   }
 
-  const isOnline = Boolean(presence?.isOnline);
-  const isInRoom = Boolean(presence?.isInRoom);
-  const roomId = presence?.currentRoomId || null;
-  const effectiveLastActiveAt = isOnline
+  let isOnline = Boolean(presence?.isOnline);
+  let isInRoom = Boolean(presence?.isInRoom);
+  let roomId = presence?.currentRoomId || null;
+  let effectiveLastActiveAt = isOnline
     ? (presence?.lastActiveAt || new Date().toISOString())
     : (presence?.lastActiveAt || '1970-01-01T00:00:00.000Z');
+  let presenceStatus = presence?.presenceStatus || (isOnline ? (isInRoom ? 'IN_ROOM' : 'ONLINE') : 'OFFLINE');
+
+  // Enforce privacy restrictions when viewed by third parties
+  let effectiveSvipLevel = user.profile?.svipLevel || 0;
+  let effectiveLevel = user.profile?.level || 1;
+
+  if (!isOwner) {
+    // 1. Hide Online Status
+    if (targetPreferences.HIDE_ONLINE) {
+      try {
+        const el = await privacyEligibilityService.checkUserEligibility(canonicalTargetId, 'HIDE_ONLINE', db);
+        if (el.isEligible) {
+          isOnline = false;
+          isInRoom = false;
+          roomId = null;
+          presenceStatus = 'OFFLINE';
+          effectiveLastActiveAt = null;
+          presence = {
+            userId: targetUserId,
+            presenceStatus: 'OFFLINE',
+            isOnline: false,
+            online: false,
+            isInRoom: false,
+            currentRoomId: null,
+            currentRoomTitle: null,
+            currentRoomSessionId: null,
+            currentRoom: null,
+            inRoomAvailable: false,
+            lastSeenAt: null,
+            lastActiveAt: null,
+            lastSeen: null,
+          };
+        }
+      } catch (_) {}
+    }
+
+    // 2. Hide SVIP Identity
+    if (targetPreferences.SVIP_HIDDEN) {
+      try {
+        const el = await privacyEligibilityService.checkUserEligibility(canonicalTargetId, 'SVIP_HIDDEN', db);
+        if (el.isEligible) {
+          effectiveSvipLevel = 0;
+        }
+      } catch (_) {}
+    }
+
+    // 3. Hide Wealth Level
+    if (targetPreferences.HIDE_WEALTH) {
+      try {
+        const el = await privacyEligibilityService.checkUserEligibility(canonicalTargetId, 'HIDE_WEALTH', db);
+        if (el.isEligible) {
+          effectiveLevel = null;
+        }
+      } catch (_) {}
+    }
+  }
 
   return {
     id: user.id,
@@ -931,9 +1019,9 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     avatarUrl: user.avatarUrl,
     bio: user.bio,
     displayName: user.profile?.displayName || user.username,
-    level: user.profile?.level || 1,
+    level: effectiveLevel,
     vipLevel: user.profile?.vipLevel || 0,
-    svipLevel: user.profile?.svipLevel || 0,
+    svipLevel: effectiveSvipLevel,
     nobleRank: user.profile?.nobleRank || null,
     isPrivate,
     followersCount,
@@ -942,6 +1030,8 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     isFollowing,
     isFollowedBy,
     isBlocked: isBlockedByViewer,
+    isOwner,
+    isSelf: isOwner,
     canViewPosts,
     createdAt: user.createdAt,
     // Real-time server presence fields (Bug 05)
@@ -956,7 +1046,7 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     inRoomAvailable: Boolean(presence?.inRoomAvailable),
     isOnline,
     online: isOnline,
-    presenceStatus: presence?.presenceStatus || (isOnline ? (isInRoom ? 'IN_ROOM' : 'ONLINE') : 'OFFLINE'),
+    presenceStatus,
     lastSeenAt: presence?.lastSeenAt || null,
     lastActiveAt: effectiveLastActiveAt,
     lastSeen: effectiveLastActiveAt,
@@ -964,7 +1054,7 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
   };
 }
 
-export async function updatePrivacySettings(userId, isPrivate, db = prisma) {
+export async function updatePrivacySettings(userId, settings, authUserId = null, db = prisma) {
   if (!userId) {
     const error = new Error('User authentication is required');
     error.statusCode = 401;
@@ -972,10 +1062,97 @@ export async function updatePrivacySettings(userId, isPrivate, db = prisma) {
     throw error;
   }
 
-  const updated = await socialRepository.updateUserPrivacy(userId, isPrivate, db);
+  let effectiveDb = db;
+  let effectiveAuthUserId = authUserId;
+  if (authUserId && typeof authUserId === 'object' && authUserId.userProfile) {
+    effectiveDb = authUserId;
+    effectiveAuthUserId = null;
+  }
+
+  if (effectiveAuthUserId && effectiveAuthUserId !== userId) {
+    const error = new Error('Unauthorized to modify another user privacy settings');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  let isPrivate;
+  let rawSettings = {};
+  if (typeof settings === 'boolean') {
+    isPrivate = settings;
+    rawSettings = { isPrivate };
+  } else if (settings && typeof settings === 'object') {
+    rawSettings = settings;
+    if (rawSettings.isPrivate !== undefined) {
+      isPrivate = Boolean(rawSettings.isPrivate);
+    } else if (rawSettings.hideFollowList !== undefined) {
+      isPrivate = Boolean(rawSettings.hideFollowList);
+    }
+  }
+
+  const prefsToPersist = {};
+  if (isPrivate !== undefined) {
+    prefsToPersist.VIEW_LISTS = !isPrivate;
+    prefsToPersist.HIDE_FOLLOW_LIST = isPrivate;
+  }
+  if (rawSettings.hideOnline !== undefined) prefsToPersist.HIDE_ONLINE = Boolean(rawSettings.hideOnline);
+  if (rawSettings.hideLevels !== undefined) prefsToPersist.HIDE_WEALTH = Boolean(rawSettings.hideLevels);
+  if (rawSettings.blockStrangersDm !== undefined) prefsToPersist.BLOCK_STRANGERS_DM = Boolean(rawSettings.blockStrangersDm);
+  if (rawSettings.hideCpRelationship !== undefined) prefsToPersist.HIDE_CP_RELATIONSHIP = Boolean(rawSettings.hideCpRelationship);
+  if (rawSettings.stealthEntry !== undefined) prefsToPersist.ROOM_INVISIBLE = Boolean(rawSettings.stealthEntry);
+  if (rawSettings.anonymousGifting !== undefined) prefsToPersist.HIDE_GIFT_RECORD = Boolean(rawSettings.anonymousGifting);
+  if (rawSettings.genderPrivacy !== undefined) prefsToPersist.GENDER_PRIVACY = Boolean(rawSettings.genderPrivacy);
+  if (rawSettings.failedToFind !== undefined) prefsToPersist.FAILED_TO_FIND = Boolean(rawSettings.failedToFind);
+  if (rawSettings.antiFollow !== undefined) prefsToPersist.ANTI_FOLLOW = Boolean(rawSettings.antiFollow);
+  if (rawSettings.rankInvisible !== undefined) prefsToPersist.RANK_INVISIBLE = Boolean(rawSettings.rankInvisible);
+  if (rawSettings.roomInvisible !== undefined) prefsToPersist.ROOM_INVISIBLE = Boolean(rawSettings.roomInvisible);
+  if (rawSettings.svipHidden !== undefined) prefsToPersist.SVIP_HIDDEN = Boolean(rawSettings.svipHidden);
+  if (rawSettings.invisibleVisit !== undefined) prefsToPersist.INVISIBLE_VISIT = Boolean(rawSettings.invisibleVisit);
+  if (rawSettings.mystery !== undefined) prefsToPersist.MYSTERY = Boolean(rawSettings.mystery);
+  if (rawSettings.hideWealth !== undefined) prefsToPersist.HIDE_WEALTH = Boolean(rawSettings.hideWealth);
+
+  // Authoritative entitlement validation for gated privacy controls
+  const gatedKeys = [
+    'ANTI_FOLLOW',
+    'FAILED_TO_FIND',
+    'INVISIBLE_VISIT',
+    'HIDE_ONLINE',
+    'HIDE_GIFT_RECORD',
+    'RANK_INVISIBLE',
+    'ROOM_INVISIBLE',
+    'SVIP_HIDDEN',
+    'MYSTERY',
+    'HIDE_WEALTH',
+  ];
+
+  for (const gatedKey of gatedKeys) {
+    if (prefsToPersist[gatedKey] === true) {
+      const eligibility = await privacyEligibilityService.checkUserEligibility(userId, gatedKey, db);
+      if (!eligibility.isEligible) {
+        const error = new Error(`User is not eligible to enable ${gatedKey}. Requires configured tier or explicit grant.`);
+        error.statusCode = 403;
+        error.code = 'PRIVACY_FEATURE_INELIGIBLE';
+        error.featureKey = gatedKey;
+        throw error;
+      }
+    }
+  }
+
+  // Persist to UserProfile
+  let updatedProfile = null;
+  if (isPrivate !== undefined) {
+    updatedProfile = await socialRepository.updateUserPrivacy(userId, isPrivate, db);
+  } else {
+    updatedProfile = await db.userProfile.findUnique({ where: { userId } });
+  }
+
+  // Persist to user preferences
+  const updatedPrefs = await privacyEligibilityService.setUserPreferences(userId, prefsToPersist, db);
+
   return {
     success: true,
-    isPrivate: updated.isPrivate,
+    isPrivate: isPrivate !== undefined ? isPrivate : Boolean(updatedProfile?.isPrivate),
+    preferences: updatedPrefs,
   };
 }
 
@@ -1140,7 +1317,10 @@ export async function recordProfileVisit({ visitorId, visitedId, isMystery = fal
     try {
       const prefs = await privacyEligibilityService.getUserPreferences(visitorId, db);
       if (prefs && prefs.INVISIBLE_VISIT) {
-        effectiveMystery = true;
+        const eligibility = await privacyEligibilityService.checkUserEligibility(visitorId, 'INVISIBLE_VISIT', db);
+        if (eligibility.isEligible) {
+          effectiveMystery = true;
+        }
       }
     } catch (_) {}
   }
@@ -1149,11 +1329,23 @@ export async function recordProfileVisit({ visitorId, visitedId, isMystery = fal
 }
 
 export async function getProfileVisitors(userId, { page = 1, limit = 50, viewerUserId = null } = {}, db = prisma) {
-  return await socialRepository.findProfileVisitors(userId, { page, limit, viewerUserId }, db);
+  if (viewerUserId && userId !== viewerUserId) {
+    const error = new Error("Forbidden: You are not authorized to view another user's visitor history");
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+  return await socialRepository.findProfileVisitors(userId, { page, limit, viewerUserId: userId }, db);
 }
 
 export async function getProfileVisited(userId, { page = 1, limit = 50, viewerUserId = null } = {}, db = prisma) {
-  return await socialRepository.findProfileVisited(userId, { page, limit, viewerUserId }, db);
+  if (viewerUserId && userId !== viewerUserId) {
+    const error = new Error("Forbidden: You are not authorized to view another user's visited profiles");
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+  return await socialRepository.findProfileVisited(userId, { page, limit, viewerUserId: userId }, db);
 }
 
 // ============================================================

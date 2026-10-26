@@ -1,6 +1,11 @@
 import roomService from '../services/room.service.js';
 import agoraService from '../services/agora.service.js';
 import * as attendanceService from '../services/attendance.service.js';
+import cohostInviteService from '../services/cohostInvite.service.js';
+import stageService from '../services/stage.service.js';
+import roomRepository from '../repositories/room.repository.js';
+import presenceService from '../socket/presence.service.js';
+import roomRoleAuditService from '../services/roomRoleAudit.service.js';
 import {
   createRoomSchema,
   queryActiveRoomsSchema,
@@ -77,12 +82,78 @@ export async function joinRoom(req, res, next) {
     const userId = req.auth.userId;
     const pin = req.body?.pin || req.body?.password;
     const isApproved = Boolean(req.body?.isApproved);
-    const room = await roomService.joinRoom(id, userId, { pin, isApproved });
+    const attemptId = req.body?.attemptId || req.headers['x-attempt-id'] || null;
+    const explicit = req.body?.explicit !== undefined ? Boolean(req.body.explicit) : false;
+    const isVisitor = req.body?.isVisitor !== undefined ? Boolean(req.body.isVisitor) : (req.query?.isVisitor === 'true' || !explicit);
+    const room = await roomService.joinRoom(id, userId, { pin, isApproved, attemptId, explicit, isVisitor });
 
     return res.status(200).json({
       success: true,
       message: 'Joined room successfully',
+      attemptId: room?.attemptId || attemptId,
       data: room,
+      room,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function visitRoom(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const userId = req.auth.userId;
+    const attemptId = req.body?.attemptId || req.headers['x-attempt-id'] || null;
+    const room = await roomService.visitRoom(id, userId, { attemptId });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Room visit recorded successfully',
+      attemptId: room?.attemptId || attemptId,
+      data: room,
+      room,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function joinRoomMembership(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const userId = req.auth.userId;
+    const result = await roomService.joinRoomMembership(id, userId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Joined room membership successfully',
+      data: result,
+      membership: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function removeRoomMember(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const targetUserId = req.params.targetUserId || req.body?.targetUserId;
+    const actorUserId = req.auth.userId;
+
+    if (!targetUserId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Target user ID is required to remove member',
+      });
+    }
+
+    const result = await roomService.removeRoomMember(id, actorUserId, targetUserId);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Room member removed successfully',
+      data: result,
     });
   } catch (err) {
     next(err);
@@ -162,6 +233,16 @@ export async function occupySeat(req, res, next) {
     const seat = result?.updatedSeat || result;
     const vacatedSeatIndex = result?.vacatedSeatIndex ?? null;
 
+    // Trigger authoritative stage sync across all clients
+    try {
+      await stageService.notifyStageOccupied({
+        roomId: id,
+        seatIndex: Number(seatIndex),
+        userId,
+        role: Number(seatIndex) === 1 ? 'CO_HOST' : 'SPEAKER',
+      });
+    } catch (_) {}
+
     return res.status(200).json({
       success: true,
       message: `Seat ${seatIndex} occupied successfully`,
@@ -178,6 +259,16 @@ export async function leaveSeat(req, res, next) {
     const { id, seatIndex } = occupySeatParamSchema.parse(req.params);
     const userId = req.auth.userId;
     const seat = await roomService.leaveSeat(id, seatIndex, userId);
+
+    try {
+      await stageService.notifyStageReleased({
+        roomId: id,
+        seatIndex: Number(seatIndex),
+        userId,
+        releasedByUserId: userId,
+        reason: 'LEFT_SEAT',
+      });
+    } catch (_) {}
 
     return res.status(200).json({
       success: true,
@@ -229,11 +320,76 @@ export async function leaveMic(req, res, next) {
     }
 
     const seat = await roomService.leaveSeat(id, seatIndex, userId);
+
+    try {
+      await stageService.notifyStageReleased({
+        roomId: id,
+        seatIndex: Number(seatIndex),
+        userId,
+        releasedByUserId: userId,
+        reason: 'LEFT_MIC',
+      });
+    } catch (_) {}
+
     return res.status(200).json({
       success: true,
       message: `Seat ${seatIndex} released successfully`,
       data: seat,
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getStageSnapshot(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const snapshot = await stageService.getStageSnapshot(id);
+    return res.status(200).json({
+      success: true,
+      message: 'Stage snapshot retrieved successfully',
+      data: snapshot,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateStageMic(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const actorUserId = req.auth?.userId || req.user?.id;
+    const targetUserId = req.body?.targetUserId || actorUserId;
+    const isMuted = req.body?.isMuted !== undefined ? Boolean(req.body.isMuted) : true;
+    const reason = req.body?.reason || null;
+
+    const result = await stageService.updateStageMicState({
+      roomId: id,
+      actorUserId,
+      targetUserId,
+      isMuted,
+      reason,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateStageCamera(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const actorUserId = req.auth?.userId || req.user?.id;
+    const isCameraOn = req.body?.isCameraOn !== undefined ? Boolean(req.body.isCameraOn) : true;
+
+    const result = await stageService.updateStageCameraState({
+      roomId: id,
+      actorUserId,
+      isCameraOn,
+    });
+
+    return res.status(200).json(result);
   } catch (err) {
     next(err);
   }
@@ -546,14 +702,21 @@ export async function getAdminAgoraToken(req, res, next) {
 export async function getRoomMembers(req, res, next) {
   try {
     const { id } = req.params;
-    const { search } = req.query;
-    const result = await roomService.getRoomMembers(id, { search });
+    const { search, page, limit } = req.query;
+    const parsedPage = page ? parseInt(page, 10) : 1;
+    const parsedLimit = limit ? parseInt(limit, 10) : 50;
+    const result = await roomService.getRoomMembers(id, { search, page: parsedPage, limit: parsedLimit });
 
     return res.status(200).json({
       success: true,
       message: 'Room members retrieved successfully',
       data: result.members,
+      members: result.members,
       totalCount: result.totalCount,
+      savedMemberCount: result.savedMemberCount,
+      viewerCount: result.viewerCount,
+      capacity: result.capacity,
+      pagination: result.pagination,
     });
   } catch (err) {
     next(err);
@@ -1033,6 +1196,112 @@ export async function cancelMicInvite(req, res, next) {
   }
 }
 
+// Bug #48: Live Co-Host Invitation Endpoints
+export async function inviteCoHost(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { targetUserId, seatIndex } = req.body;
+    const actorUserId = req.auth?.userId || req.user?.id;
+
+    const result = await cohostInviteService.createCoHostInvite({
+      roomId: id,
+      actorUserId,
+      targetUserId,
+      seatIndex: seatIndex ? Number(seatIndex) : 1,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Co-Host invitation sent successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRoomCoHostInvitations(req, res, next) {
+  try {
+    const { id } = req.params;
+    const userId = req.auth?.userId || req.user?.id;
+    const results = await cohostInviteService.getPendingCoHostInvitesForUser(userId, id);
+
+    return res.status(200).json({
+      success: true,
+      data: results,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getMyPendingCoHostInvitations(req, res, next) {
+  try {
+    const userId = req.auth?.userId || req.user?.id;
+    const results = await cohostInviteService.getPendingCoHostInvitesForUser(userId);
+
+    return res.status(200).json({
+      success: true,
+      data: results,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function acceptCoHostInvite(req, res, next) {
+  try {
+    const { id, invitationId } = req.params;
+    const userId = req.auth?.userId || req.user?.id;
+
+    const result = await cohostInviteService.acceptCoHostInvite({
+      roomId: id,
+      invitationId,
+      userId,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function declineCoHostInvite(req, res, next) {
+  try {
+    const { id, invitationId } = req.params;
+    const { reason } = req.body || {};
+    const userId = req.auth?.userId || req.user?.id;
+
+    const result = await cohostInviteService.declineCoHostInvite({
+      roomId: id,
+      invitationId,
+      userId,
+      reason,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function cancelCoHostInvite(req, res, next) {
+  try {
+    const { id, invitationId } = req.params;
+    const actorUserId = req.auth?.userId || req.user?.id;
+
+    const result = await cohostInviteService.cancelCoHostInvite({
+      roomId: id,
+      invitationId,
+      actorUserId,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getRoomViewers(req, res, next) {
   try {
     const { id } = req.params;
@@ -1127,6 +1396,76 @@ export async function updateRoomLayout(req, res, next) {
   }
 }
 
+export async function getAdminRoomDiagnostics(req, res, next) {
+  try {
+    const { id } = req.params;
+    const room = await roomRepository.findRoomById(id);
+    if (!room) {
+      return res.status(404).json({ success: false, error: { code: 'ROOM_NOT_FOUND', message: 'Room not found' } });
+    }
+
+    let activeUsers = [];
+    let viewerCount = 0;
+    try {
+      activeUsers = await presenceService.getRoomActiveUsers(room.id);
+      viewerCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
+    } catch (_) {}
+
+    const auditTrail = roomRoleAuditService.getRoomRoleAuditLogs(room.id);
+
+    const admins = (room.members || []).filter((m) => m.role === 'ADMIN' || m.role === 'MODERATOR');
+    const seatsStatus = (room.seats || []).map((s) => ({
+      seatIndex: s.seatIndex,
+      occupiedUserId: s.occupiedUserId || s.userId || null,
+      isMuted: Boolean(s.isMuted),
+      isMutedByModerator: Boolean(s.isMutedByModerator),
+      isLocked: Boolean(s.isLocked),
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        room: {
+          id: room.id,
+          title: room.title,
+          status: room.status,
+          creatorUserId: room.creatorUserId,
+          agoraChannelName: room.agoraChannelName,
+          isPrivate: room.isPrivate,
+          createdAt: room.createdAt,
+          endedAt: room.endedAt,
+        },
+        connectionHealth: {
+          joinAuthStage: 'HEALTHY',
+          realtimeSocketPresence: {
+            activeUserCount: activeUsers.length,
+            viewerCount,
+            activeUsers: activeUsers.map((u) => ({ userId: u.userId, displayName: u.displayName })),
+          },
+          seatsStatus,
+          adminRoster: admins.map((a) => ({ userId: a.userId, role: a.role, joinedAt: a.joinedAt })),
+          recentRoleAuditTrail: auditTrail.logs,
+        },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRoomRoleAudit(req, res, next) {
+  try {
+    const { id } = req.params;
+    const auditTrail = roomRoleAuditService.getRoomRoleAuditLogs(id);
+    return res.status(200).json({
+      success: true,
+      data: auditTrail,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -1187,11 +1526,25 @@ export default {
   acceptMicInvite,
   declineMicInvite,
   cancelMicInvite,
+  inviteCoHost,
+  getRoomCoHostInvitations,
+  getMyPendingCoHostInvitations,
+  acceptCoHostInvite,
+  declineCoHostInvite,
+  cancelCoHostInvite,
   getRoomViewers,
   adminInviteViewerToMic,
   clearRoomFeed,
   postAdminClearRoomFeed,
   unjoinRoom,
+  visitRoom,
+  joinRoomMembership,
+  removeRoomMember,
   getUserJoinedRooms,
+  getStageSnapshot,
+  updateStageMic,
+  updateStageCamera,
+  getAdminRoomDiagnostics,
+  getRoomRoleAudit,
 };
 

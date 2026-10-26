@@ -40,6 +40,7 @@ export function CoinSellersPage() {
       setSellers(
         (data || []).map((s) => ({
           ...s,
+          userId: s.userId || s.user?.id || '',
           sellerName: s.name || s.id,
           username: s.username || `@${s.id?.slice(0, 6)}`,
           country: s.country || 'US',
@@ -181,7 +182,12 @@ export function CoinSellersPage() {
     return sellers.filter((s) => {
       const q = search.toLowerCase();
       const matchCountry = !selectedCountry || selectedCountry === 'All' || selectedCountry === 'GLOBAL' || s.country?.toLowerCase() === selectedCountry.toLowerCase();
-      const matchQuery = !q || s.sellerName?.toLowerCase().includes(q) || s.username?.toLowerCase().includes(q) || (s.id && s.id.toLowerCase().includes(q));
+      const matchQuery = !q ||
+        s.sellerName?.toLowerCase().includes(q) ||
+        s.username?.toLowerCase().includes(q) ||
+        (s.id && s.id.toLowerCase().includes(q)) ||
+        (s.userId && s.userId.toLowerCase().includes(q)) ||
+        (s.contactEmail && s.contactEmail.toLowerCase().includes(q));
       return matchCountry && matchQuery;
     });
   }, [search, selectedCountry, sellers]);
@@ -227,22 +233,24 @@ export function CoinSellersPage() {
 
   // Remove Reseller role
   const handleRemoveResellerRole = async (seller) => {
+    if (!seller) return;
     try {
       setLoading(true);
       await deleteCoinSeller(seller.id);
+      setSellers((prev) => prev.filter((item) => item.id !== seller.id));
       await fetchSellers();
 
       await logAdminAction({
         action: 'RESELLER_ROLE_REMOVED',
         module: 'Recharge',
         targetType: 'reseller',
-        targetId: seller.username,
+        targetId: seller.userId || seller.username,
         targetName: seller.sellerName,
-        reason: `Removed Reseller role`,
+        reason: `Removed Reseller role for ${seller.sellerName} (${seller.userId || seller.username})`,
         riskLevel: 'HIGH',
       });
 
-      showFeedback('success', `Reseller role removed for @${seller.username}.`, 'Role Removed');
+      showFeedback('success', `Reseller role removed for ${seller.sellerName} (@${(seller.username || '').replace('@', '')}).`, 'Role Removed');
     } catch (err) {
       showFeedback('error', err.response?.data?.message || err.message || 'Failed to remove reseller role.', 'Removal Failed');
     } finally {
@@ -402,7 +410,7 @@ export function CoinSellersPage() {
       render: (row) => (
         <div>
           <p className="text-sm font-bold text-white">{row.sellerName}</p>
-          <p className="text-xs text-slate-400">@{row.username} • ID: <span className="font-mono text-slate-300">{row.id}</span></p>
+          <p className="text-xs text-slate-400">@{row.username.replace('@', '')} • User ID: <span className="font-mono text-slate-300">{row.userId || row.id}</span></p>
         </div>
       ),
     },

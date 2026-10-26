@@ -121,7 +121,23 @@ export async function findStoreCatalog(
     where.NOT = getPrismaRestrictedAssetWhereClauses();
   }
 
-  if (assetType) where.assetType = assetType;
+  if (assetType) {
+    if (assetType === 'VEHICLE') {
+      where.OR = [
+        { assetType: 'VEHICLE' },
+        {
+          AND: [
+            { assetType: 'ENTRY_EFFECT' },
+            { NOT: { id: { startsWith: 'bg_' } } },
+            { NOT: { name: { contains: 'Theme', mode: 'insensitive' } } },
+            { NOT: { name: { contains: 'Realm', mode: 'insensitive' } } },
+          ],
+        },
+      ];
+    } else {
+      where.assetType = assetType;
+    }
+  }
   if (roomAvailability) where.roomAvailability = roomAvailability;
   if (typeof isVipExclusive === 'boolean') where.isVipExclusive = isVipExclusive;
   if (minVipLevel !== undefined) {

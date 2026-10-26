@@ -2,6 +2,27 @@ import prisma from '../config/database.js';
 import storageService from '../services/storage.service.js';
 import presenceService from '../socket/presence.service.js';
 
+let giftCatalogCache = null;
+let lastGiftCatalogFetch = 0;
+
+export async function getCachedGiftCatalog() {
+  const now = Date.now();
+  if (!giftCatalogCache || now - lastGiftCatalogFetch > 60000) {
+    try {
+      const gifts = await prisma.gift.findMany({ where: { isActive: true } });
+      const byId = new Map();
+      const byName = new Map();
+      for (const g of gifts) {
+        byId.set(g.id, g);
+        if (g.name) byName.set(g.name.toLowerCase().trim(), g);
+      }
+      giftCatalogCache = { byId, byName };
+      lastGiftCatalogFetch = now;
+    } catch (_) {}
+  }
+  return giftCatalogCache || { byId: new Map(), byName: new Map() };
+}
+
 /**
  * Get distinct conversation summaries for a user with the latest message and unread counts.
  */
@@ -27,7 +48,8 @@ export async function getConversationsForUser(userId) {
     const otherId = msg.senderId === userId ? msg.recipientId : msg.senderId;
     otherUserIds.add(otherId);
 
-    const isExpired = Boolean(
+    const isGift = msg.type === 'gift' || (msg.content && msg.content.includes('🎁'));
+    const isExpired = !isGift && Boolean(
       msg.isMediaDeleted ||
       (msg.mediaExpiresAt && now > new Date(msg.mediaExpiresAt))
     );
@@ -38,7 +60,7 @@ export async function getConversationsForUser(userId) {
         lastMessage: {
           id: msg.id,
           content: msg.content,
-          type: msg.type || (msg.mediaUrl ? (msg.mediaUrl.endsWith('.m4a') || msg.mediaUrl.endsWith('.mp3') ? 'voice' : 'image') : 'text'),
+          type: isGift ? 'gift' : (msg.type || (msg.mediaUrl ? (msg.mediaUrl.endsWith('.m4a') || msg.mediaUrl.endsWith('.mp3') ? 'voice' : 'image') : 'text')),
           mediaUrl: isExpired ? null : (msg.mediaUrl || null),
           durationSeconds: msg.durationSeconds || null,
           isMediaExpired: isExpired,
@@ -200,8 +222,11 @@ export async function getMessagesBetweenUsers(userAId, userBId, { page = 1, limi
     }),
   ]);
 
+  const catalog = await getCachedGiftCatalog();
+
   const sanitizedMessages = messages.reverse().map((msg) => {
-    const isExpired = Boolean(
+    const isGift = msg.type === 'gift' || (msg.content && msg.content.includes('🎁'));
+    const isExpired = !isGift && Boolean(
       msg.isMediaDeleted ||
       (msg.mediaExpiresAt && now > new Date(msg.mediaExpiresAt))
     );
@@ -217,7 +242,51 @@ export async function getMessagesBetweenUsers(userAId, userBId, { page = 1, limi
       }).catch(() => {});
     }
 
-    const type = msg.type || (msg.mediaUrl ? (msg.mediaUrl.endsWith('.m4a') || msg.mediaUrl.endsWith('.mp3') ? 'voice' : 'image') : 'text');
+    const type = isGift ? 'gift' : (msg.type || (msg.mediaUrl ? (msg.mediaUrl.endsWith('.m4a') || msg.mediaUrl.endsWith('.mp3') ? 'voice' : 'image') : 'text'));
+
+    let giftPayload = null;
+    let resolvedMediaUrl = isExpired ? null : (msg.mediaUrl || null);
+
+    if (isGift) {
+      let giftItem = null;
+      let quantity = 1;
+
+      if (msg.content) {
+        const match = msg.content.match(/Sent\s+(?:(\d+)\s*[x×]\s*)?(.+?)[!.]?$/i);
+        if (match) {
+          if (match[1]) quantity = parseInt(match[1], 10) || 1;
+          const candidateName = match[2].trim().toLowerCase();
+          giftItem = catalog.byName.get(candidateName);
+        }
+      }
+
+      if (!giftItem && msg.mediaUrl && catalog.byId.has(msg.mediaUrl)) {
+        giftItem = catalog.byId.get(msg.mediaUrl);
+      }
+
+      if (giftItem) {
+        resolvedMediaUrl = giftItem.iconUrl || msg.mediaUrl;
+        giftPayload = {
+          id: giftItem.id,
+          name: giftItem.name,
+          iconUrl: giftItem.iconUrl,
+          animationUrl: giftItem.svgaAssetUrl || null,
+          mediaType: giftItem.svgaAssetUrl ? 'ANIMATION' : 'IMAGE',
+          isAnimated: Boolean(giftItem.isAnimated || giftItem.svgaAssetUrl),
+          coinValue: giftItem.coinValue ? giftItem.coinValue.toString() : '0',
+          quantity,
+        };
+      } else if (msg.mediaUrl && !['🎁', '🏎️', '🏰'].includes(msg.mediaUrl)) {
+        giftPayload = {
+          id: null,
+          name: msg.content?.replace(/^🎁\s*Sent\s+/i, '').replace(/[!.]+$/, '') || 'Gift',
+          iconUrl: msg.mediaUrl,
+          animationUrl: null,
+          mediaType: 'IMAGE',
+          quantity: 1,
+        };
+      }
+    }
 
     return {
       id: msg.id,
@@ -225,9 +294,11 @@ export async function getMessagesBetweenUsers(userAId, userBId, { page = 1, limi
       recipientId: msg.recipientId,
       content: msg.content,
       type,
-      mediaUrl: isExpired ? null : (msg.mediaUrl || null),
+      mediaUrl: resolvedMediaUrl,
+      mediaType: isGift ? (giftPayload?.animationUrl ? 'animation' : 'image') : (type === 'voice' ? 'voice' : (resolvedMediaUrl ? 'image' : null)),
+      gift: giftPayload,
       durationSeconds: msg.durationSeconds || null,
-      mediaExpiresAt: msg.mediaExpiresAt || null,
+      mediaExpiresAt: isGift ? null : (msg.mediaExpiresAt || null),
       isMediaDeleted: isExpired,
       isMediaExpired: isExpired,
       isRead: msg.isRead,
@@ -257,15 +328,17 @@ export async function createMessage({
   mediaUrl = null,
   durationSeconds = null,
 }) {
-  // 30 days retention policy for media attachments (voice notes, images)
-  const mediaExpiresAt = mediaUrl ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null;
+  const isGift = type === 'gift' || (content && content.includes('🎁'));
+  const effectiveType = isGift ? 'gift' : (type || 'text');
+  // 30 days retention policy for media attachments (voice notes, images). Gifts are permanent financial assets, never expired.
+  const mediaExpiresAt = (!isGift && mediaUrl) ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null;
 
   return await prisma.message.create({
     data: {
       senderId,
       recipientId,
       content,
-      type: type || 'text',
+      type: effectiveType,
       mediaUrl: mediaUrl || null,
       durationSeconds: durationSeconds ? parseInt(durationSeconds, 10) : null,
       mediaExpiresAt,
@@ -286,6 +359,8 @@ export async function cleanupExpiredMessageMedia() {
         mediaExpiresAt: { lt: now },
         isMediaDeleted: false,
         mediaUrl: { not: null },
+        type: { not: 'gift' },
+        NOT: { content: { contains: '🎁' } },
       },
       take: 100,
     });

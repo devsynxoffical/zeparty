@@ -473,7 +473,7 @@ export async function findAdminRooms(
   };
 }
 
-export async function joinRoomTx({ roomId, userId, pin = null, isApproved = false }, db = prisma) {
+export async function joinRoomTx({ roomId, userId, pin = null, isApproved = false, attemptId = null, isVisitor = false, explicit = false }, db = prisma) {
   let resolvedRoomId = roomId;
   let room = await db.room.findUnique({
     where: { id: roomId },
@@ -590,28 +590,52 @@ export async function joinRoomTx({ roomId, userId, pin = null, isApproved = fals
 
   const isGuest = Boolean(String(userId).startsWith('guest_'));
 
-  if (!isGuest) {
-    // Ensure durable RoomMember record exists for registered user
-    try {
-      const existingMember = await db.roomMember.findUnique({
-        where: {
-          roomId_userId: {
-            roomId: resolvedRoomId,
-            userId,
-          },
-        },
-      });
+  if (!isGuest && userId) {
+    // BUG #53: Distinguish live room viewing/visiting from explicit durable room membership
+    // Merely visiting/watching a room must not automatically create saved membership.
+    const isOwner = room.creatorUserId === userId;
+    const shouldPersist = isOwner || explicit || !isVisitor;
 
-      if (!existingMember) {
-        await db.roomMember.create({
-          data: {
-            roomId: resolvedRoomId,
-            userId,
-          },
-        });
+    if (shouldPersist) {
+      try {
+        if (db.roomMember?.upsert) {
+          await db.roomMember.upsert({
+            where: {
+              roomId_userId: {
+                roomId: resolvedRoomId,
+                userId,
+              },
+            },
+            create: {
+              roomId: resolvedRoomId,
+              userId,
+              role: isOwner ? 'HOST' : 'MEMBER',
+            },
+            update: {}, // Preserve existing role (e.g. ADMIN) and do not overwrite or fail
+          });
+        } else {
+          const existingMember = await db.roomMember.findUnique({
+            where: {
+              roomId_userId: {
+                roomId: resolvedRoomId,
+                userId,
+              },
+            },
+          });
+
+          if (!existingMember) {
+            await db.roomMember.create({
+              data: {
+                roomId: resolvedRoomId,
+                userId,
+                role: isOwner ? 'HOST' : 'MEMBER',
+              },
+            });
+          }
+        }
+      } catch (memberErr) {
+        console.warn(`[RoomRepo] Membership registration notice for user ${userId} in room ${resolvedRoomId}:`, memberErr.message);
       }
-    } catch (memberErr) {
-      console.warn(`[RoomRepo] Membership registration error for user ${userId} in room ${resolvedRoomId}:`, memberErr.message);
     }
 
     // If returning user is the creator/host, preserve existing seat state without forcibly re-occupying vacant seat 0
@@ -642,7 +666,7 @@ export async function joinRoomTx({ roomId, userId, pin = null, isApproved = fals
     }
   } catch (_) {}
 
-  return await db.room.update({
+  const updatedRoom = await db.room.update({
     where: { id: resolvedRoomId },
     data: {
       currentViewersCount: totalViewerCount,
@@ -660,6 +684,12 @@ export async function joinRoomTx({ roomId, userId, pin = null, isApproved = fals
       },
     },
   });
+
+  if (attemptId) {
+    updatedRoom.attemptId = attemptId;
+  }
+
+  return updatedRoom;
 }
 
 export async function leaveRoomTx({ roomId, userId }, db = prisma) {
@@ -1044,10 +1074,8 @@ export async function closeRoomTx({ roomId, status = 'ENDED', endedAt = new Date
       },
     });
 
-    // Delete all active memberships
-    await tx.roomMember.deleteMany({
-      where: { roomId },
-    });
+    // Note: Do not delete RoomMember records. Durable membership and assigned roles
+    // (such as ADMIN) must be preserved across room session closures and restarts.
 
     return await tx.room.update({
       where: { id: roomId },
@@ -1057,7 +1085,7 @@ export async function closeRoomTx({ roomId, status = 'ENDED', endedAt = new Date
         currentViewersCount: 0,
       },
     });
-  });
+  }, { timeout: 25000, maxWait: 15000 });
 }
 
 export async function updateRoomCoverImage({ roomId, coverImageUrl }, db = prisma) {
@@ -1475,6 +1503,24 @@ export async function unjoinRoomTx({ roomId, userId }, db = prisma) {
   const canonical = await resolveCanonicalUser(userId, db);
   const targetUserId = canonical ? canonical.id : userId;
 
+  // Preserve assigned room roles (ADMIN) on audience unjoin/exit
+  const existingMember = await db.roomMember.findUnique({
+    where: {
+      roomId_userId: {
+        roomId: resolvedRoomId,
+        userId: targetUserId,
+      },
+    },
+  });
+
+  if (existingMember && (existingMember.role === 'ADMIN' || existingMember.role === 'MODERATOR')) {
+    return { success: true, message: 'Unjoined room successfully; admin role preserved', rolePreserved: true };
+  }
+
+  if (room && room.creatorUserId === targetUserId) {
+    return { success: true, message: 'Owner cannot unjoin room', isOwner: true };
+  }
+
   await db.roomMember.deleteMany({
     where: {
       roomId: resolvedRoomId,
@@ -1483,6 +1529,68 @@ export async function unjoinRoomTx({ roomId, userId }, db = prisma) {
   });
 
   return { success: true, message: 'Unjoined room successfully' };
+}
+
+export async function removeRoomMemberTx({ roomId, actorUserId, targetUserId }, db = prisma) {
+  let resolvedRoomId = roomId;
+  const room = await db.room.findUnique({ where: { id: roomId } });
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+  resolvedRoomId = room.id;
+
+  if (room.creatorUserId === targetUserId) {
+    const error = new Error('Cannot remove room owner');
+    error.statusCode = 400;
+    error.code = 'OWNER_IMMUTABLE';
+    throw error;
+  }
+
+  // Permission check: actor must be owner or admin
+  const isOwner = room.creatorUserId === actorUserId;
+  let isActorAdmin = false;
+  if (!isOwner) {
+    const actorMember = await db.roomMember.findUnique({
+      where: { roomId_userId: { roomId: resolvedRoomId, userId: actorUserId } },
+    });
+    isActorAdmin = Boolean(actorMember && (actorMember.role === 'ADMIN' || actorMember.role === 'MODERATOR'));
+  }
+
+  if (!isOwner && !isActorAdmin) {
+    const error = new Error('Forbidden: Only the room owner or an admin can remove members');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  // Admin cannot remove another admin or owner
+  if (isActorAdmin && !isOwner) {
+    const targetMember = await db.roomMember.findUnique({
+      where: { roomId_userId: { roomId: resolvedRoomId, userId: targetUserId } },
+    });
+    if (targetMember && (targetMember.role === 'ADMIN' || targetMember.role === 'MODERATOR')) {
+      const error = new Error('Forbidden: Room admins cannot remove other room admins');
+      error.statusCode = 403;
+      error.code = 'FORBIDDEN';
+      throw error;
+    }
+  }
+
+  // Release any mic seat occupied by target
+  await db.roomSeat.updateMany({
+    where: { roomId: resolvedRoomId, occupiedUserId: targetUserId },
+    data: { occupiedUserId: null, isMuted: false, isMutedByModerator: false },
+  });
+
+  // Remove membership
+  await db.roomMember.deleteMany({
+    where: { roomId: resolvedRoomId, userId: targetUserId },
+  });
+
+  return { success: true, message: 'Member removed from room successfully', targetUserId };
 }
 
 export async function getUserJoinedRooms(userId, { page = 1, limit = 20, viewerUserId = null } = {}, db = prisma) {
@@ -1577,6 +1685,7 @@ export default {
   joinRoomTx,
   leaveRoomTx,
   unjoinRoomTx,
+  removeRoomMemberTx,
   getUserJoinedRooms,
   occupySeatTx,
   leaveSeatTx,

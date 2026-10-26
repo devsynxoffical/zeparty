@@ -55,6 +55,25 @@ export async function findEquippedAssetByType(userId, assetType, db = prisma) {
   });
 }
 
+export async function findEquippedEntryEffect(userId, db = prisma) {
+  if (!userId) return null;
+  return await db.userAsset.findFirst({
+    where: {
+      userId,
+      isEquipped: true,
+      asset: {
+        assetType: { in: ['VEHICLE', 'ENTRY_EFFECT'] },
+        isActive: true,
+      },
+      expiresAt: { gt: new Date() },
+    },
+    include: {
+      asset: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
 export async function createUserAsset(data, db = prisma) {
   return await db.userAsset.create({
     data: {
@@ -112,6 +131,7 @@ export default {
   findUserAssetById,
   findActiveUserAssetByAssetId,
   findEquippedAssetByType,
+  findEquippedEntryEffect,
   createUserAsset,
   updateUserAsset,
   unequipAssetsByType,

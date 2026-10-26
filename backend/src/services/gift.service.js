@@ -419,10 +419,32 @@ export async function sendGift(
       tx
     );
 
+    // If sending directly to a user in Inbox (no roomId), persist authoritative Message in conversation
+    let directMessage = null;
+    if (!roomId) {
+      try {
+        directMessage = await tx.message.create({
+          data: {
+            senderId: senderUserId,
+            recipientId: recipientUserId,
+            content: `🎁 Sent ${qty > 1 ? qty + ' × ' : ''}${gift.name}`,
+            type: 'gift',
+            mediaUrl: gift.iconUrl || gift.svgaAssetUrl || null,
+            mediaExpiresAt: null, // Gifts are permanent financial assets, never expired
+            isMediaDeleted: false,
+            isRead: false,
+          },
+        });
+      } catch (dmErr) {
+        console.warn('Failed to persist direct gift message inside tx:', dmErr.message);
+      }
+    }
+
     const senderNewBalance = (BigInt(currentSenderWallet.coinBalance) - totalCoins).toString();
 
     return {
       giftTransaction: giftTx,
+      directMessage,
       ledgerPosting,
       senderNewBalance,
       senderWealth: {
@@ -513,7 +535,38 @@ export async function sendGift(
         ipAddress,
       }, db);
 
-      // 3. Realtime Room Socket Broadcasts
+      // Load sender & recipient user details for rich real-time display
+      let senderUser = null;
+      let recipientUserObj = null;
+      try {
+        [senderUser, recipientUserObj] = await Promise.all([
+          db.user.findUnique({
+            where: { id: senderUserId },
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              profile: { select: { displayName: true } },
+            },
+          }),
+          db.user.findUnique({
+            where: { id: recipientUserId },
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              profile: { select: { displayName: true } },
+            },
+          }),
+        ]);
+      } catch (_) {}
+
+      const senderDisplayName = senderUser?.profile?.displayName || senderUser?.username || 'User';
+      const senderAvatarUrl = senderUser?.profile?.avatarUrl || senderUser?.avatarUrl || '';
+      const recipientDisplayName = recipientUserObj?.profile?.displayName || recipientUserObj?.username || 'Host';
+      const recipientAvatarUrl = recipientUserObj?.profile?.avatarUrl || recipientUserObj?.avatarUrl || '';
+
+      // 3. Realtime Room Socket Broadcasts vs Direct Inbox Messaging
       if (roomId) {
         let canonicalRoomId = roomId;
         try {
@@ -531,37 +584,6 @@ export async function sendGift(
             if (found) canonicalRoomId = found.id;
           }
         } catch (_) {}
-
-        // Load sender & recipient user details for rich real-time display
-        let senderUser = null;
-        let recipientUserObj = null;
-        try {
-          [senderUser, recipientUserObj] = await Promise.all([
-            db.user.findUnique({
-              where: { id: senderUserId },
-              select: {
-                id: true,
-                username: true,
-                avatarUrl: true,
-                profile: { select: { displayName: true } },
-              },
-            }),
-            db.user.findUnique({
-              where: { id: recipientUserId },
-              select: {
-                id: true,
-                username: true,
-                avatarUrl: true,
-                profile: { select: { displayName: true } },
-              },
-            }),
-          ]);
-        } catch (_) {}
-
-        const senderDisplayName = senderUser?.profile?.displayName || senderUser?.username || 'User';
-        const senderAvatarUrl = senderUser?.profile?.avatarUrl || senderUser?.avatarUrl || '';
-        const recipientDisplayName = recipientUserObj?.profile?.displayName || recipientUserObj?.username || 'Host';
-        const recipientAvatarUrl = recipientUserObj?.profile?.avatarUrl || recipientUserObj?.avatarUrl || '';
 
         // Bug #28: Tag live broadcast with explicit playback & replay flags
         const broadcastPayload = {
@@ -657,6 +679,55 @@ export async function sendGift(
             commitTimestamp: result.giftTransaction.createdAt,
           });
         } catch (_) {}
+      } else {
+        // Direct Inbox Gift: emit direct message events to both users
+        const giftMediaPayload = {
+          id: gift.id,
+          name: gift.name,
+          iconUrl: gift.iconUrl || null,
+          animationUrl: gift.svgaAssetUrl || null,
+          mediaType: gift.svgaAssetUrl ? 'ANIMATION' : 'IMAGE',
+          quantity: qty,
+          totalCoins: totalCoins.toString(),
+          transactionId: result.giftTransaction.id,
+        };
+
+        const msgId = result.directMessage?.id || result.giftTransaction.id;
+        const directMsgPayload = {
+          id: msgId,
+          messageId: msgId,
+          transactionId: result.giftTransaction.id,
+          senderId: senderUserId,
+          recipientId: recipientUserId,
+          content: `🎁 Sent ${qty > 1 ? qty + ' × ' : ''}${gift.name}`,
+          type: 'gift',
+          mediaUrl: gift.iconUrl || gift.svgaAssetUrl || null,
+          mediaType: gift.svgaAssetUrl ? 'animation' : 'image',
+          mediaExpiresAt: null,
+          isMediaDeleted: false,
+          isMediaExpired: false,
+          gift: giftMediaPayload,
+          sender: {
+            id: senderUserId,
+            username: senderUser?.username || senderDisplayName,
+            displayName: senderDisplayName,
+            avatarUrl: senderAvatarUrl,
+          },
+          recipient: {
+            id: recipientUserId,
+            username: recipientUserObj?.username || recipientDisplayName,
+            displayName: recipientDisplayName,
+            avatarUrl: recipientAvatarUrl,
+          },
+          createdAt: result.directMessage?.createdAt || result.giftTransaction.createdAt,
+          timestamp: (result.directMessage?.createdAt || result.giftTransaction.createdAt).toISOString(),
+        };
+
+        socketEmitter.emitToUser(recipientUserId, 'direct_message', directMsgPayload);
+        socketEmitter.emitToUser(recipientUserId, 'message:received', directMsgPayload);
+        socketEmitter.emitToUser(recipientUserId, 'inbox:message', directMsgPayload);
+        socketEmitter.emitToUser(senderUserId, 'direct_message_sent', directMsgPayload);
+        socketEmitter.emitToUser(senderUserId, 'message:sent', directMsgPayload);
       }
 
       // High-Value Activity Announcement Trigger (100,000+ Coins)

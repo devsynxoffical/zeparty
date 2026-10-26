@@ -266,8 +266,9 @@ function sanitizeUser(user) {
   const diamondBal = safeUser.wallet?.diamondBalance != null ? Number(safeUser.wallet.diamondBalance) : 0;
 
   // Authoritative Coins Seller & Portal evaluation
+  // BUG #41 FIX: Seller capabilities depend strictly on an active CoinSeller portal record
   const hasActiveSellerPortal = Boolean(safeUser.coinSeller && safeUser.coinSeller.sellerStatus === 'ACTIVE');
-  const isSeller = hasActiveSellerPortal || safeUser.userType === 'COIN_SELLER' || safeUser.userType === 'SELLER';
+  const isSeller = hasActiveSellerPortal;
   const isCoinsSeller = isSeller;
   const hasSellerPortal = hasActiveSellerPortal;
   const sellerStatus = safeUser.coinSeller ? safeUser.coinSeller.sellerStatus : null;
@@ -277,6 +278,10 @@ function sanitizeUser(user) {
     : (safeUser.wallet?.sellerBalanceCoins != null ? Number(safeUser.wallet.sellerBalanceCoins) : 0);
   const sellerBalanceStr = (safeUser.coinSeller?.resellerBalanceCoins ?? safeUser.wallet?.sellerBalanceCoins ?? 0n).toString();
 
+  // Authoritative Live Host evaluation (Bug #46)
+  const hasActiveHost = Boolean(safeUser.hostProfile && safeUser.hostProfile.hostStatus === 'ACTIVE');
+  const isHost = hasActiveHost;
+
   // Multi-role resolution
   const userRoles = ['USER'];
   if (isSeller) {
@@ -285,7 +290,13 @@ function sanitizeUser(user) {
   }
   if (safeUser.merchant && safeUser.merchant.status === 'ACTIVE') userRoles.push('MERCHANT');
   if (safeUser.ownedAgencies && safeUser.ownedAgencies.length > 0) userRoles.push('AGENCY_OWNER');
-  if (safeUser.userType && !userRoles.includes(safeUser.userType)) userRoles.push(safeUser.userType);
+  if (safeUser.userType && safeUser.userType !== 'COIN_SELLER' && !userRoles.includes(safeUser.userType)) {
+    if (safeUser.userType === 'HOST') {
+      if (hasActiveHost) userRoles.push('HOST');
+    } else {
+      userRoles.push(safeUser.userType);
+    }
+  }
   const roles = Array.from(new Set(userRoles));
 
   return {
@@ -294,6 +305,9 @@ function sanitizeUser(user) {
     diamonds: diamondBal,
     coinBalance: coinBal,
     diamondBalance: diamondBal,
+    isHost,
+    hasLiveHostAccess: isHost,
+    hostStatus: safeUser.hostProfile?.hostStatus || null,
     isSeller,
     isCoinsSeller,
     hasSellerPortal,
@@ -352,8 +366,8 @@ export async function syncUserFromApp({
   dob,
   countryCode,
   phone,
-  coins = 1000,
-  diamonds = 100,
+  coins = 0,
+  diamonds = 0,
   isSignup = false,
   device = {},
   headers = {},
@@ -465,8 +479,8 @@ export async function syncUserFromApp({
       status: 'ACTIVE',
       userType: 'USER',
       countryCode: resolvedCountryCode,
-      coinBalance: coins || 1000,
-      diamondBalance: diamonds || 100,
+      coinBalance: coins || 0,
+      diamondBalance: diamonds || 0,
     });
     isNewUser = true;
   } else {
@@ -569,8 +583,8 @@ export async function syncUserFromApp({
         status: 'ACTIVE',
         userType: 'USER',
         countryCode: resolvedCountryCode,
-        coinBalance: coins || 1000,
-        diamondBalance: diamonds || 100,
+        coinBalance: coins || 0,
+        diamondBalance: diamonds || 0,
       });
       isNewUser = true;
     }

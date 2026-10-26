@@ -354,7 +354,8 @@ async function seed() {
   // 10. Seed Canonical Store Assets
   const baselineAssets = [
     // Cars
-    { id: 'car_phantom', name: 'Phantom Hypercar', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 500000n, validDays: 30, thumbnailUrl: 'assets/animations/mystery_entry.webp', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'car_phantom', name: 'Phantom Hypercar', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 500000n, validDays: 30, thumbnailUrl: 'assets/images/gift_supercar.jpg', isVipExclusive: false, minVipLevelRequired: 0 },
+    { id: 'car_supercar', name: 'Supercar Roadster', assetType: 'VEHICLE', assetSubcategory: 'STATIC', priceCoins: 120000n, validDays: 30, thumbnailUrl: 'assets/images/gift_supercar.jpg', isVipExclusive: false, minVipLevelRequired: 0 },
     { id: 'car_astral', name: 'Astral Dragon Mount', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 350000n, validDays: 30, thumbnailUrl: 'assets/nobles/emperor_entrance.png', isVipExclusive: false, minVipLevelRequired: 0 },
     { id: 'car_royal', name: 'Royal Chariot', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 200000n, validDays: 30, thumbnailUrl: 'assets/nobles/marquis_entrance.png', isVipExclusive: false, minVipLevelRequired: 0 },
     { id: 'car_cyber_jet', name: 'Cyber Hoverjet', assetType: 'VEHICLE', assetSubcategory: 'ANIMATED_SVGA', priceCoins: 150000n, validDays: 30, thumbnailUrl: 'assets/svip/svip12_entry.png', isVipExclusive: false, minVipLevelRequired: 0 },

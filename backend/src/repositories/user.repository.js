@@ -469,7 +469,7 @@ export async function updateUserProfile(
         hostProfile: true,
       },
     });
-  });
+  }, { maxWait: 15000, timeout: 30000 });
 }
 
 export async function findPublicProfileById(id, db = prisma) {

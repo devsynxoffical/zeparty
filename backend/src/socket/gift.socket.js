@@ -2,6 +2,7 @@ import giftService from '../services/gift.service.js';
 import prisma from '../config/database.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
 import { withRateLimit } from './rateLimiter.socket.js';
+import privacyEligibilityService from '../services/privacyEligibility.service.js';
 
 export async function onSendGift(io, socket, data, callback) {
   try {
@@ -82,17 +83,41 @@ export async function onSendGift(io, socket, data, callback) {
     const transactionId = giftData?.transactionId || giftData?.transaction?.id || result?.giftTransaction?.id || 'tx_unknown';
     const giftInfo = giftData?.gift || result?.gift || {};
 
+    let isAnonymous = false;
+    try {
+      const prefs = await privacyEligibilityService.getUserPreferences(senderUserId);
+      if (prefs.HIDE_GIFT_RECORD || prefs.ANONYMOUS_GIFTING) {
+        const el = await privacyEligibilityService.checkUserEligibility(senderUserId, 'HIDE_GIFT_RECORD');
+        if (el.isEligible) {
+          isAnonymous = true;
+        }
+      }
+    } catch (_) {}
+
+    const senderInfo = isAnonymous
+      ? {
+          id: 'anonymous',
+          username: 'Mysterious Sender',
+          displayName: 'Mysterious Sender',
+          name: 'Mysterious Sender',
+          avatarUrl: null,
+          isAnonymous: true,
+        }
+      : {
+          id: socket.user?.id || senderUserId,
+          username: socket.user?.username || 'user',
+          displayName: socket.user?.displayName || socket.user?.name || socket.user?.username || 'User',
+          name: socket.user?.displayName || socket.user?.name || socket.user?.username || 'User',
+          avatarUrl: socket.user?.avatarUrl || null,
+          isAnonymous: false,
+        };
+
     const broadcastPayload = {
       id: transactionId,
       transactionId,
       roomId,
-      senderUserId,
-      sender: {
-        id: socket.user?.id || senderUserId,
-        username: socket.user?.username || 'user',
-        displayName: socket.user?.displayName || socket.user?.name || socket.user?.username || 'User',
-        avatarUrl: socket.user?.avatarUrl || null,
-      },
+      senderUserId: isAnonymous ? 'anonymous' : senderUserId,
+      sender: senderInfo,
       recipientUserId,
       receiverUserId: recipientUserId,
       gift: {
@@ -105,8 +130,14 @@ export async function onSendGift(io, socket, data, callback) {
       giftName: giftInfo.name || 'Gift',
       giftIcon: giftInfo.iconUrl || '🎁',
       quantity,
+      isAnonymous,
       timestamp: new Date().toISOString(),
     };
+
+    if (io && roomId) {
+      io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_GIFT_SENT, broadcastPayload);
+      io.to(`room:${roomId}`).emit('room:gift_sent', broadcastPayload);
+    }
 
     if (typeof callback === 'function') {
       return callback({

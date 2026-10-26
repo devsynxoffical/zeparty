@@ -335,6 +335,7 @@ export async function searchUsers(req, res, next) {
     const users = await userService.searchUsers(q || '', {
       limit,
       excludeUserId: currentUserId,
+      viewerUserId: currentUserId,
     });
     return res.status(200).json({
       success: true,
@@ -474,7 +475,8 @@ export async function getRoomUserProfileCard(req, res, next) {
 export async function getUserLevelStrip(req, res, next) {
   try {
     const { id } = req.params;
-    const result = await userService.getUserLevelStrip(id);
+    const viewerUserId = req.auth?.userId;
+    const result = await userService.getUserLevelStrip(id, viewerUserId);
     return res.status(200).json({ success: true, data: result });
   } catch (err) {
     next(err);
@@ -484,6 +486,12 @@ export async function getUserLevelStrip(req, res, next) {
 export async function putProfileEdit(req, res, next) {
   try {
     const userId = req.auth?.userId;
+    if (!userId) {
+      const error = new Error('User authentication is required');
+      error.statusCode = 401;
+      error.code = 'UNAUTHORIZED';
+      throw error;
+    }
     const result = await userService.editOwnProfile(userId, req.body);
     return res.status(200).json(result);
   } catch (err) {
@@ -494,6 +502,12 @@ export async function putProfileEdit(req, res, next) {
 export async function getUserPrivacySettings(req, res, next) {
   try {
     const userId = req.auth?.userId;
+    if (!userId) {
+      const error = new Error('User authentication is required');
+      error.statusCode = 401;
+      error.code = 'UNAUTHORIZED';
+      throw error;
+    }
     const result = await userService.getUserPrivacySettings(userId);
     return res.status(200).json({ success: true, data: result });
   } catch (err) {
@@ -504,6 +518,12 @@ export async function getUserPrivacySettings(req, res, next) {
 export async function putUserPrivacySettings(req, res, next) {
   try {
     const userId = req.auth?.userId;
+    if (!userId) {
+      const error = new Error('User authentication is required');
+      error.statusCode = 401;
+      error.code = 'UNAUTHORIZED';
+      throw error;
+    }
     const result = await userService.updateUserPrivacySettings(userId, req.body);
     return res.status(200).json(result);
   } catch (err) {

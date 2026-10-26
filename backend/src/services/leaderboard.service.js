@@ -1,10 +1,56 @@
 import prisma from '../config/database.js';
+import privacyEligibilityService from './privacyEligibility.service.js';
 
 /**
  * Leaderboard & Global Rankings Service
  * Computes live real-time ranking data from PostgreSQL for Wealth, Charm, Room, CP, and SVIP.
  * Supports daily, weekly, monthly, and all-time periods.
  */
+
+export async function sanitizeRankingUser(userObj, viewerUserId = null, db = prisma) {
+  if (!userObj || !userObj.id) return userObj;
+  if (viewerUserId && (viewerUserId === userObj.id || viewerUserId === userObj.username)) {
+    return userObj;
+  }
+
+  try {
+    const prefs = await privacyEligibilityService.getUserPreferences(userObj.id, db);
+    if (prefs.RANK_INVISIBLE) {
+      const eligibility = await privacyEligibilityService.checkUserEligibility(userObj.id, 'RANK_INVISIBLE', db);
+      if (eligibility.isEligible) {
+        return {
+          ...userObj,
+          username: 'Mystery User',
+          name: 'Mystery User',
+          displayName: 'Mystery User',
+          avatarUrl: '',
+          svipLevel: 0,
+          isMystery: true,
+        };
+      }
+    }
+  } catch (_) {}
+
+  return userObj;
+}
+
+export async function sanitizeRankingsList(rankings, viewerUserId = null, db = prisma) {
+  if (!Array.isArray(rankings)) return rankings;
+  return await Promise.all(
+    rankings.map(async (item) => {
+      if (item.user) {
+        return {
+          ...item,
+          user: await sanitizeRankingUser(item.user, viewerUserId, db),
+        };
+      }
+      if (item.id) {
+        return await sanitizeRankingUser(item, viewerUserId, db);
+      }
+      return item;
+    })
+  );
+}
 
 function getPeriodDateFilter(period) {
   const now = new Date();
@@ -24,7 +70,7 @@ function getPeriodDateFilter(period) {
 /**
  * Get Wealth Rankings (Top coin spenders / gifters)
  */
-export async function getWealthRankings({ period = 'daily', limit = 30 } = {}, db = prisma) {
+export async function getWealthRankings({ period = 'daily', limit = 30, viewerUserId = null } = {}, db = prisma) {
   const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
   const since = getPeriodDateFilter(period);
 
@@ -68,7 +114,7 @@ export async function getWealthRankings({ period = 'daily', limit = 30 } = {}, d
 
       const userMap = new Map(users.map((u) => [u.id, u]));
 
-      return aggregations
+      const results = aggregations
         .filter((a) => userMap.has(a.senderUserId))
         .map((a, idx) => {
           const u = userMap.get(a.senderUserId);
@@ -89,6 +135,7 @@ export async function getWealthRankings({ period = 'daily', limit = 30 } = {}, d
             formattedPoints: points >= 1000000 ? `${(points / 1000000).toFixed(1)}M` : points >= 1000 ? `${(points / 1000).toFixed(1)}K` : `${points}`,
           };
         });
+      return await sanitizeRankingsList(results, viewerUserId, db);
     }
   }
 
@@ -113,7 +160,7 @@ export async function getWealthRankings({ period = 'daily', limit = 30 } = {}, d
     },
   });
 
-  return profiles.map((p, idx) => {
+  const results = profiles.map((p, idx) => {
     const rawSpent = Number(p.totalSpentCoins || 0n);
     const multiplier = period === 'daily' ? 0.3 : period === 'weekly' ? 0.6 : 1.0;
     const points = Math.round(rawSpent * multiplier);
@@ -133,12 +180,13 @@ export async function getWealthRankings({ period = 'daily', limit = 30 } = {}, d
       formattedPoints: points >= 1000000 ? `${(points / 1000000).toFixed(1)}M` : points >= 1000 ? `${(points / 1000).toFixed(1)}K` : `${points}`,
     };
   });
+  return await sanitizeRankingsList(results, viewerUserId, db);
 }
 
 /**
  * Get Charm Rankings (Top gift receivers / charm earners sorted by total coin value of gifts received)
  */
-export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db = prisma) {
+export async function getCharmRankings({ period = 'daily', limit = 30, viewerUserId = null } = {}, db = prisma) {
   const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
   const since = getPeriodDateFilter(period);
 
@@ -180,7 +228,7 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
 
       const userMap = new Map(users.map((u) => [u.id, u]));
 
-      return aggregations
+      const results = aggregations
         .filter((a) => userMap.has(a.recipientUserId))
         .map((a, idx) => {
           const u = userMap.get(a.recipientUserId);
@@ -201,6 +249,7 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
             formattedPoints: points >= 1000000 ? `${(points / 1000000).toFixed(1)}M` : points >= 1000 ? `${(points / 1000).toFixed(1)}K` : `${points}`,
           };
         });
+      return await sanitizeRankingsList(results, viewerUserId, db);
     }
   }
 
@@ -239,7 +288,7 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
 
     const userMap = new Map(users.map((u) => [u.id, u]));
 
-    return allTimeAgg
+    const results = allTimeAgg
       .filter((a) => userMap.has(a.recipientUserId))
       .map((a, idx) => {
         const u = userMap.get(a.recipientUserId);
@@ -262,6 +311,7 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
           formattedPoints: points >= 1000000 ? `${(points / 1000000).toFixed(1)}M` : points >= 1000 ? `${(points / 1000).toFixed(1)}K` : `${points}`,
         };
       });
+    return await sanitizeRankingsList(results, viewerUserId, db);
   }
 
   // Fallback if no gift transactions recorded yet
@@ -285,7 +335,7 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
     },
   });
 
-  return profiles.map((p, idx) => {
+  const results = profiles.map((p, idx) => {
     const rawDiamonds = Number(p.totalEarnedDiamonds || 0n);
     const multiplier = period === 'daily' ? 0.35 : period === 'weekly' ? 0.7 : 1.0;
     const points = Math.round(rawDiamonds * multiplier);
@@ -305,12 +355,13 @@ export async function getCharmRankings({ period = 'daily', limit = 30 } = {}, db
       formattedPoints: points >= 1000000 ? `${(points / 1000000).toFixed(1)}M` : points >= 1000 ? `${(points / 1000).toFixed(1)}K` : `${points}`,
     };
   });
+  return await sanitizeRankingsList(results, viewerUserId, db);
 }
 
 /**
  * Get Room Rankings (Top active and popular live & party rooms)
  */
-export async function getRoomRankings({ period = 'daily', limit = 30 } = {}, db = prisma) {
+export async function getRoomRankings({ period = 'daily', limit = 30, viewerUserId = null } = {}, db = prisma) {
   const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
 
   const rooms = await db.room.findMany({
@@ -345,7 +396,7 @@ export async function getRoomRankings({ period = 'daily', limit = 30 } = {}, db 
     },
   });
 
-  return rooms.filter((r) => r.creator).map((r, idx) => {
+  const results = rooms.filter((r) => r.creator).map((r, idx) => {
     const rawDiamonds = Number(r.creator?.profile?.totalEarnedDiamonds || 0n);
     const viewers = r.currentViewersCount || 1;
     const points = Math.max(viewers * 10, rawDiamonds > 0 ? Math.round(rawDiamonds * 0.1) : viewers * 15);
@@ -370,12 +421,13 @@ export async function getRoomRankings({ period = 'daily', limit = 30 } = {}, db 
       formattedPoints: points >= 1000000 ? `${(points / 1000000).toFixed(1)}M` : points >= 1000 ? `${(points / 1000).toFixed(1)}K` : `${points}`,
     };
   });
+  return await sanitizeRankingsList(results, viewerUserId, db);
 }
 
 /**
  * Get SVIP Rankings
  */
-export async function getSvipRankings({ limit = 30 } = {}, db = prisma) {
+export async function getSvipRankings({ limit = 30, viewerUserId = null } = {}, db = prisma) {
   const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
 
   const profiles = await db.userProfile.findMany({
@@ -405,7 +457,7 @@ export async function getSvipRankings({ limit = 30 } = {}, db = prisma) {
     },
   });
 
-  return profiles.map((p, idx) => {
+  const results = profiles.map((p, idx) => {
     const rawSpent = Number(p.totalSpentCoins || 0n);
     const score = p.svipLevel * 100000 + p.vipLevel * 10000 + rawSpent;
     return {
@@ -424,12 +476,13 @@ export async function getSvipRankings({ limit = 30 } = {}, db = prisma) {
       formattedPoints: score >= 1000000 ? `${(score / 1000000).toFixed(1)}M` : score >= 1000 ? `${(score / 1000).toFixed(1)}K` : `${score}`,
     };
   });
+  return await sanitizeRankingsList(results, viewerUserId, db);
 }
 
 /**
  * Get Aristocratic Rankings (Aristocracy / Nobility level tiers)
  */
-export async function getAristocraticRankings({ limit = 30 } = {}, db = prisma) {
+export async function getAristocraticRankings({ limit = 30, viewerUserId = null } = {}, db = prisma) {
   const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
 
   const profiles = await db.userProfile.findMany({
@@ -454,7 +507,7 @@ export async function getAristocraticRankings({ limit = 30 } = {}, db = prisma) 
     },
   });
 
-  return profiles.map((p, idx) => {
+  const results = profiles.map((p, idx) => {
     const rawSpent = Number(p.totalSpentCoins || 0n);
     const nobleLevel = Math.max(1, Math.min(7, Math.floor((p.svipLevel * 2 + p.vipLevel) / 2) || 1));
     const score = p.svipLevel * 150000 + p.vipLevel * 25000 + rawSpent;
@@ -476,12 +529,13 @@ export async function getAristocraticRankings({ limit = 30 } = {}, db = prisma) 
       formattedPoints: score >= 1000000 ? `${(score / 1000000).toFixed(1)}M` : score >= 1000 ? `${(score / 1000).toFixed(1)}K` : `${score}`,
     };
   });
+  return await sanitizeRankingsList(results, viewerUserId, db);
 }
 
 /**
  * Get Lucky Rankings (Top Lucky Gift & Mini-game participants)
  */
-export async function getLuckyRankings({ period = 'daily', limit = 30 } = {}, db = prisma) {
+export async function getLuckyRankings({ period = 'daily', limit = 30, viewerUserId = null } = {}, db = prisma) {
   const take = Math.min(100, Math.max(1, parseInt(limit, 10) || 30));
   const since = getPeriodDateFilter(period);
 
@@ -527,16 +581,17 @@ export async function getLuckyRankings({ period = 'daily', limit = 30 } = {}, db
     }
 
     const list = Array.from(senderMap.values()).sort((a, b) => b.points - a.points).slice(0, take);
-    return list.map((item, idx) => ({
+    const results = list.map((item, idx) => ({
       rank: idx + 1,
       user: item.user,
       points: item.points,
       formattedPoints: item.points >= 1000000 ? `${(item.points / 1000000).toFixed(1)}M` : item.points >= 1000 ? `${(item.points / 1000).toFixed(1)}K` : `${item.points}`,
     }));
+    return await sanitizeRankingsList(results, viewerUserId, db);
   }
 
   // Fallback to wealth
-  return await getWealthRankings({ period, limit }, db);
+  return await getWealthRankings({ period, limit, viewerUserId }, db);
 }
 
 /**
@@ -658,6 +713,8 @@ export async function getCpRankings({ period = 'daily', limit = 30 } = {}, db = 
 }
 
 export default {
+  sanitizeRankingUser,
+  sanitizeRankingsList,
   getWealthRankings,
   getCharmRankings,
   getRoomRankings,

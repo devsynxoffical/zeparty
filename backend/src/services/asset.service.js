@@ -1,6 +1,8 @@
 import prisma from '../config/database.js';
 import assetRepository from '../repositories/asset.repository.js';
 import userAssetRepository from '../repositories/userAsset.repository.js';
+import redisProxy from '../config/redis.js';
+import { emitToUser } from '../socket/socket.emitter.js';
 import {
   isRestrictedSpecialAsset,
   isPublicStoreItem,
@@ -30,27 +32,55 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
 export function serializeAsset(asset) {
   if (!asset) return null;
   const rawType = asset.assetType || 'FRAME';
+  const idLower = String(asset.id || '').toLowerCase();
+  const nameLower = String(asset.name || '').toLowerCase();
+
   let category = 'Frame';
-  if (rawType === 'VEHICLE') category = 'Cars';
-  else if (rawType === 'FRAME') category = 'Frame';
-  else if (rawType === 'CHAT_BUBBLE') category = 'Bubble';
-  else if (rawType === 'ENTRY_EFFECT') category = 'Background';
-  else if (rawType === 'BADGE') category = 'Badges';
+  if (rawType === 'VEHICLE') {
+    category = 'Cars';
+  } else if (rawType === 'FRAME') {
+    category = 'Frame';
+  } else if (rawType === 'CHAT_BUBBLE') {
+    category = 'Bubble';
+  } else if (rawType === 'ENTRY_EFFECT') {
+    if (idLower.startsWith('bg_') || idLower.includes('background') || nameLower.includes('theme') || nameLower.includes('realm')) {
+      category = 'Background';
+    } else {
+      category = 'Cars'; // Store's Cars category contains room-entry effects
+    }
+  } else if (rawType === 'BADGE') {
+    if (idLower.startsWith('card_') || idLower.includes('card') || nameLower.includes('card')) {
+      category = 'Special card';
+    } else {
+      category = 'Badges';
+    }
+  }
 
   const imageUrl = asset.thumbnailUrl || asset.staticFileUrl || asset.animationFileUrl || '';
   const isSpecial = isRestrictedSpecialAsset(asset);
   const isPublic = isPublicStoreItem(asset);
 
+  const tags = rawType === 'VEHICLE' || category === 'Cars'
+    ? ['CARS', 'ENTRY_EFFECT']
+    : (category === 'Special card' ? ['SPECIAL_CARD', 'BADGE'] : [category.toUpperCase()]);
+
   return {
     ...asset,
     id: asset.id,
+    assetId: asset.id,
     name: asset.name,
+    category,
     categoryId: category,
+    categoryName: category,
     assetType: rawType,
     imageUrl,
     iconUrl: imageUrl,
     thumbnailUrl: imageUrl,
+    staticUrl: asset.staticFileUrl || null,
+    animationUrl: asset.animationFileUrl || null,
+    videoUrl: asset.videoFileUrl || asset.animationFileUrl || null,
     assetUrl: asset.animationFileUrl || asset.staticFileUrl || asset.videoFileUrl || null,
+    price: asset.priceCoins ? asset.priceCoins.toString() : '0',
     durationDays: asset.validDays || 30,
     validDays: asset.validDays || 30,
     priceCoins: asset.priceCoins ? asset.priceCoins.toString() : '0',
@@ -61,6 +91,7 @@ export function serializeAsset(asset) {
     isPublic,
     classification: isSpecial ? 'SPECIAL' : 'PUBLIC',
     isActive: Boolean(asset.isActive),
+    tags,
   };
 }
 
@@ -322,6 +353,11 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
   const updatedUserAsset = await db.$transaction(async (tx) => {
     if (assetType) {
       await userAssetRepository.unequipAssetsByType(userId, assetType, tx);
+      if (assetType === 'VEHICLE') {
+        await userAssetRepository.unequipAssetsByType(userId, 'ENTRY_EFFECT', tx);
+      } else if (assetType === 'ENTRY_EFFECT') {
+        await userAssetRepository.unequipAssetsByType(userId, 'VEHICLE', tx);
+      }
     }
     return await userAssetRepository.updateUserAsset(
       userAsset.id,
@@ -346,31 +382,33 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
     ipAddress,
   }, db);
 
+  // Invalidate user profile cache in Redis
+  try {
+    if (redisProxy.isOpen && userId) {
+      await redisProxy.del(`user:profile:${userId}`);
+    }
+  } catch (_) {}
+
+  // Publish realtime outfit update
+  try {
+    if (userId) {
+      const frameUrl = userAsset.asset?.thumbnailUrl || userAsset.asset?.staticFileUrl || userAsset.asset?.animationFileUrl || userAsset.asset?.name || null;
+      emitToUser(userId, 'user:outfit_updated', {
+        userId,
+        assetType,
+        assetId: userAsset.assetId,
+        equippedFrame: assetType === 'FRAME' ? frameUrl : undefined,
+        avatarFrame: assetType === 'FRAME' ? frameUrl : undefined,
+        action: 'EQUIP',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (_) {}
+
   return serializeUserAsset(updatedUserAsset);
 }
 
 export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db = prisma) {
-  // Handle assigned frames
-  if (userAssetId && userAssetId.startsWith('assigned-frame-')) {
-    return {
-      id: userAssetId,
-      userId,
-      assetId: 'assigned-asset-frame',
-      isEquipped: false,
-      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      isExpired: false,
-      asset: {
-        id: 'assigned-asset-frame',
-        name: 'Assigned Frame',
-        categoryId: 'Frame',
-        assetType: 'FRAME',
-        imageUrl: 'assets/roles/host_frame.webp',
-        priceCoins: '0',
-        isActive: true,
-      },
-    };
-  }
-
   let userAsset = await userAssetRepository.findUserAssetById(userAssetId, db);
   if (!userAsset) {
     userAsset = await userAssetRepository.findActiveUserAssetByAssetId(userId, userAssetId, db);
@@ -397,6 +435,8 @@ export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db =
     db
   );
 
+  const assetType = userAsset.asset?.assetType || 'FRAME';
+
   await logAudit({
     adminId: null,
     adminName: 'User Action',
@@ -408,9 +448,32 @@ export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db =
       userAssetId: userAsset.id,
       assetId: userAsset.assetId,
       assetName: userAsset.asset?.name,
+      assetType,
     },
     ipAddress,
   }, db);
+
+  // Invalidate user profile cache in Redis
+  try {
+    if (redisProxy.isOpen && userId) {
+      await redisProxy.del(`user:profile:${userId}`);
+    }
+  } catch (_) {}
+
+  // Publish realtime outfit unequip update
+  try {
+    if (userId) {
+      emitToUser(userId, 'user:outfit_updated', {
+        userId,
+        assetType,
+        assetId: userAsset.assetId,
+        equippedFrame: assetType === 'FRAME' ? null : undefined,
+        avatarFrame: assetType === 'FRAME' ? null : undefined,
+        action: 'UNEQUIP',
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (_) {}
 
   return serializeUserAsset(updated);
 }

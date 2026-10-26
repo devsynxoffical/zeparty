@@ -86,6 +86,24 @@ export async function reviewHostApplication(
   { status, rejectionReason, adminId, adminName, ipAddress },
   db = prisma
 ) {
+  // Validate that reviewer is an active administrator (Bug #46 Requirement 4.C)
+  if (!adminId) {
+    const error = new Error('Admin authentication required to review host application');
+    error.statusCode = 401;
+    error.code = 'UNAUTHORIZED';
+    throw error;
+  }
+  const reviewerAdmin = await db.admin.findUnique({
+    where: { id: adminId },
+    select: { id: true, status: true },
+  });
+  if (!reviewerAdmin || reviewerAdmin.status !== 'ACTIVE') {
+    const error = new Error('Forbidden: Unauthorized admin user');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
   const application = await hostRepository.findApplicationById(applicationId, db);
   if (!application) {
     const error = new Error('Host application not found');
@@ -383,6 +401,13 @@ export async function getHostProfileByUserId(userId, db = prisma) {
     throw error;
   }
 
+  if (host.hostStatus !== 'ACTIVE') {
+    const error = new Error('Host profile is not active or approved');
+    error.statusCode = 403;
+    error.code = 'HOST_NOT_ACTIVE';
+    throw error;
+  }
+
   const [attendance, targetSummary] = await Promise.all([
     attendanceService.getHostAttendanceSummary(userId, db),
     hostTargetService.getHostTargetProgress(userId, {}, db).catch(() => null),
@@ -434,11 +459,18 @@ export async function getMyHostApplication(userId, db = prisma) {
 
 export async function getHostIncomeDashboard(userId, db = prisma) {
   const host = await hostRepository.findHostProfileByUserId(userId, db);
+  if (!host || host.hostStatus !== 'ACTIVE') {
+    const error = new Error('Host profile is not active or approved');
+    error.statusCode = 403;
+    error.code = 'HOST_NOT_ACTIVE';
+    throw error;
+  }
+
   const wallet = await db.wallet.findUnique({
     where: { userId },
   });
 
-  const isLiveHost = host?.hostType === 'LIVE_HOST';
+  const isLiveHost = host.hostType === 'LIVE_HOST';
 
   // Authoritative real-time attendance stats and target calculation engine (NEW 09 & NEW 11)
   const [attendance, targetProgress] = await Promise.all([

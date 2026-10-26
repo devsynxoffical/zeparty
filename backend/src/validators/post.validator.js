@@ -62,6 +62,17 @@ export const privacySettingsSchema = z.object({
   hideLevels: z.boolean().optional(),
   blockStrangersDm: z.boolean().optional(),
   hideCpRelationship: z.boolean().optional(),
+  stealthEntry: z.boolean().optional(),
+  anonymousGifting: z.boolean().optional(),
+  genderPrivacy: z.boolean().optional(),
+  failedToFind: z.boolean().optional(),
+  antiFollow: z.boolean().optional(),
+  mystery: z.boolean().optional(),
+  invisibleVisit: z.boolean().optional(),
+  rankInvisible: z.boolean().optional(),
+  roomInvisible: z.boolean().optional(),
+  svipHidden: z.boolean().optional(),
+  hideWealth: z.boolean().optional(),
 }).refine(data => Object.keys(data).length > 0, 'At least one privacy setting must be provided');
 
 export default {

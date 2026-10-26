@@ -49,6 +49,17 @@ export async function recordBroadcastHeartbeat({ roomId, hostUserId }, db = pris
     throw error;
   }
 
+  // Verify host profile is active
+  const hostProfile = await db.hostProfile.findUnique({
+    where: { userId: hostUserId },
+  });
+  if (!hostProfile || hostProfile.hostStatus !== 'ACTIVE') {
+    const error = new Error('Host profile is not active or approved');
+    error.statusCode = 403;
+    error.code = 'HOST_NOT_ACTIVE';
+    throw error;
+  }
+
   // Verify Room Type: genuine live video broadcast only
   const isLiveVideo = (room.roomType === 'LIVE_VIDEO' || room.roomType === 'LIVE');
   if (!isLiveVideo) {

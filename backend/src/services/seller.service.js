@@ -142,6 +142,7 @@ export async function createSeller(data, { adminId, adminName, ipAddress } = {},
   }
 
   const initialQuota = data.initialCoins ? BigInt(data.initialCoins) : (data.initialCredit ? BigInt(data.initialCredit) : 0n);
+  let normalizedCountry = null;
 
   const seller = await db.$transaction(async (tx) => {
     const newSeller = await sellerRepository.createSeller({
@@ -152,7 +153,7 @@ export async function createSeller(data, { adminId, adminName, ipAddress } = {},
     }, tx);
 
     const rawCountry = data.country || data.countryCode || user.countryCode || user.region;
-    const normalizedCountry = normalizeCountry(rawCountry);
+    normalizedCountry = normalizeCountry(rawCountry);
 
     // Multi-role coexistence: Only set userType to COIN_SELLER if user has default userType USER.
     // Preserve existing primary roles such as HOST, MERCHANT, AGENCY_OWNER, etc.
@@ -225,6 +226,32 @@ export async function updateSellerStatus(id, { sellerStatus, reason }, { adminId
   }, db);
 
   await invalidateSellerDirectoryCache(seller.user?.countryCode || seller.user?.region);
+
+  // Invalidate user profile and presence caches in Redis
+  try {
+    if (redisProxy.isOpen && seller.userId) {
+      await redisProxy.del(`user:profile:${seller.userId}`);
+      await redisProxy.del(`user:presence:${seller.userId}`);
+    }
+  } catch (_) {}
+
+  // Emit realtime updates to active user sessions
+  try {
+    if (seller.userId) {
+      emitToUser(seller.userId, 'seller:status_updated', {
+        userId: seller.userId,
+        sellerId: seller.id,
+        sellerStatus,
+        isSeller: sellerStatus === 'ACTIVE',
+        timestamp: new Date().toISOString(),
+      });
+      emitToUser(seller.userId, 'user:roles_updated', {
+        userId: seller.userId,
+        sellerStatus,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (_) {}
 
   return updatedSeller;
 }
@@ -509,27 +536,33 @@ export async function deleteSeller(id, { adminId, adminName, ipAddress } = {}, d
     seller = await sellerRepository.findSellerByUserId(id, db);
   }
   if (!seller) {
-    const error = new Error('Coin seller not found');
-    error.statusCode = 404;
-    error.code = 'SELLER_NOT_FOUND';
-    throw error;
+    // Idempotency: repeated deletion is safe and returns successful revocation state
+    return {
+      success: true,
+      id,
+      alreadyRevoked: true,
+      message: 'Coin seller role is already revoked or does not exist',
+    };
   }
+
+  const userId = seller.userId;
+  const sellerCountry = seller.user?.countryCode || seller.user?.region;
 
   await db.$transaction(async (tx) => {
     // Delete any associated p2p orders if any, or delete the coin seller
     await sellerRepository.deleteSeller(seller.id, tx);
 
     // If user has userType COIN_SELLER, reset back to USER
-    if (seller.userId) {
-      const user = await tx.user.findUnique({ where: { id: seller.userId } });
+    if (userId) {
+      const user = await tx.user.findUnique({ where: { id: userId } });
       if (user && user.userType === 'COIN_SELLER') {
         await tx.user.update({
-          where: { id: seller.userId },
+          where: { id: userId },
           data: { userType: 'USER' },
         });
       }
     }
-  });
+  }, { maxWait: 15000, timeout: 30000 });
 
   await logAudit({
     adminId,
@@ -540,14 +573,45 @@ export async function deleteSeller(id, { adminId, adminName, ipAddress } = {}, d
     beforeStateJson: {
       userId: seller.userId,
       businessName: seller.businessName,
+      sellerStatus: seller.sellerStatus,
       resellerBalanceCoins: seller.resellerBalanceCoins?.toString(),
+    },
+    afterStateJson: {
+      sellerStatus: 'REVOKED',
+      revoked: true,
+      deletedAt: new Date().toISOString(),
     },
     ipAddress,
   }, db);
 
-  await invalidateSellerDirectoryCache(seller.user?.countryCode || seller.user?.region);
+  // Invalidate Redis directory cache & user profile/presence caches
+  await invalidateSellerDirectoryCache(sellerCountry);
+  try {
+    if (redisProxy.isOpen && userId) {
+      await redisProxy.del(`user:profile:${userId}`);
+      await redisProxy.del(`user:presence:${userId}`);
+    }
+  } catch (_) {}
 
-  return { success: true, id };
+  // Realtime notification to all active sessions of this user
+  try {
+    if (userId) {
+      emitToUser(userId, 'seller:revoked', {
+        userId,
+        sellerId: seller.id,
+        isSeller: false,
+        sellerStatus: 'REVOKED',
+        timestamp: new Date().toISOString(),
+      });
+      emitToUser(userId, 'user:roles_updated', {
+        userId,
+        sellerRevoked: true,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (_) {}
+
+  return { success: true, id, userId, sellerStatus: 'REVOKED' };
 }
 
 export async function getEffectiveTransferFee(db = prisma) {
@@ -786,9 +850,17 @@ export async function executeSellerRechargeTransfer(
     // Lock seller portal row with SELECT ... FOR UPDATE to eliminate concurrent overspending race conditions
     const currentSeller = await sellerRepository.findSellerWithLock(seller.id, tx);
     if (!currentSeller) {
-      const error = new Error('Coin seller portal not found');
-      error.statusCode = 404;
-      error.code = 'SELLER_NOT_FOUND';
+      const error = new Error('Coin seller portal not found or role has been revoked');
+      error.statusCode = 403;
+      error.code = 'SELLER_NOT_AUTHORIZED';
+      throw error;
+    }
+
+    // BUG #41 FIX: Re-verify sellerStatus inside transaction commit lock to handle concurrent revocation
+    if (currentSeller.sellerStatus !== 'ACTIVE') {
+      const error = new Error('Coin seller portal has been suspended or revoked');
+      error.statusCode = 403;
+      error.code = 'SELLER_SUSPENDED';
       throw error;
     }
 
