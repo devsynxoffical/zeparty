@@ -24,6 +24,14 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('15m'),
   REFRESH_TOKEN_EXPIRES_IN: z.string().default('7d'),
 
+  // Premium games service (zeparty_games/backend). The token minted by
+  // GET /v1/games/token is verified there with the same secret and issuer.
+  GAMES_JWT_SECRET: z.string().min(16).default('dev-only-change-me-7f3c1a9e'),
+  GAMES_JWT_ISSUER: z.string().default('zeparty'),
+  GAMES_TOKEN_TTL_SECONDS: z.coerce.number().min(300).max(86400).default(3600),
+  GAMES_SERVICE_URL: z.string().default(''),
+  GAMES_WS_URL: z.string().default(''),
+
   // OTP & Communications
   OTP_PROVIDER: z.enum(['mock', 'twilio', 'aws_sns']).default('mock'),
   OTP_EXPIRY_SECONDS: z.coerce.number().default(300),

@@ -57,6 +57,38 @@ dependencies:
   flutter_secure_storage: ^9.2.2
   socket_io_client: ^3.0.2
 
+  # ZeParty premium multiplayer games (see ../zeparty_games)
+  zeparty_game_core:
+    path: ../zeparty_games/packages/zeparty_game_core
+  zeparty_game_ui:
+    path: ../zeparty_games/packages/zeparty_game_ui
+  zeparty_game_network:
+    path: ../zeparty_games/packages/zeparty_game_network
+  zeparty_game_wallet:
+    path: ../zeparty_games/packages/zeparty_game_wallet
+  zeparty_game_assets:
+    path: ../zeparty_games/packages/zeparty_game_assets
+  ludo_royale:
+    path: ../zeparty_games/games/ludo_royale
+  connect4_galaxy:
+    path: ../zeparty_games/games/connect4_galaxy
+  snake_ladder_kingdom:
+    path: ../zeparty_games/games/snake_ladder_kingdom
+  chess_legends:
+    path: ../zeparty_games/games/chess_legends
+  color_clash:
+    path: ../zeparty_games/games/color_clash
+  carrom_masters:
+    path: ../zeparty_games/games/carrom_masters
+  pool_elite:
+    path: ../zeparty_games/games/pool_elite
+  air_hockey:
+    path: ../zeparty_games/games/air_hockey
+  darts_arena:
+    path: ../zeparty_games/games/darts_arena
+  mini_golf_paradise:
+    path: ../zeparty_games/games/mini_golf_paradise
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

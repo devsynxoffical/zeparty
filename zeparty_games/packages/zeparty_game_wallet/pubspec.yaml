@@ -1,0 +1,20 @@
+name: zeparty_game_wallet
+description: Client-side wallet, inventory and cosmetics state for ZeParty games. Read-only mirror of the server ledger; never mutates balances locally.
+version: 0.1.0
+publish_to: none
+resolution: workspace
+environment:
+  sdk: ^3.8.0
+  flutter: ">=3.35.0"
+dependencies:
+  flutter:
+    sdk: flutter
+  uuid: ^4.6.0
+  zeparty_game_core:
+    path: ../zeparty_game_core
+  zeparty_game_network:
+    path: ../zeparty_game_network
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

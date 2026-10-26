@@ -47,6 +47,7 @@ import 'widgets/floating_room_overlay.dart';
 import 'core/config/app_config.dart';
 import 'core/repositories/backend_repository.dart';
 import 'features/auth/splash_screen.dart';
+import 'features/games/games_bootstrap.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,6 +56,9 @@ Future<void> main() async {
   AppConfig.initialize(
     environment: kReleaseMode ? AppEnvironment.production : AppEnvironment.development,
   );
+
+  // Register the ten premium multiplayer games and configure their launcher
+  GamesBootstrap.initialize();
 
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,

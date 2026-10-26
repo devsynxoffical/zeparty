@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'game_screen.dart';
+import 'package:zeparty_game_assets/zeparty_game_assets.dart';
+import 'package:zeparty_game_core/zeparty_game_core.dart';
 
+import 'games_bootstrap.dart';
+
+/// In-room game picker: the ten premium multiplayer games. Tapping a game
+/// opens its lobby full screen on top of the live / party room, which keeps
+/// running (voice stays connected, the floating room overlay takes over).
 class GameCenterSheet extends StatelessWidget {
   const GameCenterSheet({super.key});
 
@@ -14,81 +20,28 @@ class GameCenterSheet extends StatelessWidget {
     );
   }
 
-  void _openGame(BuildContext context, String gameId, String gameName) {
+  Future<void> _openGame(BuildContext context, GameCatalogEntry entry) async {
     HapticFeedback.selectionClick();
+    // Resolve the root navigator before closing the sheet: this context is
+    // unmounted once the sheet pops.
+    final rootContext = Navigator.of(context, rootNavigator: true).context;
     Navigator.pop(context);
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => GameScreen(
-          gameId: gameId,
-          gameName: gameName,
-          inRoom: true,
-        ),
-      ),
-    );
+    await GamesBootstrap.openGame(rootContext, entry.gameId);
   }
 
   @override
   Widget build(BuildContext context) {
-    final games = [
-      {
-        'id': 'fishing',
-        'name': 'Fishing',
-        'subtitle': 'Arcade Shooter',
-        'icon': '🎣',
-        'color': const Color(0xFF00E5FF),
-        'gradient': [const Color(0xFF0D253F), const Color(0xFF0072FF)],
-      },
-      {
-        'id': 'football',
-        'name': 'Football',
-        'subtitle': 'Penalty Shootout',
-        'icon': '⚽',
-        'color': const Color(0xFF38EF7D),
-        'gradient': [const Color(0xFF0F3820), const Color(0xFF11998E)],
-      },
-      {
-        'id': 'fruit_match',
-        'name': 'Fruit Match',
-        'subtitle': 'Match-3 Puzzle',
-        'icon': '🍓',
-        'color': const Color(0xFFFF512F),
-        'gradient': [const Color(0xFF2C1038), const Color(0xFFDD2476)],
-      },
-      {
-        'id': 'rocket_challenge',
-        'name': 'Rocket Challenge',
-        'subtitle': 'Precision & Reflex',
-        'icon': '🚀',
-        'color': const Color(0xFF8E2DE2),
-        'gradient': [const Color(0xFF1B0A33), const Color(0xFF4A00E0)],
-      },
-      {
-        'id': 'lion_adventure',
-        'name': 'Lion Adventure',
-        'subtitle': '3-Lane Runner',
-        'icon': '🦁',
-        'color': const Color(0xFFFFB300),
-        'gradient': [const Color(0xFF1E3C1B), const Color(0xFFF7971E)],
-      },
-      {
-        'id': 'seven_puzzle',
-        'name': 'Seven Puzzle',
-        'subtitle': 'Number Merge',
-        'icon': '🧩',
-        'color': const Color(0xFFEAAFC8),
-        'gradient': [const Color(0xFF200B3B), const Color(0xFF654EA3)],
-      },
-    ];
+    final games = kBuiltInCatalog.where((g) => GamesBootstrap.gameIds.contains(g.gameId)).toList();
+    final maxHeight = MediaQuery.of(context).size.height * 0.82;
 
     return SafeArea(
       top: false,
       child: Container(
+        constraints: BoxConstraints(maxHeight: maxHeight),
         decoration: const BoxDecoration(
-          color: Color(0xFF140824),
+          color: Color(0xFF0B0A0F),
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          border: Border(top: BorderSide(color: Color(0xFFFF2A6D), width: 1.5)),
+          border: Border(top: BorderSide(color: Color(0xFFD4AF37), width: 1.5)),
         ),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         child: Column(
@@ -97,10 +50,7 @@ class GameCenterSheet extends StatelessWidget {
             Container(
               width: 40,
               height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
+              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(height: 12),
             Row(
@@ -108,7 +58,7 @@ class GameCenterSheet extends StatelessWidget {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.sports_esports, color: Color(0xFFFF2A6D), size: 24),
+                    Icon(Icons.sports_esports_rounded, color: Color(0xFFD4AF37), size: 24),
                     SizedBox(width: 8),
                     Text(
                       'Play Games in Room',
@@ -118,63 +68,116 @@ class GameCenterSheet extends StatelessWidget {
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, color: Colors.white60),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.close_rounded, color: Colors.white54),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-
-            // 3x2 Grid
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: games.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                childAspectRatio: 0.94,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
+            const SizedBox(height: 4),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Multiplayer tables with friends. Voice stays on while you play.',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
               ),
-              itemBuilder: (context, index) {
-                final game = games[index];
-                final gradient = game['gradient'] as List<Color>;
-                final color = game['color'] as Color;
+            ),
+            const SizedBox(height: 14),
+            Flexible(
+              child: GridView.builder(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 1.25,
+                ),
+                itemCount: games.length,
+                itemBuilder: (context, i) => _GameTile(entry: games[i], onTap: () => _openGame(context, games[i])),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-                return GestureDetector(
-                  onTap: () => _openGame(context, game['id'] as String, game['name'] as String),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: gradient,
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: color.withValues(alpha: 0.4)),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(game['icon'] as String, style: const TextStyle(fontSize: 26)),
-                        const SizedBox(height: 4),
-                        Text(
-                          game['name'] as String,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11.5),
-                        ),
-                        Text(
-                          game['subtitle'] as String,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: color, fontSize: 8.5),
-                        ),
-                      ],
-                    ),
+class _GameTile extends StatelessWidget {
+  const _GameTile({required this.entry, required this.onTap});
+  final GameCatalogEntry entry;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final players = entry.minPlayers == entry.maxPlayers ? '${entry.maxPlayers} players' : '${entry.minPlayers}-${entry.maxPlayers} players';
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [entry.accent.withValues(alpha: 0.55), const Color(0xFF15131C)],
+                ),
+              ),
+            ),
+            Image(
+              image: ZpAssets.image(entry.artwork),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+            ),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.center,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.transparent, Color(0xE60B0A0F)],
+                ),
+              ),
+            ),
+            Positioned(
+              left: 10,
+              right: 10,
+              bottom: 10,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    entry.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800, shadows: [Shadow(blurRadius: 6, color: Colors.black)]),
                   ),
-                );
-              },
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const Icon(Icons.people_alt_rounded, color: Colors.white70, size: 12),
+                      const SizedBox(width: 4),
+                      Text(players, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: entry.accent.withValues(alpha: 0.9),
+                  boxShadow: [BoxShadow(color: entry.accent.withValues(alpha: 0.5), blurRadius: 8)],
+                ),
+                child: const Icon(Icons.play_arrow_rounded, color: Colors.black, size: 18),
+              ),
             ),
           ],
         ),

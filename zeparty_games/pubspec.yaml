@@ -1,0 +1,22 @@
+name: zeparty_games_workspace
+description: ZeParty premium multiplayer mini-game ecosystem (Flutter + Flame) workspace root.
+publish_to: none
+environment:
+  sdk: ^3.8.0
+workspace:
+  - packages/zeparty_game_core
+  - packages/zeparty_game_ui
+  - packages/zeparty_game_network
+  - packages/zeparty_game_wallet
+  - packages/zeparty_game_assets
+  - games/ludo_royale
+  - games/color_clash
+  - games/chess_legends
+  - games/connect4_galaxy
+  - games/snake_ladder_kingdom
+  - games/pool_elite
+  - games/carrom_masters
+  - games/mini_golf_paradise
+  - games/air_hockey
+  - games/darts_arena
+  - apps/demo_flutter_app
