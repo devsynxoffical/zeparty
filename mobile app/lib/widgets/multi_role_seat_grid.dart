@@ -6,6 +6,7 @@ import '../providers/emoji_reaction_provider.dart';
 import '../core/utils/noble_badge_helper.dart';
 import 'pulse_glow_avatar.dart';
 import 'user_avatar.dart';
+import 'animated_room_reaction.dart';
 
 class MultiRoleSeatGrid extends StatelessWidget {
   final List<PartyParticipantModel> participants;
@@ -277,12 +278,12 @@ class MultiRoleSeatGrid extends StatelessWidget {
       final activeReaction = livePartyProv.activeMicReactions[seatIndex];
 
       return GestureDetector(
-        key: seatKey,
         onTap: () => onParticipantTap(participant),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Stack(
+              key: seatKey,
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
@@ -322,32 +323,19 @@ class MultiRoleSeatGrid extends StatelessWidget {
                         ),
                       ),
                 if (activeReaction != null)
-                  Positioned(
-                    top: -36,
-                    child: TweenAnimationBuilder<double>(
-                      duration: const Duration(milliseconds: 300),
-                      tween: Tween(begin: 0.5, end: 1.0),
-                      curve: Curves.elasticOut,
-                      builder: (context, scale, child) {
-                        return Transform.scale(
-                          scale: scale,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.85),
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: Colors.amberAccent, width: 1.5),
-                              boxShadow: [
-                                BoxShadow(color: Colors.pinkAccent.withValues(alpha: 0.6), blurRadius: 10, spreadRadius: 1),
-                              ],
-                            ),
-                            child: Text(
-                              activeReaction['reactionAsset'] ?? '🎉',
-                              style: const TextStyle(fontSize: 20),
-                            ),
-                          ),
-                        );
-                      },
+                  Positioned.fill(
+                    child: Center(
+                      child: IgnorePointer(
+                        child: AnimatedRoomReaction(
+                          key: ValueKey('seat_react_${activeReaction['id']}'),
+                          emojiKey: activeReaction['reactionAsset'] ?? 'party',
+                          gameResult: activeReaction['gameResult'] is int
+                              ? (activeReaction['gameResult'] as int)
+                              : int.tryParse(activeReaction['gameResult']?.toString() ?? ''),
+                          size: (radius * 2.2).clamp(52.0, 72.0),
+                          onComplete: () {},
+                        ),
+                      ),
                     ),
                   ),
                 if (isHostUser)
@@ -425,12 +413,12 @@ class MultiRoleSeatGrid extends StatelessWidget {
     // Locked Seat State
     if (isLocked) {
       return GestureDetector(
-        key: seatKey,
         onTap: () => onSeatTap(seatIndex),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
+              key: seatKey,
               width: radius * 2,
               height: radius * 2,
               decoration: BoxDecoration(
@@ -478,12 +466,12 @@ class MultiRoleSeatGrid extends StatelessWidget {
 
     // Empty Seat with Sleek Cushioned Chair Graphic (Ahlan Reference Match)
     return GestureDetector(
-      key: seatKey,
       onTap: () => onSeatTap(seatIndex),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
+            key: seatKey,
             width: radius * 2,
             height: radius * 2,
             decoration: BoxDecoration(

@@ -1685,9 +1685,11 @@ class LivePartyProvider extends ChangeNotifier {
       if (_activeRoom != null && roomId.isNotEmpty && roomId != _activeRoom!.id) return;
       final muted = data['isMuted'] == true || data['muted'] == true;
       _isRoomMuted = muted;
-      try {
-        _agoraService.muteLocalAudio(muted);
-      } catch (_) {}
+      if (!isHost) {
+        try {
+          _agoraService.muteLocalAudio(muted);
+        } catch (_) {}
+      }
       sendSystemMessage(muted ? '🔇 Room audio has been MUTED by platform moderation.' : '🎙️ Room audio has been UNMUTED.');
       notifyListeners();
     });
@@ -1719,12 +1721,12 @@ class LivePartyProvider extends ChangeNotifier {
           (seatIndex != null && selfParticipant?.seatNumber == seatIndex);
 
       if (isMeTarget) {
-        if (muted) {
+        if (!isHost && muted) {
           try {
             _agoraService.muteLocalAudio(true);
           } catch (_) {}
           sendSystemMessage('🔇 Your microphone has been MUTED by moderation.');
-        } else {
+        } else if (!isHost && !muted) {
           sendSystemMessage('🎙️ Your microphone restriction has been lifted by moderation.');
           // When a moderator restriction is removed:
           // Do not automatically turn on the microphone if the user had chosen to self-mute.
@@ -2947,18 +2949,18 @@ class LivePartyProvider extends ChangeNotifier {
   bool isSeatLocked(int seatIndex) => _lockedSeatIndices.contains(seatIndex);
 
   bool get isLocalMicMuted {
-    if (_isRoomMuted) return true;
+    if (!isHost && _isRoomMuted) return true;
     final self = _participants.where((p) => p.user.id == _currentUser?.id).firstOrNull;
-    if (self?.isMutedByModerator == true) return true;
-    if (self?.seatNumber != null && isSeatMutedByModerator(self!.seatNumber!)) return true;
+    if (!isHost && self?.isMutedByModerator == true) return true;
+    if (!isHost && self?.seatNumber != null && isSeatMutedByModerator(self!.seatNumber!)) return true;
     return _isLocalSelfMuted || (self?.micStatus == MicStatus.muted);
   }
 
   bool toggleLocalMic() {
-    if (_isRoomMuted) return true;
+    if (!isHost && _isRoomMuted) return true;
     final self = _participants.where((p) => p.user.id == _currentUser?.id).firstOrNull;
-    if (self?.isMutedByModerator == true) return true;
-    if (self?.seatNumber != null && isSeatMutedByModerator(self!.seatNumber!)) return true;
+    if (!isHost && self?.isMutedByModerator == true) return true;
+    if (!isHost && self?.seatNumber != null && isSeatMutedByModerator(self!.seatNumber!)) return true;
     final newMuted = !isLocalMicMuted;
     muteLocalMic(newMuted);
     return newMuted;
@@ -3096,6 +3098,7 @@ class LivePartyProvider extends ChangeNotifier {
     required String reactionAsset,
     required String category,
     required UserModel sender,
+    int? gameResult,
   }) {
     final occupant = _participants.where((p) => p.user.id == sender.id && p.seatNumber != null).firstOrNull;
     if (occupant == null || occupant.seatNumber == null) {
@@ -3117,6 +3120,7 @@ class LivePartyProvider extends ChangeNotifier {
       'micIndex': micIndex,
       'reactionAsset': reactionAsset,
       'category': category,
+      'gameResult': gameResult,
       'timestamp': DateTime.now().toIso8601String(),
     };
 

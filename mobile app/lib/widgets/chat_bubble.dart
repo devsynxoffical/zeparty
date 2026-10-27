@@ -185,20 +185,21 @@ class _ChatBubbleState extends State<ChatBubble> {
 
     final mediaPath = widget.message.mediaUrl;
     final isExpired = widget.message.isExpired;
+    final isGift = widget.message.type == 'gift' || widget.message.text.contains('🎁');
     final isVoice = widget.message.type == 'voice' ||
         widget.message.text.contains('🎤') ||
         (mediaPath != null && (mediaPath.endsWith('.m4a') || mediaPath.endsWith('.mp3')));
 
-    final isImage = widget.message.type == 'image' ||
-        (mediaPath != null &&
-            !isVoice &&
-            (mediaPath.endsWith('.jpg') ||
-                mediaPath.endsWith('.jpeg') ||
-                mediaPath.endsWith('.png') ||
-                mediaPath.startsWith('/') ||
-                mediaPath.contains('image')));
-
-    final isGift = widget.message.type == 'gift' || widget.message.text.contains('🎁');
+    final isImage = !isGift &&
+        !isVoice &&
+        (widget.message.type == 'image' ||
+            (mediaPath != null &&
+                !mediaPath.startsWith('assets/') &&
+                (mediaPath.endsWith('.jpg') ||
+                    mediaPath.endsWith('.jpeg') ||
+                    mediaPath.endsWith('.png') ||
+                    mediaPath.startsWith('/') ||
+                    mediaPath.contains('image'))));
     final backpack = context.watch<BackpackProvider>();
     final equippedBubble = (widget.message.mediaUrl != null && widget.message.mediaUrl!.contains('bubble'))
         ? widget.message.mediaUrl
@@ -264,76 +265,7 @@ class _ChatBubbleState extends State<ChatBubble> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: widget.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
-            if (isImage && isExpired) ...[
-              // ─── Expired Image Placeholder ───
-              Container(
-                width: 220,
-                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-                decoration: BoxDecoration(
-                  color: Colors.black26,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.image_not_supported_outlined, color: Colors.white60, size: 36),
-                    SizedBox(height: 6),
-                    Text(
-                      'Media not available',
-                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Expired after 1 month to manage storage',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white54, fontSize: 10),
-                    ),
-                  ],
-                ),
-              ),
-            ] else if (isImage && mediaPath != null) ...[
-              // ─── Sent Image Thumbnail ───
-              GestureDetector(
-                onTap: () => _showFullscreenImage(context, mediaPath),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: File(mediaPath).existsSync()
-                      ? Image.file(
-                          File(mediaPath),
-                          width: 220,
-                          height: 180,
-                          fit: BoxFit.cover,
-                        )
-                      : Image.network(
-                          mediaPath,
-                          width: 220,
-                          height: 180,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Container(
-                            width: 220,
-                            height: 120,
-                            color: Colors.grey.shade800,
-                            alignment: Alignment.center,
-                            child: const Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.image_rounded, color: Colors.white54, size: 36),
-                                SizedBox(height: 4),
-                                Text('Image preview unavailable', style: TextStyle(color: Colors.white54, fontSize: 11)),
-                              ],
-                            ),
-                          ),
-                        ),
-                ),
-              ),
-              if (widget.message.text.isNotEmpty && widget.message.text != '📷 Photo') ...[
-                const SizedBox(height: 6),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(widget.message.text, style: TextStyle(color: textColor, fontSize: 13)),
-                ),
-              ],
-            ] else if (isGift) ...[
+            if (isGift) ...[
               // ─── Gift Bubble (Item #40: Real gift artwork and structured details) ───
               Builder(
                 builder: (context) {
@@ -351,7 +283,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                       width: 44,
                       height: 44,
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Text('🎁', style: TextStyle(fontSize: 28)),
+                      errorBuilder: (_, _, _) => const Text('🎁', style: TextStyle(fontSize: 28)),
                     );
                   } else if (resolvedIcon != null && (resolvedIcon.startsWith('assets/') || resolvedIcon.contains('/'))) {
                     artworkWidget = Image.asset(
@@ -359,7 +291,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                       width: 44,
                       height: 44,
                       fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Text('🎁', style: TextStyle(fontSize: 28)),
+                      errorBuilder: (_, _, _) => const Text('🎁', style: TextStyle(fontSize: 28)),
                     );
                   } else {
                     artworkWidget = const Text('🎁', style: TextStyle(fontSize: 28));
@@ -422,6 +354,96 @@ class _ChatBubbleState extends State<ChatBubble> {
                   );
                 },
               ),
+            ] else if (isImage && isExpired) ...[
+              // ─── Expired Image Placeholder ───
+              Container(
+                width: 220,
+                padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.black26,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.image_not_supported_outlined, color: Colors.white60, size: 36),
+                    SizedBox(height: 6),
+                    Text(
+                      'Media not available',
+                      style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Expired after 1 month to manage storage',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white54, fontSize: 10),
+                    ),
+                  ],
+                ),
+              ),
+            ] else if (isImage && mediaPath != null) ...[
+              // ─── Sent Image Thumbnail ───
+              GestureDetector(
+                onTap: () => _showFullscreenImage(context, mediaPath),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: mediaPath.startsWith('assets/')
+                      ? Image.asset(
+                          mediaPath,
+                          width: 220,
+                          height: 180,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) => Container(
+                            width: 220,
+                            height: 120,
+                            color: Colors.grey.shade800,
+                            alignment: Alignment.center,
+                            child: const Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.image_rounded, color: Colors.white54, size: 36),
+                                SizedBox(height: 4),
+                                Text('Image preview unavailable', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                              ],
+                            ),
+                          ),
+                        )
+                      : (File(mediaPath).existsSync()
+                          ? Image.file(
+                              File(mediaPath),
+                              width: 220,
+                              height: 180,
+                              fit: BoxFit.cover,
+                            )
+                          : Image.network(
+                              mediaPath,
+                              width: 220,
+                              height: 180,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => Container(
+                                width: 220,
+                                height: 120,
+                                color: Colors.grey.shade800,
+                                alignment: Alignment.center,
+                                child: const Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.image_rounded, color: Colors.white54, size: 36),
+                                    SizedBox(height: 4),
+                                    Text('Image preview unavailable', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                                  ],
+                                ),
+                              ),
+                            )),
+                ),
+              ),
+              if (widget.message.text.isNotEmpty && widget.message.text != '📷 Photo') ...[
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(widget.message.text, style: TextStyle(color: textColor, fontSize: 13)),
+                ),
+              ],
             ] else if (isVoice) ...[
               // ─── Playable Voice Note Bubble ───
               Row(

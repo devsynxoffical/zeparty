@@ -65,12 +65,12 @@ class NobleBadgeHelper {
     if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/bd_tag.webp';
     if (lower.contains('boss')) return 'assets/roles/boss_tag.webp';
     if (lower.contains('ceo')) return 'assets/roles/ceo_tag.webp';
-    if (lower.contains('cs') || lower.contains('support')) return 'assets/roles/cs_badge.webp';
+    if (lower.contains('cs') || lower.contains('support') || lower.contains('service')) return 'assets/roles/cs_badge.webp';
     if (lower.contains('master') || lower.contains('game master')) return 'assets/roles/game_master_badge.webp';
-    if (lower.contains('live host')) return 'assets/roles/host_badge.webp';
+    if (lower.contains('live host') || lower.contains('audio host')) return 'assets/roles/host_badge.webp';
     if (lower.contains('host')) return 'assets/roles/host_badge.webp';
     if (lower.contains('coins') || lower.contains('seller')) return 'assets/roles/coins_saller_tag.webp';
-    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_badge.webp';
+    if (lower.contains('recharge') || lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_badge.webp';
     if (lower.contains('top fan')) return 'assets/roles/top_fan_badge.webp';
     if (lower.contains('lover')) return 'assets/roles/lover_tag.webp';
     if (lower.contains('official')) return 'assets/roles/official_tag.webp';
@@ -112,14 +112,14 @@ class NobleBadgeHelper {
     if (lower.contains('bd')) return 'assets/roles/bd_frame.webp';
     if (lower.contains('boss')) return 'assets/roles/boss_frame.webp';
     if (lower.contains('ceo')) return 'assets/roles/ceo_frame.webp';
-    if (lower.contains('cs')) return 'assets/roles/cs_frame.webp';
+    if (lower.contains('cs') || lower.contains('support') || lower.contains('service')) return 'assets/roles/cs_frame.webp';
     if (lower.contains('game master')) return 'assets/roles/game_master_frame.webp';
-    if (lower.contains('live host')) return 'assets/roles/host_frame.webp';
+    if (lower.contains('live host') || lower.contains('audio host')) return 'assets/roles/host_frame.webp';
     if (lower.contains('host')) return 'assets/roles/host_frame.webp';
     if (lower.contains('coins') || lower.contains('seller')) return 'assets/roles/coins_saller_frame.webp';
+    if (lower.contains('recharge') || lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_frame.webp';
     if (lower.contains('lover')) return 'assets/roles/lover_frame.webp';
     if (lower.contains('manager')) return 'assets/roles/manager_frame.webp';
-    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_frame.webp';
     if (lower.contains('official')) return 'assets/roles/official_frame.webp';
     if (lower.contains('top fan')) return 'assets/roles/top_fan_frame.webp';
     if (lower.contains('mystery')) return 'assets/animations/mystery_frame.webp';
@@ -150,12 +150,12 @@ class NobleBadgeHelper {
     if (lower.contains('boss')) return 'assets/roles/boss_tag.webp';
     if (lower.contains('ceo')) return 'assets/roles/ceo_tag.webp';
     if (lower.contains('coin') || lower.contains('seller')) return 'assets/roles/coins_saller_tag.webp';
-    if (lower.contains('cs') || lower.contains('support')) return 'assets/roles/cs_badge.webp';
+    if (lower.contains('cs') || lower.contains('support') || lower.contains('service')) return 'assets/roles/cs_badge.webp';
     if (lower.contains('game master') || lower.contains('master')) return 'assets/roles/game_master_badge.webp';
-    if (lower.contains('host')) return 'assets/roles/host_badge.webp';
+    if (lower.contains('live host') || lower.contains('audio host') || lower.contains('host')) return 'assets/roles/host_badge.webp';
     if (lower.contains('lover')) return 'assets/roles/lover_tag.webp';
     if (lower.contains('manager')) return 'assets/roles/manager_tag.webp';
-    if (lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_badge.webp';
+    if (lower.contains('recharge') || lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_badge.webp';
     if (lower.contains('official')) return 'assets/roles/official_tag.webp';
     if (lower.contains('top fan')) return 'assets/roles/top_fan_badge.webp';
     if (lower.contains('mystery')) return 'assets/animations/mystery_tag.webp';
@@ -205,14 +205,84 @@ class NobleBadgeHelper {
     if (lower.contains('svip')) {
       for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          if (i == 1) return null; // SVIP 1 does not have an official profile card / skin
+          if (i == 1) return 'assets/svip/svip1_badge.webp';
           return 'assets/svip/svip${i}_card.webp';
         }
       }
-      return null;
+      return 'assets/svip/svip3_card.webp';
     }
 
     return null;
+  }
+
+  /// Master resolver ensuring real image assets are ALWAYS loaded for any item,
+  /// replacing generic dummy icons with authentic artwork from the store catalog,
+  /// roles, SVIP, and noble collections.
+  static String resolveRealAsset({
+    String? name,
+    String? assetId,
+    String? assetType,
+    String? categoryId,
+    String? currentImageUrl,
+  }) {
+    // 1. If currentImageUrl is an existing valid assets/ path or http URL
+    if (currentImageUrl != null && currentImageUrl.isNotEmpty) {
+      if (currentImageUrl.startsWith('http://') || currentImageUrl.startsWith('https://')) {
+        return currentImageUrl;
+      }
+      if (currentImageUrl.startsWith('assets/')) {
+        return currentImageUrl;
+      }
+    }
+
+    final candidate = '${name ?? ''} ${assetId ?? ''} ${categoryId ?? ''} ${assetType ?? ''}'.trim();
+    final lower = candidate.toLowerCase();
+
+    // 2. Profile cards / cards
+    if (lower.contains('card') || lower.contains('profile')) {
+      final card = getCardAsset(candidate);
+      if (card != null && card.isNotEmpty) return card;
+    }
+
+    // 3. Avatar Frames
+    if (lower.contains('frame')) {
+      final frame = getFrameAsset(candidate);
+      if (frame != null && frame.isNotEmpty) return frame;
+    }
+
+    // 4. Badges / Roles / Special Tags
+    final badge = getBadgeAsset(candidate);
+    if (badge != null && badge.isNotEmpty) return badge;
+
+    // 5. Chat Bubbles
+    if (lower.contains('bubble')) {
+      final bubble = getChatBubbleAsset(candidate);
+      if (bubble != null && bubble.isNotEmpty) return bubble;
+    }
+
+    // 6. Entrance / Rides / Vehicles
+    if (lower.contains('car') || lower.contains('mount') || lower.contains('vehicle') || lower.contains('entry') || lower.contains('ride')) {
+      final entry = getEntranceAsset(candidate);
+      if (entry != null && entry.isNotEmpty) return entry;
+    }
+
+    // 7. Tags
+    final tag = getTagAsset(candidate);
+    if (tag != null && tag.isNotEmpty) return tag;
+
+    // 8. Frames fallback
+    final frame = getFrameAsset(candidate);
+    if (frame != null && frame.isNotEmpty) return frame;
+
+    // 9. SVIP fallback
+    if (lower.contains('svip')) {
+      final card = getCardAsset(candidate);
+      if (card != null) return card;
+      return 'assets/svip/svip3_badge.webp';
+    }
+
+    // 10. Default authentic store collection asset fallback
+    return 'assets/store/ZP-134_avatar-frames_frame.webp';
   }
 
   static String? getEntranceAsset(String? title) {

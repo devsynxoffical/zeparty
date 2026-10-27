@@ -36,6 +36,10 @@ class EmojiReactionOverlay extends StatelessWidget {
     return IgnorePointer(
       child: Consumer<EmojiReactionProvider>(
         builder: (context, provider, child) {
+          // If not in a Live Video room (e.g. in Party Room), do not render overlay in the center.
+          // Reactions in Party Rooms appear exclusively on the user's seat!
+          if (!isLiveRoom) return const SizedBox.shrink();
+
           final activeReactions = provider.activeReactions;
           if (activeReactions.isEmpty) return const SizedBox.shrink();
 
@@ -68,7 +72,7 @@ class EmojiReactionOverlay extends StatelessWidget {
 
               final double reactionSize = isLiveRoom
                   ? (size.width * 0.35).clamp(120.0, 140.0)
-                  : (isSeated ? 100.0 : 120.0);
+                  : (isSeated ? 76.0 : 120.0);
 
               return Positioned(
                 left: startPos.dx - (reactionSize / 2),

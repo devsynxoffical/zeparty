@@ -96,6 +96,18 @@ class RoomRepository {
     final roomsList = response.data?['data'] as List? ?? [];
     return roomsList
         .map((r) => LiveRoomModel.fromJson(r as Map<String, dynamic>))
+        .where((r) {
+          final t = r.title.toLowerCase();
+          final h = r.host.name.toLowerCase();
+          final creatorId = (r.creatorUserId ?? '').toLowerCase();
+          final isDummy = t.startsWith('bug ') ||
+              t.startsWith('test ') ||
+              t.contains('verification room') ||
+              creatorId.startsWith('bug') ||
+              h.contains('other host') ||
+              h.contains('master host');
+          return !isDummy;
+        })
         .toList();
   }
 

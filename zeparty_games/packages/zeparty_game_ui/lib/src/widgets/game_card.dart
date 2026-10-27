@@ -83,30 +83,41 @@ class _GameCardState extends State<GameCard> {
                   decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.center, end: Alignment.bottomCenter, colors: [Colors.transparent, Color(0xE60B0A0F)])),
                 ),
                 Positioned(
-                  left: ZpSpace.md,
-                  right: ZpSpace.md,
-                  bottom: ZpSpace.md,
+                  left: widget.featured ? ZpSpace.md : ZpSpace.sm,
+                  right: widget.featured ? ZpSpace.md : ZpSpace.sm,
+                  bottom: widget.featured ? ZpSpace.md : ZpSpace.sm,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(e.title, style: (widget.featured ? t.headlineSmall : t.titleLarge)?.copyWith(color: ZpColors.ivory, shadows: const [Shadow(blurRadius: 8, color: Colors.black)]), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(e.title, style: (widget.featured ? t.headlineSmall : t.titleMedium)?.copyWith(color: ZpColors.ivory, fontWeight: FontWeight.bold, shadows: const [Shadow(blurRadius: 8, color: Colors.black)]), maxLines: 1, overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 2),
-                      Text(e.tagline, style: t.bodySmall?.copyWith(color: ZpColors.champagne.withValues(alpha: 0.8)), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: ZpSpace.sm),
+                      Text(e.tagline, style: t.bodySmall?.copyWith(color: ZpColors.champagne.withValues(alpha: 0.8), fontSize: widget.featured ? 12 : 11), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: ZpSpace.xs),
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          ZpChip(e.minPlayers == e.maxPlayers ? '${e.maxPlayers} players' : '${e.minPlayers}-${e.maxPlayers} players', icon: Icons.people_alt_rounded),
-                          const SizedBox(width: ZpSpace.sm),
-                          if (widget.online && available)
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: ZpChip(
+                                e.minPlayers == e.maxPlayers ? '${e.maxPlayers} players' : '${e.minPlayers}-${e.maxPlayers} players',
+                                icon: Icons.people_alt_rounded,
+                              ),
+                            ),
+                          ),
+                          if (widget.featured && widget.online && available) ...[
+                            const SizedBox(width: ZpSpace.sm),
                             ZpChip(e.onlineRooms > 0 ? '${e.onlineRooms} open' : 'Online', icon: Icons.circle, color: ZpColors.success),
-                          const Spacer(),
+                          ],
+                          const SizedBox(width: 4),
                           if (available)
                             Container(
-                              width: 40,
-                              height: 40,
+                              width: widget.featured ? 40 : 34,
+                              height: widget.featured ? 40 : 34,
                               decoration: const BoxDecoration(shape: BoxShape.circle, gradient: ZpColors.goldGradient),
-                              child: const Icon(Icons.play_arrow_rounded, color: ZpColors.obsidian),
+                              child: Icon(Icons.play_arrow_rounded, color: ZpColors.obsidian, size: widget.featured ? 24 : 20),
                             ),
                         ],
                       ),

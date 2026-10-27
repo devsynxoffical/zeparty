@@ -5,6 +5,7 @@ import '../../core/utils/formatters.dart';
 import '../../models/svip_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/svip_provider.dart';
+import '../../providers/wallet_provider.dart';
 import '../../widgets/user_avatar.dart';
 import '../wallet/wallet_screen.dart';
 import '../rewards/rewards_screen.dart';
@@ -39,7 +40,8 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
     final initial = (svip.selectedViewLevel - 1).clamp(0, 15);
     _pageController = PageController(initialPage: initial);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      svip.fetchSVIPData();
+      final user = context.read<AuthProvider>().currentUser;
+      svip.fetchSVIPData(userWealthXp: user.wealthXp);
       _centerTab(initial, animate: false);
     });
   }
@@ -3602,10 +3604,140 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
   }
 
   // ─── Bottom "SVIP store" bar (Rich Golden-Amber with Subtle Royal Purple Under-tones) ───
+  void _showSvipStoreSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1B120B),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Consumer2<SVIPProvider, WalletProvider>(
+        builder: (context, svipProv, walletProv, _) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('SVIP Points Store', style: TextStyle(color: _kGoldLight, fontSize: 18, fontWeight: FontWeight.w900)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black45,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: _kGold.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.monetization_on_rounded, size: 14, color: _kGold),
+                          const SizedBox(width: 4),
+                          Text('${AppFormatters.formatNumber(walletProv.coins)} Coins', style: const TextStyle(color: _kGold, fontSize: 12, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text('Purchase SVIP point packages directly with your coins to level up instantly.', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: svipProv.storePackages.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (_, idx) {
+                      final pkg = svipProv.storePackages[idx];
+                      final canAfford = walletProv.coins >= pkg.priceCoins;
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF281C13),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: _kGold.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(colors: [_kGold, _kGoldDeep]),
+                              ),
+                              child: const Icon(Icons.stars_rounded, color: Colors.black, size: 24),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(pkg.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                                  if (pkg.bonusPoints > 0)
+                                    Text('+${AppFormatters.formatNumber(pkg.bonusPoints)} Bonus Points', style: const TextStyle(color: Color(0xFFFF80AB), fontSize: 11, fontWeight: FontWeight.w600)),
+                                ],
+                              ),
+                            ),
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: canAfford ? _kGold : Colors.white12,
+                                foregroundColor: canAfford ? Colors.black : Colors.white38,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              ),
+                              onPressed: () async {
+                                if (!canAfford) {
+                                  Navigator.pop(ctx);
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen()));
+                                  return;
+                                }
+                                final messenger = ScaffoldMessenger.of(context);
+                                final ok = await svipProv.purchasePoints(pkg, walletProv);
+                                if (ok && mounted) {
+                                  messenger.showSnackBar(
+                                    SnackBar(
+                                      content: Text('🎉 Purchased ${pkg.name}! Points added!'),
+                                      backgroundColor: Colors.green.shade800,
+                                      behavior: SnackBarBehavior.floating,
+                                    ),
+                                  );
+                                }
+                              },
+                              child: Text(
+                                canAfford ? '${AppFormatters.formatNumber(pkg.priceCoins)} 🪙' : 'Recharge',
+                                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildStoreBar() {
     final bottomPad = MediaQuery.of(context).padding.bottom;
     return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WalletScreen())),
+      onTap: _showSvipStoreSheet,
       child: SizedBox(
         height: 74 + bottomPad,
         child: Stack(

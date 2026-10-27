@@ -76,26 +76,13 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
         name.toLowerCase().contains('merchant') ||
         name.toLowerCase().contains('profile');
 
-    String effectiveAsset = rawImageUrl;
-    if (rawImageUrl.startsWith('assets/') || rawImageUrl.startsWith('http://') || rawImageUrl.startsWith('https://')) {
-      effectiveAsset = rawImageUrl;
-    } else {
-      final framePath = NobleBadgeHelper.getFrameAsset(name) ??
-          NobleBadgeHelper.getFrameAsset(displayName) ??
-          NobleBadgeHelper.getFrameAsset(rawImageUrl);
-      final badgePath = NobleBadgeHelper.getBadgeAsset(name) ?? NobleBadgeHelper.getBadgeAsset(rawImageUrl);
-      final tagPath = NobleBadgeHelper.getTagAsset(name);
-
-      if (isFrame) {
-        effectiveAsset = framePath ?? rawImageUrl;
-      } else if (type.contains('BADGE') || cat.contains('BADGE')) {
-        effectiveAsset = badgePath ?? rawImageUrl;
-      } else if (type.contains('TAG')) {
-        effectiveAsset = tagPath ?? rawImageUrl;
-      } else {
-        effectiveAsset = framePath ?? badgePath ?? tagPath ?? rawImageUrl;
-      }
-    }
+    final effectiveAsset = NobleBadgeHelper.resolveRealAsset(
+      name: name,
+      assetId: item.assetId.isNotEmpty ? item.assetId : item.id,
+      assetType: type,
+      categoryId: cat,
+      currentImageUrl: rawImageUrl,
+    );
 
     showGeneralDialog(
       context: context,
@@ -247,20 +234,11 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
                                               width: 170,
                                               height: 170,
                                               fit: BoxFit.contain,
-                                              errorBuilder: (c, e, s) => Column(
-                                                mainAxisAlignment: MainAxisAlignment.center,
-                                                children: [
-                                                  const Icon(
-                                                    Icons.workspace_premium_rounded,
-                                                    size: 56,
-                                                    color: Colors.amberAccent,
-                                                  ),
-                                                  const SizedBox(height: 8),
-                                                  Text(
-                                                    displayName,
-                                                    style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.bold),
-                                                  ),
-                                                ],
+                                              errorBuilder: (c, e, s) => Image.asset(
+                                                NobleBadgeHelper.resolveRealAsset(name: displayName, currentImageUrl: ''),
+                                                width: 170,
+                                                height: 170,
+                                                fit: BoxFit.contain,
                                               ),
                                             )),
                                 ),
@@ -467,37 +445,41 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
     final type = (item.asset?.assetType ?? '').toUpperCase();
     final cat = (item.asset?.categoryId ?? '').toUpperCase();
 
-    // Priority 1: Check if imageUrl is already a valid local asset or URL
-    String finalAssetPath = imageUrl;
-    if (finalAssetPath.isEmpty || (!finalAssetPath.startsWith('assets/') && !finalAssetPath.startsWith('http'))) {
-      if (type.contains('BADGE') || cat.contains('BADGE')) {
-        finalAssetPath = NobleBadgeHelper.getBadgeAsset(name) ?? imageUrl;
-      } else if (type.contains('FRAME') || cat.contains('FRAME')) {
-        finalAssetPath = NobleBadgeHelper.getFrameAsset(name) ?? imageUrl;
-      } else if (type.contains('TAG')) {
-        finalAssetPath = NobleBadgeHelper.getTagAsset(name) ?? imageUrl;
-      }
-    }
+    final finalAssetPath = NobleBadgeHelper.resolveRealAsset(
+      name: name,
+      assetId: item.assetId.isNotEmpty ? item.assetId : item.id,
+      assetType: type,
+      categoryId: cat,
+      currentImageUrl: imageUrl,
+    );
 
-    if (finalAssetPath.startsWith('assets/')) {
-      return Image.asset(
-        finalAssetPath,
-        width: 58,
-        height: 58,
-        fit: BoxFit.contain,
-        errorBuilder: (c, e, s) => const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold),
-      );
-    } else if (finalAssetPath.startsWith('http://') || finalAssetPath.startsWith('https://')) {
+    if (finalAssetPath.startsWith('http://') || finalAssetPath.startsWith('https://')) {
       return Image.network(
         finalAssetPath,
         width: 58,
         height: 58,
         fit: BoxFit.contain,
-        errorBuilder: (c, e, s) => const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold),
+        errorBuilder: (c, e, s) => Image.asset(
+          NobleBadgeHelper.resolveRealAsset(name: name, currentImageUrl: ''),
+          width: 58,
+          height: 58,
+          fit: BoxFit.contain,
+        ),
       );
     }
 
-    return const Icon(Icons.workspace_premium_rounded, size: 36, color: AppColors.gold);
+    return Image.asset(
+      finalAssetPath,
+      width: 58,
+      height: 58,
+      fit: BoxFit.contain,
+      errorBuilder: (c, e, s) => Image.asset(
+        'assets/store/ZP-134_avatar-frames_frame.webp',
+        width: 58,
+        height: 58,
+        fit: BoxFit.contain,
+      ),
+    );
   }
 
   Widget _buildAssetCategoryGrid(String typeKeyword, bool isDark) {

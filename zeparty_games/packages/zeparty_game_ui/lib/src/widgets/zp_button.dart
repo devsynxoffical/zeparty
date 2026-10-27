@@ -67,8 +67,15 @@ class _ZpButtonState extends State<ZpButton> {
           SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: fg))
         else if (widget.icon != null)
           Icon(widget.icon, size: 18, color: fg),
-        if (widget.loading || widget.icon != null) const SizedBox(width: ZpSpace.sm),
-        Text(widget.label.toUpperCase(), style: text.labelLarge?.copyWith(color: fg, fontSize: widget.compact ? 12 : 14)),
+        if (widget.loading || widget.icon != null) const SizedBox(width: ZpSpace.xs),
+        Flexible(
+          child: Text(
+            widget.label.toUpperCase(),
+            style: text.labelLarge?.copyWith(color: fg, fontSize: widget.compact ? 12 : 13),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ],
     );
     return Semantics(
@@ -94,7 +101,10 @@ class _ZpButtonState extends State<ZpButton> {
             duration: ZpDurations.fast,
             child: Container(
               constraints: const BoxConstraints(minHeight: 48, minWidth: 48),
-              padding: EdgeInsets.symmetric(horizontal: widget.compact ? ZpSpace.lg : ZpSpace.xl, vertical: widget.compact ? 10 : 14),
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.compact ? ZpSpace.sm : (widget.expand ? ZpSpace.md : ZpSpace.lg),
+                vertical: widget.compact ? 10 : 13,
+              ),
               decoration: decoration,
               child: child,
             ),

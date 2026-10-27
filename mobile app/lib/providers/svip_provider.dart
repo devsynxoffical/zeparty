@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/svip_model.dart';
+import '../core/utils/formatters.dart';
 import 'wallet_provider.dart';
 
 class SVIPProvider extends ChangeNotifier {
@@ -122,30 +124,109 @@ class SVIPProvider extends ChangeNotifier {
     return levelData.privilegeIds.contains(privilegeId);
   }
 
-  void addPoints(int points) {
+  static const String _kSvipPointsKey = 'svip_current_points_v1';
+  static const String _kSvipLevelKey = 'svip_current_level_v1';
+
+  void addPoints(int points, {String? reason, String? type = 'spend'}) {
+    if (points <= 0) return;
     _currentPoints += points;
     _checkAutoUpgrade();
+    _saveToStorage();
+    _auditHistory.insert(0, SVIPAuditRecord(
+      id: 'aud_${DateTime.now().millisecondsSinceEpoch}',
+      type: type ?? 'spend',
+      points: _currentPoints,
+      level: _currentLevel,
+      timestamp: DateTime.now(),
+      note: reason ?? 'Earned $points SVIP points',
+    ));
     notifyListeners();
   }
 
-  Future<void> fetchSVIPData() async {
+  /// Automatically credit 1 SVIP score point per 1 coin purchased or recharged.
+  /// 100,000 points unlocks SVIP 1, 200,000 unlocks SVIP 2, etc.
+  void addRechargePoints(int coinsPurchased, {String? planName}) {
+    if (coinsPurchased <= 0) return;
+    addPoints(
+      coinsPurchased,
+      reason: 'Recharged ${planName ?? "Coins"} (+${AppFormatters.formatNumber(coinsPurchased)} pts)',
+      type: 'recharge',
+    );
+  }
+
+  void syncWithUserWealth(int userWealthXp, {int? svipLevel}) {
+    bool changed = false;
+    if (userWealthXp > _currentPoints) {
+      _currentPoints = userWealthXp;
+      changed = true;
+    }
+    if (svipLevel != null && svipLevel > _currentLevel) {
+      _currentLevel = svipLevel;
+      _selectedViewLevel = svipLevel;
+      changed = true;
+    }
+    if (changed) {
+      _checkAutoUpgrade();
+      _saveToStorage();
+      notifyListeners();
+    }
+  }
+
+  Future<void> fetchSVIPData({int? userWealthXp, int? userSvipLevel}) async {
     _isLoading = true;
     notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 300));
+    await _loadFromStorage();
+    if (userWealthXp != null && userWealthXp > _currentPoints) {
+      _currentPoints = userWealthXp;
+    }
+    if (userSvipLevel != null && userSvipLevel > _currentLevel) {
+      _currentLevel = userSvipLevel;
+      _selectedViewLevel = userSvipLevel;
+    }
     _checkAutoUpgrade();
+    await _saveToStorage();
     _isLoading = false;
     notifyListeners();
   }
 
+  Future<void> _loadFromStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final storedPoints = prefs.getInt(_kSvipPointsKey) ?? 0;
+      final storedLevel = prefs.getInt(_kSvipLevelKey) ?? 0;
+      if (storedPoints > _currentPoints) {
+        _currentPoints = storedPoints;
+      }
+      if (storedLevel > _currentLevel) {
+        _currentLevel = storedLevel;
+        _selectedViewLevel = storedLevel;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveToStorage() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_kSvipPointsKey, _currentPoints);
+      await prefs.setInt(_kSvipLevelKey, _currentLevel);
+    } catch (_) {}
+  }
+
   Future<bool> purchasePoints(SVIPPackage package, WalletProvider wallet) async {
-    // Direct SVIP points purchase via wallet coins is blocked until backend exposes dedicated VIP package purchase API.
-    // Points are authoritatively accumulated on backend via cumulative recharge and live room gifting.
     if (wallet.coins < package.priceCoins) {
       return false;
     }
-    // Reconcile wallet
+    final ok = wallet.spendCoins(package.priceCoins, 'Purchased ${package.name} SVIP Points');
+    if (!ok) return false;
+
+    final totalAwarded = package.points + package.bonusPoints;
+    addPoints(
+      totalAwarded,
+      reason: 'Purchased ${package.name} (+${package.points}${package.bonusPoints > 0 ? " +${package.bonusPoints} bonus" : ""} pts)',
+      type: 'purchase',
+    );
     await wallet.fetchWallet();
-    return false;
+    return true;
   }
 
   void _checkAutoUpgrade() {
@@ -173,6 +254,7 @@ class SVIPProvider extends ChangeNotifier {
     if (next != null && _currentPoints >= next.requiredPoints) {
       _currentLevel = next.level;
       _selectedViewLevel = next.level;
+      await _saveToStorage();
       notifyListeners();
       return true;
     }

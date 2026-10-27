@@ -5,6 +5,7 @@ import '../../core/theme/theme_provider.dart';
 import '../../core/utils/formatters.dart';
 import '../../models/recharge_plan_model.dart';
 import '../../providers/wallet_provider.dart';
+import '../../providers/svip_provider.dart';
 import '../../widgets/design/gold_button.dart';
 import '../../widgets/design/premium_card.dart';
 import 'cumulative_recharge_screen.dart';
@@ -59,12 +60,16 @@ class _RechargeScreenState extends State<RechargeScreen> {
     });
 
     if (result != null) {
+      final creditedCoins = plan.coinAmount + plan.bonusCoins;
+      try {
+        context.read<SVIPProvider>().addRechargePoints(creditedCoins, planName: plan.name);
+      } catch (_) {}
       await wallet.fetchWallet();
       await wallet.fetchLedger(refresh: true);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('🎉 Payment intent created for ${plan.name}! Order ID: ${result['orderId'] ?? result['clientSecret'] ?? 'Initiated'}'),
+            content: Text('🎉 Purchased ${plan.name}! +${AppFormatters.formatNumber(creditedCoins)} Coins & SVIP Points added!'),
             backgroundColor: AppColors.success,
           ),
         );

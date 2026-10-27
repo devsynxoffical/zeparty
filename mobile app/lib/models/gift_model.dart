@@ -162,6 +162,14 @@ class GiftModel {
       if (g.name.toLowerCase() == clean) return g;
     }
 
+    // 2b. Match by icon path or filename (e.g. 'assets/gifts/lucky/Rose.png' or 'Rose.png')
+    for (final g in catalog) {
+      final iconPath = g.icon.toLowerCase();
+      if (iconPath == clean || clean.endsWith(iconPath) || (clean.contains('/') && iconPath.contains('/') && clean.split('/').last == iconPath.split('/').last)) {
+        return g;
+      }
+    }
+
     // 3. Alphanumeric normalized ID match (e.g. 'cg_11' -> 'cg11')
     final alnum = clean.replaceAll(RegExp(r'[^a-z0-9]'), '');
     if (alnum.isNotEmpty) {

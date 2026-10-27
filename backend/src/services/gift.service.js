@@ -378,18 +378,46 @@ export async function sendGift(
     // Approved ZeParty Level Policy: starting at Lv. 1, 10,000 XP per level
     const newWealthLevel = Math.max(1, Math.floor(Number(newXp) / 10000) + 1);
 
+    const currentSpent = BigInt(senderProfile?.totalSpentCoins || 0n);
+    const newSpent = currentSpent + coinsSpent;
+    const spentNum = Number(newSpent);
+
+    // Automatic SVIP progression calculation based on cumulative coins spent
+    let calculatedSvip = 0;
+    if (spentNum >= 150000000) calculatedSvip = 16;
+    else if (spentNum >= 100000000) calculatedSvip = 15;
+    else if (spentNum >= 50000000) calculatedSvip = 14;
+    else if (spentNum >= 30000000) calculatedSvip = 13;
+    else if (spentNum >= 20000000) calculatedSvip = 12;
+    else if (spentNum >= 12000000) calculatedSvip = 11;
+    else if (spentNum >= 7000000) calculatedSvip = 10;
+    else if (spentNum >= 5000000) calculatedSvip = 9;
+    else if (spentNum >= 3000000) calculatedSvip = 8;
+    else if (spentNum >= 1500000) calculatedSvip = 7;
+    else if (spentNum >= 700000) calculatedSvip = 6;
+    else if (spentNum >= 500000) calculatedSvip = 5;
+    else if (spentNum >= 400000) calculatedSvip = 4;
+    else if (spentNum >= 300000) calculatedSvip = 3;
+    else if (spentNum >= 200000) calculatedSvip = 2;
+    else if (spentNum >= 100000) calculatedSvip = 1;
+
+    const currentSvip = senderProfile?.svipLevel || 0;
+    const newSvipLevel = Math.max(currentSvip, calculatedSvip);
+
     await tx.userProfile.upsert({
       where: { userId: senderUserId },
       update: {
         experiencePoints: newXp,
-        totalSpentCoins: { increment: coinsSpent },
+        totalSpentCoins: newSpent,
         level: newWealthLevel,
+        svipLevel: newSvipLevel,
       },
       create: {
         userId: senderUserId,
         experiencePoints: newXp,
-        totalSpentCoins: coinsSpent,
+        totalSpentCoins: newSpent,
         level: newWealthLevel,
+        svipLevel: newSvipLevel,
       },
     });
 

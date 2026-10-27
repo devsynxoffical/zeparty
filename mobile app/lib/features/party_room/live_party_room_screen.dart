@@ -366,6 +366,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     _roomEntrySessionId = 'session_${widget.room.id}_${DateTime.now().millisecondsSinceEpoch}';
     _requestMicPermission();
 
+    // Immediately isolate gift and emoji rooms on entry so stale gifts/reactions never appear
+    Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id);
+    Provider.of<EmojiReactionProvider>(context, listen: false).setActiveRoom(widget.room.id);
+
     final savedBg = RoomConfigManager.instance.getCustomBackground(widget.room.id) ?? widget.room.backgroundImageUrl;
     if (savedBg != null && savedBg.isNotEmpty) {
       _customBackgroundPath = savedBg;
@@ -552,6 +556,16 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     _chatScrollController.dispose();
     _chatFocusNode.dispose();
     AgoraRtcService().stopAudioMixing();
+
+    try {
+      final giftProv = Provider.of<LiveGiftProvider>(context, listen: false);
+      giftProv.clearRoom();
+      final emojiProv = Provider.of<EmojiReactionProvider>(context, listen: false);
+      emojiProv.clearRoom();
+      final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+      partyProv.leaveParty();
+    } catch (_) {}
+
     super.dispose();
   }
 
@@ -846,8 +860,20 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
     final authProv = Provider.of<AuthProvider>(context, listen: false);
     final user = authProv.currentUser;
-    final isHost = partyProv.activeRoom?.host.id == user.id || partyProv.activeRoom?.creatorUserId == user.id;
-    final isSeated = partyProv.participants.any((p) => (p.user.id == user.id || p.user.username == user.username) && p.seatNumber != null);
+
+    final myParticipant = partyProv.participants.where((p) => (p.user.id == user.id || p.user.username == user.username)).firstOrNull;
+    final mySeatNumber = myParticipant?.seatNumber;
+
+    // Comprehensive Host Identification
+    final isHost = partyProv.isHost ||
+        partyProv.activeRoom?.host.id == user.id ||
+        partyProv.activeRoom?.creatorUserId == user.id ||
+        partyProv.activeRoom?.host.username.trim().toLowerCase() == user.username.trim().toLowerCase() ||
+        partyProv.activeRoom?.host.name.trim().toLowerCase() == user.name.trim().toLowerCase() ||
+        myParticipant?.role == ParticipantRole.host ||
+        mySeatNumber == 0;
+
+    final isSeated = isHost || (mySeatNumber != null);
 
     if (!isHost && !isSeated) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -860,16 +886,16 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       return;
     }
 
-    final myParticipant = partyProv.participants.where((p) => (p.user.id == user.id || p.user.username == user.username)).firstOrNull;
-    final mySeatNumber = myParticipant?.seatNumber;
     final isSeatMutedByMod = mySeatNumber != null && partyProv.isSeatMutedByModerator(mySeatNumber);
-    final isModeratorRestricted = partyProv.isRoomMuted ||
+    // Hosts have total immunity from moderator restriction and room-wide mute
+    final isModeratorRestricted = !isHost && (
+        partyProv.isRoomMuted ||
         (myParticipant?.isMutedByModerator == true) ||
-        isSeatMutedByMod;
+        isSeatMutedByMod);
 
     final isCurrentlyMuted = _isMicMuted || (myParticipant?.micStatus == MicStatus.muted) || isModeratorRestricted;
 
-    if (isCurrentlyMuted && isModeratorRestricted) {
+    if (!isHost && isCurrentlyMuted && isModeratorRestricted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('⚠️ Your microphone has been muted by moderation and cannot be toggled.'),
@@ -3515,6 +3541,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         reactionAsset: item.id,
         category: 'illustrated',
         sender: currentUser,
+        gameResult: gameResult,
       );
     }
 

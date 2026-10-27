@@ -193,6 +193,17 @@ class BackendRepository extends ChangeNotifier {
       final uniqueRooms = <LiveRoomModel>[];
       for (final r in remoteRooms) {
         if (r.id.isNotEmpty && !seenIds.contains(r.id)) {
+          final t = r.title.toLowerCase();
+          final h = r.host.name.toLowerCase();
+          final creatorId = (r.creatorUserId ?? '').toLowerCase();
+          final isDummy = t.startsWith('bug ') ||
+              t.startsWith('test ') ||
+              t.contains('verification room') ||
+              creatorId.startsWith('bug') ||
+              h.contains('other host') ||
+              h.contains('master host');
+          if (isDummy) continue;
+
           seenIds.add(r.id);
           uniqueRooms.add(r);
         }

@@ -488,6 +488,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
       }
     });
 
+    // Synchronously isolate gift & emoji rooms so frame 0 never shows previous room gifts
+    Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id);
+    Provider.of<EmojiReactionProvider>(context, listen: false).setActiveRoom(widget.room.id);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentUser = context.read<AuthProvider>().currentUser;
       final liveProv = context.read<LiveProvider>();
@@ -2049,6 +2053,12 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
     } catch (_) {}
     try {
       context.read<LiveProvider>().leaveRoom();
+    } catch (_) {}
+    try {
+      final giftProv = Provider.of<LiveGiftProvider>(context, listen: false);
+      giftProv.clearRoom();
+      final emojiProv = Provider.of<EmojiReactionProvider>(context, listen: false);
+      emojiProv.clearRoom();
     } catch (_) {}
     super.dispose();
   }

@@ -235,7 +235,7 @@ export async function getActiveRooms(filters, db = prisma) {
 
 export async function cleanupStaleRooms(db = prisma) {
   try {
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+    const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000); // 4 hours ago for abandoned streams
     const staleRooms = await db.room.findMany({
       where: {
         status: 'LIVE',
@@ -255,6 +255,32 @@ export async function cleanupStaleRooms(db = prisma) {
         },
       });
       console.log(`[RoomService] Cleaned up ${staleRooms.length} stale live rooms.`);
+    }
+
+    // Immediately close any dummy/test/verification rooms left LIVE from automated test runs
+    const dummyRooms = await db.room.findMany({
+      where: {
+        status: 'LIVE',
+        OR: [
+          { title: { startsWith: 'Bug ', mode: 'insensitive' } },
+          { title: { startsWith: 'Test ', mode: 'insensitive' } },
+          { title: { contains: 'Verification Room', mode: 'insensitive' } },
+          { creatorUserId: { startsWith: 'bug' } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (dummyRooms.length > 0) {
+      const dummyIds = dummyRooms.map((r) => r.id);
+      await db.room.updateMany({
+        where: { id: { in: dummyIds } },
+        data: {
+          status: 'ENDED',
+          endedAt: new Date(),
+          currentViewersCount: 0,
+        },
+      });
+      console.log(`[RoomService] Cleaned up ${dummyRooms.length} dummy/test rooms.`);
     }
 
     // Also close any orphaned room whose creator no longer exists

@@ -152,21 +152,20 @@ class BackpackProvider extends ChangeNotifier {
       // Preserve existing valid asset/remote URL
       asset = asset;
     } else {
-      // Only resolve via NobleBadgeHelper if asset image is completely empty or unresolved
       final candidateName = asset?.name ?? '';
-      String resolvedImage = asset?.imageUrl ?? '';
-      if (resolvedImage.isEmpty || (!resolvedImage.startsWith('assets/') && !resolvedImage.startsWith('http'))) {
-        final localFrame = NobleBadgeHelper.getFrameAsset(candidateName) ?? NobleBadgeHelper.getFrameAsset(assetId);
-        final localBadge = NobleBadgeHelper.getBadgeAsset(candidateName) ?? NobleBadgeHelper.getBadgeAsset(assetId);
-        final localTag = NobleBadgeHelper.getTagAsset(candidateName);
-        resolvedImage = localFrame ?? localBadge ?? localTag ?? 'assets/store/ZP-134_avatar-frames_frame.webp';
-      }
+      final resolvedImage = NobleBadgeHelper.resolveRealAsset(
+        name: candidateName,
+        assetId: assetId,
+        assetType: asset?.assetType,
+        categoryId: asset?.categoryId,
+        currentImageUrl: asset?.imageUrl,
+      );
 
       asset = StoreItemModel(
         id: ua.assetId.isNotEmpty ? ua.assetId : ua.id,
         name: candidateName.isNotEmpty ? candidateName : 'Store Item',
-        categoryId: (asset?.categoryId.isNotEmpty == true) ? asset!.categoryId : 'Frame',
-        assetType: (asset?.assetType.isNotEmpty == true) ? asset!.assetType : 'AVATAR_FRAME',
+        categoryId: (asset?.categoryId.isNotEmpty == true) ? asset!.categoryId : 'Badges',
+        assetType: (asset?.assetType.isNotEmpty == true) ? asset!.assetType : 'BADGE',
         imageUrl: resolvedImage,
         priceCoins: asset?.priceCoins ?? 50000,
         durationDays: asset?.durationDays ?? 30,

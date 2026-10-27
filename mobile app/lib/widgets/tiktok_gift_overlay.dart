@@ -4,6 +4,7 @@ import '../models/gift_model.dart';
 import '../models/live_gift_event_model.dart';
 import '../providers/live_gift_provider.dart';
 import 'basic_gift_animator.dart';
+import 'lucky_gift_animator.dart';
 import 'standard_gift_animator.dart';
 import 'premium_gift_animator.dart';
 import 'legendary_gift_animator.dart';
@@ -24,6 +25,11 @@ class TikTokGiftOverlay extends StatelessWidget {
       builder: (context, provider, child) {
         final activeEvent = provider.currentActiveEvent;
         if (activeEvent == null) return const SizedBox.shrink();
+
+        // Ensure events from other or previous rooms never render in this room
+        if (activeEvent.roomId.isNotEmpty && roomId.isNotEmpty && activeEvent.roomId != roomId) {
+          return const SizedBox.shrink();
+        }
 
         // If this gift has an MP4 video animation asset, GiftAnimationOverlay handles it!
         // Prevent displaying a second, duplicate static gift overlay.
@@ -56,6 +62,19 @@ class TikTokGiftOverlay extends StatelessWidget {
   ) {
     void onComplete() {
       provider.onCurrentEventCompleted();
+    }
+
+    final matchedGift = GiftModel.findById(event.giftId) ?? GiftModel.findById(event.giftName);
+    final isLucky = event.giftName.toLowerCase().contains('lucky') ||
+        (matchedGift?.isLuckyGift ?? false) ||
+        (matchedGift?.category == 'Lucky Gift');
+
+    if (isLucky) {
+      return LuckyGiftAnimator(
+        key: ValueKey('anim_lucky_${event.eventId}_${event.comboCount}'),
+        event: event,
+        onComplete: onComplete,
+      );
     }
 
     switch (event.animationLevel) {

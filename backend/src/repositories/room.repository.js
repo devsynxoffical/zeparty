@@ -205,6 +205,12 @@ export async function findActiveRooms(
     creator: {
       id: { not: '' },
     },
+    NOT: [
+      { title: { startsWith: 'Bug ', mode: 'insensitive' } },
+      { title: { startsWith: 'Test ', mode: 'insensitive' } },
+      { title: { contains: 'Verification Room', mode: 'insensitive' } },
+      { creatorUserId: { startsWith: 'bug' } },
+    ],
   };
 
   if (isPrivate !== null && isPrivate !== undefined) {

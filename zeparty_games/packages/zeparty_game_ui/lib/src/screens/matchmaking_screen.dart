@@ -76,64 +76,78 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> {
       appBar: AppBar(title: const Text('Quick match')),
       body: ZpBackdrop(
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(ZpSpace.xl),
-            child: Column(
-              children: [
-                const Spacer(),
-                SizedBox(
-                  width: 220,
-                  height: 220,
-                  child: Stack(alignment: Alignment.center, children: [
-                    for (var i = 0; i < 3; i++)
-                      Container(
-                        width: 220,
-                        height: 220,
-                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: ZpColors.gold.withValues(alpha: 0.5), width: 1.5)),
-                      ).animate(onPlay: (c) => _searching ? c.repeat() : c.stop()).scale(begin: const Offset(0.2, 0.2), end: const Offset(1, 1), duration: 2400.ms, delay: (800 * i).ms).fadeOut(duration: 2400.ms, delay: (800 * i).ms),
-                    Container(
-                      width: 110,
-                      height: 110,
-                      decoration: BoxDecoration(shape: BoxShape.circle, gradient: ZpColors.goldGradient, boxShadow: [BoxShadow(color: ZpColors.gold.withValues(alpha: 0.5), blurRadius: 40)]),
-                      child: Icon(_searching ? Icons.radar_rounded : Icons.bolt_rounded, color: ZpColors.obsidian, size: 52),
-                    ),
-                  ]),
-                ),
-                const SizedBox(height: ZpSpace.xl),
-                Text(_searching ? 'Finding players' : (e?.title ?? widget.gameId), style: t.headlineMedium, textAlign: TextAlign.center),
-                const SizedBox(height: ZpSpace.sm),
-                Text(
-                  _searching ? 'Searching for ${_elapsed}s. A table of $_tableSize fills first; after 20 s we start with the minimum.' : 'We pair you with players looking for the same table size.',
-                  style: t.bodyMedium,
-                  textAlign: TextAlign.center,
-                ),
-                const Spacer(),
-                if (!_searching) ...[
-                  Text('TABLE SIZE', style: t.labelSmall?.copyWith(letterSpacing: 2)),
-                  const SizedBox(height: ZpSpace.sm),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: ZpSpace.lg, vertical: ZpSpace.md),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      for (final n in sizes)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: ChoiceChip(
-                            label: Text('$n players'),
-                            selected: _tableSize == n,
-                            selectedColor: ZpColors.gold,
-                            labelStyle: TextStyle(color: _tableSize == n ? ZpColors.obsidian : ZpColors.textPrimary, fontWeight: FontWeight.w600),
-                            backgroundColor: ZpColors.panelRaised,
-                            side: const BorderSide(color: ZpColors.divider),
-                            onSelected: (_) => setState(() => _tableSize = n),
+                      const SizedBox(height: ZpSpace.md),
+                      SizedBox(
+                        width: 170,
+                        height: 170,
+                        child: Stack(alignment: Alignment.center, children: [
+                          for (var i = 0; i < 3; i++)
+                            Container(
+                              width: 170,
+                              height: 170,
+                              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: ZpColors.gold.withValues(alpha: 0.5), width: 1.5)),
+                            ).animate(onPlay: (c) => _searching ? c.repeat() : c.stop()).scale(begin: const Offset(0.2, 0.2), end: const Offset(1, 1), duration: 2400.ms, delay: (800 * i).ms).fadeOut(duration: 2400.ms, delay: (800 * i).ms),
+                          Container(
+                            width: 90,
+                            height: 90,
+                            decoration: BoxDecoration(shape: BoxShape.circle, gradient: ZpColors.goldGradient, boxShadow: [BoxShadow(color: ZpColors.gold.withValues(alpha: 0.5), blurRadius: 40)]),
+                            child: Icon(_searching ? Icons.radar_rounded : Icons.bolt_rounded, color: ZpColors.obsidian, size: 44),
                           ),
+                        ]),
+                      ),
+                      const SizedBox(height: ZpSpace.lg),
+                      Text(_searching ? 'Finding players' : (e?.title ?? widget.gameId), style: t.headlineMedium, textAlign: TextAlign.center),
+                      const SizedBox(height: ZpSpace.xs),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: ZpSpace.md),
+                        child: Text(
+                          _searching ? 'Searching for ${_elapsed}s. A table of $_tableSize fills first; after 20 s we start with the minimum.' : 'We pair you with players looking for the same table size.',
+                          style: t.bodyMedium,
+                          textAlign: TextAlign.center,
                         ),
+                      ),
+                      const SizedBox(height: ZpSpace.lg),
+                      if (!_searching) ...[
+                        Text('TABLE SIZE', style: t.labelSmall?.copyWith(letterSpacing: 2)),
+                        const SizedBox(height: ZpSpace.sm),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final n in sizes)
+                              ChoiceChip(
+                                label: Text('$n players'),
+                                selected: _tableSize == n,
+                                selectedColor: ZpColors.gold,
+                                labelStyle: TextStyle(color: _tableSize == n ? ZpColors.obsidian : ZpColors.textPrimary, fontWeight: FontWeight.w600),
+                                backgroundColor: ZpColors.panelRaised,
+                                side: const BorderSide(color: ZpColors.divider),
+                                onSelected: (_) => setState(() => _tableSize = n),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: ZpSpace.xl),
+                        ZpButton(label: 'Find match', icon: Icons.search_rounded, expand: true, onPressed: _start),
+                      ] else ...[
+                        const SizedBox(height: ZpSpace.xl),
+                        ZpButton(label: 'Cancel', kind: ZpButtonKind.ghost, expand: true, onPressed: _cancel),
+                      ],
+                      const SizedBox(height: ZpSpace.md),
                     ],
                   ),
-                  const SizedBox(height: ZpSpace.xl),
-                  ZpButton(label: 'Find match', icon: Icons.search_rounded, expand: true, onPressed: _start),
-                ] else
-                  ZpButton(label: 'Cancel', kind: ZpButtonKind.ghost, expand: true, onPressed: _cancel),
-              ],
+                ),
+              ),
             ),
           ),
         ),

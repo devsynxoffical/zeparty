@@ -9,6 +9,7 @@ import '../../providers/store_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../profile/modules/outfit_screen.dart';
 import '../wallet/wallet_screen.dart';
+import '../../core/utils/noble_badge_helper.dart';
 
 class StoreScreen extends StatefulWidget {
   const StoreScreen({super.key});
@@ -277,25 +278,41 @@ class _StoreScreenState extends State<StoreScreen> {
                 final imgHeight = isBg ? 65.0 : 60.0;
                 final imgWidth = isBg ? double.infinity : null;
 
+                final resolvedPath = NobleBadgeHelper.resolveRealAsset(
+                  name: item.name,
+                  assetId: item.id,
+                  assetType: item.assetType,
+                  categoryId: item.categoryId,
+                  currentImageUrl: item.imageUrl,
+                );
+
                 Widget imageWidget;
-                if (item.imageUrl.startsWith('http')) {
+                if (resolvedPath.startsWith('http://') || resolvedPath.startsWith('https://')) {
                   imageWidget = Image.network(
-                    item.imageUrl,
+                    resolvedPath,
                     height: imgHeight,
                     width: imgWidth,
                     fit: fitMode,
-                    errorBuilder: (c, e, s) => const Icon(Icons.stars_rounded, size: 40, color: Colors.amber),
-                  );
-                } else if (item.imageUrl.isNotEmpty) {
-                  imageWidget = Image.asset(
-                    item.imageUrl,
-                    height: imgHeight,
-                    width: imgWidth,
-                    fit: fitMode,
-                    errorBuilder: (c, e, s) => const Icon(Icons.stars_rounded, size: 40, color: Colors.amber),
+                    errorBuilder: (c, e, s) => Image.asset(
+                      NobleBadgeHelper.resolveRealAsset(name: item.name, currentImageUrl: ''),
+                      height: imgHeight,
+                      width: imgWidth,
+                      fit: fitMode,
+                    ),
                   );
                 } else {
-                  imageWidget = const Icon(Icons.shopping_bag_rounded, size: 40, color: Colors.purpleAccent);
+                  imageWidget = Image.asset(
+                    resolvedPath,
+                    height: imgHeight,
+                    width: imgWidth,
+                    fit: fitMode,
+                    errorBuilder: (c, e, s) => Image.asset(
+                      'assets/store/ZP-134_avatar-frames_frame.webp',
+                      height: imgHeight,
+                      width: imgWidth,
+                      fit: fitMode,
+                    ),
+                  );
                 }
 
                 if (isBg) {

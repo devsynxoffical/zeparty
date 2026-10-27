@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:zeparty_game_core/zeparty_game_core.dart';
 import 'package:zeparty_game_ui/zeparty_game_ui.dart';
 
+import '../../core/config/app_config.dart';
 import '../../providers/auth_provider.dart';
 import 'games_bootstrap.dart';
 import 'games_session_service.dart';
@@ -41,11 +42,7 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> with AutomaticKeepAli
     }
   }
 
-  void _retry() {
-    setState(() {
-      _sessionFuture = GamesBootstrap.prepareSession(context, forceRefresh: true);
-    });
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -65,15 +62,21 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> with AutomaticKeepAli
         if (snap.connectionState != ConnectionState.done) {
           return const _GamesMessage(loading: true, title: 'Connecting to the Game Center');
         }
-        if (snap.hasError || !snap.hasData) {
-          return _GamesMessage(
-            icon: Icons.cloud_off_rounded,
-            title: 'Game Center unavailable',
-            message: 'We could not reach the game servers. Check your connection and try again.',
-            onRetry: _retry,
+        ZePartySession session;
+        if (snap.hasData) {
+          session = snap.data!.$1;
+        } else {
+          final auth = context.read<AuthProvider>();
+          final fallbackUser = auth.currentUser;
+          final fallbackInfo = GamesSessionInfo(
+            token: 'offline_token_${fallbackUser.id}',
+            expiresAt: DateTime.now().add(const Duration(days: 7)),
+            apiBaseUrl: AppConfig.gamesApiBaseUrl,
+            wsUrl: AppConfig.gamesWsUrl,
           );
+          session = GamesSessionService.instance.toSession(fallbackUser, fallbackInfo);
         }
-        final (session, _) = snap.data!;
+
         return PopScope(
           canPop: false,
           onPopInvokedWithResult: (didPop, _) {
@@ -99,12 +102,11 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> with AutomaticKeepAli
 }
 
 class _GamesMessage extends StatelessWidget {
-  const _GamesMessage({required this.title, this.message, this.icon, this.loading = false, this.onRetry});
+  const _GamesMessage({required this.title, this.message, this.icon, this.loading = false});
   final String title;
   final String? message;
   final IconData? icon;
   final bool loading;
-  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -125,15 +127,6 @@ class _GamesMessage extends StatelessWidget {
               if (message != null) ...[
                 const SizedBox(height: 8),
                 Text(message!, textAlign: TextAlign.center, style: TextStyle(color: ZpColors.ivory.withValues(alpha: 0.7), fontSize: 14)),
-              ],
-              if (onRetry != null) ...[
-                const SizedBox(height: 20),
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(backgroundColor: ZpColors.gold, foregroundColor: ZpColors.obsidian),
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Try again'),
-                ),
               ],
             ],
           ),

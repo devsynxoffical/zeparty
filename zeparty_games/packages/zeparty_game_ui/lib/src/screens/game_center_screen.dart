@@ -129,7 +129,7 @@ class _GameCenterScreenState extends State<GameCenterScreen> {
                 SliverPadding(
                   padding: const EdgeInsets.symmetric(horizontal: ZpSpace.lg),
                   sliver: SliverGrid(
-                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 220, mainAxisSpacing: ZpSpace.md, crossAxisSpacing: ZpSpace.md, childAspectRatio: 0.78),
+                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(maxCrossAxisExtent: 220, mainAxisSpacing: ZpSpace.md, crossAxisSpacing: ZpSpace.sm, childAspectRatio: 0.74),
                     delegate: SliverChildBuilderDelegate(
                       (_, i) => GameCard(entry: catalog[i], online: online, onPlay: () => _open(context, catalog[i])).animate().fadeIn(delay: (40 * i).ms).scale(begin: const Offset(0.95, 0.95), end: const Offset(1, 1)),
                       childCount: catalog.length,

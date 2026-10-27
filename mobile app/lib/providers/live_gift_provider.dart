@@ -8,6 +8,7 @@ import '../core/services/api_client.dart';
 import '../core/services/socket_service.dart';
 import '../core/utils/performance_utils.dart';
 import 'auth_provider.dart';
+import 'svip_provider.dart';
 import 'wallet_provider.dart';
 
 class LiveGiftProvider extends ChangeNotifier {
@@ -57,6 +58,11 @@ class LiveGiftProvider extends ChangeNotifier {
   void _initSocketListener() {
     _socketGiftSubscription?.cancel();
     _socketGiftSubscription = _socketService.onGiftSent.listen((data) {
+      final inRoomId = (data['roomId'] ?? '').toString();
+      // Drop event immediately if we are not in a room, or if it belongs to another room
+      if (_activeRoomId == null || _activeRoomId!.isEmpty) return;
+      if (inRoomId.isNotEmpty && inRoomId != _activeRoomId) return;
+
       final txId = (data['transactionId'] ?? data['id'] ?? data['eventId'] ?? '').toString();
       if (txId.isNotEmpty && _processedTransactionIds.contains(txId)) {
         // Already processed locally (e.g. sender triggered local animation on REST response)
@@ -88,13 +94,16 @@ class LiveGiftProvider extends ChangeNotifier {
   }
 
   void setActiveRoom(String roomId) {
-    if (_activeRoomId != roomId) {
-      _activeRoomId = roomId;
-      _eventQueue.clear();
-      _activeComboMap.clear();
-      _currentActiveEvent = null;
-      notifyListeners();
+    _activeRoomId = roomId;
+    // Always wipe stale queues and previous room gift state on room switch/entry
+    _eventQueue.clear();
+    _activeComboMap.clear();
+    _currentActiveEvent = null;
+    for (final timer in _comboResetTimers.values) {
+      timer.cancel();
     }
+    _comboResetTimers.clear();
+    notifyListeners();
   }
 
   void clearRoom() {
@@ -102,6 +111,10 @@ class LiveGiftProvider extends ChangeNotifier {
     _eventQueue.clear();
     _activeComboMap.clear();
     _currentActiveEvent = null;
+    for (final timer in _comboResetTimers.values) {
+      timer.cancel();
+    }
+    _comboResetTimers.clear();
     notifyListeners();
   }
 
@@ -115,6 +128,7 @@ class LiveGiftProvider extends ChangeNotifier {
     required String roomId,
     int quantity = 1,
     AuthProvider? authProvider,
+    SVIPProvider? svipProvider,
   }) async {
     final unitPrice = gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice;
     final totalCost = unitPrice * quantity;
@@ -161,6 +175,11 @@ class LiveGiftProvider extends ChangeNotifier {
         authProvider.addWealthXp(totalCost);
       }
 
+      // Award SVIP points (1 coin spent = 1 SVIP point) and auto-upgrade SVIP level
+      if (svipProvider != null && totalCost > 0) {
+        svipProvider.addPoints(totalCost, reason: 'Sent $quantity × ${gift.name}', type: 'gift_send');
+      }
+
       // Trigger local animation & combo aggregation (only for non-video gifts)
       _enqueueLocalComboEvent(
         txId: txId.isNotEmpty ? txId : idempotencyKey,
@@ -189,6 +208,11 @@ class LiveGiftProvider extends ChangeNotifier {
         // Credit sender Wealth XP
         if (authProvider != null && totalCost > 0) {
           authProvider.addWealthXp(totalCost);
+        }
+
+        // Award SVIP points on local delivery
+        if (svipProvider != null && totalCost > 0) {
+          svipProvider.addPoints(totalCost, reason: 'Sent $quantity × ${gift.name}', type: 'gift_send');
         }
 
         // Broadcast real-time gift over socket so room viewers and receiver see it
@@ -316,7 +340,8 @@ class LiveGiftProvider extends ChangeNotifier {
 
   /// Receive realtime gift event from remote socket/server
   void receiveGiftEvent(LiveGiftEventModel event) {
-    if (_activeRoomId != null && event.roomId.isNotEmpty && event.roomId != _activeRoomId) return;
+    if (_activeRoomId == null || _activeRoomId!.isEmpty) return;
+    if (event.roomId.isNotEmpty && event.roomId != _activeRoomId) return;
     _eventStreamController.add(event);
     _enqueueEvent(event);
     notifyListeners();

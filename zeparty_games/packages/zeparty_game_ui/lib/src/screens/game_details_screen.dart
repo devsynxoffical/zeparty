@@ -155,17 +155,17 @@ class _GameDetailsScreenState extends State<GameDetailsScreen> {
                   Row(children: [
                     Expanded(child: ZpButton(label: 'Quick match', icon: Icons.bolt_rounded, onPressed: _busy ? null : () => Navigator.of(context).push(MatchmakingScreen.route(e.gameId)), expand: true)),
                   ]),
-                  const SizedBox(height: ZpSpace.md),
+                  const SizedBox(height: ZpSpace.sm),
                   Row(children: [
-                    Expanded(child: ZpButton(label: 'Create room', kind: ZpButtonKind.secondary, icon: Icons.add_rounded, onPressed: _busy ? null : () => _create(private: false), expand: true, loading: _busy)),
-                    const SizedBox(width: ZpSpace.md),
-                    Expanded(child: ZpButton(label: 'Private', kind: ZpButtonKind.secondary, icon: Icons.lock_rounded, onPressed: _busy ? null : () => _create(private: true), expand: true)),
+                    Expanded(child: ZpButton(label: 'Create room', kind: ZpButtonKind.secondary, icon: Icons.add_rounded, onPressed: _busy ? null : () => _create(private: false), expand: true, compact: true, loading: _busy)),
+                    const SizedBox(width: ZpSpace.sm),
+                    Expanded(child: ZpButton(label: 'Private', kind: ZpButtonKind.secondary, icon: Icons.lock_rounded, onPressed: _busy ? null : () => _create(private: true), expand: true, compact: true)),
                   ]),
-                  const SizedBox(height: ZpSpace.md),
+                  const SizedBox(height: ZpSpace.sm),
                   Row(children: [
-                    Expanded(child: ZpButton(label: 'Join by code', kind: ZpButtonKind.ghost, icon: Icons.vpn_key_rounded, onPressed: _busy ? null : _joinByCode, expand: true)),
-                    const SizedBox(width: ZpSpace.md),
-                    Expanded(child: ZpButton(label: 'Cosmetics', kind: ZpButtonKind.ghost, icon: Icons.palette_rounded, onPressed: () => Navigator.of(context).push(StoreScreen.route(gameId: e.gameId)), expand: true)),
+                    Expanded(child: ZpButton(label: 'Join by code', kind: ZpButtonKind.ghost, icon: Icons.vpn_key_rounded, onPressed: _busy ? null : _joinByCode, expand: true, compact: true)),
+                    const SizedBox(width: ZpSpace.sm),
+                    Expanded(child: ZpButton(label: 'Cosmetics', kind: ZpButtonKind.ghost, icon: Icons.palette_rounded, onPressed: () => Navigator.of(context).push(StoreScreen.route(gameId: e.gameId)), expand: true, compact: true)),
                   ]),
                   if (rules.isNotEmpty) ...[
                     const ZpSectionHeader('Rules'),

@@ -10,6 +10,7 @@ import '../providers/wallet_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/live_party_provider.dart';
 import '../providers/live_gift_provider.dart';
+import '../providers/svip_provider.dart';
 import '../widgets/user_avatar.dart';
 import '../features/recharge/recharge_screen.dart';
 
@@ -572,6 +573,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
 
                             int totalSuccess = 0;
                             final roomId = liveProv.activeRoom?.id ?? partyLiveProv.activeRoom?.id ?? '';
+                            final svipProv = context.read<SVIPProvider>();
 
                             for (final targetUser in validRecipients) {
                               final success = await liveGiftProv.sendGift(
@@ -582,6 +584,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                                 roomId: roomId,
                                 quantity: quantity,
                                 authProvider: auth,
+                                svipProvider: svipProv,
                               );
 
                               if (success) {

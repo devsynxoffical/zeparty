@@ -10,6 +10,27 @@ import prisma from '../config/database.js';
 
 export const COINS_PER_USD = 10000n; // 1 USD = 10,000 Coins baseline default
 
+export function calculateSvipTier(points) {
+  const p = Number(points);
+  if (p >= 150000000) return 16;
+  if (p >= 100000000) return 15;
+  if (p >= 50000000) return 14;
+  if (p >= 30000000) return 13;
+  if (p >= 20000000) return 12;
+  if (p >= 12000000) return 11;
+  if (p >= 7000000) return 10;
+  if (p >= 5000000) return 9;
+  if (p >= 3000000) return 8;
+  if (p >= 1500000) return 7;
+  if (p >= 700000) return 6;
+  if (p >= 500000) return 5;
+  if (p >= 400000) return 4;
+  if (p >= 300000) return 3;
+  if (p >= 200000) return 2;
+  if (p >= 100000) return 1;
+  return 0;
+}
+
 export async function getRechargePlans({ includeInactive = false } = {}) {
   const plans = await rechargeRepository.findAllPlans({ includeInactive });
   return plans.map((p) => sanitizeFinancial(p));
@@ -194,6 +215,23 @@ export async function approveOfflineRecharge({ id, adminId, isOwner = false, ipA
       transactionType: 'RECHARGE',
       db: tx,
     });
+
+    // 2.5. Upgrade user's SVIP Tier based on recharged coins (1 coin = 1 SVIP score point)
+    try {
+      const userProfile = await tx.userProfile.findUnique({ where: { userId: record.userId } });
+      if (userProfile) {
+        const currentTotalCoins = BigInt(userProfile.totalSpentCoins || 0) + BigInt(coinsCredited);
+        const newSvipLevel = calculateSvipTier(currentTotalCoins);
+        if (newSvipLevel > (userProfile.svipLevel || 0)) {
+          await tx.userProfile.update({
+            where: { userId: record.userId },
+            data: { svipLevel: newSvipLevel },
+          });
+        }
+      }
+    } catch (svipErr) {
+      console.warn('[RechargeService] Offline recharge SVIP tier calculation note:', svipErr?.message);
+    }
 
     // 3. Emit AuditLog
     await tx.auditLog.create({
@@ -436,6 +474,23 @@ export async function processPaymentWebhook({ provider, rawBody, signature, head
       transactionType: 'RECHARGE',
       db: tx,
     });
+
+    // 2.5. Upgrade user's SVIP Tier based on recharged coins (1 coin = 1 SVIP score point)
+    try {
+      const userProfile = await tx.userProfile.findUnique({ where: { userId: record.userId } });
+      if (userProfile) {
+        const currentTotalCoins = BigInt(userProfile.totalSpentCoins || 0) + BigInt(coinsToCredit);
+        const newSvipLevel = calculateSvipTier(currentTotalCoins);
+        if (newSvipLevel > (userProfile.svipLevel || 0)) {
+          await tx.userProfile.update({
+            where: { userId: record.userId },
+            data: { svipLevel: newSvipLevel },
+          });
+        }
+      }
+    } catch (svipErr) {
+      console.warn('[RechargeService] Online recharge SVIP tier calculation note:', svipErr?.message);
+    }
 
     // 3. Emit AuditLog
     await tx.auditLog.create({

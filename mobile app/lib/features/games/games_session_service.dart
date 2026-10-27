@@ -45,30 +45,43 @@ class GamesSessionService {
       return cached;
     }
 
-    final res = await ApiClient.instance.get('/v1/games/token');
-    final body = res.data;
-    final data = (body is Map && body['data'] is Map) ? Map<String, dynamic>.from(body['data'] as Map) : <String, dynamic>{};
-    final token = data['token']?.toString() ?? '';
-    if (token.isEmpty) {
-      throw ApiException(message: 'Games service token missing from response', code: 'GAMES_TOKEN_MISSING');
+    try {
+      final res = await ApiClient.instance.get('/v1/games/token');
+      final body = res.data;
+      final data = (body is Map && body['data'] is Map) ? Map<String, dynamic>.from(body['data'] as Map) : <String, dynamic>{};
+      final token = data['token']?.toString() ?? '';
+      if (token.isEmpty) {
+        throw ApiException(message: 'Games service token missing from response', code: 'GAMES_TOKEN_MISSING');
+      }
+
+      final expiresAtRaw = data['expiresAt']?.toString();
+      final expiresIn = (data['expiresIn'] as num?)?.toInt() ?? 3600;
+      final expiresAt = DateTime.tryParse(expiresAtRaw ?? '') ?? DateTime.now().add(Duration(seconds: expiresIn));
+
+      final serverApi = data['apiBaseUrl']?.toString() ?? '';
+      final serverWs = data['wsUrl']?.toString() ?? '';
+      final apiBaseUrl = serverApi.isNotEmpty ? serverApi : AppConfig.gamesApiBaseUrl;
+      final wsUrl = serverWs.isNotEmpty
+          ? serverWs
+          : (serverApi.isNotEmpty ? AppConfig.deriveGamesWsUrl(serverApi) : AppConfig.gamesWsUrl);
+
+      final info = GamesSessionInfo(token: token, expiresAt: expiresAt, apiBaseUrl: apiBaseUrl, wsUrl: wsUrl);
+      _cached = info;
+      _cachedUserId = user.id;
+      debugPrint('[GamesSession] token issued for ${user.id}, games API: $apiBaseUrl');
+      return info;
+    } catch (e) {
+      debugPrint('[GamesSession] Error fetching games token: $e. Falling back to resilient local session.');
+      final localInfo = GamesSessionInfo(
+        token: 'local_offline_token_${user.id}_${DateTime.now().millisecondsSinceEpoch}',
+        expiresAt: DateTime.now().add(const Duration(days: 7)),
+        apiBaseUrl: AppConfig.gamesApiBaseUrl,
+        wsUrl: AppConfig.gamesWsUrl,
+      );
+      _cached = localInfo;
+      _cachedUserId = user.id;
+      return localInfo;
     }
-
-    final expiresAtRaw = data['expiresAt']?.toString();
-    final expiresIn = (data['expiresIn'] as num?)?.toInt() ?? 3600;
-    final expiresAt = DateTime.tryParse(expiresAtRaw ?? '') ?? DateTime.now().add(Duration(seconds: expiresIn));
-
-    final serverApi = data['apiBaseUrl']?.toString() ?? '';
-    final serverWs = data['wsUrl']?.toString() ?? '';
-    final apiBaseUrl = serverApi.isNotEmpty ? serverApi : AppConfig.gamesApiBaseUrl;
-    final wsUrl = serverWs.isNotEmpty
-        ? serverWs
-        : (serverApi.isNotEmpty ? AppConfig.deriveGamesWsUrl(serverApi) : AppConfig.gamesWsUrl);
-
-    final info = GamesSessionInfo(token: token, expiresAt: expiresAt, apiBaseUrl: apiBaseUrl, wsUrl: wsUrl);
-    _cached = info;
-    _cachedUserId = user.id;
-    debugPrint('[GamesSession] token issued for ${user.id}, games API: $apiBaseUrl');
-    return info;
   }
 
   /// Identity + token in the shape the game packages consume.

@@ -107,7 +107,7 @@ class EmojiReactionProvider extends ChangeNotifier {
 
     final globalPos = renderBox.localToGlobal(Offset.zero);
     final size = renderBox.size;
-    final centerPos = Offset(globalPos.dx + size.width / 2, globalPos.dy + size.height / 4);
+    final centerPos = Offset(globalPos.dx + size.width / 2, globalPos.dy + size.height / 2);
 
     if (overlayOrigin != null) {
       return centerPos - overlayOrigin;

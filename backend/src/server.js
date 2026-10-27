@@ -66,6 +66,10 @@ async function startServer() {
         await roomService.cleanupStaleRooms().catch((e) => console.warn('Room cleanup warning:', e.message));
         // Start Phase 7 Recurring Auto-Restore Scheduler
         startAutoRestoreScheduler({ intervalMs: 60000 });
+        // Periodically cleanup stale and test rooms every 10 minutes
+        setInterval(() => {
+          roomService.cleanupStaleRooms().catch((e) => console.warn('[RoomCleanup] Periodic error:', e.message));
+        }, 10 * 60 * 1000);
       })
       .catch((err) => {
         console.error('❌ Database connection failure:', err.message);
