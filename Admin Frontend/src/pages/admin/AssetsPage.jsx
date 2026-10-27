@@ -44,6 +44,8 @@ import {
   deleteAsset,
   replaceAssetFile
 } from '../../services/modules/assets.service';
+import { getGifts } from '../../services/modules/gifts.service';
+import { resolveMediaUrl, handleImageError } from '../../utils/imageUrl';
 import { GeographicInheritancePanel } from '../../components/ui/GeographicInheritancePanel';
 import { Globe } from 'lucide-react';
 
@@ -123,7 +125,7 @@ export function AssetsPage() {
   const [formStartDate, setFormStartDate] = useState('');
   const [formEndDate, setFormEndDate] = useState('');
   const [formAssignment, setFormAssignment] = useState('All');
-  const [formThumbnail, setFormThumbnail] = useState('https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?w=120&auto=format&fit=crop&q=60');
+  const [formThumbnail, setFormThumbnail] = useState('/assets/images/frame_neon.jpg');
   
   // Upload Simulator State
   const [uploadFile, setUploadFile] = useState(null);
@@ -139,10 +141,44 @@ export function AssetsPage() {
   async function loadAssetsList() {
     setIsLoading(true);
     try {
-      const data = await getAssets();
-      setAssets(data);
+      const [assetsData, giftsData] = await Promise.all([
+        getAssets().catch(() => []),
+        getGifts().catch(() => []),
+      ]);
+
+      const mappedGifts = (Array.isArray(giftsData) ? giftsData : []).map((g) => ({
+        id: g.id,
+        name: g.name,
+        category: 'GIFTS',
+        assetType: 'GIFT',
+        subCategory: g.giftCategory || g.category || 'Popular',
+        assetSubcategory: g.isAnimated ? 'ANIMATED_SVGA' : 'STATIC',
+        price: Number(g.coinValue || g.coinPrice || 0),
+        coinPrice: Number(g.coinValue || g.coinPrice || 0),
+        status: (g.isActive ?? g.active ?? true) ? 'active' : 'inactive',
+        isActive: Boolean(g.isActive ?? g.active ?? true),
+        isSpecial: g.giftCategory === 'VIP' || g.category === 'VIP',
+        isPublic: true,
+        classification: 'PUBLIC',
+        roomAvailability: 'Both',
+        thumbnail: g.iconUrl || g.icon || '/assets/images/party_gift_box.jpg',
+        iconUrl: g.iconUrl || g.icon || '/assets/images/party_gift_box.jpg',
+        previewUrl: g.svgaAssetUrl || g.iconUrl || '/assets/images/party_gift_box.jpg',
+        duration: 30,
+        durationDays: 30,
+        volume: 80,
+        comboSupport: false,
+        comboCount: 1,
+        fullScreen: Boolean(g.isFullScreen),
+        priority: 1,
+        isGift: true,
+        updatedAt: g.updatedAt || g.createdAt,
+        history: [],
+      }));
+
+      setAssets([...(Array.isArray(assetsData) ? assetsData : []), ...mappedGifts]);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to load assets list:', err);
     } finally {
       setIsLoading(false);
     }
@@ -462,21 +498,69 @@ export function AssetsPage() {
   const filteredAssets = useMemo(() => {
     return assets.filter((item) => {
       let matchCat = true;
-      if (activeCategory === 'SPECIAL_RESTRICTED') {
-        matchCat = item.isSpecial === true;
-      } else if (activeCategory === 'PUBLIC_STORE') {
-        matchCat = item.isSpecial !== true;
-      } else if (activeCategory !== 'ALL') {
-        matchCat = item.category === activeCategory;
+      const cat = (item.category || '').toUpperCase();
+      const type = (item.assetType || '').toUpperCase();
+      const sub = (item.subCategory || item.assetSubcategory || '').toUpperCase();
+      const name = (item.name || '').toLowerCase();
+      const id = (item.id || '').toLowerCase();
+
+      switch (activeCategory) {
+        case 'ALL':
+          matchCat = true;
+          break;
+        case 'SPECIAL_RESTRICTED':
+          matchCat = item.isSpecial === true || item.classification === 'SPECIAL';
+          break;
+        case 'PUBLIC_STORE':
+          matchCat = item.isSpecial !== true && item.classification !== 'SPECIAL';
+          break;
+        case 'GIFTS':
+          matchCat = item.isGift === true || type === 'GIFT' || cat === 'GIFTS' || cat === 'GIFT';
+          break;
+        case 'VIP_SVIP_FRAMES':
+          matchCat =
+            (type === 'FRAME' || cat.includes('FRAME')) &&
+            (id.includes('vip') || id.includes('svip') || name.includes('vip') || name.includes('svip') || name.includes('noble') || id.includes('noble') || item.isSpecial);
+          break;
+        case 'PROFILE_FRAMES':
+          matchCat = type === 'FRAME' || cat.includes('FRAME');
+          break;
+        case 'TAGS':
+          matchCat = cat.includes('TAG') || name.includes('tag') || id.includes('tag') || (item.tags && item.tags.length > 0);
+          break;
+        case 'BADGES':
+          matchCat = type === 'BADGE' || cat.includes('BADGE');
+          break;
+        case 'CHAT_BUBBLES':
+          matchCat = type === 'CHAT_BUBBLE' || cat.includes('BUBBLE');
+          break;
+        case 'BAGS':
+          matchCat = cat.includes('BAG') || name.includes('bag') || id.includes('bag') || name.includes('box');
+          break;
+        case 'ENTRY_EFFECTS':
+          matchCat = type === 'ENTRY_EFFECT' || type === 'VEHICLE' || cat.includes('ENTRY') || cat.includes('CARS') || cat.includes('VEHICLE');
+          break;
+        case 'ANIMATIONS':
+          matchCat = sub.includes('ANIMAT') || sub.includes('SVGA') || item.assetSubcategory === 'ANIMATED_SVGA' || name.includes('animation') || (item.previewUrl || '').endsWith('.svga');
+          break;
+        case 'SOUND_EFFECTS':
+          matchCat = type === 'SOUND_EFFECT' || sub.includes('AUDIO') || sub.includes('MP3') || cat.includes('AUDIO') || cat.includes('SOUND');
+          break;
+        case 'VIDEO_ASSETS':
+          matchCat = type === 'VIDEO' || sub.includes('VIDEO') || sub.includes('MP4') || cat.includes('VIDEO');
+          break;
+        default:
+          matchCat = cat === activeCategory;
       }
 
       const matchStatus = statusFilter === 'ALL' || item.status === statusFilter.toLowerCase();
-      const q = search.toLowerCase();
+      const q = search.trim().toLowerCase();
       const matchSearch =
         !q ||
-        item.id.toLowerCase().includes(q) ||
-        item.name.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q);
+        id.includes(q) ||
+        name.includes(q) ||
+        cat.toLowerCase().includes(q) ||
+        type.toLowerCase().includes(q);
 
       return matchCat && matchStatus && matchSearch;
     });
@@ -488,9 +572,15 @@ export function AssetsPage() {
       header: 'Asset Identity',
       render: (row) => (
         <div className="flex items-center gap-3">
-          <div className="relative h-11 w-11 rounded-lg bg-slate-900 border border-slate-700/60 overflow-hidden flex-shrink-0 flex items-center justify-center">
+          <div className="relative h-11 w-11 rounded-lg bg-slate-900 border border-slate-700/60 overflow-hidden flex-shrink-0 flex items-center justify-center p-0.5">
             {row.thumbnail ? (
-              <img src={row.thumbnail} alt={row.name} className="h-full w-full object-cover" />
+              <img
+                src={resolveMediaUrl(row.thumbnail, (row.assetType || row.category || 'frame').toLowerCase())}
+                alt={row.name}
+                onError={(e) => handleImageError(e, (row.assetType || row.category || 'frame').toLowerCase())}
+                className="h-full w-full object-contain"
+                loading="lazy"
+              />
             ) : (
               <ImageIcon className="h-5 w-5 text-slate-500" />
             )}
@@ -710,14 +800,42 @@ export function AssetsPage() {
         </div>
       </div>
 
-      {/* Data Table */}
+      {/* Data Table with Rich Category Empty States */}
       <Card className="border-slate-800/80 bg-slate-900/40 overflow-hidden">
-        <DataTable
-          columns={columns}
-          data={filteredAssets}
-          isLoading={isLoading}
-          emptyMessage="No assets match the current category, search or status filters."
-        />
+        {!isLoading && filteredAssets.length === 0 && (activeCategory === 'SOUND_EFFECTS' || activeCategory === 'VIDEO_ASSETS' || activeCategory === 'BAGS') ? (
+          <div className="text-center py-16 px-4">
+            <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700/60 flex items-center justify-center mx-auto mb-3 text-gold-400">
+              {activeCategory === 'SOUND_EFFECTS' && <Volume2 className="h-6 w-6" />}
+              {activeCategory === 'VIDEO_ASSETS' && <Video className="h-6 w-6" />}
+              {activeCategory === 'BAGS' && <Layers className="h-6 w-6" />}
+            </div>
+            <h3 className="text-base font-semibold text-white">
+              {activeCategory === 'SOUND_EFFECTS' && 'No Sound Effects in Catalog'}
+              {activeCategory === 'VIDEO_ASSETS' && 'No Video Assets in Catalog'}
+              {activeCategory === 'BAGS' && 'No Mystery / Gift Bags Cataloged'}
+            </h3>
+            <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
+              {activeCategory === 'SOUND_EFFECTS' && 'Audio assets (.mp3) can be uploaded and assigned to room entrance and gift animations via the "Add Virtual Asset" button above.'}
+              {activeCategory === 'VIDEO_ASSETS' && 'Video effect files (.mp4) can be uploaded and configured for full-screen animations via the "Add Virtual Asset" button above.'}
+              {activeCategory === 'BAGS' && 'Gift bags and lucky bags are managed dynamically via the Lucky Bag module. You can also create static bag assets here.'}
+            </p>
+            <div className="mt-4 flex justify-center gap-2">
+              <Button onClick={handleOpenAddModal} variant="primary" size="sm" leftIcon={Plus}>
+                Upload New {activeCategory === 'SOUND_EFFECTS' ? 'Sound' : activeCategory === 'VIDEO_ASSETS' ? 'Video' : 'Bag'} Asset
+              </Button>
+              <Button onClick={() => setActiveCategory('ALL')} variant="ghost" size="sm">
+                View All Assets
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={filteredAssets}
+            isLoading={isLoading}
+            emptyMessage="No assets match the current category, search or status filters."
+          />
+        )}
       </Card>
 
       {/* UNIVERSAL ADD ASSET MODAL */}
@@ -1147,8 +1265,13 @@ export function AssetsPage() {
                 </div>
               ) : selectedAsset?.category === 'GIFTS' || selectedAsset?.category === 'ANIMATIONS' ? (
                 <div className="relative h-28 w-full border border-slate-800 rounded-lg bg-slate-900 flex flex-col items-center justify-center text-center p-3">
-                  <div className="h-12 w-12 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden">
-                    <img src={selectedAsset?.thumbnail} alt="Gift" className="h-full w-full object-cover" />
+                  <div className="h-12 w-12 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden p-1">
+                    <img
+                      src={resolveMediaUrl(selectedAsset?.thumbnail, (selectedAsset?.assetType || selectedAsset?.category || 'gift').toLowerCase())}
+                      alt={selectedAsset?.name || 'Gift'}
+                      onError={(e) => handleImageError(e, (selectedAsset?.assetType || selectedAsset?.category || 'gift').toLowerCase())}
+                      className="h-full w-full object-contain"
+                    />
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1 font-semibold">Animation Duration: {selectedAsset?.duration}s</p>
                   <button
@@ -1171,8 +1294,13 @@ export function AssetsPage() {
                   </button>
                 </div>
               ) : (
-                <div className="h-28 w-28 rounded-lg bg-slate-900 border border-slate-800 overflow-hidden flex items-center justify-center">
-                  <img src={selectedAsset?.thumbnail} alt="Preset thumbnail" className="h-full w-full object-cover" />
+                <div className="h-28 w-28 rounded-lg bg-slate-900 border border-slate-800 overflow-hidden flex items-center justify-center p-1">
+                  <img
+                    src={resolveMediaUrl(selectedAsset?.thumbnail, (selectedAsset?.assetType || selectedAsset?.category || 'frame').toLowerCase())}
+                    alt={selectedAsset?.name || 'Preset thumbnail'}
+                    onError={(e) => handleImageError(e, (selectedAsset?.assetType || selectedAsset?.category || 'frame').toLowerCase())}
+                    className="h-full w-full object-contain"
+                  />
                 </div>
               )}
               <p className="text-[10px] text-slate-400 mt-2 font-mono">Render ID: {selectedAsset?.id}-PREV</p>

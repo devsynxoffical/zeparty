@@ -68,3 +68,6 @@ backend/scripts/generate_*
 backend/scripts/build_*
 backend/scripts/git_audit.js
 scripts/
+**/scripts/
+backend/public/assets/
+Admin Frontend/public/assets/

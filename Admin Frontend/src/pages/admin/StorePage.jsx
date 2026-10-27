@@ -21,6 +21,7 @@ import {
 } from '../../services/modules/store.service';
 import { GeographicInheritancePanel } from '../../components/ui/GeographicInheritancePanel';
 import { Button } from '../../components/ui/Button';
+import { resolveMediaUrl, handleImageError } from '../../utils/imageUrl';
 
 function CreateItemModal({ isOpen, onClose, onCreated }) {
   const [formData, setFormData] = useState({ name: '', category: 'Outfits', price: 0, duration: '30 Days', availability: 'Global', featured: false });
@@ -266,9 +267,14 @@ export function StorePage() {
   const columns = [
     { key: 'item', header: 'Item Details', render: (row) => (
       <div className="flex items-center gap-3">
-        <div className="h-10 w-10 bg-slate-800 rounded-lg border border-slate-700 flex flex-shrink-0 items-center justify-center overflow-hidden">
+        <div className="h-10 w-10 bg-slate-800 rounded-lg border border-slate-700 flex flex-shrink-0 items-center justify-center overflow-hidden p-0.5">
           {row.thumbnail ? (
-            <img src={row.thumbnail} alt={row.name} className="h-full w-full object-cover" />
+            <img
+              src={resolveMediaUrl(row.thumbnail, (row.category || 'frame').toLowerCase())}
+              alt={row.name}
+              onError={(e) => handleImageError(e, (row.category || 'frame').toLowerCase())}
+              className="h-full w-full object-contain"
+            />
           ) : (
             <ImageIcon className="h-5 w-5 text-slate-500" />
           )}

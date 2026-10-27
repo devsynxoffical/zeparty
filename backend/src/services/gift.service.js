@@ -45,10 +45,60 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
   }
 }
 
+export function normalizeGiftUrl(url) {
+  if (!url) return '/assets/images/party_gift_box.jpg';
+  let clean = url.trim();
+
+  // Handle raw unicode or emoji test strings like '🎁', '🌹', etc.
+  if (!clean.includes('/') && !clean.includes('.')) {
+    return '/assets/images/party_gift_box.jpg';
+  }
+
+  if (clean.includes('example.com') || clean === 'castle.png' || clean === 'dragon.png') {
+    if (clean.includes('dragon')) return '/assets/gifts/classic/CG33_Emerald_Dragon_100000_coins.png';
+    if (clean.includes('castle')) return '/assets/gifts/classic/CG26_Crystal_Castle_35000_coins.png';
+    return '/assets/images/party_gift_box.jpg';
+  }
+
+  if (clean.includes('cdn.zeparty.app/gifts/')) {
+    const giftName = clean.split('gifts/')[1]?.replace(/\.[^.]+$/, '');
+    if (giftName === 'rose') return '/assets/images/gift_rose.jpg';
+    if (giftName === 'heart') return '/assets/gifts/classic/CG05_Heart_Hands_500_coins.png';
+    if (giftName === 'car') return '/assets/images/gift_supercar.jpg';
+    if (giftName === 'jet') return '/assets/gifts/classic/CG23_Private_Jet_22000_coins.png';
+    if (giftName === 'crown') return '/assets/images/gift_gold_crown.jpg';
+    if (giftName === 'castle') return '/assets/gifts/classic/CG26_Crystal_Castle_35000_coins.png';
+    if (giftName === 'firework') return '/assets/gifts/classic/CG29_Meteor_Storm_60000_coins.png';
+    if (giftName === 'wand') return '/assets/gifts/classic/CG14_Magic_Lamp_4000_coins.png';
+    if (giftName === 'rocket') return '/assets/gifts/classic/CG27_Rocket_Launch_40000_coins.png';
+    return '/assets/images/party_gift_box.jpg';
+  }
+  if (clean.includes('rocket')) {
+    return '/assets/gifts/classic/CG27_Rocket_Launch_40000_coins.png';
+  }
+  if (clean.includes('assets.zeparty.app/') || clean.includes('cdn.zeparty.app/')) {
+    const after = clean.split(/zeparty\.app\/(?:visual_assets\/)?/)[1];
+    if (after) {
+      if (after.startsWith('assets/')) return '/' + after;
+      return '/assets/' + after;
+    }
+  }
+  if (clean.startsWith('assets/')) {
+    return '/' + clean;
+  }
+  return clean;
+}
+
 export function serializeGift(gift) {
   if (!gift) return null;
+  const iconUrl = normalizeGiftUrl(gift.iconUrl);
+  const svgaAssetUrl = gift.svgaAssetUrl
+    ? (gift.svgaAssetUrl.startsWith('assets/') ? '/' + gift.svgaAssetUrl : gift.svgaAssetUrl)
+    : null;
   return {
     ...gift,
+    iconUrl,
+    svgaAssetUrl,
     coinValue: gift.coinValue ? gift.coinValue.toString() : '0',
   };
 }

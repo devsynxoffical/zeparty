@@ -29,6 +29,8 @@ import {
 } from '../../services/modules/bdCenter.service';
 import { getAgencies } from '../../services/modules/agencies.service';
 import { useAuditLog } from '../../context/AuditLogContext';
+import apiClient from '../../services/api';
+import { resolveMediaUrl, handleImageError } from '../../utils/imageUrl';
 
 export const BD_COMMISSION_POLICY_CONFIG = {
   policyTitle: 'Z PARTY — BD MONTHLY COMMISSION POLICY',
@@ -134,8 +136,31 @@ export function BDCentersPage() {
         setIsLoading(false);
       }
     });
+
+    apiClient.get('/v1/admin/bd-reactions')
+      .then((res) => {
+        if (mounted) {
+          setBdReactions(res.data?.data || []);
+          if (res.data?.masterEnabled !== undefined) {
+            setReactionMasterSwitch(Boolean(res.data.masterEnabled));
+          }
+        }
+      })
+      .catch((err) => console.error('Failed to load BD reactions:', err));
+
     return () => { mounted = false; };
   }, []);
+
+  const handleMasterReactionSwitchToggle = async () => {
+    const nextVal = !reactionMasterSwitch;
+    try {
+      await apiClient.post('/v1/admin/bd-reactions/master-switch', { enabled: nextVal });
+      setReactionMasterSwitch(nextVal);
+      showFeedback(`BD Reactions master switch set to ${nextVal ? 'ON' : 'OFF'}.`);
+    } catch (err) {
+      showFeedback(err?.response?.data?.message || 'Failed to toggle BD reaction master switch');
+    }
+  };
 
   // BD Simulator Tier Calculation
   const simTier = useMemo(() => {
@@ -1247,10 +1272,7 @@ export function BDCentersPage() {
               <p className="text-xs text-slate-400">Enable or disable BD Center reactions globally across the platform.</p>
             </div>
             <button
-              onClick={() => {
-                setReactionMasterSwitch(!reactionMasterSwitch);
-                showFeedback(`BD Reactions master switch set to ${!reactionMasterSwitch ? 'ON' : 'OFF'}.`);
-              }}
+              onClick={handleMasterReactionSwitchToggle}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors ${
                 reactionMasterSwitch ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
               }`}
@@ -1259,26 +1281,40 @@ export function BDCentersPage() {
             </button>
           </Card>
 
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
             {bdReactions.map((r) => (
-              <Card key={r.id} className="p-4 space-y-2">
-                <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">{r.icon}</span>
+              <Card key={r.id} className="p-4 space-y-3 bg-slate-900/60 border-slate-800">
+                <div className="flex justify-between items-start gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center p-1 overflow-hidden shrink-0 shadow-inner">
+                      <img
+                        src={resolveMediaUrl(r.iconUrl, 'reaction')}
+                        alt={r.name}
+                        onError={(e) => handleImageError(e, 'reaction')}
+                        className="w-full h-full object-contain filter drop-shadow-md"
+                      />
+                    </div>
                     <div>
                       <h4 className="font-bold text-white text-sm">{r.name}</h4>
-                      <p className="text-xs text-slate-400">Placement: {r.placement}</p>
+                      <p className="text-xs text-slate-400">Placement: {r.placement || 'Room Overlay'}</p>
                     </div>
                   </div>
-                  <Badge variant="purple">{r.scope}</Badge>
+                  <Badge variant="purple">{r.scope || 'GLOBAL'}</Badge>
                 </div>
                 <div className="flex justify-between items-center text-xs pt-2 border-t border-slate-800">
-                  <span className="text-slate-400">Total Usage Count: <strong className="text-gold-400">{r.usageCount}</strong></span>
+                  <span className="text-slate-400">Total Usage Count: <strong className="text-gold-400">{r.usageCount || 0}</strong></span>
                   <Badge variant={r.isPaid ? 'warning' : 'success'}>{r.isPaid ? `${r.priceCoins} Coins` : 'FREE'}</Badge>
                 </div>
               </Card>
             ))}
           </div>
+
+          {bdReactions.length === 0 && (
+            <div className="text-center py-12 text-slate-400 bg-slate-900/40 border border-slate-800 rounded-xl">
+              <Smile className="h-10 w-10 text-slate-600 mx-auto mb-2 opacity-50" />
+              <p className="font-medium text-slate-300">No BD reactions currently cataloged</p>
+            </div>
+          )}
         </div>
       )}
 

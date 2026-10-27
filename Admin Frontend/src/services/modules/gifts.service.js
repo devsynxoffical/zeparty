@@ -3,35 +3,45 @@
 // ============================================================
 
 import apiClient from '../api';
+import { resolveMediaUrl } from '../../utils/imageUrl';
 
 export async function getGifts(params = {}) {
   const res = await apiClient.get('/v1/admin/gifts', { params });
   const items = res.data?.data || [];
-  return items.map((g) => ({
-    id: g.id,
-    name: g.name,
-    coinPrice: Number(g.coinValue || g.coinPrice || 0),
-    coinValue: Number(g.coinValue || g.coinPrice || 0),
-    category: g.giftCategory?.toLowerCase() || g.category?.toLowerCase() || 'popular',
-    icon: g.iconUrl || '🎁',
-    iconUrl: g.iconUrl || '',
-    svgaAssetUrl: g.svgaAssetUrl || '',
-    isAnimated: Boolean(g.isAnimated),
-    isFullScreen: Boolean(g.isFullScreen),
-    active: Boolean(g.isActive),
-    isActive: Boolean(g.isActive),
-    createdAt: g.createdAt,
-    updatedAt: g.updatedAt,
-  }));
+  return items.map((g) => {
+    const rawIcon = g.iconUrl || g.icon || '';
+    const resolvedIcon = resolveMediaUrl(rawIcon, 'gift');
+    const coinVal = Number(g.coinValue || g.coinPrice || g.diamondPrice || 0);
+    const cat = g.giftCategory || g.category || 'POPULAR';
+
+    return {
+      id: g.id,
+      name: g.name,
+      coinPrice: coinVal,
+      coinValue: coinVal,
+      diamondPrice: coinVal, // Backwards compatibility with diamondPrice references
+      category: cat,
+      giftCategory: cat.toUpperCase(),
+      icon: resolvedIcon,
+      iconUrl: resolvedIcon,
+      svgaAssetUrl: resolveMediaUrl(g.svgaAssetUrl, 'gift'),
+      isAnimated: Boolean(g.isAnimated),
+      isFullScreen: Boolean(g.isFullScreen),
+      active: Boolean(g.isActive),
+      isActive: Boolean(g.isActive),
+      createdAt: g.createdAt,
+      updatedAt: g.updatedAt,
+    };
+  });
 }
 
 export async function createGift(giftData) {
   const res = await apiClient.post('/v1/admin/gifts', {
     name: giftData.name,
-    coinValue: Number(giftData.coinPrice || giftData.coinValue),
-    iconUrl: giftData.iconUrl || (giftData.icon?.startsWith('http') ? giftData.icon : 'https://cdn.zeparty.io/gifts/default.png'),
+    coinValue: Number(giftData.coinPrice || giftData.coinValue || giftData.diamondPrice || 100),
+    iconUrl: giftData.iconUrl || giftData.icon || '/assets/images/party_gift_box.jpg',
     svgaAssetUrl: giftData.svgaAssetUrl || null,
-    giftCategory: (giftData.category || 'POPULAR').toUpperCase(),
+    giftCategory: (giftData.giftCategory || giftData.category || 'POPULAR').toUpperCase(),
     isAnimated: Boolean(giftData.isAnimated),
     isFullScreen: Boolean(giftData.isFullScreen),
     isActive: giftData.active !== undefined ? Boolean(giftData.active) : true,

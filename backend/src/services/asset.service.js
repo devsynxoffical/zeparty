@@ -29,6 +29,148 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
   }
 }
 
+const nobleTiers = {
+  1: 'baron',
+  2: 'viscount',
+  3: 'count',
+  4: 'marquis',
+  5: 'duke',
+  6: 'king',
+  7: 'emperor',
+};
+
+const roleFiles = {
+  admin: { badge: 'roles/admin_badge.webp', frame: 'roles/admin_frame.webp' },
+  agency: { badge: 'roles/agency_tag.webp', frame: 'roles/agency_frame.webp' },
+  assistant: { badge: 'roles/assistant_tag.webp', frame: 'roles/assistant_frame.webp' },
+  bd: { badge: 'roles/bd_tag.webp', frame: 'roles/bd_frame.webp' },
+  boss: { badge: 'roles/boss_tag.webp', frame: 'roles/boss_frame.webp' },
+  ceo: { badge: 'roles/ceo_tag.webp', frame: 'roles/ceo_frame.webp' },
+  coins_seller: { badge: 'roles/coins_saller_tag.webp', frame: 'roles/coins_saller_frame.webp' },
+  coin_seller: { badge: 'roles/coins_saller_tag.webp', frame: 'roles/coins_saller_frame.webp' },
+  cs: { badge: 'roles/cs_badge.webp', frame: 'roles/cs_frame.webp' },
+  game_master: { badge: 'roles/game_master_badge.webp', frame: 'roles/game_master_frame.webp' },
+  host: { badge: 'roles/host_badge.webp', frame: 'roles/host_frame.webp' },
+  lover: { badge: 'roles/lover_tag.webp', frame: 'roles/lover_frame.webp' },
+  manager: { badge: 'roles/manager_tag.webp', frame: 'roles/manager_frame.webp' },
+  merchant: { badge: 'roles/marchent_badge.webp', frame: 'roles/marchent_frame.webp' },
+  marchent: { badge: 'roles/marchent_badge.webp', frame: 'roles/marchent_frame.webp' },
+  official: { badge: 'roles/official_tag.webp', frame: 'roles/official_frame.webp' },
+  super_admin: { badge: 'roles/super_admin_tag.webp', frame: 'roles/super_admin_frame.webp' },
+  top_fan: { badge: 'roles/top_fan_badge.webp', frame: 'roles/top_fan_frame.webp' },
+  vip: { badge: 'roles/ZP-216_official_badge.webp', frame: 'roles/official_frame.webp' },
+  svip: { badge: 'svip/ZP-054_svip-1_badge.webp', frame: 'svip/svip1_frame.webp' },
+  dragon: { badge: 'nobles/emperor_badge.webp', frame: 'nobles/emperor_frame.webp' },
+  elite: { badge: 'nobles/king_badge.webp', frame: 'nobles/king_frame.webp' },
+  guardian: { badge: 'nobles/duke_badge.webp', frame: 'nobles/duke_frame.webp' },
+  singer: { badge: 'nobles/marquis_badge.webp', frame: 'nobles/marquis_frame.webp' },
+  family: { badge: 'nobles/count_badge.webp', frame: 'nobles/count_frame.webp' },
+};
+
+const dbPathOverrides = {
+  'assets/roles/ZP-220_top-fan_badge.webp': '/assets/roles/top_fan_badge.webp',
+  'assets/roles/ZP-218_super-admin_badge.webp': '/assets/roles/super_admin_tag.webp',
+  'assets/roles/ZP-215_official_badge.webp': '/assets/roles/ZP-216_official_badge.webp',
+  'assets/roles/ZP-212_marchent_badge.webp': '/assets/roles/ZP-213_marchent_badge.webp',
+  'assets/roles/ZP-210_manager_badge.webp': '/assets/roles/manager_tag.webp',
+  'assets/roles/ZP-207_lover_badge.webp': '/assets/roles/ZP-208_lover_badge.webp',
+  'assets/roles/ZP-204_host_badge.webp': '/assets/roles/ZP-205_host_badge.webp',
+  'assets/roles/ZP-201_game-master_badge.webp': '/assets/roles/game_master_badge.webp',
+  'assets/roles/ZP-198_cs_badge.webp': '/assets/roles/ZP-199_cs_badge.webp',
+  'assets/roles/ZP-196_coins-saller_badge.webp': '/assets/roles/coins_saller_tag.webp',
+  'assets/roles/ZP-193_ceo_badge.webp': '/assets/roles/ZP-194_ceo_badge.webp',
+  'assets/roles/ZP-190_boss_badge.webp': '/assets/roles/ZP-191_boss_badge.webp',
+  'assets/roles/ZP-187_bd_badge.webp': '/assets/roles/ZP-188_bd_badge.webp',
+  'assets/roles/ZP-184_assistant_badge.webp': '/assets/roles/ZP-185_assistant_badge.webp',
+  'assets/roles/ZP-181_agency_badge.webp': '/assets/roles/ZP-182_agency_badge.webp',
+  'assets/roles/ZP-178_admin_badge.webp': '/assets/roles/ZP-179_admin_badge.webp',
+  'assets/nobles/emperor_entrance.png': '/assets/nobles/emperor_entrance.webp',
+  'assets/nobles/marquis_entrance.png': '/assets/nobles/marquis_entrance.webp',
+  'assets/cars/suv_black.png': '/assets/images/gift_supercar.jpg',
+  '/assets/cars/suv_black.png': '/assets/images/gift_supercar.jpg',
+  'assets/frames/warrior.png': '/assets/nobles/king_frame.webp',
+  '/assets/frames/warrior.png': '/assets/nobles/king_frame.webp',
+  'assets/frames/spider.png': '/assets/nobles/emperor_frame.webp',
+  '/assets/frames/spider.png': '/assets/nobles/emperor_frame.webp',
+  'assets/bubbles/unicorn.png': '/assets/animations/mystery_bubble.webp',
+  '/assets/bubbles/unicorn.png': '/assets/animations/mystery_bubble.webp',
+};
+
+export function resolveAssetPath(url) {
+  if (!url) return null;
+  let clean = url.trim();
+
+  for (const [key, val] of Object.entries(dbPathOverrides)) {
+    if (clean === key || clean.endsWith(key)) {
+      return val;
+    }
+  }
+
+  if (clean.includes('assets.zeparty.app') || clean.includes('cdn.zeparty.app') || clean.includes('cdn.zeparty.io')) {
+    if (clean.includes('cyber_neon')) {
+      return '/assets/images/frame_neon.jpg';
+    }
+    if (clean.includes('car_gold')) {
+      return '/assets/animations/mystery_entry.webp';
+    }
+
+    // Check roles
+    const roleMatch = clean.match(/roles\/(badge|frame)_([a-z_]+)/);
+    if (roleMatch) {
+      const type = roleMatch[1];
+      const role = roleMatch[2];
+      if (roleFiles[role]) {
+        return '/assets/' + (type === 'frame' ? roleFiles[role].frame : roleFiles[role].badge);
+      }
+    }
+
+    // Check noble items
+    const nobleMatch = clean.match(/(?:noble|nobles)\/(frame|tag|bag|entry)_noble_(\d+)/);
+    if (nobleMatch) {
+      const type = nobleMatch[1];
+      const num = parseInt(nobleMatch[2], 10);
+      const tier = nobleTiers[Math.min(num, 7)] || 'baron';
+
+      if (type === 'frame') return '/assets/nobles/' + tier + '_frame.webp';
+      if (type === 'tag' || type === 'bag') return '/assets/nobles/' + tier + '_badge.webp';
+      if (type === 'entry') return num >= 6 ? '/assets/nobles/emperor_entrance.webp' : (num >= 5 ? '/assets/nobles/duke_entrance.webp' : '/assets/nobles/marquis_entrance.webp');
+    }
+
+    // Check mystery items
+    const mysteryMatch = clean.match(/mystery\/(frame|entry|bubble|tag|bag)_mystery_(\d+)/);
+    if (mysteryMatch) {
+      const type = mysteryMatch[1];
+      if (type === 'frame') return '/assets/animations/mystery_frame.webp';
+      if (type === 'entry') return '/assets/animations/mystery_entry.webp';
+      if (type === 'bubble') return '/assets/animations/mystery_bubble.webp';
+      return '/assets/animations/mystery_badge.webp';
+    }
+
+    // Check svip items
+    const svipMatch = clean.match(/svip\/(badge|frame|entry|bubble)_svip_(\d+)/);
+    if (svipMatch) {
+      const type = svipMatch[1];
+      const num = svipMatch[2];
+      if (type === 'badge') return '/assets/svip/svip' + num + '_badge.webp';
+      if (type === 'frame') return '/assets/svip/svip' + num + '_frame.webp';
+      if (type === 'entry') return '/assets/svip/svip' + num + '_entry.webp';
+      if (type === 'bubble') return '/assets/svip/svip' + num + '_chat_bubble.webp';
+    }
+
+    const after = clean.split(/zeparty\.(?:app|io)\/(?:visual_assets\/)?/)[1];
+    if (after) {
+      if (after.startsWith('assets/')) return '/' + after;
+      return '/assets/' + after;
+    }
+  }
+
+  if (clean.startsWith('assets/')) {
+    return '/' + clean;
+  }
+
+  return clean;
+}
+
 export function serializeAsset(asset) {
   if (!asset) return null;
   const rawType = asset.assetType || 'FRAME';
@@ -56,7 +198,13 @@ export function serializeAsset(asset) {
     }
   }
 
-  const imageUrl = asset.thumbnailUrl || asset.staticFileUrl || asset.animationFileUrl || '';
+  const rawUrl = asset.thumbnailUrl || asset.staticFileUrl || asset.animationFileUrl || '';
+  const imageUrl = resolveAssetPath(rawUrl) || rawUrl;
+  const staticUrl = resolveAssetPath(asset.staticFileUrl);
+  const animationUrl = resolveAssetPath(asset.animationFileUrl);
+  const videoUrl = resolveAssetPath(asset.videoFileUrl) || animationUrl;
+  const assetUrl = animationUrl || staticUrl || videoUrl || imageUrl;
+
   const isSpecial = isRestrictedSpecialAsset(asset);
   const isPublic = isPublicStoreItem(asset);
 
@@ -76,10 +224,10 @@ export function serializeAsset(asset) {
     imageUrl,
     iconUrl: imageUrl,
     thumbnailUrl: imageUrl,
-    staticUrl: asset.staticFileUrl || null,
-    animationUrl: asset.animationFileUrl || null,
-    videoUrl: asset.videoFileUrl || asset.animationFileUrl || null,
-    assetUrl: asset.animationFileUrl || asset.staticFileUrl || asset.videoFileUrl || null,
+    staticUrl,
+    animationUrl,
+    videoUrl,
+    assetUrl,
     price: asset.priceCoins ? asset.priceCoins.toString() : '0',
     durationDays: asset.validDays || 30,
     validDays: asset.validDays || 30,

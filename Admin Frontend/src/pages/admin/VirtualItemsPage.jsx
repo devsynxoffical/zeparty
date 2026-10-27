@@ -15,6 +15,7 @@ import { formatNumber } from '../../utils/format';
 import { GeographicInheritancePanel } from '../../components/ui/GeographicInheritancePanel';
 import { useAuditLog } from '../../context/AuditLogContext';
 import apiClient from '../../services/api';
+import { resolveMediaUrl, handleImageError } from '../../utils/imageUrl';
 
 export function VirtualItemsPage() {
   const { logAdminAction } = useAuditLog();
@@ -27,7 +28,7 @@ export function VirtualItemsPage() {
     let isMounted = true;
     setIsLoading(true);
     apiClient
-      .get('/v1/admin/assets', { params: { type: 'STORE_ITEM' } })
+      .get('/v1/admin/assets')
       .then((res) => {
         if (!isMounted) return;
         const raw = res.data?.data || [];
@@ -35,6 +36,7 @@ export function VirtualItemsPage() {
           id: i.id,
           name: i.name,
           type: i.category || 'Avatar Frame',
+          thumbnail: i.thumbnailUrl || i.iconUrl || i.imageUrl || '/assets/images/frame_neon.jpg',
           priceCoins: Number(i.priceCoins || i.coinPrice || 0),
           duration: i.duration ? `${i.duration} Days` : '30 Days',
           rarity: i.rarity || 'Rare',
@@ -120,9 +122,19 @@ export function VirtualItemsPage() {
       key: 'name',
       header: 'Item Name',
       render: (r) => (
-        <div>
-          <p className="text-xs font-bold text-white">{r.name}</p>
-          <p className="text-[10px] text-slate-400">ID: {r.id}</p>
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center p-0.5 overflow-hidden shrink-0">
+            <img
+              src={resolveMediaUrl(r.thumbnail, (r.type || 'frame').toLowerCase())}
+              alt={r.name}
+              onError={(e) => handleImageError(e, (r.type || 'frame').toLowerCase())}
+              className="w-full h-full object-contain"
+            />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-white">{r.name}</p>
+            <p className="text-[10px] text-slate-400">ID: {r.id}</p>
+          </div>
         </div>
       ),
     },

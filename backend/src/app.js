@@ -1,4 +1,6 @@
 import express from 'express';
+import path from 'path';
+import fs from 'fs';
 import crypto from 'crypto';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -19,8 +21,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// Security HTTP headers
-app.use(helmet());
+// Security HTTP headers with cross-origin resource policy permitted for static media
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  })
+);
 
 // Trust Cloudflare and reverse proxy headers (CF-Connecting-IP, X-Forwarded-For, X-Forwarded-Proto)
 app.set('trust proxy', 1);
@@ -98,8 +104,30 @@ app.use(
 // Global BigInt and Decimal response serializer
 app.use(serializerMiddleware);
 
-// Static uploads serving for media assets (CDN origin)
-app.use('/uploads', express.static('public/uploads'));
+// Static media and visual assets serving (CDN origin)
+const staticOptions = {
+  maxAge: '7d',
+  setHeaders: (res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  },
+};
+
+app.use('/uploads', express.static('public/uploads', staticOptions));
+
+const publicAssets = path.resolve(process.cwd(), 'public/assets');
+const repoMobileAssets = path.resolve(process.cwd(), '../mobile app/assets');
+const cwdMobileAssets = path.resolve(process.cwd(), 'mobile app/assets');
+
+if (fs.existsSync(publicAssets)) {
+  app.use('/assets', express.static(publicAssets, staticOptions));
+}
+if (fs.existsSync(repoMobileAssets)) {
+  app.use('/assets', express.static(repoMobileAssets, staticOptions));
+}
+if (fs.existsSync(cwdMobileAssets)) {
+  app.use('/assets', express.static(cwdMobileAssets, staticOptions));
+}
 
 // Top-level Health Checks (Liveness & Readiness)
 app.get('/health/ping', (req, res) => {
