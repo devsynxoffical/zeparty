@@ -91,7 +91,8 @@ const dbPathOverrides = {
   'assets/frames/warrior.png': '/assets/nobles/king_frame.webp',
   '/assets/frames/warrior.png': '/assets/nobles/king_frame.webp',
   'assets/frames/spider.png': '/assets/nobles/emperor_frame.webp',
-  '/assets/frames/spider.png': '/assets/nobles/emperor_frame.webp',
+  'assets/nobles/tier-6-king_profilecard.webp': '/assets/nobles/king_card.webp',
+  '/assets/nobles/tier-6-king_profilecard.webp': '/assets/nobles/king_card.webp',
   'assets/bubbles/unicorn.png': '/assets/animations/mystery_bubble.webp',
   '/assets/bubbles/unicorn.png': '/assets/animations/mystery_bubble.webp',
 };

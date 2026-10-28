@@ -129,6 +129,22 @@ if (fs.existsSync(cwdMobileAssets)) {
   app.use('/assets', express.static(cwdMobileAssets, staticOptions));
 }
 
+// Fallback for static assets in containerized environments (Railway, Docker)
+app.use('/assets', (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return next();
+  }
+  const cleanPath = req.path.replace(/^\//, '');
+  if (!cleanPath) {
+    return res.status(404).json({ success: false, message: 'Asset not found' });
+  }
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  const remoteUrl = `https://raw.githubusercontent.com/devsynxoffical/zeparty/main/mobile%20app/assets/${encodeURI(cleanPath)}`;
+  return res.redirect(302, remoteUrl);
+});
+
 // Top-level Health Checks (Liveness & Readiness)
 app.get('/health/ping', (req, res) => {
   return res.status(200).json({

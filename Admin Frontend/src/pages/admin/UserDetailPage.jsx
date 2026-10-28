@@ -36,6 +36,7 @@ import { getUserPosts, deleteUserPost } from '../../services/modules/posts.servi
 import { CountryFlag } from '../../components/ui/CountryFlag';
 import { getCountryName } from '../../constants/countries.data';
 import { formatDate, formatNumber, timeAgo, avatarColor } from '../../utils/format';
+import { resolveMediaUrl, handleImageError } from '../../utils/imageUrl';
 
 function InfoRow({ label, value, valueClass = '' }) {
   return (
@@ -1388,7 +1389,12 @@ export function UserDetailPage() {
                           >
                             <div className="flex items-center gap-2.5">
                               {item.iconUrl || item.animationUrl ? (
-                                <img src={item.iconUrl || item.animationUrl} alt={item.name} className="w-8 h-8 rounded object-contain bg-slate-950 p-0.5 border border-slate-700" />
+                                <img
+                                  src={resolveMediaUrl(item.iconUrl || item.animationUrl, (item.type || selectedProp || 'frame').toLowerCase())}
+                                  alt={item.name}
+                                  onError={(e) => handleImageError(e, (item.type || selectedProp || 'frame').toLowerCase())}
+                                  className="w-8 h-8 rounded object-contain bg-slate-950 p-0.5 border border-slate-700"
+                                />
                               ) : (
                                 <div className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center text-gold-400 font-bold text-xs">
                                   ★
