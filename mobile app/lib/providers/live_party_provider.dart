@@ -482,6 +482,10 @@ class LivePartyProvider extends ChangeNotifier {
     final currentAttempt = ++_joinAttemptCounter;
     _isLoading = true;
     _errorMessage = null;
+    final isDifferentRoom = (_activeRoom != null && _activeRoom!.id != room.id);
+    if (isDifferentRoom) {
+      _roomSendingTotal = 0;
+    }
     _activeRoom = room;
     _initialRoomId = room.id;
     _currentUser = currentUser;
@@ -2272,6 +2276,7 @@ class LivePartyProvider extends ChangeNotifier {
     _initialRoomId = null;
     _currentUser = null;
     _isPkActive = false;
+    _roomSendingTotal = 0;
     _participants = [];
     _messages = [];
     _announcedJoinedUserIds.clear();
@@ -2283,6 +2288,7 @@ class LivePartyProvider extends ChangeNotifier {
     if (roomId != null) {
       try {
         await _roomRepository.closeRoom(roomId);
+        await RoomConfigManager.instance.clearRoomSendingTotal(roomId);
       } catch (_) {}
       await leaveParty();
     }

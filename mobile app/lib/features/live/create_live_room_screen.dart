@@ -8,6 +8,7 @@ import '../../core/animations/app_animations.dart';
 import '../../core/repositories/backend_repository.dart';
 import '../../core/repositories/room_repository.dart';
 import '../../core/services/api_client.dart';
+import '../../core/services/room_config_manager.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/live_room_model.dart';
 import '../../providers/auth_provider.dart';
@@ -499,6 +500,7 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                               try {
                                 await RoomRepository.instance.closeRoom(existingRoom.id);
                                 BackendRepository.instance.removeLiveRoom(existingRoom.id);
+                                await RoomConfigManager.instance.clearRoomSendingTotal(existingRoom.id);
                               } catch (_) {}
                             } else {
                               return;
@@ -522,6 +524,7 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                             roomType: 'LIVE_VIDEO',
                             category: _selectedCategory,
                             isPrivate: _isPrivate,
+                            forceNew: true,
                           );
                         } catch (e) {
                           debugPrint('[CreateLiveRoom] Backend createRoom error: $e');

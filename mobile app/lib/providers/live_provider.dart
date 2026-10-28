@@ -194,10 +194,15 @@ class LiveProvider extends ChangeNotifier {
     final isHost = (currentUser != null) &&
         (room.host.id == currentUser.id || room.creatorUserId == currentUser.id);
 
+    final initialLikes = isRejoiningSameRoom ? (_likeCount > 0 ? _likeCount : room.totalLikes) : room.totalLikes;
+    final initialGifts = isRejoiningSameRoom
+        ? (_giftPoints > 0 ? _giftPoints : (room.totalGifts > 0 ? room.totalGifts : room.giftsReceivedCoins))
+        : (room.totalGifts > 0 ? room.totalGifts : room.giftsReceivedCoins);
+
     _activeRoom = room.copyWith(
       viewerCount: isHost ? room.viewerCount : room.viewerCount + 1,
-      totalGifts: room.totalGifts > 0 ? room.totalGifts : _giftPoints,
-      totalLikes: room.totalLikes > 0 ? room.totalLikes : _likeCount,
+      totalGifts: initialGifts,
+      totalLikes: initialLikes,
     );
     _currentUser = currentUser;
     _viewers.clear();
@@ -211,12 +216,8 @@ class LiveProvider extends ChangeNotifier {
     _currentMusicTrack = null;
     _luckyBagActive = false;
     _activeEffect = 'None';
-
-    // Preserve points & likes if rejoining/expanding from minimize, otherwise initialize from room
-    if (!isRejoiningSameRoom) {
-      _likeCount = room.totalLikes;
-      _giftPoints = room.totalGifts > 0 ? room.totalGifts : room.giftsReceivedCoins;
-    }
+    _likeCount = initialLikes;
+    _giftPoints = initialGifts;
     final displayName = currentUser?.displayName.isNotEmpty == true
         ? currentUser!.displayName
         : (currentUser?.name.isNotEmpty == true ? currentUser!.name : (currentUser?.username ?? 'User'));
@@ -972,6 +973,8 @@ class LiveProvider extends ChangeNotifier {
 
     _activeRoom = null;
     _currentUser = null;
+    _giftPoints = 0;
+    _likeCount = 0;
     _messages.clear();
     _processedGiftTxIds.clear();
     _announcedViewerIds.clear();

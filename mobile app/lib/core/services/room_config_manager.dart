@@ -145,8 +145,8 @@ class RoomConfigManager extends ChangeNotifier {
   // ── Room Sending Total (Item 08) ─────────────────────────────────────────
   num getRoomSendingTotal(String roomId) => _roomSendingTotals[roomId] ?? 0;
 
-  Future<void> saveRoomSendingTotal(String roomId, num total) async {
-    if (total <= 0 && (_roomSendingTotals[roomId] ?? 0) > 0) {
+  Future<void> saveRoomSendingTotal(String roomId, num total, {bool allowZeroReset = false}) async {
+    if (!allowZeroReset && total <= 0 && (_roomSendingTotals[roomId] ?? 0) > 0) {
       // Do not silently overwrite a positive sending total with 0 on failure
       return;
     }
@@ -154,6 +154,15 @@ class RoomConfigManager extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setDouble('zeparty_room_sending_total_$roomId', total.toDouble());
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  Future<void> clearRoomSendingTotal(String roomId) async {
+    _roomSendingTotals.remove(roomId);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('zeparty_room_sending_total_$roomId');
     } catch (_) {}
     notifyListeners();
   }

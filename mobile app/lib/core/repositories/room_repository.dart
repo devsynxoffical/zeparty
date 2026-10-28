@@ -15,6 +15,7 @@ class RoomRepository {
     String category = 'CHAT',
     bool isPrivate = false,
     String? roomPin,
+    bool forceNew = true,
   }) async {
     String normType = 'LIVE_VIDEO';
     final uType = roomType.toUpperCase().trim();
@@ -36,7 +37,7 @@ class RoomRepository {
       'roomType': normType,
       'category': normCat,
       'isPrivate': isPrivate,
-      'forceNew': normType == 'LIVE_VIDEO',
+      'forceNew': forceNew,
       if (roomPin != null && roomPin.isNotEmpty) 'roomPin': roomPin,
     };
 

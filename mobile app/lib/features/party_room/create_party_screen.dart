@@ -6,6 +6,7 @@ import '../../core/repositories/backend_repository.dart';
 import '../../core/repositories/room_repository.dart';
 import '../../core/services/api_client.dart';
 import '../../core/services/media_upload_service.dart';
+import '../../core/services/room_config_manager.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -346,6 +347,7 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
           try {
             await RoomRepository.instance.closeRoom(existingRoom.id);
             BackendRepository.instance.removeLiveRoom(existingRoom.id);
+            await RoomConfigManager.instance.clearRoomSendingTotal(existingRoom.id);
           } catch (_) {}
         } else {
           return;
@@ -368,6 +370,7 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
         roomType: _roomType,
         category: _selectedCategory,
         isPrivate: _privacy != 'Public',
+        forceNew: true,
       );
     } catch (e) {
       debugPrint('[CreateParty] Backend createRoom error: $e');
