@@ -129,14 +129,14 @@ if (fs.existsSync(cwdMobileAssets)) {
   app.use('/assets', express.static(cwdMobileAssets, staticOptions));
 }
 
-// Fallback for static assets in containerized environments (Railway, Docker)
+// Cloud / Container fallback when mobile assets folder is not packaged in container
 app.use('/assets', (req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     return next();
   }
-  const cleanPath = req.path.replace(/^\//, '');
+  const cleanPath = req.path.replace(/^\/+/, '');
   if (!cleanPath) {
-    return res.status(404).json({ success: false, message: 'Asset not found' });
+    return res.status(404).json({ success: false, message: 'Asset path missing' });
   }
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
