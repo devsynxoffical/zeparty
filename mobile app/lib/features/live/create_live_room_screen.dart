@@ -445,7 +445,7 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                                   ],
                                 ),
                                 content: Text(
-                                  'Aapki pehle se ek live/party stream chal rahi hai:\n"${existingRoom.title}"\n\nKya aap purani room mein wapas jaana chahte hain ya use khatam karke nayi live stream shuru karna chahte hain?',
+                                  'You already have an active stream running:\n"${existingRoom.title}"\n\nDo you want to rejoin your existing room or end it to start a new live stream?',
                                   style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
                                 ),
                                 actionsPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -461,16 +461,16 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                     ),
                                     onPressed: () => Navigator.pop(ctx, 'rejoin'),
-                                    child: const Text('Rejoin Host Room', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                    child: const Text('Rejoin Host Room', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                                   ),
                                   ElevatedButton(
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.redAccent,
+                                      backgroundColor: const Color(0xFFEF4444),
                                       foregroundColor: Colors.white,
                                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                                     ),
                                     onPressed: () => Navigator.pop(ctx, 'close_old'),
-                                    child: const Text('End Old & Start New', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                    child: const Text('End Old & Start New', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                                   ),
                                 ],
                               ),
@@ -536,7 +536,7 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                               setState(() => _isCreating = false);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text(e is ApiException ? e.message : 'Aapki pehle se ek live stream chal rahi hai. Purani live stream end karen.'),
+                                  content: Text(e is ApiException ? e.message : 'You already have an active live stream running. Please end the previous live stream first.'),
                                   backgroundColor: Colors.redAccent,
                                   duration: const Duration(seconds: 4),
                                 ),

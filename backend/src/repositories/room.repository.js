@@ -303,23 +303,37 @@ export async function findActiveRooms(
     try {
       const todayUtc = new Date();
       todayUtc.setUTCHours(0, 0, 0, 0);
-      const [allGifts, dailyGifts] = await Promise.all([
-        db.giftTransaction.groupBy({
-          by: ['roomId'],
-          where: { roomId: { in: roomIds } },
-          _sum: { totalCoins: true },
-        }),
-        db.giftTransaction.groupBy({
-          by: ['roomId'],
-          where: { roomId: { in: roomIds }, createdAt: { gte: todayUtc } },
-          _sum: { totalCoins: true },
-        }),
-      ]);
-      for (const g of allGifts) {
-        if (g.roomId) giftTotalsMap[g.roomId] = Number(g._sum.totalCoins || 0);
-      }
-      for (const d of dailyGifts) {
-        if (d.roomId) dailyTotalsMap[d.roomId] = Number(d._sum.totalCoins || 0);
+      const earliestCreated = rawRooms.reduce((earliest, r) => {
+        const d = r.createdAt ? new Date(r.createdAt) : todayUtc;
+        return d < earliest ? d : earliest;
+      }, todayUtc);
+
+      const candidateGifts = await db.giftTransaction.findMany({
+        where: {
+          roomId: { in: roomIds },
+          createdAt: { gte: earliestCreated },
+        },
+        select: { roomId: true, totalCoins: true, createdAt: true },
+      });
+
+      for (const r of rawRooms) {
+        const sStart = r.createdAt ? new Date(r.createdAt) : new Date(0);
+        const effDailyStart = sStart > todayUtc ? sStart : todayUtc;
+        let rTotal = 0;
+        let dTotal = 0;
+        for (const tx of candidateGifts) {
+          if (tx.roomId === r.id && tx.createdAt) {
+            const txDate = new Date(tx.createdAt);
+            if (txDate >= sStart) {
+              rTotal += Number(tx.totalCoins || 0);
+            }
+            if (txDate >= effDailyStart) {
+              dTotal += Number(tx.totalCoins || 0);
+            }
+          }
+        }
+        giftTotalsMap[r.id] = rTotal;
+        dailyTotalsMap[r.id] = dTotal;
       }
     } catch (_) {}
   }

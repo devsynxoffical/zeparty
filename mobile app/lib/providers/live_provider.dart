@@ -190,10 +190,15 @@ class LiveProvider extends ChangeNotifier {
   // ── Core Methods ─────────────────────────────────────────
 
   Future<void> joinRoom(LiveRoomModel room, {UserModel? currentUser}) async {
+    final isRejoiningSameRoom = (_activeRoom != null && _activeRoom!.id == room.id);
     final isHost = (currentUser != null) &&
         (room.host.id == currentUser.id || room.creatorUserId == currentUser.id);
 
-    _activeRoom = room.copyWith(viewerCount: isHost ? room.viewerCount : room.viewerCount + 1);
+    _activeRoom = room.copyWith(
+      viewerCount: isHost ? room.viewerCount : room.viewerCount + 1,
+      totalGifts: room.totalGifts > 0 ? room.totalGifts : _giftPoints,
+      totalLikes: room.totalLikes > 0 ? room.totalLikes : _likeCount,
+    );
     _currentUser = currentUser;
     _viewers.clear();
     _isLiveEnded = false;
@@ -206,8 +211,12 @@ class LiveProvider extends ChangeNotifier {
     _currentMusicTrack = null;
     _luckyBagActive = false;
     _activeEffect = 'None';
-    _likeCount = 0;
-    _giftPoints = 0;
+
+    // Preserve points & likes if rejoining/expanding from minimize, otherwise initialize from room
+    if (!isRejoiningSameRoom) {
+      _likeCount = room.totalLikes;
+      _giftPoints = room.totalGifts > 0 ? room.totalGifts : room.giftsReceivedCoins;
+    }
     final displayName = currentUser?.displayName.isNotEmpty == true
         ? currentUser!.displayName
         : (currentUser?.name.isNotEmpty == true ? currentUser!.name : (currentUser?.username ?? 'User'));
@@ -232,6 +241,18 @@ class LiveProvider extends ChangeNotifier {
         if (rawCount is int && _activeRoom != null) {
           _activeRoom = _activeRoom!.copyWith(viewerCount: rawCount);
         }
+        final rawGifts = int.tryParse(roomData['totalGifts']?.toString() ?? '') ??
+            int.tryParse(roomData['giftsReceivedCoins']?.toString() ?? '') ??
+            int.tryParse(roomData['trophyCoins']?.toString() ?? '');
+        if (rawGifts != null && rawGifts > _giftPoints) {
+          _giftPoints = rawGifts;
+        }
+        final rawLikes = int.tryParse(roomData['totalLikes']?.toString() ?? '') ??
+            int.tryParse(roomData['likesCount']?.toString() ?? '');
+        if (rawLikes != null && rawLikes > _likeCount) {
+          _likeCount = rawLikes;
+        }
+        notifyListeners();
         if (roomData['members'] is List) {
           for (final mRaw in (roomData['members'] as List)) {
             if (mRaw is! Map) continue;
@@ -450,6 +471,25 @@ class LiveProvider extends ChangeNotifier {
       }
     });
 
+    _socketRoomSnapshotSub?.cancel();
+    _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
+      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+        return;
+      }
+      final snapLikes = int.tryParse(data['totalLikes']?.toString() ?? '') ??
+          int.tryParse(data['likesCount']?.toString() ?? '');
+      if (snapLikes != null && snapLikes > _likeCount) {
+        _likeCount = snapLikes;
+      }
+      final snapGifts = int.tryParse(data['dailySendingTotal']?.toString() ?? '') ??
+          int.tryParse(data['totalGifts']?.toString() ?? '') ??
+          int.tryParse(data['trophyCoins']?.toString() ?? '');
+      if (snapGifts != null && snapGifts > _giftPoints) {
+        _giftPoints = snapGifts;
+      }
+      notifyListeners();
+    });
+
     _socketRoomLikeSub?.cancel();
     _socketRoomLikeSub = _socketService.onRoomLike.listen((data) {
       if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
@@ -458,11 +498,15 @@ class LiveProvider extends ChangeNotifier {
       final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender']) : {};
       final senderId = senderMap['id'] ?? data['userId'];
       final addedLikes = data['count'] is int ? data['count'] as int : 1;
+      final incomingTotal = int.tryParse(data['totalLikes']?.toString() ?? '') ??
+          int.tryParse(data['likesCount']?.toString() ?? '');
 
-      if (senderId != currentUser?.id) {
+      if (incomingTotal != null && incomingTotal > _likeCount) {
+        _likeCount = incomingTotal;
+      } else if (senderId != currentUser?.id) {
         _likeCount += addedLikes;
-        notifyListeners();
       }
+      notifyListeners();
       _likeReceivedController.add(data);
     });
 

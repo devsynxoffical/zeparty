@@ -354,9 +354,10 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     } catch (_) {}
 
     let recentGifts = [];
+    const sessionStart = room.createdAt ? new Date(room.createdAt) : new Date(0);
     try {
       const recentTxs = await (db || prisma).giftTransaction.findMany({
-        where: { roomId: room.id },
+        where: { roomId: room.id, createdAt: { gte: sessionStart } },
         orderBy: { createdAt: 'desc' },
         take: 20,
         include: {
@@ -393,16 +394,22 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     try {
       const todayUtc = new Date();
       todayUtc.setUTCHours(0, 0, 0, 0);
+      const effectiveDailyStart = sessionStart > todayUtc ? sessionStart : todayUtc;
       const dailyAggr = await (db || prisma).giftTransaction.aggregate({
-        where: { roomId: room.id, createdAt: { gte: todayUtc } },
+        where: { roomId: room.id, createdAt: { gte: effectiveDailyStart } },
         _sum: { totalCoins: true },
       });
-      dailySendingTotal = Number(dailyAggr._sum.totalCoins || 0);
+      dailySendingTotal = Number(dailyAggr._sum?.totalCoins || 0);
     } catch (_) {}
     room.dailySendingTotal = dailySendingTotal;
     room.roomSendingTotal = dailySendingTotal;
     room.periodTotalCoins = dailySendingTotal;
     room.trophyCoins = dailySendingTotal;
+
+    let totalLikes = 0;
+    try {
+      totalLikes = await presenceService.getRoomLikes(room.id);
+    } catch (_) {}
 
     const snapshot = buildRoomSnapshot(room, currentCount, activeUsers);
     snapshot.attemptId = attemptId;
@@ -412,6 +419,8 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     snapshot.roomSendingTotal = dailySendingTotal;
     snapshot.periodTotalCoins = dailySendingTotal;
     snapshot.trophyCoins = dailySendingTotal;
+    snapshot.totalLikes = totalLikes;
+    snapshot.likesCount = totalLikes;
     socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, {
       room: snapshot,
       ...snapshot,
@@ -421,6 +430,8 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       viewerCount: currentCount,
       feedClearedAt,
       recentGifts,
+      totalLikes,
+      likesCount: totalLikes,
     });
 
     try {
@@ -1033,9 +1044,10 @@ export async function onRequestSnapshot(socket, data, callback, db) {
     } catch (_) {}
 
     let recentGifts = [];
+    const sessionStart = room.createdAt ? new Date(room.createdAt) : new Date(0);
     try {
       const recentTxs = await (db || prisma).giftTransaction.findMany({
-        where: { roomId: room.id },
+        where: { roomId: room.id, createdAt: { gte: sessionStart } },
         orderBy: { createdAt: 'desc' },
         take: 20,
         include: {
@@ -1067,9 +1079,16 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       }));
     } catch (_) {}
 
+    let totalLikes = 0;
+    try {
+      totalLikes = await presenceService.getRoomLikes(room.id);
+    } catch (_) {}
+
     const snapshot = buildRoomSnapshot(room, viewerCount, activeUsers);
     snapshot.feedClearedAt = feedClearedAt;
     snapshot.recentGifts = recentGifts;
+    snapshot.totalLikes = totalLikes;
+    snapshot.likesCount = totalLikes;
     const responsePayload = {
       room: snapshot,
       ...snapshot,
@@ -1080,6 +1099,8 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       viewerCount,
       feedClearedAt,
       recentGifts,
+      totalLikes,
+      likesCount: totalLikes,
       timestamp: new Date().toISOString(),
     };
 
@@ -1608,9 +1629,16 @@ export async function onSendRoomLike(arg1, arg2, arg3, arg4, arg5) {
       nobleTitle: socket.user?.nobleTitle || null,
     };
 
+    let totalLikes = count;
+    try {
+      totalLikes = await presenceService.incrementRoomLikes(roomId, count);
+    } catch (_) {}
+
     const payload = {
       roomId,
       count,
+      totalLikes,
+      likesCount: totalLikes,
       userId: socket.user?.id || socket.userId,
       sender,
       timestamp: new Date().toISOString(),

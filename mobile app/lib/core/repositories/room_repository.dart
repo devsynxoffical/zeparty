@@ -36,7 +36,7 @@ class RoomRepository {
       'roomType': normType,
       'category': normCat,
       'isPrivate': isPrivate,
-      'forceNew': false,
+      'forceNew': normType == 'LIVE_VIDEO',
       if (roomPin != null && roomPin.isNotEmpty) 'roomPin': roomPin,
     };
 

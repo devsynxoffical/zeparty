@@ -20,6 +20,8 @@ const memoryUserLastSeen = new Map();
 const memoryRoomFeedCleared = new Map();
 // memoryRoomPeakViewers: roomId -> number (peak concurrent viewers during session)
 const memoryRoomPeakViewers = new Map();
+// memoryRoomLikes: roomId -> number (accumulated likes during session)
+const memoryRoomLikes = new Map();
 
 /**
  * Realtime Presence Service supporting:
@@ -853,6 +855,53 @@ export async function getRoomPeakViewers(roomId) {
   return Math.max(peak, memPeak);
 }
 
+export async function incrementRoomLikes(roomId, count = 1) {
+  if (!roomId) return 0;
+  const rId = String(roomId);
+  const inc = Math.max(1, parseInt(count || 1, 10));
+
+  if (redisClient.isOpen) {
+    try {
+      const newTotal = await redisClient.incrBy(`presence:room:${rId}:likes`, inc);
+      memoryRoomLikes.set(rId, newTotal);
+      return newTotal;
+    } catch (_) {}
+  }
+
+  const current = memoryRoomLikes.get(rId) || 0;
+  const next = current + inc;
+  memoryRoomLikes.set(rId, next);
+  return next;
+}
+
+export async function getRoomLikes(roomId) {
+  if (!roomId) return 0;
+  const rId = String(roomId);
+
+  if (redisClient.isOpen) {
+    try {
+      const val = await redisClient.get(`presence:room:${rId}:likes`);
+      if (val !== null && val !== undefined) {
+        return parseInt(val, 10) || 0;
+      }
+    } catch (_) {}
+  }
+
+  return memoryRoomLikes.get(rId) || 0;
+}
+
+export async function clearRoomLikes(roomId) {
+  if (!roomId) return;
+  const rId = String(roomId);
+  memoryRoomLikes.delete(rId);
+
+  if (redisClient.isOpen) {
+    try {
+      await redisClient.del(`presence:room:${rId}:likes`);
+    } catch (_) {}
+  }
+}
+
 export default {
   registerUserSocket,
   unregisterUserSocket,
@@ -877,4 +926,7 @@ export default {
   clearRoomPresence,
   setRoomFeedClearedAt,
   getRoomFeedClearedAt,
+  incrementRoomLikes,
+  getRoomLikes,
+  clearRoomLikes,
 };

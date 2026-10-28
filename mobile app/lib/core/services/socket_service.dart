@@ -452,6 +452,14 @@ class SocketService {
     _socket!.on('room:started', handleRoomCreated);
     _socket!.on('room_started', handleRoomCreated);
 
+    void handleRoomSnapshot(dynamic data) {
+      if (data != null) _roomSnapshotController.add(safeMap(data));
+    }
+    _socket!.off('room:snapshot');
+    _socket!.on('room:snapshot', handleRoomSnapshot);
+    _socket!.off('room_snapshot');
+    _socket!.on('room_snapshot', handleRoomSnapshot);
+
     void handleRoomClosed(dynamic data) {
       if (data != null) _roomClosedController.add(safeMap(data));
     }

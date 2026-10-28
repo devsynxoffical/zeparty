@@ -34,6 +34,9 @@ class LiveRoomModel {
   final String? backgroundImageUrl;
   final String? numericRoomId;
   final String? shortId;
+  final int totalGifts;
+  final int giftsReceivedCoins;
+  final int totalLikes;
 
   bool get isLive => status.toUpperCase() == 'LIVE' || status.toUpperCase() == 'ACTIVE';
   String get displayId => (numericRoomId != null && numericRoomId!.isNotEmpty)
@@ -74,6 +77,9 @@ class LiveRoomModel {
     this.backgroundImageUrl,
     this.numericRoomId,
     this.shortId,
+    this.totalGifts = 0,
+    this.giftsReceivedCoins = 0,
+    this.totalLikes = 0,
   });
 
   factory LiveRoomModel.fromJson(Map<String, dynamic> json) {
@@ -140,6 +146,14 @@ class LiveRoomModel {
       backgroundImageUrl: json['backgroundImageUrl']?.toString() ?? json['background']?.toString(),
       numericRoomId: json['numericRoomId']?.toString() ?? json['roomNumber']?.toString() ?? json['numericId']?.toString(),
       shortId: json['shortId']?.toString() ?? json['displayId']?.toString(),
+      totalGifts: int.tryParse(json['totalGifts']?.toString() ?? '') ??
+          int.tryParse(json['giftsReceivedCoins']?.toString() ?? '') ??
+          int.tryParse(json['trophyCoins']?.toString() ?? '') ?? 0,
+      giftsReceivedCoins: int.tryParse(json['giftsReceivedCoins']?.toString() ?? '') ??
+          int.tryParse(json['totalGifts']?.toString() ?? '') ?? 0,
+      totalLikes: int.tryParse(json['totalLikes']?.toString() ?? '') ??
+          int.tryParse(json['likesCount']?.toString() ?? '') ??
+          int.tryParse(json['likeCount']?.toString() ?? '') ?? 0,
     );
   }
 
@@ -169,6 +183,9 @@ class LiveRoomModel {
       'allowAdminChangeMode': allowAdminChangeMode,
       'closeRoomEffect': closeRoomEffect,
       'bannedUserIds': bannedUserIds,
+      'totalGifts': totalGifts,
+      'giftsReceivedCoins': giftsReceivedCoins,
+      'totalLikes': totalLikes,
       if (backgroundImageUrl != null && backgroundImageUrl!.isNotEmpty) 'backgroundImageUrl': backgroundImageUrl,
       if (numericRoomId != null && numericRoomId!.isNotEmpty) 'numericRoomId': numericRoomId,
       if (shortId != null && shortId!.isNotEmpty) 'shortId': shortId,
@@ -207,6 +224,9 @@ class LiveRoomModel {
     String? backgroundImageUrl,
     String? numericRoomId,
     String? shortId,
+    int? totalGifts,
+    int? giftsReceivedCoins,
+    int? totalLikes,
   }) {
     return LiveRoomModel(
       id: id ?? this.id,
@@ -240,6 +260,9 @@ class LiveRoomModel {
       backgroundImageUrl: backgroundImageUrl ?? this.backgroundImageUrl,
       numericRoomId: numericRoomId ?? this.numericRoomId,
       shortId: shortId ?? this.shortId,
+      totalGifts: totalGifts ?? this.totalGifts,
+      giftsReceivedCoins: giftsReceivedCoins ?? this.giftsReceivedCoins,
+      totalLikes: totalLikes ?? this.totalLikes,
     );
   }
 }

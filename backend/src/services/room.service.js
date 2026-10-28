@@ -61,12 +61,15 @@ export async function createRoom(
     where: { userId },
   });
 
-  // Bug #27 & Bug #34: Check if the user already has a persistent room to resume or reopen rather than recreating a new room
-  if (!forceNew) {
+  const isVideoLive = (roomType === 'LIVE_VIDEO');
+
+  // Bug #27 & Bug #34: Check if the user already has a persistent AUDIO_PARTY room to resume or reopen rather than recreating a new room.
+  // Note: LIVE_VIDEO streams are distinct broadcast sessions and must always create a clean, fresh room with isolated score & gifts.
+  if (!forceNew && !isVideoLive) {
     try {
-      // Find the user's most recent room (prioritizing LIVE room if active, otherwise latest room)
+      // Find the user's most recent AUDIO_PARTY room (prioritizing LIVE room if active, otherwise latest)
       let existingRoom = await db.room.findFirst({
-        where: { creatorUserId: userId, status: 'LIVE' },
+        where: { creatorUserId: userId, status: 'LIVE', roomType: 'AUDIO_PARTY' },
         orderBy: { createdAt: 'desc' },
         include: {
           seats: {
@@ -77,7 +80,7 @@ export async function createRoom(
 
       if (!existingRoom) {
         existingRoom = await db.room.findFirst({
-          where: { creatorUserId: userId },
+          where: { creatorUserId: userId, roomType: 'AUDIO_PARTY' },
           orderBy: { createdAt: 'desc' },
           include: {
             seats: {
@@ -108,9 +111,12 @@ export async function createRoom(
         const isRevivingEndedRoom = existingRoom.status !== 'LIVE';
         if (isRevivingEndedRoom) {
           updateData.status = 'LIVE';
+          updateData.createdAt = new Date(); // Reset session start time so new session starts with 0 score and clean gift history
           updateData.endedAt = null;
           updateData.currentViewersCount = 0;
           updateData.agoraChannelName = `room_${crypto.randomUUID().replace(/-/g, '')}`;
+
+          await presenceService.clearRoomLikes(existingRoom.id);
 
           // Clear temporary live session seat occupants
           await db.roomSeat.updateMany({
@@ -348,14 +354,17 @@ export async function getRoomDetails(roomId, db = prisma) {
     }
   } catch (_) {}
 
-  // Calculate gift coin total from transactions or fallback aggregate
+  // Calculate gift coin total from transactions for current session
+  const sessionStart = room.createdAt ? new Date(room.createdAt) : new Date(0);
   let totalGiftCoins = 0;
   if (Array.isArray(room.giftTransactions) && room.giftTransactions.length > 0) {
-    totalGiftCoins = room.giftTransactions.reduce((sum, tx) => sum + Number(tx.totalCoins || 0), 0);
+    totalGiftCoins = room.giftTransactions
+      .filter((tx) => !tx.createdAt || new Date(tx.createdAt) >= sessionStart)
+      .reduce((sum, tx) => sum + Number(tx.totalCoins || 0), 0);
   } else {
     try {
       const allTx = await db.giftTransaction.aggregate({
-        where: { roomId: room.id },
+        where: { roomId: room.id, createdAt: { gte: sessionStart } },
         _sum: { totalCoins: true },
       });
       totalGiftCoins = Number(allTx._sum?.totalCoins || 0);
@@ -365,16 +374,17 @@ export async function getRoomDetails(roomId, db = prisma) {
   // Calculate today's daily gift coin total (Issue 08: Trophy Counter Sync)
   const todayUtc = new Date();
   todayUtc.setUTCHours(0, 0, 0, 0);
+  const effectiveDailyStart = sessionStart > todayUtc ? sessionStart : todayUtc;
   let dailyGiftCoins = 0;
   try {
     const dailyTx = await db.giftTransaction.aggregate({
       where: {
         roomId: room.id,
-        createdAt: { gte: todayUtc },
+        createdAt: { gte: effectiveDailyStart },
       },
       _sum: { totalCoins: true },
     });
-    dailyGiftCoins = Number(dailyTx._sum.totalCoins || 0);
+    dailyGiftCoins = Number(dailyTx._sum?.totalCoins || 0);
   } catch (_) {}
 
   // Check if any seats are muted to determine room-level mute flag
@@ -387,6 +397,11 @@ export async function getRoomDetails(roomId, db = prisma) {
   let peakViewers = 0;
   try {
     peakViewers = await presenceService.getRoomPeakViewers(room.id);
+  } catch (_) {}
+
+  let totalLikes = 0;
+  try {
+    totalLikes = await presenceService.getRoomLikes(room.id);
   } catch (_) {}
 
   return {
@@ -405,6 +420,8 @@ export async function getRoomDetails(roomId, db = prisma) {
     dailySendingTotal: dailyGiftCoins,
     periodTotalCoins: dailyGiftCoins,
     trophyCoins: dailyGiftCoins,
+    totalLikes,
+    likesCount: totalLikes,
     seatCapacity: (room.seats || []).length || 10,
     capacity: (room.seats || []).length || 10,
     isLocked: Boolean(room.isPrivate),
@@ -693,6 +710,7 @@ export async function closeMyRoom(roomId, userId, db = prisma) {
   clearHostAbsentTimer(roomId);
   micInviteService.clearAllInvitesForRoom(roomId);
   await attendanceService.endBroadcastSession({ roomId, hostUserId: userId }, db).catch(() => {});
+  await presenceService.clearRoomLikes(roomId);
   const closedRoom = await roomRepository.closeRoomTx({ roomId, status: 'ENDED' }, db);
   const summary = await getLiveSessionSummary(roomId, db);
 
@@ -1560,12 +1578,12 @@ export async function getRoomSendingRankings(roomId, { period = 'daily', current
   let canonicalRoomId = roomId;
   let room = await db.room.findUnique({
     where: { id: roomId },
-    select: { id: true, creatorUserId: true },
+    select: { id: true, creatorUserId: true, createdAt: true, status: true },
   });
   if (!room && roomId && roomId.length <= 16) {
     room = await db.room.findFirst({
       where: { id: { startsWith: roomId, mode: 'insensitive' } },
-      select: { id: true, creatorUserId: true },
+      select: { id: true, creatorUserId: true, createdAt: true, status: true },
     });
   }
   if (!room) {
@@ -1590,11 +1608,20 @@ export async function getRoomSendingRankings(roomId, { period = 'daily', current
     startDate.setUTCHours(0, 0, 0, 0);
   }
 
+  // When room is LIVE, isolate score & rankings to the current active session
+  let effectiveStartDate = startDate;
+  if (room && room.status === 'LIVE' && room.createdAt) {
+    const sessionCreatedAt = new Date(room.createdAt);
+    if (sessionCreatedAt > startDate) {
+      effectiveStartDate = sessionCreatedAt;
+    }
+  }
+
   const txs = await db.giftTransaction.groupBy({
     by: ['senderUserId'],
     where: {
       roomId: canonicalRoomId,
-      createdAt: { gte: startDate },
+      createdAt: { gte: effectiveStartDate },
     },
     _sum: {
       totalCoins: true,
@@ -1607,7 +1634,7 @@ export async function getRoomSendingRankings(roomId, { period = 'daily', current
   });
 
   const periodTotalResult = await db.giftTransaction.aggregate({
-    where: { roomId: canonicalRoomId, createdAt: { gte: startDate } },
+    where: { roomId: canonicalRoomId, createdAt: { gte: effectiveStartDate } },
     _sum: { totalCoins: true },
   });
   const periodTotalCoins = Number(periodTotalResult._sum.totalCoins || 0);

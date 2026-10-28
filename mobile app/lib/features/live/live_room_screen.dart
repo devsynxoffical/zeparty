@@ -2957,12 +2957,18 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                                   padding: const EdgeInsets.only(right: 8),
                                   child: GestureDetector(
                                     onTap: () {
+                                      final liveProv = Provider.of<LiveProvider>(context, listen: false);
+                                      final updatedRoom = widget.room.copyWith(
+                                        totalGifts: liveProv.giftPoints,
+                                        giftsReceivedCoins: liveProv.giftPoints,
+                                        totalLikes: liveProv.likeCount,
+                                      );
                                       Provider.of<RoomOverlayProvider>(
                                         context,
                                         listen: false,
                                       ).minimizeRoom(
                                         roomType: 'LIVE',
-                                        room: widget.room,
+                                        room: updatedRoom,
                                       );
                                       Navigator.pop(context);
                                     },
