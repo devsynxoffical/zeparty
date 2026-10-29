@@ -96,9 +96,45 @@ const dbPathOverrides = {
   '/assets/bubbles/unicorn.png': '/assets/animations/mystery_bubble.webp',
 };
 
+const idAssetOverrides = {
+  car_supercar: '/assets/images/gift_supercar.jpg',
+  noble_frame_emperor: '/assets/nobles/emperor_frame.webp',
+  noble_badge_emperor: '/assets/nobles/emperor_badge.webp',
+  noble_card_emperor: '/assets/nobles/tier-7-emperor_profilecard.webp',
+  noble_frame_king: '/assets/nobles/king_frame.webp',
+  noble_badge_king: '/assets/nobles/king_badge.webp',
+  noble_card_king: '/assets/nobles/king_card.webp',
+  noble_frame_duke: '/assets/nobles/duke_frame.webp',
+  noble_badge_duke: '/assets/nobles/duke_badge.webp',
+  noble_card_duke: '/assets/nobles/duke_card.webp',
+  noble_frame_marquis: '/assets/nobles/marquis_frame.webp',
+  noble_badge_marquis: '/assets/nobles/marquis_badge.webp',
+  noble_card_marquis: '/assets/nobles/marquis_card.webp',
+  noble_frame_count: '/assets/nobles/count_frame.webp',
+  noble_badge_count: '/assets/nobles/count_badge.webp',
+  noble_card_count: '/assets/nobles/count_card.webp',
+  noble_frame_viscount: '/assets/nobles/viscount_frame.webp',
+  noble_badge_viscount: '/assets/nobles/viscount_badge.webp',
+  noble_card_viscount: '/assets/nobles/viscount_card.webp',
+  noble_frame_baron: '/assets/nobles/baron_frame.webp',
+  noble_badge_baron: '/assets/nobles/baron_badge.webp',
+  noble_card_baron: '/assets/nobles/baron_card.webp',
+  test_cosmetic_frame_cyber: '/assets/images/frame_neon.jpg',
+  test_cosmetic_frame_cyb: '/assets/images/frame_neon.jpg',
+  'ast-car-01': '/assets/animations/mystery_entry.webp',
+  'ast-car-02': '/assets/images/gift_supercar.jpg',
+  'ast-frame-01': '/assets/nobles/king_frame.webp',
+  'ast-frame-02': '/assets/nobles/emperor_frame.webp',
+  'ast-bub-01': '/assets/animations/mystery_bubble.webp',
+};
+
 export function resolveAssetPath(url) {
   if (!url) return null;
   let clean = url.trim();
+
+  if (idAssetOverrides[clean]) {
+    return idAssetOverrides[clean];
+  }
 
   for (const [key, val] of Object.entries(dbPathOverrides)) {
     if (clean === key || clean.endsWith(key)) {
@@ -198,9 +234,9 @@ export function serializeAsset(asset) {
     }
   }
 
-  const rawUrl = asset.thumbnailUrl || asset.staticFileUrl || asset.animationFileUrl || '';
-  const imageUrl = resolveAssetPath(rawUrl) || rawUrl;
-  const staticUrl = resolveAssetPath(asset.staticFileUrl);
+  const rawUrl = asset.thumbnailUrl || asset.staticFileUrl || asset.animationFileUrl || asset.id || '';
+  const imageUrl = resolveAssetPath(rawUrl) || resolveAssetPath(asset.id) || (rawUrl.startsWith('assets/') ? '/' + rawUrl : rawUrl);
+  const staticUrl = resolveAssetPath(asset.staticFileUrl) || imageUrl;
   const animationUrl = resolveAssetPath(asset.animationFileUrl);
   const videoUrl = resolveAssetPath(asset.videoFileUrl) || animationUrl;
   const assetUrl = animationUrl || staticUrl || videoUrl || imageUrl;

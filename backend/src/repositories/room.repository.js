@@ -168,6 +168,7 @@ export async function findRoomById(id, db = prisma) {
     giftTransactions: {
       select: {
         totalCoins: true,
+        createdAt: true,
       },
     },
   };

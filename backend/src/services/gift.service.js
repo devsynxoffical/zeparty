@@ -727,11 +727,24 @@ export async function sendGift(
         try {
           const todayUtc = new Date();
           todayUtc.setUTCHours(0, 0, 0, 0);
+          let effectiveDailyStart = todayUtc;
+          if (canonicalRoomId) {
+            const roomRec = await (db || prisma).room.findUnique({
+              where: { id: canonicalRoomId },
+              select: { createdAt: true },
+            }).catch(() => null);
+            if (roomRec?.createdAt) {
+              const sessionStart = new Date(roomRec.createdAt);
+              if (sessionStart > todayUtc) {
+                effectiveDailyStart = sessionStart;
+              }
+            }
+          }
           const dailyAggr = await (db || prisma).giftTransaction.aggregate({
-            where: { roomId: canonicalRoomId, createdAt: { gte: todayUtc } },
+            where: { roomId: canonicalRoomId, createdAt: { gte: effectiveDailyStart } },
             _sum: { totalCoins: true },
           });
-          const updatedTotal = Number(dailyAggr._sum.totalCoins || 0);
+          const updatedTotal = Number(dailyAggr._sum?.totalCoins || 0);
           const sendingTotalPayload = {
             roomId: canonicalRoomId,
             clientRoomId: roomId,
@@ -739,6 +752,7 @@ export async function sendGift(
             totalCoins: updatedTotal,
             roomSendingTotal: updatedTotal,
             dailySendingTotal: updatedTotal,
+            trophyCoins: updatedTotal,
             timestamp: new Date().toISOString(),
           };
           for (const rid of targetRoomIds) {

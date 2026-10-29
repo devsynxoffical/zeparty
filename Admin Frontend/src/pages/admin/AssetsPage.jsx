@@ -570,42 +570,46 @@ export function AssetsPage() {
     {
       key: 'asset',
       header: 'Asset Identity',
-      render: (row) => (
-        <div className="flex items-center gap-3">
-          <div className="relative h-11 w-11 rounded-lg bg-slate-900 border border-slate-700/60 overflow-hidden flex-shrink-0 flex items-center justify-center p-0.5">
-            {row.thumbnail ? (
-              <img
-                src={resolveMediaUrl(row.thumbnail, (row.assetType || row.category || 'frame').toLowerCase())}
-                alt={row.name}
-                onError={(e) => handleImageError(e, (row.assetType || row.category || 'frame').toLowerCase())}
-                className="h-full w-full object-contain"
-                loading="lazy"
-              />
-            ) : (
-              <ImageIcon className="h-5 w-5 text-slate-500" />
-            )}
-          </div>
-          <div>
-            <p className="text-sm font-bold text-white leading-tight">{row.name}</p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="font-mono text-[10px] text-slate-400 font-bold">{row.id}</span>
-              <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-medium border border-slate-700">
-                {row.category}
-              </span>
-              {row.isSpecial ? (
-                <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[9px] font-bold border border-amber-500/30">
-                  Special / Restricted
-                </span>
+      render: (row) => {
+        const assetMediaUrl = row.thumbnail || row.thumbnailUrl || row.iconUrl || row.imageUrl || row.id;
+        const normalizedAssetType = (row.assetType || row.category || 'frame').toLowerCase();
+        return (
+          <div className="flex items-center gap-3">
+            <div className="relative h-11 w-11 rounded-lg bg-slate-900 border border-slate-700/60 overflow-hidden flex-shrink-0 flex items-center justify-center p-0.5 shadow-inner">
+              {assetMediaUrl ? (
+                <img
+                  src={resolveMediaUrl(assetMediaUrl, normalizedAssetType)}
+                  alt={row.name}
+                  onError={(e) => handleImageError(e, normalizedAssetType)}
+                  className="h-full w-full object-contain filter drop-shadow-sm"
+                  loading="lazy"
+                />
               ) : (
-                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[9px] font-medium border border-emerald-500/30">
-                  Public Store
-                </span>
+                <ImageIcon className="h-5 w-5 text-slate-500" />
               )}
-              <Badge variant="purple" className="text-[9px] font-mono"><Globe className="h-2.5 w-2.5 mr-0.5 inline" /> {row.scope || 'GLOBAL'}</Badge>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-white leading-tight">{row.name}</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="font-mono text-[10px] text-slate-400 font-bold">{row.id}</span>
+                <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[9px] font-medium border border-slate-700">
+                  {row.category}
+                </span>
+                {row.isSpecial ? (
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[9px] font-bold border border-amber-500/30">
+                    Special / Restricted
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[9px] font-medium border border-emerald-500/30">
+                    Public Store
+                  </span>
+                )}
+                <Badge variant="purple" className="text-[9px] font-mono"><Globe className="h-2.5 w-2.5 mr-0.5 inline" /> {row.scope || 'GLOBAL'}</Badge>
+              </div>
             </div>
           </div>
-        </div>
-      )
+        );
+      }
     },
     {
       key: 'type',
@@ -1248,29 +1252,34 @@ export function AssetsPage() {
               <h3 className="font-bold text-white text-[11px] uppercase tracking-wider mb-3 self-start">Interactive Preview</h3>
               
               {/* Sample Avatar Border Preview for Frames */}
-              {selectedAsset?.category === 'VIP_SVIP_FRAMES' || selectedAsset?.category === 'PROFILE_FRAMES' ? (
+              {selectedAsset?.category === 'VIP_SVIP_FRAMES' || selectedAsset?.category === 'PROFILE_FRAMES' || selectedAsset?.assetType === 'FRAME' ? (
                 <div className="relative h-28 w-28 flex items-center justify-center">
-                  {/* Outer Border/Frame Preview simulator */}
-                  <div className="absolute inset-0 rounded-full border-4 border-dashed border-gold-500 animate-spin-slow"></div>
                   {/* Sample User Avatar Image */}
                   <img
                     src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
                     alt="Sample Avatar"
-                    className="h-20 w-20 rounded-full object-cover border-2 border-slate-900 z-10"
+                    className="h-20 w-20 rounded-full object-cover border-2 border-slate-900 z-10 shadow-lg"
+                  />
+                  {/* Real Frame Overlay */}
+                  <img
+                    src={resolveMediaUrl(selectedAsset?.thumbnail || selectedAsset?.id, 'frame')}
+                    alt={selectedAsset?.name || 'Frame'}
+                    onError={(e) => handleImageError(e, 'frame')}
+                    className="absolute inset-0 w-full h-full object-contain pointer-events-none z-20"
                   />
                   {/* Badge overlap preview */}
-                  <span className="absolute bottom-1 right-2 bg-slate-900 px-1 py-0.5 rounded border border-slate-700 text-[8px] text-gold-400 font-bold z-20">
-                    SVIP 5
+                  <span className="absolute bottom-1 right-2 bg-slate-900 px-1 py-0.5 rounded border border-slate-700 text-[8px] text-gold-400 font-bold z-30">
+                    SVIP
                   </span>
                 </div>
               ) : selectedAsset?.category === 'GIFTS' || selectedAsset?.category === 'ANIMATIONS' ? (
                 <div className="relative h-28 w-full border border-slate-800 rounded-lg bg-slate-900 flex flex-col items-center justify-center text-center p-3">
-                  <div className="h-12 w-12 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden p-1">
+                  <div className="h-14 w-14 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center overflow-hidden p-1 shadow-inner">
                     <img
-                      src={resolveMediaUrl(selectedAsset?.thumbnail, (selectedAsset?.assetType || selectedAsset?.category || 'gift').toLowerCase())}
+                      src={resolveMediaUrl(selectedAsset?.thumbnail || selectedAsset?.id, (selectedAsset?.assetType || selectedAsset?.category || 'gift').toLowerCase())}
                       alt={selectedAsset?.name || 'Gift'}
                       onError={(e) => handleImageError(e, (selectedAsset?.assetType || selectedAsset?.category || 'gift').toLowerCase())}
-                      className="h-full w-full object-contain"
+                      className="h-full w-full object-contain filter drop-shadow-md"
                     />
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1 font-semibold">Animation Duration: {selectedAsset?.duration}s</p>
@@ -1294,12 +1303,12 @@ export function AssetsPage() {
                   </button>
                 </div>
               ) : (
-                <div className="h-28 w-28 rounded-lg bg-slate-900 border border-slate-800 overflow-hidden flex items-center justify-center p-1">
+                <div className="h-28 w-28 rounded-lg bg-slate-900 border border-slate-800 overflow-hidden flex items-center justify-center p-2 shadow-inner">
                   <img
-                    src={resolveMediaUrl(selectedAsset?.thumbnail, (selectedAsset?.assetType || selectedAsset?.category || 'frame').toLowerCase())}
+                    src={resolveMediaUrl(selectedAsset?.thumbnail || selectedAsset?.id, (selectedAsset?.assetType || selectedAsset?.category || 'frame').toLowerCase())}
                     alt={selectedAsset?.name || 'Preset thumbnail'}
                     onError={(e) => handleImageError(e, (selectedAsset?.assetType || selectedAsset?.category || 'frame').toLowerCase())}
-                    className="h-full w-full object-contain"
+                    className="h-full w-full object-contain filter drop-shadow-md"
                   />
                 </div>
               )}

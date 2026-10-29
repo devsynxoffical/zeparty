@@ -1079,6 +1079,22 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       }));
     } catch (_) {}
 
+    let dailySendingTotal = 0;
+    try {
+      const todayUtc = new Date();
+      todayUtc.setUTCHours(0, 0, 0, 0);
+      const effectiveDailyStart = sessionStart > todayUtc ? sessionStart : todayUtc;
+      const dailyAggr = await (db || prisma).giftTransaction.aggregate({
+        where: { roomId: room.id, createdAt: { gte: effectiveDailyStart } },
+        _sum: { totalCoins: true },
+      });
+      dailySendingTotal = Number(dailyAggr._sum?.totalCoins || 0);
+    } catch (_) {}
+    room.dailySendingTotal = dailySendingTotal;
+    room.roomSendingTotal = dailySendingTotal;
+    room.periodTotalCoins = dailySendingTotal;
+    room.trophyCoins = dailySendingTotal;
+
     let totalLikes = 0;
     try {
       totalLikes = await presenceService.getRoomLikes(room.id);
@@ -1087,6 +1103,10 @@ export async function onRequestSnapshot(socket, data, callback, db) {
     const snapshot = buildRoomSnapshot(room, viewerCount, activeUsers);
     snapshot.feedClearedAt = feedClearedAt;
     snapshot.recentGifts = recentGifts;
+    snapshot.dailySendingTotal = dailySendingTotal;
+    snapshot.roomSendingTotal = dailySendingTotal;
+    snapshot.periodTotalCoins = dailySendingTotal;
+    snapshot.trophyCoins = dailySendingTotal;
     snapshot.totalLikes = totalLikes;
     snapshot.likesCount = totalLikes;
     const responsePayload = {
@@ -1099,6 +1119,10 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       viewerCount,
       feedClearedAt,
       recentGifts,
+      dailySendingTotal,
+      roomSendingTotal: dailySendingTotal,
+      periodTotalCoins: dailySendingTotal,
+      trophyCoins: dailySendingTotal,
       totalLikes,
       likesCount: totalLikes,
       timestamp: new Date().toISOString(),

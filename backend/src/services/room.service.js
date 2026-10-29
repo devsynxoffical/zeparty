@@ -63,12 +63,12 @@ export async function createRoom(
 
   const isVideoLive = (roomType === 'LIVE_VIDEO');
 
-  // Bug #27 & Bug #34: Check if the user already has a persistent AUDIO_PARTY room to resume or reopen rather than recreating a new room.
-  // Note: LIVE_VIDEO streams are distinct broadcast sessions and must always create a clean, fresh room with isolated score & gifts.
+  // Check if the user already has a currently active LIVE AUDIO_PARTY room to resume rather than recreating
+  // Note: Ended rooms must never be revived; new room creation must always establish a fresh room identity and zero score.
   if (!forceNew && !isVideoLive) {
     try {
-      // Find the user's most recent AUDIO_PARTY room (prioritizing LIVE room if active, otherwise latest)
-      let existingRoom = await db.room.findFirst({
+      // Find the user's currently active LIVE AUDIO_PARTY room only
+      const existingRoom = await db.room.findFirst({
         where: { creatorUserId: userId, status: 'LIVE', roomType: 'AUDIO_PARTY' },
         orderBy: { createdAt: 'desc' },
         include: {
@@ -77,18 +77,6 @@ export async function createRoom(
           },
         },
       });
-
-      if (!existingRoom) {
-        existingRoom = await db.room.findFirst({
-          where: { creatorUserId: userId, roomType: 'AUDIO_PARTY' },
-          orderBy: { createdAt: 'desc' },
-          include: {
-            seats: {
-              orderBy: { seatIndex: 'asc' },
-            },
-          },
-        });
-      }
 
       if (existingRoom) {
         clearHostAbsentTimer(existingRoom.id);
@@ -99,48 +87,12 @@ export async function createRoom(
         if (coverImageUrl && typeof coverImageUrl === 'string' && coverImageUrl.trim() && coverImageUrl.trim() !== existingRoom.coverImageUrl) {
           updateData.coverImageUrl = coverImageUrl.trim();
         }
-        // Bug #34: Only update backgroundImageUrl if a non-empty string is explicitly provided.
-        // NEVER overwrite a valid saved background with null, undefined, or empty string on resume/reopen!
         if (backgroundImageUrl && typeof backgroundImageUrl === 'string' && backgroundImageUrl.trim() !== '' && backgroundImageUrl.trim() !== existingRoom.backgroundImageUrl) {
           updateData.backgroundImageUrl = backgroundImageUrl.trim();
         }
         if (category && category !== existingRoom.category) updateData.category = category;
         if (isPrivate !== undefined && isPrivate !== existingRoom.isPrivate) updateData.isPrivate = isPrivate;
         if (roomPin !== undefined && roomPin !== existingRoom.roomPin) updateData.roomPin = roomPin;
-
-        const isRevivingEndedRoom = existingRoom.status !== 'LIVE';
-        if (isRevivingEndedRoom) {
-          updateData.status = 'LIVE';
-          updateData.createdAt = new Date(); // Reset session start time so new session starts with 0 score and clean gift history
-          updateData.endedAt = null;
-          updateData.currentViewersCount = 0;
-          updateData.agoraChannelName = `room_${crypto.randomUUID().replace(/-/g, '')}`;
-
-          await presenceService.clearRoomLikes(existingRoom.id);
-
-          // Clear temporary live session seat occupants
-          await db.roomSeat.updateMany({
-            where: { roomId: existingRoom.id },
-            data: {
-              occupiedUserId: null,
-              isMuted: false,
-              isMutedByModerator: false,
-            },
-          });
-
-          // Place host on Seat 0 for AUDIO_PARTY
-          const effectiveRoomType = (updateData.roomType || existingRoom.roomType);
-          if (effectiveRoomType === 'AUDIO_PARTY') {
-            await db.roomSeat.updateMany({
-              where: { roomId: existingRoom.id, seatIndex: 0 },
-              data: {
-                occupiedUserId: userId,
-                isMuted: false,
-                isMutedByModerator: false,
-              },
-            });
-          }
-        }
 
         if (Object.keys(updateData).length > 0) {
           await db.room.update({
@@ -149,7 +101,7 @@ export async function createRoom(
           });
         }
 
-        // Bug #34: If capacity or seatCapacity was explicitly requested, update layout
+        // If capacity or seatCapacity was explicitly requested, update layout
         const requestedCap = parseInt(seatCapacity || capacity, 10);
         if (requestedCap && requestedCap >= 8 && requestedCap <= 30 && requestedCap !== existingRoom.seats.length) {
           await roomRepository.updateRoomLayoutTx({
@@ -161,18 +113,37 @@ export async function createRoom(
 
         const refreshedRoom = await roomRepository.findRoomById(existingRoom.id, db);
 
-        if (isRevivingEndedRoom) {
-          try {
-            socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CREATED, refreshedRoom);
-            socketEmitter.broadcastGlobal('room:created', refreshedRoom);
-            socketEmitter.broadcastGlobal('room_created', refreshedRoom);
-            socketEmitter.broadcastGlobal('room:started', refreshedRoom);
-          } catch (err) {
-            console.error('Failed to broadcast room revived socket event:', err);
-          }
-        }
+        // Calculate session scores for resumed active room
+        const sessionStart = refreshedRoom.createdAt ? new Date(refreshedRoom.createdAt) : new Date(0);
+        const todayUtc = new Date();
+        todayUtc.setUTCHours(0, 0, 0, 0);
+        const effStart = sessionStart > todayUtc ? sessionStart : todayUtc;
 
-        return refreshedRoom;
+        let dailyGiftCoins = 0;
+        try {
+          const dailyAggr = await db.giftTransaction.aggregate({
+            where: { roomId: refreshedRoom.id, createdAt: { gte: effStart } },
+            _sum: { totalCoins: true },
+          });
+          dailyGiftCoins = Number(dailyAggr._sum?.totalCoins || 0);
+        } catch (_) {}
+
+        let totalLikes = 0;
+        try {
+          totalLikes = await presenceService.getRoomLikes(refreshedRoom.id);
+        } catch (_) {}
+
+        return {
+          ...refreshedRoom,
+          totalGifts: dailyGiftCoins,
+          giftsReceivedCoins: dailyGiftCoins,
+          roomSendingTotal: dailyGiftCoins,
+          dailySendingTotal: dailyGiftCoins,
+          periodTotalCoins: dailyGiftCoins,
+          trophyCoins: dailyGiftCoins,
+          totalLikes,
+          likesCount: totalLikes,
+        };
       }
     } catch (err) {
       console.warn('[RoomService] Error resuming existing room:', err?.message);
@@ -187,6 +158,8 @@ export async function createRoom(
     });
     for (const er of existingRooms) {
       clearHostAbsentTimer(er.id);
+      await presenceService.clearRoomLikes(er.id).catch(() => {});
+      await presenceService.clearRoomPresence(er.id).catch(() => {});
       await db.room.update({
         where: { id: er.id },
         data: { status: 'ENDED', endedAt: new Date(), currentViewersCount: 0 },
@@ -222,17 +195,37 @@ export async function createRoom(
     db
   );
 
+  // Clear any residual Redis state for the new room ID to guarantee clean zero start
+  await presenceService.clearRoomLikes(room.id).catch(() => {});
+  await presenceService.clearRoomPresence(room.id).catch(() => {});
+
+  const freshSessionScores = {
+    totalGifts: 0,
+    giftsReceivedCoins: 0,
+    roomSendingTotal: 0,
+    dailySendingTotal: 0,
+    periodTotalCoins: 0,
+    trophyCoins: 0,
+    totalLikes: 0,
+    likesCount: 0,
+  };
+
+  const newRoomPayload = {
+    ...room,
+    ...freshSessionScores,
+  };
+
   // Broadcast new room creation to global realtime discovery subscribers
   try {
-    socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CREATED, room);
-    socketEmitter.broadcastGlobal('room:created', room);
-    socketEmitter.broadcastGlobal('room_created', room);
-    socketEmitter.broadcastGlobal('room:started', room);
+    socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CREATED, newRoomPayload);
+    socketEmitter.broadcastGlobal('room:created', newRoomPayload);
+    socketEmitter.broadcastGlobal('room_created', newRoomPayload);
+    socketEmitter.broadcastGlobal('room:started', newRoomPayload);
   } catch (err) {
     console.error('Failed to broadcast ROOM_CREATED socket event:', err);
   }
 
-  return room;
+  return newRoomPayload;
 }
 
 export async function getActiveRooms(filters, db = prisma) {
@@ -359,7 +352,7 @@ export async function getRoomDetails(roomId, db = prisma) {
   let totalGiftCoins = 0;
   if (Array.isArray(room.giftTransactions) && room.giftTransactions.length > 0) {
     totalGiftCoins = room.giftTransactions
-      .filter((tx) => !tx.createdAt || new Date(tx.createdAt) >= sessionStart)
+      .filter((tx) => tx.createdAt && new Date(tx.createdAt) >= sessionStart)
       .reduce((sum, tx) => sum + Number(tx.totalCoins || 0), 0);
   } else {
     try {
@@ -457,6 +450,44 @@ export async function joinRoom(roomId, userId, { pin = null, isApproved = false,
       socketEmitter.emitToRoom(roomId, 'room:viewer_count', payload);
       socketEmitter.emitToRoom(roomId, 'viewer_count_changed', payload);
     } catch (_) {}
+
+    // Attach session-isolated trophy, gift, and like metrics
+    const sessionStart = result.createdAt ? new Date(result.createdAt) : new Date(0);
+    const todayUtc = new Date();
+    todayUtc.setUTCHours(0, 0, 0, 0);
+    const effStart = sessionStart > todayUtc ? sessionStart : todayUtc;
+
+    let dailyGiftCoins = 0;
+    try {
+      const dailyAggr = await db.giftTransaction.aggregate({
+        where: { roomId: result.id || roomId, createdAt: { gte: effStart } },
+        _sum: { totalCoins: true },
+      });
+      dailyGiftCoins = Number(dailyAggr._sum?.totalCoins || 0);
+    } catch (_) {}
+
+    let totalSessionGifts = 0;
+    try {
+      const sessionAggr = await db.giftTransaction.aggregate({
+        where: { roomId: result.id || roomId, createdAt: { gte: sessionStart } },
+        _sum: { totalCoins: true },
+      });
+      totalSessionGifts = Number(sessionAggr._sum?.totalCoins || 0);
+    } catch (_) {}
+
+    let totalLikes = 0;
+    try {
+      totalLikes = await presenceService.getRoomLikes(result.id || roomId);
+    } catch (_) {}
+
+    result.totalGifts = totalSessionGifts;
+    result.giftsReceivedCoins = totalSessionGifts;
+    result.roomSendingTotal = dailyGiftCoins;
+    result.dailySendingTotal = dailyGiftCoins;
+    result.periodTotalCoins = dailyGiftCoins;
+    result.trophyCoins = dailyGiftCoins;
+    result.totalLikes = totalLikes;
+    result.likesCount = totalLikes;
   }
   return result;
 }
@@ -609,13 +640,18 @@ export async function getLiveSessionSummary(roomId, db = prisma) {
   const hasAuthoritativePeak = typeof trackedPeak === 'number' && trackedPeak > 0;
   const peakViewers = hasAuthoritativePeak ? trackedPeak : 0;
 
-  // Authoritative gift coins calculation from GiftTransaction ledger
+  // Authoritative gift coins calculation from GiftTransaction ledger strictly for this session
   let totalGiftCoins = 0;
   let totalDiamonds = 0;
   let totalGiftsCount = 0;
+  const sessionStart = room.createdAt ? new Date(room.createdAt) : null;
+  const sessionWhere = {
+    roomId: room.id,
+    ...(sessionStart ? { createdAt: { gte: sessionStart } } : {}),
+  };
   try {
     const giftAggr = await db.giftTransaction.aggregate({
-      where: { roomId: room.id },
+      where: sessionWhere,
       _sum: {
         totalCoins: true,
         hostDiamonds: true,
@@ -634,7 +670,7 @@ export async function getLiveSessionSummary(roomId, db = prisma) {
   try {
     const topGifters = await db.giftTransaction.groupBy({
       by: ['senderUserId'],
-      where: { roomId: room.id },
+      where: sessionWhere,
       _sum: { totalCoins: true },
       orderBy: { _sum: { totalCoins: 'desc' } },
       take: 3,
@@ -711,6 +747,7 @@ export async function closeMyRoom(roomId, userId, db = prisma) {
   micInviteService.clearAllInvitesForRoom(roomId);
   await attendanceService.endBroadcastSession({ roomId, hostUserId: userId }, db).catch(() => {});
   await presenceService.clearRoomLikes(roomId);
+  await presenceService.clearRoomPresence(roomId).catch(() => {});
   const closedRoom = await roomRepository.closeRoomTx({ roomId, status: 'ENDED' }, db);
   const summary = await getLiveSessionSummary(roomId, db);
 
@@ -886,6 +923,8 @@ export async function adminCloseRoom(
   }
 
   const beforeState = { status: room.status };
+  await presenceService.clearRoomLikes(roomId).catch(() => {});
+  await presenceService.clearRoomPresence(roomId).catch(() => {});
   const updatedRoom = await roomRepository.closeRoomTx({ roomId, status: 'CLOSED_BY_ADMIN' }, db);
   const afterState = { status: 'CLOSED_BY_ADMIN' };
 

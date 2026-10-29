@@ -31,7 +31,9 @@ function staticAssetsMiddleware(prefix, targetDir) {
     const safePath = path.normalize(decodedPath).replace(/^(\.\.(\/|\\|$))+/, '');
     const fullPath = path.join(targetDir, safePath);
 
-    if (!fullPath.startsWith(targetDir)) {
+    // Cross-platform directory containment check (case-insensitive for Windows drive letters)
+    const rel = path.relative(targetDir, fullPath);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
       return next();
     }
 
@@ -44,9 +46,19 @@ function staticAssetsMiddleware(prefix, targetDir) {
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
       return fs.createReadStream(fullPath).pipe(res);
     }
-    next();
+
+    // Resilient fallback: redirect to canonical CDN if local file is missing
+    const cleanRel = safePath.replace(/\\/g, '/');
+    const remoteUrl = `https://raw.githubusercontent.com/devsynxoffical/zeparty/main/mobile%20app/assets/${encodeURI(cleanRel)}`;
+    res.writeHead(302, {
+      'Location': remoteUrl,
+      'Access-Control-Allow-Origin': '*',
+      'Cross-Origin-Resource-Policy': 'cross-origin'
+    });
+    return res.end();
   };
 }
+
 function mobileAssetsPlugin() {
   const assetsDir = path.resolve(__dirname, '../mobile app/assets');
   const uploadsDir = path.resolve(__dirname, '../backend/public/uploads');

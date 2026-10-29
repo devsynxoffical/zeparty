@@ -32,6 +32,47 @@ const NOBLE_TIERS = {
   7: 'emperor',
 };
 
+export const CANONICAL_CDN_BASE = 'https://raw.githubusercontent.com/devsynxoffical/zeparty/main/mobile%20app/assets';
+
+export function getCanonicalCdnUrl(path) {
+  if (!path || typeof path !== 'string') return '';
+  const clean = path.replace(/^\/+/, '').replace(/^assets\//, '').replace(/^\/+/, '');
+  const encoded = clean.split('/').map(encodeURIComponent).join('/');
+  return `${CANONICAL_CDN_BASE}/${encoded}`;
+}
+
+const ID_ASSET_MAPPINGS = {
+  car_supercar: 'images/gift_supercar.jpg',
+  noble_frame_emperor: 'nobles/emperor_frame.webp',
+  noble_badge_emperor: 'nobles/emperor_badge.webp',
+  noble_card_emperor: 'nobles/tier-7-emperor_profilecard.webp',
+  noble_frame_king: 'nobles/king_frame.webp',
+  noble_badge_king: 'nobles/king_badge.webp',
+  noble_card_king: 'nobles/king_card.webp',
+  noble_frame_duke: 'nobles/duke_frame.webp',
+  noble_badge_duke: 'nobles/duke_badge.webp',
+  noble_card_duke: 'nobles/duke_card.webp',
+  noble_frame_marquis: 'nobles/marquis_frame.webp',
+  noble_badge_marquis: 'nobles/marquis_badge.webp',
+  noble_card_marquis: 'nobles/marquis_card.webp',
+  noble_frame_count: 'nobles/count_frame.webp',
+  noble_badge_count: 'nobles/count_badge.webp',
+  noble_card_count: 'nobles/count_card.webp',
+  noble_frame_viscount: 'nobles/viscount_frame.webp',
+  noble_badge_viscount: 'nobles/viscount_badge.webp',
+  noble_card_viscount: 'nobles/viscount_card.webp',
+  noble_frame_baron: 'nobles/baron_frame.webp',
+  noble_badge_baron: 'nobles/baron_badge.webp',
+  noble_card_baron: 'nobles/baron_card.webp',
+  test_cosmetic_frame_cyber: 'images/frame_neon.jpg',
+  test_cosmetic_frame_cyb: 'images/frame_neon.jpg',
+  'ast-car-01': 'animations/mystery_entry.webp',
+  'ast-car-02': 'images/gift_supercar.jpg',
+  'ast-frame-01': 'nobles/king_frame.webp',
+  'ast-frame-02': 'nobles/emperor_frame.webp',
+  'ast-bub-01': 'animations/mystery_bubble.webp',
+};
+
 const ROLE_ASSETS = {
   admin: { badge: 'roles/ZP-179_admin_badge.webp', frame: 'roles/admin_frame.webp' },
   agency: { badge: 'roles/ZP-182_agency_badge.webp', frame: 'roles/agency_frame.webp' },
@@ -61,32 +102,32 @@ const ROLE_ASSETS = {
 };
 
 const LEGACY_OVERRIDES = {
-  'assets/roles/ZP-220_top-fan_badge.webp': '/assets/roles/top_fan_badge.webp',
-  'assets/roles/ZP-218_super-admin_badge.webp': '/assets/roles/super_admin_tag.webp',
-  'assets/roles/ZP-215_official_badge.webp': '/assets/roles/ZP-216_official_badge.webp',
-  'assets/roles/ZP-212_marchent_badge.webp': '/assets/roles/ZP-213_marchent_badge.webp',
-  'assets/roles/ZP-210_manager_badge.webp': '/assets/roles/manager_tag.webp',
-  'assets/roles/ZP-207_lover_badge.webp': '/assets/roles/ZP-208_lover_badge.webp',
-  'assets/roles/ZP-204_host_badge.webp': '/assets/roles/ZP-205_host_badge.webp',
-  'assets/roles/ZP-201_game-master_badge.webp': '/assets/roles/game_master_badge.webp',
-  'assets/roles/ZP-198_cs_badge.webp': '/assets/roles/ZP-199_cs_badge.webp',
-  'assets/roles/ZP-196_coins-saller_badge.webp': '/assets/roles/coins_saller_tag.webp',
-  'assets/roles/ZP-193_ceo_badge.webp': '/assets/roles/ZP-194_ceo_badge.webp',
-  'assets/roles/ZP-190_boss_badge.webp': '/assets/roles/ZP-191_boss_badge.webp',
-  'assets/roles/ZP-187_bd_badge.webp': '/assets/roles/ZP-188_bd_badge.webp',
-  'assets/roles/ZP-184_assistant_badge.webp': '/assets/roles/ZP-185_assistant_badge.webp',
-  'assets/roles/ZP-181_agency_badge.webp': '/assets/roles/ZP-182_agency_badge.webp',
-  'assets/roles/ZP-178_admin_badge.webp': '/assets/roles/ZP-179_admin_badge.webp',
-  'assets/nobles/emperor_entrance.png': '/assets/nobles/emperor_entrance.webp',
-  'assets/nobles/marquis_entrance.png': '/assets/nobles/marquis_entrance.webp',
-  'assets/cars/suv_black.png': '/assets/images/gift_supercar.jpg',
-  '/assets/cars/suv_black.png': '/assets/images/gift_supercar.jpg',
-  'assets/frames/warrior.png': '/assets/nobles/king_frame.webp',
-  '/assets/frames/warrior.png': '/assets/nobles/king_frame.webp',
-  'assets/frames/spider.png': '/assets/nobles/emperor_frame.webp',
-  '/assets/frames/spider.png': '/assets/nobles/emperor_frame.webp',
-  'assets/bubbles/unicorn.png': '/assets/animations/mystery_bubble.webp',
-  '/assets/bubbles/unicorn.png': '/assets/animations/mystery_bubble.webp',
+  'assets/roles/ZP-220_top-fan_badge.webp': 'roles/top_fan_badge.webp',
+  'assets/roles/ZP-218_super-admin_badge.webp': 'roles/super_admin_tag.webp',
+  'assets/roles/ZP-215_official_badge.webp': 'roles/ZP-216_official_badge.webp',
+  'assets/roles/ZP-212_marchent_badge.webp': 'roles/ZP-213_marchent_badge.webp',
+  'assets/roles/ZP-210_manager_badge.webp': 'roles/manager_tag.webp',
+  'assets/roles/ZP-207_lover_badge.webp': 'roles/ZP-208_lover_badge.webp',
+  'assets/roles/ZP-204_host_badge.webp': 'roles/ZP-205_host_badge.webp',
+  'assets/roles/ZP-201_game-master_badge.webp': 'roles/game_master_badge.webp',
+  'assets/roles/ZP-198_cs_badge.webp': 'roles/ZP-199_cs_badge.webp',
+  'assets/roles/ZP-196_coins-saller_badge.webp': 'roles/coins_saller_tag.webp',
+  'assets/roles/ZP-193_ceo_badge.webp': 'roles/ZP-194_ceo_badge.webp',
+  'assets/roles/ZP-190_boss_badge.webp': 'roles/ZP-191_boss_badge.webp',
+  'assets/roles/ZP-187_bd_badge.webp': 'roles/ZP-188_bd_badge.webp',
+  'assets/roles/ZP-184_assistant_badge.webp': 'roles/ZP-185_assistant_badge.webp',
+  'assets/roles/ZP-181_agency_badge.webp': 'roles/ZP-182_agency_badge.webp',
+  'assets/roles/ZP-178_admin_badge.webp': 'roles/ZP-179_admin_badge.webp',
+  'assets/nobles/emperor_entrance.png': 'nobles/emperor_entrance.webp',
+  'assets/nobles/marquis_entrance.png': 'nobles/marquis_entrance.webp',
+  'assets/cars/suv_black.png': 'images/gift_supercar.jpg',
+  '/assets/cars/suv_black.png': 'images/gift_supercar.jpg',
+  'assets/frames/warrior.png': 'nobles/king_frame.webp',
+  '/assets/frames/warrior.png': 'nobles/king_frame.webp',
+  'assets/frames/spider.png': 'nobles/emperor_frame.webp',
+  '/assets/frames/spider.png': 'nobles/emperor_frame.webp',
+  'assets/bubbles/unicorn.png': 'animations/mystery_bubble.webp',
+  '/assets/bubbles/unicorn.png': 'animations/mystery_bubble.webp',
 };
 
 function normalizeType(type) {
@@ -106,6 +147,107 @@ function normalizeType(type) {
   return 'general';
 }
 
+function resolveAssetSubpath(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const clean = raw.trim();
+
+  // Direct ID check
+  if (ID_ASSET_MAPPINGS[clean]) {
+    return ID_ASSET_MAPPINGS[clean];
+  }
+
+  // Explicit known overrides
+  if (LEGACY_OVERRIDES[clean]) {
+    return LEGACY_OVERRIDES[clean];
+  }
+
+  // Legacy CDN domains
+  if (clean.includes('assets.zeparty.app') || clean.includes('cdn.zeparty.app') || clean.includes('cdn.zeparty.io')) {
+    if (clean.includes('cyber_neon')) {
+      return 'images/frame_neon.jpg';
+    }
+    if (clean.includes('car_gold')) {
+      return 'animations/mystery_entry.webp';
+    }
+
+    if (clean.includes('cdn.zeparty.app/gifts/')) {
+      const giftName = clean.split('gifts/')[1]?.replace(/\.[^.]+$/, '');
+      if (giftName === 'rose') return 'images/gift_rose.jpg';
+      if (giftName === 'heart') return 'gifts/classic/CG05_Heart_Hands_500_coins.png';
+      if (giftName === 'car') return 'images/gift_supercar.jpg';
+      if (giftName === 'jet') return 'gifts/classic/CG23_Private_Jet_22000_coins.png';
+      if (giftName === 'crown') return 'images/gift_gold_crown.jpg';
+      if (giftName === 'castle') return 'gifts/classic/CG26_Crystal_Castle_35000_coins.png';
+      if (giftName === 'firework') return 'gifts/classic/CG29_Meteor_Storm_60000_coins.png';
+      if (giftName === 'wand') return 'gifts/classic/CG14_Magic_Lamp_4000_coins.png';
+      return 'images/party_gift_box.jpg';
+    }
+
+    // Role assets
+    const roleMatch = clean.match(/roles\/(badge|frame)_([a-z_]+)/);
+    if (roleMatch) {
+      const mType = roleMatch[1];
+      const role = roleMatch[2];
+      if (ROLE_ASSETS[role]) {
+        return mType === 'frame' ? ROLE_ASSETS[role].frame : ROLE_ASSETS[role].badge;
+      }
+    }
+
+    // Noble assets
+    const nobleMatch = clean.match(/(?:noble|nobles)\/(frame|tag|bag|entry)_noble_(\d+)/);
+    if (nobleMatch) {
+      const mType = nobleMatch[1];
+      const num = parseInt(nobleMatch[2], 10);
+      const tier = NOBLE_TIERS[Math.min(num, 7)] || 'baron';
+
+      if (mType === 'frame') return `nobles/${tier}_frame.webp`;
+      if (mType === 'tag' || mType === 'bag') return `nobles/${tier}_badge.webp`;
+      if (mType === 'entry') {
+        return num >= 6
+          ? 'nobles/emperor_entrance.webp'
+          : num >= 5
+          ? 'nobles/duke_entrance.webp'
+          : 'nobles/marquis_entrance.webp';
+      }
+    }
+
+    // Mystery assets
+    const mysteryMatch = clean.match(/mystery\/(frame|entry|bubble|tag|bag)_mystery_(\d+)/);
+    if (mysteryMatch) {
+      const mType = mysteryMatch[1];
+      if (mType === 'frame') return 'animations/mystery_frame.webp';
+      if (mType === 'entry') return 'animations/mystery_entry.webp';
+      if (mType === 'bubble') return 'animations/mystery_bubble.webp';
+      return 'animations/mystery_badge.webp';
+    }
+
+    // SVIP assets
+    const svipMatch = clean.match(/svip\/(badge|frame|entry|bubble)_svip_(\d+)/);
+    if (svipMatch) {
+      const mType = svipMatch[1];
+      const num = svipMatch[2];
+      if (mType === 'badge') return `svip/svip${num}_badge.webp`;
+      if (mType === 'frame') return `svip/svip${num}_frame.webp`;
+      if (mType === 'entry') return `svip/svip${num}_entry.webp`;
+      if (mType === 'bubble') return `svip/svip${num}_chat_bubble.webp`;
+    }
+
+    const after = clean.split(/zeparty\.(?:app|io)\/(?:visual_assets\/)?/)[1];
+    if (after) {
+      const trimmedAfter = after.replace(/^assets\//, '').replace(/^\/+/, '');
+      return LEGACY_OVERRIDES[trimmedAfter] || trimmedAfter;
+    }
+  }
+
+  // If starts with assets/ or /assets/
+  if (clean.startsWith('assets/') || clean.startsWith('/assets/')) {
+    const sub = clean.replace(/^\/+/, '').replace(/^assets\//, '').replace(/^\/+/, '');
+    return LEGACY_OVERRIDES[sub] || sub;
+  }
+
+  return null;
+}
+
 /**
  * Resolves any image URL or asset key to an accessible, valid URL with appropriate fallbacks.
  *
@@ -122,107 +264,44 @@ export function resolveMediaUrl(url, type = 'general') {
 
   const clean = url.trim();
 
-  // Explicit known typo overrides
-  if (LEGACY_OVERRIDES[clean]) {
-    return LEGACY_OVERRIDES[clean];
-  }
-
-  // Handle dummy test URLs
+  // Direct test URLs fallback
   if (clean.startsWith('http://example.com/')) {
     return SVG_DATA_FALLBACKS[normType] || SVG_DATA_FALLBACKS.gift;
   }
 
-  // Map legacy / placeholder CDN domains to verified local assets
-  if (clean.includes('assets.zeparty.app') || clean.includes('cdn.zeparty.app') || clean.includes('cdn.zeparty.io')) {
-    if (clean.includes('cyber_neon')) {
-      return '/assets/images/frame_neon.jpg';
-    }
-    if (clean.includes('car_gold')) {
-      return '/assets/animations/mystery_entry.webp';
-    }
-
-    // Gift CDN matches
-    if (clean.includes('cdn.zeparty.app/gifts/')) {
-      const giftName = clean.split('gifts/')[1]?.replace(/\.[^.]+$/, '');
-      if (giftName === 'rose') return '/assets/images/gift_rose.jpg';
-      if (giftName === 'heart') return '/assets/gifts/classic/CG05_Heart_Hands_500_coins.png';
-      if (giftName === 'car') return '/assets/images/gift_supercar.jpg';
-      if (giftName === 'jet') return '/assets/gifts/classic/CG23_Private_Jet_22000_coins.png';
-      if (giftName === 'crown') return '/assets/images/gift_gold_crown.jpg';
-      if (giftName === 'castle') return '/assets/gifts/classic/CG26_Crystal_Castle_35000_coins.png';
-      if (giftName === 'firework') return '/assets/gifts/classic/CG29_Meteor_Storm_60000_coins.png';
-      if (giftName === 'wand') return '/assets/gifts/classic/CG14_Magic_Lamp_4000_coins.png';
-      return SVG_DATA_FALLBACKS.gift;
-    }
-
-    // Role assets
-    const roleMatch = clean.match(/roles\/(badge|frame)_([a-z_]+)/);
-    if (roleMatch) {
-      const mType = roleMatch[1];
-      const role = roleMatch[2];
-      if (ROLE_ASSETS[role]) {
-        return '/assets/' + (mType === 'frame' ? ROLE_ASSETS[role].frame : ROLE_ASSETS[role].badge);
-      }
-    }
-
-    // Noble assets
-    const nobleMatch = clean.match(/(?:noble|nobles)\/(frame|tag|bag|entry)_noble_(\d+)/);
-    if (nobleMatch) {
-      const mType = nobleMatch[1];
-      const num = parseInt(nobleMatch[2], 10);
-      const tier = NOBLE_TIERS[Math.min(num, 7)] || 'baron';
-
-      if (mType === 'frame') return `/assets/nobles/${tier}_frame.webp`;
-      if (mType === 'tag' || mType === 'bag') return `/assets/nobles/${tier}_badge.webp`;
-      if (mType === 'entry') return num >= 6 ? '/assets/nobles/emperor_entrance.webp' : (num >= 5 ? '/assets/nobles/duke_entrance.webp' : '/assets/nobles/marquis_entrance.webp');
-    }
-
-    // Mystery assets
-    const mysteryMatch = clean.match(/mystery\/(frame|entry|bubble|tag|bag)_mystery_(\d+)/);
-    if (mysteryMatch) {
-      const mType = mysteryMatch[1];
-      if (mType === 'frame') return '/assets/animations/mystery_frame.webp';
-      if (mType === 'entry') return '/assets/animations/mystery_entry.webp';
-      if (mType === 'bubble') return '/assets/animations/mystery_bubble.webp';
-      return '/assets/animations/mystery_badge.webp';
-    }
-
-    // SVIP assets
-    const svipMatch = clean.match(/svip\/(badge|frame|entry|bubble)_svip_(\d+)/);
-    if (svipMatch) {
-      const mType = svipMatch[1];
-      const num = svipMatch[2];
-      if (mType === 'badge') return `/assets/svip/svip${num}_badge.webp`;
-      if (mType === 'frame') return `/assets/svip/svip${num}_frame.webp`;
-      if (mType === 'entry') return `/assets/svip/svip${num}_entry.webp`;
-      if (mType === 'bubble') return `/assets/svip/svip${num}_chat_bubble.webp`;
-    }
-
-    const after = clean.split(/zeparty\.(?:app|io)\/(?:visual_assets\/)?/)[1];
-    if (after) {
-      const rel = after.startsWith('assets/') ? '/' + after : '/assets/' + after;
-      if (LEGACY_OVERRIDES[after] || LEGACY_OVERRIDES[rel]) {
-        return LEGACY_OVERRIDES[after] || LEGACY_OVERRIDES[rel];
-      }
-      return rel;
-    }
-
-    return SVG_DATA_FALLBACKS[normType] || SVG_DATA_FALLBACKS.general;
-  }
-
-  // Handle local relative paths
-  if (clean.startsWith('assets/')) {
-    return '/' + clean;
-  }
-  if (clean.startsWith('/assets/') || clean.startsWith('/uploads/')) {
+  // Already a full canonical CDN link
+  if (clean.startsWith(CANONICAL_CDN_BASE)) {
     return clean;
   }
-  if (clean.startsWith('uploads/')) {
-    return '/' + clean;
+
+  // Resolve subpath
+  const subPath = resolveAssetSubpath(clean);
+  if (subPath) {
+    const isLocalhost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    // On deployed environments (Vercel, Railway, etc.), load canonical CDN directly to avoid 404s
+    if (!isLocalhost) {
+      return getCanonicalCdnUrl(subPath);
+    }
+
+    // On localhost, use relative /assets/ path for local dev speed
+    return `/assets/${subPath}`;
+  }
+
+  // Handle local /uploads/
+  if (clean.startsWith('/uploads/') || clean.startsWith('uploads/')) {
+    return clean.startsWith('/') ? clean : '/' + clean;
   }
 
   // Already fully-qualified valid URL (e.g. Unsplash, Cloudinary, Firebase, Data URI)
-  if (clean.startsWith('http://') || clean.startsWith('https://') || clean.startsWith('blob:') || clean.startsWith('data:')) {
+  if (
+    clean.startsWith('http://') ||
+    clean.startsWith('https://') ||
+    clean.startsWith('blob:') ||
+    clean.startsWith('data:')
+  ) {
     return clean;
   }
 
@@ -230,20 +309,38 @@ export function resolveMediaUrl(url, type = 'general') {
 }
 
 /**
- * Handle `<img onError={...} />` to replace broken images with a verified graceful SVG fallback.
+ * Handle `<img onError={...} />` to replace broken images with a two-stage fallback:
+ * Stage 1: Retry using canonical CDN if local /assets/ failed.
+ * Stage 2: Verified graceful SVG fallback if CDN also fails.
  */
 export function handleImageError(e, type = 'general') {
   if (!e || !e.target) return;
+  const target = e.target;
+  const currentSrc = target.src || '';
+
+  // Stage 1: Try canonical CDN if local request failed and hasn't retried yet
+  const assetMatch = currentSrc.match(/(?:assets|uploads)\/(.+)$/);
+  if (assetMatch && !currentSrc.includes('raw.githubusercontent.com') && !target.dataset.cdnRetried) {
+    target.dataset.cdnRetried = 'true';
+    const subPath = assetMatch[1];
+    target.src = getCanonicalCdnUrl(subPath);
+    return;
+  }
+
+  // Stage 2: Graceful SVG fallback
   const normType = normalizeType(type);
   const fallback = SVG_DATA_FALLBACKS[normType] || SVG_DATA_FALLBACKS.general;
-  if (e.target.src !== fallback) {
-    e.target.onerror = null; // Prevent infinite loop
-    e.target.src = fallback;
+  if (target.src !== fallback) {
+    target.onerror = null; // Prevent infinite loop
+    target.src = fallback;
   }
 }
 
 export default {
   resolveMediaUrl,
   handleImageError,
+  getCanonicalCdnUrl,
+  CANONICAL_CDN_BASE,
   FALLBACK_ASSETS,
 };
+
