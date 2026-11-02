@@ -14,6 +14,7 @@ import hostingEligibilityService, {
   HostingEligibilityError,
 } from './hostingEligibility.service.js';
 import privacyEligibilityService from './privacyEligibility.service.js';
+import { getNobleStyle } from './asset.service.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -454,15 +455,17 @@ export async function getPublicProfile(userId, db = prisma) {
     throw error;
   }
 
+  const canonicalUserId = publicUser.id;
+
   const [followersCount, followingCount, visitorsCount, roomCount, activeRoom, equippedUserAssets] = await Promise.all([
-    db.follow.count({ where: { followingId: userId, status: 'ACCEPTED', follower: { status: { not: 'DELETED' } } } }),
-    db.follow.count({ where: { followerId: userId, status: 'ACCEPTED', following: { status: { not: 'DELETED' } } } }),
-    db.profileVisit ? db.profileVisit.count({ where: { visitedId: userId, isMystery: false } }).catch(() => 0) : 0,
-    db.roomMember ? db.roomMember.count({ where: { userId, room: { status: { not: 'CLOSED_BY_ADMIN' } } } }).catch(() => 0) : 0,
-    getActiveRoomForUser(userId, db),
+    db.follow.count({ where: { followingId: canonicalUserId, status: 'ACCEPTED', follower: { status: { not: 'DELETED' } } } }),
+    db.follow.count({ where: { followerId: canonicalUserId, status: 'ACCEPTED', following: { status: { not: 'DELETED' } } } }),
+    db.profileVisit ? db.profileVisit.count({ where: { visitedId: canonicalUserId, isMystery: false } }).catch(() => 0) : 0,
+    db.roomMember ? db.roomMember.count({ where: { userId: canonicalUserId, room: { status: { not: 'CLOSED_BY_ADMIN' } } } }).catch(() => 0) : 0,
+    getActiveRoomForUser(canonicalUserId, db),
     db.userAsset.findMany({
       where: {
-        userId,
+        userId: canonicalUserId,
         isEquipped: true,
         expiresAt: { gt: new Date() },
       },
@@ -1435,18 +1438,58 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
     }
   }
 
+  const nobleStyle = getNobleStyle(user.profile?.nobleRank);
+
   return {
+    id: user.id,
+    userId: user.id,
+    username: user.username,
+    displayName: user.profile?.displayName || user.username,
+    avatarUrl: user.avatarUrl,
+    avatarFrame: equippedFrame,
+    equippedFrame: equippedFrame,
+    level: effectiveWealthLevel,
+    wealthLevel: effectiveWealthLevel,
+    wealthXp: effectiveWealthXp,
+    charmLevel: effectiveCharm,
+    charmXp: effectiveCharmXp,
+    gameLevel: 1,
+    vipLevel: user.profile?.vipLevel || 0,
+    svipLevel: effectiveSvipLevel,
+    nobleRank: user.profile?.nobleRank || 'NONE',
+    nobleColor: nobleStyle?.color || null,
+    nobleStyle: nobleStyle,
     user: {
       id: user.id,
+      userId: user.id,
       username: user.username,
       displayName: user.profile?.displayName || user.username,
       avatarUrl: user.avatarUrl,
       avatarFrame: equippedFrame,
       equippedFrame: equippedFrame,
       country: user.countryCode || 'GLOBAL',
+      level: effectiveWealthLevel,
+      wealthLevel: effectiveWealthLevel,
+      wealthXp: effectiveWealthXp,
+      charmLevel: effectiveCharm,
+      charmXp: effectiveCharmXp,
+      gameLevel: 1,
       vipLevel: user.profile?.vipLevel || 0,
       svipLevel: effectiveSvipLevel,
       nobleRank: user.profile?.nobleRank || 'NONE',
+      nobleColor: nobleStyle?.color || null,
+      nobleStyle: nobleStyle,
+      levels: {
+        wealth: effectiveWealthLevel,
+        wealthLevel: effectiveWealthLevel,
+        wealthXp: effectiveWealthXp,
+        charm: effectiveCharm,
+        charmLevel: effectiveCharm,
+        charmXp: effectiveCharmXp,
+        game: 1,
+        gameLevel: 1,
+        overall: effectiveWealthLevel,
+      },
       presenceStatus: effectivePresenceStatus,
       currentRoomId: effectiveRoomId,
       currentRoomTitle: effectiveCurrentRoomTitle,
@@ -1461,8 +1504,6 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
       liveRoomId: effectiveRoomId,
       roomId: effectiveRoomId,
     },
-    avatarFrame: equippedFrame,
-    equippedFrame: equippedFrame,
     presenceStatus: effectivePresenceStatus,
     currentRoomId: effectiveRoomId,
     currentRoomTitle: effectiveCurrentRoomTitle,
@@ -1480,10 +1521,13 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
     presence: effectivePresence,
     levels: {
       wealth: effectiveWealthLevel,
+      wealthLevel: effectiveWealthLevel,
       wealthXp: effectiveWealthXp,
       charm: effectiveCharm,
+      charmLevel: effectiveCharm,
       charmXp: effectiveCharmXp,
       game: 1,
+      gameLevel: 1,
       overall: effectiveWealthLevel,
     },
     achievements: {

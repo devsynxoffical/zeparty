@@ -4,6 +4,7 @@ import roomRepository from '../repositories/room.repository.js';
 import presenceService from '../socket/presence.service.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from '../socket/socket.constants.js';
+import { getNobleStyle } from './asset.service.js';
 
 // In-memory fallback cache for distributed or local environments
 const localInviteStore = new Map();
@@ -213,15 +214,41 @@ export async function createMicInvite(
     throw error;
   }
 
+  // Resolve target user if targetUserId was supplied as prefixed member ID or username
+  const cleanTargetId = String(targetUserId).trim().replace(/^(host_member_|member_|viewer_)/, '');
+  let resolvedTarget = await db.user.findUnique({
+    where: { id: cleanTargetId },
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      profile: { select: { displayName: true, nobleRank: true, vipLevel: true, svipLevel: true } },
+    },
+  }).catch(() => null);
+
+  if (!resolvedTarget) {
+    resolvedTarget = await db.user.findFirst({
+      where: { username: { equals: cleanTargetId, mode: 'insensitive' } },
+      select: {
+        id: true,
+        username: true,
+        avatarUrl: true,
+        profile: { select: { displayName: true, nobleRank: true, vipLevel: true, svipLevel: true } },
+      },
+    }).catch(() => null);
+  }
+
+  const effectiveTargetId = resolvedTarget?.id || cleanTargetId;
+
   // 2. Validate Target User Eligibility
-  if (targetUserId === actorUserId) {
+  if (effectiveTargetId === actorUserId) {
     const error = new Error('Cannot invite yourself to mic');
     error.statusCode = 400;
     error.code = SOCKET_ERRORS.CANNOT_INVITE_SELF;
     throw error;
   }
 
-  if (targetUserId === room.creatorUserId) {
+  if (effectiveTargetId === room.creatorUserId) {
     const error = new Error('Room owner already has full host mic privileges');
     error.statusCode = 400;
     error.code = SOCKET_ERRORS.CANNOT_INVITE_OWNER;
@@ -230,12 +257,12 @@ export async function createMicInvite(
 
   // Verify target is currently in the room
   const targetMember = await db.roomMember.findUnique({
-    where: { roomId_userId: { roomId: room.id, userId: targetUserId } },
+    where: { roomId_userId: { roomId: room.id, userId: effectiveTargetId } },
   });
   let isTargetInPresence = false;
   try {
     const activeUsers = await presenceService.getRoomActiveUsers(room.id);
-    isTargetInPresence = activeUsers.some((u) => u.userId === targetUserId || u.id === targetUserId);
+    isTargetInPresence = activeUsers.some((u) => u.userId === effectiveTargetId || u.id === effectiveTargetId || u.userId === targetUserId);
   } catch (_) {}
 
   if (!targetMember && !isTargetInPresence) {
@@ -246,7 +273,7 @@ export async function createMicInvite(
   }
 
   // Verify target is not already on mic
-  const occupiedSeat = (room.seats || []).find((s) => s.occupiedUserId === targetUserId);
+  const occupiedSeat = (room.seats || []).find((s) => s.occupiedUserId === effectiveTargetId);
   if (occupiedSeat) {
     const error = new Error('Selected user is already occupying a microphone seat');
     error.statusCode = 400;
@@ -255,7 +282,7 @@ export async function createMicInvite(
   }
 
   // Check for existing pending invitation (deduplication)
-  const existingPending = await getActiveInviteForUser(room.id, targetUserId);
+  const existingPending = await getActiveInviteForUser(room.id, effectiveTargetId);
   if (existingPending) {
     const error = new Error('An invitation to mic is already pending for this viewer');
     error.statusCode = 409;
@@ -282,43 +309,43 @@ export async function createMicInvite(
     }
   }
 
-  // Resolve inviter and target profile details
-  const [inviterUser, targetUser] = await Promise.all([
-    db.user.findUnique({
-      where: { id: actorUserId },
-      select: {
-        id: true,
-        username: true,
-        avatarUrl: true,
-        profile: { select: { displayName: true } },
-      },
-    }),
-    db.user.findUnique({
-      where: { id: targetUserId },
-      select: {
-        id: true,
-        username: true,
-        avatarUrl: true,
-        profile: { select: { displayName: true } },
-      },
-    }),
-  ]);
+  // Resolve inviter details
+  const inviterUser = await db.user.findUnique({
+    where: { id: actorUserId },
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      profile: { select: { displayName: true, nobleRank: true } },
+    },
+  });
+
+  const targetUser = resolvedTarget || await db.user.findUnique({
+    where: { id: effectiveTargetId },
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      profile: { select: { displayName: true, nobleRank: true } },
+    },
+  });
 
   const inviterName = inviterUser?.profile?.displayName || inviterUser?.username || 'Host';
-  const targetName = targetUser?.profile?.displayName || targetUser?.username || `User_${String(targetUserId).substring(0, 6)}`;
+  const targetName = targetUser?.profile?.displayName || targetUser?.username || `User_${String(effectiveTargetId).substring(0, 6)}`;
+  const targetNobleStyle = getNobleStyle(targetUser?.profile?.nobleRank);
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + INVITE_TTL_SECONDS * 1000);
-  const invitationId = `mic_inv_${room.id}_${targetUserId}_${Date.now()}`;
+  const invitationId = `mic_inv_${room.id}_${effectiveTargetId}_${Date.now()}`;
 
-  // Assemble stable invitation payload (following Item 12: numeric IDs visible, username removal respected)
+  // Assemble stable invitation payload
   const invitation = {
     id: invitationId,
     invitationId,
     roomId: room.id,
     roomTitle: room.title,
     inviterUserId: actorUserId,
-    targetUserId,
+    targetUserId: effectiveTargetId,
     seatIndex: targetSeatIndex,
     status: 'PENDING',
     inviter: {
@@ -331,11 +358,14 @@ export async function createMicInvite(
       isAdmin,
     },
     targetUser: {
-      id: targetUserId,
-      userId: targetUserId,
+      id: effectiveTargetId,
+      userId: effectiveTargetId,
       name: targetName,
       displayName: targetName,
       avatarUrl: targetUser?.avatarUrl || null,
+      nobleRank: targetUser?.profile?.nobleRank || null,
+      nobleColor: targetNobleStyle?.color || null,
+      nobleStyle: targetNobleStyle,
     },
     room: {
       id: room.id,
@@ -350,19 +380,25 @@ export async function createMicInvite(
   await saveInvitation(invitation);
 
   // 3. Emit Realtime Events
-  // Direct notification to target user
-  socketEmitter.emitToUser(targetUserId, SOCKET_EVENTS.MIC_INVITATION_RECEIVED, invitation);
-  socketEmitter.emitToUser(targetUserId, 'room:mic_invitation', invitation);
-  socketEmitter.emitToUser(targetUserId, 'room:mic_invite_received', invitation);
-  socketEmitter.emitToUser(targetUserId, 'room:mic_invitation_received', invitation);
-  socketEmitter.emitToUser(targetUserId, 'mic_invitation_received', invitation);
-  socketEmitter.emitToUser(targetUserId, 'room_mic_invitation', invitation);
+  // Direct notification to target user via private socket channel
+  socketEmitter.emitToUser(effectiveTargetId, 'room:mic_invite', invitation);
+  socketEmitter.emitToUser(effectiveTargetId, 'room_mic_invite', invitation);
+  socketEmitter.emitToUser(effectiveTargetId, SOCKET_EVENTS.MIC_INVITATION_RECEIVED, invitation);
+  socketEmitter.emitToUser(effectiveTargetId, 'room:mic_invitation', invitation);
+  socketEmitter.emitToUser(effectiveTargetId, 'room:mic_invite_received', invitation);
+  socketEmitter.emitToUser(effectiveTargetId, 'room:mic_invitation_received', invitation);
+  socketEmitter.emitToUser(effectiveTargetId, 'mic_invitation_received', invitation);
+  socketEmitter.emitToUser(effectiveTargetId, 'room_mic_invitation', invitation);
+
+  // Emit to room channel for participants and in-room listeners
+  socketEmitter.emitToRoom(room.id, 'room:mic_invite', invitation);
+  socketEmitter.emitToRoom(room.id, 'room_mic_invite', invitation);
 
   // Update room participants that this viewer has a pending invite (disables duplicate buttons in Live Viewers)
   const pendingPayload = {
     roomId: room.id,
     invitationId,
-    targetUserId,
+    targetUserId: effectiveTargetId,
     inviterUserId: actorUserId,
     status: 'PENDING',
     isPending: true,
@@ -498,6 +534,7 @@ export async function acceptMicInvite({ roomId, invitationId, userId }, db = pri
   const effectiveAvatar = userRec?.avatarUrl || null;
   const effectiveVip = Boolean(userRec?.profile?.vipLevel && userRec.profile.vipLevel > 0);
   const effectiveNoble = userRec?.profile?.nobleRank || null;
+  const effectiveNobleStyle = getNobleStyle(effectiveNoble);
 
   const seatPayload = {
     roomId: room.id,
@@ -511,6 +548,9 @@ export async function acceptMicInvite({ roomId, invitationId, userId }, db = pri
       avatarUrl: effectiveAvatar,
       isVip: effectiveVip,
       nobleTitle: effectiveNoble,
+      nobleRank: effectiveNoble,
+      nobleColor: effectiveNobleStyle?.color || null,
+      nobleStyle: effectiveNobleStyle,
     },
   };
 
@@ -570,6 +610,21 @@ export async function acceptMicInvite({ roomId, invitationId, userId }, db = pri
     status: 'ACCEPTED',
   });
 
+  const acceptResponsePayload = {
+    roomId: room.id,
+    invitationId: invitation.id,
+    targetUserId: userId,
+    seatIndex: chosenSeatIndex,
+    accepted: true,
+    status: 'ACCEPTED',
+  };
+  socketEmitter.emitToRoom(room.id, 'room:mic_invite_response', acceptResponsePayload);
+  socketEmitter.emitToRoom(room.id, 'room_mic_invite_response', acceptResponsePayload);
+  if (invitation.inviterUserId) {
+    socketEmitter.emitToUser(invitation.inviterUserId, 'room:mic_invite_response', acceptResponsePayload);
+    socketEmitter.emitToUser(invitation.inviterUserId, 'room_mic_invite_response', acceptResponsePayload);
+  }
+
   return {
     success: true,
     message: 'Joined microphone seat successfully',
@@ -618,6 +673,21 @@ export async function declineMicInvite(
     status: 'DECLINED',
     reason,
   });
+
+  const declineResponsePayload = {
+    roomId: effectiveRoomId,
+    invitationId: invitation.id,
+    targetUserId: invitation.targetUserId,
+    accepted: false,
+    status: 'DECLINED',
+    reason,
+  };
+  socketEmitter.emitToRoom(effectiveRoomId, 'room:mic_invite_response', declineResponsePayload);
+  socketEmitter.emitToRoom(effectiveRoomId, 'room_mic_invite_response', declineResponsePayload);
+  if (invitation.inviterUserId) {
+    socketEmitter.emitToUser(invitation.inviterUserId, 'room:mic_invite_response', declineResponsePayload);
+    socketEmitter.emitToUser(invitation.inviterUserId, 'room_mic_invite_response', declineResponsePayload);
+  }
 
   return {
     success: true,

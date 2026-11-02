@@ -271,7 +271,9 @@ export function EmojiManagementPage() {
                       src={resolveMediaUrl(emoji.panelIconUrl || emoji.assetUrl, 'emoji')}
                       alt={emoji.name}
                       onError={(e) => handleImageError(e, 'emoji')}
-                      className="w-full h-full object-contain filter drop-shadow-md"
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-contain select-none transition-transform duration-200 hover:scale-105"
                     />
                   </div>
                   <div>

@@ -1306,7 +1306,7 @@ export async function getRoomViewers(req, res, next) {
   try {
     const { id } = req.params;
     const { search } = req.query;
-    const result = await roomService.getRoomMembers(id, { search });
+    const result = await roomService.getRoomMembers(id, { search, onlyActive: true });
 
     return res.status(200).json({
       success: true,

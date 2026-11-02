@@ -29,6 +29,58 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
   }
 }
 
+/**
+ * Noble rank styling definition:
+ * Mercurius/Duke: Red (#EF4444)
+ * King: Golden (#FFD700)
+ * Imperial/Emperor: Gradient / Sky Blue & Golden (#38BDF8 / #F59E0B)
+ */
+export function getNobleStyle(nobleRank) {
+  if (!nobleRank) return null;
+  const rank = String(nobleRank).toUpperCase().trim();
+  switch (rank) {
+    case 'MERCURIUS':
+    case 'DUKE':
+      return {
+        rank,
+        color: '#EF4444',
+        textColor: '#EF4444',
+        nameColor: '#EF4444',
+        styleType: 'RED',
+        gradient: null,
+      };
+    case 'KING':
+      return {
+        rank,
+        color: '#FFD700',
+        textColor: '#FFD700',
+        nameColor: '#FFD700',
+        styleType: 'GOLDEN',
+        gradient: null,
+      };
+    case 'IMPERIAL':
+    case 'EMPEROR':
+      return {
+        rank,
+        color: '#38BDF8',
+        textColor: '#38BDF8',
+        nameColor: '#38BDF8',
+        accentColor: '#F59E0B',
+        styleType: 'GRADIENT',
+        gradient: ['#38BDF8', '#F59E0B'],
+      };
+    default:
+      return {
+        rank,
+        color: '#E2E8F0',
+        textColor: '#E2E8F0',
+        nameColor: '#E2E8F0',
+        styleType: 'STANDARD',
+        gradient: null,
+      };
+  }
+}
+
 const nobleTiers = {
   1: 'baron',
   2: 'viscount',
@@ -104,6 +156,9 @@ const idAssetOverrides = {
   noble_frame_king: '/assets/nobles/king_frame.webp',
   noble_badge_king: '/assets/nobles/king_badge.webp',
   noble_card_king: '/assets/nobles/king_card.webp',
+  noble_mic_king: '/assets/nobles/king_mic.webp',
+  noble_colorname_king: '/assets/nobles/tier-6-king_colorname.webp',
+  noble_worldnotif_king: '/assets/nobles/tier-6-king_worldnotif.webp',
   noble_frame_duke: '/assets/nobles/duke_frame.webp',
   noble_badge_duke: '/assets/nobles/duke_badge.webp',
   noble_card_duke: '/assets/nobles/duke_card.webp',

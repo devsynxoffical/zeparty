@@ -71,7 +71,15 @@ function formatUserRecord(u) {
 export async function getUsers(params = {}) {
   try {
     const res = await apiClient.get('/v1/admin/users', { params });
-    const userList = res.data?.data || res.data?.users || (Array.isArray(res.data) ? res.data : []);
+    const rawData = res.data?.data;
+    const rawList = Array.isArray(rawData)
+      ? rawData
+      : (Array.isArray(rawData?.users)
+          ? rawData.users
+          : (Array.isArray(res.data?.users)
+              ? res.data.users
+              : (Array.isArray(res.data) ? res.data : [])));
+    const userList = rawList;
     const pagination = res.data?.pagination || {
       page: Number(params.page) || 1,
       limit: Number(params.limit) || 20,

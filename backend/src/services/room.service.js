@@ -12,6 +12,7 @@ import luckyBagService from './luckyBag.service.js';
 import bcrypt from 'bcryptjs';
 import stageService from './stage.service.js';
 import roomRoleAuditService from './roomRoleAudit.service.js';
+import { getNobleStyle } from './asset.service.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -63,14 +64,18 @@ export async function createRoom(
 
   const isVideoLive = (roomType === 'LIVE_VIDEO');
 
-  // Check if the user already has a currently active LIVE AUDIO_PARTY room to resume rather than recreating
-  // Note: Ended rooms must never be revived; new room creation must always establish a fresh room identity and zero score.
+  // Check if the user already has an existing AUDIO_PARTY room to resume/reactivate rather than recreating
+  // Note: For AUDIO_PARTY, hosts have a persistent party room. Resuming or reopening reactivates status to LIVE
+  // and retains today's gifts for daily sending rankings. LIVE_VIDEO always establishes a fresh session.
   if (!forceNew && !isVideoLive) {
     try {
-      // Find the user's currently active LIVE AUDIO_PARTY room only
       const existingRoom = await db.room.findFirst({
-        where: { creatorUserId: userId, status: 'LIVE', roomType: 'AUDIO_PARTY' },
-        orderBy: { createdAt: 'desc' },
+        where: {
+          creatorUserId: userId,
+          roomType: 'AUDIO_PARTY',
+          status: { in: ['LIVE', 'ENDED'] },
+        },
+        orderBy: { updatedAt: 'desc' },
         include: {
           seats: {
             orderBy: { seatIndex: 'asc' },
@@ -81,6 +86,9 @@ export async function createRoom(
       if (existingRoom) {
         clearHostAbsentTimer(existingRoom.id);
         const updateData = {};
+        if (existingRoom.status !== 'LIVE') {
+          updateData.status = 'LIVE';
+        }
         if (title && typeof title === 'string' && title.trim() && title.trim() !== existingRoom.title) {
           updateData.title = title.trim();
         }
@@ -113,11 +121,10 @@ export async function createRoom(
 
         const refreshedRoom = await roomRepository.findRoomById(existingRoom.id, db);
 
-        // Calculate session scores for resumed active room
-        const sessionStart = refreshedRoom.createdAt ? new Date(refreshedRoom.createdAt) : new Date(0);
+        // Calculate session scores for resumed active room across today UTC
         const todayUtc = new Date();
         todayUtc.setUTCHours(0, 0, 0, 0);
-        const effStart = sessionStart > todayUtc ? sessionStart : todayUtc;
+        const effStart = todayUtc;
 
         let dailyGiftCoins = 0;
         try {
@@ -537,6 +544,9 @@ export async function removeRoomMember(roomId, actorUserId, targetUserId, db = p
 }
 
 export async function leaveRoom(roomId, userId, db = prisma) {
+  try {
+    await presenceService.clearUserActiveRoom(userId, roomId);
+  } catch (_) {}
   const result = await roomRepository.leaveRoomTx({ roomId, userId }, db);
   if (result) {
     let viewerCount = typeof result.currentViewersCount === 'number' ? result.currentViewersCount : 0;
@@ -1237,7 +1247,7 @@ export async function adminUpdateRoomDp(
   return updatedRoom;
 }
 
-export async function getRoomMembers(roomId, { search, page = 1, limit = 50 } = {}, db = prisma) {
+export async function getRoomMembers(roomId, { search, page = 1, limit = 50, onlyActive = false } = {}, db = prisma) {
   let room = await db.room.findUnique({
     where: { id: roomId },
     include: {
@@ -1268,10 +1278,11 @@ export async function getRoomMembers(roomId, { search, page = 1, limit = 50 } = 
   const resolvedRoomId = room.id;
 
   // Active socket presence
+  let activePresence = [];
   let activePresenceUserIds = new Set();
   try {
-    const activePresence = await presenceService.getRoomActiveUsers(resolvedRoomId);
-    activePresenceUserIds = new Set(activePresence.map((p) => p.userId).filter(Boolean));
+    activePresence = await presenceService.getRoomActiveUsers(resolvedRoomId);
+    activePresenceUserIds = new Set(activePresence.map((p) => p.userId || p.id).filter(Boolean));
   } catch (_) {}
 
   // Current mic seats map
@@ -1378,8 +1389,11 @@ export async function getRoomMembers(roomId, { search, page = 1, limit = 50 } = 
     const displayName = m.user?.profile?.displayName || m.user?.username || m.userId;
     const publicId = m.user?.username || m.user?.id || m.userId;
 
+    const nobleStyle = getNobleStyle(m.user?.profile?.nobleRank);
+
     return {
-      id: m.id || `member_${m.userId}`,
+      id: m.userId,
+      memberId: m.id || `member_${m.userId}`,
       userId: m.userId,
       publicUserId: publicId,
       publicId,
@@ -1397,6 +1411,8 @@ export async function getRoomMembers(roomId, { search, page = 1, limit = 50 } = 
       vipLevel: m.user?.profile?.vipLevel || 0,
       svipLevel: m.user?.profile?.svipLevel || 0,
       nobleRank: m.user?.profile?.nobleRank || null,
+      nobleColor: nobleStyle?.color || null,
+      nobleStyle,
       isOnline,
       inRoom: isOnline,
       presenceStatus: isOnline ? 'IN_ROOM' : 'OFFLINE',
@@ -1405,24 +1421,87 @@ export async function getRoomMembers(roomId, { search, page = 1, limit = 50 } = 
       isOnMic: Boolean(seatInfo),
       isMutedOnMic: seatInfo ? seatInfo.isMuted : false,
       user: {
-        id: m.user?.id || m.userId,
+        id: m.userId,
+        userId: m.userId,
         username: m.user?.username || m.userId,
         displayName,
         avatarUrl: m.user?.avatarUrl || '',
         level: m.user?.profile?.level || 1,
         vipLevel: m.user?.profile?.vipLevel || 0,
         svipLevel: m.user?.profile?.svipLevel || 0,
+        nobleRank: m.user?.profile?.nobleRank || null,
+        nobleColor: nobleStyle?.color || null,
+        nobleStyle,
         lastSeenAt: m.user?.lastLoginAt || null,
       },
     };
   });
+
+  // If fetching active viewers only, include any active presence users not already in saved membership
+  if (onlyActive) {
+    for (const ap of activePresence) {
+      const uId = ap.userId || ap.id;
+      if (!uId || rawMembers.some((m) => m.userId === uId)) continue;
+      const isOwner = uId === creatorUserId;
+      const seatInfo = seatedUserMap.get(uId) || null;
+      const dName = ap.displayName || ap.name || ap.username || `User_${String(uId).substring(0, 6)}`;
+      const nobleStyle = getNobleStyle(ap.nobleRank);
+      formattedList.push({
+        id: uId,
+        memberId: `viewer_${uId}`,
+        userId: uId,
+        publicUserId: ap.username || uId,
+        publicId: ap.username || uId,
+        username: ap.username || uId,
+        name: dName,
+        displayName: dName,
+        avatarUrl: ap.avatarUrl || '',
+        role: isOwner ? 'HOST' : 'MEMBER',
+        isHost: isOwner,
+        isOwner,
+        isAdmin: false,
+        isMember: false,
+        joinedAt: ap.joinedAt || new Date().toISOString(),
+        level: ap.level || 1,
+        vipLevel: ap.vipLevel || 0,
+        svipLevel: ap.svipLevel || 0,
+        nobleRank: ap.nobleRank || null,
+        nobleColor: nobleStyle?.color || null,
+        nobleStyle,
+        isOnline: true,
+        inRoom: true,
+        presenceStatus: 'IN_ROOM',
+        lastSeenAt: new Date().toISOString(),
+        seatIndex: seatInfo ? seatInfo.seatIndex : null,
+        isOnMic: Boolean(seatInfo),
+        isMutedOnMic: seatInfo ? seatInfo.isMuted : false,
+        user: {
+          id: uId,
+          userId: uId,
+          username: ap.username || uId,
+          displayName: dName,
+          avatarUrl: ap.avatarUrl || '',
+          level: ap.level || 1,
+          vipLevel: ap.vipLevel || 0,
+          svipLevel: ap.svipLevel || 0,
+          nobleRank: ap.nobleRank || null,
+          nobleColor: nobleStyle?.color || null,
+          nobleStyle,
+          lastSeenAt: new Date().toISOString(),
+        },
+      });
+    }
+  }
+
+  // Filter for active users when onlyActive is requested
+  const filteredList = onlyActive ? formattedList.filter((m) => m.isOnline) : formattedList;
 
   // Strict Roster Ordering:
   // 1. Owner first (weight 0)
   // 2. Room Admins next (weight 1)
   // 3. Ordinary Members after admins (weight 2)
   // Stable deterministic tie-breaker within each group: joinedAt asc, then userId asc
-  formattedList.sort((a, b) => {
+  filteredList.sort((a, b) => {
     const weightA = a.role === 'HOST' ? 0 : (a.role === 'ADMIN' ? 1 : 2);
     const weightB = b.role === 'HOST' ? 0 : (b.role === 'ADMIN' ? 1 : 2);
     if (weightA !== weightB) {
@@ -1436,14 +1515,14 @@ export async function getRoomMembers(roomId, { search, page = 1, limit = 50 } = 
     return String(a.userId).localeCompare(String(b.userId));
   });
 
-  // Total saved membership count
-  const totalCount = formattedList.length;
+  // Total active or saved membership count
+  const totalCount = filteredList.length;
 
   // Pagination
   const pageNum = Math.max(1, Number(page) || 1);
   const limitNum = Math.min(200, Math.max(1, Number(limit) || 50));
   const skip = (pageNum - 1) * limitNum;
-  const paginatedMembers = formattedList.slice(skip, skip + limitNum);
+  const paginatedMembers = filteredList.slice(skip, skip + limitNum);
 
   // Decorate with mic invite status
   let decorated = paginatedMembers;
@@ -1647,9 +1726,10 @@ export async function getRoomSendingRankings(roomId, { period = 'daily', current
     startDate.setUTCHours(0, 0, 0, 0);
   }
 
-  // When room is LIVE, isolate score & rankings to the current active session
+  // For AUDIO_PARTY, daily period covers all gifts sent today (startDate).
+  // For LIVE_VIDEO broadcast sessions, isolate score & rankings to the current active session.
   let effectiveStartDate = startDate;
-  if (room && room.status === 'LIVE' && room.createdAt) {
+  if (room && room.status === 'LIVE' && room.createdAt && room.roomType !== 'AUDIO_PARTY') {
     const sessionCreatedAt = new Date(room.createdAt);
     if (sessionCreatedAt > startDate) {
       effectiveStartDate = sessionCreatedAt;

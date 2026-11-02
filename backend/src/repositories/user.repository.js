@@ -474,40 +474,58 @@ export async function updateUserProfile(
 
 export async function findPublicProfileById(id, db = prisma) {
   if (!id) return null;
-  return await db.user.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      username: true,
-      avatarUrl: true,
-      bio: true,
-      gender: true,
-      countryCode: true,
-      userType: true,
-      createdAt: true,
-      profile: {
-        select: {
-          displayName: true,
-          level: true,
-          vipLevel: true,
-          svipLevel: true,
-          nobleRank: true,
-          signature: true,
-          followersCount: true,
-          followingCount: true,
-          postsCount: true,
-          isPrivate: true,
-        },
-      },
-      hostProfile: {
-        select: {
-          hostType: true,
-          hostLevel: true,
-          hostStatus: true,
-        },
+  const cleanId = String(id).trim().replace(/^(host_member_|member_|viewer_)/, '');
+
+  const selectFields = {
+    id: true,
+    username: true,
+    avatarUrl: true,
+    bio: true,
+    gender: true,
+    countryCode: true,
+    userType: true,
+    createdAt: true,
+    profile: {
+      select: {
+        displayName: true,
+        level: true,
+        vipLevel: true,
+        svipLevel: true,
+        nobleRank: true,
+        signature: true,
+        followersCount: true,
+        followingCount: true,
+        postsCount: true,
+        isPrivate: true,
       },
     },
-  });
+    hostProfile: {
+      select: {
+        hostType: true,
+        hostLevel: true,
+        hostStatus: true,
+      },
+    },
+  };
+
+  let user = await db.user.findUnique({
+    where: { id: cleanId },
+    select: selectFields,
+  }).catch(() => null);
+
+  if (!user) {
+    user = await db.user.findFirst({
+      where: {
+        OR: [
+          { username: { equals: cleanId, mode: 'insensitive' } },
+          { id: { equals: cleanId, mode: 'insensitive' } },
+        ],
+      },
+      select: selectFields,
+    }).catch(() => null);
+  }
+
+  return user;
 }
 
 export async function deleteUserById(id, db = prisma) {

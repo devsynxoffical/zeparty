@@ -889,7 +889,13 @@ export function UsersPage() {
         ...(statusFilter !== 'all' ? { status: statusFilter.toUpperCase() } : {}),
       });
 
-      const userList = res?.users || res?.data || (Array.isArray(res) ? res : []);
+      const userList = Array.isArray(res?.users)
+        ? res.users
+        : (Array.isArray(res?.data)
+            ? res.data
+            : (Array.isArray(res?.data?.users)
+                ? res.data.users
+                : (Array.isArray(res) ? res : [])));
       setUsers(userList);
       setSelectedUserIds([]); // reset selection on page change or reload
       if (res?.pagination) {
@@ -928,12 +934,14 @@ export function UsersPage() {
   };
 
   const toggleSelectAll = () => {
-    if (users.length > 0 && selectedUserIds.length === users.length) {
+    const safeList = Array.isArray(users) ? users : [];
+    if (safeList.length > 0 && selectedUserIds.length === safeList.length) {
       setSelectedUserIds([]);
     } else {
-      setSelectedUserIds(users.map((u) => u.id));
+      setSelectedUserIds(safeList.map((u) => u.id));
     }
   };
+
 
   // Batch Status Change Handler
   const handleBatchStatus = async (newStatus) => {
@@ -963,7 +971,8 @@ export function UsersPage() {
 
   // Batch Export Handler (CSV)
   const handleBatchExport = () => {
-    const selectedUsers = users.filter((u) => selectedUserIds.includes(u.id));
+    const safeList = Array.isArray(users) ? users : [];
+    const selectedUsers = safeList.filter((u) => selectedUserIds.includes(u.id));
     if (selectedUsers.length === 0) return;
     const headers = ['ID', 'Username', 'DisplayName', 'Email', 'Phone', 'Country', 'Status', 'Coins', 'Diamonds'];
     const rows = selectedUsers.map((u) => [
@@ -1109,7 +1118,8 @@ export function UsersPage() {
     }
   }
 
-  const isAllSelected = users.length > 0 && selectedUserIds.length === users.length;
+  const safeUsers = Array.isArray(users) ? users : [];
+  const isAllSelected = safeUsers.length > 0 && selectedUserIds.length === safeUsers.length;
 
   const columns = [
     {
@@ -1364,10 +1374,10 @@ export function UsersPage() {
     },
   ];
 
-  const totalUsersCount = pagination.total || users.length;
-  const activeCount = users.filter((u) => u.status === 'active').length;
-  const suspendedCount = users.filter((u) => u.status === 'suspended').length;
-  const bannedCount = users.filter((u) => u.status === 'banned').length;
+  const totalUsersCount = pagination.total || safeUsers.length;
+  const activeCount = safeUsers.filter((u) => u?.status === 'active').length;
+  const suspendedCount = safeUsers.filter((u) => u?.status === 'suspended').length;
+  const bannedCount = safeUsers.filter((u) => u?.status === 'banned').length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -1459,7 +1469,7 @@ export function UsersPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: 'Total Users', value: totalUsersCount,                               color: 'text-white' },
-          { label: 'Active',      value: activeCount > 0 ? (totalUsersCount > 0 && activeCount === users.length ? totalUsersCount : activeCount) : 0, color: 'text-emerald-400' },
+          { label: 'Active',      value: activeCount > 0 ? (totalUsersCount > 0 && activeCount === safeUsers.length ? totalUsersCount : activeCount) : 0, color: 'text-emerald-400' },
           { label: 'Suspended',   value: suspendedCount,                                color: 'text-amber-400' },
           { label: 'Banned',      value: bannedCount,                                   color: 'text-red-400' },
         ].map((s) => (
@@ -1485,7 +1495,7 @@ export function UsersPage() {
       {/* Table with real pagination */}
       <DataTable
         columns={columns}
-        data={users}
+        data={safeUsers}
         isLoading={isLoading}
         emptyTitle="No users found"
         emptyDescription="Try adjusting your search or status filter."

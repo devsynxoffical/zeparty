@@ -4,6 +4,19 @@ import redisProxy from '../config/redis.js';
 // Dedicated in-memory storage for active admin sessions (scoped away from mobile User table)
 const adminSessionsStore = new Map();
 
+// Grace period store for rotated tokens to absorb mobile network race conditions (RFC 6749)
+const rotatedTokensGraceMap = new Map(); // oldRefreshTokenHash -> { session, rotatedAt }
+const ROTATION_GRACE_PERIOD_MS = 60 * 1000; // 60 seconds
+
+function cleanRotatedGraceMap() {
+  const cutoff = Date.now() - ROTATION_GRACE_PERIOD_MS;
+  for (const [hash, entry] of rotatedTokensGraceMap.entries()) {
+    if (entry.rotatedAt < cutoff) {
+      rotatedTokensGraceMap.delete(hash);
+    }
+  }
+}
+
 export async function createSession(
   { userId, refreshTokenHash, ipAddress, userAgent, expiresAt, isAdmin = false },
   db = prisma
@@ -97,6 +110,13 @@ export async function findActiveSessionByRefreshTokenHash(refreshTokenHash, db =
     if (userSession) return userSession;
   } catch (_) {}
 
+  // 1b. Check grace period store for recently rotated refresh token to prevent room restart 401s
+  cleanRotatedGraceMap();
+  const graceEntry = rotatedTokensGraceMap.get(refreshTokenHash);
+  if (graceEntry && (Date.now() - graceEntry.rotatedAt <= ROTATION_GRACE_PERIOD_MS)) {
+    return graceEntry.session;
+  }
+
   // 2. Check in-memory store for Admin sessions
   if (adminSessionsStore.has(refreshTokenHash)) {
     const session = adminSessionsStore.get(refreshTokenHash);
@@ -174,13 +194,40 @@ export async function rotateSessionToken(sessionId, newRefreshTokenHash, newExpi
     return adminSess;
   }
 
-  return await db.userSession.update({
+  let existingSession = null;
+  try {
+    existingSession = await db.userSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        user: {
+          include: { profile: true },
+        },
+      },
+    });
+  } catch (_) {}
+
+  const updatedSession = await db.userSession.update({
     where: { id: sessionId },
     data: {
       refreshToken: newRefreshTokenHash,
       expiresAt: newExpiresAt,
     },
+    include: {
+      user: {
+        include: { profile: true },
+      },
+    },
   });
+
+  if (existingSession && existingSession.refreshToken) {
+    cleanRotatedGraceMap();
+    rotatedTokensGraceMap.set(existingSession.refreshToken, {
+      session: updatedSession,
+      rotatedAt: Date.now(),
+    });
+  }
+
+  return updatedSession;
 }
 
 export async function revokeSession(sessionId, db = prisma) {

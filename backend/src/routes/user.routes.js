@@ -107,6 +107,9 @@ userProfileRouter.delete('/me', authenticate, userController.deleteSelfAccount);
 
 // In-room profile card and level strip
 userProfileRouter.get('/:id/room-profile-card', optionalAuthenticate, userController.getRoomUserProfileCard);
+userProfileRouter.get('/:id/room-profile', optionalAuthenticate, userController.getRoomUserProfileCard);
+userProfileRouter.get('/:id/profile-card', optionalAuthenticate, userController.getRoomUserProfileCard);
+userProfileRouter.get('/:id/card', optionalAuthenticate, userController.getRoomUserProfileCard);
 userProfileRouter.get('/:id/level-strip', optionalAuthenticate, userController.getUserLevelStrip);
 
 // Social, Follows, Followers, Visitors, & Blocks (mounted directly on /users/:id)

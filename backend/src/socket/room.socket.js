@@ -13,6 +13,7 @@ import { withRateLimit } from './rateLimiter.socket.js';
 import * as attendanceService from '../services/attendance.service.js';
 import stageService from '../services/stage.service.js';
 import privacyEligibilityService from '../services/privacyEligibility.service.js';
+import { getNobleStyle } from '../services/asset.service.js';
 
 /**
  * Builds a safe, public room snapshot containing no sensitive admin or private fields.
@@ -1308,6 +1309,8 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
       senderName = `User_${String(senderId).replace('guest_', '').substring(0, 5)}`;
     }
 
+    const senderNobleStyle = getNobleStyle(senderNoble);
+
     const payload = {
       id: data?.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       roomId: canonicalRoomId,
@@ -1325,6 +1328,9 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
         isVip: senderVip,
         nobleLevel: senderNoble || null,
         nobleTitle: senderNoble || null,
+        nobleRank: senderNoble || null,
+        nobleColor: senderNobleStyle?.color || null,
+        nobleStyle: senderNobleStyle,
         role: senderRole || null,
       },
       text: text.substring(0, 500),
