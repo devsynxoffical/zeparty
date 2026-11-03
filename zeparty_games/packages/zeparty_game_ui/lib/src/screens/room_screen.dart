@@ -271,20 +271,26 @@ class _RoomCodeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = Theme.of(context).textTheme;
-    return ZpPanel(
-      padding: const EdgeInsets.symmetric(horizontal: ZpSpace.xl, vertical: ZpSpace.md),
-      radius: ZpRadius.pill,
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(room.isPrivate ? Icons.lock_rounded : Icons.public_rounded, size: 16, color: ZpColors.gold),
-        const SizedBox(width: ZpSpace.sm),
-        Text('ROOM ', style: t.labelSmall),
-        Text(room.roomId, style: t.titleMedium?.copyWith(color: ZpColors.goldLight, letterSpacing: 2)),
-        if (room.inviteCode != null) ...[
-          const SizedBox(width: ZpSpace.md),
-          Text('CODE ', style: t.labelSmall),
-          Text(room.inviteCode!, style: t.titleMedium?.copyWith(color: ZpColors.goldLight, letterSpacing: 2)),
-        ],
-      ]),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: ZpSpace.md),
+      child: ZpPanel(
+        padding: const EdgeInsets.symmetric(horizontal: ZpSpace.lg, vertical: ZpSpace.sm),
+        radius: ZpRadius.pill,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(room.isPrivate ? Icons.lock_rounded : Icons.public_rounded, size: 16, color: ZpColors.gold),
+            const SizedBox(width: ZpSpace.xs),
+            Text('ROOM ', style: t.labelSmall),
+            Text(room.roomId, style: t.titleMedium?.copyWith(color: ZpColors.goldLight, letterSpacing: 1.2)),
+            if (room.inviteCode != null) ...[
+              const SizedBox(width: ZpSpace.sm),
+              Text('CODE ', style: t.labelSmall),
+              Text(room.inviteCode!, style: t.titleMedium?.copyWith(color: ZpColors.goldLight, letterSpacing: 1.2)),
+            ],
+          ]),
+        ),
+      ),
     );
   }
 }

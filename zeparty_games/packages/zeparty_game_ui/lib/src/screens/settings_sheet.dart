@@ -24,7 +24,7 @@ class SettingsSheet extends StatelessWidget {
     return ListenableBuilder(
       listenable: Listenable.merge([g, a]),
       builder: (context, _) => SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(ZpSpace.xl, ZpSpace.md, ZpSpace.xl, ZpSpace.xl),
           child: Column(
             mainAxisSize: MainAxisSize.min,

@@ -227,6 +227,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           },
           body: TabBarView(
             controller: _tabController,
+            physics: const NeverScrollableScrollPhysics(),
             children: [
               // 1. Mine Tab: User's owned / hosted rooms
               MineTab(isDark: isDark),
