@@ -35,6 +35,7 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
   // Search & Discovery State
   bool _isSearching = false;
   PKDiscoveryResult? _discoveredOpponent;
+  UserModel? _selectedOpponent;
   String? _searchError;
 
   // Available hosts fallback list
@@ -128,6 +129,12 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
         if (result != null) {
           setState(() {
             _discoveredOpponent = result;
+            _selectedOpponent = UserModel(
+              id: result.hostId,
+              name: result.hostDisplayName,
+              username: result.hostUsername,
+              avatarUrl: result.hostAvatarUrl,
+            );
             _isSearching = false;
           });
         } else {
@@ -319,7 +326,14 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
       Navigator.pop(context, {
         'success': true,
         'matchId': _pendingMatchId,
-        'opponent': _selectedOpponent,
+        'opponent': _selectedOpponent ?? (_discoveredOpponent != null
+            ? UserModel(
+                id: _discoveredOpponent!.hostId,
+                name: _discoveredOpponent!.hostDisplayName,
+                username: _discoveredOpponent!.hostUsername,
+                avatarUrl: _discoveredOpponent!.hostAvatarUrl,
+              )
+            : null),
       });
     }
   }
