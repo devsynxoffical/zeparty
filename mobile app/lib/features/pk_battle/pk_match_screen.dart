@@ -316,7 +316,11 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
           backgroundColor: Colors.green,
         ),
       );
-      Navigator.pop(context, true);
+      Navigator.pop(context, {
+        'success': true,
+        'matchId': _pendingMatchId,
+        'opponent': _selectedOpponent,
+      });
     }
   }
 

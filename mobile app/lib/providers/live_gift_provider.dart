@@ -175,10 +175,7 @@ class LiveGiftProvider extends ChangeNotifier {
         authProvider.addWealthXp(totalCost);
       }
 
-      // Award SVIP points (1 coin spent = 1 SVIP point) and auto-upgrade SVIP level
-      if (svipProvider != null && totalCost > 0) {
-        svipProvider.addPoints(totalCost, reason: 'Sent $quantity × ${gift.name}', type: 'gift_send');
-      }
+      // Note: SVIP points are strictly earned via official recharge / SVIP store purchases (Issue 24)
 
       // Trigger local animation & combo aggregation (only for non-video gifts)
       _enqueueLocalComboEvent(
@@ -210,10 +207,7 @@ class LiveGiftProvider extends ChangeNotifier {
           authProvider.addWealthXp(totalCost);
         }
 
-        // Award SVIP points on local delivery
-        if (svipProvider != null && totalCost > 0) {
-          svipProvider.addPoints(totalCost, reason: 'Sent $quantity × ${gift.name}', type: 'gift_send');
-        }
+        // Note: SVIP points are strictly earned via official recharge / SVIP store purchases (Issue 24)
 
         // Broadcast real-time gift over socket so room viewers and receiver see it
         final txId = idempotencyKey;

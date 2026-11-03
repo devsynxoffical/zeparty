@@ -53,6 +53,46 @@ class InRoomProfileCardSheet extends StatefulWidget {
 
 class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
   bool _isLeavingMic = false;
+  UserModel? _authoritativeUser;
+  bool _isLoadingAuthoritative = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAuthoritativeUser();
+    });
+  }
+
+  Future<void> _loadAuthoritativeUser() async {
+    if (!mounted) return;
+    final auth = context.read<AuthProvider>();
+    final targetId = widget.participant.user.id;
+    if (targetId.isEmpty) {
+      if (mounted) setState(() => _isLoadingAuthoritative = false);
+      return;
+    }
+    if (targetId == auth.currentUser.id) {
+      if (mounted) {
+        setState(() {
+          _authoritativeUser = auth.currentUser;
+          _isLoadingAuthoritative = false;
+        });
+      }
+      return;
+    }
+    try {
+      final fetched = await auth.getUserById(targetId);
+      if (mounted) {
+        setState(() {
+          if (fetched != null) _authoritativeUser = fetched;
+          _isLoadingAuthoritative = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingAuthoritative = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,9 +100,14 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     final authProvider = context.watch<AuthProvider>();
     final currentUser = authProvider.currentUser;
 
-    // Populated dynamically with selected user's data
-    final user = widget.participant.user;
-    final isMe = user.id == currentUser.id ||
+    final isMe = widget.participant.user.id == currentUser.id ||
+        (widget.participant.user.username.isNotEmpty &&
+            currentUser.username.isNotEmpty &&
+            widget.participant.user.username.toLowerCase() == currentUser.username.toLowerCase());
+
+    // Populated dynamically with authoritative data
+    final user = _authoritativeUser ?? (isMe ? currentUser : widget.participant.user);
+    final isLoadingLevels = _isLoadingAuthoritative && _authoritativeUser == null && !isMe;
         (user.username.isNotEmpty &&
             currentUser.username.isNotEmpty &&
             user.username.toLowerCase() == currentUser.username.toLowerCase());
@@ -423,6 +468,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                         _buildCompactLevelBadge(
                           title: 'Sending',
                           level: wealthLv,
+                          isLoading: isLoadingLevels,
                           assetPath: 'assets/images/level_logo_wealth.png',
                           fallbackIcon: Icons.diamond_rounded,
                           accentColor: const Color(0xFF00E5FF),
@@ -431,6 +477,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                         _buildCompactLevelBadge(
                           title: 'Receiving',
                           level: charmLv,
+                          isLoading: isLoadingLevels,
                           assetPath: 'assets/images/level_logo_charm.png',
                           fallbackIcon: Icons.favorite_rounded,
                           accentColor: const Color(0xFFFF4081),
@@ -439,6 +486,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                         _buildCompactLevelBadge(
                           title: 'Game',
                           level: gameLv,
+                          isLoading: isLoadingLevels,
                           assetPath: 'assets/images/level_logo_game.png',
                           fallbackIcon: Icons.sports_esports_rounded,
                           accentColor: const Color(0xFFB388FF),
@@ -447,6 +495,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                         _buildCompactLevelBadge(
                           title: 'Account',
                           level: accountLv,
+                          isLoading: isLoadingLevels,
                           assetPath: 'assets/images/level_logo_account.png',
                           fallbackIcon: Icons.stars_rounded,
                           accentColor: const Color(0xFF00E676),
@@ -1220,6 +1269,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
   Widget _buildCompactLevelBadge({
     required String title,
     required int level,
+    bool isLoading = false,
     required String assetPath,
     required IconData fallbackIcon,
     required Color accentColor,
@@ -1241,14 +1291,27 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
             errorBuilder: (context, error, stackTrace) => Icon(fallbackIcon, size: 12, color: accentColor),
           ),
           const SizedBox(width: 3),
-          Text(
-            'Lv. $level',
-            style: TextStyle(
-              color: accentColor,
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
+          if (isLoading)
+            SizedBox(
+              width: 14,
+              height: 10,
+              child: Center(
+                child: SizedBox(
+                  width: 8,
+                  height: 8,
+                  child: CircularProgressIndicator(strokeWidth: 1.5, color: accentColor),
+                ),
+              ),
+            )
+          else
+            Text(
+              'Lv. $level',
+              style: TextStyle(
+                color: accentColor,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
         ],
       ),
     );

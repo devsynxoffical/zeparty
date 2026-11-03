@@ -21,78 +21,17 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
   void _showBuildOptions(BuildContext context, AuthProvider auth) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: AppColors.getCard(Theme.of(context).brightness == Brightness.dark),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) {
-        final allUsers = BackendRepository.instance.popularUsers;
-        final user = auth.currentUser;
-        final followedFriends = allUsers.where((u) => u.id != user.id && auth.isFollowing(u.id)).toList();
-        final candidates = followedFriends.isNotEmpty ? followedFriends : allUsers.where((u) => u.id != user.id).toList();
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Build New Relationship',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 6),
-              const Text(
-                'Select an eligible friend to send a relationship card invitation.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: candidates.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No eligible friends found.\nFollow creators or users to start building relationships!',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.white60, fontSize: 13),
-                        ),
-                      )
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: candidates.length,
-                        itemBuilder: (ctx, idx) {
-                          final candidate = candidates[idx];
-
-                          return ListTile(
-                            leading: UserAvatar(imageUrl: candidate.avatarUrl, radius: 24),
-                            title: Text(candidate.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                            subtitle: Text(
-                              auth.isFollowing(candidate.id)
-                                  ? '✨ Friend • Wealth Lv ${candidate.wealthLevel}'
-                                  : 'Eligible Candidate • Wealth Lv ${candidate.wealthLevel}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: auth.isFollowing(candidate.id) ? Colors.amberAccent : Colors.grey,
-                              ),
-                            ),
-                            trailing: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.purpleAccent,
-                                foregroundColor: Colors.white,
-                              ),
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _showRelationshipCardChooser(context, candidate);
-                              },
-                              child: const Text('Invite'),
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
-        );
-      },
+      builder: (ctx) => _BuildRelationshipModalSheet(
+        auth: auth,
+        onSelectCandidate: (candidate) {
+          _showRelationshipCardChooser(context, candidate);
+        },
+      ),
     );
   }
 
@@ -101,7 +40,7 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
     final cards = [
       const RelationshipCardModel(
         id: 'card_cp',
-        name: 'Eternal CP Ring Card',
+        name: 'CP Card (Eternal CP Ring)',
         type: 'CP',
         imageUrl: 'assets/images/cp_ring.png',
         coinPrice: 1000,
@@ -109,31 +48,31 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
         maxCount: 1,
       ),
       const RelationshipCardModel(
+        id: 'card_friend',
+        name: 'Friend Card',
+        type: 'Friend',
+        imageUrl: 'assets/images/friend_card.png',
+        coinPrice: 500,
+        benefits: 'Friend Badge, Social Profile Wall Showcase',
+        maxCount: 20,
+      ),
+      const RelationshipCardModel(
+        id: 'card_bozun',
+        name: 'Bozun Card',
+        type: 'Bozun',
+        imageUrl: 'assets/images/bozun_card.png',
+        coinPrice: 1500,
+        benefits: 'Bozun Oath Badge, Shared Room Perks, Wall Accent',
+        maxCount: 10,
+      ),
+      const RelationshipCardModel(
         id: 'card_best_friend',
-        name: 'Best Friend Oath Card',
+        name: 'Best Friend Card',
         type: 'Best Friend',
         imageUrl: 'assets/images/best_friend.png',
         coinPrice: 500,
         benefits: 'Best Friend Badge, Chat Frame, Shared Room Perks',
         maxCount: 5,
-      ),
-      const RelationshipCardModel(
-        id: 'card_bro_sis',
-        name: 'Bro & Sis Soul Card',
-        type: 'Bro/Sis',
-        imageUrl: 'assets/images/bro_sis.png',
-        coinPrice: 300,
-        benefits: 'Bro/Sis Label, Special Profile Wall Accent',
-        maxCount: 10,
-      ),
-      const RelationshipCardModel(
-        id: 'card_game_friend',
-        name: 'Game Buddy Card',
-        type: 'Game Friend',
-        imageUrl: 'assets/images/game_buddy.png',
-        coinPrice: 200,
-        benefits: 'Game Team-up Badge, Extra Game Bonus Rewards',
-        maxCount: 20,
       ),
     ];
 
@@ -696,6 +635,197 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+class _BuildRelationshipModalSheet extends StatefulWidget {
+  final AuthProvider auth;
+  final Function(UserModel) onSelectCandidate;
+
+  const _BuildRelationshipModalSheet({
+    required this.auth,
+    required this.onSelectCandidate,
+  });
+
+  @override
+  State<_BuildRelationshipModalSheet> createState() => _BuildRelationshipModalSheetState();
+}
+
+class _BuildRelationshipModalSheetState extends State<_BuildRelationshipModalSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  List<UserModel> _friends = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchEligibleFriends();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchEligibleFriends({String search = ''}) async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final List<UserModel> res = await SocialRepository.instance.getEligibleRelationshipFriends(search: search);
+      if (mounted) {
+        setState(() {
+          final currentUserId = widget.auth.currentUser.id;
+          _friends = res.where((UserModel u) => u.id != currentUserId).toList();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Failed to load eligible friends. Please check your network and retry.';
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final primary = AppColors.getPrimary(isDark);
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.65,
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+      child: Column(
+        children: [
+          // Drag handle
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.white24 : Colors.black12,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const Text(
+            'Build New Relationship',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Select an eligible friend to send a relationship card invitation.\n(Requires both users to follow each other)',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 14),
+          // Search Box (Issue 15 & 17)
+          TextField(
+            controller: _searchController,
+            onChanged: (val) => _fetchEligibleFriends(search: val),
+            style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Search mutual friends by nickname or ID...',
+              hintStyle: const TextStyle(fontSize: 12, color: Colors.grey),
+              prefixIcon: const Icon(Icons.search_rounded, size: 20),
+              suffixIcon: _searchController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 18),
+                      onPressed: () {
+                        _searchController.clear();
+                        _fetchEligibleFriends();
+                      },
+                    )
+                  : null,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              filled: true,
+              fillColor: isDark ? const Color(0xFF1E1A33) : Colors.black.withValues(alpha: 0.05),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _error != null
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12), textAlign: TextAlign.center),
+                            const SizedBox(height: 8),
+                            ElevatedButton(
+                              onPressed: () => _fetchEligibleFriends(search: _searchController.text),
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      )
+                    : _friends.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.purple.withValues(alpha: 0.15),
+                                  ),
+                                  child: const Icon(Icons.people_outline_rounded, size: 40, color: Colors.purpleAccent),
+                                ),
+                                const SizedBox(height: 12),
+                                const Text(
+                                  'No eligible friends found',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                ),
+                                const SizedBox(height: 6),
+                                const Text(
+                                  'Follow creators or friends and have them follow you back to unlock relationships!',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: Colors.white60, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: _friends.length,
+                            itemBuilder: (ctx, idx) {
+                              final candidate = _friends[idx];
+                              return ListTile(
+                                leading: UserAvatar(imageUrl: candidate.avatarUrl, radius: 24),
+                                title: Text(candidate.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                subtitle: Text(
+                                  'ID: ${candidate.id} • Wealth Lv ${candidate.wealthLevel}',
+                                  style: const TextStyle(fontSize: 11, color: Colors.amberAccent),
+                                ),
+                                trailing: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: primary,
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    widget.onSelectCandidate(candidate);
+                                  },
+                                  child: const Text('Invite', style: TextStyle(fontWeight: FontWeight.bold)),
+                                ),
+                              );
+                            },
+                          ),
+          ),
+        ],
+      ),
     );
   }
 }

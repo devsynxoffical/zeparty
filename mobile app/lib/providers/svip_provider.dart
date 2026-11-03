@@ -124,8 +124,24 @@ class SVIPProvider extends ChangeNotifier {
     return levelData.privilegeIds.contains(privilegeId);
   }
 
-  static const String _kSvipPointsKey = 'svip_current_points_v1';
-  static const String _kSvipLevelKey = 'svip_current_level_v1';
+  String? _userId;
+
+  void setUserId(String? userId) {
+    if (_userId != userId) {
+      _userId = userId;
+      if (userId == null || userId.isEmpty) {
+        _currentPoints = 0;
+        _currentLevel = 0;
+        _selectedViewLevel = 1;
+        notifyListeners();
+      } else {
+        _loadFromStorage();
+      }
+    }
+  }
+
+  String get _pointsStorageKey => _userId != null && _userId!.isNotEmpty ? 'svip_points_$_userId' : 'svip_current_points_v1';
+  String get _levelStorageKey => _userId != null && _userId!.isNotEmpty ? 'svip_level_$_userId' : 'svip_current_level_v1';
 
   void addPoints(int points, {String? reason, String? type = 'spend'}) {
     if (points <= 0) return;
@@ -156,10 +172,7 @@ class SVIPProvider extends ChangeNotifier {
 
   void syncWithUserWealth(int userWealthXp, {int? svipLevel}) {
     bool changed = false;
-    if (userWealthXp > _currentPoints) {
-      _currentPoints = userWealthXp;
-      changed = true;
-    }
+    // Issue 24: Do NOT sync regular wealth XP to SVIP recharge points. Only sync explicit svipLevel.
     if (svipLevel != null && svipLevel > _currentLevel) {
       _currentLevel = svipLevel;
       _selectedViewLevel = svipLevel;
@@ -172,13 +185,14 @@ class SVIPProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchSVIPData({int? userWealthXp, int? userSvipLevel}) async {
+  Future<void> fetchSVIPData({String? userId, int? userWealthXp, int? userSvipLevel}) async {
     _isLoading = true;
     notifyListeners();
-    await _loadFromStorage();
-    if (userWealthXp != null && userWealthXp > _currentPoints) {
-      _currentPoints = userWealthXp;
+    if (userId != null && userId.isNotEmpty) {
+      _userId = userId;
     }
+    await _loadFromStorage();
+    // Issue 24: Only sync explicit SVIP level from profile/model, never wealth XP
     if (userSvipLevel != null && userSvipLevel > _currentLevel) {
       _currentLevel = userSvipLevel;
       _selectedViewLevel = userSvipLevel;
@@ -192,23 +206,19 @@ class SVIPProvider extends ChangeNotifier {
   Future<void> _loadFromStorage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final storedPoints = prefs.getInt(_kSvipPointsKey) ?? 0;
-      final storedLevel = prefs.getInt(_kSvipLevelKey) ?? 0;
-      if (storedPoints > _currentPoints) {
-        _currentPoints = storedPoints;
-      }
-      if (storedLevel > _currentLevel) {
-        _currentLevel = storedLevel;
-        _selectedViewLevel = storedLevel;
-      }
+      final storedPoints = prefs.getInt(_pointsStorageKey) ?? 0;
+      final storedLevel = prefs.getInt(_levelStorageKey) ?? 0;
+      _currentPoints = storedPoints;
+      _currentLevel = storedLevel;
+      _selectedViewLevel = storedLevel > 0 ? storedLevel : 1;
     } catch (_) {}
   }
 
   Future<void> _saveToStorage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_kSvipPointsKey, _currentPoints);
-      await prefs.setInt(_kSvipLevelKey, _currentLevel);
+      await prefs.setInt(_pointsStorageKey, _currentPoints);
+      await prefs.setInt(_levelStorageKey, _currentLevel);
     } catch (_) {}
   }
 

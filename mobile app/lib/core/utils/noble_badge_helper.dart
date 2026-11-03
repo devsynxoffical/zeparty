@@ -21,11 +21,11 @@ class NobleBadgeHelper {
   static NobleTier getTierFromTitle(String? title) {
     if (title == null) return NobleTier.none;
     final lower = title.toLowerCase();
-    if (lower.contains('emperor')) return NobleTier.emperor;
+    if (lower.contains('emperor') || lower.contains('imperial')) return NobleTier.emperor;
     if (lower.contains('king')) return NobleTier.king;
     if (lower.contains('prince')) return NobleTier.prince;
     if (lower.contains('duke')) return NobleTier.duke;
-    if (lower.contains('marquis')) return NobleTier.marquis;
+    if (lower.contains('marquis') || lower.contains('mercurius')) return NobleTier.marquis;
     if (lower.contains('viscount')) return NobleTier.viscount;
     if (lower.contains('count') || lower.contains('earl')) return NobleTier.earl;
     if (lower.contains('baron') || lower.contains('knight')) return NobleTier.knight;
@@ -37,8 +37,8 @@ class NobleBadgeHelper {
     final lower = title.toLowerCase().trim();
 
     // Noble Badges
-    if (lower.contains('emperor')) return 'assets/nobles/emperor_badge.webp';
-    if (lower.contains('king') || lower.contains('prince')) return 'assets/nobles/king_badge.webp';
+    if (lower.contains('emperor') || lower.contains('imperial')) return 'assets/nobles/emperor_badge.webp';
+    if (lower.contains('king') || lower.contains('prince')) return 'assets/nobles/ZP-034_tier-6-king_badge.webp';
     if (lower.contains('duke')) return 'assets/nobles/duke_badge.webp';
     if (lower.contains('marquis')) return 'assets/nobles/marquis_badge.webp';
     if (lower.contains('viscount')) return 'assets/nobles/viscount_badge.webp';
@@ -168,7 +168,8 @@ class NobleBadgeHelper {
     final lower = title.toLowerCase().trim();
 
     // Noble Chat Bubbles for all 7 Aristocracy Tiers
-    if (lower.contains('emperor') || lower.contains('king')) return 'assets/nobles/emperor_chat_bubble.webp';
+    if (lower.contains('emperor') || lower.contains('imperial')) return 'assets/nobles/emperor_chat_bubble.webp';
+    if (lower.contains('king')) return 'assets/nobles/ZP-036_tier-6-king_badge.webp';
     if (lower.contains('duke')) return 'assets/nobles/duke_chat_bubble.webp';
     if (lower.contains('marquis')) return 'assets/nobles/marquis_chat_bubble.webp';
     if (lower.contains('count') || lower.contains('earl') || lower.contains('viscount') || lower.contains('baron')) return 'assets/nobles/count_chat_bubble.webp';
@@ -313,17 +314,21 @@ class NobleBadgeHelper {
   static Color getColoredNicknameColor(NobleTier tier, {bool isDark = true}) {
     switch (tier) {
       case NobleTier.emperor:
+        return const Color(0xFFFFE082); // Emperor (Imperial Gold)
       case NobleTier.king:
+        return const Color(0xFFFFD54F); // King (Royal Gold)
       case NobleTier.duke:
-        return isDark ? const Color(0xFFFFD700) : const Color(0xFFB8860B);
-      case NobleTier.prince:
+        return const Color(0xFFAB47BC); // Duke (Royal Purple)
       case NobleTier.marquis:
-        return isDark ? const Color(0xFFFF4500) : const Color(0xFFD84315);
+        return const Color(0xFFEF5350); // Marquis (Crimson Red)
       case NobleTier.earl:
+        return const Color(0xFF42A5F5); // Count / Earl (Sky Blue)
       case NobleTier.viscount:
-        return isDark ? const Color(0xFFD500F9) : const Color(0xFF8E24AA);
+        return const Color(0xFFFFA726); // Viscount (Warm Orange)
       case NobleTier.knight:
-        return isDark ? const Color(0xFF00E5FF) : const Color(0xFF00838F);
+        return const Color(0xFF29B6F6); // Baron / Knight (Distinct Baron Blue)
+      case NobleTier.prince:
+        return const Color(0xFFFFB300); // Prince (Amber)
       case NobleTier.none:
         return isDark ? Colors.white : AppColors.darkNavy;
     }
@@ -522,5 +527,107 @@ class NobleHelper {
     6: Color(0xFFEC4899), // 6: Prince (Rose Gold)
     7: Color(0xFFFF5A4F), // 7: Emperor (Crimson Red)
   };
+}
+
+/// Lightweight, design-compliant animated blue and golden mixed username for Imperial (Emperor) Nobles
+class AnimatedImperialUsername extends StatefulWidget {
+  final String text;
+  final TextStyle? style;
+  final TextOverflow overflow;
+  final int maxLines;
+  final TextAlign textAlign;
+
+  const AnimatedImperialUsername({
+    super.key,
+    required this.text,
+    this.style,
+    this.overflow = TextOverflow.ellipsis,
+    this.maxLines = 1,
+    this.textAlign = TextAlign.start,
+  });
+
+  @override
+  State<AnimatedImperialUsername> createState() => _AnimatedImperialUsernameState();
+}
+
+class _AnimatedImperialUsernameState extends State<AnimatedImperialUsername>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: const [
+                Color(0xFF29B6F6), // Royal Blue
+                Color(0xFFFFD54F), // Imperial Gold
+                Color(0xFF4FC3F7), // Cyan/Sky Blue
+                Color(0xFFFFE082), // Radiant Gold
+                Color(0xFF29B6F6), // Royal Blue
+              ],
+              stops: const [0.0, 0.35, 0.55, 0.8, 1.0],
+              transform: _GradientRotation(_controller.value * 6.2831853),
+            ).createShader(bounds);
+          },
+          child: child,
+        );
+      },
+      child: Text(
+        widget.text,
+        style: (widget.style ?? const TextStyle(fontWeight: FontWeight.bold)).copyWith(
+          color: Colors.white,
+        ),
+        overflow: widget.overflow,
+        maxLines: widget.maxLines,
+        textAlign: widget.textAlign,
+      ),
+    );
+  }
+}
+
+class _GradientRotation extends GradientTransform {
+  final double radians;
+  const _GradientRotation(this.radians);
+
+  @override
+  Matrix4? transform(Rect bounds, {TextDirection? textDirection}) {
+    final sin = math_sin(radians);
+    final cos = math_cos(radians);
+    final center = bounds.center;
+    return Matrix4.identity()
+      ..translate(center.dx, center.dy)
+      ..multiply(Matrix4(
+        cos, -sin, 0, 0,
+        sin,  cos, 0, 0,
+        0,    0,   1, 0,
+        0,    0,   0, 1,
+      ))
+      ..translate(-center.dx, -center.dy);
+  }
+
+  static double math_sin(double x) => (x - (x * x * x) / 6.0).clamp(-1.0, 1.0);
+  static double math_cos(double x) => (1.0 - (x * x) / 2.0).clamp(-1.0, 1.0);
 }
 

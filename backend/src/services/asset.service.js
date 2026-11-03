@@ -450,6 +450,7 @@ export const ALL_AVAILABLE_FRAMES = [
   { key: 'top_fan', name: 'Top Fan VIP Frame', asset: 'assets/roles/top_fan_frame.webp' },
   { key: 'assistant', name: 'Official Assistant Frame', asset: 'assets/roles/assistant_frame.webp' },
   { key: 'boss', name: 'Big Boss Frame', asset: 'assets/roles/boss_frame.webp' },
+  { key: 'svip16', name: 'SVIP 16 Eternal Frame', asset: 'assets/svip/svip16_frame.webp' },
   { key: 'svip15', name: 'SVIP 15 Infinite Divinity Frame', asset: 'assets/svip/svip15_frame.webp' },
   { key: 'svip14', name: 'SVIP 14 Supreme Deity Frame', asset: 'assets/svip/svip14_frame.webp' },
   { key: 'svip13', name: 'SVIP 13 Immortal Frame', asset: 'assets/svip/svip13_frame.webp' },
@@ -460,6 +461,11 @@ export const ALL_AVAILABLE_FRAMES = [
   { key: 'svip8', name: 'SVIP 8 Celestial Frame', asset: 'assets/svip/svip8_frame.webp' },
   { key: 'svip7', name: 'SVIP 7 Aurora Frame', asset: 'assets/svip/svip7_frame.webp' },
   { key: 'svip6', name: 'SVIP 6 Obsidian Frame', asset: 'assets/svip/svip6_frame.webp' },
+  { key: 'svip5', name: 'SVIP 5 Diamond Frame', asset: 'assets/svip/svip5_frame.webp' },
+  { key: 'svip4', name: 'SVIP 4 Platinum Frame', asset: 'assets/svip/svip4_frame.webp' },
+  { key: 'svip3', name: 'SVIP 3 Gold Frame', asset: 'assets/svip/svip3_frame.webp' },
+  { key: 'svip2', name: 'SVIP 2 Silver Frame', asset: 'assets/svip/svip2_frame.webp' },
+  { key: 'svip1', name: 'SVIP 1 Bronze Frame', asset: 'assets/svip/svip1_frame.webp' },
   { key: 'mystery', name: 'Mystery Astral Frame', asset: 'assets/animations/mystery_frame.webp' },
 ];
 
@@ -486,9 +492,17 @@ export async function getUserBackpack(userId, db = prisma) {
     else if (isAdmin) defaultFrameKey = 'admin';
     else if (isAgency) defaultFrameKey = 'agency';
 
-    // Add eligible role/noble frames if user qualifies
+    const svipLvl = Number(user.profile?.svipLevel || 0);
+
+    // Add eligible role/noble/SVIP frames if user qualifies
     for (const f of ALL_AVAILABLE_FRAMES) {
-      const isQualified = (defaultFrameKey === f.key);
+      const isRoleQualified = (defaultFrameKey === f.key);
+      const isSvipQualified = svipLvl > 0 && (
+        f.key === `svip${svipLvl}` ||
+        (f.key.startsWith('svip') && Number(f.key.replace('svip', '')) <= svipLvl)
+      );
+      const isQualified = isRoleQualified || isSvipQualified;
+
       const alreadyExists = serialized.some(
         (s) => s.asset?.imageUrl === f.asset || s.asset?.name === f.name || s.assetId === `assigned-asset-${f.key}-frame`
       );
@@ -498,7 +512,7 @@ export async function getUserBackpack(userId, db = prisma) {
           id: `assigned-frame-${f.key}-${user.id}`,
           userId: user.id,
           assetId: `assigned-asset-${f.key}-frame`,
-          isEquipped: !serialized.some((s) => s.isEquipped && s.asset?.assetType === 'FRAME'),
+          isEquipped: !serialized.some((s) => s.isEquipped && s.asset?.assetType === 'FRAME') && (f.key === `svip${svipLvl}` || isRoleQualified),
           expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
           isExpired: false,
           asset: {
@@ -522,39 +536,189 @@ export async function getUserBackpack(userId, db = prisma) {
         }
       }
     }
+
+    // Add eligible SVIP Chat Bubbles, Vehicles, and Badges
+    if (svipLvl > 0) {
+      const svipBubbleAsset = `assets/svip/svip${svipLvl}_chat_bubble.webp`;
+      const hasBubble = serialized.some((s) => s.asset?.imageUrl === svipBubbleAsset || s.assetId === `assigned-asset-svip${svipLvl}-bubble`);
+      if (!hasBubble) {
+        serialized.push({
+          id: `assigned-bubble-svip${svipLvl}-${user.id}`,
+          userId: user.id,
+          assetId: `assigned-asset-svip${svipLvl}-bubble`,
+          isEquipped: false,
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+          isExpired: false,
+          asset: {
+            id: `assigned-asset-svip${svipLvl}-bubble`,
+            name: `SVIP ${svipLvl} Chat Bubble`,
+            categoryId: 'Bubbles',
+            assetType: 'BUBBLE',
+            imageUrl: svipBubbleAsset,
+            iconUrl: svipBubbleAsset,
+            thumbnailUrl: svipBubbleAsset,
+            priceCoins: '0',
+            validDays: 365,
+            isActive: true,
+          },
+        });
+      }
+
+      if (svipLvl >= 6) {
+        const svipVehicleAsset = `assets/svip/svip${svipLvl}_entry.webp`;
+        const hasVehicle = serialized.some((s) => s.asset?.imageUrl === svipVehicleAsset || s.assetId === `assigned-asset-svip${svipLvl}-vehicle`);
+        if (!hasVehicle) {
+          serialized.push({
+            id: `assigned-vehicle-svip${svipLvl}-${user.id}`,
+            userId: user.id,
+            assetId: `assigned-asset-svip${svipLvl}-vehicle`,
+            isEquipped: false,
+            expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+            isExpired: false,
+            asset: {
+              id: `assigned-asset-svip${svipLvl}-vehicle`,
+              name: `SVIP ${svipLvl} VIP Vehicle`,
+              categoryId: 'Cars',
+              assetType: 'VEHICLE',
+              imageUrl: svipVehicleAsset,
+              iconUrl: svipVehicleAsset,
+              thumbnailUrl: svipVehicleAsset,
+              priceCoins: '0',
+              validDays: 365,
+              isActive: true,
+            },
+          });
+        }
+      }
+
+      const svipTagAsset = `assets/svip/svip${svipLvl}_tag.png`;
+      const hasTag = serialized.some((s) => s.asset?.imageUrl === svipTagAsset || s.assetId === `assigned-asset-svip${svipLvl}-badge`);
+      if (!hasTag) {
+        serialized.push({
+          id: `assigned-badge-svip${svipLvl}-${user.id}`,
+          userId: user.id,
+          assetId: `assigned-asset-svip${svipLvl}-badge`,
+          isEquipped: false,
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+          isExpired: false,
+          asset: {
+            id: `assigned-asset-svip${svipLvl}-badge`,
+            name: `SVIP ${svipLvl} VIP Tag`,
+            categoryId: 'Badges',
+            assetType: 'BADGE',
+            imageUrl: svipTagAsset,
+            iconUrl: svipTagAsset,
+            thumbnailUrl: svipTagAsset,
+            priceCoins: '0',
+            validDays: 365,
+            isActive: true,
+          },
+        });
+      }
+    }
   }
 
   return serialized;
 }
 
 export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = prisma) {
-  // Handle assigned frames
-  if (userAssetId && userAssetId.startsWith('assigned-frame-')) {
-    let matchedFrame = ALL_AVAILABLE_FRAMES.find((f) => userAssetId.startsWith(`assigned-frame-${f.key}-`));
-    if (!matchedFrame) {
-      matchedFrame = ALL_AVAILABLE_FRAMES[0];
+  // Handle assigned frames, bubbles, vehicles, badges
+  if (userAssetId && userAssetId.startsWith('assigned-')) {
+    let matchedItem = null;
+    let itemType = 'FRAME';
+    let itemCategory = 'Frame';
+
+    if (userAssetId.includes('-bubble') || userAssetId.startsWith('assigned-bubble-')) {
+      itemType = 'BUBBLE';
+      itemCategory = 'Bubbles';
+      const svipMatch = userAssetId.match(/svip(\d+)/i);
+      const lvl = svipMatch ? svipMatch[1] : '6';
+      matchedItem = { key: `svip${lvl}_bubble`, name: `SVIP ${lvl} Chat Bubble`, asset: `assets/svip/svip${lvl}_chat_bubble.webp` };
+    } else if (userAssetId.includes('-vehicle') || userAssetId.startsWith('assigned-vehicle-')) {
+      itemType = 'VEHICLE';
+      itemCategory = 'Cars';
+      const svipMatch = userAssetId.match(/svip(\d+)/i);
+      const lvl = svipMatch ? svipMatch[1] : '6';
+      matchedItem = { key: `svip${lvl}_vehicle`, name: `SVIP ${lvl} VIP Vehicle`, asset: `assets/svip/svip${lvl}_entry.webp` };
+    } else if (userAssetId.includes('-badge') || userAssetId.startsWith('assigned-badge-')) {
+      itemType = 'BADGE';
+      itemCategory = 'Badges';
+      const svipMatch = userAssetId.match(/svip(\d+)/i);
+      const lvl = svipMatch ? svipMatch[1] : '6';
+      matchedItem = { key: `svip${lvl}_tag`, name: `SVIP ${lvl} VIP Tag`, asset: `assets/svip/svip${lvl}_tag.png` };
+    } else {
+      // Default to FRAME
+      itemType = 'FRAME';
+      itemCategory = 'Frame';
+      matchedItem = ALL_AVAILABLE_FRAMES.find((f) => userAssetId.startsWith(`assigned-frame-${f.key}-`));
+      if (!matchedItem) {
+        matchedItem = ALL_AVAILABLE_FRAMES[0];
+      }
     }
 
-    return {
-      id: userAssetId,
+    const assetId = `assigned-asset-${matchedItem.key}`;
+    // Ensure Asset exists in database
+    let dbAsset = await db.asset.findUnique({ where: { id: assetId } });
+    if (!dbAsset) {
+      dbAsset = await db.asset.create({
+        data: {
+          id: assetId,
+          name: matchedItem.name,
+          assetType: itemType,
+          thumbnailUrl: matchedItem.asset,
+          staticFileUrl: matchedItem.asset,
+          animationFileUrl: matchedItem.asset,
+          priceCoins: 0,
+          validDays: 365,
+          isActive: true,
+        },
+      });
+    }
+
+    // Unequip existing of same type
+    await userAssetRepository.unequipAssetsByType(userId, itemType, db);
+    if (itemType === 'VEHICLE') {
+      await userAssetRepository.unequipAssetsByType(userId, 'ENTRY_EFFECT', db);
+    }
+
+    // Upsert UserAsset
+    let userAsset = await db.userAsset.findFirst({
+      where: { userId, assetId },
+      include: { asset: true },
+    });
+    if (userAsset) {
+      userAsset = await db.userAsset.update({
+        where: { id: userAsset.id },
+        data: { isEquipped: true, expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) },
+        include: { asset: true },
+      });
+    } else {
+      userAsset = await db.userAsset.create({
+        data: {
+          userId,
+          assetId,
+          isEquipped: true,
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+        },
+        include: { asset: true },
+      });
+    }
+
+    // Invalidate profile cache in Redis
+    try {
+      if (redisProxy.isOpen && userId) {
+        await redisProxy.del(`user:profile:${userId}`);
+      }
+    } catch (_) {}
+
+    emitToUser(userId, 'user:outfit_updated', {
       userId,
-      assetId: `assigned-asset-${matchedFrame.key}-frame`,
+      assetType: itemType,
+      assetUrl: matchedItem.asset,
       isEquipped: true,
-      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
-      isExpired: false,
-      asset: {
-        id: `assigned-asset-${matchedFrame.key}-frame`,
-        name: matchedFrame.name,
-        categoryId: 'Frame',
-        assetType: 'FRAME',
-        imageUrl: matchedFrame.asset,
-        iconUrl: matchedFrame.asset,
-        thumbnailUrl: matchedFrame.asset,
-        priceCoins: '0',
-        validDays: 365,
-        isActive: true,
-      },
-    };
+    });
+
+    return serializeUserAsset(userAsset);
   }
 
   let userAsset = await userAssetRepository.findUserAssetById(userAssetId, db);

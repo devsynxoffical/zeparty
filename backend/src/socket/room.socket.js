@@ -28,11 +28,23 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     (s) => (s.occupiedUserId === hostUserId || s.user?.id === hostUserId)
   );
 
+  const activeSet = new Set(
+    (activePresenceUsers || []).map((u) => u.userId || u.id).filter(Boolean)
+  );
+  for (const s of room.seats || []) {
+    if (s.occupiedUserId) activeSet.add(s.occupiedUserId);
+  }
+  if (hostUserId) activeSet.add(hostUserId);
+
   const membersList = (room.members || [])
     .filter((m) => {
       const mid = m.userId || m.user?.id;
       // If host is occupying a seat, do not duplicate in audience list
       if (mid === hostUserId && hostIsOccupyingSeat) {
+        return false;
+      }
+      // Stale member exclusion: when active presence is known, exclude departed members
+      if (activeSet.size > 0 && !activeSet.has(mid)) {
         return false;
       }
       return true;
@@ -143,6 +155,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       username: room.creator.username,
       displayName: room.creator.profile?.displayName || room.creator.username,
       avatarUrl: room.creator.profile?.avatarUrl || null,
+      nobleTitle: room.creator.profile?.nobleRank || room.creator.nobleTitle || null,
+      nobleLevel: room.creator.profile?.nobleRank || room.creator.nobleTitle || null,
     } : null,
     seats: (room.seats || []).map((s) => {
       const u = s.occupiedUser || s.user;
@@ -164,6 +178,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
           avatar: u.profile?.avatarUrl || u.avatarUrl || null,
           level: u.profile?.level || 1,
           vipLevel: u.profile?.vipLevel || 0,
+          nobleTitle: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
+          nobleLevel: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
         } : null,
       };
     }),

@@ -13,6 +13,8 @@ import '../../core/utils/noble_badge_helper.dart';
 import '../../models/user_model.dart';
 import '../../models/post_model.dart';
 import '../../models/medal_model.dart';
+import '../../models/user_asset_model.dart';
+import '../../providers/backpack_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/svip_provider.dart';
 import '../../providers/social_provider.dart';
@@ -147,6 +149,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   Map<String, dynamic>? _relationData;
   StreamSubscription? _userPresenceSub;
 
+  List<Map<String, dynamic>> _receivedGifts = [];
+  bool _isLoadingGifts = false;
+  bool _hasLoadedGifts = false;
+
+  List<UserAssetModel> _honorAssets = [];
+  bool _isLoadingHonor = false;
+  bool _hasLoadedHonor = false;
+  String _selectedHonorCategory = 'All';
+
   bool get _isMe {
     final currentId = context.read<AuthProvider>().currentUser.id;
     final targetId = _user?.id ?? widget.userId;
@@ -157,10 +168,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(() {
+      if (_tabController.index == 2 && !_hasLoadedHonor) {
+        _loadHonorAssets();
+      } else if (_tabController.index == 3 && !_hasLoadedGifts) {
+        _loadReceivedGifts();
+      }
+    });
     if (widget.user != null) {
       _user = widget.user;
     }
     _loadUser();
+    _loadReceivedGifts();
+    _loadHonorAssets();
 
     _userPresenceSub = SocketService.instance.onUserPresence.listen((data) {
       final targetUserId = data['userId']?.toString();
@@ -204,6 +224,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     setState(() => _isLoading = true);
     final auth = context.read<AuthProvider>();
     var user = await auth.getUserById(widget.userId);
+    user ??= _user ?? widget.user;
     if (user != null && user.id.isNotEmpty && user.id != auth.currentUser.id) {
       try {
         SocialRepository.instance.recordProfileVisit(user.id);
@@ -277,9 +298,62 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
 
     if (mounted) {
       setState(() {
-        _user = user;
+        _user = user ?? _user ?? widget.user;
         _isLoading = false;
       });
+      _loadReceivedGifts();
+      _loadHonorAssets();
+    }
+  }
+
+  Future<void> _loadReceivedGifts() async {
+    final targetId = _user?.id ?? widget.userId;
+    if (targetId.isEmpty) return;
+    setState(() => _isLoadingGifts = true);
+    try {
+      final gifts = await SocialRepository.instance.getReceivedGifts(targetId);
+      if (mounted) {
+        setState(() {
+          _receivedGifts = gifts;
+          _isLoadingGifts = false;
+          _hasLoadedGifts = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingGifts = false);
+    }
+  }
+
+  Future<void> _loadHonorAssets() async {
+    final targetId = _user?.id ?? widget.userId;
+    if (targetId.isEmpty) return;
+    setState(() => _isLoadingHonor = true);
+    try {
+      if (_isMe) {
+        try {
+          final backpack = context.read<BackpackProvider>();
+          if (backpack.userAssets.isNotEmpty) {
+            if (mounted) {
+              setState(() {
+                _honorAssets = backpack.userAssets;
+                _isLoadingHonor = false;
+                _hasLoadedHonor = true;
+              });
+              return;
+            }
+          }
+        } catch (_) {}
+      }
+      final assets = await SocialRepository.instance.getUserHonorAssets(targetId);
+      if (mounted) {
+        setState(() {
+          _honorAssets = assets;
+          _isLoadingHonor = false;
+          _hasLoadedHonor = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingHonor = false);
     }
   }
 
@@ -2041,8 +2115,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
 
   // Tag Badges Section -- shows only real earned level indicators & assigned custom titles
   Widget _buildProfileTags(bool isDark, SVIPProvider svip) {
-    final svipLvl = svip.currentLevel > 0
-        ? svip.currentLevel
+    final auth = context.read<AuthProvider>();
+    final isMe = _user != null && _user!.id == auth.currentUser.id;
+    final svipLvl = isMe
+        ? (svip.currentLevel > 0 ? svip.currentLevel : (_user?.svipLevel ?? 0))
         : (_user?.svipLevel ?? 0);
     final wealthLvl = _user?.computedWealthLevel ?? 0;
     final charmLvl = _user?.computedCharmLevel ?? 0;
@@ -2057,25 +2133,38 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
       child: Row(
         children: [
           if (svipLvl > 0) ...[
-            _buildTagChip(
-              icon: Icons.workspace_premium_rounded,
-              text: 'SVIP $svipLvl',
-              color: const Color(0xFFFFD700),
-              bgColor: const Color(0xFF2E2715),
-              borderColor: const Color(0xFFFFD700),
+            GestureDetector(
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const SVIPCenterScreen()),
               ),
+              child: NobleBadgeHelper.getTagAsset('SVIP $svipLvl') != null
+                  ? Image.asset(
+                      NobleBadgeHelper.getTagAsset('SVIP $svipLvl')!,
+                      height: 26,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => _buildTagChip(
+                        icon: Icons.workspace_premium_rounded,
+                        text: 'SVIP $svipLvl',
+                        color: const Color(0xFFFFD700),
+                        bgColor: const Color(0xFF2E2715),
+                        borderColor: const Color(0xFFFFD700),
+                      ),
+                    )
+                  : _buildTagChip(
+                      icon: Icons.workspace_premium_rounded,
+                      text: 'SVIP $svipLvl',
+                      color: const Color(0xFFFFD700),
+                      bgColor: const Color(0xFF2E2715),
+                      borderColor: const Color(0xFFFFD700),
+                    ),
             ),
             const SizedBox(width: 6),
           ],
-          _buildTagChip(
+          _buildStageLevelIndicator(
             imagePath: 'assets/images/level_logo_wealth.png',
             text: 'Lv.$wealthLvl',
-            color: const Color(0xFF00E5FF),
-            bgColor: const Color(0xFF321A4C),
-            borderColor: const Color(0xFF9042F5),
+            level: wealthLvl,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -2084,12 +2173,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
             ),
           ),
           const SizedBox(width: 6),
-          _buildTagChip(
+          _buildStageLevelIndicator(
             imagePath: 'assets/images/level_logo_charm.png',
             text: 'Lv.$charmLvl',
-            color: const Color(0xFFFF4081),
-            bgColor: const Color(0xFF42152E),
-            borderColor: const Color(0xFFFF4081),
+            level: charmLvl,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -2098,12 +2185,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
             ),
           ),
           const SizedBox(width: 6),
-          _buildTagChip(
+          _buildStageLevelIndicator(
             imagePath: 'assets/images/level_logo_game.png',
             text: 'Lv.$gameLvl',
-            color: const Color(0xFFB388FF),
-            bgColor: const Color(0xFF261842),
-            borderColor: const Color(0xFF7C4DFF),
+            level: gameLvl,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -2112,12 +2197,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
             ),
           ),
           const SizedBox(width: 6),
-          _buildTagChip(
+          _buildStageLevelIndicator(
             imagePath: 'assets/images/level_logo_account.png',
             text: 'Lv.$accountLvl',
-            color: const Color(0xFF00E676),
-            bgColor: const Color(0xFF0E3D1E),
-            borderColor: const Color(0xFF00E676),
+            level: accountLvl,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
@@ -2142,6 +2225,92 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildStageLevelIndicator({
+    required String text,
+    required int level,
+    required String imagePath,
+    required VoidCallback onTap,
+  }) {
+    // Defined stage thresholds for polished progression designs
+    final Color stageBorder;
+    final Color stageAccent;
+    final List<Color> stageGradient;
+
+    if (level >= 120) {
+      // Stage 5 (120+): Celestial Crown
+      stageBorder = const Color(0xFFFFD700);
+      stageAccent = const Color(0xFFFFE082);
+      stageGradient = const [Color(0xFF382605), Color(0xFF1E1401)];
+    } else if (level >= 90) {
+      // Stage 4 (90-119): Ruby / Crimson
+      stageBorder = const Color(0xFFFF4081);
+      stageAccent = const Color(0xFFFF80AB);
+      stageGradient = const [Color(0xFF3B1028), Color(0xFF220816)];
+    } else if (level >= 60) {
+      // Stage 3 (60-89): Emerald / Cyan
+      stageBorder = const Color(0xFF00E5FF);
+      stageAccent = const Color(0xFF84FFFF);
+      stageGradient = const [Color(0xFF0C2C38), Color(0xFF061820)];
+    } else if (level >= 30) {
+      // Stage 2 (30-59): Amethyst / Royal Violet
+      stageBorder = const Color(0xFFB388FF);
+      stageAccent = const Color(0xFFD1C4E9);
+      stageGradient = const [Color(0xFF281442), Color(0xFF160A26)];
+    } else {
+      // Stage 1 (0-29): Polished Bronze
+      stageBorder = const Color(0xFFFFB300);
+      stageAccent = const Color(0xFFFFD54F);
+      stageGradient = const [Color(0xFF261E0A), Color(0xFF161005)];
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: stageGradient,
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(
+            color: stageBorder.withValues(alpha: 0.85),
+            width: 1.1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: stageBorder.withValues(alpha: 0.22),
+              blurRadius: 5,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              imagePath,
+              width: 15,
+              height: 15,
+              errorBuilder: (_, __, ___) => const Icon(Icons.star, size: 12, color: Colors.amber),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              text,
+              style: TextStyle(
+                color: stageAccent,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2358,8 +2527,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
         }
       }
 
-      final currentSvip = svip.currentLevel > 0
-          ? svip.currentLevel
+      final auth = context.read<AuthProvider>();
+      final isMe = _user != null && _user!.id == auth.currentUser.id;
+      final currentSvip = isMe
+          ? (svip.currentLevel > 0 ? svip.currentLevel : _user!.svipLevel)
           : _user!.svipLevel;
       if (currentSvip > 0) {
         final svipBadge = NobleBadgeHelper.getBadgeAsset('SVIP $currentSvip');
@@ -4381,58 +4552,466 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   }
 
   Widget _buildHonorTab(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      alignment: Alignment.center,
-      child: Column(
-        children: [
-          const Icon(
-            Icons.workspace_premium_rounded,
-            size: 44,
-            color: Colors.amber,
+    if (_isLoadingHonor) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        alignment: Alignment.center,
+        child: const CircularProgressIndicator(),
+      );
+    }
+
+    final categories = ['All', 'Titles', 'Frames', 'Entry Effects', 'Vehicles', 'Bubbles'];
+
+    // Filter items
+    final filteredAssets = _honorAssets.where((a) {
+      if (_selectedHonorCategory == 'All') return true;
+      final type = (a.asset?.assetType ?? '').toUpperCase();
+      final cat = (a.asset?.categoryId ?? '').toUpperCase();
+      if (_selectedHonorCategory == 'Frames') {
+        return type.contains('FRAME') || cat.contains('FRAME');
+      }
+      if (_selectedHonorCategory == 'Entry Effects') {
+        return type.contains('ENTRY') || cat.contains('ENTRY');
+      }
+      if (_selectedHonorCategory == 'Vehicles') {
+        return type.contains('CAR') || type.contains('VEHICLE') || cat.contains('CAR');
+      }
+      if (_selectedHonorCategory == 'Bubbles') {
+        return type.contains('BUBBLE') || cat.contains('BUBBLE');
+      }
+      if (_selectedHonorCategory == 'Titles') {
+        return type.contains('TITLE') || cat.contains('TITLE') || type.contains('BADGE');
+      }
+      return true;
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Category Selector Chips
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            children: categories.map((cat) {
+              final isSelected = _selectedHonorCategory == cat;
+              return Padding(
+                padding: const EdgeInsets.only(right: 8, bottom: 12),
+                child: ChoiceChip(
+                  label: Text(cat),
+                  selected: isSelected,
+                  selectedColor: AppColors.getPrimary(isDark),
+                  backgroundColor: isDark ? const Color(0xFF1E1A33) : Colors.black.withValues(alpha: 0.05),
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.white : AppColors.getTextSecondary(isDark),
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() => _selectedHonorCategory = cat);
+                    }
+                  },
+                ),
+              );
+            }).toList(),
           ),
-          const SizedBox(height: 10),
-          Text(
-            'ZeParty Honor Hall of Fame',
-            style: TextStyle(
-              color: AppColors.getTextPrimary(isDark),
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
+        ),
+
+        if (filteredAssets.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(32),
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.amber.withValues(alpha: 0.12),
+                  ),
+                  child: const Icon(
+                    Icons.workspace_premium_rounded,
+                    size: 40,
+                    color: Colors.amber,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'No honors in $_selectedHonorCategory',
+                  style: TextStyle(
+                    color: AppColors.getTextPrimary(isDark),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Unlocked badges, titles, frames and vehicles will be showcased here.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.getTextSecondary(isDark),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
+          )
+        else
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.78,
+            ),
+            itemCount: filteredAssets.length,
+            itemBuilder: (context, index) {
+              final ua = filteredAssets[index];
+              final item = ua.asset;
+              final name = item?.name ?? 'Honor Asset';
+              final imgUrl = item?.imageUrl ?? '';
+              final isEquipped = ua.isEquipped;
+
+              return Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1F1B2E) : Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isEquipped
+                        ? Colors.greenAccent
+                        : (isDark ? Colors.white10 : Colors.black12),
+                    width: isEquipped ? 1.5 : 1,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 4,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Equipped Tag
+                    if (isEquipped)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        margin: const EdgeInsets.only(bottom: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.greenAccent, width: 0.8),
+                        ),
+                        child: const Text(
+                          'Equipped',
+                          style: TextStyle(
+                            color: Colors.greenAccent,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      )
+                    else
+                      const SizedBox(height: 16),
+
+                    // Artwork
+                    Expanded(
+                      child: Center(
+                        child: imgUrl.isNotEmpty
+                            ? (imgUrl.startsWith('http://') || imgUrl.startsWith('https://'))
+                                ? Image.network(
+                                    imgUrl,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.workspace_premium_rounded,
+                                      color: Colors.amber,
+                                      size: 34,
+                                    ),
+                                  )
+                                : Image.asset(
+                                    imgUrl,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.workspace_premium_rounded,
+                                      color: Colors.amber,
+                                      size: 34,
+                                    ),
+                                  )
+                            : const Icon(
+                                Icons.workspace_premium_rounded,
+                                color: Colors.amber,
+                                size: 34,
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.getTextPrimary(isDark),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      ua.isExpired ? 'Expired' : 'Active',
+                      style: TextStyle(
+                        color: ua.isExpired ? Colors.redAccent : Colors.white60,
+                        fontSize: 9,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
-          const SizedBox(height: 4),
-          const Text(
-            'Top Supporter & Special Seasonal Honors',
-            style: TextStyle(color: Colors.grey, fontSize: 12),
-          ),
-        ],
-      ),
+      ],
     );
   }
 
   Widget _buildGloryTab(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      alignment: Alignment.center,
-      child: Column(
-        children: [
-          const Icon(Icons.stars_rounded, color: Colors.cyanAccent, size: 44),
-          const SizedBox(height: 10),
-          Text(
-            'ZeParty Seasonal Glory Titles',
-            style: TextStyle(
-              color: AppColors.getTextPrimary(isDark),
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
+    if (_isLoadingGifts) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        alignment: Alignment.center,
+        child: const CircularProgressIndicator(),
+      );
+    }
+
+    if (_receivedGifts.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(32),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.amber.withValues(alpha: 0.12),
+              ),
+              child: const Icon(
+                Icons.card_giftcard_rounded,
+                size: 40,
+                color: Colors.amber,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'No gifts received yet',
+              style: TextStyle(
+                color: AppColors.getTextPrimary(isDark),
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Gifts received from other users in rooms and live streams will appear here.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: AppColors.getTextSecondary(isDark),
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final totalCoins = _receivedGifts.fold<int>(
+      0,
+      (sum, g) => sum + (int.tryParse(g['totalCoins']?.toString() ?? '0') ?? 0),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Summary Header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          margin: const EdgeInsets.only(bottom: 14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: isDark
+                  ? [const Color(0xFF2B1D3D), const Color(0xFF1E142B)]
+                  : [const Color(0xFFEDE7F6), const Color(0xFFD1C4E9)],
+            ),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: const Color(0xFFFFB300).withValues(alpha: 0.3),
             ),
           ),
-          const SizedBox(height: 4),
-          const Text(
-            'Authorized Ranking Badges & Distinctive Badges',
-            style: TextStyle(color: Colors.grey, fontSize: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.stars_rounded, color: Color(0xFFFFB300), size: 18),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Received Gifts (${_receivedGifts.length})',
+                    style: TextStyle(
+                      color: AppColors.getTextPrimary(isDark),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  const Text('🪙 ', style: TextStyle(fontSize: 13)),
+                  Text(
+                    AppFormatters.formatNumber(totalCoins),
+                    style: const TextStyle(
+                      color: Color(0xFFFFD54F),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+
+        // Gift Grid
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 0.82,
+          ),
+          itemCount: _receivedGifts.length,
+          itemBuilder: (context, index) {
+            final gift = _receivedGifts[index];
+            final name = gift['name']?.toString() ?? 'Gift';
+            final iconUrl = gift['iconUrl']?.toString() ?? '';
+            final count = gift['count']?.toString() ?? '1';
+            final coins = int.tryParse(gift['totalCoins']?.toString() ?? '0') ?? 0;
+
+            return Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1F1B2E) : Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isDark ? Colors.white10 : Colors.black12,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.15),
+                    blurRadius: 4,
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Artwork with Quantity Badge
+                  Expanded(
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        if (iconUrl.isNotEmpty)
+                          (iconUrl.startsWith('http://') || iconUrl.startsWith('https://'))
+                              ? Image.network(
+                                  iconUrl,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.card_giftcard_rounded,
+                                    color: Colors.amber,
+                                    size: 36,
+                                  ),
+                                )
+                              : Image.asset(
+                                  iconUrl,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.card_giftcard_rounded,
+                                    color: Colors.amber,
+                                    size: 36,
+                                  ),
+                                )
+                        else
+                          const Icon(
+                            Icons.card_giftcard_rounded,
+                            color: Colors.amber,
+                            size: 36,
+                          ),
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 1.5,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFFF4081), Color(0xFFF50057)],
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              '×$count',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppColors.getTextPrimary(isDark),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('🪙 ', style: TextStyle(fontSize: 10)),
+                      Text(
+                        AppFormatters.formatNumber(coins),
+                        style: const TextStyle(
+                          color: Color(0xFFFFB300),
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }

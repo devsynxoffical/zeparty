@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/party_participant_model.dart';
+import '../providers/auth_provider.dart';
 import '../providers/live_party_provider.dart';
 import '../providers/emoji_reaction_provider.dart';
 import '../core/utils/noble_badge_helper.dart';
@@ -277,6 +278,14 @@ class MultiRoleSeatGrid extends StatelessWidget {
       final livePartyProv = context.watch<LivePartyProvider>();
       final activeReaction = livePartyProv.activeMicReactions[seatIndex];
 
+      final effectiveFrame = (participant.user.avatarFrame.isNotEmpty && participant.user.avatarFrame != 'none')
+          ? participant.user.avatarFrame
+          : (participant.user.nobleTitle != null && participant.user.nobleTitle!.isNotEmpty
+              ? NobleBadgeHelper.getFrameAsset(participant.user.nobleTitle)
+              : (participant.user.svipLevel > 0
+                  ? NobleBadgeHelper.getFrameAsset('SVIP ${participant.user.svipLevel}')
+                  : null));
+
       return GestureDetector(
         onTap: () => onParticipantTap(participant),
         child: Column(
@@ -293,9 +302,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                         name: participant.user.name,
                         radius: radius + 1,
                         glowColor: isHostUser ? Colors.amber : const Color(0xFF00E676),
-                        frameAsset: participant.user.avatarFrame.isNotEmpty && participant.user.avatarFrame != 'none'
-                            ? participant.user.avatarFrame
-                            : null,
+                        frameAsset: effectiveFrame,
                       )
                     : Container(
                         decoration: BoxDecoration(
@@ -317,9 +324,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                           imageUrl: participant.user.avatarUrl,
                           name: participant.user.name,
                           radius: radius,
-                          frameAsset: participant.user.avatarFrame.isNotEmpty && participant.user.avatarFrame != 'none'
-                              ? participant.user.avatarFrame
-                              : null,
+                          frameAsset: effectiveFrame,
                         ),
                       ),
                 if (activeReaction != null)
@@ -385,20 +390,42 @@ class MultiRoleSeatGrid extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Flexible(
-                    child: Text(
-                      participant.user.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: NobleBadgeHelper.getColoredNicknameColor(
-                          NobleBadgeHelper.getTierFromTitle(participant.user.nobleTitle),
+                  Builder(
+                    builder: (ctx) {
+                      final authUser = Provider.of<AuthProvider>(ctx, listen: false).currentUser;
+                      final isSelf = participant.user.id == authUser.id;
+                      final effectiveNoble = (participant.user.nobleTitle != null && participant.user.nobleTitle!.isNotEmpty)
+                          ? participant.user.nobleTitle
+                          : (isSelf ? authUser.nobleTitle : null);
+                      final tier = NobleBadgeHelper.getTierFromTitle(effectiveNoble);
+                      if (tier == NobleTier.emperor) {
+                        return Flexible(
+                          child: AnimatedImperialUsername(
+                            text: participant.user.name,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: isHostRow ? 10.5 : 9,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                          ),
+                        );
+                      }
+                      return Flexible(
+                        child: Text(
+                          participant.user.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: NobleBadgeHelper.getColoredNicknameColor(tier),
+                            fontWeight: FontWeight.w600,
+                            fontSize: isHostRow ? 10.5 : 9,
+                          ),
                         ),
-                        fontWeight: FontWeight.w600,
-                        fontSize: isHostRow ? 10.5 : 9,
-                      ),
-                    ),
+                      );
+                    },
                   ),
                   NobleBadgeChip(user: participant.user, fontSize: 7),
                   NobleTagChip(user: participant.user, height: 11),

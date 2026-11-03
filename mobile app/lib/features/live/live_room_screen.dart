@@ -640,9 +640,12 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
 
       if (mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (currentUser.isVip ||
+          final roomId = widget.room.id;
+          final hasPlayedSession = SvipEntryManager().hasPlayedForSession(roomId, currentUser.id);
+          if (!hasPlayedSession && (currentUser.isVip ||
               (currentUser.nobleTitle != null &&
-                  currentUser.nobleTitle!.isNotEmpty)) {
+                  currentUser.nobleTitle!.isNotEmpty))) {
+            SvipEntryManager().markPlayedForSession(roomId, currentUser.id);
             SvipEntryManager().showEntry(currentUser);
           }
         });
@@ -2359,6 +2362,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
       } catch (_) {}
 
       try {
+        SvipEntryManager().clearSession(widget.room.id);
         await liveProvider.closeRoom();
       } catch (_) {}
 
@@ -2601,7 +2605,6 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
             // High Value Announcement Overlay
             const HighValueAnnouncementOverlay(),
             const SvipEntryBanner(),
-            const WorldLuckyBagBanner(),
 
             // TikTok-Style Live Gifting Animation Overlay
             TikTokGiftOverlay(roomId: widget.room.id),
@@ -3648,6 +3651,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               Positioned.fill(
                 child: _buildPkVictoryOverlay(liveProvider.activePkBattle!),
               ),
+
+            // World Lucky Bag Notification Banner (Topmost foreground overlay, compact & above room header)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 0,
+              right: 0,
+              child: const Center(
+                child: WorldLuckyBagBanner(),
+              ),
+            ),
           ],
         ),
       ),

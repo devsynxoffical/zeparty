@@ -1,5 +1,9 @@
 import userService from '../services/user.service.js';
 import socialService from '../services/social.service.js';
+import prisma from '../config/prisma.js';
+import redisClient from '../config/redis.js';
+import * as assetService from '../services/asset.service.js';
+import * as userRepository from '../repositories/user.repository.js';
 import {
   queryUsersSchema,
   updateUserStatusSchema,
@@ -1310,7 +1314,244 @@ export async function postAdminReconcileWealth(req, res, next) {
   }
 }
 
+export async function getDailyCheckinStatus(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const rewardsConfig = [
+      { day: 1, coins: 50 },
+      { day: 2, coins: 100 },
+      { day: 3, coins: 150 },
+      { day: 4, coins: 200 },
+      { day: 5, coins: 250 },
+      { day: 6, coins: 300 },
+      { day: 7, coins: 350 },
+    ];
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    let state = { lastClaimDate: null, streakDays: 0 };
+    try {
+      if (redisClient.isOpen) {
+        const raw = await redisClient.get(`checkin:user:${userId}`);
+        if (raw) state = JSON.parse(raw);
+      }
+    } catch (_) {}
+
+    const isTodayClaimed = state.lastClaimDate === todayStr;
+    let currentEligibleDay = 1;
+
+    if (isTodayClaimed) {
+      currentEligibleDay = state.streakDays;
+    } else {
+      if (state.lastClaimDate === yesterdayStr) {
+        currentEligibleDay = (state.streakDays % 7) + 1;
+      } else {
+        currentEligibleDay = 1;
+      }
+    }
+
+    const rewards = rewardsConfig.map((item) => {
+      let status = 'LOCKED';
+      if (isTodayClaimed) {
+        if (item.day <= state.streakDays) {
+          status = 'CLAIMED';
+        } else {
+          status = 'LOCKED';
+        }
+      } else {
+        if (state.lastClaimDate === yesterdayStr && item.day <= state.streakDays) {
+          status = 'CLAIMED';
+        } else if (item.day === currentEligibleDay) {
+          status = 'AVAILABLE';
+        } else {
+          status = 'LOCKED';
+        }
+      }
+      return {
+        ...item,
+        status,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        streakDays: isTodayClaimed ? state.streakDays : (state.lastClaimDate === yesterdayStr ? state.streakDays : 0),
+        currentEligibleDay,
+        isTodayClaimed,
+        rewards,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function claimDailyCheckin(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    if (redisClient.isOpen) {
+      const lockKey = `checkin:lock:${userId}:${todayStr}`;
+      const acquired = await redisClient.set(lockKey, '1', { NX: true, EX: 30 }).catch(() => true);
+      if (!acquired) {
+        return res.status(409).json({ success: false, message: 'Claim in progress or already processed today.' });
+      }
+    }
+
+    let state = { lastClaimDate: null, streakDays: 0 };
+    try {
+      if (redisClient.isOpen) {
+        const raw = await redisClient.get(`checkin:user:${userId}`);
+        if (raw) state = JSON.parse(raw);
+      }
+    } catch (_) {}
+
+    if (state.lastClaimDate === todayStr) {
+      return res.status(400).json({
+        success: false,
+        message: 'You have already claimed today\'s check-in bonus. Come back tomorrow!',
+      });
+    }
+
+    let newStreak = 1;
+    if (state.lastClaimDate === yesterdayStr) {
+      newStreak = (state.streakDays % 7) + 1;
+    }
+
+    const rewardCoins = newStreak * 50;
+
+    const updatedWallet = await prisma.wallet.upsert({
+      where: { userId },
+      update: {
+        coins: { increment: BigInt(rewardCoins) },
+      },
+      create: {
+        userId,
+        coins: BigInt(rewardCoins),
+      },
+    });
+
+    state = {
+      lastClaimDate: todayStr,
+      streakDays: newStreak,
+      lastClaimedAt: now.toISOString(),
+      lastCoinsReward: rewardCoins,
+    };
+    if (redisClient.isOpen) {
+      await redisClient.set(`checkin:user:${userId}`, JSON.stringify(state), { EX: 60 * 60 * 24 * 30 }).catch(() => {});
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Day ${newStreak} bonus claimed: +${rewardCoins} ZeCoins!`,
+      data: {
+        day: newStreak,
+        rewardCoins,
+        newStreak,
+        walletCoins: Number(updatedWallet.coins),
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getUserReceivedGifts(req, res, next) {
+  try {
+    const { id } = req.params;
+    let targetUser = await userRepository.findUserById(id).catch(() => null);
+    if (!targetUser) {
+      targetUser = await userRepository.findUserByUniqueId(id).catch(() => null);
+    }
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // CRITICAL: Strictly filter out self-sent gifts (senderUserId != targetUser.id)
+    const txs = await prisma.giftTransaction.findMany({
+      where: {
+        recipientUserId: targetUser.id,
+        senderUserId: { not: targetUser.id },
+      },
+      include: {
+        gift: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const giftMap = new Map();
+    for (const tx of txs) {
+      const gId = tx.giftId;
+      const count = Number(tx.giftCount || 1);
+      const coins = Number(tx.totalCoins || 0);
+      if (!giftMap.has(gId)) {
+        giftMap.set(gId, {
+          giftId: gId,
+          name: tx.gift?.name || 'Gift',
+          iconUrl: tx.gift?.iconUrl || '',
+          animationUrl: tx.gift?.animationUrl || '',
+          category: tx.gift?.category || 'NORMAL',
+          count: 0,
+          totalCoins: 0,
+          lastReceivedAt: tx.createdAt,
+        });
+      }
+      const entry = giftMap.get(gId);
+      entry.count += count;
+      entry.totalCoins += coins;
+    }
+
+    const gifts = Array.from(giftMap.values()).sort((a, b) => b.totalCoins - a.totalCoins);
+
+    return res.status(200).json({
+      success: true,
+      data: gifts,
+      totalGiftsReceived: txs.length,
+      totalUniqueGifts: gifts.length,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getUserHonorAssets(req, res, next) {
+  try {
+    const { id } = req.params;
+    let targetUser = await userRepository.findUserById(id).catch(() => null);
+    if (!targetUser) {
+      targetUser = await userRepository.findUserByUniqueId(id).catch(() => null);
+    }
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const assets = await assetService.getUserBackpack(targetUser.id);
+    return res.status(200).json({
+      success: true,
+      data: assets,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
+  getDailyCheckinStatus,
+  claimDailyCheckin,
+  getUserReceivedGifts,
+  getUserHonorAssets,
   getAdminUsers,
   getAdminUserById,
   patchAdminUserStatus,

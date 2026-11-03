@@ -1,6 +1,7 @@
 import '../services/api_client.dart';
 import '../../models/pk_battle_model.dart';
 import '../../models/user_model.dart';
+import 'room_repository.dart';
 
 class PKRepository {
   static final PKRepository instance = PKRepository._internal();
@@ -239,13 +240,31 @@ class PKRepository {
     return PKBattleModel.fromJson(data);
   }
 
-  /// Legacy: Fetch currently active live hosts available for Host vs Host PK
+  /// Fetch currently active live hosts available for Host vs Host PK (Bug 9)
   Future<List<UserModel>> getAvailableLiveHosts() async {
-    final response = await _apiClient.get('/v1/pk/available-hosts');
-    final data = response.data?['data'];
-    if (data is List) {
-      return data.map((json) => UserModel.fromJson(json as Map<String, dynamic>)).toList();
-    }
+    try {
+      final rooms = await RoomRepository.instance.getActiveRooms(limit: 50);
+      final hosts = <UserModel>[];
+      final seenIds = <String>{};
+      for (final room in rooms) {
+        if (room.status.toUpperCase() == 'LIVE' && room.host.id.isNotEmpty && !seenIds.contains(room.host.id)) {
+          seenIds.add(room.host.id);
+          hosts.add(room.host);
+        }
+      }
+      if (hosts.isNotEmpty) {
+        return hosts;
+      }
+    } catch (_) {}
+
+    try {
+      final response = await _apiClient.get('/v1/pk/available-hosts');
+      final data = response.data?['data'];
+      if (data is List) {
+        return data.map((json) => UserModel.fromJson(json as Map<String, dynamic>)).toList();
+      }
+    } catch (_) {}
+
     return [];
   }
 }

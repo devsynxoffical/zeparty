@@ -7,6 +7,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/wallet_provider.dart';
+import '../../core/services/api_client.dart';
 import '../../widgets/design/gold_button.dart';
 import '../../widgets/design/premium_card.dart';
 
@@ -18,12 +19,88 @@ class RewardsScreen extends StatefulWidget {
 }
 
 class _RewardsScreenState extends State<RewardsScreen> {
-  int _claimedDays = 3;
+  int _currentEligibleDay = 1;
+  int _streakDays = 0;
+  bool _isTodayClaimed = false;
+  bool _isLoadingCheckin = true;
+  bool _isClaiming = false;
+  List<Map<String, dynamic>> _checkinRewards = [];
+
   bool _watchingAd = false;
   bool _adWatchedToday = false;
   bool _gameTaskClaimed = false;
   bool _giftTaskClaimed = false;
   Timer? _adTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCheckinStatus();
+  }
+
+  Future<void> _fetchCheckinStatus() async {
+    setState(() => _isLoadingCheckin = true);
+    try {
+      final res = await ApiClient.instance.get('/v1/users/me/daily-checkin');
+      if (res.data != null && res.data['data'] != null) {
+        final d = res.data['data'] as Map<String, dynamic>;
+        if (mounted) {
+          setState(() {
+            _streakDays = int.tryParse(d['streakDays']?.toString() ?? '0') ?? 0;
+            _currentEligibleDay = int.tryParse(d['currentEligibleDay']?.toString() ?? '1') ?? 1;
+            _isTodayClaimed = d['isTodayClaimed'] == true;
+            if (d['rewards'] is List) {
+              _checkinRewards = (d['rewards'] as List)
+                  .map((e) => Map<String, dynamic>.from(e as Map))
+                  .toList();
+            }
+            _isLoadingCheckin = false;
+          });
+        }
+        return;
+      }
+    } catch (e) {
+      debugPrint('[RewardsScreen] _fetchCheckinStatus error: $e');
+    }
+    if (mounted) setState(() => _isLoadingCheckin = false);
+  }
+
+  Future<void> _claimCheckin(BuildContext context, WalletProvider wallet) async {
+    if (_isTodayClaimed || _isClaiming) return;
+    setState(() => _isClaiming = true);
+    try {
+      final res = await ApiClient.instance.post('/v1/users/me/daily-checkin/claim');
+      if (res.data != null && res.data['success'] == true) {
+        final data = res.data['data'] as Map<String, dynamic>?;
+        final rewardCoins = int.tryParse(data?['rewardCoins']?.toString() ?? '') ?? (_currentEligibleDay * 50);
+        wallet.rechargeCoins(rewardCoins, 0.0);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF16A34A),
+              content: Text('🎉 Day $_currentEligibleDay bonus claimed: +$rewardCoins ZeCoins!'),
+            ),
+          );
+          await _fetchCheckinStatus();
+        }
+      } else {
+        final msg = res.data?['message']?.toString() ?? 'Failed to claim daily reward.';
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(msg), backgroundColor: Colors.orangeAccent),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Network error. Please try again.'), backgroundColor: Colors.redAccent),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isClaiming = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -167,80 +244,127 @@ class _RewardsScreenState extends State<RewardsScreen> {
 
             const SizedBox(height: 22),
 
-            // ─── 7-Day Check-in Section ───
+            // ─── 7-Day Check-in Section (Issue 21: Server Authoritative, No Auto-Claim) ───
             _sectionTitle('📅 7-Day Daily Check-in Streak', isDark),
             const SizedBox(height: 12),
             SizedBox(
-              height: 96,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: 7,
-                itemBuilder: (context, index) {
-                  final dayNum = index + 1;
-                  final isClaimed = dayNum <= _claimedDays;
-                  final isToday = dayNum == _claimedDays + 1;
-                  final coins = dayNum * 50;
-                  return GestureDetector(
-                    onTap: () {
-                      if (isToday) {
-                        setState(() => _claimedDays++);
-                        wallet.rechargeCoins(coins, 0.0);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            backgroundColor: const Color(0xFF16A34A),
-                            content: Text('🎉 Day $dayNum bonus claimed: +$coins ZeCoins!'),
+              height: 104,
+              child: _isLoadingCheckin
+                  ? const Center(child: CircularProgressIndicator())
+                  : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: 7,
+                      itemBuilder: (context, index) {
+                        final dayNum = index + 1;
+                        final isClaimed = _isTodayClaimed
+                            ? dayNum <= _streakDays
+                            : _checkinRewards.any((r) => r['day'] == dayNum && r['status'] == 'CLAIMED');
+                        final isEligibleToday = !_isTodayClaimed && dayNum == _currentEligibleDay;
+                        final isLocked = !isClaimed && !isEligibleToday;
+                        final coins = dayNum * 50;
+
+                        return GestureDetector(
+                          onTap: () {
+                            if (isEligibleToday) {
+                              _claimCheckin(context, wallet);
+                            } else if (isClaimed) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('✅ Day $dayNum has already been claimed! Next reward unlocks tomorrow.'),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            } else if (isLocked) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('🔒 Day $dayNum is locked. Complete previous days to unlock!'),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            width: 78,
+                            margin: const EdgeInsets.only(right: 10),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                            decoration: BoxDecoration(
+                              gradient: isEligibleToday
+                                  ? const LinearGradient(colors: [Color(0xFFFFB300), Color(0xFFFF6F00)])
+                                  : (isClaimed ? AppColors.getAccentGradient(isDark) : null),
+                              color: isLocked ? AppColors.getCard(isDark) : null,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isEligibleToday
+                                    ? Colors.amberAccent
+                                    : (isClaimed ? primary : AppColors.getBorder(isDark)),
+                                width: isEligibleToday ? 2 : 1,
+                              ),
+                              boxShadow: isEligibleToday
+                                  ? [
+                                      BoxShadow(
+                                        color: Colors.amber.withValues(alpha: 0.4),
+                                        blurRadius: 8,
+                                        spreadRadius: 1,
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'Day $dayNum',
+                                  style: TextStyle(
+                                    color: (isClaimed || isEligibleToday) ? onPrimary : AppColors.getTextSecondary(isDark),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Icon(
+                                  isClaimed
+                                      ? Icons.check_circle_rounded
+                                      : (isEligibleToday ? Icons.card_giftcard_rounded : Icons.lock_outline_rounded),
+                                  color: isClaimed
+                                      ? (isDark ? Colors.lightGreenAccent : const Color(0xFF16A34A))
+                                      : (isEligibleToday ? Colors.white : AppColors.getTextSecondary(isDark)),
+                                  size: 20,
+                                ),
+                                const SizedBox(height: 3),
+                                if (isEligibleToday)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: _isClaiming
+                                        ? const SizedBox(width: 8, height: 8, child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.orange))
+                                        : const Text(
+                                            'Claim',
+                                            style: TextStyle(
+                                              color: Color(0xFFE65100),
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                  )
+                                else
+                                  Text(
+                                    '+$coins',
+                                    style: TextStyle(
+                                      color: isClaimed ? onPrimary : AppColors.getTextPrimary(isDark),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         );
-                      }
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 250),
-                      width: 72,
-                      margin: const EdgeInsets.only(right: 10),
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        gradient: isToday || isClaimed ? AppColors.getAccentGradient(isDark) : null,
-                        color: !isToday && !isClaimed ? AppColors.getCard(isDark) : null,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: isToday || isClaimed ? primary : AppColors.getBorder(isDark),
-                          width: isToday ? 2 : 1,
-                        ),
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Day $dayNum',
-                            style: TextStyle(
-                              color: isClaimed || isToday ? onPrimary : AppColors.getTextSecondary(isDark),
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Icon(
-                            isClaimed ? Icons.check_circle_rounded : Icons.monetization_on_rounded,
-                            color: isClaimed
-                                ? (isDark ? Colors.lightGreenAccent : const Color(0xFF16A34A))
-                                : primary,
-                            size: 22,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '+$coins',
-                            style: TextStyle(
-                              color: isClaimed || isToday ? onPrimary : AppColors.getTextPrimary(isDark),
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
+                      },
                     ),
-                  );
-                },
-              ),
             ),
 
             const SizedBox(height: 24),

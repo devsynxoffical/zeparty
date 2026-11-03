@@ -109,7 +109,7 @@ class ApiClient {
                 return handler.resolve(response);
               }
             } catch (refreshErr) {
-              await clearTokens();
+              // Only reject error; do not destroy persistent user credentials on transient issues
               return handler.reject(error);
             }
           }

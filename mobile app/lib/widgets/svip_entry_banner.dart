@@ -25,7 +25,25 @@ class SvipEntryManager {
   Stream<SvipEntryEvent> get onEntry => _eventController.stream;
 
   final Map<String, int> _lastShownEntryTimestamp = {};
+  final Set<String> _playedRoomSessions = {};
   static const int _dedupWindowMs = 8000;
+
+  bool hasPlayedForSession(String roomId, String userId) {
+    if (roomId.isEmpty || userId.isEmpty) return false;
+    return _playedRoomSessions.contains('${roomId}_$userId');
+  }
+
+  void markPlayedForSession(String roomId, String userId) {
+    if (roomId.isNotEmpty && userId.isNotEmpty) {
+      _playedRoomSessions.add('${roomId}_$userId');
+    }
+  }
+
+  void clearSession(String roomId) {
+    if (roomId.isNotEmpty) {
+      _playedRoomSessions.removeWhere((k) => k.startsWith('${roomId}_'));
+    }
+  }
 
   bool isRecentlyShown(String userId) {
     final now = DateTime.now().millisecondsSinceEpoch;

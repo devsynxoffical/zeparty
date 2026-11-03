@@ -348,14 +348,26 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                               ),
                             ),
 
-                          TextSpan(
-                            text: '${widget.senderName}: ',
-                            style: TextStyle(
-                              color: nameColor,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12.5,
+                          if (NobleBadgeHelper.getTierFromTitle(widget.nobleTitle) == NobleTier.emperor)
+                            WidgetSpan(
+                              alignment: PlaceholderAlignment.middle,
+                              child: AnimatedImperialUsername(
+                                text: '${widget.senderName}: ',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12.5,
+                                ),
+                              ),
+                            )
+                          else
+                            TextSpan(
+                              text: '${widget.senderName}: ',
+                              style: TextStyle(
+                                color: nameColor,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12.5,
+                              ),
                             ),
-                          ),
                           ...() {
                             final emojiItem = RoomEmojiCatalog.findByReactionString(widget.text);
                             if (emojiItem != null) {

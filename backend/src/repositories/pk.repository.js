@@ -609,21 +609,20 @@ export class PKRepository {
     if (coinVal <= 0n) return null;
 
     return db.$transaction(async (tx) => {
-      // Find active match where commitTimestamp falls strictly in startAt <= time < endAt
+      // Find active match where roomId matches or recipient is one of the hosts
       const match = await tx.pKMatch.findFirst({
         where: {
           status: 'ACTIVE',
-          startAt: { lte: commitTimestamp },
-          endAt: { gt: commitTimestamp },
           OR: [
             { hostAUserId: recipientUserId },
             { hostBUserId: recipientUserId },
+            ...(roomId ? [{ roomAId: roomId }, { roomBId: roomId }] : []),
           ],
         },
       });
 
       if (!match) {
-        return null; // Not part of an active PK window or recipient is not a PK host
+        return null; // Not part of an active PK match
       }
 
       // Check idempotency: giftTransactionId must be unique
@@ -634,7 +633,8 @@ export class PKRepository {
         return { match, contribution: existing, duplicate: true };
       }
 
-      const side = match.hostAUserId === recipientUserId ? 'A' : 'B';
+      const isSideA = match.hostAUserId === recipientUserId || (roomId && match.roomAId === roomId);
+      const side = isSideA ? 'A' : 'B';
       const scoreField = side === 'A' ? 'scoreA' : 'scoreB';
 
       const contribution = await tx.pKGiftContribution.create({

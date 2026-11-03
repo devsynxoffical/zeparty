@@ -151,7 +151,7 @@ class LuckyBagService extends ChangeNotifier {
       if (bag.mode == LuckyBagMode.world) {
         _worldBag = bag;
         _worldBagAutoDismissTimer?.cancel();
-        _worldBagAutoDismissTimer = Timer(const Duration(seconds: 5), () {
+        _worldBagAutoDismissTimer = Timer(const Duration(milliseconds: 3600), () {
           _worldBag = null;
           notifyListeners();
         });
@@ -229,6 +229,11 @@ class LuckyBagService extends ChangeNotifier {
   void createLuckyBag(LuckyBagModel bag) {
     if (bag.mode == LuckyBagMode.world) {
       _worldBag = bag;
+      _worldBagAutoDismissTimer?.cancel();
+      _worldBagAutoDismissTimer = Timer(const Duration(milliseconds: 3600), () {
+        _worldBag = null;
+        notifyListeners();
+      });
     }
     _roomBags[bag.sourceRoomId] = bag;
     _history.removeWhere((b) => b.id == bag.id);
@@ -1316,79 +1321,265 @@ class LuckyBagFloatingWidget extends StatelessWidget {
 // World Lucky Bag Notification Banner
 // ─────────────────────────────────────────────────────────────────────────────
 
-class WorldLuckyBagBanner extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// World Lucky Bag Notification Banner (Compact Floating Pill with Slide Animation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class WorldLuckyBagBanner extends StatefulWidget {
   const WorldLuckyBagBanner({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: LuckyBagService.instance,
-      builder: (ctx, _) {
-        final bag = LuckyBagService.instance.worldBag;
-        if (bag == null || bag.isFullyClaimed || bag.isExpired) {
-          return const SizedBox.shrink();
-        }
+  State<WorldLuckyBagBanner> createState() => _WorldLuckyBagBannerState();
+}
 
-        return Container(
+class _WorldLuckyBagBannerState extends State<WorldLuckyBagBanner> with SingleTickerProviderStateMixin {
+  late AnimationController _animController;
+  late Animation<Offset> _slideAnimation;
+  LuckyBagModel? _currentBag;
+  Timer? _dismissTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, -1.3),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeOutBack,
+      reverseCurve: Curves.easeInBack,
+    ));
+
+    LuckyBagService.instance.addListener(_onServiceUpdate);
+    _checkInitialBag();
+  }
+
+  void _checkInitialBag() {
+    final bag = LuckyBagService.instance.worldBag;
+    if (bag != null && !bag.isFullyClaimed && !bag.isExpired) {
+      _showBag(bag);
+    }
+  }
+
+  void _onServiceUpdate() {
+    final bag = LuckyBagService.instance.worldBag;
+    if (bag == null || bag.isFullyClaimed || bag.isExpired) {
+      if (_currentBag != null) {
+        _hideBag();
+      }
+    } else if (_currentBag?.id != bag.id) {
+      _showBag(bag);
+    }
+  }
+
+  void _showBag(LuckyBagModel bag) {
+    _dismissTimer?.cancel();
+    if (mounted) {
+      setState(() {
+        _currentBag = bag;
+      });
+      _animController.forward(from: 0.0);
+      _dismissTimer = Timer(const Duration(milliseconds: 3400), () {
+        _hideBag();
+      });
+    }
+  }
+
+  void _hideBag() {
+    _dismissTimer?.cancel();
+    if (mounted) {
+      _animController.reverse().then((_) {
+        if (mounted) {
+          setState(() {
+            _currentBag = null;
+          });
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _dismissTimer?.cancel();
+    LuckyBagService.instance.removeListener(_onServiceUpdate);
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_currentBag == null) return const SizedBox.shrink();
+
+    final bag = _currentBag!;
+    return SlideTransition(
+      position: _slideAnimation,
+      child: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 380, minWidth: 320),
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF7B2FF7), Color(0xFF9147FF)],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.3),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.topCenter,
             children: [
-              Image.asset(
-                'assets/images/party_tool_luckybag.png',
-                width: 28,
-                height: 28,
-                errorBuilder: (context, error, stackTrace) => const Icon(Icons.public_rounded, color: Colors.amber, size: 24),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        const Text('🌍 World Lucky Bag', style: TextStyle(color: Colors.amberAccent, fontWeight: FontWeight.bold, fontSize: 12)),
-                        const SizedBox(width: 6),
-                        Text('• ${bag.totalCoins} 🪙', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    Text(
-                      '${bag.senderName} in "${bag.sourceRoomTitle}"',
-                      style: const TextStyle(color: Colors.white70, fontSize: 10),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
+              // Main Pill Banner Container
               GestureDetector(
                 onTap: () => LuckyBagClaimSheet.show(context, bag),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: Colors.amber,
-                    borderRadius: BorderRadius.circular(14),
+                    gradient: const LinearGradient(
+                      colors: [
+                        Color(0xFF240638),
+                        Color(0xFF3F0A5E),
+                        Color(0xFF240638),
+                      ],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    ),
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(
+                      color: const Color(0xFFFFD54F),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFFB300).withValues(alpha: 0.45),
+                        blurRadius: 14,
+                        spreadRadius: 1.5,
+                      ),
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                  child: const Text('Claim', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 11)),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Left: Animated Gift Icon
+                      Image.asset(
+                        'assets/images/party_tool_luckybag.png',
+                        width: 34,
+                        height: 34,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.card_giftcard_rounded,
+                          color: Colors.amber,
+                          size: 30,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Center: Sender Name + Action Text
+                      Flexible(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    bag.senderName,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12.5,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Text(
+                                  'opened Lucky Bag',
+                                  style: TextStyle(
+                                    color: Color(0xFFFFE082),
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 11.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              'in "${bag.sourceRoomTitle}"',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.7),
+                                fontSize: 10,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Right: Coin Amount & Claim Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFFD54F), Color(0xFFFFB300)],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFFFB300).withValues(alpha: 0.5),
+                              blurRadius: 6,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '× ${bag.totalCoins}',
+                              style: const TextStyle(
+                                color: Color(0xFF2A1002),
+                                fontWeight: FontWeight.w900,
+                                fontSize: 11.5,
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                            const Text(
+                              '🪙',
+                              style: TextStyle(fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              // Crown Motif at Top-Center
+              Positioned(
+                top: -9,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E0330),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFFFD54F), width: 1),
+                  ),
+                  child: const Text(
+                    '👑',
+                    style: TextStyle(fontSize: 10),
+                  ),
                 ),
               ),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

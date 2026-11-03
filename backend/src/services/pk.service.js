@@ -360,8 +360,14 @@ export class PKService {
       topSupportersB: snapshot.topSupportersB,
     };
 
-    socketEmitter.emitToRoom(result.match.roomAId, 'pk:score_updated', scorePayload);
-    socketEmitter.emitToRoom(result.match.roomBId, 'pk:score_updated', scorePayload);
+    const roomsToNotify = new Set([result.match.roomAId, result.match.roomBId]);
+    if (roomId) roomsToNotify.add(roomId);
+
+    for (const rid of roomsToNotify) {
+      if (!rid) continue;
+      socketEmitter.emitToRoom(rid, 'pk:score_updated', scorePayload);
+      socketEmitter.emitToRoom(rid, 'pk_score_updated', scorePayload);
+    }
 
     return result;
   }

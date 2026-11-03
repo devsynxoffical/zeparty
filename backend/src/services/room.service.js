@@ -548,27 +548,57 @@ export async function leaveRoom(roomId, userId, db = prisma) {
     await presenceService.clearUserActiveRoom(userId, roomId);
   } catch (_) {}
   const result = await roomRepository.leaveRoomTx({ roomId, userId }, db);
-  if (result) {
-    let viewerCount = typeof result.currentViewersCount === 'number' ? result.currentViewersCount : 0;
-    try {
-      const presCount = await presenceService.getRoomViewerCount(result.id || roomId, result.creatorUserId);
-      if (typeof presCount === 'number' && presCount >= 0) {
-        viewerCount = presCount;
-      }
-    } catch (_) {}
+  const targetRoomId = result?.id || roomId;
 
-    const payload = {
-      roomId: result.id || roomId,
-      viewerCount,
-      count: viewerCount,
-      currentViewersCount: viewerCount,
-    };
+  // Clear presence and roomMember membership to prevent stale viewers
+  try {
+    await presenceService.leaveRoomPresence(targetRoomId, userId);
+  } catch (_) {}
+  try {
+    await db.roomMember.deleteMany({
+      where: { roomId: targetRoomId, userId },
+    });
+  } catch (_) {}
+
+  let viewerCount = typeof result?.currentViewersCount === 'number' ? result.currentViewersCount : 0;
+  try {
+    const presCount = await presenceService.getRoomViewerCount(targetRoomId, result?.creatorUserId);
+    if (typeof presCount === 'number' && presCount >= 0) {
+      viewerCount = presCount;
+    }
+  } catch (_) {}
+
+  const leftPayload = {
+    roomId: targetRoomId,
+    clientRoomId: roomId,
+    userId,
+    id: userId,
+    viewerCount,
+    count: viewerCount,
+    currentViewersCount: viewerCount,
+  };
+
+  const countPayload = {
+    roomId: targetRoomId,
+    clientRoomId: roomId,
+    viewerCount,
+    count: viewerCount,
+    currentViewersCount: viewerCount,
+  };
+
+  const targetIds = Array.from(new Set([String(roomId), String(targetRoomId)]));
+  for (const rid of targetIds) {
     try {
-      socketEmitter.emitToRoom(roomId, 'room:viewer_count_changed', payload);
-      socketEmitter.emitToRoom(roomId, 'room:viewer_count', payload);
-      socketEmitter.emitToRoom(roomId, 'viewer_count_changed', payload);
+      socketEmitter.emitToRoom(rid, 'room:user_left', leftPayload);
+      socketEmitter.emitToRoom(rid, 'user_left', leftPayload);
+      socketEmitter.emitToRoom(rid, 'user:left', leftPayload);
+      socketEmitter.emitToRoom(rid, 'room_user_left', leftPayload);
+      socketEmitter.emitToRoom(rid, 'room:viewer_count_changed', countPayload);
+      socketEmitter.emitToRoom(rid, 'room:viewer_count', countPayload);
+      socketEmitter.emitToRoom(rid, 'viewer_count_changed', countPayload);
     } catch (_) {}
   }
+
   return result;
 }
 

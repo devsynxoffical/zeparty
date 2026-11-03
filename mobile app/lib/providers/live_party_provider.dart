@@ -1816,7 +1816,9 @@ class LivePartyProvider extends ChangeNotifier {
 
       if (!isMatchingRoom) return;
 
-      final targetUserId = data['targetUserId']?.toString();
+      final targetUserId = data['targetUserId']?.toString() ??
+          data['targetUser']?['id']?.toString() ??
+          data['userId']?.toString();
       final inviteId = data['id']?.toString() ?? 'inv_${DateTime.now().millisecondsSinceEpoch}';
 
       if (targetUserId != null) {
@@ -1829,12 +1831,14 @@ class LivePartyProvider extends ChangeNotifier {
         notifyListeners();
       }
 
-      // Normalized target comparison to support numeric IDs, string IDs, and prefixed IDs
+      // Normalized target comparison to support numeric IDs, string IDs, username, and prefixed IDs
       final currentId = _currentUser?.id ?? '';
+      final currentUsername = _currentUser?.username ?? '';
       final isSelfTarget = currentId.isNotEmpty && targetUserId != null && (
         targetUserId == currentId ||
         targetUserId.toLowerCase() == currentId.toLowerCase() ||
-        targetUserId.replaceAll('user_', '') == currentId.replaceAll('user_', '')
+        targetUserId.replaceAll('user_', '') == currentId.replaceAll('user_', '') ||
+        (currentUsername.isNotEmpty && targetUserId.toLowerCase() == currentUsername.toLowerCase())
       );
 
       if (isSelfTarget) {
@@ -2072,6 +2076,23 @@ class LivePartyProvider extends ChangeNotifier {
           timer.cancel();
         }
       });
+    });
+
+    // 24. PK Battle: Active match listener for new / reconnecting viewers (Bug 1 & 8)
+    _socketService.onPkActive.listen((data) {
+      try {
+        _activePkBattle = PKBattleModel.fromJson(data);
+        _isPkActive = true;
+        _pkCountdown = 0;
+        _isPkOpponentDisconnected = false;
+        _pkScoreA = _activePkBattle!.scoreA;
+        _pkScoreB = _activePkBattle!.scoreB;
+        _pkTimerRemaining = _activePkBattle!.remainingSeconds;
+
+        _setupAudioPkRelay(_activePkBattle!);
+        _startPkAuthoritativeTimer();
+        notifyListeners();
+      } catch (_) {}
     });
 
     // 24. PK Battle: Match Started (Active - Section 2)
@@ -3343,13 +3364,36 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void startPk(UserModel opponent) {
+  void startPk(UserModel opponent, {String? matchId}) {
     _pkOpponent = opponent;
     _isPkActive = true;
     _pkScoreA = 0;
     _pkScoreB = 0;
     _pkTimerRemaining = 300;
     _startPkAuthoritativeTimer();
+
+    // Broadcast to room via socket so all room viewers see the PK match (Bug 1 & 8)
+    if (_activeRoom != null) {
+      final payload = {
+        'id': matchId ?? 'pk_${DateTime.now().millisecondsSinceEpoch}',
+        'matchId': matchId ?? 'pk_${DateTime.now().millisecondsSinceEpoch}',
+        'roomId': _activeRoom!.id,
+        'roomAId': _activeRoom!.id,
+        'roomBId': 'room_${opponent.id}',
+        'status': 'ACTIVE',
+        'remainingSeconds': 300,
+        'scoreA': 0,
+        'scoreB': 0,
+        'hostA': (_currentUser ?? _activeRoom!.host).toJson(),
+        'hostB': opponent.toJson(),
+        'opponent': opponent.toJson(),
+      };
+      _socketService.emit('pk:start', payload);
+      _socketService.emit('room:pk_started', payload);
+      try {
+        _activePkBattle = PKBattleModel.fromJson(payload);
+      } catch (_) {}
+    }
     notifyListeners();
   }
 

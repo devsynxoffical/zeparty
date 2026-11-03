@@ -26,6 +26,7 @@ socialRouter.post('/users/:id/block', authenticate, socialController.postBlock);
 socialRouter.delete('/users/:id/block', authenticate, socialController.deleteBlock);
 
 // CP / Relationships
+socialRouter.get('/relationship/eligible-friends', authenticate, socialController.getEligibleRelationshipFriends);
 socialRouter.get('/relationship/me', authenticate, socialController.getRelationship);
 socialRouter.get('/users/:userId/relationship', authenticate, socialController.getRelationship);
 socialRouter.get('/relationship/cards', socialController.getRelationshipCards);

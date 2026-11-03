@@ -204,6 +204,98 @@ class BackpackProvider extends ChangeNotifier {
         }
       }
 
+      // Synthesize SVIP assets for user if eligible
+      if (currentUser != null && currentUser.svipLevel > 0) {
+        final svipLvl = currentUser.svipLevel;
+        final svipFrameAsset = 'assets/svip/svip${svipLvl}_frame.webp';
+        final hasSvipFrame = mergedAssets.any((a) => a.asset?.imageUrl == svipFrameAsset || a.id.contains('svip$svipLvl-frame'));
+        if (!hasSvipFrame) {
+          mergedAssets.insert(0, UserAssetModel(
+            id: 'assigned-frame-svip$svipLvl-${currentUser.id}',
+            userId: currentUser.id,
+            assetId: 'assigned-asset-svip$svipLvl-frame',
+            isEquipped: currentUser.avatarFrame == svipFrameAsset,
+            expiresAt: DateTime.now().add(const Duration(days: 365)),
+            isExpired: false,
+            asset: StoreItemModel(
+              id: 'assigned-asset-svip$svipLvl-frame',
+              name: 'SVIP $svipLvl Obsidian Frame',
+              categoryId: 'Frames',
+              assetType: 'FRAME',
+              imageUrl: svipFrameAsset,
+              priceCoins: 0,
+              durationDays: 365,
+            ),
+          ));
+        }
+
+        final svipBubbleAsset = 'assets/svip/svip${svipLvl}_chat_bubble.webp';
+        final hasSvipBubble = mergedAssets.any((a) => a.asset?.imageUrl == svipBubbleAsset || a.id.contains('svip$svipLvl-bubble'));
+        if (!hasSvipBubble) {
+          mergedAssets.add(UserAssetModel(
+            id: 'assigned-bubble-svip$svipLvl-${currentUser.id}',
+            userId: currentUser.id,
+            assetId: 'assigned-asset-svip$svipLvl-bubble',
+            isEquipped: false,
+            expiresAt: DateTime.now().add(const Duration(days: 365)),
+            isExpired: false,
+            asset: StoreItemModel(
+              id: 'assigned-asset-svip$svipLvl-bubble',
+              name: 'SVIP $svipLvl Chat Bubble',
+              categoryId: 'Bubbles',
+              assetType: 'BUBBLE',
+              imageUrl: svipBubbleAsset,
+              priceCoins: 0,
+              durationDays: 365,
+            ),
+          ));
+        }
+
+        final svipCarAsset = 'assets/svip/svip${svipLvl}_entry.webp';
+        final hasSvipCar = mergedAssets.any((a) => a.asset?.imageUrl == svipCarAsset || a.id.contains('svip$svipLvl-vehicle'));
+        if (!hasSvipCar) {
+          mergedAssets.add(UserAssetModel(
+            id: 'assigned-vehicle-svip$svipLvl-${currentUser.id}',
+            userId: currentUser.id,
+            assetId: 'assigned-asset-svip$svipLvl-vehicle',
+            isEquipped: false,
+            expiresAt: DateTime.now().add(const Duration(days: 365)),
+            isExpired: false,
+            asset: StoreItemModel(
+              id: 'assigned-asset-svip$svipLvl-vehicle',
+              name: 'SVIP $svipLvl VIP Vehicle',
+              categoryId: 'Cars',
+              assetType: 'VEHICLE',
+              imageUrl: svipCarAsset,
+              priceCoins: 0,
+              durationDays: 365,
+            ),
+          ));
+        }
+
+        final svipTagAsset = 'assets/svip/svip${svipLvl}_tag.png';
+        final hasSvipTag = mergedAssets.any((a) => a.asset?.imageUrl == svipTagAsset || a.id.contains('svip$svipLvl-badge'));
+        if (!hasSvipTag) {
+          mergedAssets.add(UserAssetModel(
+            id: 'assigned-badge-svip$svipLvl-${currentUser.id}',
+            userId: currentUser.id,
+            assetId: 'assigned-asset-svip$svipLvl-badge',
+            isEquipped: false,
+            expiresAt: DateTime.now().add(const Duration(days: 365)),
+            isExpired: false,
+            asset: StoreItemModel(
+              id: 'assigned-asset-svip$svipLvl-badge',
+              name: 'SVIP $svipLvl VIP Tag',
+              categoryId: 'Badges',
+              assetType: 'BADGE',
+              imageUrl: svipTagAsset,
+              priceCoins: 0,
+              durationDays: 365,
+            ),
+          ));
+        }
+      }
+
       _userAssets = mergedAssets;
       _isLoading = false;
       _saveLocalPurchases();

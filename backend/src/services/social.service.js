@@ -1539,38 +1539,144 @@ export async function dissolveRelationship({ userId, reason }, db = prisma) {
 }
 
 /**
- * Module 10: Relationship Card Catalog
+ * Module 10: Relationship Card Catalog (Issue 17: Friend Card, CP Card, Bozun Card)
  */
 export async function getRelationshipCardCatalog() {
   return [
-    { id: 'card_cp', key: 'CP_LOVE', name: 'CP Relationship Card', priceCoins: 50000, durationDays: 30, limit: 'ONLY_ONE', icon: '💍', badge: 'CP' },
-    { id: 'card_bestie', key: 'BEST_FRIEND', name: 'Best Friend Card', priceCoins: 20000, durationDays: 30, limit: 5, icon: '🌟', badge: 'BESTIE' },
-    { id: 'card_bro_sis', key: 'BRO_SIS', name: 'Bro / Sis Card', priceCoins: 15000, durationDays: 30, limit: 5, icon: '🤝', badge: 'BRO/SIS' },
-    { id: 'card_game_friend', key: 'GAME_FRIEND', name: 'Game Friend Card', priceCoins: 10000, durationDays: 30, limit: 10, icon: '🎮', badge: 'GAME' },
-    { id: 'card_good_friend', key: 'GOOD_FRIEND', name: 'Good Friend Card', priceCoins: 5000, durationDays: 30, limit: 20, icon: '🌸', badge: 'FRIEND' },
+    { id: 'card_cp', key: 'CP_LOVE', name: 'CP Card', priceCoins: 50000, durationDays: 30, limit: 'ONLY_ONE', icon: '💍', badge: 'CP' },
+    { id: 'card_friend', key: 'FRIEND', name: 'Friend Card', priceCoins: 5000, durationDays: 30, limit: 20, icon: '🌸', badge: 'FRIEND' },
+    { id: 'card_bozun', key: 'BOZUN', name: 'Bozun Card', priceCoins: 15000, durationDays: 30, limit: 10, icon: '🤝', badge: 'BOZUN' },
+    { id: 'card_best_friend', key: 'BEST_FRIEND', name: 'Best Friend Card', priceCoins: 20000, durationDays: 30, limit: 5, icon: '🌟', badge: 'BESTIE' },
   ];
+}
+
+/**
+ * Issue 15 & 17: Get Eligible Mutual Friends for Relationship
+ */
+export async function getEligibleRelationshipFriends(userId, search = '', db = prisma) {
+  if (!userId) return [];
+
+  // 1. Find all users the current user follows with ACCEPTED status
+  const followings = await db.follow.findMany({
+    where: { followerId: userId, status: 'ACCEPTED' },
+    select: { followingId: true },
+  });
+  const followingIds = followings.map((f) => f.followingId).filter((id) => id !== userId);
+  if (followingIds.length === 0) return [];
+
+  // 2. Find mutual follows (they also follow current user with ACCEPTED status)
+  const mutuals = await db.follow.findMany({
+    where: {
+      followerId: { in: followingIds },
+      followingId: userId,
+      status: 'ACCEPTED',
+    },
+    select: {
+      follower: {
+        select: {
+          id: true,
+          username: true,
+          profile: {
+            select: {
+              displayName: true,
+              avatarUrl: true,
+              level: true,
+              wealthLevel: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  let friends = mutuals.map((m) => {
+    const u = m.follower;
+    return {
+      id: u.id,
+      userId: u.id,
+      username: u.username,
+      name: u.profile?.displayName || u.username,
+      displayName: u.profile?.displayName || u.username,
+      avatarUrl: u.profile?.avatarUrl || null,
+      level: u.profile?.level || 1,
+      wealthLevel: u.profile?.wealthLevel || 0,
+      isMutualFollow: true,
+    };
+  });
+
+  // Exclude current user strictly
+  friends = friends.filter((f) => f.id !== userId);
+
+  // Search filter by ID, nickname, or username
+  if (search && search.trim().length > 0) {
+    const q = search.trim().toLowerCase();
+    friends = friends.filter(
+      (f) =>
+        f.id.toLowerCase().includes(q) ||
+        f.username.toLowerCase().includes(q) ||
+        f.name.toLowerCase().includes(q)
+    );
+  }
+
+  return friends;
 }
 
 /**
  * Module 10: Purchase & Send Relationship Card
  */
 export async function purchaseAndSendRelationshipCard({ senderUserId, recipientUserId, cardType = 'CP_LOVE', deductCoins = true }, db = prisma) {
+  if (senderUserId === recipientUserId) {
+    const error = new Error('You cannot start a relationship with yourself.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Server-side validation of mutual-follow eligibility
+  const isMutual = await db.follow.findFirst({
+    where: { followerId: senderUserId, followingId: recipientUserId, status: 'ACCEPTED' },
+  });
+  const isFollowBack = await db.follow.findFirst({
+    where: { followerId: recipientUserId, followingId: senderUserId, status: 'ACCEPTED' },
+  });
+  if (!isMutual || !isFollowBack) {
+    const error = new Error('Eligibility requirement failed: Both users must mutually follow each other.');
+    error.statusCode = 400;
+    throw error;
+  }
+
   const cards = await getRelationshipCardCatalog();
   const card = cards.find((c) => c.key === cardType || c.id === cardType) || cards[0];
 
+  // Validate wallet and deduct coins atomically
+  if (deductCoins && card.priceCoins > 0) {
+    const senderWallet = await db.wallet.findUnique({ where: { userId: senderUserId } });
+    const currentCoins = BigInt(senderWallet?.coins || 0);
+    const requiredCoins = BigInt(card.priceCoins);
+    if (currentCoins < requiredCoins) {
+      const error = new Error(`Insufficient coins balance. You need ${card.priceCoins} coins.`);
+      error.statusCode = 400;
+      throw error;
+    }
+    await db.wallet.update({
+      where: { userId: senderUserId },
+      data: { coins: { decrement: requiredCoins } },
+    });
+  }
+
   const recipient = await db.user.findUnique({
     where: { id: recipientUserId },
-    select: { id: true, username: true, avatarUrl: true },
+    select: { id: true, username: true, profile: { select: { displayName: true, avatarUrl: true } } },
   });
 
   return {
     success: true,
-    message: `Relationship card ${card.name} sent to @${recipient?.username || recipientUserId}. Awaiting acceptance.`,
+    message: `Relationship card "${card.name}" sent to @${recipient?.username || recipientUserId}. Awaiting acceptance.`,
     data: {
       invitationId: `INV_${Date.now()}`,
       senderUserId,
       recipientUserId,
       recipientUsername: recipient?.username,
+      recipientDisplayName: recipient?.profile?.displayName || recipient?.username,
       card,
       priceDeducted: deductCoins ? card.priceCoins : 0,
       status: 'PENDING_ACCEPTANCE',
@@ -1656,6 +1762,7 @@ export default {
   respondRelationship,
   dissolveRelationship,
   getRelationshipCardCatalog,
+  getEligibleRelationshipFriends,
   purchaseAndSendRelationshipCard,
   getCpPairRankings,
 };

@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import '../services/api_client.dart';
+import '../../models/user_asset_model.dart';
+import '../../models/user_model.dart';
 
 /// Social & Post Repository
 /// All calls are against the real ZeParty backend.
@@ -441,5 +444,51 @@ class SocialRepository {
       },
     );
     return response.data ?? {};
+  }
+
+  /// GET /v1/users/:id/received-gifts
+  Future<List<Map<String, dynamic>>> getReceivedGifts(String userId) async {
+    try {
+      final response = await _client.get('/v1/users/$userId/received-gifts');
+      if (response.data != null && response.data['data'] is List) {
+        return (response.data['data'] as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[SocialRepository] getReceivedGifts error: $e');
+    }
+    return [];
+  }
+
+  /// GET /v1/users/:id/honor-assets
+  Future<List<UserAssetModel>> getUserHonorAssets(String userId) async {
+    try {
+      final response = await _client.get('/v1/users/$userId/honor-assets');
+      if (response.data != null && response.data['data'] is List) {
+        return (response.data['data'] as List)
+            .map((e) => UserAssetModel.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[SocialRepository] getUserHonorAssets error: $e');
+    }
+    return [];
+  }
+
+  /// GET /v1/social/relationship/eligible-friends
+  Future<List<UserModel>> getEligibleRelationshipFriends({String search = ''}) async {
+    try {
+      final queryParam = search.isNotEmpty ? '?search=${Uri.encodeComponent(search)}' : '';
+      final response = await _client.get('/v1/social/relationship/eligible-friends$queryParam');
+      if (response.data != null && response.data['data'] is List) {
+        return (response.data['data'] as List)
+            .map((item) => UserModel.fromJson(Map<String, dynamic>.from(item as Map)))
+            .toList();
+      }
+    } catch (e) {
+      debugPrint('[SocialRepository] getEligibleRelationshipFriends error: $e');
+    }
+    return [];
   }
 }

@@ -93,6 +93,8 @@ userProfileRouter.get('/noble-palette', userController.getNoblePalette);
 userProfileRouter.get('/me', authenticate, userController.getMe);
 userProfileRouter.get('/me/profile-grid', authenticate, userController.getProfileGrid);
 userProfileRouter.put('/me/profile-edit', authenticate, userController.putProfileEdit);
+userProfileRouter.get('/me/daily-checkin', authenticate, userController.getDailyCheckinStatus);
+userProfileRouter.post('/me/daily-checkin/claim', authenticate, userController.claimDailyCheckin);
 userProfileRouter.get('/me/privacy-settings', authenticate, userController.getUserPrivacySettings);
 userProfileRouter.put('/me/privacy-settings', authenticate, userController.putUserPrivacySettings);
 userProfileRouter.get('/me/visitors', authenticate, socialController.getProfileVisitors);
@@ -111,6 +113,8 @@ userProfileRouter.get('/:id/room-profile', optionalAuthenticate, userController.
 userProfileRouter.get('/:id/profile-card', optionalAuthenticate, userController.getRoomUserProfileCard);
 userProfileRouter.get('/:id/card', optionalAuthenticate, userController.getRoomUserProfileCard);
 userProfileRouter.get('/:id/level-strip', optionalAuthenticate, userController.getUserLevelStrip);
+userProfileRouter.get('/:id/received-gifts', optionalAuthenticate, userController.getUserReceivedGifts);
+userProfileRouter.get('/:id/honor-assets', optionalAuthenticate, userController.getUserHonorAssets);
 
 // Social, Follows, Followers, Visitors, & Blocks (mounted directly on /users/:id)
 userProfileRouter.get('/:id/social-profile', optionalAuthenticate, socialController.getSocialProfile);

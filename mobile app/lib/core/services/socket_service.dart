@@ -612,12 +612,21 @@ class SocketService {
     _socket!.on('room:role_updated', (data) {
       if (data != null) _roomRoleUpdatedController.add(safeMap(data));
     });
-    _socket!.on('room:mic_invite', (data) {
+    void handleMicInvite(dynamic data) {
       if (data != null) _roomMicInviteController.add(safeMap(data));
-    });
-    _socket!.on('room_mic_invite', (data) {
-      if (data != null) _roomMicInviteController.add(safeMap(data));
-    });
+    }
+    _socket!.off('room:mic_invite');
+    _socket!.on('room:mic_invite', handleMicInvite);
+    _socket!.off('room_mic_invite');
+    _socket!.on('room_mic_invite', handleMicInvite);
+    _socket!.off('room:mic_invitation');
+    _socket!.on('room:mic_invitation', handleMicInvite);
+    _socket!.off('room:mic_invite_received');
+    _socket!.on('room:mic_invite_received', handleMicInvite);
+    _socket!.off('room:mic_invitation_received');
+    _socket!.on('room:mic_invitation_received', handleMicInvite);
+    _socket!.off('mic_invitation_received');
+    _socket!.on('mic_invitation_received', handleMicInvite);
     void handleFeedCleared(dynamic data) {
       final map = data != null ? safeMap(data) : <String, dynamic>{'roomId': _currentRoomId};
       _roomFeedClearedController.add(map);

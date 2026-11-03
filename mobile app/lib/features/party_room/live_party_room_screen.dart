@@ -464,8 +464,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         if (mounted) _showPkResultDialog(result);
       });
       
-      // Local VIP or Noble entry banner trigger
-      if (user.isVip || (user.nobleTitle != null && user.nobleTitle!.isNotEmpty)) {
+      // Local VIP or Noble entry banner trigger (plays ONCE per genuine room session, not on minimize/restore)
+      final roomId = partyProv.activeRoom?.id ?? widget.room.id;
+      final hasPlayedSession = SvipEntryManager().hasPlayedForSession(roomId, user.id);
+      if (!hasPlayedSession && (user.isVip || (user.nobleTitle != null && user.nobleTitle!.isNotEmpty))) {
+        SvipEntryManager().markPlayedForSession(roomId, user.id);
         Future.delayed(const Duration(seconds: 1), () {
           if (mounted) {
             SvipEntryManager().showEntry(user);
@@ -827,6 +830,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               onPressed: () async {
                 Navigator.pop(d);
                 AgoraRtcService().stopAudioMixing();
+                SvipEntryManager().clearSession(widget.room.id);
                 await provider.closeRoom();
                 if (mounted) {
                   Navigator.pop(context);
@@ -844,6 +848,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
               Navigator.pop(d);
               // Leave without closing room so other users can stay inside
               AgoraRtcService().stopAudioMixing();
+              SvipEntryManager().clearSession(widget.room.id);
               await provider.leaveParty();
               if (mounted) {
                 Navigator.pop(context);
@@ -1086,13 +1091,6 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
           // Overlays (hidden in Clear Screen Mode)
           if (!_isClearScreenMode) const HighValueAnnouncementOverlay(),
-          if (!_isClearScreenMode)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 60,
-              left: 0,
-              right: 0,
-              child: const WorldLuckyBagBanner(),
-            ),
 
           // Main Layout
           SafeArea(
@@ -1403,6 +1401,17 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                     ],
                   ),
                 ),
+              ),
+            ),
+
+          // World Lucky Bag Notification Banner (Topmost foreground overlay, compact & above room header)
+          if (!_isClearScreenMode)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              left: 0,
+              right: 0,
+              child: const Center(
+                child: WorldLuckyBagBanner(),
               ),
             ),
         ],
@@ -3161,12 +3170,20 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                 context,
                                 MaterialPageRoute(builder: (_) => PkMatchScreen(currentRoomId: widget.room.id, roomType: 'AUDIO')),
                               ).then((res) {
-                                if (res == true && mounted && !provider.isPkActive) {
-                                  final opponent = DummyData.popularUsers.firstWhere(
+                                if (res != null && mounted && !provider.isPkActive) {
+                                  UserModel? opponent;
+                                  String? matchId;
+                                  if (res is Map) {
+                                    if (res['opponent'] is UserModel) {
+                                      opponent = res['opponent'] as UserModel;
+                                    }
+                                    matchId = res['matchId']?.toString();
+                                  }
+                                  opponent ??= DummyData.popularUsers.firstWhere(
                                     (u) => u.id != widget.room.host.id,
                                     orElse: () => DummyData.popularUsers.first,
                                   );
-                                  provider.startPk(opponent);
+                                  provider.startPk(opponent, matchId: matchId);
                                 }
                               });
                             }

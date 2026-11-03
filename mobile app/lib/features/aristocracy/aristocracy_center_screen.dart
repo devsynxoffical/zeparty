@@ -141,16 +141,16 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
       'status': 'Expired',
       'themeColors': [const Color(0xFF2E1C0C), const Color(0xFF4A3015), const Color(0xFF1A0F06)],
       'cardGradient': [const Color(0xFF7C5428), const Color(0xFF4D3216)],
-      'badgeAsset': 'assets/nobles/king_badge.webp',
+      'badgeAsset': 'assets/nobles/ZP-034_tier-6-king_badge.webp',
       'frameAsset': 'assets/nobles/king_frame.webp',
       'privileges': [
-        {'name': 'Entrance Effect', 'asset': 'assets/nobles/emperor_entrance.webp', 'type': 'image'},
+        {'name': 'Entrance Effect', 'asset': 'assets/nobles/ZP-037_tier-6-king_badge.webp', 'type': 'image'},
         {'name': 'Profile Card', 'asset': 'assets/nobles/king_card.webp', 'type': 'image'},
         {'name': 'Frame', 'asset': 'assets/nobles/king_frame.webp', 'type': 'image'},
-        {'name': 'Activate Effect', 'asset': 'assets/nobles/king_badge.webp', 'type': 'image'},
-        {'name': 'Identify Badge', 'asset': 'assets/nobles/king_badge.webp', 'type': 'image'},
+        {'name': 'Activate Effect', 'asset': 'assets/nobles/ZP-035_tier-6-king_badge.webp', 'type': 'image'},
+        {'name': 'Identify Badge', 'asset': 'assets/nobles/ZP-034_tier-6-king_badge.webp', 'type': 'image'},
         {'name': 'Colored Username', 'color': const Color(0xFFFFD54F), 'type': 'colored_name'},
-        {'name': 'Bubble', 'asset': 'assets/nobles/emperor_chat_bubble.webp', 'type': 'image'},
+        {'name': 'Bubble', 'asset': 'assets/nobles/ZP-036_tier-6-king_badge.webp', 'type': 'image'},
         {'name': 'Mic Wave', 'asset': 'assets/nobles/king_mic.webp', 'type': 'image'},
         {'name': 'World Notif', 'asset': 'assets/nobles/tier-6-king_worldnotif.webp', 'type': 'image'},
       ]
@@ -1127,7 +1127,7 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
                 if (item['type'] == 'colored_name')
                   Padding(
                     padding: EdgeInsets.symmetric(vertical: 24.h),
-                    child: _buildColoredNamePreview(item['color'], null),
+                    child: _buildColoredNamePreview(item['color'], Provider.of<AuthProvider>(context, listen: false).currentUser),
                   )
                 else
                   Container(
@@ -1152,7 +1152,33 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
   }
 
   Widget _buildColoredNamePreview(Color color, dynamic user) {
-    final name = user?.username ?? 'User Name';
+    // Issue 20: Display real nickname, never internal keys like "user_free_..."
+    String displayName = '';
+    if (user != null) {
+      final name = user.name?.toString() ?? '';
+      final dName = user.displayName?.toString() ?? '';
+      final uName = user.username?.toString() ?? '';
+      if (name.isNotEmpty && !name.startsWith('user_free_')) {
+        displayName = name;
+      } else if (dName.isNotEmpty && !dName.startsWith('user_free_')) {
+        displayName = dName;
+      } else if (uName.isNotEmpty && !uName.startsWith('user_free_')) {
+        displayName = uName;
+      }
+    }
+    if (displayName.isEmpty) {
+      try {
+        final authUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+        if (authUser.name.isNotEmpty && !authUser.name.startsWith('user_free_')) {
+          displayName = authUser.name;
+        } else if (authUser.displayName.isNotEmpty && !authUser.displayName.startsWith('user_free_')) {
+          displayName = authUser.displayName;
+        }
+      } catch (_) {}
+    }
+    if (displayName.isEmpty) {
+      displayName = 'Javis';
+    }
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 10.w, vertical: 4.h),
       decoration: BoxDecoration(
@@ -1161,7 +1187,7 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
         border: Border.all(color: color.withValues(alpha: 0.6)),
       ),
       child: Text(
-        name,
+        displayName,
         style: TextStyle(
           color: color,
           fontWeight: FontWeight.bold,

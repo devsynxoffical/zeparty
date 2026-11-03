@@ -358,6 +358,17 @@ export async function getRelationshipCards(req, res, next) {
   }
 }
 
+export async function getEligibleRelationshipFriends(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const { search } = req.query;
+    const friends = await socialService.getEligibleRelationshipFriends(userId, search);
+    return res.status(200).json({ success: true, data: friends });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function purchaseAndSendRelationshipCard(req, res, next) {
   try {
     const senderUserId = req.auth?.userId;
@@ -398,6 +409,7 @@ export default {
   getProfileVisitors,
   getProfileVisited,
   getRelationship,
+  getEligibleRelationshipFriends,
   requestRelationship,
   respondRelationship,
   dissolveRelationship,

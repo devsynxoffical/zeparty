@@ -389,8 +389,13 @@ export async function createMicInvite(
   socketEmitter.emitToUser(effectiveTargetId, 'room:mic_invitation_received', invitation);
   socketEmitter.emitToUser(effectiveTargetId, 'mic_invitation_received', invitation);
   socketEmitter.emitToUser(effectiveTargetId, 'room_mic_invitation', invitation);
+  if (targetUserId && targetUserId !== effectiveTargetId) {
+    socketEmitter.emitToUser(targetUserId, 'room:mic_invite', invitation);
+    socketEmitter.emitToUser(targetUserId, 'room_mic_invite', invitation);
+    socketEmitter.emitToUser(targetUserId, SOCKET_EVENTS.MIC_INVITATION_RECEIVED, invitation);
+  }
 
-  // Emit to room channel for participants and in-room listeners
+  // Broadcast to room channel so target receives even if user-socket channel was delayed
   socketEmitter.emitToRoom(room.id, 'room:mic_invite', invitation);
   socketEmitter.emitToRoom(room.id, 'room_mic_invite', invitation);
 
