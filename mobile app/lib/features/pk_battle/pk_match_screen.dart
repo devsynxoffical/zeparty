@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/repositories/pk_repository.dart';
+import '../../core/services/socket_service.dart';
 import '../../models/user_model.dart';
 import '../../models/pk_battle_model.dart';
 import '../../providers/auth_provider.dart';
@@ -47,6 +48,10 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
   String? _pendingMatchId;
   int _invitationTimerRemaining = 30;
   Timer? _invitationTimer;
+  Timer? _invitationPollingTimer;
+  StreamSubscription? _subPkAccepted;
+  StreamSubscription? _subPkPreparing;
+  StreamSubscription? _subPkStarted;
 
   // Readiness & Countdown State
   bool _isConfirmingReady = false;
@@ -57,11 +62,69 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
   void initState() {
     super.initState();
     _loadAvailableHosts();
+    _listenToSocketEvents();
+  }
+
+  void _listenToSocketEvents() {
+    _subPkAccepted = SocketService.instance.onPkInvitationAccepted.listen((data) {
+      final invId = data['invitationId']?.toString();
+      final mId = data['matchId']?.toString();
+      if ((invId != null && invId == _pendingInvitationId) ||
+          (mId != null && mId == _pendingMatchId)) {
+        _onOpponentAccepted(matchId: mId);
+      }
+    });
+
+    _subPkPreparing = SocketService.instance.onPkPreparing.listen((data) {
+      final mId = data['id']?.toString() ?? data['matchId']?.toString();
+      final rA = data['roomAId']?.toString();
+      final rB = data['roomBId']?.toString();
+      if ((_pendingMatchId != null && mId == _pendingMatchId) ||
+          (_effectiveRoomId.isNotEmpty && (rA == _effectiveRoomId || rB == _effectiveRoomId))) {
+        _onOpponentAccepted(matchId: mId);
+      }
+    });
+
+    _subPkStarted = SocketService.instance.onPkStarted.listen((data) {
+      final mId = data['id']?.toString() ?? data['matchId']?.toString();
+      final rA = data['roomAId']?.toString();
+      final rB = data['roomBId']?.toString();
+      if ((_pendingMatchId != null && mId == _pendingMatchId) ||
+          (_effectiveRoomId.isNotEmpty && (rA == _effectiveRoomId || rB == _effectiveRoomId))) {
+        _onOpponentAccepted(matchId: mId);
+      }
+    });
+  }
+
+  void _onOpponentAccepted({String? matchId}) {
+    if (!mounted) return;
+    _invitationTimer?.cancel();
+    _invitationPollingTimer?.cancel();
+
+    final mId = matchId ?? _pendingMatchId;
+    final opponent = _selectedOpponent ?? (_discoveredOpponent != null
+        ? UserModel(
+            id: _discoveredOpponent!.hostId,
+            name: _discoveredOpponent!.hostDisplayName,
+            username: _discoveredOpponent!.hostUsername,
+            avatarUrl: _discoveredOpponent!.hostAvatarUrl,
+          )
+        : null);
+
+    Navigator.pop(context, {
+      'success': true,
+      'matchId': mId,
+      'opponent': opponent,
+    });
   }
 
   @override
   void dispose() {
     _invitationTimer?.cancel();
+    _invitationPollingTimer?.cancel();
+    _subPkAccepted?.cancel();
+    _subPkPreparing?.cancel();
+    _subPkStarted?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -254,6 +317,26 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
 
   void _startInvitationCountdown() {
     _invitationTimer?.cancel();
+    _invitationPollingTimer?.cancel();
+
+    // Active polling fallback in case socket packet was dropped on mobile data
+    _invitationPollingTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
+      if (!mounted || _pendingMatchId == null) {
+        t.cancel();
+        return;
+      }
+      try {
+        final match = await PKRepository.instance.getMatchSnapshot(_pendingMatchId!);
+        if (match != null && mounted) {
+          final s = match.status.toUpperCase();
+          if (s == 'PREPARING' || s == 'COUNTDOWN' || s == 'ACTIVE' || s == 'STARTED') {
+            t.cancel();
+            _onOpponentAccepted(matchId: match.id);
+          }
+        }
+      } catch (_) {}
+    });
+
     _invitationTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
         timer.cancel();
@@ -261,6 +344,7 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
       }
       if (_invitationTimerRemaining <= 1) {
         timer.cancel();
+        _invitationPollingTimer?.cancel();
         setState(() {
           _pendingInvitationId = null;
           _invitationTimerRemaining = 0;
@@ -275,11 +359,12 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
   }
 
   Future<void> _cancelPendingInvitation() async {
+    _invitationTimer?.cancel();
+    _invitationPollingTimer?.cancel();
     if (_pendingInvitationId == null) return;
     try {
       await PKRepository.instance.cancelInvitation(_pendingInvitationId!);
     } catch (_) {}
-    _invitationTimer?.cancel();
     if (mounted) {
       setState(() {
         _pendingInvitationId = null;

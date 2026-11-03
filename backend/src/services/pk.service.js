@@ -219,9 +219,27 @@ export class PKService {
     const matchSnapshot = await this.repo.getMatchSnapshot(result.match.id);
 
     if (result.accepted) {
-      // Broadcast preparing event to both rooms
+      const acceptedPayload = {
+        invitationId,
+        matchId: result.match.id,
+        status: 'ACCEPTED',
+        match: matchSnapshot,
+      };
+      // Broadcast preparing and invitation_accepted events to both rooms
+      socketEmitter.emitToRoom(result.match.roomAId, 'pk:invitation_accepted', acceptedPayload);
+      socketEmitter.emitToRoom(result.match.roomBId, 'pk:invitation_accepted', acceptedPayload);
       socketEmitter.emitToRoom(result.match.roomAId, 'pk:preparing', matchSnapshot);
       socketEmitter.emitToRoom(result.match.roomBId, 'pk:preparing', matchSnapshot);
+
+      // Emit directly to inviter & target host users so active sheets/dialogs transition immediately
+      if (result.invitation?.inviterUserId) {
+        socketEmitter.emitToUser(result.invitation.inviterUserId, 'pk:invitation_accepted', acceptedPayload);
+        socketEmitter.emitToUser(result.invitation.inviterUserId, 'pk:preparing', matchSnapshot);
+      }
+      if (result.invitation?.targetHostUserId) {
+        socketEmitter.emitToUser(result.invitation.targetHostUserId, 'pk:invitation_accepted', acceptedPayload);
+        socketEmitter.emitToUser(result.invitation.targetHostUserId, 'pk:preparing', matchSnapshot);
+      }
     } else {
       // Notify inviter room of rejection
       socketEmitter.emitToRoom(result.match.roomAId, 'pk:invitation_responded', {

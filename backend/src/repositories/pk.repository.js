@@ -353,6 +353,9 @@ export class PKRepository {
       }
 
       if (invite.status !== 'PENDING') {
+        if (action === 'ACCEPT' && invite.status === 'ACCEPTED') {
+          return { accepted: true, match: invite.match, invitation: invite };
+        }
         const err = new Error(`Invitation is already ${invite.status.toLowerCase()}.`);
         err.code = 'PK_INVALID_STATE';
         throw err;

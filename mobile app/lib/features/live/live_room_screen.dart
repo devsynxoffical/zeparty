@@ -2166,7 +2166,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                   true,
                 );
               } catch (e) {
-                if (mounted) {
+                if (mounted && !e.toString().toLowerCase().contains('already accepted')) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Failed to accept PK: $e')),
                   );

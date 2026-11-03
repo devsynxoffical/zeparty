@@ -21,12 +21,17 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
   Future<Map<String, dynamic>>? _future;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _future ??= SessionScope.read(context).api.leaderboard(_gameId, weekly: _weekly);
   }
 
-  void _load() => setState(() => _future = SessionScope.read(context).api.leaderboard(_gameId, weekly: _weekly));
+  void _load() {
+    final future = SessionScope.read(context).api.leaderboard(_gameId, weekly: _weekly);
+    setState(() {
+      _future = future;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
