@@ -1,6 +1,6 @@
 import userService from '../services/user.service.js';
 import socialService from '../services/social.service.js';
-import prisma from '../config/prisma.js';
+import prisma from '../config/database.js';
 import redisClient from '../config/redis.js';
 import * as assetService from '../services/asset.service.js';
 import * as userRepository from '../repositories/user.repository.js';
