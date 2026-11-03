@@ -6,7 +6,13 @@ import micInviteService from '../services/micInvite.service.js';
 import cohostInviteService from '../services/cohostInvite.service.js';
 import presenceService from './presence.service.js';
 import prisma from '../config/database.js';
-import { startHostAbsentTimer, clearHostAbsentTimer } from './roomTimer.manager.js';
+import {
+  startHostAbsentTimer,
+  clearHostAbsentTimer,
+  clearEmptyRoomSleepTimer,
+  checkAndSchedulePartyRoomSleep,
+  isPartyRoomType,
+} from './roomTimer.manager.js';
 import { deriveAgoraUid } from '../utils/agoraToken.util.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
 import { withRateLimit } from './rateLimiter.socket.js';
@@ -34,7 +40,7 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
   for (const s of room.seats || []) {
     if (s.occupiedUserId) activeSet.add(s.occupiedUserId);
   }
-  if (hostUserId) activeSet.add(hostUserId);
+  if (hostUserId && hostIsOccupyingSeat) activeSet.add(hostUserId);
 
   const membersList = (room.members || [])
     .filter((m) => {
@@ -250,29 +256,46 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
+    clearEmptyRoomSleepTimer(room.id);
+
     if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
-      // Auto-resolve to creator's active live room session if available
-      const creatorId = room.creatorUserId || room.creator?.id;
-      if (creatorId) {
-        const activeRoom = await (db || prisma).room.findFirst({
-          where: {
-            creatorUserId: creatorId,
-            status: 'LIVE',
-          },
-          select: { id: true },
-        });
-        if (activeRoom) {
-          const resolvedRoom = await roomRepository.findRoomById(activeRoom.id, db || prisma);
-          if (resolvedRoom && resolvedRoom.status && ['LIVE', 'ACTIVE', 'OPEN'].includes(resolvedRoom.status.toUpperCase())) {
-            room = resolvedRoom;
+      // Persistent Party Room Wake-from-Sleep:
+      // Any user joining a sleeping Party Room by Room ID automatically wakes it up to LIVE!
+      if (isPartyRoomType(room.roomType) && room.status.toUpperCase() !== 'CLOSED_BY_ADMIN') {
+        await (db || prisma).room.update({
+          where: { id: room.id },
+          data: { status: 'LIVE', endedAt: null },
+        }).catch(() => {});
+        const refreshed = await roomRepository.findRoomById(room.id, db || prisma);
+        if (refreshed) {
+          room = refreshed;
+        } else {
+          room.status = 'LIVE';
+        }
+      } else {
+        // For solo LIVE_VIDEO, auto-resolve to creator's active live room session if available
+        const creatorId = room.creatorUserId || room.creator?.id;
+        if (creatorId) {
+          const activeRoom = await (db || prisma).room.findFirst({
+            where: {
+              creatorUserId: creatorId,
+              status: 'LIVE',
+            },
+            select: { id: true },
+          });
+          if (activeRoom) {
+            const resolvedRoom = await roomRepository.findRoomById(activeRoom.id, db || prisma);
+            if (resolvedRoom && resolvedRoom.status && ['LIVE', 'ACTIVE', 'OPEN'].includes(resolvedRoom.status.toUpperCase())) {
+              room = resolvedRoom;
+            }
           }
         }
-      }
 
-      if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
-        const err = { success: false, attemptId, error: { code: SOCKET_ERRORS.ROOM_NOT_LIVE, message: 'Room is not available or has ended', stage: 'ROOM_LIFECYCLE', recoverable: false } };
-        if (typeof callback === 'function') return callback(err);
-        return socket.emit(SOCKET_EVENTS.ERROR, err);
+        if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
+          const err = { success: false, attemptId, error: { code: SOCKET_ERRORS.ROOM_NOT_LIVE, message: 'Room is not available or has ended', stage: 'ROOM_LIFECYCLE', recoverable: false } };
+          if (typeof callback === 'function') return callback(err);
+          return socket.emit(SOCKET_EVENTS.ERROR, err);
+        }
       }
     }
 
@@ -731,17 +754,28 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
           io.emit('room:deleted', { roomId });
         }
       } else if (isHostUser && room) {
-        // Host has left/disconnected: Room stays alive as long as viewers/speakers remain.
+        // Host has left: stop host attendance timer, keep Party Room open for remaining users (or schedule 12s sleep if empty)
+        await attendanceService.endBroadcastSession({ roomId: room.id, hostUserId: userId }, db).catch(() => {});
         const hostAwayPayload = {
-          roomId,
+          roomId: room.id,
+          clientRoomId: roomId,
           userId,
+          id: userId,
+          viewerCount: updatedViewerCount,
+          count: updatedViewerCount,
+          currentViewersCount: updatedViewerCount,
           status: 'LIVE',
+          roomStaysOpen: isPartyRoomType(room.roomType),
           reason: 'HOST_AWAY',
-          message: 'Host has temporarily stepped away.',
+          message: isPartyRoomType(room.roomType)
+            ? 'Host has left the room. Party continues for remaining members.'
+            : 'Host has temporarily stepped away.',
         };
+        broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, hostAwayPayload);
+        broadcastTarget.emit('user_left', hostAwayPayload);
         broadcastTarget.emit('room:host_away', hostAwayPayload);
         broadcastTarget.emit('room:host_left', hostAwayPayload);
-        startHostAbsentTimer(roomId, room.roomType || 'LIVE_VIDEO', userId, io);
+        startHostAbsentTimer(room.id, room.roomType || 'AUDIO_PARTY', userId, io);
       } else {
         const leftPayload = {
           roomId: room ? room.id : roomId,
@@ -775,6 +809,10 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, countPayload);
         broadcastTarget.emit('room:viewer_count', countPayload);
         broadcastTarget.emit('viewer_count_changed', countPayload);
+
+        if (room && isPartyRoomType(room.roomType)) {
+          await checkAndSchedulePartyRoomSleep(room.id, io, 12000, userId);
+        }
       }
 
       // If the leaving user was occupying a microphone seat, broadcast authoritative seat release across all aliases
@@ -893,10 +931,7 @@ export async function onSocketDisconnect(io, socket, db) {
           const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
           const isAudioParty = (room.roomType || '').toUpperCase().includes('AUDIO') || (room.roomType || '').toUpperCase().includes('PARTY');
 
-          let leaveResult = null;
-          if (!isHostUser || !isAudioParty) {
-            leaveResult = await roomService.leaveRoom(roomId, userId, db).catch(() => null);
-          }
+          const leaveResult = await roomService.leaveRoom(roomId, userId, db).catch(() => null);
 
           let updatedViewerCount = 0;
           try {
@@ -907,8 +942,26 @@ export async function onSocketDisconnect(io, socket, db) {
           const broadcastTarget = io ? io.to(`room:${roomId}`) : socket;
 
           if (isHostUser) {
+            await attendanceService.endBroadcastSession({ roomId: room.id, hostUserId: userId }, db).catch(() => {});
             if (isAudioParty) {
-              startHostAbsentTimer(roomId, 'AUDIO_PARTY', userId, io);
+              const hostAwayPayload = {
+                roomId: room.id,
+                clientRoomId: roomId,
+                userId,
+                id: userId,
+                viewerCount: updatedViewerCount,
+                count: updatedViewerCount,
+                currentViewersCount: updatedViewerCount,
+                status: 'LIVE',
+                roomStaysOpen: true,
+                reason: 'HOST_AWAY',
+                message: 'Host has left the room. Party continues for remaining members.',
+              };
+              broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_LEFT, hostAwayPayload);
+              broadcastTarget.emit('user_left', hostAwayPayload);
+              broadcastTarget.emit('room:host_away', hostAwayPayload);
+              broadcastTarget.emit('room:host_left', hostAwayPayload);
+              startHostAbsentTimer(room.id, 'AUDIO_PARTY', userId, io);
             } else {
               const hostLeftPayload = {
                 roomId,
@@ -956,6 +1009,10 @@ export async function onSocketDisconnect(io, socket, db) {
             broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, countPayload);
             broadcastTarget.emit('room:viewer_count', countPayload);
             broadcastTarget.emit('viewer_count_changed', countPayload);
+
+            if (isAudioParty) {
+              await checkAndSchedulePartyRoomSleep(room.id, io, 12000, userId);
+            }
           }
 
           // If the disconnecting user was occupying a microphone seat, broadcast authoritative seat release across all aliases

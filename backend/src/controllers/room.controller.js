@@ -35,10 +35,38 @@ export async function createRoom(req, res, next) {
       ...validatedData,
     });
 
-    return res.status(201).json({
+    const alreadyHasRoom = Boolean(room?.alreadyHasRoom || room?.isExistingRoom);
+
+    return res.status(alreadyHasRoom ? 200 : 201).json({
       success: true,
-      message: 'Room created successfully',
+      alreadyHasRoom,
+      isExistingRoom: alreadyHasRoom,
+      existingRoomId: room?.id || null,
+      message: alreadyHasRoom
+        ? 'You already have a party room. Opening your existing room.'
+        : 'Room created successfully',
       data: room,
+      room,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getMyPartyRoom(req, res, next) {
+  try {
+    const userId = req.auth?.userId || req.user?.id;
+    const result = await roomService.getMyPartyRoom(userId);
+    return res.status(200).json({
+      success: true,
+      hasRoom: result.hasRoom,
+      alreadyHasRoom: result.alreadyHasRoom,
+      isExistingRoom: result.hasRoom,
+      existingRoomId: result.existingRoomId || null,
+      isSleeping: result.isSleeping || false,
+      message: result.message || (result.hasRoom ? 'Existing party room found' : 'No existing party room'),
+      data: result.room,
+      room: result.room,
     });
   } catch (err) {
     next(err);
@@ -47,7 +75,11 @@ export async function createRoom(req, res, next) {
 
 export async function getActiveRooms(req, res, next) {
   try {
-    const validatedQuery = queryActiveRoomsSchema.parse(req.query);
+    const rawQuery = {
+      ...req.query,
+      search: req.query.search || req.query.q || req.query.query || req.query.roomId || undefined,
+    };
+    const validatedQuery = queryActiveRoomsSchema.parse(rawQuery);
     const result = await roomService.getActiveRooms(validatedQuery);
 
     return res.status(200).json({
@@ -1544,6 +1576,7 @@ export default {
   getStageSnapshot,
   updateStageMic,
   updateStageCamera,
+  getMyPartyRoom,
   getAdminRoomDiagnostics,
   getRoomRoleAudit,
 };

@@ -201,8 +201,8 @@ export async function findActiveRooms(
   } = {},
   db = prisma
 ) {
+  const hasSearch = Boolean(search && search.trim() !== '');
   const where = {
-    status: 'LIVE',
     creator: {
       id: { not: '' },
     },
@@ -214,21 +214,36 @@ export async function findActiveRooms(
     ],
   };
 
-  if (isPrivate !== null && isPrivate !== undefined) {
-    where.isPrivate = Boolean(isPrivate);
+  if (hasSearch) {
+    // When searching by Room ID / title / host, allow sleeping Party Rooms (status = 'ENDED', roomType = 'AUDIO_PARTY')
+    // to be discovered by ID and awakened upon join, while excluding admin-closed rooms.
+    const s = search.trim();
+    where.AND = [
+      {
+        OR: [
+          { status: 'LIVE' },
+          { roomType: 'AUDIO_PARTY', status: { in: ['LIVE', 'ENDED'] } },
+        ],
+      },
+      {
+        OR: [
+          { id: { contains: s, mode: 'insensitive' } },
+          { creatorUserId: { contains: s, mode: 'insensitive' } },
+          { title: { contains: s, mode: 'insensitive' } },
+          { creator: { username: { contains: s, mode: 'insensitive' } } },
+          { creator: { profile: { displayName: { contains: s, mode: 'insensitive' } } } },
+        ],
+      },
+    ];
+  } else {
+    where.status = 'LIVE';
+    if (isPrivate !== null && isPrivate !== undefined) {
+      where.isPrivate = Boolean(isPrivate);
+    }
   }
 
   if (roomType) where.roomType = roomType;
   if (category) where.category = category;
-  if (search && search.trim() !== '') {
-    const s = search.trim();
-    where.OR = [
-      { id: { contains: s, mode: 'insensitive' } },
-      { title: { contains: s, mode: 'insensitive' } },
-      { creator: { username: { contains: s, mode: 'insensitive' } } },
-      { creator: { profile: { displayName: { contains: s, mode: 'insensitive' } } } },
-    ];
-  }
 
   const parsedPage = Math.max(1, Number(page) || 1);
   const parsedLimit = Math.max(1, Math.min(100, Number(limit) || 20));
@@ -346,8 +361,13 @@ export async function findActiveRooms(
     const seatCount = (r.seats || []).length || 10;
     const giftsReceived = giftTotalsMap[r.id] || 0;
     const dailyTotal = dailyTotalsMap[r.id] || 0;
+    const wasSleeping = r.status !== 'LIVE';
     return {
       ...safeRoom,
+      status: 'LIVE',
+      dbStatus: r.status,
+      isSleeping: wasSleeping,
+      sleepState: wasSleeping ? 'SLEEPING' : 'ACTIVE',
       isLocked: Boolean(r.isPrivate),
       lockMode,
       seatCapacity: seatCount,
@@ -517,9 +537,25 @@ export async function joinRoomTx({ roomId, userId, pin = null, isApproved = fals
   }
 
   let isRoomOpen = ['LIVE', 'ACTIVE', 'OPEN'].includes(room.status);
+  let wokeFromSleep = false;
+  const isPartyRoom = String(room.roomType || 'AUDIO_PARTY').toUpperCase().includes('PARTY') ||
+    String(room.roomType || 'AUDIO_PARTY').toUpperCase().includes('AUDIO');
+
   if (!isRoomOpen) {
-    // Check if the host has started a new active room session
-    if (room.creatorUserId) {
+    // Persistent Party Room Wake-from-Sleep:
+    // When any user searches and joins a sleeping Party Room by its Room ID, automatically wake it back to LIVE!
+    if (isPartyRoom && room.status !== 'CLOSED_BY_ADMIN') {
+      room = await db.room.update({
+        where: { id: resolvedRoomId },
+        data: {
+          status: 'LIVE',
+          endedAt: null,
+        },
+      });
+      isRoomOpen = true;
+      wokeFromSleep = true;
+    } else if (room.creatorUserId) {
+      // For solo LIVE_VIDEO, check if the host has started a new active room session
       const activeRoom = await db.room.findFirst({
         where: {
           creatorUserId: room.creatorUserId,
@@ -659,14 +695,17 @@ export async function joinRoomTx({ roomId, userId, pin = null, isApproved = fals
       }
     }
 
-    // If returning user is the creator/host, preserve existing seat state without forcibly re-occupying vacant seat 0
+    // If returning user is the creator/host of a Party Room and Seat 0 is vacant on wake/rejoin, seat them on Seat 0
     if (room.creatorUserId === userId) {
       try {
         const seat0 = await db.roomSeat.findUnique({
           where: { roomId_seatIndex: { roomId: resolvedRoomId, seatIndex: 0 } },
         });
-        if (seat0 && seat0.occupiedUserId === userId) {
-          // Already occupied by creator, preserve
+        if (seat0 && !seat0.occupiedUserId && isPartyRoom) {
+          await db.roomSeat.update({
+            where: { id: seat0.id },
+            data: { occupiedUserId: userId, isMuted: false, isMutedByModerator: false },
+          });
         }
       } catch (_) {}
     }
@@ -709,6 +748,7 @@ export async function joinRoomTx({ roomId, userId, pin = null, isApproved = fals
   if (attemptId) {
     updatedRoom.attemptId = attemptId;
   }
+  updatedRoom.wokeFromSleep = wokeFromSleep;
 
   return updatedRoom;
 }
@@ -843,10 +883,19 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
     }
 
     if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
-      const error = new Error('Room is not live');
-      error.statusCode = 400;
-      error.code = 'ROOM_NOT_LIVE';
-      throw error;
+      const isParty = String(room.roomType || '').toUpperCase().includes('PARTY') ||
+        String(room.roomType || '').toUpperCase().includes('AUDIO');
+      if (isParty && room.status !== 'CLOSED_BY_ADMIN') {
+        room = await tx.room.update({
+          where: { id: resolvedRoomId },
+          data: { status: 'LIVE', endedAt: null },
+        });
+      } else {
+        const error = new Error('Room is not live');
+        error.statusCode = 400;
+        error.code = 'ROOM_NOT_LIVE';
+        throw error;
+      }
     }
 
     // Check if user already occupies another seat in this room

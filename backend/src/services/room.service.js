@@ -3,7 +3,13 @@ import prisma from '../config/database.js';
 import roomRepository from '../repositories/room.repository.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
-import { clearHostAbsentTimer } from '../socket/roomTimer.manager.js';
+import {
+  clearHostAbsentTimer,
+  clearEmptyRoomSleepTimer,
+  checkAndSchedulePartyRoomSleep,
+  isPartyRoomType,
+  getActiveRoomParticipantCount,
+} from '../socket/roomTimer.manager.js';
 import presenceService from '../socket/presence.service.js';
 import micInviteService from './micInvite.service.js';
 import * as attendanceService from './attendance.service.js';
@@ -84,10 +90,13 @@ export async function createRoom(
       });
 
       if (existingRoom) {
+        const wasSleeping = existingRoom.status !== 'LIVE';
         clearHostAbsentTimer(existingRoom.id);
+        clearEmptyRoomSleepTimer(existingRoom.id);
         const updateData = {};
         if (existingRoom.status !== 'LIVE') {
           updateData.status = 'LIVE';
+          updateData.endedAt = null;
         }
         if (title && typeof title === 'string' && title.trim() && title.trim() !== existingRoom.title) {
           updateData.title = title.trim();
@@ -119,6 +128,17 @@ export async function createRoom(
           }, db);
         }
 
+        // Ensure host is seated on Seat 0 if Seat 0 is currently unoccupied when reopening their party room
+        try {
+          const seat0 = (existingRoom.seats || []).find((s) => s.seatIndex === 0);
+          if (seat0 && !seat0.occupiedUserId) {
+            await db.roomSeat.update({
+              where: { id: seat0.id },
+              data: { occupiedUserId: userId, isMuted: false, isMutedByModerator: false },
+            });
+          }
+        } catch (_) {}
+
         const refreshedRoom = await roomRepository.findRoomById(existingRoom.id, db);
 
         // Calculate session scores for resumed active room across today UTC
@@ -140,8 +160,14 @@ export async function createRoom(
           totalLikes = await presenceService.getRoomLikes(refreshedRoom.id);
         } catch (_) {}
 
-        return {
+        const resumedPayload = {
           ...refreshedRoom,
+          alreadyHasRoom: true,
+          alreadyHadRoom: true,
+          isExistingRoom: true,
+          existingRoomId: refreshedRoom.id,
+          wasSleeping,
+          statusMessage: 'You already have a party room. Opening your existing room.',
           totalGifts: dailyGiftCoins,
           giftsReceivedCoins: dailyGiftCoins,
           roomSendingTotal: dailyGiftCoins,
@@ -151,16 +177,30 @@ export async function createRoom(
           totalLikes,
           likesCount: totalLikes,
         };
+
+        if (wasSleeping) {
+          try {
+            socketEmitter.broadcastGlobal('room:woke_up', resumedPayload);
+            socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CREATED, resumedPayload);
+            socketEmitter.broadcastGlobal('room:created', resumedPayload);
+          } catch (_) {}
+        }
+
+        return resumedPayload;
       }
     } catch (err) {
       console.warn('[RoomService] Error resuming existing room:', err?.message);
     }
   }
 
-  // If forceNew is requested or no active room exists, automatically close any lingering LIVE rooms
+  // If forceNew is requested or starting a LIVE_VIDEO stream, only close lingering LIVE rooms of the same type
   try {
     const existingRooms = await db.room.findMany({
-      where: { creatorUserId: userId, status: 'LIVE' },
+      where: {
+        creatorUserId: userId,
+        status: 'LIVE',
+        ...(isVideoLive ? { roomType: 'LIVE_VIDEO' } : {}),
+      },
       select: { id: true },
     });
     for (const er of existingRooms) {
@@ -235,33 +275,78 @@ export async function createRoom(
   return newRoomPayload;
 }
 
+export async function getMyPartyRoom(userId, db = prisma) {
+  if (!userId) {
+    return { hasRoom: false, alreadyHasRoom: false, room: null };
+  }
+  const existingRoom = await db.room.findFirst({
+    where: {
+      creatorUserId: userId,
+      roomType: 'AUDIO_PARTY',
+      status: { in: ['LIVE', 'ENDED'] },
+    },
+    orderBy: { updatedAt: 'desc' },
+    select: { id: true, status: true },
+  });
+
+  if (!existingRoom) {
+    return { hasRoom: false, alreadyHasRoom: false, room: null };
+  }
+
+  const roomDetails = await getRoomDetails(existingRoom.id, db);
+  const isSleeping = existingRoom.status !== 'LIVE';
+  return {
+    hasRoom: true,
+    alreadyHasRoom: true,
+    isExistingRoom: true,
+    existingRoomId: existingRoom.id,
+    isSleeping,
+    sleepState: isSleeping ? 'SLEEPING' : 'ACTIVE',
+    message: 'You already have an existing party room.',
+    room: {
+      ...roomDetails,
+      alreadyHasRoom: true,
+      isExistingRoom: true,
+      isSleeping,
+    },
+  };
+}
+
 export async function getActiveRooms(filters, db = prisma) {
   return await roomRepository.findActiveRooms(filters, db);
 }
 
 export async function cleanupStaleRooms(db = prisma) {
   try {
-    const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000); // 4 hours ago for abandoned streams
-    const staleRooms = await db.room.findMany({
+    const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000); // 4 hours of inactivity
+    const candidateStaleRooms = await db.room.findMany({
       where: {
         status: 'LIVE',
-        createdAt: { lt: cutoff },
+        updatedAt: { lt: cutoff },
       },
       select: { id: true },
     });
 
-    if (staleRooms.length > 0) {
-      const ids = staleRooms.map((r) => r.id);
+    const staleIds = [];
+    for (const r of candidateStaleRooms) {
+      const activeCount = await getActiveRoomParticipantCount(r.id);
+      if (activeCount <= 0) {
+        staleIds.push(r.id);
+      }
+    }
+
+    if (staleIds.length > 0) {
       await db.room.updateMany({
-        where: { id: { in: ids } },
+        where: { id: { in: staleIds } },
         data: {
           status: 'ENDED',
           endedAt: new Date(),
           currentViewersCount: 0,
         },
       });
-      console.log(`[RoomService] Cleaned up ${staleRooms.length} stale live rooms.`);
+      console.log(`[RoomService] Cleaned up ${staleIds.length} stale empty live rooms.`);
     }
+    const staleRooms = staleIds;
 
     // Immediately close any dummy/test/verification rooms left LIVE from automated test runs
     const dummyRooms = await db.room.findMany({
@@ -324,13 +409,17 @@ export async function cleanupStaleRooms(db = prisma) {
 export async function getRoomDetails(roomId, db = prisma) {
   let room = await roomRepository.findRoomById(roomId, db);
 
-  // If room wasn't found by ID, check if roomId is a host's userId who has an active LIVE room
+  // If room wasn't found by ID, check if roomId is a host's userId who has an active or sleeping Party Room
   if (!room && roomId) {
     const activeRoomByUser = await db.room.findFirst({
       where: {
         creatorUserId: roomId,
-        status: 'LIVE',
+        OR: [
+          { status: 'LIVE' },
+          { roomType: 'AUDIO_PARTY', status: { in: ['LIVE', 'ENDED'] } },
+        ],
       },
+      orderBy: { updatedAt: 'desc' },
       select: { id: true },
     });
     if (activeRoomByUser) {
@@ -404,8 +493,14 @@ export async function getRoomDetails(roomId, db = prisma) {
     totalLikes = await presenceService.getRoomLikes(room.id);
   } catch (_) {}
 
+  const isSleeping = room.status !== 'LIVE';
+  const isParty = isPartyRoomType(room.roomType);
   return {
     ...safeRoom,
+    status: isParty && room.status !== 'CLOSED_BY_ADMIN' ? 'LIVE' : room.status,
+    dbStatus: room.status,
+    isSleeping,
+    sleepState: isSleeping ? 'SLEEPING' : 'ACTIVE',
     currentViewersCount: viewerCount,
     viewerCount,
     count: viewerCount,
@@ -433,9 +528,24 @@ export async function getRoomDetails(roomId, db = prisma) {
 export async function joinRoom(roomId, userId, { pin = null, isApproved = false, attemptId = null, isVisitor = false, explicit = false } = {}, db = prisma) {
   const result = await roomRepository.joinRoomTx({ roomId, userId, pin, isApproved, attemptId, isVisitor, explicit }, db);
   if (result) {
+    try {
+      clearEmptyRoomSleepTimer(result.id || roomId);
+    } catch (_) {}
     if (result.creatorUserId === userId) {
       try {
         clearHostAbsentTimer(result.id);
+        await attendanceService.startBroadcastSession({
+          roomId: result.id,
+          hostUserId: userId,
+          roomType: result.roomType || 'AUDIO_PARTY',
+        }, db).catch(() => {});
+      } catch (_) {}
+    }
+    if (result.wokeFromSleep) {
+      try {
+        socketEmitter.broadcastGlobal('room:woke_up', result);
+        socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CREATED, result);
+        socketEmitter.broadcastGlobal('room:created', result);
       } catch (_) {}
     }
     let viewerCount = typeof result.currentViewersCount === 'number' ? result.currentViewersCount : 0;
@@ -586,6 +696,17 @@ export async function leaveRoom(roomId, userId, db = prisma) {
     currentViewersCount: viewerCount,
   };
 
+  // If the leaving user is the host, immediately stop their personal BroadcastSession attendance clock
+  if (result && result.creatorUserId === userId) {
+    await attendanceService.endBroadcastSession({ roomId: targetRoomId, hostUserId: userId }, db).catch(() => {});
+  }
+
+  // If this is a Party Room, check if 0 participants remain and schedule the 12-second Empty Room Sleep Timer
+  let sleepSchedule = { scheduled: false, activeCount: viewerCount };
+  if (result && isPartyRoomType(result.roomType)) {
+    sleepSchedule = await checkAndSchedulePartyRoomSleep(targetRoomId, null, 12000, userId);
+  }
+
   const targetIds = Array.from(new Set([String(roomId), String(targetRoomId)]));
   for (const rid of targetIds) {
     try {
@@ -599,7 +720,12 @@ export async function leaveRoom(roomId, userId, db = prisma) {
     } catch (_) {}
   }
 
-  return result;
+  return {
+    ...result,
+    roomStaysOpen: true,
+    willSleepIfEmpty: sleepSchedule.scheduled,
+    sleepAfterSeconds: sleepSchedule.scheduled ? 12 : null,
+  };
 }
 
 export async function occupySeat(roomId, seatIndex, userId, db = prisma) {
@@ -783,6 +909,51 @@ export async function closeMyRoom(roomId, userId, db = prisma) {
     throw error;
   }
 
+  // Persistent Party Room Lifecycle:
+  // When the host exits a Party Room (AUDIO_PARTY / VIDEO_PARTY), only the host leaves the room.
+  // Remaining users stay inside uninterrupted; the room goes to sleep 12 seconds after the last user leaves.
+  if (isPartyRoomType(room.roomType)) {
+    await attendanceService.endBroadcastSession({ roomId: room.id, hostUserId: userId }, db).catch(() => {});
+    const leaveResult = await leaveRoom(room.id, userId, db);
+    const summary = await getLiveSessionSummary(room.id, db).catch(() => null);
+
+    if (typeof leaveResult?.vacatedSeatIndex === 'number') {
+      try {
+        await stageService.notifyStageReleased({
+          roomId: room.id,
+          seatIndex: Number(leaveResult.vacatedSeatIndex),
+          userId,
+          releasedByUserId: userId,
+          reason: 'HOST_LEFT_ROOM',
+        });
+      } catch (_) {}
+    }
+
+    const hostLeftPayload = {
+      roomId: room.id,
+      userId,
+      status: 'LIVE',
+      reason: 'HOST_LEFT',
+      roomStaysOpen: true,
+      message: 'Host has left the room. Party continues for remaining members.',
+    };
+    socketEmitter.emitToRoom(room.id, 'room:host_away', hostLeftPayload);
+    socketEmitter.emitToRoom(room.id, 'room:host_left', hostLeftPayload);
+
+    const sleepCheck = await checkAndSchedulePartyRoomSleep(room.id, null, 12000, userId);
+
+    return {
+      ...leaveResult,
+      status: 'LIVE',
+      hostLeftOnly: true,
+      roomStaysOpen: true,
+      willSleepIfEmpty: sleepCheck.scheduled,
+      sleepAfterSeconds: sleepCheck.scheduled ? 12 : null,
+      summary,
+    };
+  }
+
+  // Solo LIVE_VIDEO stream: ends immediately for all viewers when broadcaster ends stream
   clearHostAbsentTimer(roomId);
   micInviteService.clearAllInvitesForRoom(roomId);
   await attendanceService.endBroadcastSession({ roomId, hostUserId: userId }, db).catch(() => {});
@@ -3457,6 +3628,7 @@ export default {
   leaveSeat,
   closeMyRoom,
   getLiveSessionSummary,
+  getMyPartyRoom,
   listRoomsForAdmin,
   adminPinRoom,
   adminUnpinRoom,

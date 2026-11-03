@@ -9,7 +9,11 @@ export const adminRoomRouter = express.Router();
 
 // User & Mobile Live Room Routes
 userRoomRouter.post('/', authenticate, roomController.createRoom);
+userRoomRouter.get('/', roomController.getActiveRooms);
 userRoomRouter.get('/active', roomController.getActiveRooms);
+userRoomRouter.get('/search', roomController.getActiveRooms);
+userRoomRouter.get('/my-room', authenticate, roomController.getMyPartyRoom);
+userRoomRouter.get('/me', authenticate, roomController.getMyPartyRoom);
 userRoomRouter.get('/joined', authenticate, roomController.getUserJoinedRooms);
 userRoomRouter.get('/user/:userId/joined', roomController.getUserJoinedRooms);
 userRoomRouter.get('/:id', roomController.getRoomDetails);

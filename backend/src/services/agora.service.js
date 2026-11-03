@@ -69,13 +69,26 @@ export async function issueRoomAgoraToken({ roomId, userId }, db = prisma) {
   }
 
   if (room.status !== 'LIVE') {
-    const error = new Error(`Room is not live (current status: ${room.status})`);
-    error.statusCode = 410;
-    error.status = 410;
-    error.code = 'ROOM_NOT_LIVE';
-    error.roomEnded = true;
-    error.recoverable = false;
-    throw error;
+    const isParty = String(room.roomType || '').toUpperCase().includes('PARTY') ||
+      String(room.roomType || '').toUpperCase().includes('AUDIO');
+    if (isParty && room.status !== 'CLOSED_BY_ADMIN') {
+      try {
+        await db.room.update({
+          where: { id: room.id },
+          data: { status: 'LIVE', endedAt: null },
+        });
+        room.status = 'LIVE';
+      } catch (_) {}
+    }
+    if (room.status !== 'LIVE') {
+      const error = new Error(`Room is not live (current status: ${room.status})`);
+      error.statusCode = 410;
+      error.status = 410;
+      error.code = 'ROOM_NOT_LIVE';
+      error.roomEnded = true;
+      error.recoverable = false;
+      throw error;
+    }
   }
 
   if (!room.agoraChannelName) {
