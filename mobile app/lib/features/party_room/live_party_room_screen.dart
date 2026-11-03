@@ -2009,7 +2009,9 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
   void _showIncomingPKInvitationDialog(Map<String, dynamic> data) {
     final invitationId = data['invitationId']?.toString() ?? '';
-    final fromHost = data['fromHost'] is Map ? data['fromHost'] as Map : {};
+    final fromHost = data['fromHost'] is Map
+        ? data['fromHost'] as Map
+        : (data['inviterUser'] is Map ? data['inviterUser'] as Map : <String, dynamic>{});
     final fromRoom = data['fromRoom'] is Map ? data['fromRoom'] as Map : {};
     final hostName = fromHost['displayName'] ?? fromHost['username'] ?? 'Live Host';
     final hostAvatar = fromHost['avatarUrl']?.toString() ?? '';

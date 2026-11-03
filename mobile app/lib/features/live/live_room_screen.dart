@@ -582,7 +582,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
         if (!mounted) return;
         final inviterUser = data['inviterUser'] is Map
             ? Map<String, dynamic>.from(data['inviterUser'])
-            : {};
+            : (data['fromHost'] is Map ? Map<String, dynamic>.from(data['fromHost']) : <String, dynamic>{});
         final inviterName =
             inviterUser['name'] ??
             inviterUser['displayName'] ??

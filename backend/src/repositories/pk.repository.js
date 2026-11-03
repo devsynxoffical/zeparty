@@ -63,7 +63,8 @@ export class PKRepository {
       return { eligible: false, code: 'PK_ROOM_NOT_FOUND', error: 'Room ID and User ID are required' };
     }
 
-    const room = await db.room.findUnique({
+    const cleanRoomId = (roomId || '').trim().replace(/^room_/, '');
+    let room = await db.room.findUnique({
       where: { id: roomId },
       include: {
         creator: {
@@ -74,10 +75,44 @@ export class PKRepository {
           select: { role: true },
         },
       },
-    });
+    }).catch(() => null);
+
+    if (!room && cleanRoomId && cleanRoomId !== roomId) {
+      room = await db.room.findUnique({
+        where: { id: cleanRoomId },
+        include: {
+          creator: {
+            select: { id: true, username: true, avatarUrl: true, profile: true },
+          },
+          members: {
+            where: { userId },
+            select: { role: true },
+          },
+        },
+      }).catch(() => null);
+    }
+
+    if (!room && userId) {
+      // Fallback: Resolve active LIVE room owned/hosted by this user
+      room = await db.room.findFirst({
+        where: {
+          creatorUserId: userId,
+          status: 'LIVE',
+        },
+        include: {
+          creator: {
+            select: { id: true, username: true, avatarUrl: true, profile: true },
+          },
+          members: {
+            where: { userId },
+            select: { role: true },
+          },
+        },
+      }).catch(() => null);
+    }
 
     if (!room) {
-      return { eligible: false, code: 'PK_ROOM_NOT_FOUND', error: 'Room does not exist' };
+      return { eligible: false, code: 'PK_ROOM_NOT_FOUND', error: 'Room does not exist or host is not live' };
     }
 
     if (room.status !== 'LIVE') {
@@ -117,10 +152,18 @@ export class PKRepository {
     const trimmed = (query || '').trim();
     if (!trimmed) return [];
 
+    const cleanId = trimmed.replace(/^room_/, '');
     const numericQuery = parseInt(trimmed, 10);
     const whereConditions = [
       { id: trimmed },
-      { creator: { username: { equals: trimmed, mode: 'insensitive' } } },
+      { id: cleanId },
+      { creatorUserId: trimmed },
+      { creatorUserId: cleanId },
+      { creator: { id: trimmed } },
+      { creator: { id: cleanId } },
+      { creator: { username: { contains: trimmed, mode: 'insensitive' } } },
+      { creator: { profile: { displayName: { contains: trimmed, mode: 'insensitive' } } } },
+      { title: { contains: trimmed, mode: 'insensitive' } },
     ];
 
     if (!isNaN(numericQuery) && numericQuery > 0) {

@@ -249,7 +249,9 @@ class PKRepository {
       for (final room in rooms) {
         if (room.status.toUpperCase() == 'LIVE' && room.host.id.isNotEmpty && !seenIds.contains(room.host.id)) {
           seenIds.add(room.host.id);
-          hosts.add(room.host);
+          hosts.add(room.host.copyWith(
+            liveRoomId: room.id,
+          ));
         }
       }
       if (hosts.isNotEmpty) {

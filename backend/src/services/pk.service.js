@@ -163,11 +163,23 @@ export class PKService {
         displayName: fromCheck.room.creator.profile?.displayName || fromCheck.room.creator.username,
         avatarUrl: fromCheck.room.creator.avatarUrl || '',
       },
+      inviterUser: {
+        id: fromCheck.room.creator.id,
+        username: fromCheck.room.creator.username,
+        name: fromCheck.room.creator.profile?.displayName || fromCheck.room.creator.username,
+        displayName: fromCheck.room.creator.profile?.displayName || fromCheck.room.creator.username,
+        avatarUrl: fromCheck.room.creator.avatarUrl || '',
+      },
     };
 
     // Emit realtime invitation notification directly to target user and room
     socketEmitter.emitToUser(targetHostUserId, 'pk:invitation_received', invitePayload);
-    socketEmitter.emitToRoom(targetRoomId, 'pk:invitation_received', invitePayload);
+    if (targetCheck.room?.id) {
+      socketEmitter.emitToRoom(targetCheck.room.id, 'pk:invitation_received', invitePayload);
+    }
+    if (targetRoomId && targetRoomId !== targetCheck.room?.id) {
+      socketEmitter.emitToRoom(targetRoomId, 'pk:invitation_received', invitePayload);
+    }
 
     return {
       invitationId: invitation.id,

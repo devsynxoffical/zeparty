@@ -141,9 +141,12 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
             orElse: () => null,
           );
           if (localMatch != null) {
+            final effectiveTargetRoomId = (localMatch.liveRoomId != null && localMatch.liveRoomId!.isNotEmpty)
+                ? localMatch.liveRoomId!
+                : (localMatch.currentRoomId ?? localMatch.id);
             setState(() {
               _discoveredOpponent = PKDiscoveryResult(
-                roomId: 'room_${localMatch.id}',
+                roomId: effectiveTargetRoomId,
                 roomTitle: '${localMatch.name}\'s Arena',
                 roomType: _effectiveRoomType,
                 region: 'GLOBAL',
@@ -171,9 +174,12 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
           orElse: () => null,
         );
         if (localMatch != null) {
+          final effectiveTargetRoomId = (localMatch.liveRoomId != null && localMatch.liveRoomId!.isNotEmpty)
+              ? localMatch.liveRoomId!
+              : (localMatch.currentRoomId ?? localMatch.id);
           setState(() {
             _discoveredOpponent = PKDiscoveryResult(
-              roomId: 'room_${localMatch.id}',
+              roomId: effectiveTargetRoomId,
               roomTitle: '${localMatch.name}\'s Arena',
               roomType: _effectiveRoomType,
               region: 'GLOBAL',
@@ -235,22 +241,11 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
       }
     } catch (e) {
       if (mounted) {
-        final fallbackMatchId = 'pk_match_${DateTime.now().millisecondsSinceEpoch}';
-        final fallbackInvId = 'inv_${DateTime.now().millisecondsSinceEpoch}';
-        setState(() {
-          _pendingInvitationId = fallbackInvId;
-          _pendingMatchId = fallbackMatchId;
-          _invitationTimerRemaining = 30;
-          _isSendingInvite = false;
-          _isPreparing = true; // Auto-transition to prep so user can start
-        });
-
-        _startInvitationCountdown();
-
+        setState(() => _isSendingInvite = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('⚔️ PK match ready with $targetName! Tap "I Am Ready" to enter.'),
-            backgroundColor: AppColors.primary,
+            content: Text('❌ PK invitation failed: $e'),
+            backgroundColor: Colors.redAccent,
           ),
         );
       }
@@ -831,12 +826,39 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
                         ],
                       ),
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.send_rounded, color: Color(0xFF00E5FF), size: 20),
-                      onPressed: () {
-                        _searchController.text = host.id;
-                        _performDiscovery();
-                      },
+                    ElevatedButton(
+                      onPressed: _isSendingInvite
+                          ? null
+                          : () {
+                              final targetRoomId = (host.liveRoomId != null && host.liveRoomId!.isNotEmpty)
+                                  ? host.liveRoomId!
+                                  : (host.currentRoomId ?? host.id);
+                              setState(() {
+                                _selectedOpponent = host;
+                                _discoveredOpponent = PKDiscoveryResult(
+                                  roomId: targetRoomId,
+                                  roomTitle: '${host.name}\'s Room',
+                                  roomType: _effectiveRoomType,
+                                  region: 'GLOBAL',
+                                  hostId: host.id,
+                                  hostUsername: host.username,
+                                  hostDisplayName: host.name,
+                                  hostAvatarUrl: host.avatarUrl,
+                                  isOnline: true,
+                                );
+                              });
+                              _sendInvitation(
+                                targetRoomId: targetRoomId,
+                                targetHostUserId: host.id,
+                                targetName: host.name,
+                              );
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFE91E63),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      ),
+                      child: const Text('Invite', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
