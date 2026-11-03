@@ -2605,7 +2605,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
             // High Value Announcement Overlay
             const HighValueAnnouncementOverlay(),
             Positioned(
-              top: MediaQuery.of(context).padding.top + 60,
+              top: MediaQuery.of(context).padding.top + 105,
               left: 10,
               child: const SvipEntryBanner(),
             ),

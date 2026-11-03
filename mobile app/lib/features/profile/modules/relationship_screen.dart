@@ -37,210 +37,281 @@ class _RelationshipScreenState extends State<RelationshipScreen> {
 
   // ── Module 10: Relationship Card Chooser & Store Purchase Flow ──
   void _showRelationshipCardChooser(BuildContext context, UserModel targetUser) {
-    final cards = [
-      const RelationshipCardModel(
-        id: 'card_cp',
-        name: 'CP Card (Eternal CP Ring)',
-        type: 'CP',
-        imageUrl: 'assets/images/cp_ring.png',
-        coinPrice: 1000,
-        benefits: 'Exclusive CP Ring Badge, Dynamic Entry Banner, Relationship Leveling',
-        maxCount: 1,
-      ),
-      const RelationshipCardModel(
-        id: 'card_friend',
-        name: 'Friend Card',
-        type: 'Friend',
-        imageUrl: 'assets/images/friend_card.png',
-        coinPrice: 500,
-        benefits: 'Friend Badge, Social Profile Wall Showcase',
-        maxCount: 20,
-      ),
-      const RelationshipCardModel(
-        id: 'card_bozun',
-        name: 'Bozun Card',
-        type: 'Bozun',
-        imageUrl: 'assets/images/bozun_card.png',
-        coinPrice: 1500,
-        benefits: 'Bozun Oath Badge, Shared Room Perks, Wall Accent',
-        maxCount: 10,
-      ),
-      const RelationshipCardModel(
-        id: 'card_best_friend',
-        name: 'Best Friend Card',
-        type: 'Best Friend',
-        imageUrl: 'assets/images/best_friend.png',
-        coinPrice: 500,
-        benefits: 'Best Friend Badge, Chat Frame, Shared Room Perks',
-        maxCount: 5,
-      ),
-    ];
-
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.getCard(isDark),
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  UserAvatar(imageUrl: targetUser.avatarUrl, radius: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Select Card for ${targetUser.name}', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
-                        Text('Target user remains attached to invitation flow', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                ],
+      builder: (ctx) => FutureBuilder<List<dynamic>>(
+        future: SocialRepository.instance.fetchRelationshipCards(),
+        builder: (context, snapshot) {
+          final isWaiting = snapshot.connectionState == ConnectionState.waiting;
+          List<RelationshipCardModel> cards = [];
+
+          if (snapshot.hasData && snapshot.data!.isNotEmpty) {
+            cards = snapshot.data!
+                .map((item) => RelationshipCardModel.fromJson(Map<String, dynamic>.from(item as Map)))
+                .toList();
+          } else if (!isWaiting) {
+            // Fallback to configured catalog
+            cards = const [
+              RelationshipCardModel(
+                id: 'card_cp',
+                name: 'CP Card (Eternal CP Ring)',
+                type: 'CP',
+                imageUrl: 'assets/images/cp_ring.png',
+                coinPrice: 50000,
+                benefits: 'Exclusive CP Ring Badge, Dynamic Entry Banner, Relationship Leveling',
+                maxCount: 1,
               ),
-              const SizedBox(height: 16),
-              Divider(color: isDark ? Colors.white24 : AppColors.lightBorder),
-              Expanded(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: cards.length,
-                  itemBuilder: (c, i) {
-                    final card = cards[i];
-                    return Card(
-                      color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFF8FAFC),
-                      margin: const EdgeInsets.only(bottom: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: ListTile(
-                        leading: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(color: Colors.purple.withValues(alpha: 0.3), shape: BoxShape.circle),
-                          child: const Icon(Icons.favorite_rounded, color: Colors.pinkAccent),
-                        ),
-                        title: Text(card.name, style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold)),
-                        subtitle: Text('${card.benefits}\nMax Limit: ${card.maxCount} ${card.type}', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 11)),
-                        isThreeLine: true,
-                        trailing: ElevatedButton(
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
-                          onPressed: () {
-                            Navigator.pop(ctx);
-                            _showRelationshipStoreDialog(context, targetUser, card);
-                          },
-                          child: Text('${card.coinPrice} 🪙', style: const TextStyle(fontWeight: FontWeight.bold)),
+              RelationshipCardModel(
+                id: 'card_friend',
+                name: 'Friend Card',
+                type: 'Friend',
+                imageUrl: 'assets/images/friend_card.png',
+                coinPrice: 5000,
+                benefits: 'Friend Badge, Social Profile Wall Showcase',
+                maxCount: 20,
+              ),
+              RelationshipCardModel(
+                id: 'card_bozun',
+                name: 'Bozun Card',
+                type: 'Bozun',
+                imageUrl: 'assets/images/bozun_card.png',
+                coinPrice: 15000,
+                benefits: 'Bozun Oath Badge, Shared Room Perks, Wall Accent',
+                maxCount: 10,
+              ),
+              RelationshipCardModel(
+                id: 'card_best_friend',
+                name: 'Best Friend Card',
+                type: 'Best Friend',
+                imageUrl: 'assets/images/best_friend.png',
+                coinPrice: 20000,
+                benefits: 'Best Friend Badge, Chat Frame, Shared Room Perks',
+                maxCount: 5,
+              ),
+            ];
+          }
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      UserAvatar(imageUrl: targetUser.avatarUrl, radius: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Select Card for ${targetUser.name}',
+                              style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            Text(
+                              'Target user will receive a relationship invitation',
+                              style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 11),
+                            ),
+                          ],
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Divider(color: isDark ? Colors.white24 : AppColors.lightBorder),
+                  if (isWaiting)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: CircularProgressIndicator(),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: cards.length,
+                        itemBuilder: (c, i) {
+                          final card = cards[i];
+                          return Card(
+                            color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFF8FAFC),
+                            margin: const EdgeInsets.only(bottom: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            child: ListTile(
+                              leading: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.withValues(alpha: 0.3),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.favorite_rounded, color: Colors.pinkAccent),
+                              ),
+                              title: Text(
+                                card.name,
+                                style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text(
+                                '${card.benefits}\nMax Limit: ${card.maxCount} ${card.type} • Expiry: ${card.expiryHours}h',
+                                style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 11),
+                              ),
+                              isThreeLine: true,
+                              trailing: ElevatedButton(
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.amber, foregroundColor: Colors.black),
+                                onPressed: () {
+                                  Navigator.pop(ctx);
+                                  _showRelationshipStoreDialog(context, targetUser, card);
+                                },
+                                child: Text('${card.coinPrice} 🪙', style: const TextStyle(fontWeight: FontWeight.bold)),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
 
   void _showRelationshipStoreDialog(BuildContext context, UserModel targetUser, RelationshipCardModel card) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    bool isPurchasing = false;
 
     showDialog(
       context: context,
-      builder: (d) => AlertDialog(
-        backgroundColor: AppColors.getCard(isDark),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Icon(Icons.storefront_rounded, color: isDark ? Colors.amberAccent : Colors.amber.shade800),
-            const SizedBox(width: 8),
-            Text('Purchase ${card.type} Card', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isDark ? Colors.purple.withValues(alpha: 0.2) : const Color(0xFFFDF4FF),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.purpleAccent.withValues(alpha: 0.4)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+      barrierDismissible: true,
+      builder: (d) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) {
+          final wallet = dialogCtx.watch<WalletProvider>();
+          final hasEnoughCoins = wallet.coins >= card.coinPrice;
+
+          return AlertDialog(
+            backgroundColor: AppColors.getCard(isDark),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                Icon(Icons.storefront_rounded, color: isDark ? Colors.amberAccent : Colors.amber.shade800),
+                const SizedBox(width: 8),
+                Text('Purchase ${card.type} Card', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.purple.withValues(alpha: 0.2) : const Color(0xFFFDF4FF),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.purpleAccent.withValues(alpha: 0.4)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      UserAvatar(imageUrl: targetUser.avatarUrl, radius: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Target: ${targetUser.name}',
-                          style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
+                      Row(
+                        children: [
+                          UserAvatar(imageUrl: targetUser.avatarUrl, radius: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Target: ${targetUser.name}',
+                              style: TextStyle(color: AppColors.getTextPrimary(isDark), fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 8),
+                      Text('Card Name: ${card.name}', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
+                      Text('Price: ${card.coinPrice} Coins 🪙', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 12)),
+                      Text('Your Balance: ${wallet.coins} Coins 🪙', style: TextStyle(color: hasEnoughCoins ? Colors.greenAccent : Colors.redAccent, fontSize: 12, fontWeight: FontWeight.w600)),
+                      Text('Refund Policy: ${card.refundPolicy}', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 10)),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text('Card Name: ${card.name}', style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
-                  Text('Price: ${card.coinPrice} Coins 🪙', style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 12)),
-                  Text('Refund Policy: ${card.refundPolicy}', style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 10)),
-                ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '⚠️ Purchase alone does NOT activate relationship. An invitation will be sent to the target user. Upon acceptance, the relationship becomes active.',
+                  style: TextStyle(color: isDark ? Colors.amberAccent : Colors.amber.shade900, fontSize: 11, fontStyle: FontStyle.italic),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: isPurchasing ? null : () => Navigator.pop(d),
+                child: Text('Cancel', style: TextStyle(color: AppColors.getTextSecondary(isDark))),
               ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '⚠️ Purchase alone does NOT activate relationship. An invitation will be sent to the target user. Upon acceptance, the relationship becomes active.',
-              style: TextStyle(color: isDark ? Colors.amberAccent : Colors.amber.shade900, fontSize: 11, fontStyle: FontStyle.italic),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(d), child: Text('Cancel', style: TextStyle(color: AppColors.getTextSecondary(isDark)))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.pinkAccent),
-            onPressed: () async {
-              final wallet = context.read<WalletProvider>();
-              final success = wallet.spendCoins(card.coinPrice, 'Relationship Card: ${card.name}');
-              if (!success) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Insufficient Coins! Please recharge your wallet.'), backgroundColor: Colors.redAccent),
-                );
-                return;
-              }
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: hasEnoughCoins ? Colors.pinkAccent : Colors.grey),
+                onPressed: isPurchasing
+                    ? null
+                    : () async {
+                        if (!hasEnoughCoins) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Insufficient Coins! You need ${card.coinPrice} coins. Current balance: ${wallet.coins}.'),
+                              backgroundColor: Colors.redAccent,
+                            ),
+                          );
+                          return;
+                        }
 
-              final auth = context.read<AuthProvider>();
-              auth.sendCpRequest(targetUser.id);
-              try {
-                await SocialRepository.instance.purchaseAndSendRelationshipCard(
-                  recipientUserId: targetUser.id,
-                  cardType: card.type,
-                  deductCoins: false,
-                );
-              } catch (_) {}
+                        setDialogState(() => isPurchasing = true);
 
-              if (context.mounted) {
-                Navigator.pop(d);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('📩 Purchased ${card.name}! Invitation sent to ${targetUser.name}. Pending acceptance.'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
-            },
-            child: const Text('Purchase & Send Invitation', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
+                        try {
+                          // Call backend purchase and invitation flow with deductCoins: true
+                          await SocialRepository.instance.purchaseAndSendRelationshipCard(
+                            recipientUserId: targetUser.id,
+                            cardType: card.type,
+                            deductCoins: true,
+                          );
+
+                          // Deduct coins / refresh wallet balance ONLY after backend confirmation
+                          await wallet.fetchWallet();
+
+                          if (context.mounted) {
+                            final auth = context.read<AuthProvider>();
+                            auth.sendCpRequest(targetUser.id);
+                            Navigator.pop(d);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('📩 Invitation sent to ${targetUser.name}! Pending their acceptance.'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          setDialogState(() => isPurchasing = false);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Failed to purchase and send card: $e'),
+                                backgroundColor: Colors.redAccent,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                child: isPurchasing
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text('Purchase & Send Invitation', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
-
   void _showOptions(BuildContext context, AuthProvider auth) {
     showModalBottomSheet(
       context: context,
@@ -694,13 +765,26 @@ class _BuildRelationshipModalSheetState extends State<_BuildRelationshipModalShe
     }
   }
 
+  List<UserModel> get _displayFriends {
+    final q = _searchController.text.trim().toLowerCase();
+    if (q.isEmpty) return _friends;
+    return _friends.where((u) {
+      final name = u.name.toLowerCase();
+      final username = u.username.toLowerCase();
+      final id = u.id.toLowerCase();
+      final publicId = u.publicUserId.toLowerCase();
+      return name.contains(q) || username.contains(q) || id.contains(q) || publicId.contains(q);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primary = AppColors.getPrimary(isDark);
+    final displayList = _displayFriends;
 
     return Container(
-      height: MediaQuery.of(context).size.height * 0.65,
+      height: MediaQuery.of(context).size.height * 0.70,
       padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
       child: Column(
         children: [
@@ -720,15 +804,18 @@ class _BuildRelationshipModalSheetState extends State<_BuildRelationshipModalShe
           ),
           const SizedBox(height: 6),
           const Text(
-            'Select an eligible friend to send a relationship card invitation.\n(Requires both users to follow each other)',
+            'Select an eligible mutual friend to send a relationship card invitation.\n(Both users must follow each other mutually)',
             style: TextStyle(fontSize: 12, color: Colors.grey),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 14),
-          // Search Box (Issue 15 & 17)
+          // Search Box (Issue 15 & 17: Search by Nickname or User ID)
           TextField(
             controller: _searchController,
-            onChanged: (val) => _fetchEligibleFriends(search: val),
+            onChanged: (val) {
+              setState(() {});
+              _fetchEligibleFriends(search: val);
+            },
             style: TextStyle(color: AppColors.getTextPrimary(isDark), fontSize: 13),
             decoration: InputDecoration(
               hintText: 'Search mutual friends by nickname or ID...',
@@ -739,6 +826,7 @@ class _BuildRelationshipModalSheetState extends State<_BuildRelationshipModalShe
                       icon: const Icon(Icons.clear_rounded, size: 18),
                       onPressed: () {
                         _searchController.clear();
+                        setState(() {});
                         _fetchEligibleFriends();
                       },
                     )
@@ -761,16 +849,24 @@ class _BuildRelationshipModalSheetState extends State<_BuildRelationshipModalShe
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12), textAlign: TextAlign.center),
+                            const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 36),
                             const SizedBox(height: 8),
-                            ElevatedButton(
+                            Text(_error!, style: const TextStyle(color: Colors.redAccent, fontSize: 12), textAlign: TextAlign.center),
+                            const SizedBox(height: 12),
+                            ElevatedButton.icon(
                               onPressed: () => _fetchEligibleFriends(search: _searchController.text),
-                              child: const Text('Retry'),
+                              icon: const Icon(Icons.refresh_rounded, size: 16),
+                              label: const Text('Retry'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: primary,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
                             ),
                           ],
                         ),
                       )
-                    : _friends.isEmpty
+                    : displayList.isEmpty
                         ? Center(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -798,16 +894,31 @@ class _BuildRelationshipModalSheetState extends State<_BuildRelationshipModalShe
                             ),
                           )
                         : ListView.builder(
-                            itemCount: _friends.length,
+                            itemCount: displayList.length,
                             itemBuilder: (ctx, idx) {
-                              final candidate = _friends[idx];
+                              final candidate = displayList[idx];
                               return ListTile(
                                 leading: UserAvatar(imageUrl: candidate.avatarUrl, radius: 24),
                                 title: Text(candidate.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                subtitle: Text(
-                                  'ID: ${candidate.id} • Wealth Lv ${candidate.wealthLevel}',
-                                  style: const TextStyle(fontSize: 11, color: Colors.amberAccent),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'ID: ${candidate.effectivePublicId}',
+                                      style: TextStyle(fontSize: 11, color: isDark ? Colors.white60 : Colors.black54),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.sync_alt_rounded, size: 12, color: Colors.greenAccent),
+                                        SizedBox(width: 4),
+                                        Text('Mutual Follow', style: TextStyle(color: Colors.greenAccent, fontSize: 10, fontWeight: FontWeight.w600)),
+                                      ],
+                                    ),
+                                  ],
                                 ),
+                                isThreeLine: true,
                                 trailing: ElevatedButton(
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: primary,

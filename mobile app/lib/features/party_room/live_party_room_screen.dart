@@ -3535,9 +3535,30 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
 
     // 1. Determine sender's seat (if on a mic seat)
     final participant = partyProv.participants
-        .where((p) => (p.user.id == currentUser.id || p.user.username == currentUser.username) && p.seatNumber != null)
+        .where((p) =>
+            (p.user.id == currentUser.id ||
+             p.user.username == currentUser.username ||
+             (p.user.publicUserId.isNotEmpty && p.user.publicUserId == currentUser.publicUserId)) &&
+            p.seatNumber != null)
         .firstOrNull;
-    final seatId = participant?.seatNumber;
+    int? seatId = participant?.seatNumber;
+
+    // Fix Host Seat 0 Detection (Section 5)
+    if (seatId == null) {
+      final isHost = partyProv.isHost ||
+          widget.room.host.id == currentUser.id ||
+          widget.room.creatorUserId == currentUser.id ||
+          partyProv.activeRoom?.host.id == currentUser.id ||
+          partyProv.activeRoom?.creatorUserId == currentUser.id ||
+          (currentUser.username.isNotEmpty && widget.room.host.username.toLowerCase() == currentUser.username.toLowerCase()) ||
+          (currentUser.publicUserId.isNotEmpty &&
+              (widget.room.host.publicUserId == currentUser.publicUserId ||
+               widget.room.host.id == currentUser.publicUserId ||
+               widget.room.creatorUserId == currentUser.publicUserId));
+      if (isHost) {
+        seatId = 0;
+      }
+    }
 
     // 2. Random result for Dice (1-6) or Number (0-999)
     int? gameResult;

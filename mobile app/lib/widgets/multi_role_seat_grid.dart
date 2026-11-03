@@ -7,7 +7,102 @@ import '../providers/emoji_reaction_provider.dart';
 import '../core/utils/noble_badge_helper.dart';
 import 'pulse_glow_avatar.dart';
 import 'user_avatar.dart';
-import 'animated_room_reaction.dart';
+
+class InternalVoiceMicBadge extends StatefulWidget {
+  final bool isMuted;
+  final double volume; // 0.0 to 1.0
+  final double size;
+
+  const InternalVoiceMicBadge({
+    super.key,
+    required this.isMuted,
+    required this.volume,
+    required this.size,
+  });
+
+  @override
+  State<InternalVoiceMicBadge> createState() => _InternalVoiceMicBadgeState();
+}
+
+class _InternalVoiceMicBadgeState extends State<InternalVoiceMicBadge>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animController;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.isMuted) {
+      return Icon(
+        Icons.mic_off_rounded,
+        size: widget.size,
+        color: Colors.white,
+      );
+    }
+
+    final isSpeaking = widget.volume > 0.05;
+
+    if (!isSpeaking) {
+      return Icon(
+        Icons.mic_rounded,
+        size: widget.size,
+        color: Colors.white,
+      );
+    }
+
+    final speedMultiplier = widget.volume < 0.35 ? 0.7 : (widget.volume < 0.70 ? 1.2 : 1.8);
+    final waveAmplitude = widget.volume < 0.35 ? 0.25 : (widget.volume < 0.70 ? 0.5 : 0.85);
+
+    return AnimatedBuilder(
+      animation: _animController,
+      builder: (context, child) {
+        final animVal = (_animController.value * speedMultiplier) % 1.0;
+        return ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) {
+            final yOffset = animVal;
+            return LinearGradient(
+              begin: Alignment.bottomCenter,
+              end: Alignment.topCenter,
+              colors: const [
+                Colors.white,
+                Color(0xFF69F0AE),
+                Colors.white,
+                Color(0xFF00E676),
+                Colors.white,
+              ],
+              stops: [
+                0.0,
+                ((yOffset - 0.25 * waveAmplitude).clamp(0.0, 1.0)),
+                yOffset.clamp(0.0, 1.0),
+                ((yOffset + 0.25 * waveAmplitude).clamp(0.0, 1.0)),
+                1.0,
+              ],
+            ).createShader(bounds);
+          },
+          child: Icon(
+            Icons.mic_rounded,
+            size: widget.size,
+            color: Colors.white,
+          ),
+        );
+      },
+    );
+  }
+}
 
 class MultiRoleSeatGrid extends StatelessWidget {
   final List<PartyParticipantModel> participants;
@@ -269,21 +364,29 @@ class MultiRoleSeatGrid extends StatelessWidget {
     if (participant != null) {
       emojiProv.registerAnchor('user_${participant.user.id}', seatKey);
     }
+    if (seatIndex == 0) {
+      final hostId = context.read<LivePartyProvider>().activeRoom?.host.id ??
+          context.read<LivePartyProvider>().activeRoom?.creatorUserId;
+      if (hostId != null && hostId.isNotEmpty) {
+        emojiProv.registerAnchor('user_$hostId', seatKey);
+      }
+    }
 
     if (participant != null) {
       final isMuted = participant.micStatus == MicStatus.muted;
       final isHostUser = participant.role == ParticipantRole.host;
       final isMod = participant.role == ParticipantRole.moderator;
 
-      final livePartyProv = context.watch<LivePartyProvider>();
-      final activeReaction = livePartyProv.activeMicReactions[seatIndex];
+      final authUser = context.watch<AuthProvider>().currentUser;
+      final isSelf = participant.user.id == authUser.id;
+      final effectiveUser = isSelf ? authUser : participant.user;
 
-      final effectiveFrame = (participant.user.avatarFrame.isNotEmpty && participant.user.avatarFrame != 'none')
-          ? participant.user.avatarFrame
-          : (participant.user.nobleTitle != null && participant.user.nobleTitle!.isNotEmpty
-              ? NobleBadgeHelper.getFrameAsset(participant.user.nobleTitle)
-              : (participant.user.svipLevel > 0
-                  ? NobleBadgeHelper.getFrameAsset('SVIP ${participant.user.svipLevel}')
+      final effectiveFrame = (effectiveUser.avatarFrame.isNotEmpty && effectiveUser.avatarFrame != 'none')
+          ? effectiveUser.avatarFrame
+          : (effectiveUser.nobleTitle != null && effectiveUser.nobleTitle!.isNotEmpty
+              ? NobleBadgeHelper.getFrameAsset(effectiveUser.nobleTitle)
+              : (effectiveUser.svipLevel > 0
+                  ? NobleBadgeHelper.getFrameAsset('SVIP ${effectiveUser.svipLevel}')
                   : null));
 
       return GestureDetector(
@@ -298,8 +401,8 @@ class MultiRoleSeatGrid extends StatelessWidget {
               children: [
                 participant.isSpeaking
                     ? PulseGlowAvatar(
-                        imageUrl: participant.user.avatarUrl,
-                        name: participant.user.name,
+                        imageUrl: effectiveUser.avatarUrl,
+                        name: effectiveUser.name,
                         radius: radius + 1,
                         glowColor: isHostUser ? Colors.amber : const Color(0xFF00E676),
                         frameAsset: effectiveFrame,
@@ -307,7 +410,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                     : Container(
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          border: Border.all(
+                          border: effectiveFrame != null ? null : Border.all(
                             color: isHostUser
                                 ? const Color(0xFFFFD700)
                                 : (isMod ? const Color(0xFF40C4FF) : const Color(0xFFAB47BC).withValues(alpha: 0.8)),
@@ -321,28 +424,13 @@ class MultiRoleSeatGrid extends StatelessWidget {
                           ],
                         ),
                         child: UserAvatar(
-                          imageUrl: participant.user.avatarUrl,
-                          name: participant.user.name,
+                          imageUrl: effectiveUser.avatarUrl,
+                          name: effectiveUser.name,
                           radius: radius,
                           frameAsset: effectiveFrame,
                         ),
                       ),
-                if (activeReaction != null)
-                  Positioned.fill(
-                    child: Center(
-                      child: IgnorePointer(
-                        child: AnimatedRoomReaction(
-                          key: ValueKey('seat_react_${activeReaction['id']}'),
-                          emojiKey: activeReaction['reactionAsset'] ?? 'party',
-                          gameResult: activeReaction['gameResult'] is int
-                              ? (activeReaction['gameResult'] as int)
-                              : int.tryParse(activeReaction['gameResult']?.toString() ?? ''),
-                          size: (radius * 2.2).clamp(52.0, 72.0),
-                          onComplete: () {},
-                        ),
-                      ),
-                    ),
-                  ),
+
                 if (isHostUser)
                   const Positioned(
                     top: -6,
@@ -374,10 +462,16 @@ class MultiRoleSeatGrid extends StatelessWidget {
                         ),
                       ],
                     ),
-                    child: Icon(
-                      isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                      size: radius * 0.38,
-                      color: Colors.white,
+                    child: Builder(
+                      builder: (ctx) {
+                        final partyProv = ctx.watch<LivePartyProvider>();
+                        final vol = partyProv.getSeatVoiceLevel(seatIndex);
+                        return InternalVoiceMicBadge(
+                          isMuted: isMuted,
+                          volume: vol,
+                          size: radius * 0.38,
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -392,16 +486,14 @@ class MultiRoleSeatGrid extends StatelessWidget {
                 children: [
                   Builder(
                     builder: (ctx) {
-                      final authUser = Provider.of<AuthProvider>(ctx, listen: false).currentUser;
-                      final isSelf = participant.user.id == authUser.id;
-                      final effectiveNoble = (participant.user.nobleTitle != null && participant.user.nobleTitle!.isNotEmpty)
-                          ? participant.user.nobleTitle
-                          : (isSelf ? authUser.nobleTitle : null);
+                      final effectiveNoble = (effectiveUser.nobleTitle != null && effectiveUser.nobleTitle!.isNotEmpty)
+                          ? effectiveUser.nobleTitle
+                          : null;
                       final tier = NobleBadgeHelper.getTierFromTitle(effectiveNoble);
                       if (tier == NobleTier.emperor) {
                         return Flexible(
                           child: AnimatedImperialUsername(
-                            text: participant.user.name,
+                            text: effectiveUser.name,
                             style: TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: isHostRow ? 10.5 : 9,
@@ -414,7 +506,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                       }
                       return Flexible(
                         child: Text(
-                          participant.user.name,
+                          effectiveUser.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
@@ -427,8 +519,8 @@ class MultiRoleSeatGrid extends StatelessWidget {
                       );
                     },
                   ),
-                  NobleBadgeChip(user: participant.user, fontSize: 7),
-                  NobleTagChip(user: participant.user, height: 11),
+                  NobleBadgeChip(user: effectiveUser, fontSize: 7),
+                  NobleTagChip(user: effectiveUser, height: 11),
                 ],
               ),
             ),

@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../core/services/agora_rtc_service.dart';
 import '../core/services/socket_service.dart';
@@ -14,6 +17,20 @@ import '../models/pk_battle_model.dart';
 import '../models/gift_model.dart';
 import '../models/live_cohost_invitation_model.dart';
 import '../core/services/room_config_manager.dart';
+
+int deriveAgoraUid(String userId) {
+  final numVal = int.tryParse(userId);
+  if (numVal != null && numVal > 0 && numVal <= 2147483640) {
+    return numVal;
+  }
+  final bytes = sha256.convert(utf8.encode(userId)).bytes;
+  final rawUint = ((bytes[0] & 0xFF) << 24) |
+      ((bytes[1] & 0xFF) << 16) |
+      ((bytes[2] & 0xFF) << 8) |
+      (bytes[3] & 0xFF);
+  final unsigned = rawUint & 0xFFFFFFFF;
+  return (unsigned % 2147483640) + 1;
+}
 
 class LivePartyProvider extends ChangeNotifier {
   final AgoraRtcService _agoraService = AgoraRtcService();
@@ -48,6 +65,10 @@ class LivePartyProvider extends ChangeNotifier {
   String? get lastJoinFailureReason => _lastJoinFailureReason;
 
   // Stream Subscriptions
+  final Map<int, double> _seatVoiceLevels = {};
+  Map<int, double> get seatVoiceLevels => _seatVoiceLevels;
+  double getSeatVoiceLevel(int seatIndex) => _seatVoiceLevels[seatIndex] ?? 0.0;
+  StreamSubscription? _volumeIndicationSub;
   StreamSubscription? _speakerSub;
   StreamSubscription? _remoteUsersSub;
   StreamSubscription? _socketUserJoinedSub;
@@ -73,6 +94,7 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketCoHostInviteSub;
   StreamSubscription? _socketCoHostInviteResponseSub;
   StreamSubscription? _socketRoomBackgroundSub;
+  StreamSubscription? _socketRoomEmojiSub;
 
   DateTime? _feedClearedAt;
   DateTime? get feedClearedAt => _feedClearedAt;
@@ -742,6 +764,72 @@ class LivePartyProvider extends ChangeNotifier {
         final speakerParticipant = _participants.where((p) => p.seatNumber != null).firstOrNull;
         if (speakerParticipant != null) {
           // Temporarily pulse active speaking
+        }
+      });
+
+      // Volume indication listener for internal microphone voice animation
+      _volumeIndicationSub?.cancel();
+      _volumeIndicationSub = _agoraService.volumeIndicationStream.listen((speakers) {
+        bool changed = false;
+        final detectedSeats = <int>{};
+
+        for (final info in speakers) {
+          int? targetSeat;
+          final isLocal = (info.uid == 0 || info.uid == _agoraService.currentUid);
+
+          if (isLocal) {
+            if (!isLocalMicMuted) {
+              final self = _participants.where((p) => p.user.id == currentUser.id && p.seatNumber != null).firstOrNull;
+              if (self != null) {
+                targetSeat = self.seatNumber;
+              } else if (isHost) {
+                targetSeat = 0;
+              }
+            }
+          } else {
+            final remotePart = _participants.where((p) {
+              if (p.seatNumber == null) return false;
+              if (p.user.id == info.uid.toString()) return true;
+              return deriveAgoraUid(p.user.id) == info.uid;
+            }).firstOrNull;
+
+            if (remotePart != null && !remotePart.isMuted) {
+              targetSeat = remotePart.seatNumber;
+            } else if (_activeRoom?.host.id != null && deriveAgoraUid(_activeRoom!.host.id) == info.uid) {
+              final hostPart = _participants.where((p) => p.seatNumber == 0).firstOrNull;
+              if (hostPart == null || !hostPart.isMuted) {
+                targetSeat = 0;
+              }
+            }
+          }
+
+          if (targetSeat != null) {
+            detectedSeats.add(targetSeat);
+            double level = 0.0;
+            final v = info.volume ?? 0;
+            if (v >= 6) {
+              level = (v / 160.0).clamp(0.15, 1.0);
+            }
+            if ((_seatVoiceLevels[targetSeat] ?? 0.0) != level) {
+              _seatVoiceLevels[targetSeat] = level;
+              changed = true;
+            }
+          }
+        }
+
+        final toReset = <int>[];
+        _seatVoiceLevels.forEach((seat, vol) {
+          if (!detectedSeats.contains(seat) && vol > 0.0) {
+            toReset.add(seat);
+          }
+        });
+        for (final seat in toReset) {
+          _seatVoiceLevels[seat] = 0.0;
+          changed = true;
+        }
+
+        if (changed) {
+          notifyListeners();
         }
       });
 
@@ -1997,6 +2085,8 @@ class LivePartyProvider extends ChangeNotifier {
 
     // 21. Room Background Image Stream (Item 34)
     _socketRoomBackgroundSub?.cancel();
+    _socketRoomEmojiSub?.cancel();
+    _activeMicReactions.clear();
     _socketRoomBackgroundSub = _socketService.onRoomBackgroundUpdated.listen((data) {
       final rId = data['roomId']?.toString() ?? data['id']?.toString();
       final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
@@ -2039,6 +2129,89 @@ class LivePartyProvider extends ChangeNotifier {
       if (rId == null || rId == currentId) {
         _isHostAbsent = false;
         notifyListeners();
+      }
+    });
+
+    // Room Animated Emojis Stream (Section 4)
+    _socketRoomEmojiSub?.cancel();
+    _socketRoomEmojiSub = _socketService.onRoomEmoji.listen((data) {
+      try {
+        final rId = (data['roomId'] ?? '').toString().trim();
+        final currentId = (_activeRoom?.id ?? _initialRoomId ?? '').trim().toLowerCase();
+        if (rId.isNotEmpty && currentId.isNotEmpty && rId.toLowerCase() != currentId) {
+          return;
+        }
+
+        final emoji = (data['emoji'] ?? '').toString().trim();
+        if (emoji.isEmpty) return;
+
+        final senderMap = data['sender'] is Map ? (data['sender'] as Map) : null;
+        final senderId = (senderMap != null ? (senderMap['id'] ?? senderMap['userId']) : data['senderId'])?.toString() ?? '';
+        final senderName = (senderMap != null ? (senderMap['displayName'] ?? senderMap['name']) : data['senderName'])?.toString() ?? 'User';
+
+        int? seatId = data['seatId'] is num
+            ? (data['seatId'] as num).toInt()
+            : int.tryParse(data['seatId']?.toString() ?? '');
+
+        // Fallback: If backend broadcast stripped seatId, resolve seat from participants or host
+        if (seatId == null && senderId.isNotEmpty) {
+          final occupant = _participants.where((p) =>
+              (p.user.id == senderId ||
+               (p.user.username.isNotEmpty && p.user.username == (senderMap?['username']?.toString() ?? ''))) &&
+              p.seatNumber != null
+          ).firstOrNull;
+          seatId = occupant?.seatNumber;
+
+          if (seatId == null) {
+            final isRoomHost = (_activeRoom?.host.id == senderId) ||
+                (_activeRoom?.creatorUserId == senderId) ||
+                (senderMap?['username'] != null && _activeRoom?.host.username.toLowerCase() == senderMap!['username'].toString().toLowerCase()) ||
+                (senderMap?['publicUserId'] != null && _activeRoom?.host.publicUserId == senderMap!['publicUserId'].toString());
+            if (isRoomHost) {
+              seatId = 0;
+            }
+          }
+        }
+
+        if (seatId != null) {
+          int? gameResult = data['gameResult'] is num
+              ? (data['gameResult'] as num).toInt()
+              : int.tryParse(data['gameResult']?.toString() ?? '');
+
+          if (gameResult == null) {
+            if (emoji == 'dice') {
+              gameResult = math.Random().nextInt(6) + 1;
+            } else if (emoji == 'number') {
+              gameResult = math.Random().nextInt(1000);
+            }
+          }
+
+          final reactionId = data['id']?.toString() ?? 'react_${DateTime.now().millisecondsSinceEpoch}_$seatId';
+          final reactionEvent = {
+            'id': reactionId,
+            'senderUserId': senderId,
+            'senderName': senderName,
+            'roomId': rId.isNotEmpty ? rId : currentId,
+            'micIndex': seatId,
+            'reactionAsset': emoji,
+            'category': data['category']?.toString() ?? 'illustrated',
+            'gameResult': gameResult,
+            'timestamp': data['timestamp']?.toString() ?? DateTime.now().toIso8601String(),
+          };
+
+          _activeMicReactions[seatId] = reactionEvent;
+          notifyListeners();
+
+          final capturedSeat = seatId;
+          Future.delayed(Duration(seconds: _reactionDurationSeconds), () {
+            if (_activeMicReactions[capturedSeat]?['id'] == reactionId) {
+              _activeMicReactions.remove(capturedSeat);
+              notifyListeners();
+            }
+          });
+        }
+      } catch (e) {
+        debugPrint('[LivePartyProvider] onRoomEmoji incoming event error: $e');
       }
     });
 
@@ -3128,7 +3301,17 @@ class LivePartyProvider extends ChangeNotifier {
     int? gameResult,
   }) {
     final occupant = _participants.where((p) => p.user.id == sender.id && p.seatNumber != null).firstOrNull;
-    if (occupant == null || occupant.seatNumber == null) {
+    int? micIndex = occupant?.seatNumber;
+    if (micIndex == null) {
+      final isHost = (_activeRoom?.host.id == sender.id) ||
+          (_activeRoom?.creatorUserId == sender.id) ||
+          (sender.username.isNotEmpty && _activeRoom?.host.username.toLowerCase() == sender.username.toLowerCase()) ||
+          (sender.publicUserId.isNotEmpty && _activeRoom?.host.publicUserId == sender.publicUserId);
+      if (isHost) {
+        micIndex = 0;
+      }
+    }
+    if (micIndex == null) {
       return false;
     }
 
@@ -3138,7 +3321,6 @@ class LivePartyProvider extends ChangeNotifier {
     }
     _lastUserReactionTimestamp[sender.id] = DateTime.now();
 
-    final micIndex = occupant.seatNumber!;
     final reactionEvent = {
       'id': 'react_${DateTime.now().millisecondsSinceEpoch}',
       'senderUserId': sender.id,
@@ -3572,6 +3754,22 @@ class LivePartyProvider extends ChangeNotifier {
       }
 
       sendSystemMessage('✏️ Room details updated.');
+      notifyListeners();
+    }
+  }
+
+  /// Synchronize equipped avatar frame across party room seats (Bug 4)
+  void syncUserFrame(String userId, String frame) {
+    bool updated = false;
+    for (int i = 0; i < _participants.length; i++) {
+      if (_participants[i].user.id == userId) {
+        _participants[i] = _participants[i].copyWith(
+          user: _participants[i].user.copyWith(avatarFrame: frame),
+        );
+        updated = true;
+      }
+    }
+    if (updated) {
       notifyListeners();
     }
   }

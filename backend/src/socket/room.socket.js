@@ -1287,6 +1287,8 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
       roomId,
       emoji,
       targetUserId,
+      seatId: typeof data?.seatId === 'number' ? data.seatId : (data?.seatId != null && !isNaN(parseInt(data.seatId, 10)) ? parseInt(data.seatId, 10) : null),
+      gameResult: typeof data?.gameResult === 'number' ? data.gameResult : (data?.gameResult != null && !isNaN(parseInt(data.gameResult, 10)) ? parseInt(data.gameResult, 10) : null),
       sender: {
         id: socket.user?.id || socket.userId,
         username: socket.user?.username || 'user',

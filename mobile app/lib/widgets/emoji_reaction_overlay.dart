@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/emoji_reaction_provider.dart';
+import '../providers/live_party_provider.dart';
 import 'animated_room_reaction.dart';
 
 class EmojiReactionOverlay extends StatelessWidget {
@@ -31,52 +32,79 @@ class EmojiReactionOverlay extends StatelessWidget {
     final liveCenterX = size.width / 2;
     final liveStageCenter = Offset(liveCenterX, liveCenterY);
 
-    final defaultFallback = fallbackPosition ?? (isLiveRoom ? liveStageCenter : Offset(size.width * 0.5, size.height * 0.48));
-
     return IgnorePointer(
       child: Consumer<EmojiReactionProvider>(
         builder: (context, provider, child) {
-          // If not in a Live Video room (e.g. in Party Room), do not render overlay in the center.
-          // Reactions in Party Rooms appear exclusively on the user's seat!
-          if (!isLiveRoom) return const SizedBox.shrink();
-
           final activeReactions = provider.activeReactions;
           if (activeReactions.isEmpty) return const SizedBox.shrink();
 
           return Stack(
             clipBehavior: Clip.none,
             children: activeReactions.map((reaction) {
-              Offset startPos;
-              bool isSeated = false;
+              Offset? startPos;
 
               if (isLiveRoom) {
                 // In live rooms, center reaction by its visual center on the central live room stage
                 startPos = liveStageCenter;
               } else {
-                // 1. Try position by seatId anchor (Party Room)
-                Offset? seatPos;
-                if (reaction.seatId != null) {
-                  seatPos = provider.getAnchorPosition('party_seat_${reaction.seatId}');
-                  if (seatPos != null) isSeated = true;
+                // Audio Party Room: Strictly seat-anchored rendering above mic seat
+                int? effectiveSeatId = reaction.seatId;
+
+                // Fallback: If seatId is not in the reaction payload, resolve via LivePartyProvider
+                if (effectiveSeatId == null) {
+                  try {
+                    final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+                    final occupant = partyProv.participants
+                        .where((p) =>
+                            (p.user.id == reaction.senderId ||
+                             (p.user.username.isNotEmpty && p.user.username == reaction.senderId) ||
+                             (p.user.publicUserId.isNotEmpty && p.user.publicUserId == reaction.senderId)) &&
+                            p.seatNumber != null)
+                        .firstOrNull;
+                    effectiveSeatId = occupant?.seatNumber;
+
+                    if (effectiveSeatId == null) {
+                      final isHost = partyProv.isHost ||
+                          partyProv.activeRoom?.host.id == reaction.senderId ||
+                          partyProv.activeRoom?.creatorUserId == reaction.senderId ||
+                          (partyProv.activeRoom?.host.username.isNotEmpty == true &&
+                           partyProv.activeRoom?.host.username.toLowerCase() == reaction.senderId.toLowerCase()) ||
+                          (partyProv.activeRoom?.host.publicUserId.isNotEmpty == true &&
+                           partyProv.activeRoom?.host.publicUserId == reaction.senderId);
+                      if (isHost) {
+                        effectiveSeatId = 0;
+                      }
+                    }
+                  } catch (_) {}
+                }
+
+                // 1. Try position by seatId anchor (party_seat_{seatId})
+                if (effectiveSeatId != null) {
+                  startPos = provider.getAnchorPosition('party_seat_$effectiveSeatId');
                 }
 
                 // 2. Try position by senderId anchor
-                if (seatPos == null) {
-                  seatPos = provider.getAnchorPosition('user_${reaction.senderId}');
-                  if (seatPos != null) isSeated = true;
-                }
+                startPos ??= provider.getAnchorPosition('user_${reaction.senderId}');
 
-                // 3. Fallback position for audience / non-seated
-                startPos = seatPos ?? defaultFallback;
+                // In Audio Party Rooms, do not enable unwanted center screen reactions.
+                // Only render if a valid seat anchor was resolved.
+                if (startPos == null) {
+                  return const SizedBox.shrink();
+                }
               }
 
               final double reactionSize = isLiveRoom
                   ? (size.width * 0.35).clamp(120.0, 140.0)
-                  : (isSeated ? 76.0 : 120.0);
+                  : 84.0;
+
+              // In Audio Party Room, render floating smoothly above the microphone seat
+              final double topPos = isLiveRoom
+                  ? (startPos.dy - (reactionSize / 2))
+                  : (startPos.dy - reactionSize * 0.85);
 
               return Positioned(
                 left: startPos.dx - (reactionSize / 2),
-                top: startPos.dy - (reactionSize / 2),
+                top: topPos,
                 child: AnimatedRoomReaction(
                   key: ValueKey('room_react_${reaction.reactionId}'),
                   emojiKey: reaction.emoji,

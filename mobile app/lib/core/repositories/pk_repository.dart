@@ -35,6 +35,23 @@ class PKRepository {
     }
   }
 
+  Map<String, dynamic> _extractData(dynamic responseData) {
+    if (responseData is Map<String, dynamic>) {
+      final inner = responseData['data'];
+      if (inner is Map<String, dynamic>) return inner;
+      if (inner is Map) return Map<String, dynamic>.from(inner);
+      return responseData;
+    } else if (responseData is Map) {
+      final m = Map<String, dynamic>.from(responseData);
+      final inner = m['data'];
+      if (inner is Map) return Map<String, dynamic>.from(inner);
+      return m;
+    } else if (responseData is List && responseData.isNotEmpty && responseData.first is Map) {
+      return Map<String, dynamic>.from(responseData.first as Map);
+    }
+    return {};
+  }
+
   /// 2. Send 1v1 PK Match invitation
   /// POST /v1/pk/invitations
   Future<Map<String, dynamic>> sendInvitation({
@@ -52,7 +69,7 @@ class PKRepository {
         'durationSeconds': durationSeconds,
       },
     );
-    return (response.data?['data'] as Map<String, dynamic>?) ?? {};
+    return _extractData(response.data);
   }
 
   /// 3. Respond to invitation (ACCEPT or REJECT)
@@ -69,14 +86,14 @@ class PKRepository {
         if (targetRoomId != null) 'targetRoomId': targetRoomId,
       },
     );
-    return (response.data?['data'] as Map<String, dynamic>?) ?? {};
+    return _extractData(response.data);
   }
 
   /// 4. Cancel sent invitation
   /// POST /v1/pk/invitations/:id/cancel
   Future<Map<String, dynamic>> cancelInvitation(String invitationId) async {
     final response = await _apiClient.post('/v1/pk/invitations/$invitationId/cancel');
-    return (response.data?['data'] as Map<String, dynamic>?) ?? {};
+    return _extractData(response.data);
   }
 
   /// 5. Confirm operator readiness and media preparation
@@ -89,7 +106,7 @@ class PKRepository {
       '/v1/pk/matches/$matchId/ready',
       data: {'mediaPrepared': mediaPrepared},
     );
-    return (response.data?['data'] as Map<String, dynamic>?) ?? {};
+    return _extractData(response.data);
   }
 
   /// 6. Get authoritative match snapshot
@@ -144,7 +161,7 @@ class PKRepository {
   /// POST /v1/pk/matches/:id/rematch
   Future<Map<String, dynamic>> requestRematch(String matchId) async {
     final response = await _apiClient.post('/v1/pk/matches/$matchId/rematch');
-    return (response.data?['data'] as Map<String, dynamic>?) ?? {};
+    return _extractData(response.data);
   }
 
   /// 10. Get match history
@@ -154,7 +171,7 @@ class PKRepository {
       '/v1/pk/history',
       queryParameters: {'page': page, 'limit': limit},
     );
-    return (response.data?['data'] as Map<String, dynamic>?) ?? {};
+    return _extractData(response.data);
   }
 
   // ── BACKWARD-COMPATIBLE / LEGACY METHODS ───────────────────────────────────
@@ -187,13 +204,13 @@ class PKRepository {
         'targetUserId': targetUserId,
       },
     );
-    return (response.data?['data'] as Map<String, dynamic>?) ?? {};
+    return _extractData(response.data);
   }
 
   /// Legacy: Get invitation details by invitation ID
   Future<Map<String, dynamic>> getInvitationDetails(String inviteId) async {
     final response = await _apiClient.get('/v1/pk/invite/$inviteId');
-    return (response.data?['data'] as Map<String, dynamic>?) ?? {};
+    return _extractData(response.data);
   }
 
   /// Legacy: Respond to a PK invitation (accept / decline)

@@ -6,6 +6,7 @@ import '../../../../core/utils/noble_badge_helper.dart';
 import '../../../../models/user_asset_model.dart';
 import '../../../../providers/auth_provider.dart';
 import '../../../../providers/backpack_provider.dart';
+import '../../../../providers/live_party_provider.dart';
 import '../../../../widgets/user_avatar.dart';
 
 class OutfitScreen extends StatefulWidget {
@@ -41,7 +42,12 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
     if (userAsset.isEquipped) {
       final success = await backpack.unequipAsset(
         userAsset.id,
-        onAvatarFrameChanged: (frame) => auth.updateAvatarFrame(frame),
+        onAvatarFrameChanged: (frame) {
+          auth.updateAvatarFrame(frame);
+          try {
+            context.read<LivePartyProvider>().syncUserFrame(auth.currentUser.id, frame);
+          } catch (_) {}
+        },
         onBadgeChanged: (badge) => auth.updateEquippedBadge(badge),
       );
       if (success && mounted) {
@@ -52,7 +58,12 @@ class _OutfitScreenState extends State<OutfitScreen> with SingleTickerProviderSt
     } else {
       final success = await backpack.equipAsset(
         userAsset.id,
-        onAvatarFrameChanged: (frame) => auth.updateAvatarFrame(frame),
+        onAvatarFrameChanged: (frame) {
+          auth.updateAvatarFrame(frame);
+          try {
+            context.read<LivePartyProvider>().syncUserFrame(auth.currentUser.id, frame);
+          } catch (_) {}
+        },
         onBadgeChanged: (badge) => auth.updateEquippedBadge(badge),
       );
       if (success && mounted) {

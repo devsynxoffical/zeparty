@@ -461,7 +461,7 @@ class UserModel {
           json['currentRoomId']?.toString() ??
           json['roomId']?.toString() ??
           (json['currentRoom'] is Map ? (json['currentRoom']['id']?.toString() ?? json['currentRoom']['roomId']?.toString()) : null),
-      avatarFrame: json['avatarFrame']?.toString() ?? '',
+      avatarFrame: json['avatarFrame']?.toString() ?? json['equippedFrame']?.toString() ?? profile['avatarFrame']?.toString() ?? profile['equippedFrame']?.toString() ?? '',
       badge: json['badge']?.toString() ?? '',
       referralCode: json['referralCode']?.toString() ?? 'ZEP$id',
       referralCount: json['referralCount'] is int ? json['referralCount'] as int : 0,
@@ -477,7 +477,7 @@ class UserModel {
       accountLevel: parsedAccountLevel,
       accountXp: parsedAccountXp,
       cpPartnerId: json['cpPartnerId']?.toString(),
-      nobleTitle: json['nobleTitle']?.toString(),
+      nobleTitle: json['nobleTitle']?.toString() ?? profile['nobleRank']?.toString() ?? profile['nobleTitle']?.toString() ?? json['nobleRank']?.toString(),
       status: json['status']?.toString() ?? 'ACTIVE',
       likesReceived: profile['likesReceived'] is int
           ? profile['likesReceived'] as int

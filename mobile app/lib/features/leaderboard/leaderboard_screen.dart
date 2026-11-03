@@ -87,7 +87,9 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> with SingleTicker
         _fetchCurrentRankings();
       }
     });
-    _fetchCurrentRankings();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _fetchCurrentRankings();
+    });
   }
 
   @override

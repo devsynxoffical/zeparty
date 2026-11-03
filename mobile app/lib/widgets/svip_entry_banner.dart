@@ -163,14 +163,14 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
         child: Align(
           alignment: Alignment.centerLeft,
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 260),
+            constraints: const BoxConstraints(maxWidth: 210),
             margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFFFF9800), Color(0xFFF57C00), Color(0xFFE64A19)],
               ),
-              borderRadius: BorderRadius.circular(18),
+              borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 8, spreadRadius: 1),
               ],
@@ -181,7 +181,7 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
                 Container(
                   padding: const EdgeInsets.all(1.5),
                   decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-                  child: UserAvatar(imageUrl: user.avatarUrl, radius: 13),
+                  child: UserAvatar(imageUrl: user.avatarUrl, radius: 10.5),
                 ),
                 const SizedBox(width: 6),
                 Flexible(
@@ -206,7 +206,7 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
-                              fontSize: 9,
+                              fontSize: 8,
                               fontStyle: FontStyle.italic,
                             ),
                           ),
@@ -218,7 +218,7 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
                         effectName != null && effectName.isNotEmpty
                             ? '${user.name} arrived in $effectName!'
                             : '${user.name} entered!',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,
                       ),
@@ -230,10 +230,10 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
                   effectMedia.startsWith('http')
                       ? Image.network(
                           effectMedia,
-                          width: 24,
-                          height: 18,
+                          width: 20,
+                          height: 15,
                           fit: BoxFit.contain,
-                          errorBuilder: (_, _, _) => const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 16),
+                          errorBuilder: (_, _, _) => const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 13),
                         )
                       : Image.asset(
                           effectMedia,

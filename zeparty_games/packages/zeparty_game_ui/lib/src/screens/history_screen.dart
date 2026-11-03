@@ -28,7 +28,14 @@ class _HistoryScreenState extends State<HistoryScreen> {
           future: _future,
           builder: (context, snap) {
             if (snap.connectionState != ConnectionState.done) return const ZpLoading();
-            if (snap.hasError) return ZpError(message: '${snap.error}', onRetry: () => setState(() => _future = s.api.matchHistory()));
+            if (snap.hasError) {
+              return ZpError(
+                message: '${snap.error}',
+                onRetry: () => setState(() {
+                  _future = s.api.matchHistory();
+                }),
+              );
+            }
             final matches = snap.data!;
             if (matches.isEmpty) return const ZpEmpty(icon: Icons.history_rounded, title: 'No matches yet', message: 'Your finished matches appear here.');
             return ListView.builder(

@@ -478,16 +478,12 @@ class SocialRepository {
 
   /// GET /v1/social/relationship/eligible-friends
   Future<List<UserModel>> getEligibleRelationshipFriends({String search = ''}) async {
-    try {
-      final queryParam = search.isNotEmpty ? '?search=${Uri.encodeComponent(search)}' : '';
-      final response = await _client.get('/v1/social/relationship/eligible-friends$queryParam');
-      if (response.data != null && response.data['data'] is List) {
-        return (response.data['data'] as List)
-            .map((item) => UserModel.fromJson(Map<String, dynamic>.from(item as Map)))
-            .toList();
-      }
-    } catch (e) {
-      debugPrint('[SocialRepository] getEligibleRelationshipFriends error: $e');
+    final queryParam = search.isNotEmpty ? '?search=${Uri.encodeComponent(search)}' : '';
+    final response = await _client.get('/v1/social/relationship/eligible-friends$queryParam');
+    if (response.data != null && response.data['data'] is List) {
+      return (response.data['data'] as List)
+          .map((item) => UserModel.fromJson(Map<String, dynamic>.from(item as Map)))
+          .toList();
     }
     return [];
   }

@@ -22,12 +22,14 @@ class AgoraRtcService {
   final _remoteUsersController = StreamController<Set<int>>.broadcast();
   final _firstRemoteVideoFrameController = StreamController<int>.broadcast();
   final _audioMixingStateController = StreamController<AudioMixingStateChange>.broadcast();
+  final _volumeIndicationController = StreamController<List<AudioVolumeInfo>>.broadcast();
   final Set<int> _remoteUids = <int>{};
 
   Stream<int> get activeSpeakerStream => _activeSpeakerController.stream;
   Stream<Set<int>> get remoteUsersStream => _remoteUsersController.stream;
   Stream<int> get firstRemoteVideoFrameStream => _firstRemoteVideoFrameController.stream;
   Stream<AudioMixingStateChange> get audioMixingStateStream => _audioMixingStateController.stream;
+  Stream<List<AudioVolumeInfo>> get volumeIndicationStream => _volumeIndicationController.stream;
   Set<int> get remoteUids => Set.unmodifiable(_remoteUids);
 
   RtcEngineEx? get engine => _engine;
@@ -74,6 +76,9 @@ class AgoraRtcService {
         RtcEngineEventHandler(
           onActiveSpeaker: (RtcConnection connection, int uid) {
             _activeSpeakerController.add(uid);
+          },
+          onAudioVolumeIndication: (RtcConnection connection, List<AudioVolumeInfo> speakers, int totalVolume, int vad) {
+            _volumeIndicationController.add(speakers);
           },
           onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
             debugPrint('[AgoraRtcService] Joined channel: ${connection.channelId}, local UID: ${connection.localUid}');
