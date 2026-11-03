@@ -24,7 +24,6 @@ import '../../providers/wallet_provider.dart';
 import '../../providers/live_party_provider.dart';
 import '../../providers/room_overlay_provider.dart';
 import '../../core/utils/formatters.dart';
-import '../../core/constants/dummy_data.dart';
 import '../recharge/recharge_screen.dart';
 import '../../models/party_participant_model.dart';
 import '../../widgets/user_avatar.dart';
@@ -3179,11 +3178,16 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                                     }
                                     matchId = res['matchId']?.toString();
                                   }
-                                  opponent ??= DummyData.popularUsers.firstWhere(
-                                    (u) => u.id != widget.room.host.id,
-                                    orElse: () => DummyData.popularUsers.first,
-                                  );
-                                  provider.startPk(opponent, matchId: matchId);
+                                  if (opponent != null) {
+                                    provider.startPk(opponent, matchId: matchId);
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('No real opponent selected. PK was not started.'),
+                                        backgroundColor: Colors.orangeAccent,
+                                      ),
+                                    );
+                                  }
                                 }
                               });
                             }

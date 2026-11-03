@@ -14,7 +14,6 @@ import '../../widgets/gift_dialog.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/tiktok_gift_overlay.dart';
 import '../../widgets/comments_sheet.dart';
-import '../../core/constants/dummy_data.dart';
 
 class PKBattleScreen extends StatefulWidget {
   final PKBattleModel? pkBattle;
@@ -227,32 +226,43 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final liveProvider = context.watch<LiveProvider>();
-    final PKBattleModel pk = liveProvider.activePkBattle ??
-        () {
-          final currentUser = context.read<AuthProvider>().currentUser;
-          final opponent = DummyData.popularUsers.firstWhere(
-            (u) => u.id != currentUser.id,
-            orElse: () => DummyData.popularUsers.first,
-          );
-          final fallbackPk = PKBattleModel(
-            id: 'pk_${DateTime.now().millisecondsSinceEpoch}',
-            roomAId: liveProvider.activeRoom?.id ?? 'pk_battle',
-            roomBId: 'room_${opponent.id}',
-            initiatorUserId: currentUser.id,
-            hostA: currentUser,
-            hostB: opponent,
-            scoreA: 0,
-            scoreB: 0,
-            durationSeconds: 300,
-            remainingSeconds: 300,
-            status: 'STARTED',
-            startedAt: DateTime.now(),
-          );
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            liveProvider.setPkBattle(fallbackPk);
-          });
-          return fallbackPk;
-        }();
+    final PKBattleModel? activePk = liveProvider.activePkBattle;
+    if (activePk == null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFF0A071B),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.sports_kabaddi_rounded, color: Colors.white38, size: 56),
+              const SizedBox(height: 16),
+              const Text(
+                'No active PK battle found.',
+                style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Back to Room'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final PKBattleModel pk = activePk;
 
     final seconds = liveProvider.pkTimeRemainingSeconds;
     final minutes = (seconds / 60).floor();

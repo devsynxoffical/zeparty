@@ -9,7 +9,6 @@ import '../core/services/socket_service.dart';
 import '../core/repositories/room_repository.dart';
 import '../core/repositories/pk_repository.dart';
 import '../core/utils/noble_badge_helper.dart';
-import '../core/constants/dummy_data.dart';
 
 class LiveMessage {
   final String id;
@@ -1226,12 +1225,12 @@ class LiveProvider extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // Initialize battle session with fallback to prevent infinite loading
-    final host = currentHost ?? _currentUser ?? _activeRoom?.host ?? DummyData.currentUser;
-    final opponent = opponentHost ?? DummyData.popularUsers.firstWhere(
-      (u) => u.id != host.id,
-      orElse: () => DummyData.popularUsers.first,
-    );
+    final host = currentHost ?? _currentUser ?? _activeRoom?.host;
+    if (host == null || opponentHost == null) {
+      debugPrint('[LiveProvider] Cannot start PK battle without a real active host and opponent.');
+      return null;
+    }
+    final opponent = opponentHost;
 
     final newPk = PKBattleModel(
       id: 'pk_${DateTime.now().millisecondsSinceEpoch}',

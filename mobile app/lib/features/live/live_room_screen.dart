@@ -4011,11 +4011,25 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                               ),
                             ),
                           );
-                          if (result == true && mounted) {
-                            final liveProv = context.read<LiveProvider>();
-                            if (liveProv.activePkBattle == null) {
-                              liveProv.startHostPKBattle(
-                                currentHost: widget.room.host,
+                          if (result != null && mounted) {
+                            UserModel? opponent;
+                            if (result is Map && result['opponent'] is UserModel) {
+                              opponent = result['opponent'] as UserModel;
+                            }
+                            if (opponent != null) {
+                              final liveProv = context.read<LiveProvider>();
+                              if (liveProv.activePkBattle == null) {
+                                liveProv.startHostPKBattle(
+                                  currentHost: widget.room.host,
+                                  opponentHost: opponent,
+                                );
+                              }
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('No real opponent selected. PK was not started.'),
+                                  backgroundColor: Colors.orangeAccent,
+                                ),
                               );
                             }
                           }

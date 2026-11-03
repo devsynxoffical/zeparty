@@ -10,7 +10,6 @@ import '../../providers/auth_provider.dart';
 import '../../providers/live_provider.dart';
 import '../../providers/live_party_provider.dart';
 import '../../widgets/user_avatar.dart';
-import '../../core/constants/dummy_data.dart';
 
 class PkMatchScreen extends StatefulWidget {
   final String? currentRoomId;
@@ -93,16 +92,14 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
       if (mounted) {
         final filtered = hosts.where((h) => h.id != authUserId).toList();
         setState(() {
-          _availableHosts = filtered.isNotEmpty
-              ? filtered
-              : DummyData.popularUsers.where((h) => h.id != authUserId).toList();
+          _availableHosts = filtered; // Strictly real active live hosts
           _isLoadingHosts = false;
         });
       }
     } catch (_) {
       if (mounted) {
         setState(() {
-          _availableHosts = DummyData.popularUsers.where((h) => h.id != authUserId).toList();
+          _availableHosts = []; // No dummy users
           _isLoadingHosts = false;
         });
       }
