@@ -489,6 +489,9 @@ export async function findPublicProfileById(id, db = prisma) {
       select: {
         displayName: true,
         level: true,
+        experiencePoints: true,
+        totalSpentCoins: true,
+        totalEarnedDiamonds: true,
         vipLevel: true,
         svipLevel: true,
         nobleRank: true,

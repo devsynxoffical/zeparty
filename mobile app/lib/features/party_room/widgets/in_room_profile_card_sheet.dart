@@ -108,9 +108,6 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     // Populated dynamically with authoritative data
     final user = _authoritativeUser ?? (isMe ? currentUser : widget.participant.user);
     final isLoadingLevels = _isLoadingAuthoritative && _authoritativeUser == null && !isMe;
-        (user.username.isNotEmpty &&
-            currentUser.username.isNotEmpty &&
-            user.username.toLowerCase() == currentUser.username.toLowerCase());
 
     final activeRoom = liveProvider.activeRoom;
 
@@ -186,11 +183,11 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     final isSvipActive = user.isVip || user.svipLevel > 0;
     final svipLevelNumber = user.svipLevel > 0 ? user.svipLevel : 1;
 
-    // Real computed level numbers (Lv. 0 for new users)
-    final wealthLv = user.computedWealthLevel;
-    final charmLv = user.computedCharmLevel;
-    final gameLv = user.computedGameLevel;
-    final accountLv = user.computedAccountLevel;
+    // Real computed level numbers (Starting at minimum Lv. 1)
+    final wealthLv = user.wealthLevel > 0 ? user.wealthLevel : (user.computedWealthLevel > 0 ? user.computedWealthLevel : 1);
+    final charmLv = user.charmLevel > 0 ? user.charmLevel : (user.computedCharmLevel > 0 ? user.computedCharmLevel : 1);
+    final gameLv = user.gameLevel > 0 ? user.gameLevel : (user.computedGameLevel > 0 ? user.computedGameLevel : 1);
+    final accountLv = user.accountLevel > 0 ? user.accountLevel : (user.computedAccountLevel > 0 ? user.computedAccountLevel : wealthLv);
 
     // Medals assigned (Real count, 0 artwork when 0 assigned)
     final assignedMedals = <String>[];

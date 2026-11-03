@@ -271,6 +271,7 @@ class UserModel {
     final profile = json['profile'] is Map<String, dynamic> ? json['profile'] as Map<String, dynamic> : {};
     final wallet = json['wallet'] is Map<String, dynamic> ? json['wallet'] as Map<String, dynamic> : {};
     final hostProfile = json['hostProfile'] is Map<String, dynamic> ? json['hostProfile'] as Map<String, dynamic> : null;
+    final levels = json['levels'] is Map<String, dynamic> ? json['levels'] as Map<String, dynamic> : (profile['levels'] is Map<String, dynamic> ? profile['levels'] as Map<String, dynamic> : <String, dynamic>{});
 
     final id = json['id']?.toString() ?? json['_id']?.toString() ?? '';
     final email = json['email']?.toString();
@@ -375,35 +376,35 @@ class UserModel {
     }
 
     final int parsedWealthLevel = _parseIntSafe(
-      profile['wealthLevel'] ?? profile['level'] ?? json['wealthLevel'] ?? json['level'],
+      profile['wealthLevel'] ?? profile['level'] ?? json['wealthLevel'] ?? json['level'] ?? levels['wealthLevel'] ?? levels['wealth'],
       1, // Default minimum level is 1
     );
     final int parsedWealthXp = _parseIntSafe(
-      profile['wealthXp'] ?? profile['experience'] ?? profile['experiencePoints'] ?? json['wealthXp'] ?? json['experiencePoints'],
+      profile['wealthXp'] ?? profile['experience'] ?? profile['experiencePoints'] ?? json['wealthXp'] ?? json['experiencePoints'] ?? levels['wealthXp'],
       0,
     );
     final int parsedCharmLevel = _parseIntSafe(
-      profile['charmLevel'] ?? json['charmLevel'],
+      profile['charmLevel'] ?? json['charmLevel'] ?? levels['charmLevel'] ?? levels['charm'],
       1,
     );
     final int parsedCharmXp = _parseIntSafe(
-      profile['charmXp'] ?? profile['totalEarnedDiamonds'] ?? json['charmXp'],
+      profile['charmXp'] ?? profile['totalEarnedDiamonds'] ?? json['charmXp'] ?? levels['charmXp'],
       0,
     );
     final int parsedAccountLevel = _parseIntSafe(
-      profile['accountLevel'] ?? profile['level'] ?? json['accountLevel'] ?? json['level'],
+      profile['accountLevel'] ?? profile['level'] ?? json['accountLevel'] ?? json['level'] ?? levels['accountLevel'] ?? levels['overall'],
       1,
     );
     final int parsedAccountXp = _parseIntSafe(
-      profile['accountXp'] ?? profile['experiencePoints'] ?? json['accountXp'],
+      profile['accountXp'] ?? profile['experiencePoints'] ?? json['accountXp'] ?? levels['accountXp'],
       0,
     );
     final int parsedGameLevel = _parseIntSafe(
-      profile['gameLevel'] ?? json['gameLevel'],
+      profile['gameLevel'] ?? json['gameLevel'] ?? levels['gameLevel'] ?? levels['game'],
       1,
     );
     final int parsedGameXp = _parseIntSafe(
-      profile['gameXp'] ?? json['gameXp'],
+      profile['gameXp'] ?? json['gameXp'] ?? levels['gameXp'],
       0,
     );
     final bool isVipUser = json['isVip'] == true || (parsedWealthLevel > 10);
@@ -551,26 +552,50 @@ class UserModel {
   // ──────────────────────────────────────────────────────────────────────────
   static const int _xpPerLevel = 10000;
 
-  /// Computed wealth level from cumulative wealthXp
-  int get computedWealthLevel => wealthXp ~/ _xpPerLevel;
+  /// Computed wealth level from cumulative wealthXp or explicit wealthLevel (starting at Lv. 1)
+  int get computedWealthLevel {
+    if (wealthXp > 0) {
+      final lvl = (wealthXp ~/ _xpPerLevel) + 1;
+      return lvl > wealthLevel ? lvl : (wealthLevel > 0 ? wealthLevel : 1);
+    }
+    return wealthLevel > 0 ? wealthLevel : 1;
+  }
 
   /// XP progress within the current wealth level
   int get wealthLevelXp => wealthXp % _xpPerLevel;
 
-  /// Computed charm level from cumulative charmXp
-  int get computedCharmLevel => charmXp ~/ _xpPerLevel;
+  /// Computed charm level from cumulative charmXp or explicit charmLevel (starting at Lv. 1)
+  int get computedCharmLevel {
+    if (charmXp > 0) {
+      final lvl = (charmXp ~/ _xpPerLevel) + 1;
+      return lvl > charmLevel ? lvl : (charmLevel > 0 ? charmLevel : 1);
+    }
+    return charmLevel > 0 ? charmLevel : 1;
+  }
 
   /// XP progress within the current charm level
   int get charmLevelXp => charmXp % _xpPerLevel;
 
-  /// Computed game level from cumulative gameXp
-  int get computedGameLevel => gameXp ~/ _xpPerLevel;
+  /// Computed game level from cumulative gameXp or explicit gameLevel (starting at Lv. 1)
+  int get computedGameLevel {
+    if (gameXp > 0) {
+      final lvl = (gameXp ~/ _xpPerLevel) + 1;
+      return lvl > gameLevel ? lvl : (gameLevel > 0 ? gameLevel : 1);
+    }
+    return gameLevel > 0 ? gameLevel : 1;
+  }
 
   /// XP progress within the current game level
   int get gameLevelXp => gameXp % _xpPerLevel;
 
-  /// Computed account level from cumulative accountXp
-  int get computedAccountLevel => accountXp ~/ _xpPerLevel;
+  /// Computed account level from cumulative accountXp or explicit accountLevel (starting at Lv. 1)
+  int get computedAccountLevel {
+    if (accountXp > 0) {
+      final lvl = (accountXp ~/ _xpPerLevel) + 1;
+      return lvl > accountLevel ? lvl : (accountLevel > 0 ? accountLevel : 1);
+    }
+    return accountLevel > 0 ? accountLevel : (wealthLevel > 0 ? wealthLevel : 1);
+  }
 
   /// XP progress within the current account level
   int get accountLevelXp => accountXp % _xpPerLevel;
