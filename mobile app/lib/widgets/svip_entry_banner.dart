@@ -160,83 +160,92 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
     return IgnorePointer(
       child: SlideTransition(
         position: _slideAnimation,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [Colors.amber, Colors.orange, Colors.deepOrange]),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(color: Colors.orange.withValues(alpha: 0.5), blurRadius: 12, spreadRadius: 2),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(2),
-                decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
-                child: UserAvatar(imageUrl: user.avatarUrl, radius: 18),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 260),
+            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFF9800), Color(0xFFF57C00), Color(0xFFE64A19)],
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        if (badgeAsset != null) ...[
-                          Image.asset(
-                            badgeAsset,
-                            height: 14,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-                          ),
-                          const SizedBox(width: 4),
-                        ],
-                        Text(
-                          tierLabel,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 10,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.flash_on, color: Colors.white, size: 10),
-                      ],
-                    ),
-                    Text(
-                      effectName != null && effectName.isNotEmpty
-                          ? '${user.name} arrived in $effectName!'
-                          : '${user.name} entered!',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 8, spreadRadius: 1),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(1.5),
+                  decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                  child: UserAvatar(imageUrl: user.avatarUrl, radius: 13),
                 ),
-              ),
-              const SizedBox(width: 8),
-              if (effectMedia != null && effectMedia.isNotEmpty)
-                effectMedia.startsWith('http')
-                    ? Image.network(
-                        effectMedia,
-                        width: 38,
-                        height: 28,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) => const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 24),
-                      )
-                    : Image.asset(
-                        effectMedia,
-                        width: 38,
-                        height: 28,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) => const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 24),
-                      )
-              else
-                const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 24),
-            ],
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (badgeAsset != null) ...[
+                            Image.asset(
+                              badgeAsset,
+                              height: 11,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                            ),
+                            const SizedBox(width: 3),
+                          ],
+                          Text(
+                            tierLabel,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 9,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          const Icon(Icons.flash_on, color: Colors.white, size: 9),
+                        ],
+                      ),
+                      Text(
+                        effectName != null && effectName.isNotEmpty
+                            ? '${user.name} arrived in $effectName!'
+                            : '${user.name} entered!',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                if (effectMedia != null && effectMedia.isNotEmpty)
+                  effectMedia.startsWith('http')
+                      ? Image.network(
+                          effectMedia,
+                          width: 24,
+                          height: 18,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 16),
+                        )
+                      : Image.asset(
+                          effectMedia,
+                          width: 24,
+                          height: 18,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 16),
+                        )
+                else
+                  const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 16),
+              ],
+            ),
           ),
         ),
       ),

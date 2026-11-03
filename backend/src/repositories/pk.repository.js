@@ -40,10 +40,26 @@ export class PKRepository {
    */
   async findActiveOrPendingMatchForRoom(roomId, db = prisma) {
     if (!roomId) return null;
+    const now = new Date();
+    // Auto-cancel stale pending/preparing matches older than 45 seconds
+    const staleThreshold = new Date(now.getTime() - 45 * 1000);
+    await db.pKMatch.updateMany({
+      where: {
+        OR: [{ roomAId: roomId }, { roomBId: roomId }],
+        status: { in: ['PENDING', 'PREPARING', 'COUNTDOWN'] },
+        OR: [
+          { createdAt: { lt: staleThreshold } },
+          { invitationExpiresAt: { lt: now } },
+        ],
+      },
+      data: { status: 'CANCELLED' },
+    }).catch(() => {});
+
     return db.pKMatch.findFirst({
       where: {
         OR: [{ roomAId: roomId }, { roomBId: roomId }],
         status: { in: ['PENDING', 'PREPARING', 'COUNTDOWN', 'ACTIVE'] },
+        createdAt: { gte: staleThreshold },
       },
       include: {
         roomA: { include: { creator: { select: { id: true, username: true, avatarUrl: true, profile: true } } } },

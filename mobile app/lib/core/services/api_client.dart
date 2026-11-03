@@ -289,13 +289,30 @@ class ApiClient {
     if (response != null) {
       if (response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
-        final msg = data['message'] ?? data['error']?['message'] ?? error.message ?? 'Unknown API error';
-        final code = data['error']?['code']?.toString() ?? 'HTTP_${response.statusCode}';
+        final errorField = data['error'];
+        String msg;
+        if (data['message'] != null) {
+          msg = data['message'].toString();
+        } else if (errorField is String) {
+          msg = errorField;
+        } else if (errorField is Map) {
+          msg = errorField['message']?.toString() ?? 'Unknown API error';
+        } else {
+          msg = error.message ?? 'Unknown API error';
+        }
+
+        String code = 'HTTP_${response.statusCode}';
+        if (data['code'] != null) {
+          code = data['code'].toString();
+        } else if (errorField is Map && errorField['code'] != null) {
+          code = errorField['code'].toString();
+        }
+
         return ApiException(
-          message: msg.toString(),
+          message: msg,
           code: code,
           statusCode: response.statusCode,
-          details: data['error']?['details'],
+          details: errorField is Map ? errorField['details'] : null,
         );
       }
       return ApiException(

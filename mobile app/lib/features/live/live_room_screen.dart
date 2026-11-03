@@ -2604,7 +2604,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
 
             // High Value Announcement Overlay
             const HighValueAnnouncementOverlay(),
-            const SvipEntryBanner(),
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 60,
+              left: 10,
+              child: const SvipEntryBanner(),
+            ),
 
             // TikTok-Style Live Gifting Animation Overlay
             TikTokGiftOverlay(roomId: widget.room.id),

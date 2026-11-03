@@ -116,8 +116,14 @@ export class PKService {
       throw err;
     }
 
-    // Check Room Type parity
-    if (fromCheck.room.roomType !== targetCheck.room.roomType) {
+    // Check Room Type parity (normalized for enum differences e.g. LIVE_VIDEO vs VIDEO, AUDIO_PARTY vs AUDIO)
+    const normalizeType = (t) => {
+      const s = String(t || '').toUpperCase();
+      if (s.includes('VIDEO')) return 'VIDEO';
+      if (s.includes('AUDIO') || s.includes('PARTY') || s.includes('VOICE')) return 'AUDIO';
+      return s;
+    };
+    if (normalizeType(fromCheck.room.roomType) !== normalizeType(targetCheck.room.roomType)) {
       const err = new Error('Cannot match different room types (Audio vs Video).');
       err.code = 'PK_WRONG_ROOM_TYPE';
       err.status = 400;
