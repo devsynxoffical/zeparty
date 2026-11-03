@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 import env from './config/env.js';
 import apiRoutes from './routes/index.js';
+import { gamesSubApp, gamesHttpMiddleware } from './gamesEngine/src/index.js';
 import { serializerMiddleware } from './utils/serializer.util.js';
 import prisma from './config/database.js';
 import redisClient from './config/redis.js';
@@ -193,6 +194,12 @@ app.get('/health', async (req, res) => {
     services,
   });
 });
+
+// Mount Embedded Multiplayer Games Hub before main API routes and 404 handler
+app.use('/api/games-hub', gamesSubApp);
+app.use('/api/v1/games-hub', gamesSubApp);
+app.use('/v1/games-hub', gamesSubApp);
+app.use(gamesHttpMiddleware);
 
 // Register routes under /api and /
 app.use('/api', apiRoutes);

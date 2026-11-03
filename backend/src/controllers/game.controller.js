@@ -39,7 +39,7 @@ class GameController {
    */
   async getGamesToken(req, res, next) {
     try {
-      const result = await gameService.issueGamesToken(req.user);
+      const result = await gameService.issueGamesToken(req.user, req);
       return res.status(200).json({
         success: true,
         message: 'Games service token issued',

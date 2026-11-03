@@ -34,13 +34,11 @@ class GameService {
   }
 
   /**
-   * Mint a short-lived HS256 token for the games service (zeparty_games/backend,
-   * AUTH_ADAPTER=jwt). The games service never stores accounts: it derives the
-   * player's identity from these claims, so the display name and avatar shown to
-   * other players come from here, not from the client.
+   * Mint a short-lived HS256 token for the games service (embedded in ZeParty-Backend
+   * at /api/games-hub and /ws, or external when GAMES_SERVICE_URL is configured).
    * GET /v1/games/token
    */
-  async issueGamesToken(user) {
+  async issueGamesToken(user, req = null) {
     if (!user?.id) {
       const err = new Error('Authentication required to join games.');
       err.statusCode = 401;
@@ -64,6 +62,34 @@ class GameService {
       expiresIn: ttl,
     });
 
+    // Resolve API base URL and WebSocket URL dynamically from the active server when not overridden
+    let apiBaseUrl = env.GAMES_SERVICE_URL || '';
+    if (!apiBaseUrl && req) {
+      const proto = (req.headers?.['x-forwarded-proto'] || req.protocol || 'https')
+        .toString()
+        .split(',')[0]
+        .trim();
+      const host = req.headers?.['x-forwarded-host'] || req.headers?.host;
+      if (host) {
+        apiBaseUrl = `${proto}://${host}/api/games-hub`;
+      }
+    }
+    if (!apiBaseUrl) {
+      apiBaseUrl = 'https://zeparty-backend-production.up.railway.app/api/games-hub';
+    }
+
+    let wsUrl = env.GAMES_WS_URL || '';
+    if (!wsUrl) {
+      const originBase = apiBaseUrl.replace(/\/api\/(v1\/)?games-hub\/?$/, '').replace(/\/+$/, '');
+      if (originBase.startsWith('https://')) {
+        wsUrl = `wss://${originBase.slice(8)}/ws`;
+      } else if (originBase.startsWith('http://')) {
+        wsUrl = `ws://${originBase.slice(7)}/ws`;
+      } else {
+        wsUrl = `${originBase}/ws`;
+      }
+    }
+
     return {
       token,
       tokenType: 'Bearer',
@@ -71,8 +97,8 @@ class GameService {
       expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
       issuer: env.GAMES_JWT_ISSUER,
       // Lets the mobile app discover where the games service runs without a rebuild.
-      apiBaseUrl: env.GAMES_SERVICE_URL || null,
-      wsUrl: env.GAMES_WS_URL || null,
+      apiBaseUrl,
+      wsUrl,
     };
   }
 

@@ -5,6 +5,7 @@ import prisma from './config/database.js';
 import { ensureDatabaseSchema } from './config/schemaMigrator.js';
 import redisClient from './config/redis.js';
 import { initSocketServer } from './socket/index.js';
+import { attachGamesWebSocketServer, shutdownGamesEngine } from './gamesEngine/src/index.js';
 import {
   runStartupRecoverySweep,
   startAutoRestoreScheduler,
@@ -52,6 +53,7 @@ async function startServer() {
     // 1. Create HTTP Server and bind immediately to prevent cold boot 502 Bad Gateway
     const port = Number(process.env.PORT) || Number(env.PORT) || 8080;
     server = http.createServer(app);
+    attachGamesWebSocketServer(server);
     server.listen(port, '0.0.0.0', () => {
       console.log(`🚀 Server listening on port ${port} in ${env.NODE_ENV} mode`);
       console.log(`🔗 Health check available at http://localhost:${port}/health`);
@@ -101,6 +103,7 @@ async function gracefulShutdown(signal) {
 
   // Stop background schedulers
   stopAutoRestoreScheduler();
+  shutdownGamesEngine();
 
   if (server) {
     console.log('🔄 Closing HTTP server...');
