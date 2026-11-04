@@ -363,6 +363,16 @@ export async function getSelfProfile(userId, db = prisma) {
     updatedAt: user.coinSeller.updatedAt,
   } : null;
 
+  const selfNobleRank = user.profile?.nobleRank || null;
+  const selfNobleStyle = getNobleStyle(selfNobleRank);
+  if (profileWithPresence) {
+    profileWithPresence.nobleRank = selfNobleRank;
+    profileWithPresence.nobleTitle = selfNobleRank;
+    profileWithPresence.nobleLevel = selfNobleRank;
+    profileWithPresence.nobleColor = selfNobleStyle?.color || null;
+    profileWithPresence.nobleStyle = selfNobleStyle;
+  }
+
   return {
     ...sanitizedUserSafe,
     coins: coinBalanceNum,
@@ -376,6 +386,11 @@ export async function getSelfProfile(userId, db = prisma) {
     joinedRoomsCount: roomCount,
     publicId,
     zePartyId: publicId,
+    nobleRank: selfNobleRank,
+    nobleTitle: selfNobleRank,
+    nobleLevel: selfNobleRank,
+    nobleColor: selfNobleStyle?.color || null,
+    nobleStyle: selfNobleStyle,
     profile: profileWithPresence ? sanitizeFinancial(profileWithPresence) : profileWithPresence,
     avatarFrame: avatarFrame || null,
     equippedFrame: avatarFrame || null,
@@ -583,6 +598,15 @@ export async function getPublicProfile(userId, db = prisma) {
   } : publicUser.profile;
 
   const publicId = /^[1-9]\d{6}$/.test(publicUser.id) ? publicUser.id : (publicUser.username && /^\d+$/.test(publicUser.username) ? publicUser.username : publicUser.id);
+  const pubNobleRank = publicUser.profile?.nobleRank || null;
+  const pubNobleStyle = getNobleStyle(pubNobleRank);
+  if (profileWithPresence) {
+    profileWithPresence.nobleRank = pubNobleRank;
+    profileWithPresence.nobleTitle = pubNobleRank;
+    profileWithPresence.nobleLevel = pubNobleRank;
+    profileWithPresence.nobleColor = pubNobleStyle?.color || null;
+    profileWithPresence.nobleStyle = pubNobleStyle;
+  }
 
   return {
     ...publicUser,
@@ -593,6 +617,11 @@ export async function getPublicProfile(userId, db = prisma) {
     joinedRoomsCount: roomCount,
     publicId,
     zePartyId: publicId,
+    nobleRank: pubNobleRank,
+    nobleTitle: pubNobleRank,
+    nobleLevel: pubNobleRank,
+    nobleColor: pubNobleStyle?.color || null,
+    nobleStyle: pubNobleStyle,
     profile: profileWithPresence,
     level: pubWealthLvl,
     wealthLevel: pubWealthLvl,

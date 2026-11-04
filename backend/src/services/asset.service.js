@@ -40,13 +40,51 @@ export function getNobleStyle(nobleRank) {
   const rank = String(nobleRank).toUpperCase().trim();
   switch (rank) {
     case 'MERCURIUS':
-    case 'DUKE':
+    case 'MARQUIS':
       return {
         rank,
         color: '#EF4444',
         textColor: '#EF4444',
         nameColor: '#EF4444',
         styleType: 'RED',
+        gradient: null,
+      };
+    case 'VISCOUNT':
+      return {
+        rank,
+        color: '#3B82F6',
+        textColor: '#3B82F6',
+        nameColor: '#3B82F6',
+        styleType: 'BLUE',
+        gradient: null,
+      };
+    case 'DUKE':
+      return {
+        rank,
+        color: '#AB47BC',
+        textColor: '#AB47BC',
+        nameColor: '#AB47BC',
+        styleType: 'PURPLE',
+        gradient: null,
+      };
+    case 'COUNT':
+    case 'EARL':
+      return {
+        rank,
+        color: '#E24A5A',
+        textColor: '#E24A5A',
+        nameColor: '#E24A5A',
+        styleType: 'CORAL',
+        gradient: null,
+      };
+    case 'BARON':
+    case 'KNIGHT':
+      return {
+        rank,
+        color: '#CD7F32',
+        textColor: '#CD7F32',
+        nameColor: '#CD7F32',
+        styleType: 'BRONZE',
         gradient: null,
       };
     case 'KING':

@@ -8,6 +8,7 @@ import { SOCKET_EVENTS } from '../socket/socket.constants.js';
 import * as notificationService from './notification.service.js';
 import presenceService from '../socket/presence.service.js';
 import privacyEligibilityService from './privacyEligibility.service.js';
+import { getNobleStyle } from './asset.service.js';
 
 /**
  * Social & Engagement Service
@@ -1023,6 +1024,10 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     vipLevel: user.profile?.vipLevel || 0,
     svipLevel: effectiveSvipLevel,
     nobleRank: user.profile?.nobleRank || null,
+    nobleTitle: user.profile?.nobleRank || null,
+    nobleLevel: user.profile?.nobleRank || null,
+    nobleColor: getNobleStyle(user.profile?.nobleRank)?.color || null,
+    nobleStyle: getNobleStyle(user.profile?.nobleRank),
     isPrivate,
     followersCount,
     followingCount,

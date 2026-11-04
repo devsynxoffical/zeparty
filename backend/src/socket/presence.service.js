@@ -494,6 +494,9 @@ export async function addSocketToRoom(roomId, userId, socketId, userInfo = null)
           avatarUrl: userInfo.avatarUrl || null,
           isGuest: Boolean(userInfo.isGuest || String(userId).startsWith('guest_')),
           joinedAt: userInfo.joinedAt || new Date().toISOString(),
+          nobleRank: userInfo.nobleRank || userInfo.nobleTitle || null,
+          nobleTitle: userInfo.nobleRank || userInfo.nobleTitle || null,
+          svipLevel: userInfo.svipLevel || 0,
         }), { EX: 86400 });
       }
 

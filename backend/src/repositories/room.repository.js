@@ -143,6 +143,8 @@ export async function findRoomById(id, db = prisma) {
                 displayName: true,
                 level: true,
                 vipLevel: true,
+                svipLevel: true,
+                nobleRank: true,
               },
             },
           },
@@ -462,6 +464,9 @@ export async function findAdminRooms(
                   select: {
                     displayName: true,
                     level: true,
+                    vipLevel: true,
+                    svipLevel: true,
+                    nobleRank: true,
                   },
                 },
               },

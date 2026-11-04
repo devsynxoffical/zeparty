@@ -2765,12 +2765,26 @@ function formatRoomSnapshot(room, viewerCount) {
     isMuted: Boolean(s.isMuted),
     isMutedByModerator: Boolean(s.isMutedByModerator),
     isLocked: Boolean(s.isLocked),
-    user: s.occupiedUser ? {
-      id: s.occupiedUser.id,
-      username: s.occupiedUser.username,
-      displayName: s.occupiedUser.profile?.displayName || s.occupiedUser.displayName || s.occupiedUser.username,
-      avatarUrl: s.occupiedUser.avatarUrl || s.occupiedUser.profile?.avatarUrl || null,
-    } : null,
+    user: s.occupiedUser ? (() => {
+      const uRank = s.occupiedUser.profile?.nobleRank || s.occupiedUser.nobleTitle || s.occupiedUser.nobleRank || null;
+      const uStyle = getNobleStyle(uRank);
+      return {
+        id: s.occupiedUser.id,
+        userId: s.occupiedUser.id,
+        username: s.occupiedUser.username,
+        displayName: s.occupiedUser.profile?.displayName || s.occupiedUser.displayName || s.occupiedUser.username,
+        name: s.occupiedUser.profile?.displayName || s.occupiedUser.displayName || s.occupiedUser.username,
+        avatarUrl: s.occupiedUser.avatarUrl || s.occupiedUser.profile?.avatarUrl || null,
+        level: s.occupiedUser.profile?.level || s.occupiedUser.level || 1,
+        vipLevel: s.occupiedUser.profile?.vipLevel || s.occupiedUser.vipLevel || 0,
+        svipLevel: s.occupiedUser.profile?.svipLevel || s.occupiedUser.svipLevel || 0,
+        nobleTitle: uRank,
+        nobleRank: uRank,
+        nobleLevel: uRank,
+        nobleColor: uStyle?.color || null,
+        nobleStyle: uStyle,
+      };
+    })() : null,
   }));
 
   return {
