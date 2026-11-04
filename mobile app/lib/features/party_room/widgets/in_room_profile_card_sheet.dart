@@ -94,6 +94,34 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     }
   }
 
+  Widget _buildFallbackSvipTag(int svipLevelNumber) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF8D5B00), Color(0xFFFFC107), Color(0xFF8D5B00)],
+        ),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.amberAccent, width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.workspace_premium_rounded, size: 12, color: Colors.black),
+          const SizedBox(width: 4),
+          Text(
+            'SVIP $svipLevelNumber',
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final liveProvider = context.watch<LivePartyProvider>();
@@ -324,14 +352,12 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Flexible(
-                              child: Text(
-                                user.displayName,
-                                style: TextStyle(
+                              child: NobleBadgeHelper.buildStyledUsername(
+                                text: user.displayName,
+                                nobleTitle: user.nobleTitle,
+                                style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: NobleBadgeHelper.getColoredNicknameColor(
-                                    NobleBadgeHelper.getTierFromTitle(user.nobleTitle),
-                                  ),
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -507,32 +533,21 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Show SVIP ONLY if active; otherwise show nothing (leave no empty slot)
+                      // Show SVIP graphic tag if active (accurate SVIP1-16 asset mapping)
                       if (isSvipActive) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF8D5B00), Color(0xFFFFC107), Color(0xFF8D5B00)],
-                            ),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.amberAccent, width: 0.8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.workspace_premium_rounded, size: 12, color: Colors.black),
-                              const SizedBox(width: 4),
-                              Text(
-                                'SVIP $svipLevelNumber',
-                                style: const TextStyle(
-                                  color: Colors.black,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
+                        Builder(
+                          builder: (context) {
+                            final tagAsset = NobleBadgeHelper.getTagAsset('SVIP $svipLevelNumber');
+                            if (tagAsset != null) {
+                              return Image.asset(
+                                tagAsset,
+                                height: 26,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => _buildFallbackSvipTag(svipLevelNumber),
+                              );
+                            }
+                            return _buildFallbackSvipTag(svipLevelNumber);
+                          },
                         ),
                         const SizedBox(width: 6),
                       ],

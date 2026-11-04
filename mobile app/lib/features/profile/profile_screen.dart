@@ -423,20 +423,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       constraints: BoxConstraints(
                         maxWidth: MediaQuery.of(context).size.width * 0.45,
                       ),
-                      child: Text(
-                        user.displayName.isNotEmpty
+                      child: NobleBadgeHelper.buildStyledUsername(
+                        text: user.displayName.isNotEmpty
                             ? user.displayName
                             : (user.name.isNotEmpty ? user.name : 'User ${user.id}'),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
+                        nobleTitle: user.nobleTitle,
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          color: NobleBadgeHelper.getColoredNicknameColor(
-                            NobleBadgeHelper.getTierFromTitle(user.nobleTitle),
-                            isDark: isDark,
-                          ),
                         ),
+                        isDark: isDark,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                     if (context.watch<LivePartyProvider>().activeRoom != null) ...[
@@ -476,7 +474,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.blueAccent.withValues(alpha: 0.2),
+                        color: user.gender.toLowerCase() == 'female'
+                            ? Colors.pinkAccent.withValues(alpha: 0.2)
+                            : Colors.blueAccent.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Row(

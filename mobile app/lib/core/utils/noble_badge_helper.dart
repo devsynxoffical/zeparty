@@ -314,17 +314,17 @@ class NobleBadgeHelper {
   static Color getColoredNicknameColor(NobleTier tier, {bool isDark = true}) {
     switch (tier) {
       case NobleTier.emperor:
-        return const Color(0xFFFFE082); // Emperor (Imperial Gold)
+        return const Color(0xFFFFD700); // Imperial (mixture handled via AnimatedImperialUsername)
       case NobleTier.king:
-        return const Color(0xFFFFD54F); // King (Royal Gold)
+        return const Color(0xFFFFD700); // King (Yellow / Golden)
       case NobleTier.duke:
         return const Color(0xFFAB47BC); // Duke (Royal Purple)
       case NobleTier.marquis:
-        return const Color(0xFFEF5350); // Marquis (Crimson Red)
+        return const Color(0xFFE53935); // Mercurius / Marquis (Red)
       case NobleTier.earl:
         return const Color(0xFF42A5F5); // Count / Earl (Sky Blue)
       case NobleTier.viscount:
-        return const Color(0xFFFFA726); // Viscount (Warm Orange)
+        return const Color(0xFF2196F3); // Viscount (Blue)
       case NobleTier.knight:
         return const Color(0xFF29B6F6); // Baron / Knight (Distinct Baron Blue)
       case NobleTier.prince:
@@ -332,6 +332,39 @@ class NobleBadgeHelper {
       case NobleTier.none:
         return isDark ? Colors.white : AppColors.darkNavy;
     }
+  }
+
+  /// Builds a username widget styled consistently across all surfaces:
+  /// - Imperial/Emperor: Animated gradient text (Blue & Golden mixture)
+  /// - Other active Noble tiers: Colored nickname based on tier
+  /// - Inactive/None: Normal theme text color
+  static Widget buildStyledUsername({
+    required String text,
+    String? nobleTitle,
+    TextStyle? style,
+    TextOverflow overflow = TextOverflow.ellipsis,
+    int maxLines = 1,
+    TextAlign textAlign = TextAlign.start,
+    bool isDark = true,
+  }) {
+    final tier = getTierFromTitle(nobleTitle);
+    if (tier == NobleTier.emperor) {
+      return AnimatedImperialUsername(
+        text: text,
+        style: style,
+        overflow: overflow,
+        maxLines: maxLines,
+        textAlign: textAlign,
+      );
+    }
+    final color = getColoredNicknameColor(tier, isDark: isDark);
+    return Text(
+      text,
+      style: (style ?? const TextStyle()).copyWith(color: color),
+      overflow: overflow,
+      maxLines: maxLines,
+      textAlign: textAlign,
+    );
   }
 
   static String getNobleIcon(NobleTier tier) {

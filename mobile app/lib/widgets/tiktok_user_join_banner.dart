@@ -296,10 +296,10 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
                                 ),
                               ],
                               Flexible(
-                                child: Text(
-                                  name,
+                                child: NobleBadgeHelper.buildStyledUsername(
+                                  text: name,
+                                  nobleTitle: nobleLevel,
                                   style: const TextStyle(
-                                    color: Colors.white,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
                                   ),

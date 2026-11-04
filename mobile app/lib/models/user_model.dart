@@ -477,7 +477,15 @@ class UserModel {
       accountLevel: parsedAccountLevel,
       accountXp: parsedAccountXp,
       cpPartnerId: json['cpPartnerId']?.toString(),
-      nobleTitle: json['nobleTitle']?.toString() ?? profile['nobleRank']?.toString() ?? profile['nobleTitle']?.toString() ?? json['nobleRank']?.toString(),
+      nobleTitle: json['nobleTitle']?.toString() ??
+          profile['nobleRank']?.toString() ??
+          profile['nobleTitle']?.toString() ??
+          json['nobleRank']?.toString() ??
+          json['nobleLevel']?.toString() ??
+          profile['nobleLevel']?.toString() ??
+          json['noble']?.toString() ??
+          profile['noble']?.toString() ??
+          (json['activeNoble'] is Map ? (json['activeNoble']['title']?.toString() ?? json['activeNoble']['rank']?.toString()) : json['activeNoble']?.toString()),
       status: json['status']?.toString() ?? 'ACTIVE',
       likesReceived: profile['likesReceived'] is int
           ? profile['likesReceived'] as int

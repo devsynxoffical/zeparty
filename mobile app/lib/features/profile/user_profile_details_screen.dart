@@ -1927,21 +1927,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
               Row(
                 children: [
                   Flexible(
-                    child: Text(
-                      _user!.name.isNotEmpty
+                    child: NobleBadgeHelper.buildStyledUsername(
+                      text: _user!.name.isNotEmpty
                           ? _user!.name
                           : (_user!.displayName.isNotEmpty
                                 ? _user!.displayName
                                 : 'User ${_user!.id}'),
-                      style: TextStyle(
+                      nobleTitle: _user!.nobleTitle,
+                      style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
-                        color: NobleBadgeHelper.getColoredNicknameColor(
-                          NobleBadgeHelper.getTierFromTitle(_user!.nobleTitle),
-                          isDark: isDark,
-                        ),
                         letterSpacing: 0.2,
                       ),
+                      isDark: isDark,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1955,7 +1953,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                       vertical: 3,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF3897F0),
+                      color: _user!.gender.toLowerCase() == 'female'
+                          ? const Color(0xFFE91E63)
+                          : const Color(0xFF3897F0),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
@@ -2141,7 +2141,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
               child: NobleBadgeHelper.getTagAsset('SVIP $svipLvl') != null
                   ? Image.asset(
                       NobleBadgeHelper.getTagAsset('SVIP $svipLvl')!,
-                      height: 26,
+                      height: 34,
                       fit: BoxFit.contain,
                       errorBuilder: (_, __, ___) => _buildTagChip(
                         icon: Icons.workspace_premium_rounded,

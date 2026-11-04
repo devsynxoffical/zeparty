@@ -10,6 +10,7 @@ import '../../providers/wallet_provider.dart';
 import '../../core/services/api_client.dart';
 import '../../widgets/design/gold_button.dart';
 import '../../widgets/design/premium_card.dart';
+import '../games/game_lobby_screen.dart';
 
 class RewardsScreen extends StatefulWidget {
   const RewardsScreen({super.key});
@@ -28,7 +29,9 @@ class _RewardsScreenState extends State<RewardsScreen> {
 
   bool _watchingAd = false;
   bool _adWatchedToday = false;
+  bool _gameTaskCompleted = false;
   bool _gameTaskClaimed = false;
+  bool _giftTaskCompleted = false;
   bool _giftTaskClaimed = false;
   Timer? _adTimer;
 
@@ -73,8 +76,9 @@ class _RewardsScreenState extends State<RewardsScreen> {
       if (res.data != null && res.data['success'] == true) {
         final data = res.data['data'] as Map<String, dynamic>?;
         final rewardCoins = int.tryParse(data?['rewardCoins']?.toString() ?? '') ?? (_currentEligibleDay * 50);
-        wallet.rechargeCoins(rewardCoins, 0.0);
+        await wallet.fetchWallet();
         if (mounted) {
+          setState(() => _isTodayClaimed = true);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               backgroundColor: const Color(0xFF16A34A),
@@ -91,10 +95,38 @@ class _RewardsScreenState extends State<RewardsScreen> {
           );
         }
       }
+    } on ApiException catch (e) {
+      final lowerMsg = e.message.toLowerCase();
+      final isAlreadyClaimed = (e.statusCode == 400 || e.statusCode == 409) &&
+          (lowerMsg.contains('already') || lowerMsg.contains('claimed') || lowerMsg.contains('progress'));
+      if (isAlreadyClaimed) {
+        if (mounted) {
+          setState(() => _isTodayClaimed = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.message),
+              backgroundColor: Colors.orangeAccent,
+            ),
+          );
+          await _fetchCheckinStatus();
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.message.isNotEmpty ? e.message : 'Claim failed (${e.statusCode}). Please try again.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Network error. Please try again.'), backgroundColor: Colors.redAccent),
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     } finally {
@@ -443,7 +475,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
 
             const SizedBox(height: 10),
 
-            // 2. Play Mini Game Task
+            // 2. Play Mini Game Task (Issue 3: Action "Play" when incomplete, "Claim" when completed)
             _buildTaskTile(
               context,
               isDark,
@@ -451,22 +483,35 @@ class _RewardsScreenState extends State<RewardsScreen> {
               reward: '+150 ZeCoins',
               icon: Icons.sports_esports_rounded,
               isClaimed: _gameTaskClaimed,
-              onClaim: () {
+              isCompleted: _gameTaskCompleted,
+              actionLabel: 'Play',
+              onAction: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const GameLobbyScreen()),
+                ).then((_) {
+                  if (mounted) setState(() => _gameTaskCompleted = true);
+                });
+              },
+              onClaim: () async {
                 if (_gameTaskClaimed) return;
                 setState(() => _gameTaskClaimed = true);
                 wallet.rechargeCoins(150, 0.0);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: Color(0xFF16A34A),
-                    content: Text('🎉 +150 ZeCoins claimed for playing mini game!'),
-                  ),
-                );
+                await wallet.fetchWallet();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      backgroundColor: Color(0xFF16A34A),
+                      content: Text('🎉 +150 ZeCoins claimed for playing mini game!'),
+                    ),
+                  );
+                }
               },
             ),
 
             const SizedBox(height: 10),
 
-            // 3. Send Gifts Task
+            // 3. Send Gifts Task (Issue 3: Action "Send" when incomplete, "Claim" when completed)
             _buildTaskTile(
               context,
               isDark,
@@ -474,16 +519,29 @@ class _RewardsScreenState extends State<RewardsScreen> {
               reward: '+250 ZeCoins',
               icon: Icons.card_giftcard_rounded,
               isClaimed: _giftTaskClaimed,
-              onClaim: () {
+              isCompleted: _giftTaskCompleted,
+              actionLabel: 'Send',
+              onAction: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Send gifts to any host or friend in a live room or party room to complete this quest!'),
+                  ),
+                );
+                Navigator.pop(context);
+              },
+              onClaim: () async {
                 if (_giftTaskClaimed) return;
                 setState(() => _giftTaskClaimed = true);
                 wallet.rechargeCoins(250, 0.0);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    backgroundColor: Color(0xFF16A34A),
-                    content: Text('🎉 +250 ZeCoins claimed for sending stream gifts!'),
-                  ),
-                );
+                await wallet.fetchWallet();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      backgroundColor: Color(0xFF16A34A),
+                      content: Text('🎉 +250 ZeCoins claimed for sending stream gifts!'),
+                    ),
+                  );
+                }
               },
             ),
 
@@ -734,10 +792,12 @@ class _RewardsScreenState extends State<RewardsScreen> {
     required String reward,
     required IconData icon,
     required bool isClaimed,
+    required bool isCompleted,
+    required String actionLabel,
+    required VoidCallback onAction,
     required VoidCallback onClaim,
   }) {
     final primary = AppColors.getPrimary(isDark);
-    final onPrimary = AppColors.onPrimary(isDark: isDark);
     return PremiumCard(
       padding: const EdgeInsets.all(14),
       radius: 16,
@@ -773,17 +833,41 @@ class _RewardsScreenState extends State<RewardsScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isClaimed ? AppColors.getBorder(isDark) : primary,
-              foregroundColor: isClaimed ? AppColors.getTextSecondary(isDark) : onPrimary,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          if (isClaimed)
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.getBorder(isDark),
+                foregroundColor: AppColors.getTextSecondary(isDark),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: null,
+              child: const Text('Claimed'),
+            )
+          else if (isCompleted)
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF16A34A),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: onClaim,
+              child: const Text('Claim'),
+            )
+          else
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: primary,
+                side: BorderSide(color: primary, width: 1.2),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              onPressed: onAction,
+              child: Text(actionLabel),
             ),
-            onPressed: isClaimed ? null : onClaim,
-            child: Text(isClaimed ? 'Claimed' : 'Claim'),
-          ),
         ],
       ),
     );

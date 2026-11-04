@@ -163,7 +163,9 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                                     TextSpan(
                                       text: widget.senderName.isNotEmpty ? widget.senderName : widget.senderId,
                                       style: TextStyle(
-                                        color: senderAccent,
+                                        color: widget.nobleTitle != null && widget.nobleTitle!.isNotEmpty
+                                            ? NobleBadgeHelper.getColoredNicknameColor(NobleBadgeHelper.getTierFromTitle(widget.nobleTitle))
+                                            : senderAccent,
                                         fontWeight: FontWeight.bold,
                                         fontSize: 12,
                                       ),
@@ -242,8 +244,12 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                 Flexible(
                   child: Container(
                     padding: hasCustomBubble
-                        ? const EdgeInsets.symmetric(horizontal: 14, vertical: 7)
+                        ? const EdgeInsets.fromLTRB(26, 11, 26, 12)
                         : const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    constraints: BoxConstraints(
+                      minHeight: hasCustomBubble ? 44 : 0,
+                      minWidth: hasCustomBubble ? 100 : 0,
+                    ),
                     decoration: BoxDecoration(
                       image: hasCustomBubble
                           ? DecorationImage(

@@ -378,7 +378,10 @@ class MultiRoleSeatGrid extends StatelessWidget {
       final isMod = participant.role == ParticipantRole.moderator;
 
       final authUser = context.watch<AuthProvider>().currentUser;
-      final isSelf = participant.user.id == authUser.id;
+      final isSelf = participant.user.id == authUser.id ||
+          (participant.user.username.isNotEmpty &&
+              authUser.username.isNotEmpty &&
+              participant.user.username.toLowerCase() == authUser.username.toLowerCase());
       final effectiveUser = isSelf ? authUser : participant.user;
 
       final effectiveFrame = (effectiveUser.avatarFrame.isNotEmpty && effectiveUser.avatarFrame != 'none')
@@ -484,40 +487,18 @@ class MultiRoleSeatGrid extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Builder(
-                    builder: (ctx) {
-                      final effectiveNoble = (effectiveUser.nobleTitle != null && effectiveUser.nobleTitle!.isNotEmpty)
-                          ? effectiveUser.nobleTitle
-                          : null;
-                      final tier = NobleBadgeHelper.getTierFromTitle(effectiveNoble);
-                      if (tier == NobleTier.emperor) {
-                        return Flexible(
-                          child: AnimatedImperialUsername(
-                            text: effectiveUser.name,
-                            style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              fontSize: isHostRow ? 10.5 : 9,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                          ),
-                        );
-                      }
-                      return Flexible(
-                        child: Text(
-                          effectiveUser.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            color: NobleBadgeHelper.getColoredNicknameColor(tier),
-                            fontWeight: FontWeight.w600,
-                            fontSize: isHostRow ? 10.5 : 9,
-                          ),
-                        ),
-                      );
-                    },
+                  Flexible(
+                    child: NobleBadgeHelper.buildStyledUsername(
+                      text: effectiveUser.name,
+                      nobleTitle: effectiveUser.nobleTitle,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: isHostRow ? 10.5 : 9,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
                   ),
                   NobleBadgeChip(user: effectiveUser, fontSize: 7),
                   NobleTagChip(user: effectiveUser, height: 11),

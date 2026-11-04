@@ -214,10 +214,11 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
                           const Icon(Icons.flash_on, color: Colors.white, size: 9),
                         ],
                       ),
-                      Text(
-                        effectName != null && effectName.isNotEmpty
+                      NobleBadgeHelper.buildStyledUsername(
+                        text: effectName != null && effectName.isNotEmpty
                             ? '${user.name} arrived in $effectName!'
                             : '${user.name} entered!',
+                        nobleTitle: user.nobleTitle,
                         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 10),
                         overflow: TextOverflow.ellipsis,
                         maxLines: 1,

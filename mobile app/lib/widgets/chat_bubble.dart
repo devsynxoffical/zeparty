@@ -9,6 +9,7 @@ import '../core/utils/formatters.dart';
 import '../features/social/short_videos_screen.dart';
 import '../providers/backpack_provider.dart';
 import '../models/gift_model.dart';
+import '../core/constants/animated_gifts_catalog.dart';
 
 class ChatBubble extends StatefulWidget {
   final MessageModel message;
@@ -222,18 +223,20 @@ class _ChatBubbleState extends State<ChatBubble> {
             ? const EdgeInsets.all(4)
             : (hasCustomBubble
                 ? (widget.isMe
-                    ? const EdgeInsets.fromLTRB(30, 18, 38, 16)
-                    : const EdgeInsets.fromLTRB(40, 18, 30, 16))
+                    ? const EdgeInsets.fromLTRB(36, 16, 42, 14)
+                    : const EdgeInsets.fromLTRB(42, 16, 36, 14))
                 : const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
         constraints: BoxConstraints(
-          minWidth: hasCustomBubble ? 165 : 0,
-          minHeight: hasCustomBubble ? 68 : 0,
+          minWidth: hasCustomBubble ? 140 : 0,
+          minHeight: hasCustomBubble ? 54 : 0,
           maxWidth: MediaQuery.of(context).size.width * 0.78,
         ),
         decoration: BoxDecoration(
-          color: isGift
-              ? (isDark ? const Color(0xFF2A153E) : const Color(0xFFF3E5F5))
-              : (hasCustomBubble ? Colors.transparent : bubbleColor),
+          color: hasCustomBubble
+              ? Colors.transparent
+              : (isGift
+                  ? (isDark ? const Color(0xFF2A153E) : const Color(0xFFF3E5F5))
+                  : bubbleColor),
           image: hasCustomBubble
               ? DecorationImage(
                   image: (equippedBubble.startsWith('http://') || equippedBubble.startsWith('https://'))
@@ -250,7 +253,9 @@ class _ChatBubbleState extends State<ChatBubble> {
                   bottomLeft: Radius.circular(widget.isMe ? 16 : 4),
                   bottomRight: Radius.circular(widget.isMe ? 4 : 16),
                 ),
-          border: isGift ? Border.all(color: Colors.purpleAccent, width: 1.5) : null,
+          border: hasCustomBubble
+              ? null
+              : (isGift ? Border.all(color: Colors.purpleAccent, width: 1.5) : null),
           boxShadow: hasCustomBubble
               ? null
               : [
@@ -270,8 +275,13 @@ class _ChatBubbleState extends State<ChatBubble> {
               Builder(
                 builder: (context) {
                   final media = widget.message.mediaUrl;
+                  final rawMsgText = widget.message.text.toLowerCase();
                   GiftModel? matchedGift = GiftModel.findById(media) ??
-                      GiftModel.findById(widget.message.text.replaceAll('🎁', '').replaceAll('Sent', '').replaceAll('!', '').trim());
+                      GiftModel.findById(widget.message.text.replaceAll('🎁', '').replaceAll('Sent', '').replaceAll('!', '').trim()) ??
+                      AnimatedGiftsCatalog.allGifts.where((g) =>
+                          (media != null && g.id.toLowerCase() == media.toLowerCase()) ||
+                          rawMsgText.contains(g.name.toLowerCase()) ||
+                          rawMsgText.contains(g.id.toLowerCase())).firstOrNull;
 
                   final resolvedIcon = matchedGift?.icon ?? media;
                   final giftCoinPrice = matchedGift?.priceCoins;
