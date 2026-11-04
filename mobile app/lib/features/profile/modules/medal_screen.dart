@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/repositories/social_repository.dart';
 import '../../../../models/medal_model.dart';
+import '../../../../models/user_asset_model.dart';
 import '../../../../providers/auth_provider.dart';
 
 class MedalScreen extends StatefulWidget {
@@ -12,27 +14,30 @@ class MedalScreen extends StatefulWidget {
 }
 
 class _MedalScreenState extends State<MedalScreen> {
-  late List<MedalModel> _medals;
+  List<MedalModel> _medals = [];
   int _selectedCategoryIndex = 0;
-  bool _initialized = false;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _medals = List.from(MedalModel.defaultMedals);
+    _loadRealMedals();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_initialized) {
-      final auth = Provider.of<AuthProvider>(context, listen: false);
-      final userLevel = auth.currentUser.wealthLevel;
-      _medals = MedalModel.defaultMedals.map((m) {
-        final unlocked = m.isUnlockedForLevel(userLevel);
-        return m.copyWith(isEarned: unlocked);
-      }).toList();
-      _initialized = true;
+  Future<void> _loadRealMedals() async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final user = auth.currentUser;
+    List<UserAssetModel> honorAssets = [];
+    try {
+      honorAssets = await SocialRepository.instance.getUserHonorAssets(user.id);
+    } catch (_) {}
+
+    final realMedals = MedalModel.resolveUserMedals(user, honorAssets: honorAssets);
+    if (mounted) {
+      setState(() {
+        _medals = realMedals;
+        _isLoading = false;
+      });
     }
   }
 
@@ -65,9 +70,11 @@ class _MedalScreenState extends State<MedalScreen> {
 
   IconData _getIcon(String key) {
     switch (key) {
-      case 'super_creator': return Icons.videocam_rounded;
-      case 'charity_king': return Icons.diamond_rounded;
-      case 'rising_star': return Icons.local_fire_department_rounded;
+      case 'role_merchant': return Icons.storefront_rounded;
+      case 'role_seller': return Icons.monetization_on_rounded;
+      case 'role_bd': return Icons.business_center_rounded;
+      case 'role_host': return Icons.mic_external_on_rounded;
+      case 'prestige_svip': return Icons.diamond_rounded;
       default: return Icons.workspace_premium_rounded;
     }
   }
@@ -95,12 +102,14 @@ class _MedalScreenState extends State<MedalScreen> {
             ],
           ),
         ),
-        body: TabBarView(
-          children: [
-            _buildMedalWall(isDark),
-            _buildMyMedals(isDark),
-          ],
-        ),
+        body: _isLoading
+            ? Center(child: CircularProgressIndicator(color: AppColors.getPrimary(isDark)))
+            : TabBarView(
+                children: [
+                  _buildMedalWall(isDark),
+                  _buildMyMedals(isDark),
+                ],
+              ),
       ),
     );
   }
@@ -108,7 +117,7 @@ class _MedalScreenState extends State<MedalScreen> {
   Widget _buildMedalWall(bool isDark) {
     final primary = AppColors.getPrimary(isDark);
     final earnedCount = _medals.where((m) => m.isEarned).length;
-    final categories = ['All', 'Streaming', 'Gifting', 'Activity'];
+    final categories = ['All', 'Nobility', 'Roles', 'Prestige'];
 
     return Column(
       children: [
@@ -151,7 +160,7 @@ class _MedalScreenState extends State<MedalScreen> {
           ),
         ),
         
-        // Progress Card
+        // Progress Card (Authoritative count)
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           padding: const EdgeInsets.all(16),
@@ -196,7 +205,7 @@ class _MedalScreenState extends State<MedalScreen> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(4),
                       child: LinearProgressIndicator(
-                        value: earnedCount / _medals.length,
+                        value: _medals.isEmpty ? 0 : (earnedCount / _medals.length),
                         minHeight: 6,
                         backgroundColor: isDark ? Colors.white12 : Colors.black12,
                         valueColor: AlwaysStoppedAnimation<Color>(primary),
@@ -234,77 +243,81 @@ class _MedalScreenState extends State<MedalScreen> {
                 itemCount: displayedMedals.length,
                 itemBuilder: (context, index) {
                   final medal = displayedMedals[index];
-              final lockedColor = isDark ? Colors.white30 : Colors.black26;
-              final lockedBg = isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05);
+                  final lockedColor = isDark ? Colors.white30 : Colors.black26;
+                  final lockedBg = isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05);
 
-              return Container(
-                decoration: BoxDecoration(
-                  color: AppColors.getCard(isDark),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.getBorder(isDark)),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: medal.isEarned 
-                            ? AppColors.metallicGold.withValues(alpha: 0.15) 
-                            : lockedBg,
-                        shape: BoxShape.circle,
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.getCard(isDark),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: medal.isEarned ? AppColors.metallicGold.withValues(alpha: 0.5) : AppColors.getBorder(isDark),
+                        width: medal.isEarned ? 1.2 : 1.0,
                       ),
-                      child: medal.iconUrl.startsWith('assets/')
-                          ? Image.asset(
-                              medal.iconUrl,
-                              width: 36,
-                              height: 36,
-                              fit: BoxFit.contain,
-                              errorBuilder: (_, __, ___) => Icon(_getIcon(medal.iconUrl), color: medal.isEarned ? AppColors.metallicGold : lockedColor, size: 32),
-                            )
-                          : Icon(
-                              _getIcon(medal.iconUrl), 
-                              color: medal.isEarned ? AppColors.metallicGold : lockedColor,
-                              size: 32,
-                            ),
                     ),
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Text(
-                        medal.name,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                          color: medal.isEarned ? AppColors.getTextPrimary(isDark) : lockedColor,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: medal.isEarned 
+                                ? AppColors.metallicGold.withValues(alpha: 0.15) 
+                                : lockedBg,
+                            shape: BoxShape.circle,
+                          ),
+                          child: medal.iconUrl.startsWith('assets/')
+                              ? Image.asset(
+                                  medal.iconUrl,
+                                  width: 36,
+                                  height: 36,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => Icon(_getIcon(medal.iconUrl), color: medal.isEarned ? AppColors.metallicGold : lockedColor, size: 32),
+                                )
+                              : Icon(
+                                  _getIcon(medal.iconUrl), 
+                                  color: medal.isEarned ? AppColors.metallicGold : lockedColor,
+                                  size: 32,
+                                ),
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                        const SizedBox(height: 8),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Text(
+                            medal.name,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                              color: medal.isEarned ? AppColors.getTextPrimary(isDark) : lockedColor,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        if (medal.isEarned)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(3, (i) => Icon(
+                              Icons.star_rounded, 
+                              size: 10, 
+                              color: i < 2 ? AppColors.metallicGold : Colors.grey.withValues(alpha: 0.5),
+                            )),
+                          )
+                        else
+                          Icon(Icons.lock_rounded, size: 12, color: lockedColor),
+                      ],
                     ),
-                    const SizedBox(height: 4),
-                    if (medal.isEarned)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(3, (i) => Icon(
-                          Icons.star_rounded, 
-                          size: 10, 
-                          color: i < 2 ? AppColors.metallicGold : Colors.grey.withValues(alpha: 0.5),
-                        )),
-                      )
-                    else
-                      Icon(Icons.lock_rounded, size: 12, color: lockedColor),
-                  ],
-                ),
+                  );
+                },
               );
             },
-          );
-        }),
-      ),
-    ],
-  );
-}
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildMyMedals(bool isDark) {
     final primary = AppColors.getPrimary(isDark);
@@ -518,17 +531,32 @@ class _MedalScreenState extends State<MedalScreen> {
           if (earnedMedals.isEmpty)
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
               margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
                 color: AppColors.getCard(isDark),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.getBorder(isDark)),
               ),
-              child: Center(
-                child: Text(
-                  'No medals unlocked yet. Complete tasks to earn your first medal!',
-                  style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 13),
-                ),
+              child: Column(
+                children: [
+                  Icon(Icons.military_tech_outlined, size: 48, color: AppColors.getTextSecondary(isDark)),
+                  const SizedBox(height: 12),
+                  Text(
+                    'No Medals Assigned Yet',
+                    style: TextStyle(
+                      color: AppColors.getTextPrimary(isDark),
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Activate Aristocracy titles, platform roles, or honor achievements to unlock official medals.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
+                  ),
+                ],
               ),
             )
           else

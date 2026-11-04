@@ -326,42 +326,7 @@ class DummyData {
     ),
   ];
 
-  static const List<MedalModel> userMedals = [
-    MedalModel(
-      id: 'm1',
-      name: 'Super Creator',
-      description: 'Streamed for over 100 hours in total.',
-      iconUrl: 'super_creator',
-      isEarned: true,
-      isEquipped: true,
-      category: 'Streaming',
-    ),
-    MedalModel(
-      id: 'm2',
-      name: 'Charity King',
-      description: 'Donated over 50,000 diamonds in a week.',
-      iconUrl: 'charity_king',
-      isEarned: true,
-      isEquipped: false,
-      category: 'Gifting',
-    ),
-    MedalModel(
-      id: 'm3',
-      name: 'Rising Star',
-      description: 'Gained 1,000 followers in a single day.',
-      iconUrl: 'rising_star',
-      isEarned: false,
-      category: 'Activity',
-    ),
-    MedalModel(
-      id: 'm4',
-      name: 'ZeParty Legend',
-      description: 'Won 10 consecutive PK battles.',
-      iconUrl: 'zep_legend',
-      isEarned: false,
-      category: 'Activity',
-    ),
-  ];
+  static const List<MedalModel> userMedals = [];
 
   static const List<OutfitModel> userOutfits = [
     OutfitModel(

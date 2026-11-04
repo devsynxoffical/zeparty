@@ -2370,23 +2370,10 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   // Shows only medals the user has actually earned (isEarned == true)
   Widget _buildMedalGallery(bool isDark) {
     final primaryText = AppColors.getTextPrimary(isDark);
-    // Filter earned medals based on isEarned flag or user milestone achievements
-    final isUserKing = _user?.nobleTitle?.toLowerCase().contains('king') == true;
-    final earnedMedals = MedalModel.defaultMedals.where((m) => m.isEarned).toList();
-    if (isUserKing && !earnedMedals.any((m) => m.id == 'king_noble_medal')) {
-      earnedMedals.insert(
-        0,
-        const MedalModel(
-          id: 'king_noble_medal',
-          name: 'King Aristocracy',
-          description: 'Supreme Royal King Entitlement',
-          iconUrl: 'assets/nobles/ZP-037_tier-6-king_badge.webp',
-          isEarned: true,
-          category: 'Nobility',
-          requiredLevel: 1,
-        ),
-      );
-    }
+    // Filter earned medals based on authoritative entitlement (No dummy data)
+    final targetUser = _user ?? context.read<AuthProvider>().currentUser;
+    final allResolvedMedals = MedalModel.resolveUserMedals(targetUser, honorAssets: _honorAssets);
+    final earnedMedals = allResolvedMedals.where((m) => m.isEarned).toList();
     final medalsCount = earnedMedals.length;
 
     return Padding(
