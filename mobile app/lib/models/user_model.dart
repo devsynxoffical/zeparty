@@ -1,3 +1,4 @@
+import '../core/utils/wealth_level_helper.dart';
 enum UserRole { user, host, seller, agency, bd, admin }
 
 class UserModel {
@@ -375,7 +376,7 @@ class UserModel {
       hostAppStatus = 'approved';
     }
 
-    final int parsedWealthLevel = _parseIntSafe(
+    final int rawParsedWealthLevel = _parseIntSafe(
       profile['wealthLevel'] ?? profile['level'] ?? json['wealthLevel'] ?? json['level'] ?? levels['wealthLevel'] ?? levels['wealth'],
       1, // Default minimum level is 1
     );
@@ -383,6 +384,9 @@ class UserModel {
       profile['wealthXp'] ?? profile['experience'] ?? profile['experiencePoints'] ?? json['wealthXp'] ?? json['experiencePoints'] ?? levels['wealthXp'],
       0,
     );
+    final int parsedWealthLevel = parsedWealthXp > 0
+        ? WealthLevelHelper.getLevelFromSending(parsedWealthXp)
+        : rawParsedWealthLevel.clamp(1, 100);
     final int parsedCharmLevel = _parseIntSafe(
       profile['charmLevel'] ?? json['charmLevel'] ?? levels['charmLevel'] ?? levels['charm'],
       1,
@@ -560,49 +564,50 @@ class UserModel {
   // ──────────────────────────────────────────────────────────────────────────
   static const int _xpPerLevel = 10000;
 
-  /// Computed wealth level from cumulative wealthXp or explicit wealthLevel (starting at Lv. 1)
+  /// Computed wealth level from cumulative wealthXp or explicit wealthLevel (starting at Lv. 1, max Lv. 100)
   int get computedWealthLevel {
     if (wealthXp > 0) {
-      final lvl = (wealthXp ~/ _xpPerLevel) + 1;
-      return lvl > wealthLevel ? lvl : (wealthLevel > 0 ? wealthLevel : 1);
+      return WealthLevelHelper.getLevelFromSending(wealthXp);
     }
-    return wealthLevel > 0 ? wealthLevel : 1;
+    return (wealthLevel > 0 ? wealthLevel : 1).clamp(1, 100);
   }
 
   /// XP progress within the current wealth level
-  int get wealthLevelXp => wealthXp % _xpPerLevel;
+  int get wealthLevelXp => wealthXp > 0
+      ? WealthLevelHelper.getProgress(wealthXp).progressInLevel
+      : 0;
 
-  /// Computed charm level from cumulative charmXp or explicit charmLevel (starting at Lv. 1)
+  /// Computed charm level from cumulative charmXp or explicit charmLevel (starting at Lv. 1, max Lv. 100)
   int get computedCharmLevel {
     if (charmXp > 0) {
       final lvl = (charmXp ~/ _xpPerLevel) + 1;
-      return lvl > charmLevel ? lvl : (charmLevel > 0 ? charmLevel : 1);
+      return (lvl > charmLevel ? lvl : (charmLevel > 0 ? charmLevel : 1)).clamp(1, 100);
     }
-    return charmLevel > 0 ? charmLevel : 1;
+    return (charmLevel > 0 ? charmLevel : 1).clamp(1, 100);
   }
 
   /// XP progress within the current charm level
   int get charmLevelXp => charmXp % _xpPerLevel;
 
-  /// Computed game level from cumulative gameXp or explicit gameLevel (starting at Lv. 1)
+  /// Computed game level from cumulative gameXp or explicit gameLevel (starting at Lv. 1, max Lv. 100)
   int get computedGameLevel {
     if (gameXp > 0) {
       final lvl = (gameXp ~/ _xpPerLevel) + 1;
-      return lvl > gameLevel ? lvl : (gameLevel > 0 ? gameLevel : 1);
+      return (lvl > gameLevel ? lvl : (gameLevel > 0 ? gameLevel : 1)).clamp(1, 100);
     }
-    return gameLevel > 0 ? gameLevel : 1;
+    return (gameLevel > 0 ? gameLevel : 1).clamp(1, 100);
   }
 
   /// XP progress within the current game level
   int get gameLevelXp => gameXp % _xpPerLevel;
 
-  /// Computed account level from cumulative accountXp or explicit accountLevel (starting at Lv. 1)
+  /// Computed account level from cumulative accountXp or explicit accountLevel (starting at Lv. 1, max Lv. 100)
   int get computedAccountLevel {
     if (accountXp > 0) {
       final lvl = (accountXp ~/ _xpPerLevel) + 1;
-      return lvl > accountLevel ? lvl : (accountLevel > 0 ? accountLevel : 1);
+      return (lvl > accountLevel ? lvl : (accountLevel > 0 ? accountLevel : 1)).clamp(1, 100);
     }
-    return accountLevel > 0 ? accountLevel : (wealthLevel > 0 ? wealthLevel : 1);
+    return (accountLevel > 0 ? accountLevel : (wealthLevel > 0 ? wealthLevel : 1)).clamp(1, 100);
   }
 
   /// XP progress within the current account level

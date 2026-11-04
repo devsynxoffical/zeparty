@@ -2551,7 +2551,7 @@ class LivePartyProvider extends ChangeNotifier {
     if (roomId != null) {
       try {
         await _roomRepository.closeRoom(roomId);
-        await RoomConfigManager.instance.clearRoomSendingTotal(roomId);
+        // CR 14: Never clear room sending total locally on room close to guarantee persistence across reopenings
       } catch (_) {}
       await leaveParty();
     }

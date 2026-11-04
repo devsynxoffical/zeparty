@@ -1,3 +1,5 @@
+import '../../../../core/utils/room_level_helper.dart';
+import '../../../../core/services/room_config_manager.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -681,6 +683,20 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
   }
 
   Widget _buildLevelRow(Color textColor, Color secondaryColor, Color primaryColor) {
+    final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+    final totalGifts = partyProv.roomSendingTotal > 0
+        ? partyProv.roomSendingTotal
+        : (RoomConfigManager.instance.getRoomSendingTotal(widget.room.id) > 0
+            ? RoomConfigManager.instance.getRoomSendingTotal(widget.room.id)
+            : widget.room.totalGifts);
+    final progress = RoomLevelHelper.getRoomLevelProgress(totalGifts);
+
+    final currentLevelStr = 'LV.${progress.currentLevel}';
+    final nextLevelStr = progress.isMax ? 'MAX' : 'LV.${progress.nextLevel}';
+    final currentCoins = RoomLevelHelper.formatCoins(progress.progressInLevel);
+    final targetCoins = RoomLevelHelper.formatCoins(progress.additionalRequired);
+    final progressLabel = progress.isMax ? 'MAX LEVEL' : '$currentCoins/$targetCoins';
+
     return Row(
       children: [
         Text(
@@ -693,7 +709,7 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
         ),
         const SizedBox(width: 16),
         Text(
-          'LV.8',
+          currentLevelStr,
           style: TextStyle(
             color: primaryColor,
             fontSize: 14,
@@ -709,7 +725,7 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
-                  value: 0.54,
+                  value: progress.progressRatio,
                   minHeight: 4,
                   backgroundColor: secondaryColor.withValues(alpha: 0.1),
                   valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
@@ -717,7 +733,7 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
               ),
               const SizedBox(height: 2),
               Text(
-                '5422/10k',
+                progressLabel,
                 style: TextStyle(color: secondaryColor, fontSize: 9, fontWeight: FontWeight.bold),
               ),
             ],
@@ -725,7 +741,7 @@ class _RoomInfoSheetState extends State<RoomInfoSheet> with SingleTickerProvider
         ),
         const SizedBox(width: 8),
         Text(
-          'LV.9',
+          nextLevelStr,
           style: TextStyle(
             color: secondaryColor.withValues(alpha: 0.4),
             fontSize: 14,

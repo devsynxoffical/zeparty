@@ -626,6 +626,31 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
             backgroundColor: accepted ? Colors.green : Colors.orange,
           ),
         );
+        if (accepted) {
+          final userMap = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : null;
+          final targetId = data['userId']?.toString() ?? data['targetUserId']?.toString();
+          if (userMap != null) {
+            setState(() {
+              _coHostUser = UserModel.fromJson(userMap);
+            });
+          } else if (targetId != null) {
+            setState(() {
+              _coHostUser = UserModel.fromJson({
+                'id': targetId,
+                'name': name,
+                'username': name,
+                'avatar': data['avatar'] ?? data['userAvatar'] ?? '',
+              });
+            });
+          }
+          _fetchInitialStageState();
+        } else {
+          if (mounted) {
+            setState(() {
+              _coHostUser = null;
+            });
+          }
+        }
       });
 
       // Item #49: Authoritative Stage Synchronization with Versioning
@@ -942,7 +967,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
     Widget? videoWidgetLeft;
     Widget? videoWidgetRight;
 
+    final myUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
+    final isMeCoHost = _coHostUser != null && (_coHostUser!.id == myUser.id || _coHostUser!.username == myUser.username);
+
     if (isHost) {
+      // Room Host: Left is host local preview (uid: 0), Right is remote Co-Host
       videoWidgetLeft = agora.engine != null
           ? AgoraVideoView(
               controller: VideoViewController(
@@ -962,12 +991,50 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               ),
             )
           : null;
-    } else {
+    } else if (isMeCoHost) {
+      // Current user is Co-Host: Left is remote Room Host, Right is co-host local preview (uid: 0)
       videoWidgetLeft = firstRemoteUid != null && agora.engine != null
           ? AgoraVideoView(
               controller: VideoViewController.remote(
                 rtcEngine: agora.engine!,
                 canvas: VideoCanvas(uid: firstRemoteUid),
+                connection: RtcConnection(
+                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                ),
+              ),
+            )
+          : null;
+      videoWidgetRight = agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController(
+                rtcEngine: agora.engine!,
+                canvas: const VideoCanvas(uid: 0),
+              ),
+            )
+          : null;
+    } else {
+      // Audience Viewer: Left is remote Room Host, Right is remote Co-Host
+      videoWidgetLeft = firstRemoteUid != null && agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController.remote(
+                rtcEngine: agora.engine!,
+                canvas: VideoCanvas(uid: firstRemoteUid),
+                connection: RtcConnection(
+                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                ),
+              ),
+            )
+          : null;
+      
+      final coHostRemoteUid = remoteUids.length > 1
+          ? remoteUids.firstWhere((uid) => uid != firstRemoteUid, orElse: () => remoteUids[1])
+          : null;
+
+      videoWidgetRight = coHostRemoteUid != null && agora.engine != null
+          ? AgoraVideoView(
+              controller: VideoViewController.remote(
+                rtcEngine: agora.engine!,
+                canvas: VideoCanvas(uid: coHostRemoteUid),
                 connection: RtcConnection(
                   channelId: activeRoom.agoraChannelName ?? activeRoom.id,
                 ),

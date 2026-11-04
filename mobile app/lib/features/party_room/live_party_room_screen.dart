@@ -1664,7 +1664,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                           const SizedBox(width: 3),
                           Text(
                             () {
-                              final total = provider.roomSendingTotal;
+                              final total = provider.roomSendingTotal > 0
+                                  ? provider.roomSendingTotal
+                                  : (RoomConfigManager.instance.getRoomSendingTotal(widget.room.id) > 0
+                                      ? RoomConfigManager.instance.getRoomSendingTotal(widget.room.id)
+                                      : widget.room.totalGifts);
                               if (total >= 1000000) return '${(total / 1000000).toStringAsFixed(1)}M';
                               if (total >= 1000) return '${(total / 1000).toStringAsFixed(1)}K';
                               return total > 0 ? '$total' : '0';

@@ -1,3 +1,4 @@
+import '../../core/utils/wealth_level_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,20 +23,6 @@ class LevelCenterScreen extends StatefulWidget {
 }
 
 class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTickerProviderStateMixin {
-  Color _getLevelColor(int level) {
-    if (level <= 1) return const Color(0xFF607D8B); // Grey for 0 and 1
-    if (level < 10) return const Color(0xFF29B6F6);
-    if (level < 20) return const Color(0xFF66BB6A);
-    if (level < 30) return const Color(0xFFFFA726);
-    if (level < 40) return const Color(0xFFAB47BC);
-    if (level < 50) return const Color(0xFFEF5350);
-    if (level < 60) return const Color(0xFF26A69A);
-    if (level < 70) return const Color(0xFFEC407A);
-    if (level < 80) return const Color(0xFF5C6BC0);
-    if (level < 90) return const Color(0xFFFF7043);
-    return const Color(0xFFFFCA28);
-  }
-
   late TabController _tabController;
 
   @override
@@ -96,25 +83,31 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
         controller: _tabController,
         children: [
           // 1. Wealth Track (Sending History)
-          _buildLevelTrackView(
-            context,
-            title: 'Wealth Level Track',
-            subtitle: 'Calculated from total sending history & gifts',
-            level: user.computedWealthLevel,
-            currentXp: user.wealthLevelXp,
-            requiredXp: 10000,
-            icon: Icons.diamond_rounded,
-            imagePath: 'assets/images/level_logo_wealth.png',
-            color: const Color(0xFF00E5FF),
-            perks: [
-              '💎 Gold Crown Mic Frame',
-              '👑 Wealth Rank Leaderboard Badge',
-              '✨ High-Value Room Entry Banner',
-              '💬 Highlighted Gold Chat Bubble',
-              '⚡ Seating Priority in Voice Rooms',
-            ],
-            isDark: isDark,
-          ),
+          () {
+            final wealthProgress = WealthLevelHelper.getProgress(user.wealthXp);
+            return _buildLevelTrackView(
+              context,
+              title: 'Wealth Level Track',
+              subtitle: 'Calculated from total sending history & gifts',
+              level: wealthProgress.currentLevel,
+              currentXp: wealthProgress.progressInLevel,
+              requiredXp: wealthProgress.additionalRequired,
+              isMax: wealthProgress.isMax,
+              nextLevel: wealthProgress.nextLevel,
+              customProgressRatio: wealthProgress.progressRatio,
+              icon: Icons.diamond_rounded,
+              imagePath: 'assets/images/level_logo_wealth.png',
+              color: const Color(0xFF00E5FF),
+              perks: [
+                '💎 Gold Crown Mic Frame',
+                '👑 Wealth Rank Leaderboard Badge',
+                '✨ High-Value Room Entry Banner',
+                '💬 Highlighted Gold Chat Bubble',
+                '⚡ Seating Priority in Voice Rooms',
+              ],
+              isDark: isDark,
+            );
+          }(),
 
           // 2. Charm Track (Receiving History)
           _buildLevelTrackView(
@@ -195,8 +188,13 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
     required Color color,
     required List<String> perks,
     required bool isDark,
+    bool isMax = false,
+    int? nextLevel,
+    double? customProgressRatio,
   }) {
-    final progress = (currentXp / requiredXp).clamp(0.0, 1.0);
+    final effectiveLevel = level.clamp(1, 100);
+    final bool effectiveIsMax = isMax || effectiveLevel >= 100;
+    final progress = customProgressRatio ?? (requiredXp > 0 ? (currentXp / requiredXp).clamp(0.0, 1.0) : 1.0);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -232,7 +230,10 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
                       const SizedBox(height: 2),
                       Text(subtitle, style: const TextStyle(color: Colors.white60, fontSize: 11)),
                       const SizedBox(height: 8),
-                      Text('Active Level: Lv. $level', style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14)),
+                      Text(
+                        effectiveIsMax ? 'Active Level: Lv. 100 (MAX)' : 'Active Level: Lv. $effectiveLevel',
+                        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
                     ],
                   ),
                 ),
@@ -257,14 +258,19 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text('Server XP Progression', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                    Text('Lv. $level ➔ Lv. ${level + 1}', style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
+                    Text(
+                      effectiveIsMax
+                          ? 'Lv. 100 ➔ MAX'
+                          : 'Lv. $effectiveLevel ➔ Lv. ${nextLevel ?? (effectiveLevel + 1)}',
+                      style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(6),
                   child: LinearProgressIndicator(
-                    value: progress,
+                    value: effectiveIsMax ? 1.0 : progress,
                     minHeight: 10,
                     backgroundColor: Colors.white12,
                     valueColor: AlwaysStoppedAnimation<Color>(color),
@@ -275,11 +281,15 @@ class _LevelCenterScreenState extends State<LevelCenterScreen> with SingleTicker
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Current XP: ${AppFormatters.formatNumber(currentXp)}',
+                      effectiveIsMax
+                          ? 'Current XP: MAX'
+                          : 'Current XP: ${AppFormatters.formatNumber(currentXp)}',
                       style: const TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                     Text(
-                      'Target XP: ${AppFormatters.formatNumber(requiredXp)}',
+                      effectiveIsMax
+                          ? 'Target XP: MAX'
+                          : 'Target XP: ${AppFormatters.formatNumber(requiredXp)}',
                       style: const TextStyle(fontSize: 11, color: Colors.grey),
                     ),
                   ],

@@ -2457,9 +2457,24 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   }
 
   Widget _buildMedalCircleAsset(MedalModel medal) {
-    final assetPath = medal.iconUrl.startsWith('assets/')
-        ? medal.iconUrl
-        : 'assets/nobles/${medal.iconUrl}.png';
+    IconData getMedalIcon(String iconKey) {
+      switch (iconKey) {
+        case 'super_creator':
+          return Icons.videocam_rounded;
+        case 'charity_king':
+          return Icons.diamond_rounded;
+        case 'rising_star':
+          return Icons.local_fire_department_rounded;
+        case 'community_pillar':
+          return Icons.shield_rounded;
+        case 'platform_pioneer':
+          return Icons.stars_rounded;
+        default:
+          return Icons.workspace_premium_rounded;
+      }
+    }
+
+    final isAsset = medal.iconUrl.startsWith('assets/');
 
     return Container(
       width: 52,
@@ -2476,15 +2491,21 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
           BoxShadow(color: Colors.amber.withValues(alpha: 0.25), blurRadius: 8),
         ],
       ),
-      child: Image.asset(
-        assetPath,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => const Icon(
-          Icons.emoji_events_rounded,
-          size: 26,
-          color: Colors.amber,
-        ),
-      ),
+      child: isAsset
+          ? Image.asset(
+              medal.iconUrl,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.emoji_events_rounded,
+                size: 26,
+                color: Colors.amber,
+              ),
+            )
+          : Icon(
+              getMedalIcon(medal.iconUrl),
+              size: 26,
+              color: Colors.amber,
+            ),
     );
   }
 
