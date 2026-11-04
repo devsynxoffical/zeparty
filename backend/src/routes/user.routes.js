@@ -95,6 +95,12 @@ userProfileRouter.get('/me/profile-grid', authenticate, userController.getProfil
 userProfileRouter.put('/me/profile-edit', authenticate, userController.putProfileEdit);
 userProfileRouter.get('/me/daily-checkin', authenticate, userController.getDailyCheckinStatus);
 userProfileRouter.post('/me/daily-checkin/claim', authenticate, userController.claimDailyCheckin);
+userProfileRouter.get('/me/daily-quests', authenticate, userController.getDailyQuests);
+userProfileRouter.get('/me/quests', authenticate, userController.getDailyQuests);
+userProfileRouter.post('/me/daily-quests/claim', authenticate, userController.postClaimDailyQuest);
+userProfileRouter.post('/me/daily-quests/:questId/claim', authenticate, userController.postClaimDailyQuest);
+userProfileRouter.post('/me/quests/claim', authenticate, userController.postClaimDailyQuest);
+userProfileRouter.post('/me/quests/:questId/claim', authenticate, userController.postClaimDailyQuest);
 userProfileRouter.get('/me/privacy-settings', authenticate, userController.getUserPrivacySettings);
 userProfileRouter.put('/me/privacy-settings', authenticate, userController.putUserPrivacySettings);
 userProfileRouter.get('/me/visitors', authenticate, socialController.getProfileVisitors);

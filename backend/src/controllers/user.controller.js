@@ -4,6 +4,8 @@ import prisma from '../config/database.js';
 import redisClient from '../config/redis.js';
 import * as assetService from '../services/asset.service.js';
 import * as userRepository from '../repositories/user.repository.js';
+import questService from '../services/quest.service.js';
+import * as ledgerRepository from '../repositories/ledger.repository.js';
 import {
   queryUsersSchema,
   updateUserStatusSchema,
@@ -1334,37 +1336,64 @@ export async function getDailyCheckinStatus(req, res, next) {
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const yesterdayStr = yesterday.toISOString().split('T')[0];
 
-    let state = { lastClaimDate: null, streakDays: 0 };
-    try {
-      if (redisClient.isOpen) {
-        const raw = await redisClient.get(`checkin:user:${userId}`);
-        if (raw) state = JSON.parse(raw);
-      }
-    } catch (_) {}
-
-    const isTodayClaimed = state.lastClaimDate === todayStr;
+    // 1. Authoritative check in PostgreSQL WalletLedger
+    let isTodayClaimed = false;
+    let streakDays = 0;
     let currentEligibleDay = 1;
 
-    if (isTodayClaimed) {
-      currentEligibleDay = state.streakDays;
-    } else {
-      if (state.lastClaimDate === yesterdayStr) {
-        currentEligibleDay = (state.streakDays % 7) + 1;
+    try {
+      const todayLedger = await prisma.walletLedger.findFirst({
+        where: { referenceId: `CHECKIN-${userId}-${todayStr}` },
+        select: { id: true, balanceAfter: true },
+      });
+
+      if (todayLedger) {
+        isTodayClaimed = true;
+        streakDays = Number(todayLedger.balanceAfter?.streakDays || 1);
+        currentEligibleDay = streakDays;
       } else {
-        currentEligibleDay = 1;
+        const yesterdayLedger = await prisma.walletLedger.findFirst({
+          where: { referenceId: `CHECKIN-${userId}-${yesterdayStr}` },
+          select: { id: true, balanceAfter: true },
+        });
+
+        if (yesterdayLedger) {
+          isTodayClaimed = false;
+          const prevStreak = Number(yesterdayLedger.balanceAfter?.streakDays || 1);
+          streakDays = prevStreak;
+          currentEligibleDay = (prevStreak % 7) + 1;
+        } else {
+          // Fallback to Redis cache if no recent ledger entry was found
+          let state = null;
+          if (redisClient.isOpen) {
+            const raw = await redisClient.get(`checkin:user:${userId}`).catch(() => null);
+            if (raw) state = JSON.parse(raw);
+          }
+          if (state && state.lastClaimDate === todayStr) {
+            isTodayClaimed = true;
+            streakDays = Number(state.streakDays || 1);
+            currentEligibleDay = streakDays;
+          } else if (state && state.lastClaimDate === yesterdayStr) {
+            isTodayClaimed = false;
+            streakDays = Number(state.streakDays || 1);
+            currentEligibleDay = (streakDays % 7) + 1;
+          } else {
+            isTodayClaimed = false;
+            streakDays = 0;
+            currentEligibleDay = 1;
+          }
+        }
       }
+    } catch (checkErr) {
+      console.warn('[UserController] Warning checking checkin ledger status:', checkErr.message);
     }
 
     const rewards = rewardsConfig.map((item) => {
       let status = 'LOCKED';
       if (isTodayClaimed) {
-        if (item.day <= state.streakDays) {
-          status = 'CLAIMED';
-        } else {
-          status = 'LOCKED';
-        }
+        status = item.day <= streakDays ? 'CLAIMED' : 'LOCKED';
       } else {
-        if (state.lastClaimDate === yesterdayStr && item.day <= state.streakDays) {
+        if (streakDays > 0 && item.day < currentEligibleDay) {
           status = 'CLAIMED';
         } else if (item.day === currentEligibleDay) {
           status = 'AVAILABLE';
@@ -1378,14 +1407,22 @@ export async function getDailyCheckinStatus(req, res, next) {
       };
     });
 
+    // Authoritative daily quests status (independent tracking for games and gifts)
+    let dailyQuests = [];
+    try {
+      dailyQuests = await questService.getDailyQuestsStatus(userId, prisma);
+    } catch (_) {}
+
     return res.status(200).json({
       success: true,
       data: {
-        streakDays: isTodayClaimed ? state.streakDays : (state.lastClaimDate === yesterdayStr ? state.streakDays : 0),
+        streakDays: isTodayClaimed ? streakDays : (currentEligibleDay > 1 ? streakDays : 0),
         currentEligibleDay,
         isTodayClaimed,
         rewards,
+        dailyQuests,
       },
+      dailyQuests,
     });
   } catch (err) {
     next(err);
@@ -1401,56 +1438,150 @@ export async function claimDailyCheckin(req, res, next) {
     const todayStr = now.toISOString().split('T')[0];
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const refId = `CHECKIN-${userId}-${todayStr}`;
 
-    if (redisClient.isOpen) {
-      const lockKey = `checkin:lock:${userId}:${todayStr}`;
-      const acquired = await redisClient.set(lockKey, '1', { NX: true, EX: 30 }).catch(() => true);
-      if (!acquired) {
-        return res.status(409).json({ success: false, message: 'Claim in progress or already processed today.' });
-      }
-    }
-
-    let state = { lastClaimDate: null, streakDays: 0 };
-    try {
+    // 1. Idempotency & duplicate check in PostgreSQL ledger
+    const existingLedger = await prisma.walletLedger.findFirst({
+      where: { referenceId: refId },
+      include: { wallet: true },
+    });
+    if (existingLedger) {
+      const currentCoins = Number(existingLedger.wallet?.coinBalance || 0);
+      const claimedStreak = Number(existingLedger.balanceAfter?.streakDays || 1);
       if (redisClient.isOpen) {
-        const raw = await redisClient.get(`checkin:user:${userId}`);
-        if (raw) state = JSON.parse(raw);
+        await redisClient.set(
+          `checkin:user:${userId}`,
+          JSON.stringify({
+            lastClaimDate: todayStr,
+            streakDays: claimedStreak,
+            lastClaimedAt: existingLedger.createdAt.toISOString(),
+            lastCoinsReward: claimedStreak * 50,
+          }),
+          { EX: 60 * 60 * 24 * 30 }
+        ).catch(() => {});
       }
-    } catch (_) {}
-
-    if (state.lastClaimDate === todayStr) {
       return res.status(400).json({
         success: false,
+        code: 'ALREADY_CLAIMED',
         message: 'You have already claimed today\'s check-in bonus. Come back tomorrow!',
+        data: {
+          day: claimedStreak,
+          rewardCoins: claimedStreak * 50,
+          newStreak: claimedStreak,
+          walletCoins: currentCoins,
+          referenceId: refId,
+        },
       });
     }
 
-    let newStreak = 1;
-    if (state.lastClaimDate === yesterdayStr) {
-      newStreak = (state.streakDays % 7) + 1;
+    // 2. Concurrency Protection: Distributed Lock
+    const lockKey = `checkin:lock:${userId}:${todayStr}`;
+    if (redisClient.isOpen) {
+      const acquired = await redisClient.set(lockKey, '1', { NX: true, EX: 30 }).catch(() => true);
+      if (!acquired) {
+        return res.status(409).json({ success: false, code: 'CLAIM_IN_PROGRESS', message: 'Claim in progress or already processed today.' });
+      }
     }
 
+    // 3. Determine streak
+    let prevStreak = 0;
+    try {
+      const yesterdayLedger = await prisma.walletLedger.findFirst({
+        where: { referenceId: `CHECKIN-${userId}-${yesterdayStr}` },
+        select: { balanceAfter: true },
+      });
+      if (yesterdayLedger) {
+        prevStreak = Number(yesterdayLedger.balanceAfter?.streakDays || 1);
+      } else if (redisClient.isOpen) {
+        const raw = await redisClient.get(`checkin:user:${userId}`).catch(() => null);
+        if (raw) {
+          const s = JSON.parse(raw);
+          if (s.lastClaimDate === yesterdayStr) {
+            prevStreak = Number(s.streakDays || 1);
+          }
+        }
+      }
+    } catch (_) {}
+
+    const newStreak = prevStreak > 0 ? (prevStreak % 7) + 1 : 1;
     const rewardCoins = newStreak * 50;
 
-    const updatedWallet = await prisma.wallet.upsert({
-      where: { userId },
-      update: {
-        coins: { increment: BigInt(rewardCoins) },
-      },
-      create: {
-        userId,
-        coins: BigInt(rewardCoins),
-      },
+    // 4. Atomic PostgreSQL Transaction: Wallet Balance Mutation + Immutable WalletLedger Entry
+    const claimResult = await prisma.$transaction(async (tx) => {
+      // Re-verify inside tx to protect against concurrent execution
+      const dup = await tx.walletLedger.findFirst({
+        where: { referenceId: refId },
+      });
+      if (dup) {
+        const err = new Error('You have already claimed today\'s check-in bonus.');
+        err.statusCode = 400;
+        err.code = 'ALREADY_CLAIMED';
+        throw err;
+      }
+
+      let wallet = await tx.wallet.findUnique({ where: { userId } });
+      if (!wallet) {
+        wallet = await tx.wallet.create({
+          data: {
+            userId,
+            coinBalance: 0n,
+            diamondBalance: 0n,
+          },
+        });
+      }
+
+      const balanceBeforeCoins = BigInt(wallet.coinBalance || 0n);
+      const rewardCoinsBig = BigInt(rewardCoins);
+      const newCoinBalance = balanceBeforeCoins + rewardCoinsBig;
+
+      // Authoritative balance update using correct schema field coinBalance
+      const updatedWallet = await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          coinBalance: newCoinBalance,
+        },
+      });
+
+      // Record immutable WalletLedger entry
+      const ledgerEntry = await ledgerRepository.createEntry(
+        {
+          walletId: wallet.id,
+          transactionType: 'RECHARGE',
+          coinDelta: rewardCoinsBig,
+          diamondDelta: 0n,
+          usdDelta: 0.0,
+          balanceBefore: {
+            coins: balanceBeforeCoins.toString(),
+            diamonds: (wallet.diamondBalance || 0n).toString(),
+          },
+          balanceAfter: {
+            coins: newCoinBalance.toString(),
+            diamonds: (wallet.diamondBalance || 0n).toString(),
+            streakDays: newStreak,
+            day: newStreak,
+            claimedDate: todayStr,
+          },
+          referenceId: refId,
+        },
+        tx
+      );
+
+      return { updatedWallet, ledgerEntry };
     });
 
-    state = {
-      lastClaimDate: todayStr,
-      streakDays: newStreak,
-      lastClaimedAt: now.toISOString(),
-      lastCoinsReward: rewardCoins,
-    };
+    // 5. Update Redis state with 30-day TTL and release lock
     if (redisClient.isOpen) {
-      await redisClient.set(`checkin:user:${userId}`, JSON.stringify(state), { EX: 60 * 60 * 24 * 30 }).catch(() => {});
+      await redisClient.set(
+        `checkin:user:${userId}`,
+        JSON.stringify({
+          lastClaimDate: todayStr,
+          streakDays: newStreak,
+          lastClaimedAt: now.toISOString(),
+          lastCoinsReward: rewardCoins,
+        }),
+        { EX: 60 * 60 * 24 * 30 }
+      ).catch(() => {});
+      await redisClient.del(lockKey).catch(() => {});
     }
 
     return res.status(200).json({
@@ -1460,9 +1591,43 @@ export async function claimDailyCheckin(req, res, next) {
         day: newStreak,
         rewardCoins,
         newStreak,
-        walletCoins: Number(updatedWallet.coins),
+        walletCoins: Number(claimResult.updatedWallet.coinBalance),
+        ledgerEntryId: claimResult.ledgerEntry.id,
+        referenceId: refId,
       },
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getDailyQuests(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    const quests = await questService.getDailyQuestsStatus(userId, prisma);
+    return res.status(200).json({
+      success: true,
+      message: 'Daily quests retrieved successfully',
+      data: quests,
+      quests,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postClaimDailyQuest(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+    const questId = req.params.questId || req.body?.questId || req.body?.id || req.body?.questKey;
+    if (!questId) {
+      return res.status(400).json({ success: false, message: 'questId is required to claim quest' });
+    }
+
+    const result = await questService.claimDailyQuest(userId, questId, prisma);
+    return res.status(200).json(result);
   } catch (err) {
     next(err);
   }
@@ -1550,6 +1715,8 @@ export async function getUserHonorAssets(req, res, next) {
 export default {
   getDailyCheckinStatus,
   claimDailyCheckin,
+  getDailyQuests,
+  postClaimDailyQuest,
   getUserReceivedGifts,
   getUserHonorAssets,
   getAdminUsers,

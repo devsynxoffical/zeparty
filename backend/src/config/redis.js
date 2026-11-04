@@ -23,21 +23,21 @@ export function getRedisClient() {
   return redisClient;
 }
 
-export const redisProxy = {
-  get isOpen() {
-    return Boolean(redisClient && redisClient.isOpen);
-  },
-  get: (key) => getRedisClient().get(key),
-  set: (key, val, opts) => getRedisClient().set(key, val, opts),
-  del: (key) => getRedisClient().del(key),
-  incr: (key) => getRedisClient().incr(key),
-  expire: (key, seconds) => getRedisClient().expire(key, seconds),
-  ttl: (key) => getRedisClient().ttl(key),
-  ping: () => getRedisClient().ping(),
-  duplicate: () => getRedisClient().duplicate(),
-  connect: () => getRedisClient().connect(),
-  disconnect: () => redisClient?.disconnect(),
-  quit: () => redisClient?.quit(),
-};
+export const redisProxy = new Proxy(
+  {},
+  {
+    get(target, prop) {
+      const client = getRedisClient();
+      if (prop === 'isOpen') {
+        return Boolean(client && client.isOpen);
+      }
+      const val = client[prop];
+      if (typeof val === 'function') {
+        return val.bind(client);
+      }
+      return val;
+    },
+  }
+);
 
 export default redisProxy;

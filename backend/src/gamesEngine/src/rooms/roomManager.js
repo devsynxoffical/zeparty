@@ -276,6 +276,12 @@ export class RoomManager {
             winnerIds: [],
             participants: room.players.map((p) => ({ userId: p.userId, seat: p.seat, placement: null, score: 0 })),
         });
+        for (const p of room.players) {
+            try {
+                const { recordActivity } = await import('../../../services/quest.service.js');
+                await recordActivity(p.userId, 'MINI_GAME', { gameId: room.gameId, matchId: match.matchId });
+            } catch (_) {}
+        }
         this.broadcastRoom(room);
         for (const p of room.players)
             this.sendState(room, p.userId);

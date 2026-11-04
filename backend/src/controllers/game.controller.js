@@ -75,10 +75,31 @@ class GameController {
       const userId = req.auth?.userId || req.user?.id || 'guest_user';
       const { coins } = req.body;
       const result = await gameService.contributeRocket(userId, { coins });
+      try {
+        const { recordActivity } = await import('../services/quest.service.js');
+        await recordActivity(userId, 'MINI_GAME', { gameId: 'rocket', coins });
+      } catch (_) {}
       return res.status(200).json({
         success: true,
         data: result,
       });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  /**
+   * POST /v1/games/activity
+   * Records verified mini-game participation for daily quest tracking.
+   */
+  async recordGameActivity(req, res, next) {
+    try {
+      const userId = req.auth?.userId || req.user?.id;
+      if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+      const { gameId } = req.body || {};
+      const { recordActivity } = await import('../services/quest.service.js');
+      await recordActivity(userId, 'MINI_GAME', { gameId: gameId || 'mini_game' });
+      return res.status(200).json({ success: true, message: 'Mini-game activity recorded successfully' });
     } catch (err) {
       next(err);
     }

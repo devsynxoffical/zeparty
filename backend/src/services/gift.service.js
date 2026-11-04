@@ -593,6 +593,18 @@ export async function sendGift(
         console.warn('Target attribution record warning:', attrErr.message);
       }
 
+      // Quest Activity Recording (Stream Gifts)
+      if (roomId) {
+        try {
+          const { recordActivity } = await import('./quest.service.js');
+          await recordActivity(senderUserId, 'STREAM_GIFT', {
+            giftId: gift.id,
+            roomId,
+            giftTxId: result.giftTransaction.id,
+          });
+        } catch (_) {}
+      }
+
       // 2. Audit Logging
       await logAudit({
         action: 'GIFT_TRANSACTION_EXECUTED',

@@ -12,6 +12,10 @@ userGameRouter.get('/token', authenticate, gameController.getGamesToken);
 userGameRouter.get('/rocket/progress', gameController.getRocketProgress);
 userGameRouter.post('/rocket/contribute', authenticate, gameController.contributeRocket);
 
+// ── Daily Quest Mini-Game Activity Recording ──
+userGameRouter.post('/activity', authenticate, gameController.recordGameActivity);
+userGameRouter.post('/play-event', authenticate, gameController.recordGameActivity);
+
 // ── Game Catalog (keep the parameterised route last) ──
 userGameRouter.get('/', gameController.getCatalog);
 userGameRouter.get('/catalog', gameController.getCatalog);
