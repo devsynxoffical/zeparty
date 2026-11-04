@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -11,6 +13,22 @@ class AgoraRtcService {
   factory AgoraRtcService() => instance;
   AgoraRtcService._internal();
 
+  /// Deterministically derives a positive 32-bit integer Agora UID from any string/UUID
+  static int deriveUid(String userId) {
+    final numVal = int.tryParse(userId);
+    if (numVal != null && numVal > 0 && numVal <= 2147483640) {
+      return numVal;
+    }
+    final bytes = sha256.convert(utf8.encode(userId)).bytes;
+    final rawUint =
+        ((bytes[0] & 0xFF) << 24) |
+        ((bytes[1] & 0xFF) << 16) |
+        ((bytes[2] & 0xFF) << 8) |
+        (bytes[3] & 0xFF);
+    final unsigned = rawUint & 0xFFFFFFFF;
+    return (unsigned % 2147483640) + 1;
+  }
+
   String _currentAppId = '970ca35de60c44645bbae8a215061401';
   RtcEngineEx? _engine;
   bool _isInitialized = false;
@@ -21,15 +39,20 @@ class AgoraRtcService {
   final _activeSpeakerController = StreamController<int>.broadcast();
   final _remoteUsersController = StreamController<Set<int>>.broadcast();
   final _firstRemoteVideoFrameController = StreamController<int>.broadcast();
-  final _audioMixingStateController = StreamController<AudioMixingStateChange>.broadcast();
-  final _volumeIndicationController = StreamController<List<AudioVolumeInfo>>.broadcast();
+  final _audioMixingStateController =
+      StreamController<AudioMixingStateChange>.broadcast();
+  final _volumeIndicationController =
+      StreamController<List<AudioVolumeInfo>>.broadcast();
   final Set<int> _remoteUids = <int>{};
 
   Stream<int> get activeSpeakerStream => _activeSpeakerController.stream;
   Stream<Set<int>> get remoteUsersStream => _remoteUsersController.stream;
-  Stream<int> get firstRemoteVideoFrameStream => _firstRemoteVideoFrameController.stream;
-  Stream<AudioMixingStateChange> get audioMixingStateStream => _audioMixingStateController.stream;
-  Stream<List<AudioVolumeInfo>> get volumeIndicationStream => _volumeIndicationController.stream;
+  Stream<int> get firstRemoteVideoFrameStream =>
+      _firstRemoteVideoFrameController.stream;
+  Stream<AudioMixingStateChange> get audioMixingStateStream =>
+      _audioMixingStateController.stream;
+  Stream<List<AudioVolumeInfo>> get volumeIndicationStream =>
+      _volumeIndicationController.stream;
   Set<int> get remoteUids => Set.unmodifiable(_remoteUids);
 
   RtcEngineEx? get engine => _engine;
@@ -49,7 +72,9 @@ class AgoraRtcService {
   }
 
   Future<void> initialize({String? appId, bool enableVideo = true}) async {
-    final targetAppId = (appId != null && appId.isNotEmpty) ? appId : _currentAppId;
+    final targetAppId = (appId != null && appId.isNotEmpty)
+        ? appId
+        : _currentAppId;
     if (_isInitialized && _engine != null && targetAppId == _currentAppId) {
       if (enableVideo && !_isVideoEnabled) {
         await _setupVideo();
@@ -66,46 +91,96 @@ class AgoraRtcService {
       }
 
       _engine = createAgoraRtcEngineEx();
-      await _engine!.initialize(RtcEngineContext(
-        appId: _currentAppId,
-        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
-        audioScenario: AudioScenarioType.audioScenarioGameStreaming,
-      ));
+      await _engine!.initialize(
+        RtcEngineContext(
+          appId: _currentAppId,
+          channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+          audioScenario: AudioScenarioType.audioScenarioGameStreaming,
+        ),
+      );
 
       _engine!.registerEventHandler(
         RtcEngineEventHandler(
           onActiveSpeaker: (RtcConnection connection, int uid) {
             _activeSpeakerController.add(uid);
           },
-          onAudioVolumeIndication: (RtcConnection connection, List<AudioVolumeInfo> speakers, int totalVolume, int vad) {
-            _volumeIndicationController.add(speakers);
-          },
+          onAudioVolumeIndication:
+              (
+                RtcConnection connection,
+                List<AudioVolumeInfo> speakers,
+                int totalVolume,
+                int vad,
+              ) {
+                _volumeIndicationController.add(speakers);
+              },
           onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
-            debugPrint('[AgoraRtcService] Joined channel: ${connection.channelId}, local UID: ${connection.localUid}');
-            _currentChannel = connection.channelId;
-            _currentUid = connection.localUid;
+            debugPrint(
+              '[AgoraRtcService] Joined channel: ${connection.channelId}, local UID: ${connection.localUid}',
+            );
+            if (_pkOpponentChannel != null &&
+                connection.channelId == _pkOpponentChannel) {
+              _pkOpponentLocalUid = connection.localUid;
+            } else {
+              _currentChannel = connection.channelId;
+              _currentUid = connection.localUid;
+            }
           },
           onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
-            debugPrint('[AgoraRtcService] Remote user joined Agora channel: $remoteUid');
-            _remoteUids.add(remoteUid);
-            _remoteUsersController.add(Set.from(_remoteUids));
+            debugPrint(
+              '[AgoraRtcService] Remote user joined Agora channel: $remoteUid (channel: ${connection.channelId})',
+            );
+            if (_pkOpponentChannel != null &&
+                connection.channelId == _pkOpponentChannel) {
+              _pkOpponentUid = remoteUid;
+            } else {
+              _remoteUids.add(remoteUid);
+              _remoteUsersController.add(Set.from(_remoteUids));
+            }
           },
-          onUserOffline: (RtcConnection connection, int remoteUid, UserOfflineReasonType reason) {
-            debugPrint('[AgoraRtcService] Remote user left Agora channel: $remoteUid');
-            _remoteUids.remove(remoteUid);
-            _remoteUsersController.add(Set.from(_remoteUids));
-          },
-          onFirstRemoteVideoFrame: (RtcConnection connection, int remoteUid, int width, int height, int elapsed) {
-            debugPrint('[AgoraRtcService] First remote video frame rendered from UID: $remoteUid ($width x $height)');
-            _firstRemoteVideoFrameController.add(remoteUid);
-          },
+          onUserOffline:
+              (
+                RtcConnection connection,
+                int remoteUid,
+                UserOfflineReasonType reason,
+              ) {
+                debugPrint(
+                  '[AgoraRtcService] Remote user left Agora channel: $remoteUid (channel: ${connection.channelId})',
+                );
+                if (_pkOpponentChannel != null &&
+                    connection.channelId == _pkOpponentChannel) {
+                  // Remote opponent host left PK channel
+                } else {
+                  _remoteUids.remove(remoteUid);
+                  _remoteUsersController.add(Set.from(_remoteUids));
+                }
+              },
+          onFirstRemoteVideoFrame:
+              (
+                RtcConnection connection,
+                int remoteUid,
+                int width,
+                int height,
+                int elapsed,
+              ) {
+                debugPrint(
+                  '[AgoraRtcService] First remote video frame rendered from UID: $remoteUid in channel ${connection.channelId} ($width x $height)',
+                );
+                if (_pkOpponentChannel != null &&
+                    connection.channelId == _pkOpponentChannel) {
+                  _pkOpponentUid = remoteUid;
+                }
+                _firstRemoteVideoFrameController.add(remoteUid);
+              },
           onError: (ErrorCodeType err, String msg) {
             debugPrint('[AgoraRtcService] Agora Engine Error: $err, $msg');
           },
-          onAudioMixingStateChanged: (AudioMixingStateType state, AudioMixingReasonType reason) {
-            debugPrint('[AgoraRtcService] onAudioMixingStateChanged: state=$state, reason=$reason');
-            _handleAudioMixingStateChanged(state, reason);
-          },
+          onAudioMixingStateChanged:
+              (AudioMixingStateType state, AudioMixingReasonType reason) {
+                debugPrint(
+                  '[AgoraRtcService] onAudioMixingStateChanged: state=$state, reason=$reason',
+                );
+                _handleAudioMixingStateChanged(state, reason);
+              },
         ),
       );
 
@@ -116,7 +191,11 @@ class AgoraRtcService {
       );
 
       // Volume indication for active speaking mic animations
-      await _engine!.enableAudioVolumeIndication(interval: 200, smooth: 3, reportVad: true);
+      await _engine!.enableAudioVolumeIndication(
+        interval: 200,
+        smooth: 3,
+        reportVad: true,
+      );
 
       if (enableVideo) {
         await _setupVideo();
@@ -197,9 +276,12 @@ class AgoraRtcService {
     try {
       // Set Ultra-Low Latency for audience
       await _engine!.setClientRole(
-        role: isHost ? ClientRoleType.clientRoleBroadcaster : ClientRoleType.clientRoleAudience,
+        role: isHost
+            ? ClientRoleType.clientRoleBroadcaster
+            : ClientRoleType.clientRoleAudience,
         options: ClientRoleOptions(
-          audienceLatencyLevel: AudienceLatencyLevelType.audienceLatencyLevelUltraLowLatency,
+          audienceLatencyLevel:
+              AudienceLatencyLevelType.audienceLatencyLevelUltraLowLatency,
         ),
       );
 
@@ -216,8 +298,11 @@ class AgoraRtcService {
           autoSubscribeVideo: isVideo,
           publishCameraTrack: isHost && isVideo,
           publishMicrophoneTrack: isHost,
-          clientRoleType: isHost ? ClientRoleType.clientRoleBroadcaster : ClientRoleType.clientRoleAudience,
-          audienceLatencyLevel: AudienceLatencyLevelType.audienceLatencyLevelUltraLowLatency,
+          clientRoleType: isHost
+              ? ClientRoleType.clientRoleBroadcaster
+              : ClientRoleType.clientRoleAudience,
+          audienceLatencyLevel:
+              AudienceLatencyLevelType.audienceLatencyLevelUltraLowLatency,
         ),
       );
     } catch (e) {
@@ -229,17 +314,23 @@ class AgoraRtcService {
     _lastBroadcasterRole = isHost;
     try {
       await _engine?.setClientRole(
-        role: isHost ? ClientRoleType.clientRoleBroadcaster : ClientRoleType.clientRoleAudience,
+        role: isHost
+            ? ClientRoleType.clientRoleBroadcaster
+            : ClientRoleType.clientRoleAudience,
         options: ClientRoleOptions(
-          audienceLatencyLevel: AudienceLatencyLevelType.audienceLatencyLevelUltraLowLatency,
+          audienceLatencyLevel:
+              AudienceLatencyLevelType.audienceLatencyLevelUltraLowLatency,
         ),
       );
       await _engine?.updateChannelMediaOptions(
         ChannelMediaOptions(
           publishCameraTrack: isHost && isVideo,
           publishMicrophoneTrack: isHost,
-          clientRoleType: isHost ? ClientRoleType.clientRoleBroadcaster : ClientRoleType.clientRoleAudience,
-          audienceLatencyLevel: AudienceLatencyLevelType.audienceLatencyLevelUltraLowLatency,
+          clientRoleType: isHost
+              ? ClientRoleType.clientRoleBroadcaster
+              : ClientRoleType.clientRoleAudience,
+          audienceLatencyLevel:
+              AudienceLatencyLevelType.audienceLatencyLevelUltraLowLatency,
         ),
       );
     } catch (e) {
@@ -380,7 +471,10 @@ class AgoraRtcService {
     } catch (_) {}
   }
 
-  void _handleAudioMixingStateChanged(AudioMixingStateType state, AudioMixingReasonType reason) {
+  void _handleAudioMixingStateChanged(
+    AudioMixingStateType state,
+    AudioMixingReasonType reason,
+  ) {
     if (state == AudioMixingStateType.audioMixingStatePlaying) {
       _isAudioMixing = true;
       _isAudioMixingPaused = false;
@@ -393,11 +487,16 @@ class AgoraRtcService {
       _isAudioMixing = false;
       _isAudioMixingPaused = false;
     }
-    _audioMixingStateController.add(AudioMixingStateChange(state: state, reason: reason));
+    _audioMixingStateController.add(
+      AudioMixingStateChange(state: state, reason: reason),
+    );
   }
 
   @visibleForTesting
-  void emitAudioMixingStateForTesting(AudioMixingStateType state, AudioMixingReasonType reason) {
+  void emitAudioMixingStateForTesting(
+    AudioMixingStateType state,
+    AudioMixingReasonType reason,
+  ) {
     _handleAudioMixingStateChanged(state, reason);
   }
 
@@ -412,7 +511,9 @@ class AgoraRtcService {
   }
 
   Widget buildRemoteVideoView(int remoteUid) {
-    if (_engine == null || _currentChannel == null) return const SizedBox.shrink();
+    if (_engine == null || _currentChannel == null) {
+      return const SizedBox.shrink();
+    }
     return AgoraVideoView(
       controller: VideoViewController.remote(
         rtcEngine: _engine!,
@@ -424,33 +525,45 @@ class AgoraRtcService {
 
   String? _pkOpponentChannel;
   int? _pkOpponentUid;
+  int? _pkOpponentLocalUid;
   String? get pkOpponentChannel => _pkOpponentChannel;
   int? get pkOpponentUid => _pkOpponentUid;
+  int? get pkOpponentLocalUid => _pkOpponentLocalUid;
 
   /// Subscribe to Opponent Host's Agora Channel for Cross-Room PK Relay (Audio & Video)
   Future<void> joinOpponentPKChannel({
     required String opponentChannel,
     required int localUid,
     int? opponentUid,
-    bool isVideo = false,
+    String? token,
+    bool isVideo = true,
   }) async {
+    _pkOpponentChannel = opponentChannel;
+    _pkOpponentUid = (opponentUid != null && opponentUid > 0)
+        ? opponentUid
+        : _pkOpponentUid;
+    _pkOpponentLocalUid = localUid;
     if (_engine == null) return;
     try {
-      _pkOpponentChannel = opponentChannel;
-      _pkOpponentUid = opponentUid;
       await _engine!.joinChannelEx(
-        token: '',
-        connection: RtcConnection(channelId: opponentChannel, localUid: localUid),
+        token: (token != null && token.isNotEmpty) ? token : '',
+        connection: RtcConnection(
+          channelId: opponentChannel,
+          localUid: localUid,
+        ),
         options: ChannelMediaOptions(
           autoSubscribeAudio: true,
           autoSubscribeVideo: isVideo,
           publishCameraTrack: false,
           publishMicrophoneTrack: false,
           clientRoleType: ClientRoleType.clientRoleAudience,
-          audienceLatencyLevel: AudienceLatencyLevelType.audienceLatencyLevelUltraLowLatency,
+          audienceLatencyLevel:
+              AudienceLatencyLevelType.audienceLatencyLevelUltraLowLatency,
         ),
       );
-      debugPrint('[AgoraRtcService] Subscribed to Opponent PK Channel: $opponentChannel (Host UID: $opponentUid)');
+      debugPrint(
+        '[AgoraRtcService] Subscribed to Opponent PK Channel: $opponentChannel (Local UID: $localUid, Host UID: $opponentUid, hasToken: ${token != null && token.isNotEmpty})',
+      );
     } catch (e) {
       debugPrint('[AgoraRtcService] joinOpponentPKChannel error: $e');
     }
@@ -458,26 +571,40 @@ class AgoraRtcService {
 
   /// Disconnect from Opponent Host's Agora Channel after PK ends or forfeits
   Future<void> leaveOpponentPKChannel() async {
-    if (_engine == null || _pkOpponentChannel == null || _currentUid == null) return;
-    try {
-      await _engine!.leaveChannelEx(
-        connection: RtcConnection(channelId: _pkOpponentChannel!, localUid: _currentUid!),
-      );
-      debugPrint('[AgoraRtcService] Left Opponent PK Channel: $_pkOpponentChannel');
-    } catch (_) {}
+    final opponentChannel = _pkOpponentChannel;
+    final leaveUid = _pkOpponentLocalUid ?? _currentUid ?? 0;
     _pkOpponentChannel = null;
     _pkOpponentUid = null;
+    _pkOpponentLocalUid = null;
+    if (_engine == null || opponentChannel == null) return;
+    try {
+      await _engine!.leaveChannelEx(
+        connection: RtcConnection(
+          channelId: opponentChannel,
+          localUid: leaveUid,
+        ),
+      );
+      debugPrint(
+        '[AgoraRtcService] Left Opponent PK Channel: $opponentChannel (UID: $leaveUid)',
+      );
+    } catch (_) {}
   }
 
   /// Mute opponent playback locally without affecting other listeners (Section 2 & 3)
   Future<void> muteOpponentAudio(bool muted) async {
     if (_engine == null) return;
     try {
-      if (_pkOpponentChannel != null && _pkOpponentUid != null && _currentUid != null) {
+      final localUid = _pkOpponentLocalUid ?? _currentUid ?? 0;
+      if (_pkOpponentChannel != null &&
+          _pkOpponentUid != null &&
+          localUid > 0) {
         await _engine!.muteRemoteAudioStreamEx(
           uid: _pkOpponentUid!,
           mute: muted,
-          connection: RtcConnection(channelId: _pkOpponentChannel!, localUid: _currentUid!),
+          connection: RtcConnection(
+            channelId: _pkOpponentChannel!,
+            localUid: localUid,
+          ),
         );
       } else if (_pkOpponentUid != null) {
         await _engine!.muteRemoteAudioStream(uid: _pkOpponentUid!, mute: muted);
@@ -508,5 +635,3 @@ class AudioMixingStateChange {
   final AudioMixingReasonType reason;
   const AudioMixingStateChange({required this.state, required this.reason});
 }
-
-

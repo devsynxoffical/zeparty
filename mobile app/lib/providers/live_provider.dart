@@ -41,8 +41,8 @@ class LiveMessage {
     this.avatarFrame,
     this.chatBubble,
     DateTime? timestamp,
-  })  : id = id ?? 'msg_${DateTime.now().millisecondsSinceEpoch}',
-        timestamp = timestamp ?? DateTime.now();
+  }) : id = id ?? 'msg_${DateTime.now().millisecondsSinceEpoch}',
+       timestamp = timestamp ?? DateTime.now();
 }
 
 class LiveProvider extends ChangeNotifier {
@@ -100,8 +100,10 @@ class LiveProvider extends ChangeNotifier {
   bool _isOpponentAudioMuted = false;
   bool get isOpponentAudioMuted => _isOpponentAudioMuted;
 
-  final _likeReceivedController = StreamController<Map<String, dynamic>>.broadcast();
-  Stream<Map<String, dynamic>> get onLikeReceived => _likeReceivedController.stream;
+  final _likeReceivedController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onLikeReceived =>
+      _likeReceivedController.stream;
 
   final _warningReceivedController = StreamController<String>.broadcast();
   Stream<String> get onWarningReceived => _warningReceivedController.stream;
@@ -109,13 +111,16 @@ class LiveProvider extends ChangeNotifier {
   final _kickedReceivedController = StreamController<String>.broadcast();
   Stream<String> get onKickedReceived => _kickedReceivedController.stream;
 
-  final _pkInvitationReceivedController = StreamController<Map<String, dynamic>>.broadcast();
-  Stream<Map<String, dynamic>> get onPkInvitationReceived => _pkInvitationReceivedController.stream;
+  final _pkInvitationReceivedController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onPkInvitationReceived =>
+      _pkInvitationReceivedController.stream;
 
   final _pkResultController = StreamController<PKBattleModel>.broadcast();
   Stream<PKBattleModel> get onPkResult => _pkResultController.stream;
 
-  final _roomClosedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomClosedController =
+      StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onRoomClosed => _roomClosedController.stream;
 
   final List<UserModel> _viewers = [];
@@ -189,13 +194,22 @@ class LiveProvider extends ChangeNotifier {
   // ── Core Methods ─────────────────────────────────────────
 
   Future<void> joinRoom(LiveRoomModel room, {UserModel? currentUser}) async {
-    final isRejoiningSameRoom = (_activeRoom != null && _activeRoom!.id == room.id);
-    final isHost = (currentUser != null) &&
-        (room.host.id == currentUser.id || room.creatorUserId == currentUser.id);
+    final isRejoiningSameRoom =
+        (_activeRoom != null && _activeRoom!.id == room.id);
+    final isHost =
+        (currentUser != null) &&
+        (room.host.id == currentUser.id ||
+            room.creatorUserId == currentUser.id);
 
-    final initialLikes = isRejoiningSameRoom ? (_likeCount > 0 ? _likeCount : room.totalLikes) : room.totalLikes;
+    final initialLikes = isRejoiningSameRoom
+        ? (_likeCount > 0 ? _likeCount : room.totalLikes)
+        : room.totalLikes;
     final initialGifts = isRejoiningSameRoom
-        ? (_giftPoints > 0 ? _giftPoints : (room.totalGifts > 0 ? room.totalGifts : room.giftsReceivedCoins))
+        ? (_giftPoints > 0
+              ? _giftPoints
+              : (room.totalGifts > 0
+                    ? room.totalGifts
+                    : room.giftsReceivedCoins))
         : (room.totalGifts > 0 ? room.totalGifts : room.giftsReceivedCoins);
 
     _activeRoom = room.copyWith(
@@ -219,11 +233,19 @@ class LiveProvider extends ChangeNotifier {
     _giftPoints = initialGifts;
     final displayName = currentUser?.displayName.isNotEmpty == true
         ? currentUser!.displayName
-        : (currentUser?.name.isNotEmpty == true ? currentUser!.name : (currentUser?.username ?? 'User'));
+        : (currentUser?.name.isNotEmpty == true
+              ? currentUser!.name
+              : (currentUser?.username ?? 'User'));
 
     _messages = [
-      LiveMessage(sender: 'System', text: 'Welcome to ${room.title}! Remember to follow community rules.'),
-      LiveMessage(sender: 'System', text: '👋 $displayName joined the room! 🔥'),
+      LiveMessage(
+        sender: 'System',
+        text: 'Welcome to ${room.title}! Remember to follow community rules.',
+      ),
+      LiveMessage(
+        sender: 'System',
+        text: '👋 $displayName joined the room! 🔥',
+      ),
     ];
     notifyListeners();
 
@@ -237,17 +259,20 @@ class LiveProvider extends ChangeNotifier {
       final joinResult = await _roomRepository.joinRoom(room.id);
       final roomData = joinResult['room'] ?? joinResult;
       if (roomData is Map<String, dynamic>) {
-        final rawCount = roomData['currentViewersCount'] ?? roomData['viewerCount'];
+        final rawCount =
+            roomData['currentViewersCount'] ?? roomData['viewerCount'];
         if (rawCount is int && _activeRoom != null) {
           _activeRoom = _activeRoom!.copyWith(viewerCount: rawCount);
         }
-        final rawGifts = int.tryParse(roomData['totalGifts']?.toString() ?? '') ??
+        final rawGifts =
+            int.tryParse(roomData['totalGifts']?.toString() ?? '') ??
             int.tryParse(roomData['giftsReceivedCoins']?.toString() ?? '') ??
             int.tryParse(roomData['trophyCoins']?.toString() ?? '');
         if (rawGifts != null && rawGifts > _giftPoints) {
           _giftPoints = rawGifts;
         }
-        final rawLikes = int.tryParse(roomData['totalLikes']?.toString() ?? '') ??
+        final rawLikes =
+            int.tryParse(roomData['totalLikes']?.toString() ?? '') ??
             int.tryParse(roomData['likesCount']?.toString() ?? '');
         if (rawLikes != null && rawLikes > _likeCount) {
           _likeCount = rawLikes;
@@ -260,23 +285,37 @@ class LiveProvider extends ChangeNotifier {
             final uRaw = mMap['user'] ?? mMap;
             if (uRaw is! Map) continue;
             final uMap = Map<String, dynamic>.from(uRaw);
-            final mId = uMap['id']?.toString() ?? mMap['userId']?.toString() ?? '';
-            final isHostUser = (_activeRoom != null) &&
-                (mId == _activeRoom!.host.id || mId == _activeRoom!.creatorUserId);
-            if (!isHostUser && mId.isNotEmpty && !_viewers.any((v) => v.id == mId)) {
-              _viewers.add(UserModel(
-                id: mId,
-                name: uMap['displayName']?.toString() ?? uMap['name']?.toString() ?? uMap['username']?.toString() ?? 'Viewer',
-                username: uMap['username']?.toString() ?? 'user_$mId',
-                avatarUrl: uMap['avatarUrl']?.toString() ?? '',
-              ));
+            final mId =
+                uMap['id']?.toString() ?? mMap['userId']?.toString() ?? '';
+            final isHostUser =
+                (_activeRoom != null) &&
+                (mId == _activeRoom!.host.id ||
+                    mId == _activeRoom!.creatorUserId);
+            if (!isHostUser &&
+                mId.isNotEmpty &&
+                !_viewers.any((v) => v.id == mId)) {
+              _viewers.add(
+                UserModel(
+                  id: mId,
+                  name:
+                      uMap['displayName']?.toString() ??
+                      uMap['name']?.toString() ??
+                      uMap['username']?.toString() ??
+                      'Viewer',
+                  username: uMap['username']?.toString() ?? 'user_$mId',
+                  avatarUrl: uMap['avatarUrl']?.toString() ?? '',
+                ),
+              );
             }
           }
         }
       }
 
       // 3. Acquire short-lived Agora RTC token & initialize video camera
-      final isVideo = (room.roomType == 'LIVE_VIDEO' || room.roomType == 'VIDEO_PARTY' || !room.roomType.contains('AUDIO'));
+      final isVideo =
+          (room.roomType == 'LIVE_VIDEO' ||
+          room.roomType == 'VIDEO_PARTY' ||
+          !room.roomType.contains('AUDIO'));
       try {
         await _agoraService.initialize(enableVideo: isVideo);
         if (isHost && isVideo) {
@@ -284,10 +323,15 @@ class LiveProvider extends ChangeNotifier {
         }
 
         final agoraData = await _roomRepository.getAgoraToken(room.id);
-        if (agoraData['token'] != null && (agoraData['token'] as String).isNotEmpty) {
+        if (agoraData['token'] != null &&
+            (agoraData['token'] as String).isNotEmpty) {
           final token = agoraData['token'] as String;
-          final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
-          final uid = agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
+          final channelName =
+              agoraData['channelName'] as String? ??
+              room.agoraChannelName ??
+              room.id;
+          final uid =
+              agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
           final appId = agoraData['appId'] as String?;
 
           await _agoraService.initialize(appId: appId, enableVideo: isVideo);
@@ -312,6 +356,18 @@ class LiveProvider extends ChangeNotifier {
       if (_isRoomMuted && isHost) {
         await _agoraService.muteLocalAudio(true);
       }
+
+      // Check if room has an ongoing active PK battle upon joining
+      try {
+        final existingPk = await PKRepository.instance.getActiveMatchForRoom(
+          room.id,
+        );
+        if (existingPk != null && existingPk.isStarted && !existingPk.isEnded) {
+          setPkBattle(existingPk);
+        }
+      } catch (e) {
+        debugPrint('[LiveProvider] joinRoom active PK restore error: $e');
+      }
     } catch (e) {
       debugPrint('[LiveProvider] joinRoom error: $e');
     }
@@ -321,11 +377,18 @@ class LiveProvider extends ChangeNotifier {
   void _setupSocketSubscriptions(UserModel? currentUser) {
     _socketRoomSnapshotSub?.cancel();
     _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
-      final roomObj = data['room'] is Map ? Map<String, dynamic>.from(data['room'] as Map) : <String, dynamic>{};
-      final rawCount = data['viewerCount'] ?? roomObj['currentViewersCount'] ?? roomObj['viewerCount'];
+      final roomObj = data['room'] is Map
+          ? Map<String, dynamic>.from(data['room'] as Map)
+          : <String, dynamic>{};
+      final rawCount =
+          data['viewerCount'] ??
+          roomObj['currentViewersCount'] ??
+          roomObj['viewerCount'];
       if (rawCount is int && _activeRoom != null) {
         _activeRoom = _activeRoom!.copyWith(viewerCount: rawCount);
       }
@@ -339,54 +402,96 @@ class LiveProvider extends ChangeNotifier {
         if (uRaw is! Map) continue;
         final uMap = Map<String, dynamic>.from(uRaw);
         final mId = uMap['id']?.toString() ?? mMap['userId']?.toString() ?? '';
-        final isHostUser = (_activeRoom != null) &&
+        final isHostUser =
+            (_activeRoom != null) &&
             (mId == _activeRoom!.host.id || mId == _activeRoom!.creatorUserId);
-        if (!isHostUser && mId.isNotEmpty && !_viewers.any((v) => v.id == mId)) {
-          _viewers.add(UserModel(
-            id: mId,
-            name: uMap['displayName']?.toString() ?? uMap['name']?.toString() ?? uMap['username']?.toString() ?? 'Viewer',
-            username: uMap['username']?.toString() ?? 'user_$mId',
-            avatarUrl: uMap['avatarUrl']?.toString() ?? '',
-          ));
+        if (!isHostUser &&
+            mId.isNotEmpty &&
+            !_viewers.any((v) => v.id == mId)) {
+          _viewers.add(
+            UserModel(
+              id: mId,
+              name:
+                  uMap['displayName']?.toString() ??
+                  uMap['name']?.toString() ??
+                  uMap['username']?.toString() ??
+                  'Viewer',
+              username: uMap['username']?.toString() ?? 'user_$mId',
+              avatarUrl: uMap['avatarUrl']?.toString() ?? '',
+            ),
+          );
         }
       }
 
       // Process recent gifts snapshot (Issue 01)
       final recentGifts = data['recentGifts'] is List
           ? (data['recentGifts'] as List)
-          : (roomObj['recentGifts'] is List ? (roomObj['recentGifts'] as List) : []);
+          : (roomObj['recentGifts'] is List
+                ? (roomObj['recentGifts'] as List)
+                : []);
       for (final g in recentGifts) {
         if (g is! Map) continue;
         final gMap = Map<String, dynamic>.from(g);
-        final txId = (gMap['transactionId'] ?? gMap['id'] ?? gMap['_id'] ?? '').toString();
+        final txId = (gMap['transactionId'] ?? gMap['id'] ?? gMap['_id'] ?? '')
+            .toString();
         if (txId.isNotEmpty) {
-          if (_processedGiftTxIds.contains(txId) || _messages.any((m) => m.id == 'snap_$txId' || m.id == 'gift_$txId')) continue;
+          if (_processedGiftTxIds.contains(txId) ||
+              _messages.any(
+                (m) => m.id == 'snap_$txId' || m.id == 'gift_$txId',
+              ))
+            continue;
           _processedGiftTxIds.add(txId);
-          if (_processedGiftTxIds.length > 500) _processedGiftTxIds.remove(_processedGiftTxIds.first);
+          if (_processedGiftTxIds.length > 500)
+            _processedGiftTxIds.remove(_processedGiftTxIds.first);
         }
-        final giftMap = gMap['gift'] is Map ? Map<String, dynamic>.from(gMap['gift']) : {};
-        final senderMap = gMap['sender'] is Map ? Map<String, dynamic>.from(gMap['sender']) : {};
-        final senderName = gMap['senderName'] ?? senderMap['displayName'] ?? senderMap['username'] ?? 'A fan';
+        final giftMap = gMap['gift'] is Map
+            ? Map<String, dynamic>.from(gMap['gift'])
+            : {};
+        final senderMap = gMap['sender'] is Map
+            ? Map<String, dynamic>.from(gMap['sender'])
+            : {};
+        final senderName =
+            gMap['senderName'] ??
+            senderMap['displayName'] ??
+            senderMap['username'] ??
+            'A fan';
         final giftName = gMap['giftName'] ?? giftMap['name'] ?? 'Gift';
-        final qty = (gMap['quantity'] is num) ? (gMap['quantity'] as num).toInt() : 1;
-        final senderId = senderMap['id']?.toString() ?? senderMap['_id']?.toString() ?? gMap['senderId']?.toString() ?? '';
-        final senderAvatar = senderMap['avatarUrl']?.toString() ?? senderMap['avatar']?.toString() ?? gMap['senderAvatar']?.toString();
-        final isHostSender = (_activeRoom != null) &&
-            (senderId == _activeRoom!.host.id || senderId == _activeRoom!.creatorUserId || senderName.toString() == _activeRoom!.host.name);
-        final effectiveAvatar = (senderAvatar != null && senderAvatar.isNotEmpty)
+        final qty = (gMap['quantity'] is num)
+            ? (gMap['quantity'] as num).toInt()
+            : 1;
+        final senderId =
+            senderMap['id']?.toString() ??
+            senderMap['_id']?.toString() ??
+            gMap['senderId']?.toString() ??
+            '';
+        final senderAvatar =
+            senderMap['avatarUrl']?.toString() ??
+            senderMap['avatar']?.toString() ??
+            gMap['senderAvatar']?.toString();
+        final isHostSender =
+            (_activeRoom != null) &&
+            (senderId == _activeRoom!.host.id ||
+                senderId == _activeRoom!.creatorUserId ||
+                senderName.toString() == _activeRoom!.host.name);
+        final effectiveAvatar =
+            (senderAvatar != null && senderAvatar.isNotEmpty)
             ? senderAvatar
             : (isHostSender ? _activeRoom?.host.avatarUrl : null);
-        final formattedText = qty > 1 ? 'sent $qty × $giftName!' : 'sent $giftName!';
+        final formattedText = qty > 1
+            ? 'sent $qty × $giftName!'
+            : 'sent $giftName!';
 
-        _messages.add(LiveMessage(
-          id: 'snap_$txId',
-          sender: senderName.toString(),
-          senderId: senderId,
-          avatarUrl: effectiveAvatar,
-          isHost: isHostSender,
-          text: formattedText,
-          isGift: true,
-        ));
+        _messages.add(
+          LiveMessage(
+            id: 'snap_$txId',
+            sender: senderName.toString(),
+            senderId: senderId,
+            avatarUrl: effectiveAvatar,
+            isHost: isHostSender,
+            text: formattedText,
+            isGift: true,
+          ),
+        );
       }
       if (_messages.length > _maxMessageBuffer) {
         _messages.removeRange(0, _messages.length - _maxMessageBuffer);
@@ -397,15 +502,30 @@ class LiveProvider extends ChangeNotifier {
 
     _socketUserJoinedSub?.cancel();
     _socketUserJoinedSub = _socketService.userJoinedStream.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
-      final userObj = data['user'] is Map ? Map<String, dynamic>.from(data['user']) : data;
-      final userName = userObj['name'] ?? userObj['displayName'] ?? userObj['username'] ?? data['name'] ?? data['username'] ?? 'A user';
-      final joinedId = data['userId']?.toString() ?? data['id']?.toString() ?? userObj['id']?.toString();
+      final userObj = data['user'] is Map
+          ? Map<String, dynamic>.from(data['user'])
+          : data;
+      final userName =
+          userObj['name'] ??
+          userObj['displayName'] ??
+          userObj['username'] ??
+          data['name'] ??
+          data['username'] ??
+          'A user';
+      final joinedId =
+          data['userId']?.toString() ??
+          data['id']?.toString() ??
+          userObj['id']?.toString();
 
-      final isHostUser = (_activeRoom != null) &&
-          (joinedId == _activeRoom!.host.id || joinedId == _activeRoom!.creatorUserId);
+      final isHostUser =
+          (_activeRoom != null) &&
+          (joinedId == _activeRoom!.host.id ||
+              joinedId == _activeRoom!.creatorUserId);
 
       // Track viewers list (all non-host users)
       if (!isHostUser && joinedId != null && joinedId.isNotEmpty) {
@@ -423,17 +543,21 @@ class LiveProvider extends ChangeNotifier {
       if (joinedId != null && joinedId != currentUser?.id) {
         if (!_announcedViewerIds.contains(joinedId)) {
           _announcedViewerIds.add(joinedId);
-          _messages.add(LiveMessage(
-            sender: 'System',
-            text: '👋 $userName joined the room! 🔥',
-          ));
+          _messages.add(
+            LiveMessage(
+              sender: 'System',
+              text: '👋 $userName joined the room! 🔥',
+            ),
+          );
           if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
         }
 
         final rawCount = data['viewerCount'] ?? data['count'];
         final newCount = rawCount is int
             ? rawCount
-            : (isHostUser ? (_activeRoom?.viewerCount ?? 0) : (_activeRoom != null ? _activeRoom!.viewerCount + 1 : 0));
+            : (isHostUser
+                  ? (_activeRoom?.viewerCount ?? 0)
+                  : (_activeRoom != null ? _activeRoom!.viewerCount + 1 : 0));
         if (_activeRoom != null) {
           _activeRoom = _activeRoom!.copyWith(viewerCount: newCount);
         }
@@ -443,7 +567,9 @@ class LiveProvider extends ChangeNotifier {
 
     _socketUserLeftSub?.cancel();
     _socketUserLeftSub = _socketService.userLeftStream.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
       final leftId = data['userId']?.toString() ?? data['id']?.toString();
@@ -453,7 +579,9 @@ class LiveProvider extends ChangeNotifier {
 
       final rawCount = data['viewerCount'] ?? data['count'];
       if (_activeRoom != null) {
-        final newCount = rawCount is int ? rawCount : (_activeRoom!.viewerCount > 0 ? _activeRoom!.viewerCount - 1 : 0);
+        final newCount = rawCount is int
+            ? rawCount
+            : (_activeRoom!.viewerCount > 0 ? _activeRoom!.viewerCount - 1 : 0);
         _activeRoom = _activeRoom!.copyWith(viewerCount: newCount);
         notifyListeners();
       }
@@ -461,7 +589,9 @@ class LiveProvider extends ChangeNotifier {
 
     _socketViewerCountSub?.cancel();
     _socketViewerCountSub = _socketService.viewerCountStream.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
       final count = data['viewerCount'] ?? data['count'];
@@ -473,15 +603,19 @@ class LiveProvider extends ChangeNotifier {
 
     _socketRoomSnapshotSub?.cancel();
     _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
-      final snapLikes = int.tryParse(data['totalLikes']?.toString() ?? '') ??
+      final snapLikes =
+          int.tryParse(data['totalLikes']?.toString() ?? '') ??
           int.tryParse(data['likesCount']?.toString() ?? '');
       if (snapLikes != null && snapLikes > _likeCount) {
         _likeCount = snapLikes;
       }
-      final snapGifts = int.tryParse(data['dailySendingTotal']?.toString() ?? '') ??
+      final snapGifts =
+          int.tryParse(data['dailySendingTotal']?.toString() ?? '') ??
           int.tryParse(data['totalGifts']?.toString() ?? '') ??
           int.tryParse(data['trophyCoins']?.toString() ?? '');
       if (snapGifts != null && snapGifts > _giftPoints) {
@@ -492,13 +626,18 @@ class LiveProvider extends ChangeNotifier {
 
     _socketRoomLikeSub?.cancel();
     _socketRoomLikeSub = _socketService.onRoomLike.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
-      final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender']) : {};
+      final senderMap = data['sender'] is Map
+          ? Map<String, dynamic>.from(data['sender'])
+          : {};
       final senderId = senderMap['id'] ?? data['userId'];
       final addedLikes = data['count'] is int ? data['count'] as int : 1;
-      final incomingTotal = int.tryParse(data['totalLikes']?.toString() ?? '') ??
+      final incomingTotal =
+          int.tryParse(data['totalLikes']?.toString() ?? '') ??
           int.tryParse(data['likesCount']?.toString() ?? '');
 
       if (incomingTotal != null && incomingTotal > _likeCount) {
@@ -512,10 +651,13 @@ class LiveProvider extends ChangeNotifier {
 
     _socketGiftSentSub?.cancel();
     _socketGiftSentSub = _socketService.giftSentStream.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
-      final txId = (data['transactionId'] ?? data['id'] ?? data['_id'] ?? '').toString();
+      final txId = (data['transactionId'] ?? data['id'] ?? data['_id'] ?? '')
+          .toString();
       if (txId.isNotEmpty) {
         if (_processedGiftTxIds.contains(txId)) {
           return;
@@ -526,50 +668,90 @@ class LiveProvider extends ChangeNotifier {
         }
       }
 
-      final giftMap = data['gift'] is Map ? Map<String, dynamic>.from(data['gift']) : {};
-      final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender']) : {};
-      final senderName = senderMap['displayName'] ?? senderMap['username'] ?? data['senderName'] ?? 'A fan';
-      final rawGiftId = giftMap['id']?.toString() ?? data['giftId']?.toString() ?? '';
-      final rawGiftName = giftMap['name']?.toString() ?? data['giftName']?.toString() ?? 'Gift';
-      final catalogGift = GiftModel.findById(rawGiftId) ?? GiftModel.findById(rawGiftName);
+      final giftMap = data['gift'] is Map
+          ? Map<String, dynamic>.from(data['gift'])
+          : {};
+      final senderMap = data['sender'] is Map
+          ? Map<String, dynamic>.from(data['sender'])
+          : {};
+      final senderName =
+          senderMap['displayName'] ??
+          senderMap['username'] ??
+          data['senderName'] ??
+          'A fan';
+      final rawGiftId =
+          giftMap['id']?.toString() ?? data['giftId']?.toString() ?? '';
+      final rawGiftName =
+          giftMap['name']?.toString() ?? data['giftName']?.toString() ?? 'Gift';
+      final catalogGift =
+          GiftModel.findById(rawGiftId) ?? GiftModel.findById(rawGiftName);
       final giftName = catalogGift?.name ?? rawGiftName;
-      final qty = (data['quantity'] is num) ? (data['quantity'] as num).toInt() : 1;
-      final senderId = senderMap['id']?.toString() ?? senderMap['_id']?.toString() ?? data['senderId']?.toString() ?? data['userId']?.toString() ?? '';
-      final senderAvatar = senderMap['avatarUrl']?.toString() ?? senderMap['avatar']?.toString() ?? data['senderAvatar']?.toString() ?? (senderId == currentUser?.id ? currentUser?.avatarUrl : null);
-      final isHostSender = (_activeRoom != null) &&
-          (senderId == _activeRoom!.host.id || senderId == _activeRoom!.creatorUserId || senderName.toString() == _activeRoom!.host.name);
+      final qty = (data['quantity'] is num)
+          ? (data['quantity'] as num).toInt()
+          : 1;
+      final senderId =
+          senderMap['id']?.toString() ??
+          senderMap['_id']?.toString() ??
+          data['senderId']?.toString() ??
+          data['userId']?.toString() ??
+          '';
+      final senderAvatar =
+          senderMap['avatarUrl']?.toString() ??
+          senderMap['avatar']?.toString() ??
+          data['senderAvatar']?.toString() ??
+          (senderId == currentUser?.id ? currentUser?.avatarUrl : null);
+      final isHostSender =
+          (_activeRoom != null) &&
+          (senderId == _activeRoom!.host.id ||
+              senderId == _activeRoom!.creatorUserId ||
+              senderName.toString() == _activeRoom!.host.name);
       final effectiveAvatar = (senderAvatar != null && senderAvatar.isNotEmpty)
           ? senderAvatar
-          : (isHostSender ? _activeRoom?.host.avatarUrl : (senderId == currentUser?.id ? currentUser?.avatarUrl : null));
-      final formattedText = qty > 1 ? 'sent $qty × $giftName!' : 'sent $giftName!';
+          : (isHostSender
+                ? _activeRoom?.host.avatarUrl
+                : (senderId == currentUser?.id
+                      ? currentUser?.avatarUrl
+                      : null));
+      final formattedText = qty > 1
+          ? 'sent $qty × $giftName!'
+          : 'sent $giftName!';
 
       // Comprehensive deduplication against locally added optimistic message
-      final isOptimisticDuplicate = _messages.any((m) =>
-          m.isGift &&
-          ( (txId.isNotEmpty && (m.id == 'gift_$txId' || m.id == txId)) ||
-            ( ((senderId.isNotEmpty && m.senderId == senderId) ||
-               m.sender.trim().toLowerCase() == senderName.toString().trim().toLowerCase()) &&
-              m.text.toLowerCase().contains(giftName.toLowerCase()) &&
-              DateTime.now().difference(m.timestamp).inSeconds.abs() <= 5 )
-          ));
+      final isOptimisticDuplicate = _messages.any(
+        (m) =>
+            m.isGift &&
+            ((txId.isNotEmpty && (m.id == 'gift_$txId' || m.id == txId)) ||
+                (((senderId.isNotEmpty && m.senderId == senderId) ||
+                        m.sender.trim().toLowerCase() ==
+                            senderName.toString().trim().toLowerCase()) &&
+                    m.text.toLowerCase().contains(giftName.toLowerCase()) &&
+                    DateTime.now().difference(m.timestamp).inSeconds.abs() <=
+                        5)),
+      );
       if (isOptimisticDuplicate) return;
 
-      _messages.add(LiveMessage(
-        id: txId.isNotEmpty ? 'gift_$txId' : null,
-        sender: senderName.toString(),
-        senderId: senderId,
-        avatarUrl: effectiveAvatar,
-        isHost: isHostSender,
-        text: formattedText,
-        isGift: true,
-        gift: catalogGift,
-      ));
+      _messages.add(
+        LiveMessage(
+          id: txId.isNotEmpty ? 'gift_$txId' : null,
+          sender: senderName.toString(),
+          senderId: senderId,
+          avatarUrl: effectiveAvatar,
+          isHost: isHostSender,
+          text: formattedText,
+          isGift: true,
+          gift: catalogGift,
+        ),
+      );
       if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
 
       // Trigger gift animation and points update for stream viewers
       if (senderId != currentUser?.id && catalogGift != null) {
         _activeGiftAnimation = catalogGift;
-        _giftPoints += ((catalogGift.priceCoins > 0 ? catalogGift.priceCoins : catalogGift.diamondPrice) * qty);
+        _giftPoints +=
+            ((catalogGift.priceCoins > 0
+                ? catalogGift.priceCoins
+                : catalogGift.diamondPrice) *
+            qty);
         _giftTimer?.cancel();
         _giftTimer = Timer(const Duration(seconds: 3), () {
           _activeGiftAnimation = null;
@@ -584,7 +766,8 @@ class LiveProvider extends ChangeNotifier {
     _socketChatMessageSub = _socketService.onRoomChatMessage.listen((data) {
       try {
         final incomingRoomId = (data['roomId'] ?? '').toString().trim();
-        final incomingClientRoomId = (data['clientRoomId'] ?? data['room'] ?? '').toString().trim();
+        final incomingClientRoomId =
+            (data['clientRoomId'] ?? data['room'] ?? '').toString().trim();
         final currentRoomId = (_activeRoom?.id ?? '').trim().toLowerCase();
         final inRoomId = incomingRoomId.toLowerCase();
         final inClientRoomId = incomingClientRoomId.toLowerCase();
@@ -594,31 +777,50 @@ class LiveProvider extends ChangeNotifier {
         };
 
         if (validRoomIds.isNotEmpty) {
-          final match = (inRoomId.isNotEmpty && validRoomIds.contains(inRoomId)) ||
-              (inClientRoomId.isNotEmpty && validRoomIds.contains(inClientRoomId)) ||
+          final match =
+              (inRoomId.isNotEmpty && validRoomIds.contains(inRoomId)) ||
+              (inClientRoomId.isNotEmpty &&
+                  validRoomIds.contains(inClientRoomId)) ||
               (inRoomId.isEmpty && inClientRoomId.isEmpty);
           if (!match) return;
         }
-        final senderMap = data['sender'] is Map ? Map<String, dynamic>.from(data['sender'] as Map) : <String, dynamic>{};
-        final senderId = (senderMap['id'] ?? senderMap['_id'] ?? data['senderUserId'] ?? data['userId'] ?? '').toString();
-        final text = (data['text'] ?? data['message'] ?? data['content'] ?? '').toString().trim();
+        final senderMap = data['sender'] is Map
+            ? Map<String, dynamic>.from(data['sender'] as Map)
+            : <String, dynamic>{};
+        final senderId =
+            (senderMap['id'] ??
+                    senderMap['_id'] ??
+                    data['senderUserId'] ??
+                    data['userId'] ??
+                    '')
+                .toString();
+        final text = (data['text'] ?? data['message'] ?? data['content'] ?? '')
+            .toString()
+            .trim();
         if (text.isEmpty) return;
 
         final incomingId = (data['id'] ?? data['_id'])?.toString();
         final clientMsgId = data['clientMessageId']?.toString();
-        if (incomingId != null && incomingId.isNotEmpty && _messages.any((m) => m.id == incomingId)) {
+        if (incomingId != null &&
+            incomingId.isNotEmpty &&
+            _messages.any((m) => m.id == incomingId)) {
           return;
         }
-        if (clientMsgId != null && clientMsgId.isNotEmpty && _messages.any((m) => m.id == clientMsgId)) {
+        if (clientMsgId != null &&
+            clientMsgId.isNotEmpty &&
+            _messages.any((m) => m.id == clientMsgId)) {
           return;
         }
 
         // Deduplicate only our own optimistic local message echo
-        if (_messages.isNotEmpty && senderId.isNotEmpty && senderId == _currentUser?.id) {
-          final recentMatchingIndex = _messages.lastIndexWhere((m) =>
-            m.senderId == senderId &&
-            m.text.trim() == text &&
-            DateTime.now().difference(m.timestamp).inSeconds < 8
+        if (_messages.isNotEmpty &&
+            senderId.isNotEmpty &&
+            senderId == _currentUser?.id) {
+          final recentMatchingIndex = _messages.lastIndexWhere(
+            (m) =>
+                m.senderId == senderId &&
+                m.text.trim() == text &&
+                DateTime.now().difference(m.timestamp).inSeconds < 8,
           );
 
           if (recentMatchingIndex != -1) {
@@ -643,26 +845,40 @@ class LiveProvider extends ChangeNotifier {
           }
         }
 
-        final senderName = senderMap['displayName']?.toString() ??
+        final senderName =
+            senderMap['displayName']?.toString() ??
             senderMap['name']?.toString() ??
             senderMap['username']?.toString() ??
             'User';
-        final isHost = (_activeRoom != null) &&
-            (_activeRoom!.host.id == senderId || _activeRoom!.creatorUserId == senderId || senderMap['isHost'] == true);
+        final isHost =
+            (_activeRoom != null) &&
+            (_activeRoom!.host.id == senderId ||
+                _activeRoom!.creatorUserId == senderId ||
+                senderMap['isHost'] == true);
 
-        _messages.add(LiveMessage(
-          id: incomingId,
-          senderId: senderId,
-          sender: senderName,
-          text: text,
-          avatarUrl: senderMap['avatarUrl']?.toString(),
-          isHost: isHost,
-          isVip: senderMap['isVip'] == true,
-          nobleTitle: senderMap['nobleTitle']?.toString() ?? senderMap['nobleLevel']?.toString(),
-          avatarFrame: senderMap['avatarFrame']?.toString() ?? senderMap['frameUrl']?.toString(),
-          chatBubble: senderMap['chatBubble']?.toString() ?? senderMap['bubbleUrl']?.toString(),
-          timestamp: DateTime.tryParse(data['timestamp']?.toString() ?? '') ?? DateTime.now(),
-        ));
+        _messages.add(
+          LiveMessage(
+            id: incomingId,
+            senderId: senderId,
+            sender: senderName,
+            text: text,
+            avatarUrl: senderMap['avatarUrl']?.toString(),
+            isHost: isHost,
+            isVip: senderMap['isVip'] == true,
+            nobleTitle:
+                senderMap['nobleTitle']?.toString() ??
+                senderMap['nobleLevel']?.toString(),
+            avatarFrame:
+                senderMap['avatarFrame']?.toString() ??
+                senderMap['frameUrl']?.toString(),
+            chatBubble:
+                senderMap['chatBubble']?.toString() ??
+                senderMap['bubbleUrl']?.toString(),
+            timestamp:
+                DateTime.tryParse(data['timestamp']?.toString() ?? '') ??
+                DateTime.now(),
+          ),
+        );
         if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
         notifyListeners();
       } catch (e) {
@@ -674,7 +890,9 @@ class LiveProvider extends ChangeNotifier {
     _socketRoomSnapshotSub?.cancel();
     _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
       try {
-        final roomObj = data['room'] is Map ? Map<String, dynamic>.from(data['room']) : <String, dynamic>{};
+        final roomObj = data['room'] is Map
+            ? Map<String, dynamic>.from(data['room'])
+            : <String, dynamic>{};
         if (roomObj.isNotEmpty && _activeRoom != null) {
           _activeRoom = LiveRoomModel.fromJson(roomObj);
           notifyListeners();
@@ -687,13 +905,20 @@ class LiveProvider extends ChangeNotifier {
     // ── Moderation Event Subscriptions ──────────────────────
     _socketRoomWarningSub?.cancel();
     _socketRoomWarningSub = _socketService.roomWarningStream.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
-      final msg = data['message'] ?? data['reason'] ?? 'Official moderation warning issued';
+      final msg =
+          data['message'] ??
+          data['reason'] ??
+          'Official moderation warning issued';
       _activeWarningMessage = msg.toString();
       _warningReceivedController.add(_activeWarningMessage!);
-      _messages.add(LiveMessage(sender: '🛡️ Moderation Warning', text: msg.toString()));
+      _messages.add(
+        LiveMessage(sender: '🛡️ Moderation Warning', text: msg.toString()),
+      );
       notifyListeners();
 
       Timer(const Duration(seconds: 10), () {
@@ -706,7 +931,9 @@ class LiveProvider extends ChangeNotifier {
 
     _socketRoomMutedSub?.cancel();
     _socketRoomMutedSub = _socketService.roomMutedStream.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
       final muted = data['isMuted'] == true || data['muted'] == true;
@@ -715,61 +942,92 @@ class LiveProvider extends ChangeNotifier {
       try {
         _agoraService.muteLocalAudio(muted);
       } catch (_) {}
-      _messages.add(LiveMessage(
-        sender: 'System',
-        text: muted ? '🔇 Room audio has been MUTED by platform moderation.' : '🎙️ Room audio has been UNMUTED.',
-      ));
+      _messages.add(
+        LiveMessage(
+          sender: 'System',
+          text: muted
+              ? '🔇 Room audio has been MUTED by platform moderation.'
+              : '🎙️ Room audio has been UNMUTED.',
+        ),
+      );
       notifyListeners();
     });
 
     _socketRoomUserMutedSub?.cancel();
     _socketRoomUserMutedSub = _socketService.onRoomUserMuted.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
       final targetId = data['targetUserId']?.toString();
       final muted = data['isMuted'] == true;
-      final isMe = targetId != null && (targetId == currentUser?.id || targetId == currentUser?.username);
+      final isMe =
+          targetId != null &&
+          (targetId == currentUser?.id || targetId == currentUser?.username);
       if (isMe) {
         try {
           _agoraService.muteLocalAudio(muted);
         } catch (_) {}
-        _messages.add(LiveMessage(
-          sender: 'System',
-          text: muted ? '🔇 Your microphone has been MUTED by moderation.' : '🎙️ Your microphone has been UNMUTED.',
-        ));
+        _messages.add(
+          LiveMessage(
+            sender: 'System',
+            text: muted
+                ? '🔇 Your microphone has been MUTED by moderation.'
+                : '🎙️ Your microphone has been UNMUTED.',
+          ),
+        );
         notifyListeners();
       }
     });
 
     _socketUserKickedSub?.cancel();
     _socketUserKickedSub = _socketService.userKickedStream.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
-      final targetId = data['targetUserId']?.toString() ?? data['userId']?.toString();
+      final targetId =
+          data['targetUserId']?.toString() ?? data['userId']?.toString();
       final isHostKicked = data['isHost'] == true;
-      final isMe = targetId != null && (targetId == currentUser?.id || targetId == currentUser?.username);
+      final isMe =
+          targetId != null &&
+          (targetId == currentUser?.id || targetId == currentUser?.username);
 
       if (isMe) {
         _wasKicked = true;
-        _kickReason = data['reason']?.toString() ?? 'You have been removed from this room by moderation.';
+        _kickReason =
+            data['reason']?.toString() ??
+            'You have been removed from this room by moderation.';
         _kickedReceivedController.add(_kickReason!);
         leaveRoom();
       } else if (isHostKicked) {
-        _messages.add(LiveMessage(sender: 'System', text: '🛑 Stream ended: Host was removed by moderation.'));
+        _messages.add(
+          LiveMessage(
+            sender: 'System',
+            text: '🛑 Stream ended: Host was removed by moderation.',
+          ),
+        );
         leaveRoom();
       }
     });
 
     _socketRoomClosedSub?.cancel();
     _socketRoomClosedSub = _socketService.roomClosedStream.listen((data) {
-      if (_activeRoom != null && data['roomId'] != null && data['roomId'] != _activeRoom!.id) {
+      if (_activeRoom != null &&
+          data['roomId'] != null &&
+          data['roomId'] != _activeRoom!.id) {
         return;
       }
       _isLiveEnded = true;
-      _liveEndedReason = data['message']?.toString() ?? data['reason']?.toString() ?? 'Live stream has ended.';
-      _messages.add(LiveMessage(sender: 'System', text: '🛑 ${_liveEndedReason!}'));
+      _liveEndedReason =
+          data['message']?.toString() ??
+          data['reason']?.toString() ??
+          'Live stream has ended.';
+      _messages.add(
+        LiveMessage(sender: 'System', text: '🛑 ${_liveEndedReason!}'),
+      );
       _roomClosedController.add(Map<String, dynamic>.from(data));
       notifyListeners();
     });
@@ -790,9 +1048,15 @@ class LiveProvider extends ChangeNotifier {
       try {
         final pk = PKBattleModel.fromJson(data);
         setPkBattle(pk);
-        final isHost = _activeRoom != null && (_activeRoom!.host.id == currentUser?.id || _activeRoom!.creatorUserId == currentUser?.id);
+        final isHost =
+            _activeRoom != null &&
+            (_activeRoom!.host.id == currentUser?.id ||
+                _activeRoom!.creatorUserId == currentUser?.id);
         if (isHost) {
-          PKRepository.instance.setOperatorReady(matchId: pk.id, mediaPrepared: true);
+          PKRepository.instance.setOperatorReady(
+            matchId: pk.id,
+            mediaPrepared: true,
+          );
         }
       } catch (e) {
         debugPrint('[LiveProvider] PK preparing error: $e');
@@ -814,14 +1078,16 @@ class LiveProvider extends ChangeNotifier {
     });
 
     _socketPkParticipantJoinedSub?.cancel();
-    _socketPkParticipantJoinedSub = _socketService.onPkParticipantJoined.listen((data) {
-      try {
-        final pk = PKBattleModel.fromJson(data);
-        setPkBattle(pk);
-      } catch (e) {
-        debugPrint('[LiveProvider] PK participant joined parse error: $e');
-      }
-    });
+    _socketPkParticipantJoinedSub = _socketService.onPkParticipantJoined.listen(
+      (data) {
+        try {
+          final pk = PKBattleModel.fromJson(data);
+          setPkBattle(pk);
+        } catch (e) {
+          debugPrint('[LiveProvider] PK participant joined parse error: $e');
+        }
+      },
+    );
 
     _socketPkReadySub?.cancel();
     _socketPkReadySub = _socketService.onPkReady.listen((data) {
@@ -849,24 +1115,40 @@ class LiveProvider extends ChangeNotifier {
     _socketPkScoreSub?.cancel();
     _socketPkScoreSub = _socketService.onPkScoreUpdated.listen((data) {
       if (_activePkBattle != null) {
-        final scoreA = int.tryParse(data['scoreA']?.toString() ?? data['hostAScore']?.toString() ?? '') ?? _activePkBattle!.scoreA;
-        final scoreB = int.tryParse(data['scoreB']?.toString() ?? data['hostBScore']?.toString() ?? '') ?? _activePkBattle!.scoreB;
-        _activePkBattle = _activePkBattle!.copyWith(scoreA: scoreA, scoreB: scoreB);
+        final scoreA =
+            int.tryParse(
+              data['scoreA']?.toString() ??
+                  data['hostAScore']?.toString() ??
+                  '',
+            ) ??
+            _activePkBattle!.scoreA;
+        final scoreB =
+            int.tryParse(
+              data['scoreB']?.toString() ??
+                  data['hostBScore']?.toString() ??
+                  '',
+            ) ??
+            _activePkBattle!.scoreB;
+        _activePkBattle = _activePkBattle!.copyWith(
+          scoreA: scoreA,
+          scoreB: scoreB,
+        );
         notifyListeners();
       }
     });
 
     _socketPkHostConnectionSub?.cancel();
-    _socketPkHostConnectionSub = _socketService.onPkHostConnectionChanged.listen((data) {
-      final status = data['status']?.toString();
-      if (status == 'OFFLINE' || status == 'RECONNECTING') {
-        _isPkOpponentDisconnected = true;
-        _pkDisconnectGrace = data['graceRemainingSeconds'] ?? 30;
-      } else if (status == 'CONNECTED') {
-        _isPkOpponentDisconnected = false;
-      }
-      notifyListeners();
-    });
+    _socketPkHostConnectionSub = _socketService.onPkHostConnectionChanged
+        .listen((data) {
+          final status = data['status']?.toString();
+          if (status == 'OFFLINE' || status == 'RECONNECTING') {
+            _isPkOpponentDisconnected = true;
+            _pkDisconnectGrace = data['graceRemainingSeconds'] ?? 30;
+          } else if (status == 'CONNECTED') {
+            _isPkOpponentDisconnected = false;
+          }
+          notifyListeners();
+        });
 
     _socketPkMatchFinishedSub?.cancel();
     _socketPkMatchFinishedSub = _socketService.onPkMatchFinished.listen((data) {
@@ -887,7 +1169,12 @@ class LiveProvider extends ChangeNotifier {
         _activePkBattle = pk;
         _pkTimer?.cancel();
         _agoraService.leaveOpponentPKChannel();
-        _messages.add(LiveMessage(sender: 'System', text: '⚔️ PK ended: ${data['endReason'] ?? "Opponent forfeited."}'));
+        _messages.add(
+          LiveMessage(
+            sender: 'System',
+            text: '⚔️ PK ended: ${data['endReason'] ?? "Opponent forfeited."}',
+          ),
+        );
         _pkResultController.add(pk);
         notifyListeners();
       } catch (_) {}
@@ -900,7 +1187,12 @@ class LiveProvider extends ChangeNotifier {
         _activePkBattle = pk;
         _pkTimer?.cancel();
         _agoraService.leaveOpponentPKChannel();
-        _messages.add(LiveMessage(sender: 'System', text: '⚠️ PK aborted: ${data['endReason'] ?? "Incident."}'));
+        _messages.add(
+          LiveMessage(
+            sender: 'System',
+            text: '⚠️ PK aborted: ${data['endReason'] ?? "Incident."}',
+          ),
+        );
         notifyListeners();
       } catch (_) {}
     });
@@ -908,7 +1200,9 @@ class LiveProvider extends ChangeNotifier {
     _socketPkEndedSub?.cancel();
     _socketPkEndedSub = _socketService.onPkEnded.listen((data) {
       if (_activePkBattle != null) {
-        final winner = data['winnerHostUserId']?.toString() ?? data['winnerHostId']?.toString();
+        final winner =
+            data['winnerHostUserId']?.toString() ??
+            data['winnerHostId']?.toString();
         _activePkBattle = _activePkBattle!.copyWith(
           winnerId: winner,
           status: 'FINISHED',
@@ -946,6 +1240,9 @@ class LiveProvider extends ChangeNotifier {
       } catch (_) {}
     }
 
+    try {
+      await _agoraService.leaveOpponentPKChannel();
+    } catch (_) {}
     await _agoraService.leaveChannel();
 
     _socketUserJoinedSub?.cancel();
@@ -1017,23 +1314,33 @@ class LiveProvider extends ChangeNotifier {
     }
   }
 
-  void sendMessage(String text, String sender, {UserModel? user, String? roomId}) {
+  void sendMessage(
+    String text,
+    String sender, {
+    UserModel? user,
+    String? roomId,
+  }) {
     final trimmedText = text.trim();
     if (trimmedText.isEmpty) return;
 
     final effectiveUser = user ?? _currentUser;
-    final isHost = (effectiveUser != null && _activeRoom != null) &&
-        (_activeRoom!.host.id == effectiveUser.id || _activeRoom!.creatorUserId == effectiveUser.id);
+    final isHost =
+        (effectiveUser != null && _activeRoom != null) &&
+        (_activeRoom!.host.id == effectiveUser.id ||
+            _activeRoom!.creatorUserId == effectiveUser.id);
 
     final resolvedSender = (effectiveUser?.displayName.isNotEmpty == true)
         ? effectiveUser!.displayName
         : (sender.isNotEmpty
-            ? sender
-            : (effectiveUser?.name.isNotEmpty == true
-                ? effectiveUser!.name
-                : (effectiveUser?.username.isNotEmpty == true ? effectiveUser!.username : 'User')));
+              ? sender
+              : (effectiveUser?.name.isNotEmpty == true
+                    ? effectiveUser!.name
+                    : (effectiveUser?.username.isNotEmpty == true
+                          ? effectiveUser!.username
+                          : 'User')));
 
-    final clientMsgId = 'msg_${DateTime.now().millisecondsSinceEpoch}_${effectiveUser?.id ?? "anon"}';
+    final clientMsgId =
+        'msg_${DateTime.now().millisecondsSinceEpoch}_${effectiveUser?.id ?? "anon"}';
 
     final localMsg = LiveMessage(
       id: clientMsgId,
@@ -1045,7 +1352,9 @@ class LiveProvider extends ChangeNotifier {
       isVip: effectiveUser?.isVip ?? false,
       nobleTitle: effectiveUser?.nobleTitle,
       avatarFrame: effectiveUser?.avatarFrame,
-      chatBubble: (effectiveUser?.nobleTitle != null && effectiveUser!.nobleTitle!.isNotEmpty)
+      chatBubble:
+          (effectiveUser?.nobleTitle != null &&
+              effectiveUser!.nobleTitle!.isNotEmpty)
           ? NobleBadgeHelper.getChatBubbleAsset(effectiveUser.nobleTitle)
           : null,
     );
@@ -1056,7 +1365,9 @@ class LiveProvider extends ChangeNotifier {
     }
     notifyListeners();
 
-    final targetRoomId = (_activeRoom?.id.isNotEmpty == true) ? _activeRoom!.id : (roomId ?? '');
+    final targetRoomId = (_activeRoom?.id.isNotEmpty == true)
+        ? _activeRoom!.id
+        : (roomId ?? '');
     if (targetRoomId.isNotEmpty && sender != 'System') {
       _socketService.sendRoomChatMessage(
         roomId: targetRoomId,
@@ -1067,9 +1378,16 @@ class LiveProvider extends ChangeNotifier {
     }
   }
 
-  void sendGift(GiftModel gift, String sender, {String? transactionId, int quantity = 1}) {
+  void sendGift(
+    GiftModel gift,
+    String sender, {
+    String? transactionId,
+    int quantity = 1,
+  }) {
     _activeGiftAnimation = gift;
-    _giftPoints += ((gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice) * quantity);
+    _giftPoints +=
+        ((gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice) *
+        quantity);
 
     _giftTimer?.cancel();
     _giftTimer = Timer(const Duration(seconds: 3), () {
@@ -1090,19 +1408,29 @@ class LiveProvider extends ChangeNotifier {
       _processedGiftTxIds.remove(_processedGiftTxIds.first);
     }
 
-    final isDuplicate = _messages.any((m) =>
-        m.isGift &&
-        (m.id == 'gift_$txId' ||
-         ((m.senderId.isNotEmpty && m.senderId == (currentUser?.id ?? '')) ||
-          m.sender.toLowerCase().trim() == sender.toLowerCase().trim()) &&
-         m.text.toLowerCase().contains(gift.name.toLowerCase()) &&
-         DateTime.now().difference(m.timestamp).inSeconds.abs() <= 5));
+    final isDuplicate = _messages.any(
+      (m) =>
+          m.isGift &&
+          (m.id == 'gift_$txId' ||
+              ((m.senderId.isNotEmpty &&
+                          m.senderId == (currentUser?.id ?? '')) ||
+                      m.sender.toLowerCase().trim() ==
+                          sender.toLowerCase().trim()) &&
+                  m.text.toLowerCase().contains(gift.name.toLowerCase()) &&
+                  DateTime.now().difference(m.timestamp).inSeconds.abs() <= 5),
+    );
 
     if (!isDuplicate) {
-      final isHostSender = (_activeRoom != null && currentUser != null) &&
-          (currentUser!.id == _activeRoom!.host.id || currentUser!.id == _activeRoom!.creatorUserId);
-      final effectiveAvatar = currentUser?.avatarUrl ?? (isHostSender ? _activeRoom?.host.avatarUrl : null);
-      final formattedText = quantity > 1 ? 'sent $quantity × ${gift.name}!' : 'sent ${gift.name}!';
+      final isHostSender =
+          (_activeRoom != null && currentUser != null) &&
+          (currentUser!.id == _activeRoom!.host.id ||
+              currentUser!.id == _activeRoom!.creatorUserId);
+      final effectiveAvatar =
+          currentUser?.avatarUrl ??
+          (isHostSender ? _activeRoom?.host.avatarUrl : null);
+      final formattedText = quantity > 1
+          ? 'sent $quantity × ${gift.name}!'
+          : 'sent ${gift.name}!';
 
       _messages.add(
         LiveMessage(
@@ -1143,8 +1471,11 @@ class LiveProvider extends ChangeNotifier {
           }
         });
       }
+      _setupVideoPkRelay(pk);
     } else {
-      _pkTimeRemainingSeconds = pk.durationSeconds > 0 ? pk.durationSeconds : 300;
+      _pkTimeRemainingSeconds = pk.durationSeconds > 0
+          ? pk.durationSeconds
+          : 300;
     }
     notifyListeners();
   }
@@ -1200,15 +1531,23 @@ class LiveProvider extends ChangeNotifier {
   }
 
   /// Host explicitly starts the PK Battle
-  Future<PKBattleModel?> startHostPKBattle({UserModel? currentHost, UserModel? opponentHost}) async {
+  Future<PKBattleModel?> startHostPKBattle({
+    UserModel? currentHost,
+    UserModel? opponentHost,
+  }) async {
     if (_activePkBattle != null) {
       try {
-        final pk = await PKRepository.instance.startPKBattle(_activePkBattle!.id);
+        final pk = await PKRepository.instance.startPKBattle(
+          _activePkBattle!.id,
+        );
         setPkBattle(pk);
         return pk;
       } catch (e) {
         debugPrint('[LiveProvider] startHostPKBattle remote error: $e');
-        final active = _activePkBattle!.copyWith(status: 'STARTED', startedAt: DateTime.now());
+        final active = _activePkBattle!.copyWith(
+          status: 'STARTED',
+          startedAt: DateTime.now(),
+        );
         setPkBattle(active);
         return active;
       }
@@ -1217,7 +1556,9 @@ class LiveProvider extends ChangeNotifier {
     // Check if room has an active match on server
     if (_activeRoom != null) {
       try {
-        final existing = await PKRepository.instance.getActiveMatchForRoom(_activeRoom!.id);
+        final existing = await PKRepository.instance.getActiveMatchForRoom(
+          _activeRoom!.id,
+        );
         if (existing != null) {
           setPkBattle(existing);
           return existing;
@@ -1227,7 +1568,9 @@ class LiveProvider extends ChangeNotifier {
 
     final host = currentHost ?? _currentUser ?? _activeRoom?.host;
     if (host == null || opponentHost == null) {
-      debugPrint('[LiveProvider] Cannot start PK battle without a real active host and opponent.');
+      debugPrint(
+        '[LiveProvider] Cannot start PK battle without a real active host and opponent.',
+      );
       return null;
     }
     final opponent = opponentHost;
@@ -1275,25 +1618,78 @@ class LiveProvider extends ChangeNotifier {
     }
   }
 
-  void _setupVideoPkRelay(PKBattleModel pk) {
-    if (pk.agoraRelay == null) return;
-    final relay = pk.agoraRelay!;
+  Future<void> _setupVideoPkRelay(PKBattleModel pk) async {
     final currentRoomId = _activeRoom?.id ?? '';
-    String opponentChannel = relay.channelB;
-    int opponentUid = relay.hostBUid;
+    final relay = pk.agoraRelay;
 
-    if (currentRoomId == pk.roomBId || currentRoomId == relay.channelB) {
-      opponentChannel = relay.channelA;
-      opponentUid = relay.hostAUid;
+    // Authoritative check if current viewer belongs to Room B
+    final isRoomB =
+        (currentRoomId.isNotEmpty && currentRoomId == pk.roomBId) ||
+        (relay != null &&
+            (currentRoomId == relay.channelB ||
+                _activeRoom?.agoraChannelName == relay.channelB));
+
+    final opponentRoomId = isRoomB ? pk.roomAId : pk.roomBId;
+    final opponentHost = isRoomB ? pk.hostA : pk.hostB;
+
+    String opponentChannel = '';
+    int opponentUid = 0;
+
+    if (relay != null) {
+      opponentChannel = isRoomB ? relay.channelA : relay.channelB;
+      opponentUid = isRoomB ? relay.hostAUid : relay.hostBUid;
     }
 
-    final localUid = _agoraService.currentUid ?? 0;
-    _agoraService.joinOpponentPKChannel(
+    if (opponentChannel.isEmpty && opponentRoomId.isNotEmpty) {
+      opponentChannel = opponentRoomId.startsWith('room_')
+          ? opponentRoomId
+          : 'room_${opponentRoomId.replaceAll('-', '')}';
+    }
+
+    if (opponentUid == 0 && opponentHost.id.isNotEmpty) {
+      opponentUid = AgoraRtcService.deriveUid(opponentHost.id);
+    }
+
+    // Guard: already connected to this opponent channel with known host
+    if (_agoraService.pkOpponentChannel == opponentChannel &&
+        _agoraService.pkOpponentUid == opponentUid &&
+        _agoraService.pkOpponentLocalUid != null) {
+      return;
+    }
+
+    String? token;
+    try {
+      if (opponentRoomId.isNotEmpty) {
+        final agoraData = await _roomRepository.getAgoraToken(opponentRoomId);
+        token = agoraData['token'] as String?;
+        final serverChannel = agoraData['channelName'] as String?;
+        if (serverChannel != null && serverChannel.isNotEmpty) {
+          opponentChannel = serverChannel;
+        }
+        final serverUid =
+            agoraData['uid'] as int? ?? agoraData['agoraUid'] as int?;
+        if (serverUid != null && serverUid > 0 && opponentUid == 0) {
+          opponentUid = serverUid;
+        }
+      }
+    } catch (e) {
+      debugPrint('[LiveProvider] Fetch opponent Agora token error: $e');
+    }
+
+    final localUid =
+        _agoraService.currentUid ??
+        (_currentUser != null
+            ? AgoraRtcService.deriveUid(_currentUser!.id)
+            : 0);
+
+    await _agoraService.joinOpponentPKChannel(
       opponentChannel: opponentChannel,
       localUid: localUid,
       opponentUid: opponentUid,
+      token: token,
       isVideo: true,
     );
+    notifyListeners();
   }
 
   void toggleOpponentMute() {
@@ -1357,9 +1753,14 @@ class LiveProvider extends ChangeNotifier {
 
   void spinSuperWheel(List<String> participants) {
     if (participants.isEmpty) return;
-    final winner = participants[DateTime.now().millisecondsSinceEpoch % participants.length];
+    final winner =
+        participants[DateTime.now().millisecondsSinceEpoch %
+            participants.length];
     _superWheelWinner = winner;
-    sendMessage('Super Wheel spun! Winner: $winner gets 100 diamonds!', 'System');
+    sendMessage(
+      'Super Wheel spun! Winner: $winner gets 100 diamonds!',
+      'System',
+    );
     Timer(const Duration(seconds: 5), () {
       _superWheelWinner = null;
       notifyListeners();
@@ -1369,7 +1770,10 @@ class LiveProvider extends ChangeNotifier {
   void startLuckyBag(int diamonds) {
     _luckyBagDiamonds = diamonds;
     _luckyBagActive = true;
-    sendMessage('Lucky Bag is live! $diamonds diamonds to grab — tap fast!', 'System');
+    sendMessage(
+      'Lucky Bag is live! $diamonds diamonds to grab — tap fast!',
+      'System',
+    );
     notifyListeners();
     Timer(const Duration(seconds: 12), () {
       _luckyBagActive = false;
@@ -1408,6 +1812,7 @@ class LiveProvider extends ChangeNotifier {
     _socketRoomClosedSub?.cancel();
     _pkTimer?.cancel();
     _giftTimer?.cancel();
+    _agoraService.leaveOpponentPKChannel();
     _likeReceivedController.close();
     super.dispose();
   }

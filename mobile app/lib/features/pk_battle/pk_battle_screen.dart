@@ -1,7 +1,9 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import '../../core/services/agora_rtc_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/animations/app_animations.dart';
 import '../../core/utils/auth_guard.dart';
@@ -24,7 +26,8 @@ class PKBattleScreen extends StatefulWidget {
   State<PKBattleScreen> createState() => _PKBattleScreenState();
 }
 
-class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStateMixin {
+class _PKBattleScreenState extends State<PKBattleScreen>
+    with TickerProviderStateMixin {
   late AnimationController _vsPulseController;
   late AnimationController _winnerController;
   late Animation<double> _vsScale;
@@ -121,7 +124,9 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
     } catch (_) {}
   }
 
-  Future<void> _setupCameraController(CameraDescription cameraDescription) async {
+  Future<void> _setupCameraController(
+    CameraDescription cameraDescription,
+  ) async {
     if (_cameraController != null) {
       await _cameraController!.dispose();
     }
@@ -184,11 +189,16 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
     if (pk.participants.isEmpty) return;
     final participant = isForHostA
         ? pk.participants[0]
-        : (pk.participants.length > 1 ? pk.participants[1] : pk.participants[0]);
+        : (pk.participants.length > 1
+              ? pk.participants[1]
+              : pk.participants[0]);
     _openGiftSheetForParticipant(context, participant);
   }
 
-  void _openGiftSheetForParticipant(BuildContext context, PKParticipantModel participant) {
+  void _openGiftSheetForParticipant(
+    BuildContext context,
+    PKParticipantModel participant,
+  ) {
     final targetUser = UserModel(
       id: participant.userId,
       username: participant.username,
@@ -204,7 +214,11 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
         onGiftSent: (gift) {
           final currentUser = context.read<AuthProvider>().currentUser;
           final liveGiftProv = context.read<LiveGiftProvider>();
-          context.read<LiveProvider>().sendGift(gift, currentUser.name, transactionId: liveGiftProv.lastTransactionId);
+          context.read<LiveProvider>().sendGift(
+            gift,
+            currentUser.name,
+            transactionId: liveGiftProv.lastTransactionId,
+          );
         },
       ),
     );
@@ -213,13 +227,21 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
   void _sendChatMessage(String text) {
     if (text.trim().isEmpty) return;
     final currentUser = context.read<AuthProvider>().currentUser;
-    context.read<LiveProvider>().sendMessage(text.trim(), currentUser.name, user: currentUser);
+    context.read<LiveProvider>().sendMessage(
+      text.trim(),
+      currentUser.name,
+      user: currentUser,
+    );
     _chatTextController.clear();
   }
 
   void _sendQuickEmojiReaction(String emoji) {
     final currentUser = context.read<AuthProvider>().currentUser;
-    context.read<LiveProvider>().sendMessage(emoji, currentUser.name, user: currentUser);
+    context.read<LiveProvider>().sendMessage(
+      emoji,
+      currentUser.name,
+      user: currentUser,
+    );
   }
 
   @override
@@ -234,7 +256,10 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Colors.white,
+            ),
             onPressed: () => Navigator.pop(context),
           ),
         ),
@@ -242,18 +267,28 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.sports_kabaddi_rounded, color: Colors.white38, size: 56),
+              const Icon(
+                Icons.sports_kabaddi_rounded,
+                color: Colors.white38,
+                size: 56,
+              ),
               const SizedBox(height: 16),
               const Text(
                 'No active PK battle found.',
-                style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: const Text('Back to Room'),
               ),
@@ -285,7 +320,8 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
 
     return Scaffold(
       backgroundColor: const Color(0xFF0A071B),
-      resizeToAvoidBottomInset: false, // Prevents yellow/black bottom overflow when keyboard opens
+      resizeToAvoidBottomInset:
+          false, // Prevents yellow/black bottom overflow when keyboard opens
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -295,10 +331,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
               gradient: RadialGradient(
                 center: Alignment(0.0, -0.3),
                 radius: 1.2,
-                colors: [
-                  Color(0xFF23143E),
-                  Color(0xFF0A071B),
-                ],
+                colors: [Color(0xFF23143E), Color(0xFF0A071B)],
               ),
             ),
           ),
@@ -317,7 +350,14 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
             child: Column(
               children: [
                 // ─── 1. TOP HEADER (Exit Button + Timer Pill + End Battle) ───
-                _buildTopNavigationHeader(context, minutes, remSecs, seconds, isLeadingA, pk),
+                _buildTopNavigationHeader(
+                  context,
+                  minutes,
+                  remSecs,
+                  seconds,
+                  isLeadingA,
+                  pk,
+                ),
                 const SizedBox(height: 4),
 
                 // ─── 2. TIKTOK SCORE BAR & VS BADGE ───
@@ -325,10 +365,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                 const SizedBox(height: 8),
 
                 // ─── 3. PK ARENA STAGE (Dynamic 2, 3, or 4 Video Feeds) ───
-                Expanded(
-                  flex: 5,
-                  child: _buildArenaStage(pk),
-                ),
+                Expanded(flex: 5, child: _buildArenaStage(pk)),
                 const SizedBox(height: 6),
 
                 // ─── 4. LOWER SECTION: CHAT FEED & BOTTOM ACTION DOCK ───
@@ -340,9 +377,7 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Floating Chat List (Occupies middle region cleanly without UI overlaps)
-                        Expanded(
-                          child: _buildFloatingChatPanel(),
-                        ),
+                        Expanded(child: _buildFloatingChatPanel()),
                         const SizedBox(height: 6),
 
                         // Bottom Control Dock (Chat input + Emoji Bar + Camera/Mic Tools + Main Gift Button)
@@ -409,7 +444,11 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
               ),
-              child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+              child: const Icon(
+                Icons.close_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
           ),
 
@@ -419,23 +458,37 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
               gradient: !isStarted
-                  ? const LinearGradient(colors: [Color(0xFF4A148C), Color(0xFF1E1035)])
+                  ? const LinearGradient(
+                      colors: [Color(0xFF4A148C), Color(0xFF1E1035)],
+                    )
                   : (seconds < 30
-                      ? const LinearGradient(colors: [Color(0xFFFF1744), Color(0xFFD50000)])
-                      : LinearGradient(colors: [Colors.black.withValues(alpha: 0.75), const Color(0xFF1E1035)])),
+                        ? const LinearGradient(
+                            colors: [Color(0xFFFF1744), Color(0xFFD50000)],
+                          )
+                        : LinearGradient(
+                            colors: [
+                              Colors.black.withValues(alpha: 0.75),
+                              const Color(0xFF1E1035),
+                            ],
+                          )),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: !isStarted
                     ? Colors.purpleAccent
-                    : (seconds < 30 ? const Color(0xFFFF5252) : const Color(0xFFFFD700)),
+                    : (seconds < 30
+                          ? const Color(0xFFFF5252)
+                          : const Color(0xFFFFD700)),
                 width: 1.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: (!isStarted
-                          ? Colors.purpleAccent
-                          : (seconds < 30 ? const Color(0xFFFF1744) : const Color(0xFFFFD700)))
-                      .withValues(alpha: 0.5),
+                  color:
+                      (!isStarted
+                              ? Colors.purpleAccent
+                              : (seconds < 30
+                                    ? const Color(0xFFFF1744)
+                                    : const Color(0xFFFFD700)))
+                          .withValues(alpha: 0.5),
                   blurRadius: 10,
                 ),
               ],
@@ -444,8 +497,12 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  !isStarted ? Icons.hourglass_top_rounded : Icons.timer_outlined,
-                  color: !isStarted ? Colors.purpleAccent : const Color(0xFFFFD700),
+                  !isStarted
+                      ? Icons.hourglass_top_rounded
+                      : Icons.timer_outlined,
+                  color: !isStarted
+                      ? Colors.purpleAccent
+                      : const Color(0xFFFFD700),
                   size: 14,
                 ),
                 const SizedBox(width: 5),
@@ -472,9 +529,13 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                 child: Container(
                   padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
-                    color: _isMuted ? Colors.redAccent.withValues(alpha: 0.85) : Colors.black.withValues(alpha: 0.5),
+                    color: _isMuted
+                        ? Colors.redAccent.withValues(alpha: 0.85)
+                        : Colors.black.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: Icon(
                     _isMuted ? Icons.mic_off : Icons.mic,
@@ -491,9 +552,13 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                 child: Container(
                   padding: const EdgeInsets.all(7),
                   decoration: BoxDecoration(
-                    color: _isCameraOff ? Colors.redAccent.withValues(alpha: 0.85) : Colors.black.withValues(alpha: 0.5),
+                    color: _isCameraOff
+                        ? Colors.redAccent.withValues(alpha: 0.85)
+                        : Colors.black.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: Icon(
                     _isCameraOff ? Icons.videocam_off : Icons.videocam,
@@ -512,7 +577,9 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                   decoration: BoxDecoration(
                     color: Colors.black.withValues(alpha: 0.5),
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
                   ),
                   child: const Icon(
                     Icons.flip_camera_ios,
@@ -528,7 +595,9 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
           GestureDetector(
             onTap: () {
               final highestScoreParticipant = pk.participantList.isNotEmpty
-                  ? (pk.participantList..sort((a, b) => b.score.compareTo(a.score))).first
+                  ? (pk.participantList
+                          ..sort((a, b) => b.score.compareTo(a.score)))
+                        .first
                   : null;
               _declareWinner(
                 highestScoreParticipant?.name ?? pk.hostA.name,
@@ -544,7 +613,11 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
               ),
               child: const Text(
                 'End PK',
-                style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 11),
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 11,
+                ),
               ),
             ),
           ),
@@ -606,14 +679,16 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                   child: Row(
                     children: List.generate(participants.length, (idx) {
                       final p = participants[idx];
-                      final ratio = (p.score / effectiveTotal).clamp(0.05, 0.95);
-                      final color = _participantColors[idx % _participantColors.length];
+                      final ratio = (p.score / effectiveTotal).clamp(
+                        0.05,
+                        0.95,
+                      );
+                      final color =
+                          _participantColors[idx % _participantColors.length];
 
                       return Expanded(
                         flex: ((ratio * 100).round()).clamp(1, 100),
-                        child: Container(
-                          color: color,
-                        ),
+                        child: Container(color: color),
                       );
                     }),
                   ),
@@ -623,7 +698,10 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                 ScaleTransition(
                   scale: _vsScale,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
                         colors: [Color(0xFFFFD700), Color(0xFFFFAB00)],
@@ -728,7 +806,8 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                       sideColor: _participantColors[1],
                       teamLabel: _participantTeamLabels[1],
                       useRealCamera: false,
-                      onSupportTap: () => _openGiftSheetForParticipant(context, p2),
+                      onSupportTap: () =>
+                          _openGiftSheetForParticipant(context, p2),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -739,7 +818,8 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                       sideColor: _participantColors[2],
                       teamLabel: _participantTeamLabels[2],
                       useRealCamera: false,
-                      onSupportTap: () => _openGiftSheetForParticipant(context, p3),
+                      onSupportTap: () =>
+                          _openGiftSheetForParticipant(context, p3),
                     ),
                   ),
                 ],
@@ -770,7 +850,8 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                       sideColor: _participantColors[0],
                       teamLabel: _participantTeamLabels[0],
                       useRealCamera: true,
-                      onSupportTap: () => _openGiftSheetForParticipant(context, p1),
+                      onSupportTap: () =>
+                          _openGiftSheetForParticipant(context, p1),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -781,7 +862,8 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                       sideColor: _participantColors[1],
                       teamLabel: _participantTeamLabels[1],
                       useRealCamera: false,
-                      onSupportTap: () => _openGiftSheetForParticipant(context, p2),
+                      onSupportTap: () =>
+                          _openGiftSheetForParticipant(context, p2),
                     ),
                   ),
                 ],
@@ -799,7 +881,8 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                       sideColor: _participantColors[2],
                       teamLabel: _participantTeamLabels[2],
                       useRealCamera: false,
-                      onSupportTap: () => _openGiftSheetForParticipant(context, p3),
+                      onSupportTap: () =>
+                          _openGiftSheetForParticipant(context, p3),
                     ),
                   ),
                   const SizedBox(width: 6),
@@ -810,7 +893,8 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                       sideColor: _participantColors[3],
                       teamLabel: _participantTeamLabels[3],
                       useRealCamera: false,
-                      onSupportTap: () => _openGiftSheetForParticipant(context, p4),
+                      onSupportTap: () =>
+                          _openGiftSheetForParticipant(context, p4),
                     ),
                   ),
                 ],
@@ -850,13 +934,35 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Camera Preview or Avatar Image / Stream
+            // Camera Preview or Opponent Remote Video or Avatar Image / Stream
             if (useRealCamera &&
                 _isCameraInitialized &&
                 _cameraController != null &&
                 _cameraController!.value.isInitialized &&
                 !_isCameraOff)
               CameraPreview(_cameraController!)
+            else if (slotIndex > 0 &&
+                AgoraRtcService.instance.engine != null &&
+                AgoraRtcService.instance.pkOpponentChannel != null)
+              AgoraVideoView(
+                controller: VideoViewController.remote(
+                  rtcEngine: AgoraRtcService.instance.engine!,
+                  canvas: VideoCanvas(
+                    uid:
+                        AgoraRtcService.instance.pkOpponentUid ??
+                        (participant.userId.isNotEmpty
+                            ? AgoraRtcService.deriveUid(participant.userId)
+                            : 0),
+                  ),
+                  connection: RtcConnection(
+                    channelId: AgoraRtcService.instance.pkOpponentChannel!,
+                    localUid:
+                        AgoraRtcService.instance.pkOpponentLocalUid ??
+                        AgoraRtcService.instance.currentUid ??
+                        0,
+                  ),
+                ),
+              )
             else
               _buildParticipantVisualFeed(participant, sideColor),
 
@@ -887,14 +993,28 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                       Container(
                         padding: const EdgeInsets.all(3),
                         margin: const EdgeInsets.only(right: 4),
-                        decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                        child: const Icon(Icons.mic_off, color: Colors.white, size: 10),
+                        decoration: const BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.mic_off,
+                          color: Colors.white,
+                          size: 10,
+                        ),
                       ),
                     if (_isCameraOff)
                       Container(
                         padding: const EdgeInsets.all(3),
-                        decoration: const BoxDecoration(color: Colors.redAccent, shape: BoxShape.circle),
-                        child: const Icon(Icons.videocam_off, color: Colors.white, size: 10),
+                        decoration: const BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.videocam_off,
+                          color: Colors.white,
+                          size: 10,
+                        ),
                       ),
                   ],
                 ),
@@ -910,7 +1030,10 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.65),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: sideColor.withValues(alpha: 0.8), width: 1.0),
+                  border: Border.all(
+                    color: sideColor.withValues(alpha: 0.8),
+                    width: 1.0,
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -919,7 +1042,9 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
-                        participant.isHost ? '${participant.name} (Host)' : participant.name,
+                        participant.isHost
+                            ? '${participant.name} (Host)'
+                            : participant.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
@@ -982,7 +1107,10 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
     );
   }
 
-  Widget _buildParticipantVisualFeed(PKParticipantModel participant, Color sideColor) {
+  Widget _buildParticipantVisualFeed(
+    PKParticipantModel participant,
+    Color sideColor,
+  ) {
     final avatar = participant.avatarUrl.isNotEmpty
         ? participant.avatarUrl
         : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500';
@@ -1065,7 +1193,11 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: const Text(
           'Battle is LIVE! Send gifts & chats to support your host 🔥',
-          style: TextStyle(color: Colors.white54, fontSize: 11, fontStyle: FontStyle.italic),
+          style: TextStyle(
+            color: Colors.white54,
+            fontSize: 11,
+            fontStyle: FontStyle.italic,
+          ),
         ),
       );
     }
@@ -1091,7 +1223,9 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                     ? const Color(0xFF8E24AA).withValues(alpha: 0.85)
                     : Colors.black.withValues(alpha: 0.65),
                 borderRadius: BorderRadius.circular(14),
-                border: isGift ? Border.all(color: const Color(0xFFFFD700), width: 1.0) : null,
+                border: isGift
+                    ? Border.all(color: const Color(0xFFFFD700), width: 1.0)
+                    : null,
               ),
               child: RichText(
                 maxLines: 2,
@@ -1101,17 +1235,16 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                     TextSpan(
                       text: '${msg.sender}: ',
                       style: TextStyle(
-                        color: isGift ? const Color(0xFFFFD700) : const Color(0xFF00E5FF),
+                        color: isGift
+                            ? const Color(0xFFFFD700)
+                            : const Color(0xFF00E5FF),
                         fontWeight: FontWeight.bold,
                         fontSize: 11,
                       ),
                     ),
                     TextSpan(
                       text: msg.text,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                      ),
+                      style: const TextStyle(color: Colors.white, fontSize: 11),
                     ),
                   ],
                 ),
@@ -1140,7 +1273,10 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
               decoration: BoxDecoration(
                 color: Colors.black.withValues(alpha: 0.85),
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.5), width: 1.2),
+                border: Border.all(
+                  color: const Color(0xFF00E5FF).withValues(alpha: 0.5),
+                  width: 1.2,
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
@@ -1160,7 +1296,11 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                         onCommentSubmitted: _sendChatMessage,
                       );
                     },
-                    child: const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF00E5FF), size: 18),
+                    child: const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      color: Color(0xFF00E5FF),
+                      size: 18,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -1175,7 +1315,10 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                       ),
                       decoration: const InputDecoration(
                         hintText: 'Say something...',
-                        hintStyle: TextStyle(color: Colors.white54, fontSize: 12),
+                        hintStyle: TextStyle(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
@@ -1194,7 +1337,10 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                         onTap: () => _sendQuickEmojiReaction(emoji),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 3),
-                          child: Text(emoji, style: const TextStyle(fontSize: 16)),
+                          child: Text(
+                            emoji,
+                            style: const TextStyle(fontSize: 16),
+                          ),
                         ),
                       );
                     }).toList(),
@@ -1250,7 +1396,11 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
             padding: const EdgeInsets.all(28),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF4A148C), Color(0xFF8E24AA), Color(0xFFD81B60)],
+                colors: [
+                  Color(0xFF4A148C),
+                  Color(0xFF8E24AA),
+                  Color(0xFFD81B60),
+                ],
               ),
               borderRadius: BorderRadius.circular(32),
               border: Border.all(color: const Color(0xFFFFD700), width: 2),
@@ -1295,11 +1445,19 @@ class _PKBattleScreenState extends State<PKBattleScreen> with TickerProviderStat
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFFFD700),
                     foregroundColor: const Color(0xFF0A071B),
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                   ),
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('Close Arena', style: TextStyle(fontWeight: FontWeight.w900)),
+                  child: const Text(
+                    'Close Arena',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
                 ),
               ],
             ),

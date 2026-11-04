@@ -102,9 +102,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
       roomTitle: widget.room.title,
     );
     try {
-      await ApiClient.instance.dio.post('/v1/rooms/${widget.room.id}/cohost/invite', data: {
-        'targetUserId': viewer.id,
-      });
+      await ApiClient.instance.dio.post(
+        '/v1/rooms/${widget.room.id}/cohost/invite',
+        data: {'targetUserId': viewer.id},
+      );
     } catch (e) {
       debugPrint('[LiveRoom] REST cohost invite notice: $e');
     }
@@ -132,7 +133,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
           children: const [
             Icon(Icons.video_camera_front_rounded, color: Colors.cyanAccent),
             SizedBox(width: 8),
-            Text('Co-Host Invitation', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            Text(
+              'Co-Host Invitation',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ],
         ),
         content: Text(
@@ -152,16 +160,21 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                 reason: 'Declined by user',
               );
               try {
-                ApiClient.instance.dio.post('/v1/rooms/${widget.room.id}/cohost/respond', data: {
-                  'invitationId': invitation.id,
-                  'accepted': false,
-                });
+                ApiClient.instance.dio.post(
+                  '/v1/rooms/${widget.room.id}/cohost/respond',
+                  data: {'invitationId': invitation.id, 'accepted': false},
+                );
               } catch (_) {}
             },
-            child: const Text('Decline', style: TextStyle(color: Colors.white60)),
+            child: const Text(
+              'Decline',
+              style: TextStyle(color: Colors.white60),
+            ),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00E5FF)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00E5FF),
+            ),
             onPressed: () async {
               _isCoHostInviteDialogShown = false;
               Navigator.pop(ctx);
@@ -173,10 +186,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                 accepted: true,
               );
               try {
-                await ApiClient.instance.dio.post('/v1/rooms/${widget.room.id}/cohost/respond', data: {
-                  'invitationId': invitation.id,
-                  'accepted': true,
-                });
+                await ApiClient.instance.dio.post(
+                  '/v1/rooms/${widget.room.id}/cohost/respond',
+                  data: {'invitationId': invitation.id, 'accepted': true},
+                );
               } catch (_) {}
 
               try {
@@ -199,7 +212,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                 );
               }
             },
-            child: const Text('Accept', style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+            child: const Text(
+              'Accept',
+              style: TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
@@ -208,10 +227,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
 
   Future<void> _fetchInitialStageState() async {
     try {
-      final res = await ApiClient.instance.dio.get('/v1/rooms/${widget.room.id}/stage');
+      final res = await ApiClient.instance.dio.get(
+        '/v1/rooms/${widget.room.id}/stage',
+      );
       final data = res.data?['data'];
       if (data is Map<String, dynamic> && mounted) {
-        final version = (data['version'] is num) ? (data['version'] as num).toInt() : 0;
+        final version = (data['version'] is num)
+            ? (data['version'] as num).toInt()
+            : 0;
         if (version >= _stageVersion) {
           _stageVersion = version;
           _handleStageUpdatePayload(data);
@@ -230,9 +253,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
     UserModel? foundCoHost;
     for (final ch in cohostsList) {
       if (ch is Map) {
-        final uMap = ch['user'] is Map ? Map<String, dynamic>.from(ch['user'] as Map) : Map<String, dynamic>.from(ch);
+        final uMap = ch['user'] is Map
+            ? Map<String, dynamic>.from(ch['user'] as Map)
+            : Map<String, dynamic>.from(ch);
         final chId = uMap['id']?.toString() ?? uMap['userId']?.toString();
-        if (chId != null && chId != widget.room.host.id && chId != widget.room.creatorUserId) {
+        if (chId != null &&
+            chId != widget.room.host.id &&
+            chId != widget.room.creatorUserId) {
           foundCoHost = UserModel.fromJson(uMap);
           break;
         }
@@ -294,7 +321,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
           (widget.room.creatorUserId == currentUser.id);
 
       if (isEffectiveHost) {
-        final isSuspendedOrHidden = state == AppLifecycleState.paused ||
+        final isSuspendedOrHidden =
+            state == AppLifecycleState.paused ||
             state == AppLifecycleState.detached ||
             state == AppLifecycleState.inactive ||
             state == AppLifecycleState.hidden;
@@ -489,8 +517,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
     });
 
     // Synchronously isolate gift & emoji rooms so frame 0 never shows previous room gifts
-    Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id);
-    Provider.of<EmojiReactionProvider>(context, listen: false).setActiveRoom(widget.room.id);
+    Provider.of<LiveGiftProvider>(
+      context,
+      listen: false,
+    ).setActiveRoom(widget.room.id);
+    Provider.of<EmojiReactionProvider>(
+      context,
+      listen: false,
+    ).setActiveRoom(widget.room.id);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final currentUser = context.read<AuthProvider>().currentUser;
@@ -582,7 +616,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
         if (!mounted) return;
         final inviterUser = data['inviterUser'] is Map
             ? Map<String, dynamic>.from(data['inviterUser'])
-            : (data['fromHost'] is Map ? Map<String, dynamic>.from(data['fromHost']) : <String, dynamic>{});
+            : (data['fromHost'] is Map
+                  ? Map<String, dynamic>.from(data['fromHost'])
+                  : <String, dynamic>{});
         final inviterName =
             inviterUser['name'] ??
             inviterUser['displayName'] ??
@@ -608,57 +644,75 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
       });
 
       // Item #48: Recipient Co-Host Invitation Listener
-      _coHostInviteSub = SocketService.instance.onCoHostInvitationReceived.listen((invitation) {
-        if (!mounted) return;
-        final myId = context.read<AuthProvider>().currentUser.id;
-        if (invitation.targetUserId != myId && invitation.recipientId != myId) return;
-        if (invitation.roomId != widget.room.id) return;
-        _showCoHostInvitationDialog(invitation);
-      });
+      _coHostInviteSub = SocketService.instance.onCoHostInvitationReceived
+          .listen((invitation) {
+            if (!mounted) return;
+            final myId = context.read<AuthProvider>().currentUser.id;
+            if (invitation.targetUserId != myId &&
+                invitation.recipientId != myId)
+              return;
+            if (invitation.roomId != widget.room.id) return;
+            _showCoHostInvitationDialog(invitation);
+          });
 
-      _coHostResponseSub = SocketService.instance.onRoomCoHostInviteResponse.listen((data) {
-        if (!mounted) return;
-        final accepted = data['accepted'] == true || data['status'] == 'accepted';
-        final name = data['userName'] ?? data['targetUserName'] ?? 'User';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(accepted ? '🎉 $name accepted the Co-Host invitation!' : 'ℹ️ $name declined the Co-Host invitation.'),
-            backgroundColor: accepted ? Colors.green : Colors.orange,
-          ),
-        );
-        if (accepted) {
-          final userMap = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : null;
-          final targetId = data['userId']?.toString() ?? data['targetUserId']?.toString();
-          if (userMap != null) {
-            setState(() {
-              _coHostUser = UserModel.fromJson(userMap);
-            });
-          } else if (targetId != null) {
-            setState(() {
-              _coHostUser = UserModel.fromJson({
-                'id': targetId,
-                'name': name,
-                'username': name,
-                'avatar': data['avatar'] ?? data['userAvatar'] ?? '',
-              });
-            });
-          }
-          _fetchInitialStageState();
-        } else {
-          if (mounted) {
-            setState(() {
-              _coHostUser = null;
-            });
-          }
-        }
-      });
+      _coHostResponseSub = SocketService.instance.onRoomCoHostInviteResponse
+          .listen((data) {
+            if (!mounted) return;
+            final accepted =
+                data['accepted'] == true || data['status'] == 'accepted';
+            final name = data['userName'] ?? data['targetUserName'] ?? 'User';
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  accepted
+                      ? '🎉 $name accepted the Co-Host invitation!'
+                      : 'ℹ️ $name declined the Co-Host invitation.',
+                ),
+                backgroundColor: accepted ? Colors.green : Colors.orange,
+              ),
+            );
+            if (accepted) {
+              final userMap = data['user'] is Map
+                  ? Map<String, dynamic>.from(data['user'] as Map)
+                  : null;
+              final targetId =
+                  data['userId']?.toString() ??
+                  data['targetUserId']?.toString();
+              if (userMap != null) {
+                setState(() {
+                  _coHostUser = UserModel.fromJson(userMap);
+                });
+              } else if (targetId != null) {
+                setState(() {
+                  _coHostUser = UserModel.fromJson({
+                    'id': targetId,
+                    'name': name,
+                    'username': name,
+                    'avatar': data['avatar'] ?? data['userAvatar'] ?? '',
+                  });
+                });
+              }
+              _fetchInitialStageState();
+            } else {
+              if (mounted) {
+                setState(() {
+                  _coHostUser = null;
+                });
+              }
+            }
+          });
 
       // Item #49: Authoritative Stage Synchronization with Versioning
       _fetchInitialStageState();
-      _stageUpdatedSub = SocketService.instance.onRoomStageUpdated.listen((data) {
+      _stageUpdatedSub = SocketService.instance.onRoomStageUpdated.listen((
+        data,
+      ) {
         if (!mounted) return;
-        final version = (data['version'] is num) ? (data['version'] as num).toInt() : int.tryParse(data['version']?.toString() ?? '0') ?? 0;
-        if (version > 0 && version < _stageVersion) return; // Suppress stale state
+        final version = (data['version'] is num)
+            ? (data['version'] as num).toInt()
+            : int.tryParse(data['version']?.toString() ?? '0') ?? 0;
+        if (version > 0 && version < _stageVersion)
+          return; // Suppress stale state
         if (version > 0) _stageVersion = version;
         _handleStageUpdatePayload(data);
       });
@@ -666,10 +720,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
       if (mounted) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final roomId = widget.room.id;
-          final hasPlayedSession = SvipEntryManager().hasPlayedForSession(roomId, currentUser.id);
-          if (!hasPlayedSession && (currentUser.isVip ||
-              (currentUser.nobleTitle != null &&
-                  currentUser.nobleTitle!.isNotEmpty))) {
+          final hasPlayedSession = SvipEntryManager().hasPlayedForSession(
+            roomId,
+            currentUser.id,
+          );
+          if (!hasPlayedSession &&
+              (currentUser.isVip ||
+                  (currentUser.nobleTitle != null &&
+                      currentUser.nobleTitle!.isNotEmpty))) {
             SvipEntryManager().markPlayedForSession(roomId, currentUser.id);
             SvipEntryManager().showEntry(currentUser);
           }
@@ -967,8 +1025,14 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
     Widget? videoWidgetLeft;
     Widget? videoWidgetRight;
 
-    final myUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
-    final isMeCoHost = _coHostUser != null && (_coHostUser!.id == myUser.id || _coHostUser!.username == myUser.username);
+    final myUser = Provider.of<AuthProvider>(
+      context,
+      listen: false,
+    ).currentUser;
+    final isMeCoHost =
+        _coHostUser != null &&
+        (_coHostUser!.id == myUser.id ||
+            _coHostUser!.username == myUser.username);
 
     if (isHost) {
       // Room Host: Left is host local preview (uid: 0), Right is remote Co-Host
@@ -1025,9 +1089,12 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               ),
             )
           : null;
-      
+
       final coHostRemoteUid = remoteUids.length > 1
-          ? remoteUids.firstWhere((uid) => uid != firstRemoteUid, orElse: () => remoteUids[1])
+          ? remoteUids.firstWhere(
+              (uid) => uid != firstRemoteUid,
+              orElse: () => remoteUids[1],
+            )
           : null;
 
       videoWidgetRight = coHostRemoteUid != null && agora.engine != null
@@ -1293,18 +1360,46 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
         (isHost && creatorId == pk.hostB.id);
 
     final agoraService = AgoraRtcService();
-    final remoteUids = agoraService.remoteUids.toList();
-    final firstRemoteUid =
-        _remoteHostUid ?? (remoteUids.isNotEmpty ? remoteUids.first : null);
-    final secondRemoteUid = remoteUids.length > 1
-        ? remoteUids[1]
-        : (remoteUids.isNotEmpty && remoteUids.first != _remoteHostUid
-              ? remoteUids.first
-              : null);
+    final localUid =
+        agoraService.pkOpponentLocalUid ??
+        agoraService.currentUid ??
+        (currentUserId.isNotEmpty
+            ? AgoraRtcService.deriveUid(currentUserId)
+            : 0);
 
-    // Opponent channel and UID resolution
-    final opponentChannel = agoraService.pkOpponentChannel ?? (isHostA ? (pk.roomBId.isNotEmpty ? pk.roomBId : activeRoom.id) : (pk.roomAId.isNotEmpty ? pk.roomAId : activeRoom.id));
-    final opponentRemoteUid = agoraService.pkOpponentUid ?? firstRemoteUid ?? 1;
+    // Identify whether current viewer belongs to Room A or Room B
+    final isRoomA =
+        (activeRoom.id == pk.roomAId) ||
+        (pk.agoraRelay != null &&
+            (activeRoom.agoraChannelName == pk.agoraRelay!.channelA ||
+                activeRoom.id == pk.agoraRelay!.channelA)) ||
+        (creatorId == pk.hostA.id);
+
+    // Authoritative host UIDs
+    final hostAUid =
+        pk.agoraRelay?.hostAUid ?? AgoraRtcService.deriveUid(pk.hostA.id);
+    final hostBUid =
+        pk.agoraRelay?.hostBUid ?? AgoraRtcService.deriveUid(pk.hostB.id);
+
+    // Opponent room and channel resolution
+    final opponentRoomId = isRoomA ? pk.roomBId : pk.roomAId;
+    final opponentChannel =
+        agoraService.pkOpponentChannel ??
+        (isRoomA
+            ? (pk.agoraRelay?.channelB.isNotEmpty == true
+                  ? pk.agoraRelay!.channelB
+                  : (opponentRoomId.startsWith('room_')
+                        ? opponentRoomId
+                        : 'room_${opponentRoomId.replaceAll('-', '')}'))
+            : (pk.agoraRelay?.channelA.isNotEmpty == true
+                  ? pk.agoraRelay!.channelA
+                  : (opponentRoomId.startsWith('room_')
+                        ? opponentRoomId
+                        : 'room_${opponentRoomId.replaceAll('-', '')}')));
+
+    final remoteUids = agoraService.remoteUids.toList();
+    final fallbackRemoteUid =
+        _remoteHostUid ?? (remoteUids.isNotEmpty ? remoteUids.first : null);
 
     Widget? videoWidgetA;
     Widget? videoWidgetB;
@@ -1318,13 +1413,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               ),
             )
           : null;
-      videoWidgetB = agoraService.engine != null && opponentRemoteUid != null
+      videoWidgetB = agoraService.engine != null
           ? AgoraVideoView(
               controller: VideoViewController.remote(
                 rtcEngine: agoraService.engine!,
-                canvas: VideoCanvas(uid: opponentRemoteUid),
+                canvas: VideoCanvas(
+                  uid: agoraService.pkOpponentUid ?? hostBUid,
+                ),
                 connection: RtcConnection(
                   channelId: opponentChannel,
+                  localUid: localUid,
                 ),
               ),
             )
@@ -1338,40 +1436,80 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               ),
             )
           : null;
-      videoWidgetA = agoraService.engine != null && opponentRemoteUid != null
+      videoWidgetA = agoraService.engine != null
           ? AgoraVideoView(
               controller: VideoViewController.remote(
                 rtcEngine: agoraService.engine!,
-                canvas: VideoCanvas(uid: opponentRemoteUid),
+                canvas: VideoCanvas(
+                  uid: agoraService.pkOpponentUid ?? hostAUid,
+                ),
                 connection: RtcConnection(
                   channelId: opponentChannel,
+                  localUid: localUid,
                 ),
               ),
             )
           : null;
     } else {
-      videoWidgetA = firstRemoteUid != null && agoraService.engine != null
-          ? AgoraVideoView(
-              controller: VideoViewController.remote(
-                rtcEngine: agoraService.engine!,
-                canvas: VideoCanvas(uid: firstRemoteUid),
-                connection: RtcConnection(
-                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+      if (isRoomA) {
+        final effectiveHostAUid = hostAUid > 0
+            ? hostAUid
+            : (fallbackRemoteUid ?? 1);
+        final effectiveHostBUid =
+            agoraService.pkOpponentUid ?? (hostBUid > 0 ? hostBUid : 1);
+        videoWidgetA = agoraService.engine != null
+            ? AgoraVideoView(
+                controller: VideoViewController.remote(
+                  rtcEngine: agoraService.engine!,
+                  canvas: VideoCanvas(uid: effectiveHostAUid),
+                  connection: RtcConnection(
+                    channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                  ),
                 ),
-              ),
-            )
-          : null;
-      videoWidgetB = secondRemoteUid != null && agoraService.engine != null
-          ? AgoraVideoView(
-              controller: VideoViewController.remote(
-                rtcEngine: agoraService.engine!,
-                canvas: VideoCanvas(uid: secondRemoteUid),
-                connection: RtcConnection(
-                  channelId: opponentChannel,
+              )
+            : null;
+        videoWidgetB = agoraService.engine != null
+            ? AgoraVideoView(
+                controller: VideoViewController.remote(
+                  rtcEngine: agoraService.engine!,
+                  canvas: VideoCanvas(uid: effectiveHostBUid),
+                  connection: RtcConnection(
+                    channelId: opponentChannel,
+                    localUid: localUid,
+                  ),
                 ),
-              ),
-            )
-          : null;
+              )
+            : null;
+      } else {
+        final effectiveHostBUid = hostBUid > 0
+            ? hostBUid
+            : (fallbackRemoteUid ?? 1);
+        final effectiveHostAUid =
+            agoraService.pkOpponentUid ?? (hostAUid > 0 ? hostAUid : 1);
+        videoWidgetB = agoraService.engine != null
+            ? AgoraVideoView(
+                controller: VideoViewController.remote(
+                  rtcEngine: agoraService.engine!,
+                  canvas: VideoCanvas(uid: effectiveHostBUid),
+                  connection: RtcConnection(
+                    channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                  ),
+                ),
+              )
+            : null;
+        videoWidgetA = agoraService.engine != null
+            ? AgoraVideoView(
+                controller: VideoViewController.remote(
+                  rtcEngine: agoraService.engine!,
+                  canvas: VideoCanvas(uid: effectiveHostAUid),
+                  connection: RtcConnection(
+                    channelId: opponentChannel,
+                    localUid: localUid,
+                  ),
+                ),
+              )
+            : null;
+      }
     }
 
     final scoreA = pk.scoreA;
@@ -1484,8 +1622,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               ),
             ),
             // Layer video stream over avatar
-            if (videoWidget != null)
-              videoWidget,
+            if (videoWidget != null) videoWidget,
 
             // Top-down & Bottom-up subtle vignettes
             Container(
@@ -1639,15 +1776,15 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
           final currentUser = context.read<AuthProvider>().currentUser;
           final liveGiftProv = context.read<LiveGiftProvider>();
           final liveProv = context.read<LiveProvider>();
-          final txId = liveGiftProv.lastTransactionId ?? 'tx_pk_${DateTime.now().millisecondsSinceEpoch}';
-          final giftPts = (gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice);
+          final txId =
+              liveGiftProv.lastTransactionId ??
+              'tx_pk_${DateTime.now().millisecondsSinceEpoch}';
+          final giftPts = (gift.priceCoins > 0
+              ? gift.priceCoins
+              : gift.diamondPrice);
 
           liveProv.addPkScore(forHostA, giftPts);
-          liveProv.sendGift(
-            gift,
-            currentUser.name,
-            transactionId: txId,
-          );
+          liveProv.sendGift(gift, currentUser.name, transactionId: txId);
           _giftOverlayKey.currentState?.playGiftAnimation(
             gift,
             senderName: currentUser.name,
@@ -1675,7 +1812,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
             'gift': gift.toJson(),
           });
 
-          final opponentRoomId = (pk.hostA.id == currentUser.id) ? targetRoomB : targetRoomA;
+          final opponentRoomId = (pk.hostA.id == currentUser.id)
+              ? targetRoomB
+              : targetRoomA;
           if (opponentRoomId.isNotEmpty) {
             SocketService.instance.emit('room:gift_sent', {
               'roomId': opponentRoomId,
@@ -2169,7 +2308,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
     try {
       final giftProv = Provider.of<LiveGiftProvider>(context, listen: false);
       giftProv.clearRoom();
-      final emojiProv = Provider.of<EmojiReactionProvider>(context, listen: false);
+      final emojiProv = Provider.of<EmojiReactionProvider>(
+        context,
+        listen: false,
+      );
       emojiProv.clearRoom();
     } catch (_) {}
     super.dispose();
@@ -2275,7 +2417,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                   true,
                 );
               } catch (e) {
-                if (mounted && !e.toString().toLowerCase().contains('already accepted')) {
+                if (mounted &&
+                    !e.toString().toLowerCase().contains('already accepted')) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Failed to accept PK: $e')),
                   );
@@ -3073,7 +3216,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                                   padding: const EdgeInsets.only(right: 8),
                                   child: GestureDetector(
                                     onTap: () {
-                                      final liveProv = Provider.of<LiveProvider>(context, listen: false);
+                                      final liveProv =
+                                          Provider.of<LiveProvider>(
+                                            context,
+                                            listen: false,
+                                          );
                                       final updatedRoom = widget.room.copyWith(
                                         totalGifts: liveProv.giftPoints,
                                         giftsReceivedCoins: liveProv.giftPoints,
@@ -3770,9 +3917,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               top: MediaQuery.of(context).padding.top + 8,
               left: 0,
               right: 0,
-              child: const Center(
-                child: WorldLuckyBagBanner(),
-              ),
+              child: const Center(child: WorldLuckyBagBanner()),
             ),
           ],
         ),
@@ -4126,7 +4271,8 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                           );
                           if (result != null && mounted) {
                             UserModel? opponent;
-                            if (result is Map && result['opponent'] is UserModel) {
+                            if (result is Map &&
+                                result['opponent'] is UserModel) {
                               opponent = result['opponent'] as UserModel;
                             }
                             if (opponent != null) {
@@ -4140,7 +4286,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                             } else {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  content: Text('No real opponent selected. PK was not started.'),
+                                  content: Text(
+                                    'No real opponent selected. PK was not started.',
+                                  ),
                                   backgroundColor: Colors.orangeAccent,
                                 ),
                               );
@@ -4406,7 +4554,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                                             },
                                           );
                                           if (mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
                                               const SnackBar(
                                                 content: Text(
                                                   '🎉 YouTube playback synchronized with viewers!',
@@ -4417,12 +4567,15 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                                           }
                                         } catch (e) {
                                           if (mounted) {
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
                                               SnackBar(
                                                 content: Text(
                                                   'Failed to sync YouTube: $e',
                                                 ),
-                                                backgroundColor: Colors.redAccent,
+                                                backgroundColor:
+                                                    Colors.redAccent,
                                               ),
                                             );
                                           }
