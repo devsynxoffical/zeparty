@@ -157,6 +157,8 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   bool _isLoadingHonor = false;
   bool _hasLoadedHonor = false;
   String _selectedHonorCategory = 'All';
+  Set<String>? _equippedMedalIds;
+  bool _hasExplicitMedalSelection = false;
 
   bool get _isMe {
     final currentId = context.read<AuthProvider>().currentUser.id;
@@ -181,6 +183,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     _loadUser();
     _loadReceivedGifts();
     _loadHonorAssets();
+    _loadEquippedMedals();
 
     _userPresenceSub = SocketService.instance.onUserPresence.listen((data) {
       final targetUserId = data['userId']?.toString();
@@ -354,6 +357,20 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
       }
     } catch (_) {
       if (mounted) setState(() => _isLoadingHonor = false);
+    }
+  }
+
+  Future<void> _loadEquippedMedals() async {
+    final targetId = _user?.id ?? widget.userId;
+    if (targetId.isNotEmpty) {
+      final hasSaved = await MedalManager.hasSavedEquippedMedals(targetId);
+      final ids = await MedalManager.getEquippedMedalIds(targetId);
+      if (mounted) {
+        setState(() {
+          _hasExplicitMedalSelection = hasSaved;
+          _equippedMedalIds = ids;
+        });
+      }
     }
   }
 
@@ -2367,14 +2384,20 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   }
 
   // MEDAL GALLERY (Header + Medal Badges)
-  // Shows only medals the user has actually earned (isEarned == true)
+  // Shows ONLY medals the user has actually EQUIPPED
   Widget _buildMedalGallery(bool isDark) {
     final primaryText = AppColors.getTextPrimary(isDark);
-    // Filter earned medals based on authoritative entitlement (No dummy data)
     final targetUser = _user ?? context.read<AuthProvider>().currentUser;
-    final allResolvedMedals = MedalModel.resolveUserMedals(targetUser, honorAssets: _honorAssets);
-    final earnedMedals = allResolvedMedals.where((m) => m.isEarned).toList();
-    final medalsCount = earnedMedals.length;
+    final allResolvedMedals = MedalModel.resolveUserMedals(
+      targetUser,
+      honorAssets: _honorAssets,
+      equippedMedalIds: _equippedMedalIds,
+      hasExplicitEquippedSelection: _hasExplicitMedalSelection,
+    );
+    // ON PROFILE SCREEN ONLY EQUIPPED MEDALS SHOW
+    final equippedMedals = allResolvedMedals.where((m) => m.isEarned && m.isEquipped).toList();
+    final totalEarnedCount = allResolvedMedals.where((m) => m.isEarned).length;
+    final equippedCount = equippedMedals.length;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -2393,14 +2416,17 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                 ),
               ),
               GestureDetector(
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const MedalScreen()),
-                ),
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MedalScreen()),
+                  );
+                  _loadEquippedMedals();
+                },
                 child: Row(
                   children: [
                     Text(
-                      '$medalsCount medals',
+                      equippedCount > 0 ? '$equippedCount equipped' : '$totalEarnedCount medals',
                       style: const TextStyle(
                         fontSize: 13,
                         color: Color(0xFF8C38FF),
@@ -2420,7 +2446,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
           ),
           const SizedBox(height: 14),
 
-          if (medalsCount == 0)
+          if (equippedCount == 0)
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 20),
@@ -2433,7 +2459,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
               ),
               child: Center(
                 child: Text(
-                  'No medals assigned yet',
+                  'No medals equipped yet',
                   style: TextStyle(
                     fontSize: 13,
                     color: AppColors.getTextSecondary(isDark),
@@ -2442,11 +2468,16 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
               ),
             )
           else
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: earnedMedals.take(5).map((medal) {
-                return _buildMedalCircleAsset(medal);
-              }).toList(),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: equippedMedals.map((medal) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 14),
+                    child: _buildMedalCircleAsset(medal),
+                  );
+                }).toList(),
+              ),
             ),
         ],
       ),

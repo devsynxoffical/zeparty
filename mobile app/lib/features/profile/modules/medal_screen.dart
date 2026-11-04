@@ -32,7 +32,15 @@ class _MedalScreenState extends State<MedalScreen> {
       honorAssets = await SocialRepository.instance.getUserHonorAssets(user.id);
     } catch (_) {}
 
-    final realMedals = MedalModel.resolveUserMedals(user, honorAssets: honorAssets);
+    final hasSaved = await MedalManager.hasSavedEquippedMedals(user.id);
+    final equippedIds = await MedalManager.getEquippedMedalIds(user.id);
+
+    final realMedals = MedalModel.resolveUserMedals(
+      user,
+      honorAssets: honorAssets,
+      equippedMedalIds: equippedIds,
+      hasExplicitEquippedSelection: hasSaved,
+    );
     if (mounted) {
       setState(() {
         _medals = realMedals;
@@ -41,31 +49,35 @@ class _MedalScreenState extends State<MedalScreen> {
     }
   }
 
-  void _toggleEquip(int index) {
+  void _toggleEquip(int index) async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final user = auth.currentUser;
+    final selectedMedal = _medals[index];
+    if (!selectedMedal.isEarned) return;
+
+    final updated = List<MedalModel>.from(_medals);
+    final willEquip = !selectedMedal.isEquipped;
+
+    updated[index] = selectedMedal.copyWith(isEquipped: willEquip);
+
     setState(() {
-      final selectedMedal = _medals[index];
-      if (!selectedMedal.isEarned) return;
-
-      // Unequip currently equipped medal if any
-      for (int i = 0; i < _medals.length; i++) {
-        if (_medals[i].isEquipped && i != index) {
-          _medals[i] = _medals[i].copyWith(isEquipped: false);
-        }
-      }
-
-      // Toggle selected
-      _medals[index] = selectedMedal.copyWith(isEquipped: !selectedMedal.isEquipped);
+      _medals = updated;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(_medals[index].isEquipped 
-          ? 'Equipped ${_medals[index].name}' 
-          : 'Unequipped ${_medals[index].name}'
+    final equippedIds = updated.where((m) => m.isEarned && m.isEquipped).map((m) => m.id).toSet();
+    await MedalManager.saveEquippedMedalIds(user.id, equippedIds);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(willEquip 
+            ? 'Equipped ${selectedMedal.name}' 
+            : 'Unequipped ${selectedMedal.name}'
+          ),
+          duration: const Duration(seconds: 1),
         ),
-        duration: const Duration(seconds: 1),
-      ),
-    );
+      );
+    }
   }
 
   IconData _getIcon(String key) {

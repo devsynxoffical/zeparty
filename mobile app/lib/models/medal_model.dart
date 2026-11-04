@@ -1,5 +1,39 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'user_model.dart';
 import 'user_asset_model.dart';
+
+class MedalManager {
+  static const String _prefPrefix = 'equipped_medal_ids_';
+
+  /// Get the set of equipped medal IDs for a given user
+  static Future<Set<String>> getEquippedMedalIds(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList('$_prefPrefix$userId');
+      if (list != null) {
+        return list.toSet();
+      }
+    } catch (_) {}
+    return <String>{};
+  }
+
+  /// Check if user has explicitly saved equipped medals before
+  static Future<bool> hasSavedEquippedMedals(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.containsKey('$_prefPrefix$userId');
+    } catch (_) {}
+    return false;
+  }
+
+  /// Save equipped medal IDs for a given user
+  static Future<void> saveEquippedMedalIds(String userId, Set<String> equippedIds) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList('$_prefPrefix$userId', equippedIds.toList());
+    } catch (_) {}
+  }
+}
 
 class MedalModel {
   final String id;
@@ -153,8 +187,15 @@ class MedalModel {
   /// Real data: Only returns true if the user actually earned/unlocked the medal
   bool isUnlockedForLevel(int userLevel) => isEarned;
 
-  /// Authoritative resolver that maps user entitlement to real earned medals without fake/dummy unlocks
-  static List<MedalModel> resolveUserMedals(UserModel user, {List<UserAssetModel>? honorAssets}) {
+  /// Authoritative resolver that maps user entitlement to real earned medals.
+  /// If [equippedMedalIds] is provided, only matching medals have [isEquipped = true].
+  /// If not yet explicitly set, defaults the user's active noble medal (if any) as equipped.
+  static List<MedalModel> resolveUserMedals(
+    UserModel user, {
+    List<UserAssetModel>? honorAssets,
+    Set<String>? equippedMedalIds,
+    bool hasExplicitEquippedSelection = false,
+  }) {
     final nobleTitle = user.nobleTitle?.toLowerCase().trim() ?? '';
     final isKing = nobleTitle.contains('king');
     final isEmperor = nobleTitle.contains('emperor');
@@ -168,6 +209,30 @@ class MedalModel {
     final isBd = user.isBd;
     final isHost = user.isHost;
     final isSvip = user.svipLevel > 0 || user.isVip;
+
+    // If user has not explicitly configured equipped medals, default their active noble medal as equipped
+    String? defaultEquippedId;
+    if (!hasExplicitEquippedSelection && (equippedMedalIds == null || equippedMedalIds.isEmpty)) {
+      if (isKing) {
+        defaultEquippedId = 'noble_king';
+      } else if (isEmperor) {
+        defaultEquippedId = 'noble_emperor';
+      } else if (isDuke) {
+        defaultEquippedId = 'noble_duke';
+      } else if (isMarquis) {
+        defaultEquippedId = 'noble_marquis';
+      } else if (isCount) {
+        defaultEquippedId = 'noble_count';
+      } else if (isViscount) {
+        defaultEquippedId = 'noble_viscount';
+      } else if (isBaron) {
+        defaultEquippedId = 'noble_baron';
+      } else if (isMerchant) {
+        defaultEquippedId = 'role_merchant';
+      } else if (isSeller) {
+        defaultEquippedId = 'role_seller';
+      }
+    }
 
     final resolved = defaultMedals.map((m) {
       bool earned = false;
@@ -216,8 +281,15 @@ class MedalModel {
           break;
       }
 
+      final bool equipped = earned && (
+        hasExplicitEquippedSelection || (equippedMedalIds != null && equippedMedalIds.isNotEmpty)
+            ? (equippedMedalIds != null && equippedMedalIds.contains(m.id))
+            : (defaultEquippedId == m.id)
+      );
+
       return m.copyWith(
         isEarned: earned,
+        isEquipped: equipped,
         iconUrl: icon,
       );
     }).toList();
@@ -231,14 +303,21 @@ class MedalModel {
             a.assetType.toUpperCase().contains('MEDAL') ||
             a.assetType.toUpperCase().contains('BADGE');
         if (!isMedalOrBadge) continue;
-        if (!resolved.any((rm) => rm.id == ha.assetId || rm.id == ha.id)) {
+        final assetMedalId = ha.assetId.isNotEmpty ? ha.assetId : ha.id;
+        if (!resolved.any((rm) => rm.id == assetMedalId)) {
+          final isEarned = !ha.isExpired;
+          final bool equipped = isEarned && (
+            hasExplicitEquippedSelection || (equippedMedalIds != null && equippedMedalIds.isNotEmpty)
+                ? (equippedMedalIds != null && equippedMedalIds.contains(assetMedalId))
+                : ha.isEquipped
+          );
           resolved.add(MedalModel(
-            id: ha.assetId.isNotEmpty ? ha.assetId : ha.id,
+            id: assetMedalId,
             name: a.name,
             description: 'Exclusive Honor Award granted to your profile.',
             iconUrl: a.imageUrl,
-            isEarned: !ha.isExpired,
-            isEquipped: ha.isEquipped,
+            isEarned: isEarned,
+            isEquipped: equipped,
             category: 'Honor',
             requiredLevel: 1,
           ));
