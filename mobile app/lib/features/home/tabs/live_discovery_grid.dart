@@ -1,3 +1,4 @@
+import '../../../providers/live_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../../core/theme/app_colors.dart';
@@ -102,7 +103,55 @@ class LiveDiscoveryGrid extends StatelessWidget {
                     ),
                   );
                 } else {
+                  final liveProv = context.read<LiveProvider>();
                   final currentUser = context.read<AuthProvider>().currentUser;
+                  final isLiveHost = liveProv.activeRoom != null && (liveProv.activeRoom!.host.id == currentUser.id || liveProv.activeRoom!.creatorUserId == currentUser.id);
+                  if (isLiveHost) {
+                    showDialog(
+                      context: context,
+                      builder: (dlgCtx) => AlertDialog(
+                        backgroundColor: const Color(0xFF1E1938),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        title: const Text('Confirm', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        content: const Text(
+                          'End your Live broadcast and join this Party room?',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(dlgCtx),
+                            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                          ),
+                          ElevatedButton(
+                            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFE91E63)),
+                            onPressed: () async {
+                              Navigator.pop(dlgCtx);
+                              await liveProv.closeRoom();
+                              if (context.mounted) {
+                                final currentUser = context.read<AuthProvider>().currentUser;
+                                RoomLockManager.instance.checkAndEnterRoom(
+                                  context,
+                                  room: room,
+                                  currentUser: currentUser,
+                                  onAdmitted: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => LivePartyRoomScreen(room: room),
+                                      ),
+                                    );
+                                  },
+                                );
+                              }
+                            },
+                            child: const Text('End Live and Join', style: TextStyle(color: Colors.white)),
+                          ),
+                        ],
+                      ),
+                    );
+                    return;
+                  }
+
                   RoomLockManager.instance.checkAndEnterRoom(
                     context,
                     room: room,

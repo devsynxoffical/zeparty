@@ -1302,6 +1302,10 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               ? remoteUids.first
               : null);
 
+    // Opponent channel and UID resolution
+    final opponentChannel = agoraService.pkOpponentChannel ?? (isHostA ? (pk.roomBId.isNotEmpty ? pk.roomBId : activeRoom.id) : (pk.roomAId.isNotEmpty ? pk.roomAId : activeRoom.id));
+    final opponentRemoteUid = agoraService.pkOpponentUid ?? firstRemoteUid ?? 1;
+
     Widget? videoWidgetA;
     Widget? videoWidgetB;
 
@@ -1314,13 +1318,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               ),
             )
           : null;
-      videoWidgetB = firstRemoteUid != null && agoraService.engine != null
+      videoWidgetB = agoraService.engine != null && opponentRemoteUid != null
           ? AgoraVideoView(
               controller: VideoViewController.remote(
                 rtcEngine: agoraService.engine!,
-                canvas: VideoCanvas(uid: firstRemoteUid),
+                canvas: VideoCanvas(uid: opponentRemoteUid),
                 connection: RtcConnection(
-                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                  channelId: opponentChannel,
                 ),
               ),
             )
@@ -1334,13 +1338,13 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
               ),
             )
           : null;
-      videoWidgetA = firstRemoteUid != null && agoraService.engine != null
+      videoWidgetA = agoraService.engine != null && opponentRemoteUid != null
           ? AgoraVideoView(
               controller: VideoViewController.remote(
                 rtcEngine: agoraService.engine!,
-                canvas: VideoCanvas(uid: firstRemoteUid),
+                canvas: VideoCanvas(uid: opponentRemoteUid),
                 connection: RtcConnection(
-                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                  channelId: opponentChannel,
                 ),
               ),
             )
@@ -1363,7 +1367,7 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                 rtcEngine: agoraService.engine!,
                 canvas: VideoCanvas(uid: secondRemoteUid),
                 connection: RtcConnection(
-                  channelId: activeRoom.agoraChannelName ?? activeRoom.id,
+                  channelId: opponentChannel,
                 ),
               ),
             )
@@ -1464,22 +1468,24 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Video or Avatar Background
-            if (videoWidget != null)
-              videoWidget
-            else
-              Image.network(
-                avatar,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  color: const Color(0xFF1E1035),
-                  child: const Icon(
-                    Icons.person,
-                    color: Colors.white54,
-                    size: 48,
+            // Always display authentic host avatar as fallback background
+            Image.network(
+              avatar,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                color: const Color(0xFF1E1035),
+                child: Center(
+                  child: UserAvatar(
+                    imageUrl: avatar,
+                    name: host.name?.toString() ?? 'Host',
+                    radius: 40,
                   ),
                 ),
               ),
+            ),
+            // Layer video stream over avatar
+            if (videoWidget != null)
+              videoWidget,
 
             // Top-down & Bottom-up subtle vignettes
             Container(
@@ -1632,17 +1638,53 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
         onGiftSent: (gift) {
           final currentUser = context.read<AuthProvider>().currentUser;
           final liveGiftProv = context.read<LiveGiftProvider>();
-          context.read<LiveProvider>().addPkScore(forHostA, gift.diamondPrice);
-          context.read<LiveProvider>().sendGift(
+          final liveProv = context.read<LiveProvider>();
+          final txId = liveGiftProv.lastTransactionId ?? 'tx_pk_${DateTime.now().millisecondsSinceEpoch}';
+          final giftPts = (gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice);
+
+          liveProv.addPkScore(forHostA, giftPts);
+          liveProv.sendGift(
             gift,
             currentUser.name,
-            transactionId: liveGiftProv.lastTransactionId,
+            transactionId: txId,
           );
           _giftOverlayKey.currentState?.playGiftAnimation(
             gift,
             senderName: currentUser.name,
-            transactionId: liveGiftProv.lastTransactionId,
+            transactionId: txId,
           );
+
+          // Real-time cross-room PK score and gift broadcast
+          final curScoreA = liveProv.activePkBattle?.scoreA ?? 0;
+          final curScoreB = liveProv.activePkBattle?.scoreB ?? 0;
+          final targetRoomA = pk.roomAId;
+          final targetRoomB = pk.roomBId;
+
+          SocketService.instance.emit('pk:score_update', {
+            'battleId': pk.id,
+            'pkId': pk.id,
+            'scoreA': curScoreA,
+            'scoreB': curScoreB,
+            'hostAScore': curScoreA,
+            'hostBScore': curScoreB,
+            'roomAId': targetRoomA,
+            'roomBId': targetRoomB,
+            'addedScore': giftPts,
+            'forHostA': forHostA,
+            'sender': currentUser.toJson(),
+            'gift': gift.toJson(),
+          });
+
+          final opponentRoomId = (pk.hostA.id == currentUser.id) ? targetRoomB : targetRoomA;
+          if (opponentRoomId.isNotEmpty) {
+            SocketService.instance.emit('room:gift_sent', {
+              'roomId': opponentRoomId,
+              'sender': currentUser.toJson(),
+              'gift': gift.toJson(),
+              'quantity': 1,
+              'transactionId': txId,
+            });
+          }
         },
       ),
     );

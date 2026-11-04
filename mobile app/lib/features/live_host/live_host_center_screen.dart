@@ -312,6 +312,7 @@ class _LiveHostCenterScreenState extends State<LiveHostCenterScreen>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               const Icon(
                                 Icons.calendar_month,
@@ -330,15 +331,21 @@ class _LiveHostCenterScreenState extends State<LiveHostCenterScreen>
                               ),
                             ],
                           ),
-                          Text(
-                            targetSummary?.cycleDateRange ??
-                                (targetSummary?.cycleIdentifier ??
-                                    'Cycle 1-10'),
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 10,
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              targetSummary?.cycleDateRange ??
+                                  (targetSummary?.cycleIdentifier ??
+                                      'Cycle 1-10'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 10,
+                              ),
                             ),
                           ),
+                          const SizedBox(width: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 6,
@@ -365,23 +372,32 @@ class _LiveHostCenterScreenState extends State<LiveHostCenterScreen>
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Target Achieved: $achievedCoins 🪙',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                        Flexible(
+                          child: Text(
+                            'Target Achieved: $achievedCoins 🪙',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                        Text(
-                          targetSummary?.nextTier != null
-                              ? 'Next Target: $nextTargetCoins 🪙'
-                              : (nextTargetCoins > achievedCoins
-                                    ? 'Target: $nextTargetCoins 🪙'
-                                    : 'MAX LEVEL'),
-                          style: const TextStyle(
-                            color: Colors.amberAccent,
-                            fontSize: 11,
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            targetSummary?.nextTier != null
+                                ? 'Next Target: $nextTargetCoins 🪙'
+                                : (nextTargetCoins > achievedCoins
+                                      ? 'Target: $nextTargetCoins 🪙'
+                                      : 'MAX LEVEL'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.amberAccent,
+                              fontSize: 11,
+                            ),
                           ),
                         ),
                       ],

@@ -223,13 +223,13 @@ class _ChatBubbleState extends State<ChatBubble> {
             ? const EdgeInsets.all(4)
             : (hasCustomBubble
                 ? (widget.isMe
-                    ? const EdgeInsets.fromLTRB(36, 16, 42, 14)
-                    : const EdgeInsets.fromLTRB(42, 16, 36, 14))
+                    ? const EdgeInsets.fromLTRB(26, 12, 28, 10)
+                    : const EdgeInsets.fromLTRB(28, 12, 26, 10))
                 : const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
         constraints: BoxConstraints(
-          minWidth: hasCustomBubble ? 140 : 0,
-          minHeight: hasCustomBubble ? 54 : 0,
-          maxWidth: MediaQuery.of(context).size.width * 0.78,
+          minWidth: hasCustomBubble ? 130 : 0,
+          minHeight: hasCustomBubble ? 48 : 0,
+          maxWidth: MediaQuery.of(context).size.width * 0.82,
         ),
         decoration: BoxDecoration(
           color: hasCustomBubble
@@ -311,9 +311,9 @@ class _ChatBubbleState extends State<ChatBubble> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Container(
-                        width: 52,
-                        height: 52,
-                        padding: const EdgeInsets.all(4),
+                        width: 46,
+                        height: 46,
+                        padding: const EdgeInsets.all(3),
                         decoration: BoxDecoration(
                           color: Colors.purple.withValues(alpha: 0.15),
                           shape: BoxShape.circle,
@@ -321,44 +321,53 @@ class _ChatBubbleState extends State<ChatBubble> {
                         ),
                         child: Center(child: artworkWidget),
                       ),
-                      const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            matchedGift != null ? '🎁 Sent ${matchedGift.name}' : widget.message.text,
-                            style: TextStyle(
-                              color: isDark ? Colors.amberAccent : Colors.deepPurple,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              matchedGift != null ? '🎁 Sent ${matchedGift.name}' : widget.message.text,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: isDark ? Colors.amberAccent : Colors.deepPurple,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 3),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.purpleAccent.withValues(alpha: 0.2),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.monetization_on_rounded, size: 12, color: Colors.amber),
-                                const SizedBox(width: 4),
-                                Text(
-                                  giftCoinPrice != null && giftCoinPrice > 0
-                                      ? '$giftCoinPrice Coins'
-                                      : 'Gift Sent',
-                                  style: const TextStyle(
-                                    color: Colors.purpleAccent,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
+                            const SizedBox(height: 3),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.purpleAccent.withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.monetization_on_rounded, size: 12, color: Colors.amber),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    child: Text(
+                                      giftCoinPrice != null && giftCoinPrice > 0
+                                          ? '$giftCoinPrice Coins'
+                                          : 'Gift Sent',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.purpleAccent,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ],
                   );

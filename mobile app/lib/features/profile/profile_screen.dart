@@ -762,13 +762,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final liveHostApp = liveHostProv.getApplicationByUserId(user.id);
     final hasLiveHostAccess = user.hasLiveHostAccess || user.isHost || user.role == UserRole.host || liveHostProv.activeLiveHost != null || liveHostApp?.status == 'Approved';
 
-    final isBdAuthorized = user.role == UserRole.bd || user.role == UserRole.admin;
+    final isBdAuthorized = user.isBd ||
+        user.role == UserRole.bd ||
+        user.role == UserRole.admin ||
+        user.badge.toLowerCase().contains('bd') ||
+        user.customTitles.any((t) => t.toLowerCase().contains('bd'));
     final isSellerAuthorized = user.isSeller ||
         user.role == UserRole.seller ||
         user.role == UserRole.admin ||
         user.badge.toLowerCase().contains('seller') ||
         user.customTitles.any((t) => t.toLowerCase().contains('seller'));
-    final isMerchantAuthorized = user.role == UserRole.admin;
+    final isMerchantAuthorized = user.isMerchant ||
+        user.badge.toLowerCase().contains('merchant') ||
+        user.customTitles.any((t) => t.toLowerCase().contains('merchant')) ||
+        user.role == UserRole.admin;
     final isAdminAuthorized = user.role == UserRole.admin;
 
     final List<Map<String, dynamic>> features = [
@@ -837,12 +844,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }
         },
       },
-      {
-        'title': 'Host Center',
-        'imagePath': 'assets/images/profile_host_center.png',
-        'badge': hasAudioHostAccess ? 'AUDIO' : null,
-        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => HostCenterScreen())),
-      },
       if (isBdAuthorized)
         {
           'title': 'BD Center',
@@ -850,6 +851,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
           'badge': 'BD',
           'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => const BDCenterDashboardScreen())),
         },
+      {
+        'title': 'Host Center',
+        'imagePath': 'assets/images/profile_host_center.png',
+        'badge': hasAudioHostAccess ? 'AUDIO' : null,
+        'onTap': () => Navigator.push(context, MaterialPageRoute(builder: (c) => HostCenterScreen())),
+      },
       {
         'title': hasLiveHostAccess ? 'Live Host Center' : 'Become a Live Host',
         'imagePath': 'assets/images/card_vip.jpg',

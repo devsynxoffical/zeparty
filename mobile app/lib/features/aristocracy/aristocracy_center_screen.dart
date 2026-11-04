@@ -141,7 +141,7 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
       'status': 'Expired',
       'themeColors': [const Color(0xFF2E1C0C), const Color(0xFF4A3015), const Color(0xFF1A0F06)],
       'cardGradient': [const Color(0xFF7C5428), const Color(0xFF4D3216)],
-      'badgeAsset': 'assets/nobles/ZP-034_tier-6-king_badge.webp',
+      'badgeAsset': 'assets/nobles/ZP-037_tier-6-king_badge.webp',
       'frameAsset': 'assets/nobles/king_frame.webp',
       'privileges': [
         {'name': 'Entrance Effect', 'asset': 'assets/nobles/ZP-037_tier-6-king_badge.webp', 'type': 'image'},

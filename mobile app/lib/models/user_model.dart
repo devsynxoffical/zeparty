@@ -28,6 +28,7 @@ class UserModel {
   final bool isAgency;
   final bool isSeller;
   final bool isBd;
+  final bool isMerchant;
   final String? agencyName;
   final int sellerBalance;
   final bool isOnline;
@@ -134,6 +135,7 @@ class UserModel {
     isAgency: false,
     isSeller: false,
     isBd: false,
+    isMerchant: false,
     sellerBalance: 0,
     isOnline: false,
     isLive: false,
@@ -186,6 +188,7 @@ class UserModel {
     this.isAgency = false,
     this.isSeller = false,
     this.isBd = false,
+    this.isMerchant = false,
     this.agencyName,
     this.sellerBalance = 0,
     this.isOnline = false,
@@ -367,6 +370,23 @@ class UserModel {
         hasSellerTitle ||
         role == UserRole.seller
     );
+
+    final rawMerchantStatus = json['merchantStatus']?.toString().toUpperCase();
+    final bool isMerchantExplicitlyRevoked = json['isMerchant'] == false ||
+        rawMerchantStatus == 'REVOKED' ||
+        rawMerchantStatus == 'SUSPENDED' ||
+        rawMerchantStatus == 'INACTIVE';
+
+    final bool isMerchantActive = !isMerchantExplicitlyRevoked && (
+        json['isMerchant'] == true ||
+        json['hasMerchantPortal'] == true ||
+        rawMerchantStatus == 'ACTIVE' ||
+        userType == 'MERCHANT' ||
+        rawRole == 'merchant' ||
+        rawRolesList.any((r) => r.toString().toUpperCase().contains('MERCHANT')) ||
+        rawBadgeStr.contains('merchant') ||
+        rawTitlesList.any((t) => t.toString().toLowerCase().contains('merchant'))
+    );
     String hostAppStatus = 'none';
     if (hostRawStatus != null && hostRawStatus.isNotEmpty) {
       hostAppStatus = hostRawStatus.toLowerCase();
@@ -446,7 +466,8 @@ class UserModel {
       isHost: effectiveIsHost,
       isAgency: role == UserRole.agency,
       isSeller: isSellerActive,
-      isBd: role == UserRole.bd,
+      isBd: role == UserRole.bd || userType == 'BD' || json['isBd'] == true || json['bdStatus']?.toString().toUpperCase() == 'ACTIVE' || rawRolesList.any((r) => r.toString().toUpperCase() == 'BD'),
+      isMerchant: isMerchantActive,
       agencyName: json['agencyName']?.toString(),
       sellerBalance: sellerBalance,
       isOnline: json['presenceStatus']?.toString().toUpperCase() == 'ONLINE' ||
@@ -638,6 +659,7 @@ class UserModel {
       'isAgency': isAgency,
       'isSeller': isSeller,
       'isBd': isBd,
+      'isMerchant': isMerchant,
       'agencyName': agencyName,
       'sellerBalance': sellerBalance,
       'isOnline': isOnline,
@@ -698,6 +720,7 @@ class UserModel {
     bool? isAgency,
     bool? isSeller,
     bool? isBd,
+    bool? isMerchant,
     String? agencyName,
     int? sellerBalance,
     bool? isOnline,
@@ -756,6 +779,7 @@ class UserModel {
       isAgency: isAgency ?? this.isAgency,
       isSeller: isSeller ?? this.isSeller,
       isBd: isBd ?? this.isBd,
+      isMerchant: isMerchant ?? this.isMerchant,
       agencyName: agencyName ?? this.agencyName,
       sellerBalance: sellerBalance ?? this.sellerBalance,
       isOnline: isOnline ?? this.isOnline,

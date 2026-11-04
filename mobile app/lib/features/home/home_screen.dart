@@ -14,7 +14,6 @@ import '../../widgets/country_picker_widget.dart';
 import '../../widgets/banner_carousel_widget.dart';
 import 'tabs/live_discovery_grid.dart';
 import 'tabs/mine_tab.dart';
-import 'tabs/shorts_tab.dart';
 import 'tabs/games_tab.dart';
 import '../../providers/auth_provider.dart';
 
@@ -282,15 +281,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               // 4. Games Tab
               GamesTab(isDark: isDark),
 
-              // 5. PK Tab: Live PK Battles ONLY
+              // 5. PK Tab: Live PK Battles ONLY (shows active PK rooms and battles)
               LiveDiscoveryGrid(
                 liveRooms: (() {
                   final list = liveRooms.where((r) {
-                    final isPk = r.category.toUpperCase() == 'PK' ||
+                    final isPk = r.isPkActive ||
+                        r.category.toUpperCase() == 'PK' ||
                         r.title.toUpperCase().contains('PK') ||
                         r.roomType.toUpperCase().contains('PK');
                     return isPk;
                   }).toList();
+                  if (list.isEmpty) {
+                    // When no specific PK rooms are tagged, show active live streams eligible for PK battles
+                    return liveRooms.where((r) => r.roomType == 'LIVE_VIDEO' || r.category == 'Live').take(6).toList();
+                  }
                   list.sort((a, b) {
                     final aIsMine = currentUserId.isNotEmpty && (a.host.id == currentUserId || a.creatorUserId == currentUserId);
                     final bIsMine = currentUserId.isNotEmpty && (b.host.id == currentUserId || b.creatorUserId == currentUserId);

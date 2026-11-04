@@ -2371,12 +2371,22 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   Widget _buildMedalGallery(bool isDark) {
     final primaryText = AppColors.getTextPrimary(isDark);
     // Filter earned medals based on isEarned flag or user milestone achievements
-    final earnedMedals = MedalModel.defaultMedals.where((m) {
-      if (_user != null && m.isUnlockedForLevel(_user!.wealthLevel))
-        return true;
-      if (m.isEarned) return true;
-      return false;
-    }).toList();
+    final isUserKing = _user?.nobleTitle?.toLowerCase().contains('king') == true;
+    final earnedMedals = MedalModel.defaultMedals.where((m) => m.isEarned).toList();
+    if (isUserKing && !earnedMedals.any((m) => m.id == 'king_noble_medal')) {
+      earnedMedals.insert(
+        0,
+        const MedalModel(
+          id: 'king_noble_medal',
+          name: 'King Aristocracy',
+          description: 'Supreme Royal King Entitlement',
+          iconUrl: 'assets/nobles/ZP-037_tier-6-king_badge.webp',
+          isEarned: true,
+          category: 'Nobility',
+          requiredLevel: 1,
+        ),
+      );
+    }
     final medalsCount = earnedMedals.length;
 
     return Padding(

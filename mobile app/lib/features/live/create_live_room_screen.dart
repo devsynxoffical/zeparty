@@ -8,7 +8,6 @@ import '../../core/animations/app_animations.dart';
 import '../../core/repositories/backend_repository.dart';
 import '../../core/repositories/room_repository.dart';
 import '../../core/services/api_client.dart';
-import '../../core/services/room_config_manager.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/live_room_model.dart';
 import '../../providers/auth_provider.dart';
@@ -421,10 +420,16 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                         final currentUserId = currentUser.id;
                         await BackendRepository.instance.fetchLiveRooms();
 
-                        final existingRoom = BackendRepository.instance.liveRooms.where((r) => r.host.id == currentUserId || r.creatorUserId == currentUserId).firstOrNull ??
-                            overlayProvider.activeRoom ??
-                            partyProvider.activeRoom ??
-                            liveProvider.activeRoom;
+                        // Only check for conflicting camera LIVE broadcasts. A user may own a persistent Party Room independently.
+                        if (partyProvider.activeRoom != null) {
+                          // Cleanly leave Party Room session without destroying or closing it
+                          await partyProvider.leaveParty();
+                        }
+
+                        final existingRoom = BackendRepository.instance.liveRooms.where((r) =>
+                            (r.host.id == currentUserId || r.creatorUserId == currentUserId) &&
+                            (r.roomType == 'LIVE_VIDEO' || r.category == 'Live')).firstOrNull ??
+                            (liveProvider.activeRoom?.roomType == 'LIVE_VIDEO' ? liveProvider.activeRoom : null);
 
                         if (existingRoom != null) {
                           if (mounted) {
@@ -500,7 +505,7 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                               try {
                                 await RoomRepository.instance.closeRoom(existingRoom.id);
                                 BackendRepository.instance.removeLiveRoom(existingRoom.id);
-                                await RoomConfigManager.instance.clearRoomSendingTotal(existingRoom.id);
+                                // Room sending total preserved
                               } catch (_) {}
                             } else {
                               return;

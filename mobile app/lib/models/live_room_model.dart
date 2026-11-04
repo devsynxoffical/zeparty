@@ -17,6 +17,7 @@ class LiveRoomModel {
   final String? creatorUserId;
   final String status; // LIVE, ENDED, CLOSED_BY_ADMIN
   final bool isPinnedTop;
+  final bool isPkActive;
   final bool isMuted;
   final List<dynamic>? seats;
 
@@ -62,6 +63,7 @@ class LiveRoomModel {
     this.creatorUserId,
     this.status = 'LIVE',
     this.isPinnedTop = false,
+    this.isPkActive = false,
     this.isMuted = false,
     this.seats,
     this.membershipFee = 0,
@@ -131,6 +133,7 @@ class LiveRoomModel {
       creatorUserId: json['creatorUserId']?.toString() ?? hostUser.id,
       status: json['status']?.toString() ?? (json['isLive'] == true ? 'LIVE' : (json['isLive'] == false ? 'OFFLINE' : 'LIVE')),
       isPinnedTop: json['isPinnedTop'] == true,
+      isPkActive: json['isPkActive'] == true || json['hasActivePk'] == true || json['pkBattle'] != null || json['pkBattleId'] != null || json['category']?.toString().toUpperCase() == 'PK' || json['roomType']?.toString().toUpperCase().contains('PK') == true,
       isMuted: json['isMuted'] == true,
       seats: json['seats'] is List ? json['seats'] as List : null,
       membershipFee: int.tryParse(json['membershipFee']?.toString() ?? '') ?? 0,
@@ -209,6 +212,7 @@ class LiveRoomModel {
     String? creatorUserId,
     String? status,
     bool? isPinnedTop,
+    bool? isPkActive,
     bool? isMuted,
     List<dynamic>? seats,
     int? membershipFee,
@@ -245,6 +249,7 @@ class LiveRoomModel {
       creatorUserId: creatorUserId ?? this.creatorUserId,
       status: status ?? this.status,
       isPinnedTop: isPinnedTop ?? this.isPinnedTop,
+      isPkActive: isPkActive ?? this.isPkActive,
       isMuted: isMuted ?? this.isMuted,
       seats: seats ?? this.seats,
       membershipFee: membershipFee ?? this.membershipFee,
