@@ -15,7 +15,13 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
-  late Future<List<Map<String, dynamic>>> _future = SessionScope.read(context).api.matchHistory();
+  Future<List<Map<String, dynamic>>>? _future;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _future ??= SessionScope.read(context).api.matchHistory();
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../services/api_client.dart';
 import '../../models/live_room_model.dart';
 
@@ -317,6 +318,43 @@ class RoomRepository {
         return false;
       }
     }
+  }
+
+  /// Get current user's persistent / sleeping party room:
+  /// GET /v1/rooms/my-room
+  Future<LiveRoomModel?> getMyPartyRoom() async {
+    try {
+      final response = await _apiClient.get('/v1/rooms/my-room');
+      final data = response.data;
+      if (data != null && (data['hasRoom'] == true || data['alreadyHasRoom'] == true)) {
+        final roomData = data['data'] ?? data['room'];
+        if (roomData is Map<String, dynamic>) {
+          return LiveRoomModel.fromJson(roomData);
+        } else if (roomData is Map) {
+          return LiveRoomModel.fromJson(Map<String, dynamic>.from(roomData));
+        }
+      }
+    } catch (e) {
+      debugPrint('[RoomRepository] getMyPartyRoom error: $e');
+    }
+    return null;
+  }
+
+  /// Get room details by room ID:
+  /// GET /v1/rooms/:id
+  Future<LiveRoomModel?> getRoomById(String roomId) async {
+    try {
+      final response = await _apiClient.get('/v1/rooms/$roomId');
+      final roomData = response.data?['data'] ?? response.data?['room'];
+      if (roomData is Map<String, dynamic>) {
+        return LiveRoomModel.fromJson(roomData);
+      } else if (roomData is Map) {
+        return LiveRoomModel.fromJson(Map<String, dynamic>.from(roomData));
+      }
+    } catch (e) {
+      debugPrint('[RoomRepository] getRoomById error: $e');
+    }
+    return null;
   }
 }
 

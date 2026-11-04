@@ -1,3 +1,4 @@
+import '../../core/repositories/room_repository.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -236,6 +237,19 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
           }
         }
       }
+
+      // Exact Room ID & Sleeping Party Room Fallback:
+      // If user typed a room ID (or prefix), query /v1/rooms/:id so sleeping persistent rooms can be woken by search
+      final cleanQ = query.trim();
+      if (cleanQ.isNotEmpty && !loadedRooms.any((r) => r.id.toLowerCase() == cleanQ.toLowerCase())) {
+        try {
+          final exactRoom = await RoomRepository.instance.getRoomById(cleanQ);
+          if (exactRoom != null) {
+            loadedRooms.insert(0, exactRoom);
+          }
+        } catch (_) {}
+      }
+
       if (mounted) {
         setState(() {
           _searchedRooms = loadedRooms;
@@ -768,7 +782,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
               overflow: TextOverflow.ellipsis,
             ),
             subtitle: Text(
-              '${isVoice ? "🎙️ Voice Party" : "📹 Video Live"} • Host: ${room.host.name} • ${room.viewerCount} Viewers',
+              '${isVoice ? "🎙️ Voice Party" : "📹 Video Live"} • Host: ${room.host.name} • ${room.viewerCount > 0 ? "${room.viewerCount} Viewers" : "Sleeping (Tap to Wake)"}',
               style: TextStyle(color: AppColors.getTextSecondary(isDark), fontSize: 12),
             ),
             trailing: ElevatedButton(
@@ -778,7 +792,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               ),
-              child: const Text('Join', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+              child: Text(room.viewerCount > 0 ? 'Join' : 'Wake & Join', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
             ),
           ),
         );

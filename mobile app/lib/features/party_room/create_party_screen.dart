@@ -6,7 +6,6 @@ import '../../core/repositories/backend_repository.dart';
 import '../../core/repositories/room_repository.dart';
 import '../../core/services/api_client.dart';
 import '../../core/services/media_upload_service.dart';
-import '../../core/services/room_config_manager.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -274,7 +273,10 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
     final currentUserId = currentUser.id;
     await BackendRepository.instance.fetchLiveRooms();
 
-    final existingRoom = BackendRepository.instance.liveRooms.where((r) => r.host.id == currentUserId || r.creatorUserId == currentUserId).firstOrNull ??
+    // Persistent Room check: Query backend /v1/rooms/my-room first
+    final myPartyRoom = await RoomRepository.instance.getMyPartyRoom();
+    final existingRoom = myPartyRoom ??
+        BackendRepository.instance.liveRooms.where((r) => r.host.id == currentUserId || r.creatorUserId == currentUserId).firstOrNull ??
         overlayProvider.activeRoom ??
         partyProvider.activeRoom ??
         liveProvider.activeRoom;
@@ -283,7 +285,7 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
       if (mounted) {
         setState(() => _isCreating = false);
         final isExistingVideo = (existingRoom.roomType == 'LIVE_VIDEO');
-        final choice = await showDialog<String>(
+        final openRoom = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             backgroundColor: const Color(0xFF161129),
@@ -295,63 +297,43 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
               children: [
                 Icon(Icons.mic_external_on_rounded, color: Colors.amber, size: 24),
                 SizedBox(width: 10),
-                Text('Active Room Found', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                Text('You Already Have a Room', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
               ],
             ),
             content: Text(
-              'You already have an active stream running:\n"${existingRoom.title}"\n\nDo you want to rejoin your existing room or end it to start a new party room?',
+              'You already have an existing party room:\n"${existingRoom.title}"\n\nWould you like to open your room now?',
               style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
             ),
             actionsPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(ctx, 'cancel'),
+                onPressed: () => Navigator.pop(ctx, false),
                 child: const Text('Cancel', style: TextStyle(color: Colors.white60)),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3B82F6),
+                  backgroundColor: const Color(0xFFB524E4),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 ),
-                onPressed: () => Navigator.pop(ctx, 'rejoin'),
-                child: const Text('Rejoin Host Room', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFEF4444),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                ),
-                onPressed: () => Navigator.pop(ctx, 'close_old'),
-                child: const Text('End Old & Start New', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Open My Room', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
               ),
             ],
           ),
         );
 
-        if (choice == 'rejoin') {
-          if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => isExistingVideo
-                    ? LiveRoomScreen(room: existingRoom, isHost: true)
-                    : LivePartyRoomScreen(room: existingRoom),
-              ),
-            );
-          }
-          return;
-        } else if (choice == 'close_old') {
-          setState(() => _isCreating = true);
-          try {
-            await RoomRepository.instance.closeRoom(existingRoom.id);
-            BackendRepository.instance.removeLiveRoom(existingRoom.id);
-            await RoomConfigManager.instance.clearRoomSendingTotal(existingRoom.id);
-          } catch (_) {}
-        } else {
-          return;
+        if (openRoom == true && mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => isExistingVideo
+                  ? LiveRoomScreen(room: existingRoom, isHost: true)
+                  : LivePartyRoomScreen(room: existingRoom),
+            ),
+          );
         }
+        return;
       }
     }
 
@@ -379,15 +361,24 @@ class _CreatePartyScreenState extends State<CreatePartyScreen> {
       final errLower = errStr.toLowerCase();
       final isApiErr = e is ApiException;
 
-      final isAlreadyActive = isApiErr || errLower.contains('active') || errLower.contains('chal rahi hai') || errLower.contains('exists');
+      final isAlreadyActive = isApiErr || errLower.contains('active') || errLower.contains('chal rahi hai') || errLower.contains('exists') || errLower.contains('already');
       if (isAlreadyActive) {
+        final existing = await RoomRepository.instance.getMyPartyRoom();
+        if (existing != null && mounted) {
+          setState(() => _isCreating = false);
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => LivePartyRoomScreen(room: existing)),
+          );
+          return;
+        }
         if (mounted) {
           setState(() => _isCreating = false);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(e is ApiException ? e.message : 'You already have an active party running. Please end the previous party before creating a new one.'),
-              backgroundColor: Colors.redAccent,
-              duration: const Duration(seconds: 4),
+              content: Text(e is ApiException ? e.message : 'You already have a party room. Opening your room...'),
+              backgroundColor: const Color(0xFFB524E4),
+              duration: const Duration(seconds: 3),
             ),
           );
         }

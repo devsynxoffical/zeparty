@@ -802,60 +802,104 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   void _leaveRoom() {
     final provider = Provider.of<LivePartyProvider>(context, listen: false);
     final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
-    final isHost = widget.room.host.id == currentUser.id || widget.room.creatorUserId == currentUser.id;
+    final isHost = widget.room.host.id == currentUser.id ||
+        widget.room.creatorUserId == currentUser.id ||
+        provider.isHost ||
+        (provider.activeRoom != null &&
+            (provider.activeRoom!.host.id == currentUser.id ||
+                provider.activeRoom!.creatorUserId == currentUser.id));
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (d) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1B2E),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Leave Party Room?',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF1E1B2E),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        content: Text(
-          isHost
-              ? 'You are about to leave this party room. The room will stay active so other speakers and listeners can continue chatting.'
-              : 'Are you sure you want to leave this party room?',
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(d),
-            child: const Text('Stay', style: TextStyle(color: Colors.white60)),
-          ),
-          if (isHost)
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              'Leave Party Room?',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isHost
+                  ? 'The party room will remain open for speakers and listeners. You can re-enter anytime.'
+                  : 'Are you sure you want to leave this party room?',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFB524E4)),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      Provider.of<RoomOverlayProvider>(context, listen: false).minimizeRoom(
+                        roomType: 'PARTY',
+                        room: widget.room,
+                      );
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.picture_in_picture_alt_rounded, size: 18, color: Color(0xFFB524E4)),
+                    label: const Text('Minimize', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFB524E4),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      AgoraRtcService().stopAudioMixing();
+                      SvipEntryManager().clearSession(widget.room.id);
+                      await provider.leaveParty();
+                      if (mounted) {
+                        Navigator.pop(context);
+                      }
+                    },
+                    icon: const Icon(Icons.exit_to_app_rounded, size: 18),
+                    label: const Text('Leave Room', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
             TextButton(
-              onPressed: () async {
-                Navigator.pop(d);
-                AgoraRtcService().stopAudioMixing();
-                SvipEntryManager().clearSession(widget.room.id);
-                await provider.closeRoom();
-                if (mounted) {
-                  Navigator.pop(context);
-                }
-              },
-              child: const Text('End Room for All', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Stay in Room', style: TextStyle(color: Colors.white54, fontSize: 13)),
             ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFB524E4),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () async {
-              Navigator.pop(d);
-              // Leave without closing room so other users can stay inside
-              AgoraRtcService().stopAudioMixing();
-              SvipEntryManager().clearSession(widget.room.id);
-              await provider.leaveParty();
-              if (mounted) {
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Leave Room'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

@@ -954,11 +954,24 @@ class LivePartyProvider extends ChangeNotifier {
           if (seatIndex != null) {
             if (userRaw is Map && userRaw['id'] != null && userRaw['id'].toString().isNotEmpty) {
               final userMap = Map<String, dynamic>.from(userRaw);
+              final rawId = userMap['id']?.toString() ?? userMap['_id']?.toString() ?? '';
+              final rawUsername = userMap['username']?.toString() ?? 'User';
+              final rawName = userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'User';
+              final rawAvatar = userMap['avatarUrl']?.toString() ?? userMap['avatar']?.toString() ?? '';
+              final rawFrame = userMap['avatarFrame']?.toString() ??
+                  userMap['equippedFrame']?.toString() ??
+                  userMap['frameUrl']?.toString() ??
+                  (userMap['profile'] is Map ? (userMap['profile']['avatarFrame'] ?? userMap['profile']['equippedFrame'])?.toString() : null) ?? '';
+              final rawNoble = userMap['nobleTitle']?.toString() ?? userMap['nobleRank']?.toString() ?? userMap['nobleLevel']?.toString();
+              final rawVip = userMap['isVip'] == true;
               final userObj = UserModel(
-                id: userMap['id']?.toString() ?? '',
-                username: userMap['username']?.toString() ?? 'User',
-                name: userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'User',
-                avatarUrl: userMap['avatarUrl']?.toString() ?? '',
+                id: rawId,
+                username: rawUsername,
+                name: rawName,
+                avatarUrl: rawAvatar,
+                avatarFrame: rawFrame,
+                nobleTitle: rawNoble,
+                isVip: rawVip,
               );
               if (userObj.id.isNotEmpty) {
                 final isSeatHost = (_activeRoom != null && (_activeRoom!.host.id == userObj.id || _activeRoom!.creatorUserId == userObj.id)) ||
@@ -1032,6 +1045,10 @@ class LivePartyProvider extends ChangeNotifier {
                 username: uUsername.isNotEmpty ? uUsername : uName,
                 name: uName,
                 avatarUrl: userMap['avatarUrl']?.toString() ?? '',
+                avatarFrame: userMap['avatarFrame']?.toString() ??
+                    userMap['equippedFrame']?.toString() ??
+                    userMap['frameUrl']?.toString() ??
+                    (userMap['profile'] is Map ? (userMap['profile']['avatarFrame'] ?? userMap['profile']['equippedFrame'])?.toString() : null) ?? '',
                 nobleTitle: userMap['nobleTitle']?.toString() ?? userMap['nobleRank']?.toString(),
                 isVip: userMap['isVip'] == true || (userMap['vipLevel'] is num && (userMap['vipLevel'] as num) > 0),
               ),
@@ -1158,6 +1175,11 @@ class LivePartyProvider extends ChangeNotifier {
               username: uUsername.isNotEmpty ? uUsername : displayName,
               name: displayName,
               avatarUrl: userObj['avatarUrl']?.toString() ?? data['avatarUrl']?.toString() ?? '',
+              avatarFrame: userObj['avatarFrame']?.toString() ??
+                  userObj['equippedFrame']?.toString() ??
+                  userObj['frameUrl']?.toString() ??
+                  data['avatarFrame']?.toString() ??
+                  data['equippedFrame']?.toString() ?? '',
               nobleTitle: userObj['nobleTitle']?.toString() ?? userObj['nobleLevel']?.toString() ?? data['nobleLevel']?.toString() ?? data['nobleTitle']?.toString(),
               vipLevel: userObj['vipLevel']?.toString() ?? data['vipLevel']?.toString() ?? 'None',
               isVip: userObj['isVip'] == true || data['isVip'] == true,
@@ -1177,6 +1199,11 @@ class LivePartyProvider extends ChangeNotifier {
           username: uUsername.isNotEmpty ? uUsername : displayName,
           name: displayName,
           avatarUrl: userObj['avatarUrl']?.toString() ?? data['avatarUrl']?.toString() ?? '',
+          avatarFrame: userObj['avatarFrame']?.toString() ??
+              userObj['equippedFrame']?.toString() ??
+              userObj['frameUrl']?.toString() ??
+              data['avatarFrame']?.toString() ??
+              data['equippedFrame']?.toString() ?? '',
           nobleTitle: userObj['nobleTitle']?.toString() ?? userObj['nobleLevel']?.toString() ?? data['nobleLevel']?.toString() ?? data['nobleTitle']?.toString(),
           vipLevel: userObj['vipLevel']?.toString() ?? data['vipLevel']?.toString() ?? 'None',
           isVip: userObj['isVip'] == true || data['isVip'] == true,
@@ -1247,6 +1274,19 @@ class LivePartyProvider extends ChangeNotifier {
         }
 
         _pendingOutgoingInvites.remove(leftUserId);
+
+        final isHostUser = leftUserId == _activeRoom?.host.id || leftUserId == _activeRoom?.creatorUserId;
+        if (isHostUser) {
+          // Host left or is away: vacate Host Seat 0, but keep Party Room open for remaining users
+          for (int i = 0; i < _participants.length; i++) {
+            if (_participants[i].role == ParticipantRole.host || _participants[i].seatNumber == 0) {
+              _participants[i] = _participants[i].copyWith(
+                clearSeat: true,
+                micStatus: MicStatus.muted,
+              );
+            }
+          }
+        }
         _participants.removeWhere((p) => p.user.id == leftUserId || p.user.id.toLowerCase() == leftIdLower);
         final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
         final parsedViewerCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
@@ -1279,11 +1319,48 @@ class LivePartyProvider extends ChangeNotifier {
         final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
         final userMap = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : null;
         if (seatIndex != null && userMap != null) {
+          final rawUserId = userMap['id']?.toString() ?? userMap['_id']?.toString() ?? userMap['userId']?.toString() ?? '';
+          final rawUsername = userMap['username']?.toString() ?? userMap['name']?.toString() ?? 'Speaker';
+          final rawName = userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'Speaker';
+          final rawAvatar = userMap['avatarUrl']?.toString() ?? userMap['avatar']?.toString() ?? '';
+
+          // Look up existing participant to preserve frame & VIP/noble if socket passed minimal user map
+          final existing = _participants.where((p) =>
+              p.user.id == rawUserId ||
+              (rawUsername.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == rawUsername.toLowerCase())
+          ).firstOrNull;
+
+          final rawFrame = userMap['avatarFrame']?.toString() ??
+              userMap['equippedFrame']?.toString() ??
+              userMap['frameUrl']?.toString() ??
+              userMap['frame']?.toString() ??
+              (userMap['profile'] is Map ? (userMap['profile']['avatarFrame'] ?? userMap['profile']['equippedFrame'])?.toString() : null) ??
+              existing?.user.avatarFrame ?? '';
+
+          final rawNoble = userMap['nobleTitle']?.toString() ??
+              userMap['nobleRank']?.toString() ??
+              userMap['nobleLevel']?.toString() ??
+              existing?.user.nobleTitle;
+
+          final rawVipLevel = userMap['vipLevel']?.toString() ?? existing?.user.vipLevel ?? 'None';
+          final bool rawIsVip = userMap['isVip'] == true || (existing?.user.isVip ?? false);
+          final int rawSvip = (userMap['svipLevel'] is num)
+              ? (userMap['svipLevel'] as num).toInt()
+              : (int.tryParse(userMap['svipLevel']?.toString() ?? '') ?? (existing?.user.svipLevel ?? 0));
+          final int rawWealth = (userMap['wealthLevel'] is num)
+              ? (userMap['wealthLevel'] as num).toInt()
+              : (int.tryParse(userMap['wealthLevel']?.toString() ?? '') ?? (existing?.user.wealthLevel ?? 1));
+
           final occupantUser = UserModel(
-            id: userMap['id']?.toString() ?? userMap['_id']?.toString() ?? userMap['userId']?.toString() ?? '',
-            username: userMap['username']?.toString() ?? userMap['name']?.toString() ?? 'Speaker',
-            name: userMap['displayName']?.toString() ?? userMap['name']?.toString() ?? userMap['username']?.toString() ?? 'Speaker',
-            avatarUrl: userMap['avatarUrl']?.toString() ?? '',
+            id: rawUserId,
+            username: rawUsername,
+            name: rawName,
+            avatarUrl: rawAvatar.isNotEmpty ? rawAvatar : (existing?.user.avatarUrl ?? ''),
+            avatarFrame: rawFrame,
+            nobleTitle: rawNoble,
+            isVip: rawIsVip,
+            vipLevel: rawSvip > 0 ? 'SVIP $rawSvip' : rawVipLevel,
+            wealthLevel: rawWealth,
           );
 
           final isHostUser = occupantUser.id == _activeRoom?.host.id ||
@@ -1291,17 +1368,7 @@ class LivePartyProvider extends ChangeNotifier {
               (isHost && occupantUser.id == currentUser.id) ||
               (_activeRoom != null && _activeRoom!.host.username.isNotEmpty && occupantUser.username.isNotEmpty && occupantUser.username.toLowerCase() == _activeRoom!.host.username.toLowerCase());
 
-          // Detect previous seat occupied by this user to determine if it is a join or a move
-          int? previousSeat;
-          for (final p in _participants) {
-            final isMatch = p.user.id == occupantUser.id ||
-                (occupantUser.username.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == occupantUser.username.toLowerCase());
-            if (isMatch && p.seatNumber != null) {
-              previousSeat = p.seatNumber;
-              break;
-            }
-          }
-          final bool isUnchangedSeat = (previousSeat == seatIndex);
+          // Seat change processed
 
           // 1. Proactively vacate ANY previous seat held by occupantUser elsewhere
           for (int i = 0; i < _participants.length; i++) {
@@ -1370,15 +1437,7 @@ class LivePartyProvider extends ChangeNotifier {
             _agoraService.muteLocalAudio(false);
           }
 
-          // Only announce if the seat state actually changed (ignore pings, refreshes, duplicate socket packets)
-          if (!isUnchangedSeat) {
-            final seatLabel = formatSeatLabel(seatIndex);
-            if (previousSeat != null) {
-              sendSystemMessage('🎙️ ${occupantUser.name} moved to $seatLabel.');
-            } else {
-              sendSystemMessage('🎙️ ${occupantUser.name} took $seatLabel.');
-            }
-          }
+          // Mic joining messages removed to keep chat clean and focused
           notifyListeners();
         }
       } catch (e) {
@@ -1417,8 +1476,7 @@ class LivePartyProvider extends ChangeNotifier {
             _agoraService.muteLocalAudio(true);
             _agoraService.switchRole(isHost: false);
           }
-          final sNum = seatIndex != null ? seatIndex + 1 : (occupant.seatNumber != null ? occupant.seatNumber! + 1 : 1);
-          sendSystemMessage('🎙️ ${occupant.user.name} left Mic $sNum and moved to the audience.');
+          // Left mic message removed to keep chat clean
         } else if (seatIndex != null) {
           // Vacate any participant marked on seatIndex
           for (int i = 0; i < _participants.length; i++) {
@@ -1441,11 +1499,22 @@ class LivePartyProvider extends ChangeNotifier {
     // 7. Room Closed Stream
     _socketRoomClosedSub?.cancel();
     _socketRoomClosedSub = _socketService.roomClosedStream.listen((data) {
+      final isSleeping = data['isSleeping'] == true;
+      final roomStaysOpen = data['roomStaysOpen'] == true || data['keepOpen'] == true;
+      final isPartyRoom = _activeRoom?.roomType == 'AUDIO_PARTY' || _activeRoom?.roomType == 'PARTY';
+      final status = data['status']?.toString().toUpperCase();
+
+      // If persistent party room stays open for listeners or is in sleep mode, do not terminate session
+      if (roomStaysOpen || isSleeping || (isPartyRoom && status != 'ENDED')) {
+        debugPrint('[LivePartyProvider] Room is persistent/sleeping, ignoring room closed event.');
+        return;
+      }
+
       final reason = data['reason']?.toString() ?? 'Room has been closed.';
       if (reason.contains('absent') || reason.contains('ABSENT')) {
         sendSystemMessage('⏰ Party ended: Host was absent for more than 2 minutes.');
       } else {
-        sendSystemMessage('🛑 Room has been closed by host.');
+        sendSystemMessage('🛑 Room has been closed.');
       }
       _roomClosedController.add(Map<String, dynamic>.from(data));
       leaveParty();
@@ -2627,7 +2696,7 @@ class LivePartyProvider extends ChangeNotifier {
       newState: seatName,
     );
 
-    sendSystemMessage('🎙️ ${actor.name} took $seatName.');
+    // sendSystemMessage mic joining message removed
     notifyListeners();
     return null;
   }
@@ -2818,7 +2887,7 @@ class LivePartyProvider extends ChangeNotifier {
         newState: 'Audience',
       );
 
-      sendSystemMessage('🎙️ ${targetUser.name} left $seatName and moved to the audience.');
+      // sendSystemMessage left mic message removed
       notifyListeners();
       return null;
     } catch (e) {

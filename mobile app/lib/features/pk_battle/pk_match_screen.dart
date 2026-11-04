@@ -51,7 +51,9 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
   Timer? _invitationPollingTimer;
   StreamSubscription? _subPkAccepted;
   StreamSubscription? _subPkPreparing;
+  StreamSubscription? _subPkCountdown;
   StreamSubscription? _subPkStarted;
+  StreamSubscription? _subPkActive;
 
   // Readiness & Countdown State
   bool _isConfirmingReady = false;
@@ -67,30 +69,36 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
 
   void _listenToSocketEvents() {
     _subPkAccepted = SocketService.instance.onPkInvitationAccepted.listen((data) {
-      final invId = data['invitationId']?.toString();
-      final mId = data['matchId']?.toString();
-      if ((invId != null && invId == _pendingInvitationId) ||
-          (mId != null && mId == _pendingMatchId)) {
+      if (_pendingInvitationId != null) {
+        final mId = data['matchId']?.toString() ?? data['id']?.toString();
         _onOpponentAccepted(matchId: mId);
       }
     });
 
     _subPkPreparing = SocketService.instance.onPkPreparing.listen((data) {
-      final mId = data['id']?.toString() ?? data['matchId']?.toString();
-      final rA = data['roomAId']?.toString();
-      final rB = data['roomBId']?.toString();
-      if ((_pendingMatchId != null && mId == _pendingMatchId) ||
-          (_effectiveRoomId.isNotEmpty && (rA == _effectiveRoomId || rB == _effectiveRoomId))) {
+      if (_pendingInvitationId != null) {
+        final mId = data['id']?.toString() ?? data['matchId']?.toString();
+        _onOpponentAccepted(matchId: mId);
+      }
+    });
+
+    _subPkCountdown = SocketService.instance.onPkCountdownStarted.listen((data) {
+      if (_pendingInvitationId != null) {
+        final mId = data['id']?.toString() ?? data['matchId']?.toString();
         _onOpponentAccepted(matchId: mId);
       }
     });
 
     _subPkStarted = SocketService.instance.onPkStarted.listen((data) {
-      final mId = data['id']?.toString() ?? data['matchId']?.toString();
-      final rA = data['roomAId']?.toString();
-      final rB = data['roomBId']?.toString();
-      if ((_pendingMatchId != null && mId == _pendingMatchId) ||
-          (_effectiveRoomId.isNotEmpty && (rA == _effectiveRoomId || rB == _effectiveRoomId))) {
+      if (_pendingInvitationId != null) {
+        final mId = data['id']?.toString() ?? data['matchId']?.toString();
+        _onOpponentAccepted(matchId: mId);
+      }
+    });
+
+    _subPkActive = SocketService.instance.onPkActive.listen((data) {
+      if (_pendingInvitationId != null) {
+        final mId = data['id']?.toString() ?? data['matchId']?.toString();
         _onOpponentAccepted(matchId: mId);
       }
     });
@@ -111,11 +119,13 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
           )
         : null);
 
-    Navigator.pop(context, {
-      'success': true,
-      'matchId': mId,
-      'opponent': opponent,
-    });
+    if (mounted && Navigator.canPop(context)) {
+      Navigator.pop(context, {
+        'success': true,
+        'matchId': mId,
+        'opponent': opponent,
+      });
+    }
   }
 
   @override
@@ -124,7 +134,9 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
     _invitationPollingTimer?.cancel();
     _subPkAccepted?.cancel();
     _subPkPreparing?.cancel();
+    _subPkCountdown?.cancel();
     _subPkStarted?.cancel();
+    _subPkActive?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -320,18 +332,20 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
     _invitationPollingTimer?.cancel();
 
     // Active polling fallback in case socket packet was dropped on mobile data
-    _invitationPollingTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
-      if (!mounted || _pendingMatchId == null) {
+    _invitationPollingTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
+      if (!mounted || _pendingInvitationId == null) {
         t.cancel();
         return;
       }
       try {
-        final match = await PKRepository.instance.getMatchSnapshot(_pendingMatchId!);
-        if (match != null && mounted) {
-          final s = match.status.toUpperCase();
-          if (s == 'PREPARING' || s == 'COUNTDOWN' || s == 'ACTIVE' || s == 'STARTED') {
-            t.cancel();
-            _onOpponentAccepted(matchId: match.id);
+        if (_pendingMatchId != null && _pendingMatchId!.isNotEmpty && !_pendingMatchId!.startsWith('match_')) {
+          final match = await PKRepository.instance.getMatchSnapshot(_pendingMatchId!);
+          if (match != null && mounted) {
+            final s = match.status.toUpperCase();
+            if (s == 'PREPARING' || s == 'COUNTDOWN' || s == 'ACTIVE' || s == 'STARTED' || s == 'ACCEPTED') {
+              t.cancel();
+              _onOpponentAccepted(matchId: match.id);
+            }
           }
         }
       } catch (_) {}
@@ -417,6 +431,17 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Watchdog: If an active PK battle was started in LiveProvider / LivePartyProvider, auto-dismiss
+    final activeLivePk = context.watch<LiveProvider?>()?.activePkBattle;
+    final activePartyPk = context.watch<LivePartyProvider?>()?.activePkBattle;
+    if ((activeLivePk != null || activePartyPk != null) && _pendingInvitationId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && Navigator.canPop(context)) {
+          _onOpponentAccepted(matchId: activeLivePk?.id ?? activePartyPk?.id);
+        }
+      });
+    }
+
     final isAudio = _effectiveRoomType == 'AUDIO';
 
     return Scaffold(
