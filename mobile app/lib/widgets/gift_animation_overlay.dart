@@ -6,14 +6,28 @@ import '../core/services/socket_service.dart';
 
 class GiftAnimationOverlay extends StatefulWidget {
   final String? roomId;
+  final Set<String>? alternativeIds;
 
   const GiftAnimationOverlay({
     super.key,
     this.roomId,
+    this.alternativeIds,
   });
 
   @override
   State<GiftAnimationOverlay> createState() => GiftAnimationOverlayState();
+}
+
+class _QueuedVideoGift {
+  final GiftModel gift;
+  final String senderName;
+  final int quantity;
+
+  const _QueuedVideoGift({
+    required this.gift,
+    required this.senderName,
+    required this.quantity,
+  });
 }
 
 class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
@@ -30,6 +44,7 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
   VideoPlayerController? _videoController;
   Timer? _videoTimer;
   bool _isVideoPlaying = false;
+  final List<_QueuedVideoGift> _videoQueue = [];
 
   /// Skia ColorMatrix that eliminates black video backgrounds via Luma-keying:
   /// Black and dark compression artifacts (R+G+B <= 15) -> Alpha = 0 (transparent).
@@ -42,6 +57,27 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
   ];
 
   final Set<String> _processedTxIds = {};
+
+  bool _matchesRoom(String inRoomId, [String? inClientRoomId]) {
+    if (widget.roomId == null || widget.roomId!.isEmpty) return true;
+    String norm(String s) => s.toLowerCase().replaceAll('room:', '').replaceAll('room_', '').trim();
+    final inNorm = norm(inRoomId);
+    final inClientNorm = inClientRoomId != null ? norm(inClientRoomId) : '';
+    final targetNorm = norm(widget.roomId!);
+
+    if (inNorm.isEmpty && inClientNorm.isEmpty) return true;
+
+    final validIds = <String>{
+      targetNorm,
+      if (widget.alternativeIds != null) ...widget.alternativeIds!.map(norm),
+    };
+
+    return validIds.contains(inNorm) ||
+        (inClientNorm.isNotEmpty && validIds.contains(inClientNorm)) ||
+        validIds.any((id) =>
+            (inNorm.isNotEmpty && (inNorm.contains(id) || id.contains(inNorm))) ||
+            (inClientNorm.isNotEmpty && (inClientNorm.contains(id) || id.contains(inClientNorm))));
+  }
 
   @override
   void initState() {
@@ -66,7 +102,9 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
 
     _giftSub = SocketService.instance.onGiftSent.listen((data) {
       if (!mounted) return;
-      if (widget.roomId != null && data['roomId'] != null && data['roomId'].toString() != widget.roomId) {
+      final inRoomId = (data['roomId'] ?? data['room'] ?? '').toString();
+      final inClientRoomId = (data['clientRoomId'] ?? '').toString();
+      if (!_matchesRoom(inRoomId, inClientRoomId)) {
         return;
       }
       try {
@@ -98,7 +136,7 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
           category: giftMap['category']?.toString() ?? 'Classic',
         );
 
-        playGiftAnimation(model, senderName: senderName, quantity: qty, transactionId: txId);
+        playGiftAnimation(model, senderName: senderName.toString(), quantity: qty, transactionId: txId);
       } catch (e) {
         debugPrint('[GiftAnimationOverlay] Error parsing gift event: $e');
       }
@@ -122,6 +160,11 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
       _giftSenderName = '';
       _giftQuantity = 1;
     });
+
+    if (_videoQueue.isNotEmpty) {
+      final next = _videoQueue.removeAt(0);
+      _playMp4Gift(next.gift, senderName: next.senderName, quantity: next.quantity);
+    }
   }
 
   void playGiftAnimation(GiftModel gift, {String senderName = '', int quantity = 1, String? transactionId}) {
@@ -133,7 +176,7 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
         return; // Prevent duplicate execution of the exact same gift transaction
       }
       _processedTxIds.add(cleanTxId);
-      if (_processedTxIds.length > 250) {
+      if (_processedTxIds.length > 500) {
         _processedTxIds.remove(_processedTxIds.first);
       }
     }
@@ -149,19 +192,40 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
       return;
     }
 
-    _animController.stop();
-    _videoTimer?.cancel();
-    _videoController?.pause();
-    _videoController?.dispose();
-    _videoController = null;
+    if (_isVideoPlaying) {
+      if (_videoQueue.length < 15) {
+        _videoQueue.add(_QueuedVideoGift(
+          gift: effectiveGift,
+          senderName: senderName,
+          quantity: quantity,
+        ));
+      }
+      return;
+    }
 
     _playMp4Gift(effectiveGift, senderName: senderName, quantity: quantity);
   }
 
   void _playMp4Gift(GiftModel gift, {String senderName = '', int quantity = 1}) async {
-    final assetPath = gift.svgaAssetUrl!;
-    final controller = VideoPlayerController.asset(assetPath);
-    _videoController = controller;
+    final assetPath = gift.svgaAssetUrl ?? '';
+    if (assetPath.isEmpty) {
+      clearAnimation();
+      return;
+    }
+
+    VideoPlayerController controller;
+    try {
+      if (assetPath.startsWith('http://') || assetPath.startsWith('https://')) {
+        controller = VideoPlayerController.networkUrl(Uri.parse(assetPath));
+      } else {
+        controller = VideoPlayerController.asset(assetPath);
+      }
+      _videoController = controller;
+    } catch (e) {
+      debugPrint('[GiftAnimationOverlay] Video controller creation error ($assetPath): $e');
+      clearAnimation();
+      return;
+    }
 
     setState(() {
       _currentGift = gift;
@@ -190,7 +254,7 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
         }
       });
     } catch (e) {
-      debugPrint('[GiftAnimationOverlay] Video init failed ($assetPath): $e');
+      debugPrint('[GiftAnimationOverlay] Video playback init failed ($assetPath): $e');
       if (mounted) {
         _isVideoPlaying = false;
         _animController.forward(from: 0.0).then((_) {

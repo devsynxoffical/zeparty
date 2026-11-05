@@ -44,16 +44,49 @@ export async function onSendGift(io, socket, data, callback) {
           id: existingTx.id,
           transactionId: existingTx.id,
           roomId: existingTx.roomId || roomId,
+          clientRoomId: roomId,
           giftId: existingTx.giftId,
           giftName: existingTx.gift?.name || 'Gift',
           giftIcon: existingTx.gift?.iconUrl || '🎁',
           quantity: existingTx.giftCount,
           senderUserId: existingTx.senderUserId,
           senderName,
+          sender: {
+            id: existingTx.senderUserId,
+            userId: existingTx.senderUserId,
+            name: senderName,
+            displayName: senderName,
+            username: existingTx.sender?.username || senderName,
+            avatarUrl: existingTx.sender?.avatarUrl || existingTx.sender?.profile?.avatarUrl || null,
+          },
           receiverUserId: existingTx.recipientUserId,
           receiverName,
+          receiver: {
+            id: existingTx.recipientUserId,
+            userId: existingTx.recipientUserId,
+            name: receiverName,
+            displayName: receiverName,
+            username: existingTx.recipient?.username || receiverName,
+            avatarUrl: existingTx.recipient?.avatarUrl || existingTx.recipient?.profile?.avatarUrl || null,
+          },
+          gift: {
+            id: existingTx.giftId,
+            name: existingTx.gift?.name || 'Gift',
+            iconUrl: existingTx.gift?.iconUrl || '🎁',
+            animationUrl: existingTx.gift?.svgaAssetUrl || null,
+          },
           timestamp: existingTx.createdAt.toISOString(),
         };
+
+        if (io && roomId) {
+          io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_GIFT_SENT, ackPayload);
+          io.to(`room:${roomId}`).emit('room:gift_sent', ackPayload);
+          if (existingTx.roomId && existingTx.roomId !== roomId) {
+            io.to(`room:${existingTx.roomId}`).emit(SOCKET_EVENTS.ROOM_GIFT_SENT, ackPayload);
+            io.to(`room:${existingTx.roomId}`).emit('room:gift_sent', ackPayload);
+          }
+        }
+
         if (typeof callback === 'function') {
           return callback({
             success: true,
@@ -116,10 +149,20 @@ export async function onSendGift(io, socket, data, callback) {
       id: transactionId,
       transactionId,
       roomId,
+      clientRoomId: roomId,
       senderUserId: isAnonymous ? 'anonymous' : senderUserId,
       sender: senderInfo,
       recipientUserId,
       receiverUserId: recipientUserId,
+      receiverName: giftData?.recipient?.displayName || giftData?.recipient?.name || 'Host',
+      receiver: {
+        id: recipientUserId,
+        userId: recipientUserId,
+        username: giftData?.recipient?.username || 'Host',
+        displayName: giftData?.recipient?.displayName || giftData?.recipient?.name || 'Host',
+        name: giftData?.recipient?.displayName || giftData?.recipient?.name || 'Host',
+        avatarUrl: giftData?.recipient?.avatarUrl || null,
+      },
       gift: {
         id: giftInfo.id || giftId,
         name: giftInfo.name || 'Gift',

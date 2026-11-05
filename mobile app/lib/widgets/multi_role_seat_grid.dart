@@ -402,7 +402,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
-                participant.isSpeaking
+                (participant.isSpeaking || (context.watch<LivePartyProvider>().getSeatVoiceLevel(seatIndex) > 0.05))
                     ? PulseGlowAvatar(
                         imageUrl: effectiveUser.avatarUrl,
                         name: effectiveUser.name,

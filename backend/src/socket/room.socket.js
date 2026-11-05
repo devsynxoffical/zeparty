@@ -537,6 +537,8 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         } catch (_) {}
       }
 
+      const joinedAgoraUid = effectiveJoinedId ? deriveAgoraUid(effectiveJoinedId) : null;
+
       const userPayload = {
         id: entryEventId,
         eventId: entryEventId,
@@ -547,6 +549,8 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         clientRoomId: roomId,
         room: room.id,
         userId: effectiveJoinedId,
+        agoraUid: joinedAgoraUid,
+        uid: joinedAgoraUid,
         user: {
           id: effectiveJoinedId,
           userId: effectiveJoinedId,
@@ -561,6 +565,8 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           nobleColor: getNobleStyle(effectiveJoinedNoble)?.color || null,
           nobleStyle: getNobleStyle(effectiveJoinedNoble),
           isGuest: isGuestUser,
+          agoraUid: joinedAgoraUid,
+          uid: joinedAgoraUid,
         },
         nobleColor: getNobleStyle(effectiveJoinedNoble)?.color || null,
         nobleStyle: getNobleStyle(effectiveJoinedNoble),
@@ -746,7 +752,9 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
       }
 
       const isRoomEnded = leaveResult?.status === 'ENDED';
-      const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
+      const targetRoomIds = Array.from(new Set([String(roomId), String(room ? room.id : roomId)]));
+      const roomChannelNames = targetRoomIds.map((id) => `room:${id}`);
+      const broadcastTarget = io ? io.to(roomChannelNames) : (socket.to ? socket.to(`room:${roomId}`) : socket);
 
       if (isRoomEnded) {
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_CLOSED, {
@@ -943,7 +951,9 @@ export async function onSocketDisconnect(io, socket, db) {
           } catch (_) {
             updatedViewerCount = leaveResult?.currentViewersCount || 0;
           }
-          const broadcastTarget = io ? io.to(`room:${roomId}`) : socket;
+          const targetRoomIds = Array.from(new Set([String(roomId), String(room ? room.id : roomId)]));
+          const roomChannelNames = targetRoomIds.map((id) => `room:${id}`);
+          const broadcastTarget = io ? io.to(roomChannelNames) : socket;
 
           if (isHostUser) {
             await attendanceService.endBroadcastSession({ roomId: room.id, hostUserId: userId }, db).catch(() => {});
@@ -1391,6 +1401,7 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
 
     const payload = {
       id: data?.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      clientMessageId: data?.clientMessageId || data?.clientMsgId || null,
       roomId: canonicalRoomId,
       clientRoomId: roomId,
       senderUserId: senderId,

@@ -61,10 +61,11 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
     ));
 
     _sub = SocketService.instance.userJoinedStream.listen((data) {
-      final incomingRoomId = (data['roomId'] ?? '').toString().trim().toLowerCase();
-      final incomingClientRoomId = (data['clientRoomId'] ?? data['room'] ?? '').toString().trim().toLowerCase();
-      final primary = widget.roomId.trim().toLowerCase();
-      final secondary = (widget.secondaryRoomId ?? '').trim().toLowerCase();
+      String norm(String s) => s.toLowerCase().replaceAll('room:', '').trim();
+      final incomingRoomId = norm((data['roomId'] ?? '').toString());
+      final incomingClientRoomId = norm((data['clientRoomId'] ?? data['room'] ?? '').toString());
+      final primary = norm(widget.roomId);
+      final secondary = norm(widget.secondaryRoomId ?? '');
 
       final validRoomIds = <String>{
         if (primary.isNotEmpty) primary,
@@ -72,8 +73,8 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
       };
 
       if (validRoomIds.isNotEmpty) {
-        final matches = (incomingRoomId.isNotEmpty && validRoomIds.contains(incomingRoomId)) ||
-            (incomingClientRoomId.isNotEmpty && validRoomIds.contains(incomingClientRoomId)) ||
+        final matches = (incomingRoomId.isNotEmpty && (validRoomIds.contains(incomingRoomId) || validRoomIds.any((id) => incomingRoomId.contains(id) || id.contains(incomingRoomId)))) ||
+            (incomingClientRoomId.isNotEmpty && (validRoomIds.contains(incomingClientRoomId) || validRoomIds.any((id) => incomingClientRoomId.contains(id) || id.contains(incomingClientRoomId)))) ||
             (incomingRoomId.isEmpty && incomingClientRoomId.isEmpty);
         if (!matches) return;
       }

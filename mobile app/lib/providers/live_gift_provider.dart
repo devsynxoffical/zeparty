@@ -48,6 +48,9 @@ class LiveGiftProvider extends ChangeNotifier {
   String? _lastTransactionId;
   String? get lastTransactionId => _lastTransactionId;
 
+  Set<String> _activeRoomAlternativeIds = {};
+  Set<String> get activeRoomAlternativeIds => _activeRoomAlternativeIds;
+
   StreamSubscription<Map<String, dynamic>>? _socketGiftSubscription;
 
   LiveGiftProvider() {
@@ -55,13 +58,35 @@ class LiveGiftProvider extends ChangeNotifier {
     fetchCatalog();
   }
 
+  bool _isMatchingActiveRoom(String incomingRoomId, [String? incomingClientRoomId]) {
+    if (_activeRoomId == null || _activeRoomId!.isEmpty) return false;
+    String norm(String s) => s.toLowerCase().replaceAll('room:', '').replaceAll('room_', '').trim();
+    final inNorm = norm(incomingRoomId);
+    final inClientNorm = incomingClientRoomId != null ? norm(incomingClientRoomId) : '';
+    final activeNorm = norm(_activeRoomId!);
+
+    if (inNorm.isEmpty && inClientNorm.isEmpty) return true;
+
+    final validIds = <String>{
+      activeNorm,
+      ..._activeRoomAlternativeIds.map(norm),
+    };
+
+    return validIds.contains(inNorm) ||
+        (inClientNorm.isNotEmpty && validIds.contains(inClientNorm)) ||
+        validIds.any((id) =>
+            (inNorm.isNotEmpty && (inNorm.contains(id) || id.contains(inNorm))) ||
+            (inClientNorm.isNotEmpty && (inClientNorm.contains(id) || id.contains(inClientNorm))));
+  }
+
   void _initSocketListener() {
     _socketGiftSubscription?.cancel();
     _socketGiftSubscription = _socketService.onGiftSent.listen((data) {
-      final inRoomId = (data['roomId'] ?? '').toString();
+      final inRoomId = (data['roomId'] ?? data['room'] ?? '').toString();
+      final inClientRoomId = (data['clientRoomId'] ?? '').toString();
+
       // Drop event immediately if we are not in a room, or if it belongs to another room
-      if (_activeRoomId == null || _activeRoomId!.isEmpty) return;
-      if (inRoomId.isNotEmpty && inRoomId != _activeRoomId) return;
+      if (!_isMatchingActiveRoom(inRoomId, inClientRoomId)) return;
 
       final txId = (data['transactionId'] ?? data['id'] ?? data['eventId'] ?? '').toString();
       if (txId.isNotEmpty && _processedTransactionIds.contains(txId)) {
@@ -70,6 +95,9 @@ class LiveGiftProvider extends ChangeNotifier {
       }
       if (txId.isNotEmpty) {
         _processedTransactionIds.add(txId);
+        if (_processedTransactionIds.length > 500) {
+          _processedTransactionIds.remove(_processedTransactionIds.first);
+        }
       }
 
       try {
@@ -93,8 +121,9 @@ class LiveGiftProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setActiveRoom(String roomId) {
+  void setActiveRoom(String roomId, {Set<String>? alternativeIds}) {
     _activeRoomId = roomId;
+    _activeRoomAlternativeIds = alternativeIds != null ? Set.from(alternativeIds) : {};
     // Always wipe stale queues and previous room gift state on room switch/entry
     _eventQueue.clear();
     _activeComboMap.clear();
@@ -108,6 +137,7 @@ class LiveGiftProvider extends ChangeNotifier {
 
   void clearRoom() {
     _activeRoomId = null;
+    _activeRoomAlternativeIds.clear();
     _eventQueue.clear();
     _activeComboMap.clear();
     _currentActiveEvent = null;
@@ -335,7 +365,7 @@ class LiveGiftProvider extends ChangeNotifier {
   /// Receive realtime gift event from remote socket/server
   void receiveGiftEvent(LiveGiftEventModel event) {
     if (_activeRoomId == null || _activeRoomId!.isEmpty) return;
-    if (event.roomId.isNotEmpty && event.roomId != _activeRoomId) return;
+    if (event.roomId.isNotEmpty && !_isMatchingActiveRoom(event.roomId)) return;
     _eventStreamController.add(event);
     _enqueueEvent(event);
     notifyListeners();

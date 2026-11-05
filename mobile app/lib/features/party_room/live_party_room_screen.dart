@@ -78,6 +78,13 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
   String _activeChatFilter = 'All';
   bool _isNoticeExpanded = false;
 
+  Set<String> get _roomAlternativeIds => <String>{
+    if (widget.room.id.isNotEmpty) widget.room.id,
+    if (widget.room.numericRoomId != null && widget.room.numericRoomId!.isNotEmpty) widget.room.numericRoomId!,
+    if (widget.room.shortId != null && widget.room.shortId!.isNotEmpty) widget.room.shortId!,
+    if (widget.room.agoraChannelName != null && widget.room.agoraChannelName!.isNotEmpty) widget.room.agoraChannelName!,
+  };
+
   // ─── Room Tools State ───
   List<Color> _roomBackgroundGradient = [
     const Color(0xFF2B1055),
@@ -366,7 +373,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
     _requestMicPermission();
 
     // Immediately isolate gift and emoji rooms on entry so stale gifts/reactions never appear
-    Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id);
+    Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id, alternativeIds: _roomAlternativeIds);
     Provider.of<EmojiReactionProvider>(context, listen: false).setActiveRoom(widget.room.id);
 
     final savedBg = RoomConfigManager.instance.getCustomBackground(widget.room.id) ?? widget.room.backgroundImageUrl;
@@ -408,7 +415,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         partyProv.ensureSocketSubscribed(user, roomId: widget.room.id);
       }
       Provider.of<EmojiReactionProvider>(context, listen: false).setActiveRoom(widget.room.id);
-      Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id);
+      Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id, alternativeIds: _roomAlternativeIds);
 
       _partyRoomClosedSub?.cancel();
       _partyRoomClosedSub = partyProv.onRoomClosed.listen((data) {
@@ -1313,10 +1320,17 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           EmojiReactionOverlay(roomId: provider.activeRoom?.id ?? widget.room.id),
 
           // TikTok Live Gifting Overlay
-          TikTokGiftOverlay(roomId: widget.room.id),
+          TikTokGiftOverlay(
+            roomId: widget.room.id,
+            alternativeIds: _roomAlternativeIds,
+          ),
 
           // Onscreen 3D Gift Animation Overlay
-          GiftAnimationOverlay(key: _giftOverlayKey),
+          GiftAnimationOverlay(
+            key: _giftOverlayKey,
+            roomId: widget.room.id,
+            alternativeIds: _roomAlternativeIds,
+          ),
 
           // PK 3-Second Countdown Overlay (Section 1)
           if (provider.isPkCountdown)
@@ -1732,7 +1746,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         }
       }
     }
-    final viewerCount = math.max(provider.activeRoom?.viewerCount ?? 0, audience.length);
+    final viewerCount = provider.activeRoom?.viewerCount ?? audience.length;
 
     return Container(
       height: 38,

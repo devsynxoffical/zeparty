@@ -13,11 +13,28 @@ import 'legendary_gift_animator.dart';
 /// Manages 4-level gift animations without blocking live room controls.
 class TikTokGiftOverlay extends StatelessWidget {
   final String roomId;
+  final Set<String>? alternativeIds;
 
   const TikTokGiftOverlay({
     super.key,
     required this.roomId,
+    this.alternativeIds,
   });
+
+  bool _matchesRoom(String eventRoomId) {
+    if (eventRoomId.isEmpty || roomId.isEmpty) return true;
+    String norm(String s) => s.toLowerCase().replaceAll('room:', '').replaceAll('room_', '').trim();
+    final eNorm = norm(eventRoomId);
+    final targetNorm = norm(roomId);
+
+    final validIds = <String>{
+      targetNorm,
+      if (alternativeIds != null) ...alternativeIds!.map(norm),
+    };
+
+    return validIds.contains(eNorm) ||
+        validIds.any((id) => eNorm.contains(id) || id.contains(eNorm));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +44,7 @@ class TikTokGiftOverlay extends StatelessWidget {
         if (activeEvent == null) return const SizedBox.shrink();
 
         // Ensure events from other or previous rooms never render in this room
-        if (activeEvent.roomId.isNotEmpty && roomId.isNotEmpty && activeEvent.roomId != roomId) {
+        if (!_matchesRoom(activeEvent.roomId)) {
           return const SizedBox.shrink();
         }
 

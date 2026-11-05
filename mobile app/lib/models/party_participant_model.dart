@@ -13,6 +13,7 @@ class PartyParticipantModel {
   final bool isOnline;
   final bool inRoom;
   final bool isMutedByModerator;
+  final int? agoraUid;
 
   const PartyParticipantModel({
     required this.user,
@@ -24,6 +25,7 @@ class PartyParticipantModel {
     this.isOnline = true,
     this.inRoom = true,
     this.isMutedByModerator = false,
+    this.agoraUid,
   });
 
   bool get isMuted => micStatus == MicStatus.muted;
@@ -47,6 +49,11 @@ class PartyParticipantModel {
     final isMutedByModerator = json['isMutedByModerator'] == true ||
         (isMuted && json['moderatedByUserId'] != null);
 
+    final rawAgoraUid = json['agoraUid'] ?? json['uid'] ?? userData['agoraUid'] ?? userData['uid'];
+    final parsedAgoraUid = (rawAgoraUid is num)
+        ? rawAgoraUid.toInt()
+        : (rawAgoraUid != null ? int.tryParse(rawAgoraUid.toString().trim()) : null);
+
     return PartyParticipantModel(
       user: user,
       role: index == 0 ? ParticipantRole.host : ParticipantRole.speaker,
@@ -57,6 +64,7 @@ class PartyParticipantModel {
       isOnline: true,
       inRoom: true,
       isMutedByModerator: isMutedByModerator,
+      agoraUid: parsedAgoraUid,
     );
   }
 
@@ -85,6 +93,11 @@ class PartyParticipantModel {
         : (json['inRoom'] != null ? json['inRoom'].toString().toLowerCase() == 'true' : isOnline);
     final isMutedByModerator = json['isMutedByModerator'] == true;
 
+    final rawAgoraUid = json['agoraUid'] ?? json['uid'] ?? userData['agoraUid'] ?? userData['uid'];
+    final parsedAgoraUid = (rawAgoraUid is num)
+        ? rawAgoraUid.toInt()
+        : (rawAgoraUid != null ? int.tryParse(rawAgoraUid.toString().trim()) : null);
+
     return PartyParticipantModel(
       user: user,
       role: role,
@@ -95,6 +108,7 @@ class PartyParticipantModel {
       isOnline: isOnline,
       inRoom: inRoom,
       isMutedByModerator: isMutedByModerator,
+      agoraUid: parsedAgoraUid,
     );
   }
 
@@ -110,6 +124,7 @@ class PartyParticipantModel {
     bool? isOnline,
     bool? inRoom,
     bool? isMutedByModerator,
+    int? agoraUid,
     bool clearSeat = false,
   }) {
     int? resolvedSeatNumber;
@@ -131,6 +146,7 @@ class PartyParticipantModel {
       isOnline: isOnline ?? this.isOnline,
       inRoom: inRoom ?? this.inRoom,
       isMutedByModerator: isMutedByModerator ?? this.isMutedByModerator,
+      agoraUid: agoraUid ?? this.agoraUid,
     );
   }
 }

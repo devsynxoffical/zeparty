@@ -487,14 +487,27 @@ class SocketService {
             ? map['sender'] as Map
             : (map['user'] is Map ? map['user'] as Map : {});
         final senderId = (senderMap['id'] ?? senderMap['_id'] ?? map['senderUserId'] ?? map['userId'] ?? '').toString();
-        final key = msgId.isNotEmpty ? msgId : '${map['roomId']}_${senderId}_$text';
         final now = DateTime.now().millisecondsSinceEpoch;
-        if (key.isNotEmpty && recentChats.containsKey(key)) {
-          if (now - recentChats[key]! < 500) {
-            return; // Ignore duplicate chat alias emissions within 500ms
+
+        if (msgId.isNotEmpty) {
+          if (recentChats.containsKey(msgId)) {
+            return; // Duplicate broadcast alias for already delivered message ID
           }
+          recentChats[msgId] = now;
+        } else if (text.isNotEmpty) {
+          final fallbackKey = 'fallback_${map['roomId']}_${senderId}_$text';
+          if (recentChats.containsKey(fallbackKey)) {
+            if (now - recentChats[fallbackKey]! < 1500) {
+              return; // Suppress alias broadcasts without ID within 1.5s
+            }
+          }
+          recentChats[fallbackKey] = now;
         }
-        recentChats[key] = now;
+
+        if (recentChats.length > 1000) {
+          recentChats.remove(recentChats.keys.first);
+        }
+
         _roomChatMessageController.add(map);
       }
     }
@@ -528,15 +541,24 @@ class SocketService {
         final senderId = (map['senderUserId'] ?? map['senderId'] ?? (map['sender'] is Map ? map['sender']['id'] : '') ?? '').toString();
         final giftId = (map['giftId'] ?? (map['gift'] is Map ? map['gift']['id'] : '') ?? '').toString();
         final qty = map['quantity']?.toString() ?? '1';
-        final dedupKey = txId.isNotEmpty ? txId : 'fallback_${map['roomId']}_${senderId}_${giftId}_$qty';
         final now = DateTime.now().millisecondsSinceEpoch;
-        if (recentGifts.containsKey(dedupKey)) {
-          if (now - recentGifts[dedupKey]! < 5000) {
-            return; // Deduplicate alias emissions within 5s
+
+        if (txId.isNotEmpty) {
+          if (recentGifts.containsKey(txId)) {
+            return; // Duplicate broadcast alias for already delivered gift transaction
           }
+          recentGifts[txId] = now;
+        } else {
+          final fallbackKey = 'fallback_${map['roomId']}_${senderId}_${giftId}_$qty';
+          if (recentGifts.containsKey(fallbackKey)) {
+            if (now - recentGifts[fallbackKey]! < 2000) {
+              return; // Deduplicate alias bursts without ID within 2s
+            }
+          }
+          recentGifts[fallbackKey] = now;
         }
-        recentGifts[dedupKey] = now;
-        if (recentGifts.length > 500) {
+
+        if (recentGifts.length > 1000) {
           recentGifts.remove(recentGifts.keys.first);
         }
         _giftSentController.add(map);
@@ -1131,17 +1153,11 @@ class SocketService {
 
     if (_socket != null && _socket!.connected) {
       _socket!.emit('room:chat_send', payload);
-      _socket!.emit('room_chat_send', payload);
-      _socket!.emit('room:chat', payload);
-      _socket!.emit('chat:send', payload);
       debugPrint('[SocketService] Sent room:chat_send for room:$roomId (msgId: $effectiveId)');
     } else {
       connect(user: sender).then((_) {
         if (_socket != null && _socket!.connected) {
           _socket!.emit('room:chat_send', payload);
-          _socket!.emit('room_chat_send', payload);
-          _socket!.emit('room:chat', payload);
-          _socket!.emit('chat:send', payload);
           debugPrint('[SocketService] Sent room:chat_send after connect for room:$roomId (msgId: $effectiveId)');
         }
       });
@@ -1184,17 +1200,11 @@ class SocketService {
 
     if (_socket != null && _socket!.connected) {
       _socket!.emit('room:gift_send', payload);
-      _socket!.emit('room_gift_send', payload);
-      _socket!.emit('gift:send', payload);
-      _socket!.emit('room:gift_sent', payload);
       debugPrint('[SocketService] Sent room:gift_send for room:$roomId (txId: $effectiveTxId)');
     } else {
       connect(user: sender).then((_) {
         if (_socket != null && _socket!.connected) {
           _socket!.emit('room:gift_send', payload);
-          _socket!.emit('room_gift_send', payload);
-          _socket!.emit('gift:send', payload);
-          _socket!.emit('room:gift_sent', payload);
           debugPrint('[SocketService] Sent room:gift_send after connect for room:$roomId (txId: $effectiveTxId)');
         }
       });

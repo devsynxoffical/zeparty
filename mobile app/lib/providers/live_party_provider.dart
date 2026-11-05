@@ -32,11 +32,105 @@ int deriveAgoraUid(String userId) {
   return (unsigned % 2147483640) + 1;
 }
 
+int? parseAgoraUid(dynamic raw) {
+  if (raw == null) return null;
+  if (raw is num) {
+    final v = raw.toInt();
+    return v > 0 ? v : null;
+  }
+  final s = raw.toString().trim();
+  if (s.isEmpty) return null;
+  final parsed = int.tryParse(s);
+  return (parsed != null && parsed > 0) ? parsed : null;
+}
+
 class LivePartyProvider extends ChangeNotifier {
   final AgoraRtcService _agoraService = AgoraRtcService();
   final RoomRepository _roomRepository = RoomRepository.instance;
   final SocketService _socketService = SocketService.instance;
   final ApiClient _apiClient = ApiClient.instance;
+
+  // Authoritative Agora UID Mapping Stores
+  final Map<int, String> _agoraUidToUserId = {};
+  final Map<String, int> _userIdToAgoraUid = {};
+  final Set<int> _activeRemoteAgoraUids = {};
+
+  Map<int, String> get agoraUidToUserId => Map.unmodifiable(_agoraUidToUserId);
+  Map<String, int> get userIdToAgoraUid => Map.unmodifiable(_userIdToAgoraUid);
+  Set<int> get activeRemoteAgoraUids => Set.unmodifiable(_activeRemoteAgoraUids);
+
+  void registerAgoraUidMapping(dynamic agoraUidRaw, String? userId) {
+    if (userId == null || userId.trim().isEmpty) return;
+    final cleanUserId = userId.trim();
+    final parsed = parseAgoraUid(agoraUidRaw);
+    if (parsed != null && parsed > 0) {
+      _agoraUidToUserId[parsed] = cleanUserId;
+      _userIdToAgoraUid[cleanUserId] = parsed;
+    }
+  }
+
+  void unregisterAgoraUidMapping({dynamic agoraUidRaw, String? userId}) {
+    if (userId != null && userId.trim().isNotEmpty) {
+      final cleanUserId = userId.trim();
+      final uid = _userIdToAgoraUid.remove(cleanUserId);
+      if (uid != null) {
+        _agoraUidToUserId.remove(uid);
+      }
+    }
+    if (agoraUidRaw != null) {
+      final parsed = parseAgoraUid(agoraUidRaw);
+      if (parsed != null) {
+        final uId = _agoraUidToUserId.remove(parsed);
+        if (uId != null) {
+          _userIdToAgoraUid.remove(uId);
+        }
+      }
+    }
+  }
+
+  String? getUserIdForAgoraUid(int agoraUid) => _agoraUidToUserId[agoraUid];
+  int? getAgoraUidForUserId(String userId) => _userIdToAgoraUid[userId.trim()];
+
+  /// Validates whether an incoming socket event belongs to the currently active room
+  bool matchesCurrentRoom(dynamic incoming) {
+    if (incoming == null) return true;
+    dynamic rawRoomId;
+    dynamic rawClientRoomId;
+    if (incoming is Map) {
+      rawRoomId = incoming['roomId'] ?? incoming['room_id'] ?? (incoming['room'] is Map ? incoming['room']['id'] : incoming['room']);
+      rawClientRoomId = incoming['clientRoomId'];
+    } else {
+      rawRoomId = incoming;
+    }
+
+    if (rawRoomId == null && rawClientRoomId == null) return true;
+
+    final inRoomId = rawRoomId?.toString().trim() ?? '';
+    final inClientRoomId = rawClientRoomId?.toString().trim() ?? '';
+    if (inRoomId.isEmpty && inClientRoomId.isEmpty) return true;
+
+    String norm(String s) => s.toLowerCase().replaceAll('room:', '').trim();
+    final inNorm = norm(inRoomId);
+    final inClientNorm = norm(inClientRoomId);
+    final currentNorm = norm(_activeRoom?.id ?? _initialRoomId ?? '');
+    final initialNorm = norm(_initialRoomId ?? '');
+    final agoraNorm = (_activeRoom?.agoraChannelName != null && _activeRoom!.agoraChannelName!.isNotEmpty)
+        ? norm(_activeRoom!.agoraChannelName!)
+        : '';
+
+    final validNormIds = <String>{
+      if (currentNorm.isNotEmpty) currentNorm,
+      if (initialNorm.isNotEmpty) initialNorm,
+      if (agoraNorm.isNotEmpty) agoraNorm,
+    };
+    if (validNormIds.isEmpty) return true;
+
+    return validNormIds.contains(inNorm) ||
+        (inClientNorm.isNotEmpty && validNormIds.contains(inClientNorm)) ||
+        validNormIds.any((id) =>
+            (inNorm.isNotEmpty && (inNorm == id || inNorm.contains(id) || id.contains(inNorm))) ||
+            (inClientNorm.isNotEmpty && (inClientNorm == id || inClientNorm.contains(id) || id.contains(inClientNorm))));
+  }
 
   LiveRoomModel? _activeRoom;
   LiveRoomModel? get activeRoom => _activeRoom;
@@ -95,6 +189,10 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketCoHostInviteResponseSub;
   StreamSubscription? _socketRoomBackgroundSub;
   StreamSubscription? _socketRoomEmojiSub;
+  StreamSubscription? _socketRoomLockSub;
+  StreamSubscription? _socketRoomHostAbsentSub;
+  StreamSubscription? _socketRoomHostReturnedSub;
+  StreamSubscription? _socketPkActiveSub;
 
   DateTime? _feedClearedAt;
   DateTime? get feedClearedAt => _feedClearedAt;
@@ -623,6 +721,7 @@ class LivePartyProvider extends ChangeNotifier {
       final seatsList = _activeRoom?.seats;
       int? hostSeatIndex;
       final seatedUsers = <int, UserModel>{};
+      final seatedAgoraUids = <int, int?>{};
 
       if (seatsList != null && seatsList.isNotEmpty) {
         for (final sRaw in seatsList) {
@@ -633,7 +732,13 @@ class LivePartyProvider extends ChangeNotifier {
           final occUserRaw = sMap['occupiedUser'] ?? sMap['user'];
           final occUserId = sMap['occupiedUserId']?.toString() ?? sMap['userId']?.toString() ?? (occUserRaw is Map ? occUserRaw['id']?.toString() : null);
 
+          final rawSeatAgoraUid = parseAgoraUid(sMap['agoraUid'] ?? sMap['uid'] ?? (occUserRaw is Map ? (occUserRaw['agoraUid'] ?? occUserRaw['uid']) : null));
+
           if (occUserId != null && occUserId.isNotEmpty) {
+            final effectiveAgoraUid = rawSeatAgoraUid ?? deriveAgoraUid(occUserId);
+            registerAgoraUidMapping(effectiveAgoraUid, occUserId);
+            seatedAgoraUids[sIdx] = effectiveAgoraUid;
+
             final isHostOcc = occUserId == hostUserId || (isHost && occUserId == currentUser.id);
             if (isHostOcc) {
               hostSeatIndex = sIdx;
@@ -649,6 +754,11 @@ class LivePartyProvider extends ChangeNotifier {
         hostSeatIndex = 0;
       }
 
+      final hostAgoraUid = deriveAgoraUid(hostUserModel.id);
+      if (hostUserModel.id.isNotEmpty) {
+        registerAgoraUidMapping(hostAgoraUid, hostUserModel.id);
+      }
+
       // Add Host participant
       _participants.add(PartyParticipantModel(
         user: hostUserModel,
@@ -656,17 +766,20 @@ class LivePartyProvider extends ChangeNotifier {
         seatNumber: hostSeatIndex,
         joinedAt: room.startTime,
         micStatus: hostSeatIndex != null ? MicStatus.on : MicStatus.muted,
+        agoraUid: hostAgoraUid,
       ));
 
       // Add any other seated speakers
       seatedUsers.forEach((sIdx, seatedUser) {
         if (seatedUser.id != hostUserModel.id) {
+          final sAgoraUid = seatedAgoraUids[sIdx] ?? deriveAgoraUid(seatedUser.id);
           _participants.add(PartyParticipantModel(
             user: seatedUser,
             role: ParticipantRole.speaker,
             seatNumber: sIdx,
             joinedAt: DateTime.now(),
             micStatus: MicStatus.on,
+            agoraUid: sAgoraUid,
           ));
         }
       });
@@ -742,8 +855,12 @@ class LivePartyProvider extends ChangeNotifier {
         if (agoraData['token'] != null) {
           final token = agoraData['token'] as String;
           final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
-          final uid = agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
+          final uid = parseAgoraUid(agoraData['uid'] ?? agoraData['agoraUid']) ?? 0;
           final appId = agoraData['appId'] as String?;
+
+          if (uid > 0 && currentUser.id.isNotEmpty) {
+            registerAgoraUidMapping(uid, currentUser.id);
+          }
 
           await _agoraService.initialize(appId: appId, enableVideo: false);
           await _agoraService.joinChannel(
@@ -761,7 +878,13 @@ class LivePartyProvider extends ChangeNotifier {
       // 4. Listen to Agora Active Speaker stream
       _speakerSub?.cancel();
       _speakerSub = _agoraService.activeSpeakerStream.listen((uid) {
-        final speakerParticipant = _participants.where((p) => p.seatNumber != null).firstOrNull;
+        if (uid <= 0) return;
+        final resolvedUserId = _agoraUidToUserId[uid];
+        final speakerParticipant = _participants.where((p) {
+          if (p.seatNumber == null) return false;
+          if (resolvedUserId != null && p.user.id == resolvedUserId) return true;
+          return p.agoraUid == uid || p.user.id == uid.toString() || deriveAgoraUid(p.user.id) == uid;
+        }).firstOrNull;
         if (speakerParticipant != null) {
           // Temporarily pulse active speaking
         }
@@ -775,7 +898,9 @@ class LivePartyProvider extends ChangeNotifier {
 
         for (final info in speakers) {
           int? targetSeat;
-          final isLocal = (info.uid == 0 || info.uid == _agoraService.currentUid);
+          final isLocal = (info.uid == 0 ||
+              info.uid == _agoraService.currentUid ||
+              (currentUser.id.isNotEmpty && _userIdToAgoraUid[currentUser.id] == info.uid));
 
           if (isLocal) {
             if (!isLocalMicMuted) {
@@ -787,18 +912,30 @@ class LivePartyProvider extends ChangeNotifier {
               }
             }
           } else {
-            final remotePart = _participants.where((p) {
+            final resolvedUserId = _agoraUidToUserId[info.uid];
+            PartyParticipantModel? remotePart;
+            if (resolvedUserId != null && resolvedUserId.isNotEmpty) {
+              remotePart = _participants.where((p) => (p.user.id == resolvedUserId || p.agoraUid == info.uid) && p.seatNumber != null).firstOrNull;
+            }
+
+            remotePart ??= _participants.where((p) {
               if (p.seatNumber == null) return false;
+              if (p.agoraUid == info.uid) return true;
               if (p.user.id == info.uid.toString()) return true;
               return deriveAgoraUid(p.user.id) == info.uid;
             }).firstOrNull;
 
             if (remotePart != null && !remotePart.isMuted) {
               targetSeat = remotePart.seatNumber;
-            } else if (_activeRoom?.host.id != null && deriveAgoraUid(_activeRoom!.host.id) == info.uid) {
-              final hostPart = _participants.where((p) => p.seatNumber == 0).firstOrNull;
-              if (hostPart == null || !hostPart.isMuted) {
-                targetSeat = 0;
+            } else {
+              final hostId = _activeRoom?.host.id ?? _activeRoom?.creatorUserId;
+              final isHostSpeaker = (resolvedUserId != null && resolvedUserId == hostId) ||
+                  (hostId != null && (hostId == info.uid.toString() || deriveAgoraUid(hostId) == info.uid));
+              if (isHostSpeaker) {
+                final hostPart = _participants.where((p) => p.seatNumber == 0).firstOrNull;
+                if (hostPart == null || !hostPart.isMuted) {
+                  targetSeat = 0;
+                }
               }
             }
           }
@@ -833,28 +970,21 @@ class LivePartyProvider extends ChangeNotifier {
         }
       });
 
-      // 5. Listen to Agora Remote Users (Keep real logged-in user names without overriding with dummy Guest IDs)
+      // 5. Listen to Agora Remote Users (Do NOT override with dummy Guest IDs)
       _remoteUsersSub?.cancel();
       _remoteUsersSub = _agoraService.remoteUsersStream.listen((uids) {
         for (final uid in uids) {
-          final isAlreadyTracked = _participants.any(
-            (p) => p.user.id == uid.toString() || p.user.id == 'agora_$uid',
-          );
-          if (!isAlreadyTracked) {
-            final guestUser = UserModel(
-              id: 'agora_$uid',
-              username: 'User_$uid',
-              name: 'Guest $uid',
-              avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100',
-            );
-            _participants.add(PartyParticipantModel(
-              user: guestUser,
-              role: ParticipantRole.listener,
-              seatNumber: null,
-              joinedAt: DateTime.now(),
-            ));
+          _activeRemoteAgoraUids.add(uid);
+          if (!_agoraUidToUserId.containsKey(uid)) {
+            final matching = _participants.where((p) =>
+              p.agoraUid == uid || p.user.id == uid.toString() || deriveAgoraUid(p.user.id) == uid
+            ).firstOrNull;
+            if (matching != null) {
+              registerAgoraUidMapping(uid, matching.user.id);
+            }
           }
         }
+        _activeRemoteAgoraUids.removeWhere((id) => !uids.contains(id));
         notifyListeners();
       });
 
@@ -945,6 +1075,12 @@ class LivePartyProvider extends ChangeNotifier {
           _activeRoom = LiveRoomModel.fromJson(roomObj);
         }
 
+        final hostAgoraUid = parseAgoraUid(data['agoraHostUid'] ?? roomObj['agoraHostUid']);
+        final hostId = roomObj['host'] is Map ? (roomObj['host']['id']?.toString() ?? roomObj['host']['userId']?.toString()) : _activeRoom?.host.id;
+        if (hostId != null && hostId.isNotEmpty) {
+          registerAgoraUidMapping(hostAgoraUid ?? deriveAgoraUid(hostId), hostId);
+        }
+
         final seatsList = data['seats'] is List ? (data['seats'] as List) : (roomObj['seats'] is List ? (roomObj['seats'] as List) : []);
         for (final seatRaw in seatsList) {
           if (seatRaw is! Map) continue;
@@ -974,6 +1110,10 @@ class LivePartyProvider extends ChangeNotifier {
                 isVip: rawVip,
               );
               if (userObj.id.isNotEmpty) {
+                final rawSeatAgoraUid = parseAgoraUid(userMap['agoraUid'] ?? userMap['uid'] ?? seatMap['agoraUid'] ?? seatMap['uid']);
+                final effectiveSeatAgoraUid = rawSeatAgoraUid ?? deriveAgoraUid(userObj.id);
+                registerAgoraUidMapping(effectiveSeatAgoraUid, userObj.id);
+
                 final isSeatHost = (_activeRoom != null && (_activeRoom!.host.id == userObj.id || _activeRoom!.creatorUserId == userObj.id)) ||
                     (isHost && _currentUser?.id == userObj.id);
                 final existingIdx = _participants.indexWhere((p) => p.user.id == userObj.id || p.seatNumber == seatIndex);
@@ -990,6 +1130,7 @@ class LivePartyProvider extends ChangeNotifier {
                     seatNumber: seatIndex,
                     role: resolvedRole,
                     micStatus: seatMap['isMuted'] == true ? MicStatus.muted : MicStatus.on,
+                    agoraUid: effectiveSeatAgoraUid,
                   );
                 } else {
                   _participants.add(PartyParticipantModel(
@@ -998,6 +1139,7 @@ class LivePartyProvider extends ChangeNotifier {
                     seatNumber: seatIndex,
                     micStatus: seatMap['isMuted'] == true ? MicStatus.muted : MicStatus.on,
                     joinedAt: DateTime.now(),
+                    agoraUid: effectiveSeatAgoraUid,
                   ));
                 }
               }
@@ -1149,6 +1291,7 @@ class LivePartyProvider extends ChangeNotifier {
     // 2. User Joined Stream
     _socketUserJoinedSub?.cancel();
     _socketUserJoinedSub = _socketService.userJoinedStream.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
       try {
         final userObj = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : <String, dynamic>{};
         final joinedUserId = userObj['id']?.toString() ??
@@ -1166,6 +1309,10 @@ class LivePartyProvider extends ChangeNotifier {
 
         // Update participants for listeners
         if (joinedUserId != null && !isHostUser) {
+          final rawJoinedAgoraUid = parseAgoraUid(userObj['agoraUid'] ?? userObj['uid'] ?? data['agoraUid'] ?? data['uid']);
+          final effectiveJoinedAgoraUid = rawJoinedAgoraUid ?? deriveAgoraUid(joinedUserId);
+          registerAgoraUidMapping(effectiveJoinedAgoraUid, joinedUserId);
+
           final existingIdx = _participants.indexWhere((p) =>
               p.user.id == joinedUserId ||
               (uUsername.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == uUsername.toLowerCase()));
@@ -1190,7 +1337,10 @@ class LivePartyProvider extends ChangeNotifier {
               role: ParticipantRole.listener,
               seatNumber: null,
               joinedAt: DateTime.now(),
+              agoraUid: effectiveJoinedAgoraUid,
             ));
+          } else {
+            _participants[existingIdx] = _participants[existingIdx].copyWith(agoraUid: effectiveJoinedAgoraUid);
           }
         }
 
@@ -1232,7 +1382,8 @@ class LivePartyProvider extends ChangeNotifier {
         final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
         final parsedViewerCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
         final currentAudienceCount = _participants.where((p) => p.role != ParticipantRole.host && p.user.id != _activeRoom?.host.id && p.user.id != _activeRoom?.creatorUserId).length;
-        final effectiveViewerCount = parsedViewerCount != null ? (parsedViewerCount > currentAudienceCount ? parsedViewerCount : currentAudienceCount) : currentAudienceCount;
+        // Authoritative backend count: use parsed count directly if provided
+        final effectiveViewerCount = parsedViewerCount != null ? (parsedViewerCount >= 0 ? parsedViewerCount : 0) : currentAudienceCount;
         if (_activeRoom != null) {
           _activeRoom = _activeRoom!.copyWith(viewerCount: effectiveViewerCount);
         }
@@ -1245,17 +1396,21 @@ class LivePartyProvider extends ChangeNotifier {
     // 3. User Left Stream
     _socketUserLeftSub?.cancel();
     _socketUserLeftSub = _socketService.userLeftStream.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
       final leftUserId = data['userId']?.toString() ?? data['id']?.toString();
       if (leftUserId != null && leftUserId.isNotEmpty) {
         final leftIdLower = leftUserId.toLowerCase();
+        final leftIdClean = leftIdLower.replaceFirst(RegExp(r'^user_'), '');
         // Capture departing participant to clean up associated name/username keys
         final departing = _participants.where((p) =>
             p.user.id == leftUserId ||
-            p.user.id.toLowerCase() == leftIdLower
+            p.user.id.toLowerCase() == leftIdLower ||
+            p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == leftIdClean
         ).firstOrNull;
 
         _announcedJoinedUserIds.remove(leftUserId);
         _announcedJoinedUserIds.remove(leftIdLower);
+        _announcedJoinedUserIds.remove(leftIdClean);
         if (departing != null) {
           if (departing.user.name.isNotEmpty) {
             _announcedJoinedUserIds.remove(departing.user.name.toLowerCase());
@@ -1263,7 +1418,22 @@ class LivePartyProvider extends ChangeNotifier {
           if (departing.user.username.isNotEmpty) {
             _announcedJoinedUserIds.remove(departing.user.username.toLowerCase());
           }
+          // Reset voice level if departing was on a seat
+          if (departing.seatNumber != null) {
+            _seatVoiceLevels[departing.seatNumber!] = 0.0;
+          }
+          unregisterAgoraUidMapping(agoraUidRaw: departing.agoraUid, userId: leftUserId);
+        } else {
+          unregisterAgoraUidMapping(userId: leftUserId);
         }
+
+        // Also check if payload specifies vacated seat
+        final vacatedSeatRaw = data['seatIndex'] ?? data['vacatedSeatIndex'];
+        final vacatedSeat = (vacatedSeatRaw is num) ? vacatedSeatRaw.toInt() : int.tryParse(vacatedSeatRaw?.toString() ?? '');
+        if (vacatedSeat != null) {
+          _seatVoiceLevels[vacatedSeat] = 0.0;
+        }
+
         final leftName = data['name']?.toString() ?? data['displayName']?.toString() ?? (data['user'] is Map ? (data['user'] as Map)['displayName']?.toString() : null);
         if (leftName != null && leftName.isNotEmpty) {
           _announcedJoinedUserIds.remove(leftName.toLowerCase());
@@ -1286,12 +1456,18 @@ class LivePartyProvider extends ChangeNotifier {
               );
             }
           }
+          _seatVoiceLevels[0] = 0.0;
         }
-        _participants.removeWhere((p) => p.user.id == leftUserId || p.user.id.toLowerCase() == leftIdLower);
+        _participants.removeWhere((p) =>
+            p.user.id == leftUserId ||
+            p.user.id.toLowerCase() == leftIdLower ||
+            p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == leftIdClean);
+
         final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
         final parsedViewerCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
         final currentAudienceCount = _participants.where((p) => p.role != ParticipantRole.host && p.user.id != _activeRoom?.host.id && p.user.id != _activeRoom?.creatorUserId).length;
-        final effectiveCount = parsedViewerCount ?? currentAudienceCount;
+        // Authoritative backend count: use parsed count directly if provided, without speculative bump
+        final effectiveCount = parsedViewerCount != null ? (parsedViewerCount >= 0 ? parsedViewerCount : 0) : currentAudienceCount;
         if (_activeRoom != null) {
           _activeRoom = _activeRoom!.copyWith(viewerCount: effectiveCount);
         }
@@ -1302,11 +1478,13 @@ class LivePartyProvider extends ChangeNotifier {
     // 4. Viewer Count Changed Stream
     _socketViewerCountSub?.cancel();
     _socketViewerCountSub = _socketService.viewerCountStream.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
       final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
       final count = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
       if (_activeRoom != null) {
         final currentAudienceCount = _participants.where((p) => p.role != ParticipantRole.host && p.user.id != _activeRoom?.host.id && p.user.id != _activeRoom?.creatorUserId).length;
-        final effectiveCount = count != null ? (count > currentAudienceCount ? count : currentAudienceCount) : currentAudienceCount;
+        // Authoritative backend count: never overwrite server count with math.max or speculative calculations
+        final effectiveCount = count != null ? (count >= 0 ? count : 0) : currentAudienceCount;
         _activeRoom = _activeRoom!.copyWith(viewerCount: effectiveCount);
         notifyListeners();
       }
@@ -1315,6 +1493,7 @@ class LivePartyProvider extends ChangeNotifier {
     // 5. Seat Occupied Stream
     _socketSeatOccupiedSub?.cancel();
     _socketSeatOccupiedSub = _socketService.seatOccupiedStream.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
       try {
         final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
         final userMap = data['user'] is Map ? Map<String, dynamic>.from(data['user'] as Map) : null;
@@ -1403,6 +1582,12 @@ class LivePartyProvider extends ChangeNotifier {
             }
           }
 
+          final rawSeatAgoraUid = parseAgoraUid(data['agoraUid'] ?? data['uid'] ?? userMap['agoraUid'] ?? userMap['uid']);
+          final effectiveSeatAgoraUid = rawSeatAgoraUid ?? (occupantUser.id.isNotEmpty ? deriveAgoraUid(occupantUser.id) : null);
+          if (occupantUser.id.isNotEmpty) {
+            registerAgoraUidMapping(effectiveSeatAgoraUid, occupantUser.id);
+          }
+
           final pIdx = _participants.indexWhere((p) =>
               p.user.id == occupantUser.id ||
               (occupantUser.username.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == occupantUser.username.toLowerCase()));
@@ -1419,6 +1604,7 @@ class LivePartyProvider extends ChangeNotifier {
               seatNumber: seatIndex,
               role: resolvedRole,
               micStatus: MicStatus.on,
+              agoraUid: effectiveSeatAgoraUid,
             );
           } else {
             _participants.add(PartyParticipantModel(
@@ -1427,6 +1613,7 @@ class LivePartyProvider extends ChangeNotifier {
               seatNumber: seatIndex,
               micStatus: MicStatus.on,
               joinedAt: DateTime.now(),
+              agoraUid: effectiveSeatAgoraUid,
             ));
           }
 
@@ -1448,6 +1635,7 @@ class LivePartyProvider extends ChangeNotifier {
     // 6. Seat Released Stream
     _socketSeatReleasedSub?.cancel();
     _socketSeatReleasedSub = _socketService.seatReleasedStream.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
       try {
         final seatIndex = (data['seatIndex'] is num) ? (data['seatIndex'] as num).toInt() : int.tryParse(data['seatIndex']?.toString() ?? '');
         final userId = data['userId']?.toString() ?? data['releasedByUserId']?.toString();
@@ -1456,7 +1644,11 @@ class LivePartyProvider extends ChangeNotifier {
           pIdx = _participants.indexWhere((p) => p.seatNumber == seatIndex);
         }
         if (pIdx == -1 && userId != null) {
-          pIdx = _participants.indexWhere((p) => p.user.id == userId);
+          final uClean = userId.toLowerCase().replaceFirst(RegExp(r'^user_'), '');
+          pIdx = _participants.indexWhere((p) =>
+              p.user.id == userId ||
+              p.user.id.toLowerCase() == userId.toLowerCase() ||
+              p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == uClean);
         }
 
         if (pIdx != -1) {
@@ -1471,6 +1663,10 @@ class LivePartyProvider extends ChangeNotifier {
             role: isHostOccupant ? ParticipantRole.host : ParticipantRole.listener,
             micStatus: MicStatus.muted,
           );
+
+          if (occupant.seatNumber != null) {
+            _seatVoiceLevels[occupant.seatNumber!] = 0.0;
+          }
 
           if (occupant.user.id == currentUser.id) {
             _agoraService.muteLocalAudio(true);
@@ -1489,6 +1685,9 @@ class LivePartyProvider extends ChangeNotifier {
             }
           }
         }
+        if (seatIndex != null) {
+          _seatVoiceLevels[seatIndex] = 0.0;
+        }
         _deduplicateParticipants();
         notifyListeners();
       } catch (e) {
@@ -1499,6 +1698,7 @@ class LivePartyProvider extends ChangeNotifier {
     // 7. Room Closed Stream
     _socketRoomClosedSub?.cancel();
     _socketRoomClosedSub = _socketService.roomClosedStream.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
       final isSleeping = data['isSleeping'] == true;
       final roomStaysOpen = data['roomStaysOpen'] == true || data['keepOpen'] == true;
       final isPartyRoom = _activeRoom?.roomType == 'AUDIO_PARTY' || _activeRoom?.roomType == 'PARTY';
@@ -1523,6 +1723,7 @@ class LivePartyProvider extends ChangeNotifier {
     // 8. Gift Sent Stream
     _socketGiftSentSub?.cancel();
     _socketGiftSentSub = _socketService.giftSentStream.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
       try {
         final txId = (data['transactionId'] ?? data['id'] ?? data['eventId'] ?? '').toString().trim();
         if (txId.isNotEmpty) {
@@ -1530,25 +1731,6 @@ class LivePartyProvider extends ChangeNotifier {
           _processedGiftTxIds.add(txId);
           if (_processedGiftTxIds.length > 500) {
             _processedGiftTxIds.remove(_processedGiftTxIds.first);
-          }
-        }
-
-        final inGiftRoomId = (data['roomId'] ?? data['room'] ?? data['clientRoomId'] ?? '').toString().trim();
-        if (inGiftRoomId.isNotEmpty) {
-          String norm(String s) => s.toLowerCase().replaceAll('room:', '').trim();
-          final inNorm = norm(inGiftRoomId);
-          final currentNorm = norm(_activeRoom?.id ?? _initialRoomId ?? '');
-          final initialNorm = norm(_initialRoomId ?? '');
-          final agoraNorm = _activeRoom?.agoraChannelName != null ? norm(_activeRoom!.agoraChannelName!) : '';
-          final validNormIds = <String>{
-            if (currentNorm.isNotEmpty) currentNorm,
-            if (initialNorm.isNotEmpty) initialNorm,
-            if (agoraNorm.isNotEmpty) agoraNorm,
-          };
-          if (validNormIds.isNotEmpty) {
-            final matches = validNormIds.contains(inNorm) ||
-                validNormIds.any((id) => inNorm.contains(id) || id.contains(inNorm));
-            if (!matches) return;
           }
         }
 
@@ -1653,28 +1835,8 @@ class LivePartyProvider extends ChangeNotifier {
     // 9. Chat Message Stream
     _socketChatMessageSub?.cancel();
     _socketChatMessageSub = _socketService.onRoomChatMessage.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
       try {
-        final incomingRoomId = (data['roomId'] ?? '').toString().trim();
-        final incomingClientRoomId = (data['clientRoomId'] ?? data['room'] ?? '').toString().trim();
-        String norm(String s) => s.toLowerCase().replaceAll('room:', '').trim();
-        final inNorm = norm(incomingRoomId);
-        final inClientNorm = norm(incomingClientRoomId);
-        final currentNorm = norm(_activeRoom?.id ?? _initialRoomId ?? '');
-        final initialNorm = norm(_initialRoomId ?? '');
-
-        final validNormIds = <String>{
-          if (currentNorm.isNotEmpty) currentNorm,
-          if (initialNorm.isNotEmpty) initialNorm,
-          if (_activeRoom?.agoraChannelName != null && _activeRoom!.agoraChannelName!.isNotEmpty)
-            norm(_activeRoom!.agoraChannelName!),
-        };
-
-        if (validNormIds.isNotEmpty && inNorm.isNotEmpty) {
-          final match = validNormIds.contains(inNorm) ||
-              (inClientNorm.isNotEmpty && validNormIds.contains(inClientNorm)) ||
-              validNormIds.any((id) => inNorm.contains(id) || id.contains(inNorm));
-          if (!match) return;
-        }
 
         final senderMap = data['sender'] is Map
             ? Map<String, dynamic>.from(data['sender'] as Map)
@@ -1790,6 +1952,7 @@ class LivePartyProvider extends ChangeNotifier {
     // 10. User Kicked Stream
     _socketUserKickedSub?.cancel();
     _socketUserKickedSub = _socketService.onUserKicked.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
       final targetUserId = data['targetUserId']?.toString() ?? data['userId']?.toString();
       final isHost = data['isHost'] == true;
       final reason = data['reason']?.toString() ?? 'Removed by platform moderation';
@@ -1805,7 +1968,12 @@ class LivePartyProvider extends ChangeNotifier {
         leaveParty();
         notifyListeners();
       } else if (targetUserId != null) {
-        final kickedIdx = _participants.indexWhere((p) => p.user.id == targetUserId || p.user.username == targetUserId);
+        final kickedClean = targetUserId.toLowerCase().replaceFirst(RegExp(r'^user_'), '');
+        final kickedIdx = _participants.indexWhere((p) =>
+            p.user.id == targetUserId ||
+            p.user.id.toLowerCase() == targetUserId.toLowerCase() ||
+            p.user.id.toLowerCase().replaceFirst(RegExp(r'^user_'), '') == kickedClean ||
+            (targetUserId.isNotEmpty && p.user.username.isNotEmpty && p.user.username.toLowerCase() == targetUserId.toLowerCase()));
         if (kickedIdx != -1) {
           final kicked = _participants[kickedIdx];
           final kickedName = kicked.user.name;
@@ -1813,7 +1981,10 @@ class LivePartyProvider extends ChangeNotifier {
           if (kickedSeat != null) {
             _mutedSeatIndices.remove(kickedSeat);
             _lockedSeatIndices.remove(kickedSeat);
+            _seatVoiceLevels[kickedSeat] = 0.0;
           }
+          unregisterAgoraUidMapping(agoraUidRaw: kicked.agoraUid, userId: kicked.user.id);
+          _announcedJoinedUserIds.remove(kicked.user.id);
           _participants.removeAt(kickedIdx);
           _deduplicateParticipants();
           sendSystemMessage('🚫 $kickedName was removed from the room by moderation.');
@@ -2172,45 +2343,36 @@ class LivePartyProvider extends ChangeNotifier {
     });
 
     // Room Lock Status Stream (Issue 07)
-    _socketService.onRoomLockUpdated.listen((data) {
-      final rId = data['roomId']?.toString();
-      final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
-      if (rId == null || rId == currentId) {
-        _isRoomLocked = data['isLocked'] == true;
-        if (data['lockMode'] != null) _roomLockMode = data['lockMode'].toString();
-        notifyListeners();
-      }
+    _socketRoomLockSub?.cancel();
+    _socketRoomLockSub = _socketService.onRoomLockUpdated.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
+      _isRoomLocked = data['isLocked'] == true;
+      if (data['lockMode'] != null) _roomLockMode = data['lockMode'].toString();
+      notifyListeners();
     });
 
     // Host Presence & Grace Period Stream (Bug 06)
-    _socketService.onRoomHostAbsent.listen((data) {
-      final rId = data['roomId']?.toString();
-      final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
-      if (rId == null || rId == currentId) {
-        _isHostAbsent = true;
-        notifyListeners();
-      }
+    _socketRoomHostAbsentSub?.cancel();
+    _socketRoomHostAbsentSub = _socketService.onRoomHostAbsent.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
+      _isHostAbsent = true;
+      notifyListeners();
     });
 
-    _socketService.onRoomHostReturned.listen((data) {
-      final rId = data['roomId']?.toString();
-      final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
-      if (rId == null || rId == currentId) {
-        _isHostAbsent = false;
-        notifyListeners();
-      }
+    _socketRoomHostReturnedSub?.cancel();
+    _socketRoomHostReturnedSub = _socketService.onRoomHostReturned.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
+      _isHostAbsent = false;
+      notifyListeners();
     });
 
     // Room Animated Emojis Stream (Section 4)
     _socketRoomEmojiSub?.cancel();
     _socketRoomEmojiSub = _socketService.onRoomEmoji.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
       try {
         final rId = (data['roomId'] ?? '').toString().trim();
-        final currentId = (_activeRoom?.id ?? _initialRoomId ?? '').trim().toLowerCase();
-        if (rId.isNotEmpty && currentId.isNotEmpty && rId.toLowerCase() != currentId) {
-          return;
-        }
-
+        final currentId = (_activeRoom?.id ?? _initialRoomId ?? '').trim();
         final emoji = (data['emoji'] ?? '').toString().trim();
         if (emoji.isEmpty) return;
 
@@ -2321,7 +2483,8 @@ class LivePartyProvider extends ChangeNotifier {
     });
 
     // 24. PK Battle: Active match listener for new / reconnecting viewers (Bug 1 & 8)
-    _socketService.onPkActive.listen((data) {
+    _socketPkActiveSub?.cancel();
+    _socketPkActiveSub = _socketService.onPkActive.listen((data) {
       try {
         _activePkBattle = PKBattleModel.fromJson(data);
         _isPkActive = true;
@@ -2492,6 +2655,7 @@ class LivePartyProvider extends ChangeNotifier {
 
     await _agoraService.leaveChannel();
 
+    _volumeIndicationSub?.cancel();
     _speakerSub?.cancel();
     _remoteUsersSub?.cancel();
     _socketRoomSnapshotSub?.cancel();
@@ -2512,6 +2676,11 @@ class LivePartyProvider extends ChangeNotifier {
     _socketMicInviteResponseSub?.cancel();
     _socketCoHostInviteSub?.cancel();
     _socketCoHostInviteResponseSub?.cancel();
+    _socketRoomEmojiSub?.cancel();
+    _socketRoomLockSub?.cancel();
+    _socketRoomHostAbsentSub?.cancel();
+    _socketRoomHostReturnedSub?.cancel();
+    _socketPkActiveSub?.cancel();
     _socketFeedClearedSub?.cancel();
     _socketDetailsUpdatedSub?.cancel();
     _socketSeatLockedSub?.cancel();
@@ -2542,7 +2711,12 @@ class LivePartyProvider extends ChangeNotifier {
     _roomSendingTotal = 0;
     _participants = [];
     _messages = [];
+    _activeRemoteAgoraUids.clear();
+    _agoraUidToUserId.clear();
+    _userIdToAgoraUid.clear();
+    _seatVoiceLevels.clear();
     _announcedJoinedUserIds.clear();
+    _recentSystemMessages.clear();
     notifyListeners();
   }
 
@@ -2706,13 +2880,24 @@ class LivePartyProvider extends ChangeNotifier {
     final unique = <PartyParticipantModel>[];
     for (final p in _participants) {
       final id = p.user.id.trim();
+      final idLower = id.toLowerCase();
+      final idClean = idLower.replaceFirst(RegExp(r'^user_'), '');
       final username = p.user.username.trim().toLowerCase();
-      final name = p.user.name.trim().toLowerCase();
 
       final existingIdx = unique.indexWhere((u) {
-        if (id.isNotEmpty && u.user.id.trim() == id) return true;
-        if (username.isNotEmpty && u.user.username.trim().toLowerCase() == username) return true;
-        if (name.isNotEmpty && u.user.name.trim().toLowerCase() == name) return true;
+        final uId = u.user.id.trim().toLowerCase();
+        final uIdClean = uId.replaceFirst(RegExp(r'^user_'), '');
+        if (id.isNotEmpty && (uId == idLower || uIdClean == idClean)) return true;
+        if (p.agoraUid != null && u.agoraUid != null && p.agoraUid == u.agoraUid) return true;
+        if (username.isNotEmpty &&
+            !username.startsWith('guest_') &&
+            !username.startsWith('user_') &&
+            username != 'guest' &&
+            username != 'user' &&
+            username != 'speaker' &&
+            u.user.username.trim().toLowerCase() == username) {
+          return true;
+        }
         return false;
       });
 
@@ -2720,14 +2905,20 @@ class LivePartyProvider extends ChangeNotifier {
         unique.add(p);
       } else {
         final existing = unique[existingIdx];
-        if (existing.seatNumber == null && p.seatNumber != null) {
-          unique[existingIdx] = p;
-        } else if (existing.seatNumber != null && p.seatNumber != null && existing.seatNumber != p.seatNumber) {
-          // If both have different seats, keep the most recent seated entry
-          unique[existingIdx] = p;
-        } else if (p.user.id.isNotEmpty && !p.user.id.startsWith('host_') && existing.user.id.startsWith('host_')) {
-          unique[existingIdx] = p;
-        }
+        final seat = p.seatNumber ?? existing.seatNumber;
+        final role = (p.role == ParticipantRole.host || existing.role == ParticipantRole.host)
+            ? ParticipantRole.host
+            : (seat != null ? ParticipantRole.speaker : (p.role != ParticipantRole.listener ? p.role : existing.role));
+        final agoraUid = p.agoraUid ?? existing.agoraUid;
+        final effectiveUser = p.user.avatarUrl.isNotEmpty ? p.user : existing.user;
+
+        unique[existingIdx] = existing.copyWith(
+          user: effectiveUser,
+          seatNumber: seat,
+          role: role,
+          agoraUid: agoraUid,
+          micStatus: seat != null ? (p.micStatus == MicStatus.on || existing.micStatus == MicStatus.on ? MicStatus.on : MicStatus.muted) : existing.micStatus,
+        );
       }
     }
     _participants.clear();
@@ -4017,7 +4208,12 @@ class LivePartyProvider extends ChangeNotifier {
   @override
   void dispose() {
     leaveParty();
-    _incomingCoHostInviteController.close();
+    if (!_incomingMicInviteController.isClosed) _incomingMicInviteController.close();
+    if (!_incomingCoHostInviteController.isClosed) _incomingCoHostInviteController.close();
+    if (!_roomClosedController.isClosed) _roomClosedController.close();
+    if (!_kickedController.isClosed) _kickedController.close();
+    if (!_pkInvitationController.isClosed) _pkInvitationController.close();
+    if (!_pkResultController.isClosed) _pkResultController.close();
     _agoraService.dispose();
     super.dispose();
   }
