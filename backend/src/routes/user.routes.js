@@ -43,6 +43,9 @@ adminUserRouter.post('/:id/props/revoke', requirePermission('view_users'), userC
 adminUserRouter.post('/:id/props/reset', requirePermission('view_users'), userController.postAdminResetProps);
 adminUserRouter.post('/:id/assign-special-id', requirePermission('view_users'), userController.postAdminAssignSpecialId);
 adminUserRouter.post('/:id/grant-noble', requirePermission('view_users'), userController.postAdminGrantNoble);
+// Wealth Management & Progression
+adminUserRouter.get('/wealth/schedule', requirePermission('view_users'), userController.getAdminWealthSchedule);
+adminUserRouter.post('/wealth/reconcile-all', requirePermission('view_users'), userController.postAdminReconcileAllWealth);
 adminUserRouter.post('/:id/reconcile-wealth', requirePermission('view_users'), userController.postAdminReconcileWealth);
 
 // Resets (Moderation & Safety)
@@ -90,6 +93,7 @@ adminUserRouter.delete('/:id/purge', requirePermission('suspend_users'), userCon
 // User Self & Public Profile Routes
 userProfileRouter.get('/search', optionalAuthenticate, userController.searchUsers);
 userProfileRouter.get('/noble-palette', userController.getNoblePalette);
+userProfileRouter.get('/wealth-schedule', userController.getAdminWealthSchedule);
 userProfileRouter.get('/me', authenticate, userController.getMe);
 userProfileRouter.get('/me/profile-grid', authenticate, userController.getProfileGrid);
 userProfileRouter.put('/me/profile-edit', authenticate, userController.putProfileEdit);

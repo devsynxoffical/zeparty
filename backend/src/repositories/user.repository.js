@@ -482,7 +482,9 @@ export async function findPublicProfileById(id, db = prisma) {
     avatarUrl: true,
     bio: true,
     gender: true,
+    dob: true,
     countryCode: true,
+    region: true,
     userType: true,
     createdAt: true,
     profile: {

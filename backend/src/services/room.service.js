@@ -19,6 +19,7 @@ import bcrypt from 'bcryptjs';
 import stageService from './stage.service.js';
 import roomRoleAuditService from './roomRoleAudit.service.js';
 import { getNobleStyle } from './asset.service.js';
+import roomLevelService from './roomLevel.service.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -81,7 +82,7 @@ export async function createRoom(
           roomType: 'AUDIO_PARTY',
           status: { in: ['LIVE', 'ENDED'] },
         },
-        orderBy: { updatedAt: 'desc' },
+        orderBy: { createdAt: 'desc' },
         include: {
           seats: {
             orderBy: { seatIndex: 'asc' },
@@ -160,6 +161,7 @@ export async function createRoom(
           totalLikes = await presenceService.getRoomLikes(refreshedRoom.id);
         } catch (_) {}
 
+        const roomLevelData = await roomLevelService.getRoomLevelData(refreshedRoom.id, {}, db);
         const resumedPayload = {
           ...refreshedRoom,
           alreadyHasRoom: true,
@@ -168,6 +170,12 @@ export async function createRoom(
           existingRoomId: refreshedRoom.id,
           wasSleeping,
           statusMessage: 'You already have a party room. Opening your existing room.',
+          level: roomLevelData.level,
+          roomLevel: roomLevelData.level,
+          displayLevel: roomLevelData.displayLevel,
+          roomDisplayLevel: roomLevelData.displayLevel,
+          roomLevelProgress: roomLevelData,
+          cumulativeRoomCoins: roomLevelData.cumulativeCoins,
           totalGifts: dailyGiftCoins,
           giftsReceivedCoins: dailyGiftCoins,
           roomSendingTotal: dailyGiftCoins,
@@ -246,7 +254,14 @@ export async function createRoom(
   await presenceService.clearRoomLikes(room.id).catch(() => {});
   await presenceService.clearRoomPresence(room.id).catch(() => {});
 
+  const freshRoomProgression = roomLevelService.calculateRoomProgression(0);
   const freshSessionScores = {
+    level: 0,
+    roomLevel: 0,
+    displayLevel: 'LV.0',
+    roomDisplayLevel: 'LV.0',
+    roomLevelProgress: freshRoomProgression,
+    cumulativeRoomCoins: 0,
     totalGifts: 0,
     giftsReceivedCoins: 0,
     roomSendingTotal: 0,
@@ -285,7 +300,7 @@ export async function getMyPartyRoom(userId, db = prisma) {
       roomType: 'AUDIO_PARTY',
       status: { in: ['LIVE', 'ENDED'] },
     },
-    orderBy: { updatedAt: 'desc' },
+    orderBy: { createdAt: 'desc' },
     select: { id: true, status: true },
   });
 
@@ -419,7 +434,7 @@ export async function getRoomDetails(roomId, db = prisma) {
           { roomType: 'AUDIO_PARTY', status: { in: ['LIVE', 'ENDED'] } },
         ],
       },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
     if (activeRoomByUser) {
@@ -495,10 +510,17 @@ export async function getRoomDetails(roomId, db = prisma) {
 
   const isSleeping = room.status !== 'LIVE';
   const isParty = isPartyRoomType(room.roomType);
+  const roomLevelData = await roomLevelService.getRoomLevelData(room.id, {}, db);
   return {
     ...safeRoom,
     status: isParty && room.status !== 'CLOSED_BY_ADMIN' ? 'LIVE' : room.status,
     dbStatus: room.status,
+    level: roomLevelData.level,
+    roomLevel: roomLevelData.level,
+    displayLevel: roomLevelData.displayLevel,
+    roomDisplayLevel: roomLevelData.displayLevel,
+    roomLevelProgress: roomLevelData,
+    cumulativeRoomCoins: roomLevelData.cumulativeCoins,
     isSleeping,
     sleepState: isSleeping ? 'SLEEPING' : 'ACTIVE',
     currentViewersCount: viewerCount,

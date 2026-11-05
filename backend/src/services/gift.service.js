@@ -10,6 +10,8 @@ import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
 import pkService from './pk.service.js';
 import hostTargetService from './hostTarget.service.js';
+import wealthLevelService from './wealthLevel.service.js';
+import roomLevelService from './roomLevel.service.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
@@ -425,8 +427,9 @@ export async function sendGift(
     });
     const currentXp = BigInt(senderProfile?.experiencePoints || 0n);
     const newXp = currentXp + coinsSpent;
-    // Approved ZeParty Level Policy: starting at Lv. 1, 10,000 XP per level
-    const newWealthLevel = Math.max(1, Math.floor(Number(newXp) / 10000) + 1);
+    // Approved ZeParty Level Policy: Authoritative 100-level progression schedule
+    const wealthProgression = wealthLevelService.calculateWealthProgression(newXp);
+    const newWealthLevel = wealthProgression.level;
 
     const currentSpent = BigInt(senderProfile?.totalSpentCoins || 0n);
     const newSpent = currentSpent + coinsSpent;
@@ -530,6 +533,7 @@ export async function sendGift(
         newXp: newXp.toString(),
         wealthLevel: newWealthLevel,
         addedXp: coinsSpent.toString(),
+        progression: wealthProgression,
       },
     };
   }, { maxWait: 10000, timeout: 30000 });
@@ -773,6 +777,22 @@ export async function sendGift(
           }
         } catch (_) {}
 
+        // ZeParty Issue 12: Room Level and Cumulative Sending Progression
+        try {
+          if (canonicalRoomId) {
+            await roomLevelService.recordRoomGiftProgress(
+              canonicalRoomId,
+              Number(totalCoins),
+              {
+                senderUserId,
+                recipientUserId,
+                transactionId: result.giftTransaction.id,
+              },
+              db || prisma
+            );
+          }
+        } catch (_) {}
+
         try {
           await pkService.recordGiftContribution({
             giftTransactionId: result.giftTransaction.id,
@@ -873,6 +893,34 @@ export async function sendGift(
           });
         } catch (_) {}
       }
+
+      // Authoritative Sender Wealth Level Real-Time Update
+      try {
+        const prevLvl = senderProfile?.level || 1;
+        const newLvl = result.senderWealth.wealthLevel;
+        const levelPayload = {
+          userId: senderUserId,
+          wealthLevel: newLvl,
+          level: newLvl,
+          previousLevel: prevLvl,
+          isLevelUp: newLvl > prevLvl,
+          wealthProgress: result.senderWealth.progression,
+          timestamp: new Date().toISOString(),
+        };
+        socketEmitter.emitToUser(senderUserId, 'user:level_updated', levelPayload);
+        socketEmitter.emitToUser(senderUserId, 'user:wealth_level_updated', levelPayload);
+        if (newLvl > prevLvl && roomId) {
+          socketEmitter.emitToRoom(roomId, 'room:user_level_up', {
+            roomId,
+            userId: senderUserId,
+            username: senderDisplayName,
+            displayName: senderDisplayName,
+            newLevel: newLvl,
+            level: newLvl,
+            type: 'WEALTH',
+          });
+        }
+      } catch (_) {}
 
       // Authoritative Host Target Progress Real-Time Refresh
       try {

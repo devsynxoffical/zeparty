@@ -846,7 +846,6 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
         };
 
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatRelPayload);
-        broadcastTarget.emit('room:seat_released', seatRelPayload);
         broadcastTarget.emit('room_seat_released', seatRelPayload);
         broadcastTarget.emit('room:seat_left', seatRelPayload);
         broadcastTarget.emit('room_seat_left', seatRelPayload);
@@ -1046,7 +1045,6 @@ export async function onSocketDisconnect(io, socket, db) {
             };
 
             broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatRelPayload);
-            broadcastTarget.emit('room:seat_released', seatRelPayload);
             broadcastTarget.emit('room_seat_released', seatRelPayload);
             broadcastTarget.emit('room:seat_left', seatRelPayload);
             broadcastTarget.emit('room_seat_left', seatRelPayload);

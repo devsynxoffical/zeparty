@@ -123,7 +123,6 @@ export async function onOccupySeat(io, socket, data, callback, db) {
       for (const rid of targetRoomIds) {
         const broadcastTarget = io && io.to ? io.to(`room:${rid}`) : (socket.to ? socket.to(`room:${rid}`) : socket);
         broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, releasePayload);
-        broadcastTarget.emit('room:seat_released', releasePayload);
         broadcastTarget.emit('room_seat_released', releasePayload);
         broadcastTarget.emit('room:seat_left', releasePayload);
         broadcastTarget.emit('room_seat_left', releasePayload);
@@ -137,7 +136,6 @@ export async function onOccupySeat(io, socket, data, callback, db) {
     for (const rid of targetRoomIds) {
       const broadcastTarget = io && io.to ? io.to(`room:${rid}`) : (socket.to ? socket.to(`room:${rid}`) : socket);
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_OCCUPIED, payload);
-      broadcastTarget.emit('room:seat_occupied', payload);
       broadcastTarget.emit('room_seat_occupied', payload);
       broadcastTarget.emit('seat_occupied', payload);
       broadcastTarget.emit('seat:occupied', payload);
@@ -276,7 +274,6 @@ export async function onLeaveSeat(io, socket, data, callback, db = prisma) {
     for (const rid of targetRoomIds) {
       const broadcastTarget = io && io.to ? io.to(`room:${rid}`) : (socket.to ? socket.to(`room:${rid}`) : socket);
       broadcastTarget.emit(SOCKET_EVENTS.ROOM_SEAT_RELEASED, payload);
-      broadcastTarget.emit('room:seat_released', payload);
       broadcastTarget.emit('room_seat_released', payload);
       broadcastTarget.emit('room:seat_left', payload);
       broadcastTarget.emit('room_seat_left', payload);

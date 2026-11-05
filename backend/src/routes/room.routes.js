@@ -17,6 +17,8 @@ userRoomRouter.get('/me', authenticate, roomController.getMyPartyRoom);
 userRoomRouter.get('/joined', authenticate, roomController.getUserJoinedRooms);
 userRoomRouter.get('/user/:userId/joined', roomController.getUserJoinedRooms);
 userRoomRouter.get('/:id', roomController.getRoomDetails);
+userRoomRouter.get('/:id/level', roomController.getRoomLevelProgression);
+userRoomRouter.get('/:id/progression', roomController.getRoomLevelProgression);
 userRoomRouter.post('/:id/join', authenticate, roomController.joinRoom);
 userRoomRouter.post('/:id/unjoin', authenticate, roomController.unjoinRoom);
 userRoomRouter.delete('/:id/join', authenticate, roomController.unjoinRoom);
@@ -145,10 +147,15 @@ userRoomRouter.post('/:id/clear-screen', authenticate, roomController.clearRoomF
 
 // Admin Live Room Management Routes
 adminRoomRouter.use(authenticate);
+adminRoomRouter.get('/level-config', requirePermission('view_live_rooms'), roomController.getAdminRoomLevelSchedule);
+adminRoomRouter.put('/level-config', requirePermission('view_live_rooms'), roomController.putAdminRoomLevelSchedule);
+adminRoomRouter.post('/reconcile-levels', requirePermission('view_live_rooms'), roomController.postAdminReconcileAllRoomLevels);
 adminRoomRouter.get('/pinned-positions', requirePermission('view_live_rooms'), roomController.getAdminPinnedPositions);
 adminRoomRouter.get('/', requirePermission('view_live_rooms'), roomController.getAdminRooms);
 adminRoomRouter.get('/:id', requirePermission('view_live_rooms'), roomController.getAdminRoomById);
 adminRoomRouter.get('/:id/diagnostics', requirePermission('view_live_rooms'), roomController.getAdminRoomDiagnostics);
+adminRoomRouter.get('/:id/level', requirePermission('view_live_rooms'), roomController.getRoomLevelProgression);
+adminRoomRouter.post('/:id/reconcile-level', requirePermission('view_live_rooms'), roomController.postAdminReconcileRoomLevel);
 adminRoomRouter.get('/:id/roles/audit', requirePermission('view_live_rooms'), roomController.getRoomRoleAudit);
 adminRoomRouter.get('/:id/summary', requirePermission('view_live_rooms'), roomController.getAdminLiveSessionSummary);
 adminRoomRouter.get('/:id/agora-token', requirePermission('view_live_rooms'), roomController.getAdminAgoraToken);

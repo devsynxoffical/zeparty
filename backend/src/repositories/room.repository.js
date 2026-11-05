@@ -119,6 +119,9 @@ export async function findRoomById(id, db = prisma) {
         id: true,
         username: true,
         avatarUrl: true,
+        gender: true,
+        dob: true,
+        countryCode: true,
         profile: {
           select: {
             displayName: true,
@@ -138,6 +141,9 @@ export async function findRoomById(id, db = prisma) {
             id: true,
             username: true,
             avatarUrl: true,
+            gender: true,
+            dob: true,
+            countryCode: true,
             profile: {
               select: {
                 displayName: true,
@@ -158,9 +164,16 @@ export async function findRoomById(id, db = prisma) {
             id: true,
             username: true,
             avatarUrl: true,
+            gender: true,
+            dob: true,
+            countryCode: true,
             profile: {
               select: {
                 displayName: true,
+                level: true,
+                vipLevel: true,
+                svipLevel: true,
+                nobleRank: true,
               },
             },
           },
@@ -1013,6 +1026,9 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
             id: true,
             username: true,
             avatarUrl: true,
+            gender: true,
+            dob: true,
+            countryCode: true,
             profile: true,
           },
         },

@@ -6,6 +6,7 @@ import stageService from '../services/stage.service.js';
 import roomRepository from '../repositories/room.repository.js';
 import presenceService from '../socket/presence.service.js';
 import roomRoleAuditService from '../services/roomRoleAudit.service.js';
+import roomLevelService from '../services/roomLevel.service.js';
 import {
   createRoomSchema,
   queryActiveRoomsSchema,
@@ -1498,6 +1499,76 @@ export async function getRoomRoleAudit(req, res, next) {
   }
 }
 
+export async function getRoomLevelProgression(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const progression = await roomLevelService.getRoomLevelData(id);
+    return res.status(200).json({
+      success: true,
+      data: progression,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAdminRoomLevelSchedule(req, res, next) {
+  try {
+    const schedule = await roomLevelService.getRoomLevelThresholds();
+    return res.status(200).json({
+      success: true,
+      schedule,
+      isClientApproved: false,
+      message: 'Approved client room level thresholds are still required. Current schedule is a configurable default.',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function putAdminRoomLevelSchedule(req, res, next) {
+  try {
+    const { thresholds } = req.body || {};
+    if (!Array.isArray(thresholds)) {
+      return res.status(400).json({
+        success: false,
+        message: 'thresholds array is required',
+      });
+    }
+    const result = await roomLevelService.updateRoomLevelThresholds(thresholds);
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminReconcileRoomLevel(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const { dryRun = true } = req.body || {};
+    const result = await roomLevelService.reconcileRoomLevel(id, { dryRun: Boolean(dryRun) });
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminReconcileAllRoomLevels(req, res, next) {
+  try {
+    const { dryRun = true, limit = 1000 } = req.body || {};
+    const result = await roomLevelService.reconcileAllRoomLevels({
+      dryRun: Boolean(dryRun),
+      limit: Number(limit),
+    });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -1579,5 +1650,10 @@ export default {
   getMyPartyRoom,
   getAdminRoomDiagnostics,
   getRoomRoleAudit,
+  getRoomLevelProgression,
+  getAdminRoomLevelSchedule,
+  putAdminRoomLevelSchedule,
+  postAdminReconcileRoomLevel,
+  postAdminReconcileAllRoomLevels,
 };
 

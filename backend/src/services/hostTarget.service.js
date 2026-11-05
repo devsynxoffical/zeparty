@@ -136,7 +136,9 @@ export function getTargetCycle(hostType = 'LIVE_HOST', date = new Date()) {
 
   const monthStr = String(month + 1).padStart(2, '0');
   const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  const isLive = String(hostType || '').toUpperCase() === 'LIVE_HOST';
+  const normHostType = String(hostType || '').toUpperCase();
+  const isAudio = normHostType === 'AUDIO_HOST' || normHostType === 'AGENCY_HOST';
+  const isLive = !isAudio;
 
   if (isLive) {
     // 10-day cycle for Live Host: Cycle 1 (1–10), Cycle 2 (11–20), Cycle 3 (21–End)
@@ -246,14 +248,9 @@ export async function resolveUserAndHost(identifier, db = prisma) {
   if (!identifier) return null;
   const cleanId = String(identifier).trim();
 
-  let user = await db.user.findFirst({
-    where: {
-      OR: [
-        { id: cleanId },
-        { username: cleanId },
-        { email: cleanId },
-      ],
-    },
+  // Authoritative primary key lookup first to prevent collision with other accounts whose username equals cleanId
+  let user = await db.user.findUnique({
+    where: { id: cleanId },
     include: {
       profile: true,
       wallet: true,
@@ -261,7 +258,25 @@ export async function resolveUserAndHost(identifier, db = prisma) {
         include: { agency: true },
       },
     },
-  });
+  }).catch(() => null);
+
+  if (!user) {
+    user = await db.user.findFirst({
+      where: {
+        OR: [
+          { username: cleanId },
+          { email: cleanId },
+        ],
+      },
+      include: {
+        profile: true,
+        wallet: true,
+        hostProfile: {
+          include: { agency: true },
+        },
+      },
+    }).catch(() => null);
+  }
 
   if (!user && /^\d+$/.test(cleanId)) {
     user = await db.user.findFirst({
@@ -401,7 +416,6 @@ export async function recordGiftAttribution(
   let status = 'NON_HOST_GIFT';
 
   const txDate = giftTransaction.createdAt || transactionDate || new Date();
-  const cycle = getTargetCycle(hostType, txDate);
 
   if (resolvedGift) {
     const contrib = calculateGiftTargetContribution(resolvedGift, qty);
@@ -425,6 +439,8 @@ export async function recordGiftAttribution(
       }
     }
   }
+
+  const cycle = getTargetCycle(targetScope === 'AUDIO_HOST' ? 'AUDIO_HOST' : 'LIVE_HOST', txDate);
 
   // 4. Atomic Database Insert with Uniqueness Guarantee
   try {
@@ -671,7 +687,7 @@ export async function recordGiftReversal(
  */
 export async function getHostTargetProgress(
   userIdOrIdentifier,
-  { date = new Date() } = {},
+  { date = new Date(), hostType: paramHostType } = {},
   db = prisma
 ) {
   if (!userIdOrIdentifier) {
@@ -702,17 +718,25 @@ export async function getHostTargetProgress(
   const userId = user.id;
   const hostProfile = user.hostProfile;
   const isHostActive = hostProfile.hostStatus === 'ACTIVE';
-  const hostType = hostProfile.hostType || 'LIVE_HOST';
+  const resolvedHostType = paramHostType
+    ? String(paramHostType).toUpperCase()
+    : (hostProfile.hostType === 'AUDIO_HOST' ? 'AUDIO_HOST' : 'LIVE_HOST');
 
   // 2. Resolve Cycle
-  const cycle = getTargetCycle(hostType, date);
+  const cycle = getTargetCycle(resolvedHostType, date);
 
   // 3. Query Persistent Attributions (status IN 'ATTRIBUTED', 'RECONCILED')
   const attributions = await db.hostTargetAttribution.findMany({
     where: {
       recipientUserId: userId,
-      cycleIdentifier: cycle.cycleIdentifier,
       status: { in: ['ATTRIBUTED', 'RECONCILED'] },
+      OR: [
+        { cycleIdentifier: cycle.cycleIdentifier },
+        {
+          createdAt: { gte: cycle.cycleStartDate, lte: cycle.cycleEndDate },
+          targetScope: resolvedHostType === 'AUDIO_HOST' ? 'AUDIO_HOST' : 'LIVE_HOST',
+        },
+      ],
     },
     orderBy: { createdAt: 'asc' },
   });
@@ -737,7 +761,7 @@ export async function getHostTargetProgress(
   }
 
   // 6. Evaluate Against Configured Tiers
-  const tiers = await getTargetTiers(hostType, db);
+  const tiers = await getTargetTiers(resolvedHostType, db);
 
   let currentTier = null;
   let nextTier = tiers[0] || null;
@@ -766,10 +790,11 @@ export async function getHostTargetProgress(
     hostProfileId: hostProfile.id,
     userId,
     username: user.username,
-    hostType,
+    hostType: resolvedHostType,
+    actualHostType: hostProfile.hostType,
     agencyId: hostProfile.agencyId || null,
     agencyName: hostProfile.agency?.agencyName || hostProfile.agency?.name || null,
-    isDirectLiveHost: hostType === 'LIVE_HOST' && !hostProfile.agencyId,
+    isDirectLiveHost: resolvedHostType === 'LIVE_HOST' && !hostProfile.agencyId,
     cycle,
     metrics: {
       transactionCount,

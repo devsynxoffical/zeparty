@@ -404,7 +404,8 @@ export async function getHostTargetSummary(req, res, next) {
   try {
     const userId = req.auth?.userId;
     const date = req.query?.date ? new Date(req.query.date) : new Date();
-    const result = await hostTargetService.getHostTargetProgress(userId, { date });
+    const hostType = req.query?.hostType;
+    const result = await hostTargetService.getHostTargetProgress(userId, { date, hostType });
     return res.status(200).json({ success: true, data: result });
   } catch (err) {
     next(err);

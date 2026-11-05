@@ -1,3 +1,4 @@
+import wealthLevelService from '../services/wealthLevel.service.js';
 import userService from '../services/user.service.js';
 import socialService from '../services/social.service.js';
 import prisma from '../config/database.js';
@@ -1309,8 +1310,32 @@ export async function postAdminGrantNoble(req, res, next) {
 export async function postAdminReconcileWealth(req, res, next) {
   try {
     const { id } = req.params;
-    const result = await userService.reconcileUserWealthXP(id);
+    const { dryRun = false } = req.body || {};
+    const result = await wealthLevelService.reconcileUserWealth(id, { dryRun: Boolean(dryRun) });
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminReconcileAllWealth(req, res, next) {
+  try {
+    const { dryRun = true, limit = 1000 } = req.body || {};
+    const result = await wealthLevelService.reconcileAllUserWealthLevels({ dryRun: Boolean(dryRun), limit: Number(limit) });
     return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAdminWealthSchedule(req, res, next) {
+  try {
+    return res.status(200).json({
+      success: true,
+      maxLevel: wealthLevelService.MAX_WEALTH_LEVEL,
+      maxThreshold: wealthLevelService.MAX_WEALTH_THRESHOLD,
+      schedule: wealthLevelService.WEALTH_LEVEL_SCHEDULE,
+    });
   } catch (err) {
     next(err);
   }
@@ -1783,6 +1808,8 @@ export default {
   getAdminNoblesCatalog,
   postAdminGrantNoble,
   postAdminReconcileWealth,
+  postAdminReconcileAllWealth,
+  getAdminWealthSchedule,
 };
 
 

@@ -489,12 +489,12 @@ export async function createComment(
     authorId: userId,
     authorUsername: comment.user?.username || 'User',
     authorName: comment.user?.profile?.displayName || comment.user?.username || 'User',
-    authorAvatar: comment.user?.profile?.avatarUrl || null,
+    authorAvatar: comment.user?.avatarUrl || comment.user?.profile?.avatarUrl || null,
     user: {
       id: comment.user?.id || userId,
       username: comment.user?.username || 'User',
       displayName: comment.user?.profile?.displayName || comment.user?.username || 'User',
-      avatarUrl: comment.user?.profile?.avatarUrl || null,
+      avatarUrl: comment.user?.avatarUrl || comment.user?.profile?.avatarUrl || null,
     },
     content: comment.content,
     text: comment.content,
@@ -1019,10 +1019,17 @@ export async function getSocialProfile(targetUserId, viewerUserId = null, db = p
     username: user.username,
     avatarUrl: user.avatarUrl,
     bio: user.bio,
+    gender: user.gender || 'Not Specified',
+    dob: user.dob || null,
+    dateOfBirth: user.dob || null,
+    countryCode: user.countryCode || 'GLOBAL',
+    region: user.region || user.countryCode || 'Global',
     displayName: user.profile?.displayName || user.username,
     level: effectiveLevel,
-    vipLevel: user.profile?.vipLevel || 0,
+    vipLevel: effectiveSvipLevel > 0 ? ('SVIP ' + effectiveSvipLevel) : (user.profile?.vipLevel ? ('VIP ' + user.profile.vipLevel) : '0'),
     svipLevel: effectiveSvipLevel,
+    isVip: Boolean(effectiveSvipLevel > 0 || user.profile?.vipLevel),
+    svipTag: effectiveSvipLevel > 0 ? ('assets/svip/svip' + effectiveSvipLevel + '_tag.png') : null,
     nobleRank: user.profile?.nobleRank || null,
     nobleTitle: user.profile?.nobleRank || null,
     nobleLevel: user.profile?.nobleRank || null,
@@ -1215,7 +1222,7 @@ export async function getBlockedUsers(userId, db = prisma) {
     id: u.id,
     name: u.name || u.username || 'User',
     username: u.username || '',
-    avatarUrl: u.profile?.avatarUrl || '',
+    avatarUrl: u.avatarUrl || u.profile?.avatarUrl || '',
     displayId: u.displayId || u.id,
   }));
 }
@@ -1581,12 +1588,13 @@ export async function getEligibleRelationshipFriends(userId, search = '', db = p
         select: {
           id: true,
           username: true,
+          avatarUrl: true,
           profile: {
             select: {
               displayName: true,
-              avatarUrl: true,
               level: true,
-              wealthLevel: true,
+              vipLevel: true,
+              svipLevel: true,
             },
           },
         },
@@ -1599,12 +1607,15 @@ export async function getEligibleRelationshipFriends(userId, search = '', db = p
     return {
       id: u.id,
       userId: u.id,
+      publicUserId: u.id,
       username: u.username,
       name: u.profile?.displayName || u.username,
       displayName: u.profile?.displayName || u.username,
-      avatarUrl: u.profile?.avatarUrl || null,
+      avatarUrl: u.avatarUrl || null,
       level: u.profile?.level || 1,
-      wealthLevel: u.profile?.wealthLevel || 0,
+      wealthLevel: u.profile?.level || 1,
+      vipLevel: u.profile?.vipLevel || 0,
+      svipLevel: u.profile?.svipLevel || 0,
       isMutualFollow: true,
     };
   });
@@ -1670,7 +1681,12 @@ export async function purchaseAndSendRelationshipCard({ senderUserId, recipientU
 
   const recipient = await db.user.findUnique({
     where: { id: recipientUserId },
-    select: { id: true, username: true, profile: { select: { displayName: true, avatarUrl: true } } },
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      profile: { select: { displayName: true } },
+    },
   });
 
   return {

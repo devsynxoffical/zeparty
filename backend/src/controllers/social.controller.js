@@ -27,7 +27,7 @@ export async function getSocialProfile(req, res, next) {
 
 export async function putPrivacySettings(req, res, next) {
   try {
-    const userId = req.auth?.userId;
+    const userId = req.auth?.userId || req.user?.id;
     if (!userId) {
       const error = new Error('User authentication is required');
       error.statusCode = 401;
@@ -161,7 +161,7 @@ export async function deleteBlock(req, res, next) {
 
 export async function getBlockedUsers(req, res, next) {
   try {
-    const userId = req.auth?.userId;
+    const userId = req.auth?.userId || req.user?.id;
     const blockedUsers = await socialService.getBlockedUsers(userId);
 
     return res.status(200).json({
@@ -322,7 +322,7 @@ export async function requestRelationship(req, res, next) {
 
 export async function respondRelationship(req, res, next) {
   try {
-    const userId = req.auth?.userId;
+    const userId = req.auth?.userId || req.user?.id;
     const targetUserId = req.body.targetUserId || req.body.requesterId;
     const accept = req.body.accept !== undefined ? req.body.accept : (req.body.action === 'ACCEPT' || req.body.status === 'ACCEPT');
     const result = await socialService.respondRelationship({
@@ -339,7 +339,7 @@ export async function respondRelationship(req, res, next) {
 
 export async function dissolveRelationship(req, res, next) {
   try {
-    const userId = req.auth?.userId;
+    const userId = req.auth?.userId || req.user?.id;
     const { reason } = req.body;
     const result = await socialService.dissolveRelationship({ userId, reason });
 
@@ -360,7 +360,7 @@ export async function getRelationshipCards(req, res, next) {
 
 export async function getEligibleRelationshipFriends(req, res, next) {
   try {
-    const userId = req.auth?.userId;
+    const userId = req.auth?.userId || req.user?.id;
     const { search } = req.query;
     const friends = await socialService.getEligibleRelationshipFriends(userId, search);
     return res.status(200).json({ success: true, data: friends });
@@ -371,7 +371,7 @@ export async function getEligibleRelationshipFriends(req, res, next) {
 
 export async function purchaseAndSendRelationshipCard(req, res, next) {
   try {
-    const senderUserId = req.auth?.userId;
+    const senderUserId = req.auth?.userId || req.user?.id;
     const { recipientUserId, cardType, deductCoins } = req.body;
     const result = await socialService.purchaseAndSendRelationshipCard({
       senderUserId,

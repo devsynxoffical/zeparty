@@ -1,3 +1,4 @@
+import wealthLevelService from './wealthLevel.service.js';
 import prisma from '../config/database.js';
 import userRepository from '../repositories/user.repository.js';
 import userAssetRepository from '../repositories/userAsset.repository.js';
@@ -277,16 +278,15 @@ export async function getSelfProfile(userId, db = prisma) {
 
   const presence = await presenceService.getUserPresence(userId, db);
 
-  const isOnline = Boolean(presence.isOnline);
+  // Authenticated active app session requesting self profile is authoritative Online
+  const isOnline = true;
   const isInRoom = Boolean(presence.isInRoom);
-  const effectiveLastActiveAt = isOnline
-    ? (presence.lastActiveAt || new Date().toISOString())
-    : (presence.lastActiveAt || '1970-01-01T00:00:00.000Z');
+  const effectivePresenceStatus = isInRoom ? 'IN_ROOM' : 'ONLINE';
+  const effectiveLastActiveAt = new Date().toISOString();
 
   const wealthXpNum = user.profile?.experiencePoints != null ? Number(user.profile.experiencePoints) : 0;
-  const wealthLvl = user.profile?.level != null && user.profile.level > 0
-    ? user.profile.level
-    : (wealthXpNum > 0 ? Math.max(1, Math.floor(wealthXpNum / 10000) + 1) : 1);
+  const wealthProgression = wealthLevelService.calculateWealthProgression(wealthXpNum);
+  const wealthLvl = wealthProgression.level;
   const charmXpNum = user.profile?.totalEarnedDiamonds != null ? Number(user.profile.totalEarnedDiamonds) : 0;
   const charmLvl = Math.max(1, Math.floor(charmXpNum / 10000) + 1);
 
@@ -294,14 +294,19 @@ export async function getSelfProfile(userId, db = prisma) {
     ...user.profile,
     level: wealthLvl,
     wealthLevel: wealthLvl,
+    wealthLvl,
     wealthXp: wealthXpNum,
     experience: wealthXpNum,
     experiencePoints: user.profile.experiencePoints ? user.profile.experiencePoints.toString() : '0',
+    wealthProgress: wealthProgression,
     charmLevel: charmLvl,
     charmXp: charmXpNum,
     totalSpentCoins: user.profile.totalSpentCoins ? user.profile.totalSpentCoins.toString() : '0',
     totalEarnedDiamonds: user.profile.totalEarnedDiamonds ? user.profile.totalEarnedDiamonds.toString() : '0',
-    presenceStatus: presence.presenceStatus,
+    gender: user.gender || 'Not Specified',
+    dob: user.dob || null,
+    dateOfBirth: user.dob || null,
+    presenceStatus: effectivePresenceStatus,
     currentRoomId: presence.currentRoomId,
     currentRoomTitle: presence.currentRoomTitle,
     inRoomAvailable: Boolean(presence.inRoomAvailable),
@@ -365,12 +370,21 @@ export async function getSelfProfile(userId, db = prisma) {
 
   const selfNobleRank = user.profile?.nobleRank || null;
   const selfNobleStyle = getNobleStyle(selfNobleRank);
+  const selfSvipLevel = user.profile?.svipLevel || 0;
+  const selfVipLevel = user.profile?.vipLevel || 0;
+  const selfIsVip = Boolean(selfSvipLevel > 0 || selfVipLevel > 0);
+  const selfSvipTag = selfSvipLevel > 0 ? ('assets/svip/svip' + selfSvipLevel + '_tag.png') : null;
+  const selfVipDisplay = selfSvipLevel > 0 ? ('SVIP ' + selfSvipLevel) : (selfVipLevel > 0 ? ('VIP ' + selfVipLevel) : '0');
   if (profileWithPresence) {
     profileWithPresence.nobleRank = selfNobleRank;
     profileWithPresence.nobleTitle = selfNobleRank;
     profileWithPresence.nobleLevel = selfNobleRank;
     profileWithPresence.nobleColor = selfNobleStyle?.color || null;
     profileWithPresence.nobleStyle = selfNobleStyle;
+    profileWithPresence.svipLevel = selfSvipLevel;
+    profileWithPresence.vipLevel = selfVipDisplay;
+    profileWithPresence.isVip = selfIsVip;
+    profileWithPresence.svipTag = selfSvipTag;
   }
 
   return {
@@ -391,6 +405,10 @@ export async function getSelfProfile(userId, db = prisma) {
     nobleLevel: selfNobleRank,
     nobleColor: selfNobleStyle?.color || null,
     nobleStyle: selfNobleStyle,
+    svipLevel: selfSvipLevel,
+    vipLevel: selfVipDisplay,
+    isVip: selfIsVip,
+    svipTag: selfSvipTag,
     profile: profileWithPresence ? sanitizeFinancial(profileWithPresence) : profileWithPresence,
     avatarFrame: avatarFrame || null,
     equippedFrame: avatarFrame || null,
@@ -415,8 +433,11 @@ export async function getSelfProfile(userId, db = prisma) {
     sellerBalance: sellerBalanceNum,
     sellerBalanceCoins: sellerBalanceStr,
     coinSeller: coinSellerData,
+    gender: user.gender || 'Not Specified',
+    dob: user.dob || null,
+    dateOfBirth: user.dob || null,
     roles,
-    presenceStatus: presence.presenceStatus,
+    presenceStatus: effectivePresenceStatus,
     currentRoomId: presence.currentRoomId,
     currentRoomTitle: presence.currentRoomTitle,
     currentRoomSessionId: presence.currentRoomSessionId,
@@ -433,11 +454,13 @@ export async function getSelfProfile(userId, db = prisma) {
     roomId: presence.currentRoomId || null,
     currentRoom: presence.currentRoom,
     wealthLevel: wealthLvl,
+    wealthLvl,
     wealthXp: wealthXpNum,
     experience: wealthXpNum,
     charmLevel: charmLvl,
     charmXp: charmXpNum,
     level: wealthLvl,
+    wealthProgress: wealthProgression,
   };
 }
 
@@ -549,9 +572,8 @@ export async function getPublicProfile(userId, db = prisma) {
     : (presence.lastActiveAt || '1970-01-01T00:00:00.000Z');
 
   const pubWealthXpNum = publicUser.profile?.experiencePoints != null ? Number(publicUser.profile.experiencePoints) : 0;
-  const pubWealthLvl = publicUser.profile?.level != null && publicUser.profile.level > 0
-    ? publicUser.profile.level
-    : (pubWealthXpNum > 0 ? Math.max(1, Math.floor(pubWealthXpNum / 10000) + 1) : 1);
+  const pubWealthProgression = wealthLevelService.calculateWealthProgression(pubWealthXpNum);
+  const pubWealthLvl = pubWealthProgression.level;
   const pubCharmXpNum = publicUser.profile?.totalEarnedDiamonds != null ? Number(publicUser.profile.totalEarnedDiamonds) : 0;
   const pubCharmLvl = Math.max(1, Math.floor(pubCharmXpNum / 10000) + 1);
 
@@ -559,15 +581,20 @@ export async function getPublicProfile(userId, db = prisma) {
     ...publicUser.profile,
     level: pubWealthLvl,
     wealthLevel: pubWealthLvl,
+    wealthLvl: pubWealthLvl,
     wealthXp: pubWealthXpNum,
     experience: pubWealthXpNum,
     experiencePoints: publicUser.profile.experiencePoints ? publicUser.profile.experiencePoints.toString() : '0',
+    wealthProgress: pubWealthProgression,
     charmLevel: pubCharmLvl,
     charmXp: pubCharmXpNum,
     gameLevel: 1,
     gameXp: 0,
     accountLevel: pubWealthLvl,
     accountXp: pubWealthXpNum,
+    gender: publicUser.gender || 'Not Specified',
+    dob: publicUser.dob || null,
+    dateOfBirth: publicUser.dob || null,
     levels: {
       wealth: pubWealthLvl,
       wealthLevel: pubWealthLvl,
@@ -600,12 +627,21 @@ export async function getPublicProfile(userId, db = prisma) {
   const publicId = /^[1-9]\d{6}$/.test(publicUser.id) ? publicUser.id : (publicUser.username && /^\d+$/.test(publicUser.username) ? publicUser.username : publicUser.id);
   const pubNobleRank = publicUser.profile?.nobleRank || null;
   const pubNobleStyle = getNobleStyle(pubNobleRank);
+  const pubSvipLevel = publicUser.profile?.svipLevel || 0;
+  const pubVipLevel = publicUser.profile?.vipLevel || 0;
+  const pubIsVip = Boolean(pubSvipLevel > 0 || pubVipLevel > 0);
+  const pubSvipTag = pubSvipLevel > 0 ? ('assets/svip/svip' + pubSvipLevel + '_tag.png') : null;
+  const pubVipDisplay = pubSvipLevel > 0 ? ('SVIP ' + pubSvipLevel) : (pubVipLevel > 0 ? ('VIP ' + pubVipLevel) : '0');
   if (profileWithPresence) {
     profileWithPresence.nobleRank = pubNobleRank;
     profileWithPresence.nobleTitle = pubNobleRank;
     profileWithPresence.nobleLevel = pubNobleRank;
     profileWithPresence.nobleColor = pubNobleStyle?.color || null;
     profileWithPresence.nobleStyle = pubNobleStyle;
+    profileWithPresence.svipLevel = pubSvipLevel;
+    profileWithPresence.vipLevel = pubVipDisplay;
+    profileWithPresence.isVip = pubIsVip;
+    profileWithPresence.svipTag = pubSvipTag;
   }
 
   return {
@@ -622,10 +658,19 @@ export async function getPublicProfile(userId, db = prisma) {
     nobleLevel: pubNobleRank,
     nobleColor: pubNobleStyle?.color || null,
     nobleStyle: pubNobleStyle,
+    svipLevel: pubSvipLevel,
+    vipLevel: pubVipDisplay,
+    isVip: pubIsVip,
+    svipTag: pubSvipTag,
+    gender: publicUser.gender || 'Not Specified',
+    dob: publicUser.dob || null,
+    dateOfBirth: publicUser.dob || null,
     profile: profileWithPresence,
     level: pubWealthLvl,
     wealthLevel: pubWealthLvl,
+    wealthLvl: pubWealthLvl,
     wealthXp: pubWealthXpNum,
+    wealthProgress: pubWealthProgression,
     charmLevel: pubCharmLvl,
     charmXp: pubCharmXpNum,
     gameLevel: 1,
@@ -1430,7 +1475,8 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
   } catch (_) {}
 
   let effectiveSvipLevel = user.profile?.svipLevel || 0;
-  let effectiveWealthLevel = user.profile?.level || 1;
+  const cardWealthProgression = wealthLevelService.calculateWealthProgression(Number(user.profile?.experiencePoints || 0n));
+  let effectiveWealthLevel = cardWealthProgression.level;
   let effectiveWealthXp = Number(user.profile?.experiencePoints || 0n);
   let effectiveCharm = Math.max(1, Math.floor(Number(user.profile?.totalEarnedDiamonds || 0n) / 10000) + 1);
   let effectiveCharmXp = Number(user.profile?.totalEarnedDiamonds || 0n);
@@ -1512,14 +1558,22 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
     avatarUrl: user.avatarUrl,
     avatarFrame: equippedFrame,
     equippedFrame: equippedFrame,
+    gender: user.gender || 'Not Specified',
+    dob: user.dob || null,
+    dateOfBirth: user.dob || null,
+    countryCode: user.countryCode || 'GLOBAL',
     level: effectiveWealthLevel,
     wealthLevel: effectiveWealthLevel,
+    effectiveWealthLevel,
     wealthXp: effectiveWealthXp,
+    wealthProgress: cardWealthProgression,
     charmLevel: effectiveCharm,
     charmXp: effectiveCharmXp,
     gameLevel: 1,
-    vipLevel: user.profile?.vipLevel || 0,
+    vipLevel: effectiveSvipLevel > 0 ? ('SVIP ' + effectiveSvipLevel) : (user.profile?.vipLevel ? ('VIP ' + user.profile.vipLevel) : '0'),
     svipLevel: effectiveSvipLevel,
+    isVip: Boolean(effectiveSvipLevel > 0 || user.profile?.vipLevel),
+    svipTag: effectiveSvipLevel > 0 ? ('assets/svip/svip' + effectiveSvipLevel + '_tag.png') : null,
     nobleRank: user.profile?.nobleRank || 'NONE',
     nobleColor: nobleStyle?.color || null,
     nobleStyle: nobleStyle,
@@ -1532,14 +1586,19 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
       avatarFrame: equippedFrame,
       equippedFrame: equippedFrame,
       country: user.countryCode || 'GLOBAL',
+      gender: user.gender || 'Not Specified',
+      dob: user.dob || null,
+      dateOfBirth: user.dob || null,
       level: effectiveWealthLevel,
       wealthLevel: effectiveWealthLevel,
       wealthXp: effectiveWealthXp,
       charmLevel: effectiveCharm,
       charmXp: effectiveCharmXp,
       gameLevel: 1,
-      vipLevel: user.profile?.vipLevel || 0,
+    vipLevel: effectiveSvipLevel > 0 ? ('SVIP ' + effectiveSvipLevel) : (user.profile?.vipLevel ? ('VIP ' + user.profile.vipLevel) : '0'),
       svipLevel: effectiveSvipLevel,
+      isVip: Boolean(effectiveSvipLevel > 0 || user.profile?.vipLevel),
+    svipTag: effectiveSvipLevel > 0 ? ('assets/svip/svip' + effectiveSvipLevel + '_tag.png') : null,
       nobleRank: user.profile?.nobleRank || 'NONE',
       nobleColor: nobleStyle?.color || null,
       nobleStyle: nobleStyle,
@@ -1626,8 +1685,9 @@ export async function getUserLevelStrip(userId, viewerUserId = null, db = prisma
     targetPreferences = await privacyEligibilityService.getUserPreferences(userId, db);
   } catch (_) {}
 
-  let wealthLvl = user?.profile?.level || 1;
   let wealthXp = Number(user?.profile?.experiencePoints || 0n);
+  const wealthProgression = wealthLevelService.calculateWealthProgression(wealthXp);
+  let wealthLvl = wealthProgression.level;
   let charmLvl = Math.max(1, Math.floor(Number(user?.profile?.totalEarnedDiamonds || 0n) / 10000) + 1);
   let svipLvl = user?.profile?.svipLevel || 0;
 
@@ -1655,7 +1715,7 @@ export async function getUserLevelStrip(userId, viewerUserId = null, db = prisma
     order: ['SVIP', 'WEALTH', 'CHARM', 'GAME'],
     cards: [
       { key: 'SVIP', label: 'SVIP', level: svipLvl > 0 ? `SVIP ${svipLvl}` : 'SVIP 0', icon: '👑', color: '#FFD700', active: svipLvl > 0 },
-      { key: 'WEALTH', label: 'Wealth (Sending)', level: `Lv. ${wealthLvl}`, icon: '💎', color: '#00D2FF', active: true, xp: wealthXp, targetXp: 10000 },
+      { key: 'WEALTH', label: 'Wealth (Sending)', level: `Lv. ${wealthLvl}`, icon: '💎', color: '#00D2FF', active: true, xp: wealthProgression.progressCoins, targetXp: wealthProgression.additionalCoinsRequired, lifetimeXp: wealthProgression.lifetimeSendingCoins, progressPercent: wealthProgression.progressPercent, isMax: wealthProgression.isMaxLevel },
       { key: 'CHARM', label: 'Charm (Receiving)', level: `Lv. ${charmLvl}`, icon: '💖', color: '#FF69B4', active: true },
       { key: 'GAME', label: 'Game Level', level: 'Lv. 1', icon: '🎮', color: '#B15CFF', active: true },
     ],
@@ -3774,39 +3834,7 @@ export async function grantNobleTitleToUser(
  * Reconcile User Wealth XP from confirmed GiftTransactions
  */
 export async function reconcileUserWealthXP(userId, db = prisma) {
-  const transactions = await db.giftTransaction.findMany({
-    where: { senderUserId: userId },
-    select: { totalCoins: true },
-  });
-
-  const cumulativeCoins = transactions.reduce((sum, t) => sum + BigInt(t.totalCoins || 0), 0n);
-  const calculatedLevel = Math.max(1, Math.floor(Number(cumulativeCoins) / 10000) + 1);
-
-  const updatedProfile = await db.userProfile.upsert({
-    where: { userId },
-    update: {
-      experiencePoints: cumulativeCoins,
-      totalSpentCoins: cumulativeCoins,
-      level: calculatedLevel,
-    },
-    create: {
-      userId,
-      experiencePoints: cumulativeCoins,
-      totalSpentCoins: cumulativeCoins,
-      level: calculatedLevel,
-    },
-  });
-
-  return {
-    success: true,
-    reconciled: {
-      userId,
-      confirmedGiftCount: transactions.length,
-      totalCoinsSpent: cumulativeCoins.toString(),
-      wealthXp: cumulativeCoins.toString(),
-      wealthLevel: calculatedLevel,
-    },
-  };
+  return await wealthLevelService.reconcileUserWealth(userId, { dryRun: false }, db);
 }
 
 export async function getUserPresence(userId, db = prisma) {
