@@ -64,6 +64,13 @@ export async function initSocketServer(httpServer) {
   io.on('connection', async (socket) => {
     // Automatically join authenticated user's private channel
     socket.join(`user:${socket.userId}`);
+    if (socket.userId && String(socket.userId).startsWith('guest_')) {
+      const strippedId = String(socket.userId).replace('guest_', '');
+      if (strippedId) socket.join(`user:${strippedId}`);
+    }
+    if (socket.user?.id && socket.user.id !== socket.userId) {
+      socket.join(`user:${socket.user.id}`);
+    }
 
     // Register global presence tracking for registered users
     if (socket.userId && !socket.isGuest && !String(socket.userId).startsWith('guest_')) {

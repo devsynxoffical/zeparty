@@ -620,7 +620,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       socket.emit('viewer_count_changed', viewerPayload);
     }
 
-    if (isFirstSocket) {
+    // Always broadcast user joined on explicit room join
 
       // Check if user has ROOM_INVISIBLE / stealth_entry enabled and eligible
       let isStealthEntry = false;
@@ -805,7 +805,6 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           socket.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
         }
       }
-    }
 
     // 8. Update Authoritative User Room Presence
     if (userId && !socket.isGuest && !String(userId).startsWith('guest_')) {

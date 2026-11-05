@@ -141,6 +141,9 @@ export async function authenticate(req, res, next) {
       if (!user && typeof subIdentifier === 'string' && !subIdentifier.startsWith('google_') && !subIdentifier.startsWith('user_')) {
         user = await userRepository.findByUsername(subIdentifier);
       }
+      if (!user && typeof subIdentifier === 'string') {
+        user = await userRepository.findByFirebaseUid(subIdentifier);
+      }
     }
 
     // Reject nonexistent accounts or synthetic shadow user records

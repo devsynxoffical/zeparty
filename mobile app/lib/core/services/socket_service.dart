@@ -316,7 +316,7 @@ class SocketService {
     _socket = IO.io(
       baseUrl,
       IO.OptionBuilder()
-          .setTransports(['polling', 'websocket'])
+          .setTransports(['websocket'])
           .disableAutoConnect()
           .setAuth(authMap)
           .setExtraHeaders({'Authorization': 'Bearer $authToken'})
