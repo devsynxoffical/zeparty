@@ -20,6 +20,7 @@ import * as attendanceService from '../services/attendance.service.js';
 import stageService from '../services/stage.service.js';
 import privacyEligibilityService from '../services/privacyEligibility.service.js';
 import { getNobleStyle } from '../services/asset.service.js';
+import roomTrophyService from '../services/roomTrophy.service.js';
 
 /**
  * Resolves the authoritative equipped avatar frame for any user object.
@@ -231,6 +232,9 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
           vipLevel: u.profile?.vipLevel || 0,
           nobleTitle: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
           nobleLevel: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
+          nobleRank: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
+          nobleColor: getNobleStyle(u.profile?.nobleRank || u.nobleTitle || u.nobleLevel)?.color || null,
+          nobleStyle: getNobleStyle(u.profile?.nobleRank || u.nobleTitle || u.nobleLevel),
         } : null,
       };
     }),
@@ -240,6 +244,7 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       if (!coHostUser) return null;
       const dName = coHostUser.profile?.displayName || coHostUser.displayName || coHostUser.username || 'Co-Host';
       const coHostFrame = resolveUserAvatarFrame(coHostUser);
+      const agoraUid = deriveAgoraUid(coHostUser.id);
       return {
         id: coHostUser.id,
         userId: coHostUser.id,
@@ -253,8 +258,67 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
         seatNumber: 1,
         isCoHost: true,
         role: 'CO_HOST',
+        agoraUid,
+        mediaUid: agoraUid,
+        hasAudio: true,
+        hasVideo: true,
+        videoState: 'active',
+        audioState: 'active',
+        connectionState: 'CONNECTED',
       };
     })(),
+    cohosts: (() => {
+      const coHostSeat = (room.seats || []).find((s) => s.seatIndex === 1 && s.occupiedUserId);
+      const coHostUser = coHostSeat ? (coHostSeat.occupiedUser || coHostSeat.user) : null;
+      if (!coHostUser) return [];
+      const dName = coHostUser.profile?.displayName || coHostUser.displayName || coHostUser.username || 'Co-Host';
+      const coHostFrame = resolveUserAvatarFrame(coHostUser);
+      const agoraUid = deriveAgoraUid(coHostUser.id);
+      return [{
+        id: coHostUser.id,
+        userId: coHostUser.id,
+        username: coHostUser.username,
+        displayName: dName,
+        name: dName,
+        avatarUrl: coHostUser.profile?.avatarUrl || coHostUser.avatarUrl || null,
+        avatarFrame: coHostFrame,
+        equippedFrame: coHostFrame,
+        seatIndex: 1,
+        seatNumber: 1,
+        isCoHost: true,
+        role: 'CO_HOST',
+        agoraUid,
+        mediaUid: agoraUid,
+        hasAudio: true,
+        hasVideo: true,
+        videoState: 'active',
+        audioState: 'active',
+        connectionState: 'CONNECTED',
+      }];
+    })(),
+    stage: (room.seats || []).map((s) => {
+      const u = s.occupiedUser || s.user;
+      const isOccupied = Boolean(u && s.occupiedUserId);
+      return {
+        slotIndex: s.seatIndex,
+        seatIndex: s.seatIndex,
+        seatNumber: s.seatIndex,
+        occupiedUserId: isOccupied ? (u.id || s.occupiedUserId) : null,
+        userId: isOccupied ? (u.id || s.occupiedUserId) : null,
+        user: isOccupied ? {
+          id: u.id,
+          userId: u.id,
+          username: u.username,
+          displayName: u.profile?.displayName || u.displayName || u.username,
+          name: u.profile?.displayName || u.displayName || u.username,
+          avatarUrl: u.profile?.avatarUrl || u.avatarUrl || null,
+        } : null,
+        isLocked: Boolean(s.isLocked),
+        isMuted: Boolean(s.isMuted),
+        isCoHost: s.seatIndex === 1 && isOccupied,
+        agoraUid: isOccupied ? deriveAgoraUid(u.id || s.occupiedUserId) : null,
+      };
+    }),
     isCoHosting: Boolean((room.seats || []).some((s) => s.seatIndex === 1 && s.occupiedUserId)),
     members: membersList,
     createdAt: room.createdAt,
@@ -477,18 +541,9 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       }));
     } catch (_) {}
 
-    // Issue 08: Calculate today's daily gift coin total for room header trophy counter
-    let dailySendingTotal = 0;
-    try {
-      const todayUtc = new Date();
-      todayUtc.setUTCHours(0, 0, 0, 0);
-      const effectiveDailyStart = sessionStart > todayUtc ? sessionStart : todayUtc;
-      const dailyAggr = await (db || prisma).giftTransaction.aggregate({
-        where: { roomId: room.id, createdAt: { gte: effectiveDailyStart } },
-        _sum: { totalCoins: true },
-      });
-      dailySendingTotal = Number(dailyAggr._sum?.totalCoins || 0);
-    } catch (_) {}
+    // Issue 14: Calculate authoritative daily trophy total for room header
+    const trophyData = await roomTrophyService.getAuthoritativeRoomTrophy(room.id, {}, db || prisma);
+    const dailySendingTotal = trophyData.trophyCoins;
     room.dailySendingTotal = dailySendingTotal;
     room.roomSendingTotal = dailySendingTotal;
     room.periodTotalCoins = dailySendingTotal;
@@ -1250,17 +1305,8 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       }));
     } catch (_) {}
 
-    let dailySendingTotal = 0;
-    try {
-      const todayUtc = new Date();
-      todayUtc.setUTCHours(0, 0, 0, 0);
-      const effectiveDailyStart = sessionStart > todayUtc ? sessionStart : todayUtc;
-      const dailyAggr = await (db || prisma).giftTransaction.aggregate({
-        where: { roomId: room.id, createdAt: { gte: effectiveDailyStart } },
-        _sum: { totalCoins: true },
-      });
-      dailySendingTotal = Number(dailyAggr._sum?.totalCoins || 0);
-    } catch (_) {}
+    const trophyDataRes = await roomTrophyService.getAuthoritativeRoomTrophy(room.id, {}, db || prisma);
+    const dailySendingTotal = trophyDataRes.trophyCoins;
     room.dailySendingTotal = dailySendingTotal;
     room.roomSendingTotal = dailySendingTotal;
     room.periodTotalCoins = dailySendingTotal;
@@ -2394,6 +2440,43 @@ export function registerRoomHandlers(io, socket) {
 
   socket.on('room:cohost_invite_response', handleCoHostInviteResponse);
   socket.on('cohost_invite_response', handleCoHostInviteResponse);
+
+  const handleCoHostLeave = async (data, callback) => {
+    try {
+      const roomId = data?.roomId;
+      const userId = socket.userId || data?.userId;
+      if (!roomId) {
+        if (typeof callback === 'function') callback({ success: false, error: 'roomId is required' });
+        return;
+      }
+      const result = await cohostInviteService.leaveCoHost({ roomId, userId });
+      if (typeof callback === 'function') callback({ success: true, ...result });
+    } catch (err) {
+      console.warn('[RoomSocket] handleCoHostLeave error:', err.message);
+      if (typeof callback === 'function') callback({ success: false, error: err.message, code: err.code });
+    }
+  };
+  socket.on('room:cohost_leave', handleCoHostLeave);
+  socket.on('cohost_leave', handleCoHostLeave);
+
+  const handleCoHostRemove = async (data, callback) => {
+    try {
+      const roomId = data?.roomId;
+      const targetUserId = data?.targetUserId || data?.userId;
+      const requesterUserId = socket.userId || data?.requesterUserId;
+      if (!roomId) {
+        if (typeof callback === 'function') callback({ success: false, error: 'roomId is required' });
+        return;
+      }
+      const result = await cohostInviteService.removeCoHost({ roomId, targetUserId, requesterUserId });
+      if (typeof callback === 'function') callback({ success: true, ...result });
+    } catch (err) {
+      console.warn('[RoomSocket] handleCoHostRemove error:', err.message);
+      if (typeof callback === 'function') callback({ success: false, error: err.message, code: err.code });
+    }
+  };
+  socket.on('room:cohost_remove', handleCoHostRemove);
+  socket.on('cohost_remove', handleCoHostRemove);
 
   // Authoritative Active Rooms Snapshot Request for newly connected or reconnecting clients
   socket.on(

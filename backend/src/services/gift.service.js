@@ -12,6 +12,7 @@ import pkService from './pk.service.js';
 import hostTargetService from './hostTarget.service.js';
 import wealthLevelService from './wealthLevel.service.js';
 import roomLevelService from './roomLevel.service.js';
+import roomTrophyService from './roomTrophy.service.js';
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {

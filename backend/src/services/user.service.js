@@ -1,4 +1,5 @@
 import wealthLevelService from './wealthLevel.service.js';
+import nobleService from './noble.service.js';
 import prisma from '../config/database.js';
 import userRepository from '../repositories/user.repository.js';
 import userAssetRepository from '../repositories/userAsset.repository.js';
@@ -368,8 +369,11 @@ export async function getSelfProfile(userId, db = prisma) {
     updatedAt: user.coinSeller.updatedAt,
   } : null;
 
-  const selfNobleRank = user.profile?.nobleRank || null;
-  const selfNobleStyle = getNobleStyle(selfNobleRank);
+  const activeNobleSelf = await nobleService.getActiveNoble(userId, { checkExpiry: true }, db);
+  const selfNobleRank = activeNobleSelf ? activeNobleSelf.nobleRank : null;
+  const selfNobleStyle = activeNobleSelf ? activeNobleSelf.style : null;
+  const selfNobleAssets = activeNobleSelf ? activeNobleSelf.assets : null;
+  const selfNobleExpiresAt = activeNobleSelf ? activeNobleSelf.expiresAt : null;
   const selfSvipLevel = user.profile?.svipLevel || 0;
   const selfVipLevel = user.profile?.vipLevel || 0;
   const selfIsVip = Boolean(selfSvipLevel > 0 || selfVipLevel > 0);
@@ -381,6 +385,8 @@ export async function getSelfProfile(userId, db = prisma) {
     profileWithPresence.nobleLevel = selfNobleRank;
     profileWithPresence.nobleColor = selfNobleStyle?.color || null;
     profileWithPresence.nobleStyle = selfNobleStyle;
+    profileWithPresence.noble = activeNobleSelf;
+    profileWithPresence.activeNoble = activeNobleSelf;
     profileWithPresence.svipLevel = selfSvipLevel;
     profileWithPresence.vipLevel = selfVipDisplay;
     profileWithPresence.isVip = selfIsVip;
@@ -405,6 +411,8 @@ export async function getSelfProfile(userId, db = prisma) {
     nobleLevel: selfNobleRank,
     nobleColor: selfNobleStyle?.color || null,
     nobleStyle: selfNobleStyle,
+    noble: activeNobleSelf,
+    activeNoble: activeNobleSelf,
     svipLevel: selfSvipLevel,
     vipLevel: selfVipDisplay,
     isVip: selfIsVip,
@@ -625,8 +633,11 @@ export async function getPublicProfile(userId, db = prisma) {
   } : publicUser.profile;
 
   const publicId = /^[1-9]\d{6}$/.test(publicUser.id) ? publicUser.id : (publicUser.username && /^\d+$/.test(publicUser.username) ? publicUser.username : publicUser.id);
-  const pubNobleRank = publicUser.profile?.nobleRank || null;
-  const pubNobleStyle = getNobleStyle(pubNobleRank);
+  const activeNoblePub = await nobleService.getActiveNoble(userId, { checkExpiry: true }, db);
+  const pubNobleRank = activeNoblePub ? activeNoblePub.nobleRank : null;
+  const pubNobleStyle = activeNoblePub ? activeNoblePub.style : null;
+  const pubNobleAssets = activeNoblePub ? activeNoblePub.assets : null;
+  const pubNobleExpiresAt = activeNoblePub ? activeNoblePub.expiresAt : null;
   const pubSvipLevel = publicUser.profile?.svipLevel || 0;
   const pubVipLevel = publicUser.profile?.vipLevel || 0;
   const pubIsVip = Boolean(pubSvipLevel > 0 || pubVipLevel > 0);
@@ -638,6 +649,8 @@ export async function getPublicProfile(userId, db = prisma) {
     profileWithPresence.nobleLevel = pubNobleRank;
     profileWithPresence.nobleColor = pubNobleStyle?.color || null;
     profileWithPresence.nobleStyle = pubNobleStyle;
+    profileWithPresence.noble = activeNoblePub;
+    profileWithPresence.activeNoble = activeNoblePub;
     profileWithPresence.svipLevel = pubSvipLevel;
     profileWithPresence.vipLevel = pubVipDisplay;
     profileWithPresence.isVip = pubIsVip;
@@ -658,6 +671,8 @@ export async function getPublicProfile(userId, db = prisma) {
     nobleLevel: pubNobleRank,
     nobleColor: pubNobleStyle?.color || null,
     nobleStyle: pubNobleStyle,
+    noble: activeNoblePub,
+    activeNoble: activeNoblePub,
     svipLevel: pubSvipLevel,
     vipLevel: pubVipDisplay,
     isVip: pubIsVip,
@@ -1227,17 +1242,19 @@ export async function grantUniqueItemToUser(
     grantedDetails.svipLevel = levelNum;
   } else if (normalizedType === 'NOBLE') {
     const rankName = String(itemId || 'Baron');
-    await db.userProfile.upsert({
-      where: { userId },
-      create: {
-        userId,
-        nobleRank: rankName,
+    const durDays = duration === 'PERMANENT' ? null : (parseInt(duration, 10) || 30);
+    const activated = await nobleService.activateNobleTier(
+      userId,
+      {
+        nobleTier: rankName,
+        durationDays: durDays,
+        grantType: 'ADMIN_GRANT',
+        grantReason: reason || 'Admin manageRoleOrBadge',
+        grantedBy: adminId || 'admin',
       },
-      update: {
-        nobleRank: rankName,
-      },
-    });
-    grantedDetails.nobleRank = rankName;
+      db
+    );
+    grantedDetails.nobleRank = activated.nobleRank;
   } else {
     // Assets: AVATAR_FRAME, BADGE, TAG, ENTRY_EFFECT, CHAT_BUBBLE, PROFILE_CARD, etc.
     let targetAsset = null;
@@ -1340,10 +1357,11 @@ export async function revokeUniqueItemFromUser(
       data: { svipLevel: 0 },
     });
   } else if (normalizedType === 'NOBLE') {
-    await db.userProfile.updateMany({
-      where: { userId },
-      data: { nobleRank: null },
-    });
+    await nobleService.revokeActiveNoble(
+      userId,
+      { reason: reason || 'Admin revokeRoleOrBadge', operatorId: adminId || 'admin' },
+      db
+    );
   } else if (itemId) {
     await db.userAsset.deleteMany({
       where: {
@@ -1548,7 +1566,9 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
     }
   }
 
-  const nobleStyle = getNobleStyle(user.profile?.nobleRank);
+  const activeNobleCard = await nobleService.getActiveNoble(targetUserId, { checkExpiry: true }, db);
+  const nobleStyle = activeNobleCard ? activeNobleCard.style : null;
+  const cardNobleRank = activeNobleCard ? activeNobleCard.nobleRank : null;
 
   return {
     id: user.id,
@@ -1574,9 +1594,11 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
     svipLevel: effectiveSvipLevel,
     isVip: Boolean(effectiveSvipLevel > 0 || user.profile?.vipLevel),
     svipTag: effectiveSvipLevel > 0 ? ('assets/svip/svip' + effectiveSvipLevel + '_tag.png') : null,
-    nobleRank: user.profile?.nobleRank || 'NONE',
+    nobleRank: cardNobleRank || 'NONE',
     nobleColor: nobleStyle?.color || null,
     nobleStyle: nobleStyle,
+    noble: activeNobleCard,
+    activeNoble: activeNobleCard,
     user: {
       id: user.id,
       userId: user.id,
@@ -3787,47 +3809,30 @@ export async function grantNobleTitleToUser(
     throw error;
   }
 
-  const previousNoble = targetUser.profile?.nobleRank || null;
+  // Issue 13: Single active noble enforcement through nobleService
+  const activated = await nobleService.activateNobleTier(
+    userId,
+    {
+      nobleTier: nobleTitle,
+      durationDays,
+      grantType: 'ADMIN_GRANT',
+      grantReason: reason || `Admin granted noble title "${nobleTitle}"`,
+      grantedBy: adminId || 'admin',
+    },
+    db
+  );
 
-  return await db.$transaction(async (tx) => {
-    const updatedProfile = await tx.userProfile.upsert({
-      where: { userId },
-      update: {
-        nobleRank: nobleTitle,
-      },
-      create: {
-        userId,
-        nobleRank: nobleTitle,
-      },
-    });
-
-    await logAudit(
-      {
-        adminId,
-        adminName,
-        action: 'NOBLE_TITLE_GRANTED',
-        targetEntity: 'UserProfile',
-        targetEntityId: userId,
-        beforeStateJson: { nobleRank: previousNoble },
-        afterStateJson: { nobleRank: nobleTitle, durationDays },
-        reason: reason || `Admin granted noble title "${nobleTitle}"`,
-        ipAddress,
-      },
-      tx
-    );
-
-    return {
-      success: true,
-      nobleTitle,
-      nobleRank: updatedProfile.nobleRank,
-      message: `Noble title "${nobleTitle}" granted successfully to @${targetUser.username}.`,
-      user: {
-        id: targetUser.id,
-        username: targetUser.username,
-        nobleRank: updatedProfile.nobleRank,
-      },
-    };
-  });
+  return {
+    success: true,
+    nobleTitle: activated.nobleTitle,
+    nobleRank: activated.nobleRank,
+    message: `Noble title "${activated.nobleTitle}" granted successfully to @${targetUser.username}.`,
+    user: {
+      id: targetUser.id,
+      username: targetUser.username,
+      nobleRank: activated.nobleRank,
+    },
+  };
 }
 
 /**

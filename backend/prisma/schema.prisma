@@ -394,6 +394,7 @@ model User {
   settlementRecords        SettlementRecord[]  @relation("UserSettlementRecords")
   settlementAdjustments    SettlementAdjustment[] @relation("UserSettlementAdjustments")
   milestoneClaims          UserMilestoneClaim[]   @relation("UserMilestoneClaims")
+  nobleEntitlements        UserNobleEntitlement[]
 
   @@index([status])
   @@index([countryCode])
@@ -419,6 +420,25 @@ model UserProfile {
   postsCount          Int      @default(0)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
+}
+
+model UserNobleEntitlement {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nobleTier   String
+  isActive    Boolean   @default(false)
+  activatedAt DateTime  @default(now())
+  expiresAt   DateTime?
+  grantType   String    @default("ADMIN_GRANT")
+  grantReason String?
+  grantedBy   String?
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+
+  @@index([userId])
+  @@index([userId, isActive])
 }
 
 model UserSession {

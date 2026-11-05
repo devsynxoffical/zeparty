@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import prisma from '../config/database.js';
+import nobleService from './noble.service.js';
 import bdCenterRepository from '../repositories/bdCenter.repository.js';
 import hostRepository from '../repositories/host.repository.js';
 
@@ -938,40 +939,48 @@ export async function grantOrUpdateUserNoble(operatorId, { targetUserId, rank, a
   }
 
   const oldRank = targetUser.profile?.nobleRank || 'NONE';
-  const newRank = rank.toUpperCase();
 
-  const updatedProfile = await db.userProfile.upsert({
-    where: { userId: targetUserId },
-    update: { nobleRank: newRank },
-    create: {
-      userId: targetUserId,
-      nobleRank: newRank,
+  if (actionType?.toLowerCase() === 'revoke' || rank?.toUpperCase() === 'NONE') {
+    const revRes = await nobleService.revokeActiveNoble(
+      targetUserId,
+      { reason: reason || 'Revoked via BD Center', operatorId },
+      db
+    );
+    return {
+      actionId: `NOBLE-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
+      targetUserId,
+      oldRank,
+      newRank: 'NONE',
+      actionType: 'REVOKE',
+      reason,
+      updatedProfile: { userId: targetUserId, nobleRank: null },
+    };
+  }
+
+  const activated = await nobleService.activateNobleTier(
+    targetUserId,
+    {
+      nobleTier: rank,
+      customExpiry: expiryDate === 'PERMANENT' ? null : expiryDate,
+      grantType: 'BD_GRANT',
+      grantReason: reason || 'Granted via BD Center',
+      grantedBy: operatorId,
     },
-  });
-
-  await logAudit({
-    adminId: operatorId,
-    adminName: 'BD Manager / Admin',
-    action: `NOBLE_${actionType.toUpperCase()}`,
-    targetEntity: 'UserNoble',
-    targetEntityId: targetUserId,
-    beforeStateJson: { nobleRank: oldRank },
-    afterStateJson: { nobleRank: newRank, actionType, startDate, expiryDate, reason },
-    reason,
-  }, db);
+    db
+  );
 
   return {
     actionId: `NOBLE-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
     targetUserId,
     oldRank,
-    newRank,
-    actionType,
+    newRank: activated.nobleTier,
+    actionType: actionType || 'GRANT',
     startDate: startDate || new Date().toISOString(),
-    expiryDate: expiryDate || 'PERMANENT',
+    expiryDate: activated.expiresAt || 'PERMANENT',
     reason,
     updatedProfile: {
-      userId: updatedProfile.userId,
-      nobleRank: updatedProfile.nobleRank,
+      userId: targetUserId,
+      nobleRank: activated.nobleRank,
     },
   };
 }

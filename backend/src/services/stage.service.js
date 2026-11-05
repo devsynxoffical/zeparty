@@ -4,6 +4,7 @@ import redisProxy from '../config/redis.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import presenceService from '../socket/presence.service.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
+import { deriveAgoraUid } from '../utils/agoraToken.util.js';
 
 const memoryStageVersions = new Map();
 const memoryCameraStates = new Map();
@@ -105,13 +106,16 @@ export async function getStageSnapshot(roomId, db = prisma) {
   const isHostMuted = Boolean(hostSeat?.isMuted);
   const isHostCameraOn = await getParticipantCameraState(room.id, hostUserId);
 
+  const hostAgoraUid = deriveAgoraUid(hostUserId);
   const hostPayload = {
     id: hostUserId,
     userId: hostUserId,
+    participantId: hostUserId,
     username: hostUser?.username || 'host',
     displayName: hostDisplayName,
     name: hostDisplayName,
     avatarUrl: hostAvatar,
+    avatar: hostAvatar,
     role: 'HOST',
     isHost: true,
     isOwner: true,
@@ -119,6 +123,13 @@ export async function getStageSnapshot(roomId, db = prisma) {
     seatNumber: 0,
     isMuted: isHostMuted,
     isCameraOn: isHostCameraOn,
+    hasAudio: !isHostMuted,
+    hasVideo: isHostCameraOn,
+    videoState: isHostCameraOn ? 'ENABLED' : 'MUTED',
+    audioState: isHostMuted ? 'MUTED' : 'ENABLED',
+    agoraUid: hostAgoraUid,
+    mediaUid: hostAgoraUid,
+    connectionState: 'CONNECTED',
     status: 'ACTIVE',
   };
 
@@ -141,13 +152,16 @@ export async function getStageSnapshot(roomId, db = prisma) {
       const isCoHostMuted = Boolean(coHostSeat?.isMuted);
       const isCoHostCameraOn = await getParticipantCameraState(room.id, activeCoHostUserId);
 
+      const coHostAgoraUid = deriveAgoraUid(activeCoHostUserId);
       coHostPayload = {
         id: activeCoHostUserId,
         userId: activeCoHostUserId,
+        participantId: activeCoHostUserId,
         username: coHostUser.username || 'cohost',
         displayName: coHostDisplayName,
         name: coHostDisplayName,
         avatarUrl: coHostAvatar,
+        avatar: coHostAvatar,
         role: 'CO_HOST',
         isHost: false,
         isCoHost: true,
@@ -155,6 +169,13 @@ export async function getStageSnapshot(roomId, db = prisma) {
         seatNumber: coHostSeat?.seatIndex ?? 1,
         isMuted: isCoHostMuted,
         isCameraOn: isCoHostCameraOn,
+        hasAudio: !isCoHostMuted,
+        hasVideo: isCoHostCameraOn,
+        videoState: isCoHostCameraOn ? 'ENABLED' : 'MUTED',
+        audioState: isCoHostMuted ? 'MUTED' : 'ENABLED',
+        agoraUid: coHostAgoraUid,
+        mediaUid: coHostAgoraUid,
+        connectionState: 'CONNECTED',
         status: 'ACTIVE',
       };
     }
@@ -230,6 +251,7 @@ export async function getStageSnapshot(roomId, db = prisma) {
     })
   );
 
+  const cohosts = coHostPayload ? [coHostPayload] : [];
   return {
     roomId: room.id,
     liveSessionId: room.id,
@@ -237,7 +259,9 @@ export async function getStageSnapshot(roomId, db = prisma) {
     updatedAt: new Date().toISOString(),
     host: hostPayload,
     coHost: coHostPayload,
+    cohosts,
     isCoHosting: Boolean(coHostPayload),
+    stage: slots,
     slots,
     seats: slots,
     stageCapacity: slots.length,
@@ -284,6 +308,7 @@ export async function notifyStageOccupied(
   const targetSeat = stageSnapshot.slots.find((s) => s.seatIndex === seatIndex);
   const effectiveUser = targetSeat?.user || user || { id: userId, userId };
 
+  const userNameStr = effectiveUser.displayName || effectiveUser.name || effectiveUser.username || 'User';
   const seatOccupiedPayload = {
     id: `seat_occ_${roomId}_${seatIndex}_${userId}_${Date.now()}`,
     roomId,
@@ -294,8 +319,13 @@ export async function notifyStageOccupied(
     isLocked: Boolean(targetSeat?.isLocked),
     isCameraOn: Boolean(targetSeat?.isCameraOn ?? true),
     user: effectiveUser,
+    userId,
+    userName: userNameStr,
+    targetUserName: userNameStr,
     coHost: stageSnapshot.coHost,
+    cohosts: stageSnapshot.cohosts || (stageSnapshot.coHost ? [stageSnapshot.coHost] : []),
     isCoHosting: stageSnapshot.isCoHosting,
+    stage: stageSnapshot.slots,
     slots: stageSnapshot.slots,
     seats: stageSnapshot.slots,
     version: stageSnapshot.version,
@@ -361,7 +391,9 @@ export async function notifyStageReleased(
     previousUserId: userId,
     reason,
     coHost: stageSnapshot.coHost,
+    cohosts: stageSnapshot.cohosts || [],
     isCoHosting: stageSnapshot.isCoHosting,
+    stage: stageSnapshot.slots,
     slots: stageSnapshot.slots,
     seats: stageSnapshot.slots,
     version: stageSnapshot.version,
@@ -534,6 +566,8 @@ export async function updateStageCameraState(
 }
 
 export default {
+  removeCoHost,
+  leaveCoHost,
   getNextStageVersion,
   getCurrentStageVersion,
   getParticipantCameraState,
@@ -545,3 +579,165 @@ export default {
   updateStageMicState,
   updateStageCameraState,
 };
+
+/**
+ * Removes an active co-host from the room stage (initiated by host or room admin/moderator).
+ */
+export async function removeCoHost({ roomId, actorUserId, requesterUserId, targetUserId }, db = prisma) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  const effectiveActorId = actorUserId || requesterUserId;
+
+  // Authorization: Only room creator, active host, or admin/moderator can remove co-host
+  const isOwner = room.creatorUserId === effectiveActorId;
+  let isAuthorized = isOwner;
+  if (!isAuthorized && effectiveActorId) {
+    const actorMember = await db.roomMember.findUnique({
+      where: { roomId_userId: { roomId: room.id, userId: effectiveActorId } },
+    });
+    if (actorMember && ['MODERATOR', 'ADMIN'].includes(actorMember.role)) {
+      isAuthorized = true;
+    }
+  }
+
+  if (!isAuthorized) {
+    const error = new Error('Unauthorized to remove co-host');
+    error.statusCode = 403;
+    error.code = 'FORBIDDEN';
+    throw error;
+  }
+
+  // Find co-host user ID to remove
+  let coHostUserId = targetUserId;
+  if (!coHostUserId) {
+    const coHostSeat = Array.isArray(room.seats) ? room.seats.find((s) => s.seatIndex === 1 && s.occupiedUserId) : null;
+    coHostUserId = coHostSeat?.occupiedUserId;
+  }
+
+  if (!coHostUserId) {
+    return { success: true, message: 'No active co-host to remove' };
+  }
+
+  // Find target seat
+  const seat = Array.isArray(room.seats) ? room.seats.find((s) => s.occupiedUserId === coHostUserId) : null;
+  const seatIndex = seat ? seat.seatIndex : 1;
+
+  // Vacate seat and demote roomMember
+  await db.$transaction([
+    db.roomSeat.updateMany({
+      where: { roomId: room.id, occupiedUserId: coHostUserId },
+      data: { occupiedUserId: null, isMuted: false, isLocked: false },
+    }),
+    db.roomMember.updateMany({
+      where: { roomId: room.id, userId: coHostUserId, role: 'CO_HOST' },
+      data: { role: 'MEMBER' },
+    }),
+  ]);
+
+  // Clear camera state
+  try {
+    if (redisProxy.isOpen) await redisProxy.del(`room:stage:camera:${room.id}:${coHostUserId}`);
+  } catch (_) {}
+  memoryCameraStates.delete(`${room.id}:${coHostUserId}`);
+
+  // Notify stage released
+  const updatedSnapshot = await notifyStageReleased({
+    roomId: room.id,
+    seatIndex,
+    userId: coHostUserId,
+    releasedByUserId: actorUserId,
+    reason: 'REMOVED_BY_HOST',
+  }, db);
+
+  const leftPayload = {
+    roomId: room.id,
+    userId: coHostUserId,
+    removedByUserId: effectiveActorId,
+    seatIndex,
+    reason: 'REMOVED_BY_HOST',
+    timestamp: new Date().toISOString(),
+  };
+
+  socketEmitter.emitToRoom(room.id, 'room:cohost_left', leftPayload);
+  socketEmitter.emitToRoom(room.id, 'cohost_left', leftPayload);
+  socketEmitter.emitToRoom(room.id, 'room:cohost_removed', leftPayload);
+  socketEmitter.emitToUser(coHostUserId, 'room:cohost_removed', leftPayload);
+
+  return {
+    success: true,
+    message: 'Co-Host removed successfully',
+    stage: updatedSnapshot,
+    cohosts: updatedSnapshot.cohosts || [],
+    coHost: updatedSnapshot.coHost || null,
+  };
+}
+
+/**
+ * Voluntarily leaves co-host status.
+ */
+export async function leaveCoHost({ roomId, userId }, db = prisma) {
+  const room = await roomRepository.findRoomById(roomId, db);
+  if (!room) {
+    const error = new Error('Room not found');
+    error.statusCode = 404;
+    error.code = 'ROOM_NOT_FOUND';
+    throw error;
+  }
+
+  // Find target seat
+  const seat = Array.isArray(room.seats) ? room.seats.find((s) => s.occupiedUserId === userId) : null;
+  const seatIndex = seat ? seat.seatIndex : 1;
+
+  // Vacate seat and demote roomMember
+  await db.$transaction([
+    db.roomSeat.updateMany({
+      where: { roomId: room.id, occupiedUserId: userId },
+      data: { occupiedUserId: null, isMuted: false, isLocked: false },
+    }),
+    db.roomMember.updateMany({
+      where: { roomId: room.id, userId, role: 'CO_HOST' },
+      data: { role: 'MEMBER' },
+    }),
+  ]);
+
+  // Clear camera state
+  try {
+    if (redisProxy.isOpen) await redisProxy.del(`room:stage:camera:${room.id}:${userId}`);
+  } catch (_) {}
+  memoryCameraStates.delete(`${room.id}:${userId}`);
+
+  // Notify stage released
+  const updatedSnapshot = await notifyStageReleased({
+    roomId: room.id,
+    seatIndex,
+    userId,
+    releasedByUserId: userId,
+    reason: 'VOLUNTARY_LEAVE',
+  }, db);
+
+  const leftPayload = {
+    roomId: room.id,
+    userId,
+    seatIndex,
+    reason: 'VOLUNTARY_LEAVE',
+    timestamp: new Date().toISOString(),
+  };
+
+  socketEmitter.emitToRoom(room.id, 'room:cohost_left', leftPayload);
+  socketEmitter.emitToRoom(room.id, 'cohost_left', leftPayload);
+  socketEmitter.emitToUser(userId, 'room:cohost_left', leftPayload);
+
+  return {
+    success: true,
+    message: 'Co-Host stepped down successfully',
+    stage: updatedSnapshot,
+    cohosts: updatedSnapshot.cohosts || [],
+    coHost: updatedSnapshot.coHost || null,
+  };
+}

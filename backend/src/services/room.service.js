@@ -20,6 +20,7 @@ import stageService from './stage.service.js';
 import roomRoleAuditService from './roomRoleAudit.service.js';
 import { getNobleStyle } from './asset.service.js';
 import roomLevelService from './roomLevel.service.js';
+import roomTrophyService from './roomTrophy.service.js';
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -74,7 +75,7 @@ export async function createRoom(
   // Check if the user already has an existing AUDIO_PARTY room to resume/reactivate rather than recreating
   // Note: For AUDIO_PARTY, hosts have a persistent party room. Resuming or reopening reactivates status to LIVE
   // and retains today's gifts for daily sending rankings. LIVE_VIDEO always establishes a fresh session.
-  if (!forceNew && !isVideoLive) {
+  if (!isVideoLive) {
     try {
       const existingRoom = await db.room.findFirst({
         where: {
@@ -142,19 +143,9 @@ export async function createRoom(
 
         const refreshedRoom = await roomRepository.findRoomById(existingRoom.id, db);
 
-        // Calculate session scores for resumed active room across today UTC
-        const todayUtc = new Date();
-        todayUtc.setUTCHours(0, 0, 0, 0);
-        const effStart = todayUtc;
-
-        let dailyGiftCoins = 0;
-        try {
-          const dailyAggr = await db.giftTransaction.aggregate({
-            where: { roomId: refreshedRoom.id, createdAt: { gte: effStart } },
-            _sum: { totalCoins: true },
-          });
-          dailyGiftCoins = Number(dailyAggr._sum?.totalCoins || 0);
-        } catch (_) {}
+        // Calculate session scores for resumed active room across today UTC (Issue 14 Authoritative Persistence)
+        const trophyData = await roomTrophyService.getAuthoritativeRoomTrophy(refreshedRoom.id, {}, db);
+        const dailyGiftCoins = trophyData.trophyCoins;
 
         let totalLikes = 0;
         try {
@@ -182,6 +173,9 @@ export async function createRoom(
           dailySendingTotal: dailyGiftCoins,
           periodTotalCoins: dailyGiftCoins,
           trophyCoins: dailyGiftCoins,
+          dailyTrophyCoins: dailyGiftCoins,
+          dailyTrophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
+          trophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
           totalLikes,
           likesCount: totalLikes,
         };
@@ -475,21 +469,9 @@ export async function getRoomDetails(roomId, db = prisma) {
     } catch (_) {}
   }
 
-  // Calculate today's daily gift coin total (Issue 08: Trophy Counter Sync)
-  const todayUtc = new Date();
-  todayUtc.setUTCHours(0, 0, 0, 0);
-  const effectiveDailyStart = sessionStart > todayUtc ? sessionStart : todayUtc;
-  let dailyGiftCoins = 0;
-  try {
-    const dailyTx = await db.giftTransaction.aggregate({
-      where: {
-        roomId: room.id,
-        createdAt: { gte: effectiveDailyStart },
-      },
-      _sum: { totalCoins: true },
-    });
-    dailyGiftCoins = Number(dailyTx._sum?.totalCoins || 0);
-  } catch (_) {}
+  // Calculate today's daily gift coin total (Issue 14: Trophy Counter Persistence)
+  const trophyData = await roomTrophyService.getAuthoritativeRoomTrophy(room.id, {}, db);
+  const dailyGiftCoins = trophyData.trophyCoins;
 
   // Check if any seats are muted to determine room-level mute flag
   const isRoomMuted = Array.isArray(room.seats) && room.seats.length > 0 && room.seats.every((s) => s.isMuted);
@@ -537,6 +519,9 @@ export async function getRoomDetails(roomId, db = prisma) {
     dailySendingTotal: dailyGiftCoins,
     periodTotalCoins: dailyGiftCoins,
     trophyCoins: dailyGiftCoins,
+    dailyTrophyCoins: dailyGiftCoins,
+    dailyTrophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
+    trophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
     totalLikes,
     likesCount: totalLikes,
     seatCapacity: (room.seats || []).length || 10,
@@ -596,20 +581,10 @@ export async function joinRoom(roomId, userId, { pin = null, isApproved = false,
       }
     } catch (_) {}
 
-    // Attach session-isolated trophy, gift, and like metrics
+    // Attach session-isolated trophy, gift, and like metrics (Issue 14 Persistence)
     const sessionStart = result.createdAt ? new Date(result.createdAt) : new Date(0);
-    const todayUtc = new Date();
-    todayUtc.setUTCHours(0, 0, 0, 0);
-    const effStart = sessionStart > todayUtc ? sessionStart : todayUtc;
-
-    let dailyGiftCoins = 0;
-    try {
-      const dailyAggr = await db.giftTransaction.aggregate({
-        where: { roomId: result.id || roomId, createdAt: { gte: effStart } },
-        _sum: { totalCoins: true },
-      });
-      dailyGiftCoins = Number(dailyAggr._sum?.totalCoins || 0);
-    } catch (_) {}
+    const trophyData = await roomTrophyService.getAuthoritativeRoomTrophy(result.id || roomId, {}, db);
+    const dailyGiftCoins = trophyData.trophyCoins;
 
     let totalSessionGifts = 0;
     try {

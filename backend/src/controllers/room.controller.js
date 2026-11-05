@@ -7,6 +7,7 @@ import roomRepository from '../repositories/room.repository.js';
 import presenceService from '../socket/presence.service.js';
 import roomRoleAuditService from '../services/roomRoleAudit.service.js';
 import roomLevelService from '../services/roomLevel.service.js';
+import roomTrophyService from '../services/roomTrophy.service.js';
 import {
   createRoomSchema,
   queryActiveRoomsSchema,
@@ -1335,6 +1336,77 @@ export async function cancelCoHostInvite(req, res, next) {
   }
 }
 
+
+export async function respondCoHostInvite(req, res, next) {
+  try {
+    const { id, invitationId } = req.params;
+    const { invitationId: bodyInvId, accepted, status, reason } = req.body || {};
+    const userId = req.auth?.userId || req.user?.id;
+
+    const result = await cohostInviteService.respondCoHostInvite({
+      roomId: id,
+      invitationId: invitationId || bodyInvId,
+      userId,
+      accepted,
+      status,
+      reason,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function leaveCoHost(req, res, next) {
+  try {
+    const { id } = req.params;
+    const userId = req.auth?.userId || req.user?.id;
+
+    const result = await cohostInviteService.leaveCoHost({
+      roomId: id,
+      userId,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function removeCoHost(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { targetUserId } = req.body || {};
+    const actorUserId = req.auth?.userId || req.user?.id;
+
+    const result = await cohostInviteService.removeCoHost({
+      roomId: id,
+      actorUserId,
+      targetUserId,
+    });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getRoomStage(req, res, next) {
+  try {
+    const { id } = req.params;
+    const snapshot = await stageService.getStageSnapshot(id);
+    return res.status(200).json({
+      success: true,
+      data: snapshot,
+      stage: snapshot,
+      ...snapshot,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getRoomViewers(req, res, next) {
   try {
     const { id } = req.params;
@@ -1556,6 +1628,37 @@ export async function postAdminReconcileRoomLevel(req, res, next) {
   }
 }
 
+
+export async function getRoomTrophy(req, res, next) {
+  try {
+    const { id } = req.params;
+    const result = await roomTrophyService.getAuthoritativeRoomTrophy(id);
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAdminRoomTrophyReconciliation(req, res, next) {
+  try {
+    const targetUserId = req.query?.userId || null;
+    const result = await roomTrophyService.reconcileAudioPartyRooms({ dryRun: true, targetUserId });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminRoomTrophyReconcile(req, res, next) {
+  try {
+    const { dryRun = true, targetUserId = null } = req.body || {};
+    const result = await roomTrophyService.reconcileAudioPartyRooms({ dryRun: Boolean(dryRun), targetUserId });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function postAdminReconcileAllRoomLevels(req, res, next) {
   try {
     const { dryRun = true, limit = 1000 } = req.body || {};
@@ -1570,6 +1673,11 @@ export async function postAdminReconcileAllRoomLevels(req, res, next) {
 }
 
 export default {
+  respondCoHostInvite,
+  leaveCoHost,
+  removeCoHost,
+  getRoomStage,
+
   createRoom,
   getActiveRooms,
   getRoomDetails,
@@ -1654,6 +1762,9 @@ export default {
   getAdminRoomLevelSchedule,
   putAdminRoomLevelSchedule,
   postAdminReconcileRoomLevel,
+  getRoomTrophy,
+  getAdminRoomTrophyReconciliation,
+  postAdminRoomTrophyReconcile,
   postAdminReconcileAllRoomLevels,
 };
 

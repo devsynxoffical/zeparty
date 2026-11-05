@@ -43,6 +43,10 @@ adminUserRouter.post('/:id/props/revoke', requirePermission('view_users'), userC
 adminUserRouter.post('/:id/props/reset', requirePermission('view_users'), userController.postAdminResetProps);
 adminUserRouter.post('/:id/assign-special-id', requirePermission('view_users'), userController.postAdminAssignSpecialId);
 adminUserRouter.post('/:id/grant-noble', requirePermission('view_users'), userController.postAdminGrantNoble);
+adminUserRouter.get('/noble/reconcile-dry-run', requirePermission('view_users'), userController.getAdminNobleReconciliation);
+adminUserRouter.post('/noble/reconcile', requirePermission('view_users'), userController.postAdminNobleReconcile);
+adminUserRouter.post('/:id/revoke-noble', requirePermission('view_users'), userController.postAdminRevokeNoble);
+
 // Wealth Management & Progression
 adminUserRouter.get('/wealth/schedule', requirePermission('view_users'), userController.getAdminWealthSchedule);
 adminUserRouter.post('/wealth/reconcile-all', requirePermission('view_users'), userController.postAdminReconcileAllWealth);
@@ -93,6 +97,12 @@ adminUserRouter.delete('/:id/purge', requirePermission('suspend_users'), userCon
 // User Self & Public Profile Routes
 userProfileRouter.get('/search', optionalAuthenticate, userController.searchUsers);
 userProfileRouter.get('/noble-palette', userController.getNoblePalette);
+// Noble Single-Active Routes (User)
+userProfileRouter.get('/noble/active', authenticate, userController.getUserActiveNoble);
+userProfileRouter.get('/noble/history', authenticate, userController.getUserNobleHistory);
+userProfileRouter.post('/noble/activate', authenticate, userController.postActivateNoble);
+userProfileRouter.post('/noble/deactivate', authenticate, userController.postDeactivateNoble);
+
 userProfileRouter.get('/wealth-schedule', userController.getAdminWealthSchedule);
 userProfileRouter.get('/me', authenticate, userController.getMe);
 userProfileRouter.get('/me/profile-grid', authenticate, userController.getProfileGrid);

@@ -525,15 +525,26 @@ export async function acceptCoHostInvite(
     id: invitation.id,
     roomId: room.id,
     targetUserId: userId,
+    userId: userId,
     recipientId: userId,
+    userName: userName,
+    targetUserName: userName,
+    userAvatar: user?.avatarUrl || '',
+    avatar: user?.avatarUrl || '',
     accepted: true,
     status: 'accepted',
     seatIndex: result.targetSeatIndex,
     user: {
       id: userId,
+      userId: userId,
       name: userName,
       displayName: userName,
+      username: user?.username || userName,
       avatarUrl: user?.avatarUrl || '',
+      avatar: user?.avatarUrl || '',
+      role: 'CO_HOST',
+      isCoHost: true,
+      isHost: false,
     },
     timestamp: new Date().toISOString(),
   };
@@ -554,7 +565,9 @@ export async function acceptCoHostInvite(
       role: 'CO_HOST',
     });
     if (stageSnapshot) {
-      responsePayload.stage = stageSnapshot;
+      responsePayload.stage = stageSnapshot.slots || stageSnapshot.stage;
+      responsePayload.coHost = stageSnapshot.coHost;
+      responsePayload.cohosts = stageSnapshot.cohosts || (stageSnapshot.coHost ? [stageSnapshot.coHost] : []);
       responsePayload.version = stageSnapshot.version;
     }
   } catch (_) {
@@ -576,6 +589,7 @@ export async function acceptCoHostInvite(
     success: true,
     message: 'Co-Host invitation accepted successfully',
     data: responsePayload,
+    ...responsePayload,
   };
 }
 
@@ -623,6 +637,7 @@ export async function declineCoHostInvite(
     success: true,
     message: 'Co-Host invitation declined',
     data: responsePayload,
+    ...responsePayload,
   };
 }
 
@@ -672,6 +687,9 @@ export async function cancelCoHostInvite(
 }
 
 export default {
+  respondCoHostInvite,
+  removeCoHost,
+  leaveCoHost,
   createCoHostInvite,
   getActiveCoHostInviteForUser,
   getCoHostInviteById,
@@ -680,3 +698,30 @@ export default {
   declineCoHostInvite,
   cancelCoHostInvite,
 };
+
+/**
+ * Unified response handler supporting Flutter's POST /v1/rooms/:id/cohost/respond
+ */
+export async function respondCoHostInvite({ roomId, invitationId, userId, accepted, status, reason }, db = prisma) {
+  const isAccepted = accepted === true || status === 'accepted';
+  if (isAccepted) {
+    return acceptCoHostInvite({ roomId, invitationId, userId }, db);
+  } else {
+    return declineCoHostInvite({ roomId, invitationId, userId, reason: reason || 'DECLINED_BY_USER' }, db);
+  }
+}
+
+/**
+ * Host removes co-host from stage
+ */
+export async function removeCoHost({ roomId, actorUserId, requesterUserId, targetUserId }, db = prisma) {
+  const actor = actorUserId || requesterUserId;
+  return stageService.removeCoHost({ roomId, actorUserId: actor, requesterUserId: actor, targetUserId }, db);
+}
+
+/**
+ * Co-host voluntarily steps down
+ */
+export async function leaveCoHost({ roomId, userId }, db = prisma) {
+  return stageService.leaveCoHost({ roomId, userId }, db);
+}

@@ -1,4 +1,5 @@
 import wealthLevelService from '../services/wealthLevel.service.js';
+import nobleService from '../services/noble.service.js';
 import userService from '../services/user.service.js';
 import socialService from '../services/social.service.js';
 import prisma from '../config/database.js';
@@ -1307,6 +1308,89 @@ export async function postAdminGrantNoble(req, res, next) {
   }
 }
 
+
+export async function getUserActiveNoble(req, res, next) {
+  try {
+    const userId = req.user?.id || req.userId;
+    const result = await nobleService.getActiveNoble(userId, { checkExpiry: true });
+    return res.status(200).json({ success: true, noble: result, activeNoble: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getUserNobleHistory(req, res, next) {
+  try {
+    const userId = req.user?.id || req.userId;
+    const history = await nobleService.getUserNobleHistory(userId);
+    return res.status(200).json({ success: true, history });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postActivateNoble(req, res, next) {
+  try {
+    const userId = req.user?.id || req.userId;
+    const { nobleTier, durationDays = 30 } = req.body || {};
+    const result = await nobleService.activateNobleTier(userId, {
+      nobleTier,
+      durationDays,
+      grantType: 'USER_ACTIVATION',
+      grantReason: 'User initiated noble activation',
+      grantedBy: userId,
+    });
+    return res.status(200).json({ success: true, noble: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postDeactivateNoble(req, res, next) {
+  try {
+    const userId = req.user?.id || req.userId;
+    const { reason = 'User deactivated noble' } = req.body || {};
+    const result = await nobleService.revokeActiveNoble(userId, {
+      reason,
+      operatorId: userId,
+    });
+    return res.status(200).json({ success: true, ...result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAdminNobleReconciliation(req, res, next) {
+  try {
+    const result = await nobleService.reconcileNobleEntitlements({ dryRun: true });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminNobleReconcile(req, res, next) {
+  try {
+    const { dryRun = true } = req.body || {};
+    const result = await nobleService.reconcileNobleEntitlements({ dryRun: Boolean(dryRun) });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function postAdminRevokeNoble(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { reason = 'Revoked by admin' } = req.body || {};
+    const adminId = req.auth?.userId || req.admin?.id || 'admin';
+    const result = await nobleService.revokeActiveNoble(id, { reason, operatorId: adminId });
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function postAdminReconcileWealth(req, res, next) {
   try {
     const { id } = req.params;
@@ -1809,6 +1893,13 @@ export default {
   postAdminGrantNoble,
   postAdminReconcileWealth,
   postAdminReconcileAllWealth,
+  getUserActiveNoble,
+  getUserNobleHistory,
+  postActivateNoble,
+  postDeactivateNoble,
+  getAdminNobleReconciliation,
+  postAdminNobleReconcile,
+  postAdminRevokeNoble,
   getAdminWealthSchedule,
 };
 

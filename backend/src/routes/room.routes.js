@@ -19,6 +19,7 @@ userRoomRouter.get('/user/:userId/joined', roomController.getUserJoinedRooms);
 userRoomRouter.get('/:id', roomController.getRoomDetails);
 userRoomRouter.get('/:id/level', roomController.getRoomLevelProgression);
 userRoomRouter.get('/:id/progression', roomController.getRoomLevelProgression);
+userRoomRouter.get('/:id/trophy', roomController.getRoomTrophy);
 userRoomRouter.post('/:id/join', authenticate, roomController.joinRoom);
 userRoomRouter.post('/:id/unjoin', authenticate, roomController.unjoinRoom);
 userRoomRouter.delete('/:id/join', authenticate, roomController.unjoinRoom);
@@ -140,6 +141,12 @@ userRoomRouter.post('/:id/cohost/invite/:invitationId/decline', authenticate, ro
 userRoomRouter.post('/:id/cohost/invite/decline', authenticate, roomController.declineCoHostInvite);
 userRoomRouter.delete('/:id/cohost/invitations/:invitationId', authenticate, roomController.cancelCoHostInvite);
 userRoomRouter.delete('/:id/cohost/invite/:invitationId', authenticate, roomController.cancelCoHostInvite);
+userRoomRouter.post('/:id/cohost/respond', authenticate, roomController.respondCoHostInvite);
+userRoomRouter.post('/:id/cohost/leave', authenticate, roomController.leaveCoHost);
+userRoomRouter.post('/:id/cohost/remove', authenticate, roomController.removeCoHost);
+userRoomRouter.get('/:id/stage', roomController.getRoomStage);
+adminRoomRouter.get('/:id/stage', requirePermission('view_live_rooms'), roomController.getRoomStage);
+
 
 // Issue 28: Clear Screen / Lower Room Feed
 userRoomRouter.post('/:id/clear-feed', authenticate, roomController.clearRoomFeed);
@@ -150,6 +157,8 @@ adminRoomRouter.use(authenticate);
 adminRoomRouter.get('/level-config', requirePermission('view_live_rooms'), roomController.getAdminRoomLevelSchedule);
 adminRoomRouter.put('/level-config', requirePermission('view_live_rooms'), roomController.putAdminRoomLevelSchedule);
 adminRoomRouter.post('/reconcile-levels', requirePermission('view_live_rooms'), roomController.postAdminReconcileAllRoomLevels);
+adminRoomRouter.get('/trophy/reconcile-dry-run', requirePermission('view_live_rooms'), roomController.getAdminRoomTrophyReconciliation);
+adminRoomRouter.post('/trophy/reconcile', requirePermission('view_live_rooms'), roomController.postAdminRoomTrophyReconcile);
 adminRoomRouter.get('/pinned-positions', requirePermission('view_live_rooms'), roomController.getAdminPinnedPositions);
 adminRoomRouter.get('/', requirePermission('view_live_rooms'), roomController.getAdminRooms);
 adminRoomRouter.get('/:id', requirePermission('view_live_rooms'), roomController.getAdminRoomById);
