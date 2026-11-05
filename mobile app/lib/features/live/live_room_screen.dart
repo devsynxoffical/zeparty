@@ -1368,12 +1368,16 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
             : 0);
 
     // Identify whether current viewer belongs to Room A or Room B
-    final isRoomA =
+    final isRoomA = !isHostB && (
+        isHostA ||
         (activeRoom.id == pk.roomAId) ||
+        (activeRoom.shortId != null && activeRoom.shortId == pk.roomAId) ||
+        (activeRoom.numericRoomId != null && activeRoom.numericRoomId == pk.roomAId) ||
         (pk.agoraRelay != null &&
             (activeRoom.agoraChannelName == pk.agoraRelay!.channelA ||
                 activeRoom.id == pk.agoraRelay!.channelA)) ||
-        (creatorId == pk.hostA.id);
+        (creatorId == pk.hostA.id)
+    );
 
     // Authoritative host UIDs
     final hostAUid =
@@ -1919,7 +1923,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                     ),
                     const SizedBox(width: 3),
                     Text(
-                      !isStarted ? 'PK READY' : 'PK $minutes:$remSecs',
+                      !isStarted
+                          ? (pk.isCountdown || pk.status.toUpperCase() == 'COUNTDOWN'
+                              ? 'COUNTDOWN'
+                              : 'PK READY')
+                          : 'PK $minutes:$remSecs',
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w900,
@@ -3845,7 +3853,11 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
             ),
 
             // TikTok User Join Entrance Banner
-            TikTokUserJoinBanner(roomId: widget.room.id, bottomOffset: 240),
+            TikTokUserJoinBanner(
+              roomId: widget.room.id,
+              secondaryRoomId: widget.room.shortId ?? widget.room.numericRoomId ?? widget.room.agoraChannelName,
+              bottomOffset: 240,
+            ),
 
             // Realtime Animated Emoji Reaction Overlay (Top of Stack) - Issue 45 Centered in Live Stage
             EmojiReactionOverlay(roomId: widget.room.id, isLiveRoom: true),

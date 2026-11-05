@@ -67,6 +67,7 @@ class LiveProvider extends ChangeNotifier {
   StreamSubscription? _socketUserJoinedSub;
   StreamSubscription? _socketUserLeftSub;
   StreamSubscription? _socketViewerCountSub;
+  StreamSubscription? _socketSendingTotalSub;
   StreamSubscription? _socketGiftSentSub;
   StreamSubscription? _socketChatMessageSub;
   StreamSubscription? _socketRoomClosedSub;
@@ -89,6 +90,43 @@ class LiveProvider extends ChangeNotifier {
   StreamSubscription? _socketPkMatchFinishedSub;
   StreamSubscription? _socketPkForfeitedSub;
   StreamSubscription? _socketPkAbortedSub;
+
+  bool matchesCurrentRoom(dynamic rawRoomId) {
+    if (_activeRoom == null) return false;
+    if (rawRoomId == null) return true;
+    final inNorm = rawRoomId.toString().toLowerCase().replaceAll('room:', '').trim();
+    if (inNorm.isEmpty) return true;
+
+    final currentNorm = _activeRoom!.id.toLowerCase().replaceAll('room:', '').trim();
+    final shortNorm = (_activeRoom!.shortId != null && _activeRoom!.shortId!.isNotEmpty)
+        ? _activeRoom!.shortId!.toLowerCase().replaceAll('room:', '').trim()
+        : '';
+    final numericNorm = (_activeRoom!.numericRoomId != null && _activeRoom!.numericRoomId!.isNotEmpty)
+        ? _activeRoom!.numericRoomId!.toLowerCase().replaceAll('room:', '').trim()
+        : '';
+    final agoraNorm = (_activeRoom!.agoraChannelName != null && _activeRoom!.agoraChannelName!.isNotEmpty)
+        ? _activeRoom!.agoraChannelName!.toLowerCase().replaceAll('room:', '').trim()
+        : '';
+
+    final validNormIds = <String>{
+      if (currentNorm.isNotEmpty) currentNorm,
+      if (shortNorm.isNotEmpty) shortNorm,
+      if (numericNorm.isNotEmpty) numericNorm,
+      if (agoraNorm.isNotEmpty) agoraNorm,
+    };
+    if (validNormIds.isEmpty) return true;
+
+    return validNormIds.contains(inNorm) ||
+        validNormIds.any((id) => inNorm == id || inNorm.contains(id) || id.contains(inNorm));
+  }
+
+  bool _matchesRoom(Map<String, dynamic> data) {
+    if (_activeRoom == null) return false;
+    final r1 = data['roomId'] ?? data['room_id'];
+    final r2 = data['clientRoomId'];
+    if (r1 == null && r2 == null) return true;
+    return (r1 != null && matchesCurrentRoom(r1)) || (r2 != null && matchesCurrentRoom(r2));
+  }
 
   int _pkCountdown = 0;
   int get pkCountdown => _pkCountdown;
@@ -251,7 +289,7 @@ class LiveProvider extends ChangeNotifier {
 
     try {
       // 1. Connect Socket.IO
-      _socketService.connect(user: currentUser?.toJson());
+      await _socketService.connect(user: currentUser?.toJson());
       _socketService.joinRoom(room.id, user: currentUser?.toJson());
       _setupSocketSubscriptions(currentUser);
 
@@ -377,9 +415,7 @@ class LiveProvider extends ChangeNotifier {
   void _setupSocketSubscriptions(UserModel? currentUser) {
     _socketRoomSnapshotSub?.cancel();
     _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
       final roomObj = data['room'] is Map
@@ -389,8 +425,11 @@ class LiveProvider extends ChangeNotifier {
           data['viewerCount'] ??
           roomObj['currentViewersCount'] ??
           roomObj['viewerCount'];
-      if (rawCount is int && _activeRoom != null) {
-        _activeRoom = _activeRoom!.copyWith(viewerCount: rawCount);
+      final parsedCount = (rawCount is num)
+          ? rawCount.toInt()
+          : int.tryParse(rawCount?.toString() ?? '');
+      if (parsedCount != null && _activeRoom != null) {
+        _activeRoom = _activeRoom!.copyWith(viewerCount: parsedCount >= 0 ? parsedCount : 0);
       }
       final membersList = data['members'] is List
           ? (data['members'] as List)
@@ -408,6 +447,9 @@ class LiveProvider extends ChangeNotifier {
         if (!isHostUser &&
             mId.isNotEmpty &&
             !_viewers.any((v) => v.id == mId)) {
+          final mFrame = uMap['avatarFrame']?.toString() ??
+              uMap['equippedFrame']?.toString() ??
+              '';
           _viewers.add(
             UserModel(
               id: mId,
@@ -418,6 +460,7 @@ class LiveProvider extends ChangeNotifier {
                   'Viewer',
               username: uMap['username']?.toString() ?? 'user_$mId',
               avatarUrl: uMap['avatarUrl']?.toString() ?? '',
+              avatarFrame: mFrame,
             ),
           );
         }
@@ -502,9 +545,7 @@ class LiveProvider extends ChangeNotifier {
 
     _socketUserJoinedSub?.cancel();
     _socketUserJoinedSub = _socketService.userJoinedStream.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
       final userObj = data['user'] is Map
@@ -529,11 +570,17 @@ class LiveProvider extends ChangeNotifier {
 
       // Track viewers list (all non-host users)
       if (!isHostUser && joinedId != null && joinedId.isNotEmpty) {
+        final viewerFrame = userObj['avatarFrame']?.toString() ??
+            userObj['equippedFrame']?.toString() ??
+            data['avatarFrame']?.toString() ??
+            data['equippedFrame']?.toString() ??
+            '';
         final viewerModel = UserModel(
           id: joinedId,
           name: userName.toString(),
           username: userObj['username']?.toString() ?? 'user_$joinedId',
           avatarUrl: userObj['avatarUrl']?.toString() ?? '',
+          avatarFrame: viewerFrame,
           region: userObj['region']?.toString() ?? 'Global',
         );
         _viewers.removeWhere((v) => v.id == joinedId);
@@ -552,14 +599,11 @@ class LiveProvider extends ChangeNotifier {
           if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
         }
 
-        final rawCount = data['viewerCount'] ?? data['count'];
-        final newCount = rawCount is int
-            ? rawCount
-            : (isHostUser
-                  ? (_activeRoom?.viewerCount ?? 0)
-                  : (_activeRoom != null ? _activeRoom!.viewerCount + 1 : 0));
+        final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
+        final parsedCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
+        final effectiveCount = parsedCount != null ? (parsedCount >= 0 ? parsedCount : 0) : _viewers.length;
         if (_activeRoom != null) {
-          _activeRoom = _activeRoom!.copyWith(viewerCount: newCount);
+          _activeRoom = _activeRoom!.copyWith(viewerCount: effectiveCount);
         }
         notifyListeners();
       }
@@ -567,9 +611,7 @@ class LiveProvider extends ChangeNotifier {
 
     _socketUserLeftSub?.cancel();
     _socketUserLeftSub = _socketService.userLeftStream.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
       final leftId = data['userId']?.toString() ?? data['id']?.toString();
@@ -577,35 +619,54 @@ class LiveProvider extends ChangeNotifier {
         _viewers.removeWhere((v) => v.id == leftId);
       }
 
-      final rawCount = data['viewerCount'] ?? data['count'];
+      final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
+      final parsedCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
       if (_activeRoom != null) {
-        final newCount = rawCount is int
-            ? rawCount
-            : (_activeRoom!.viewerCount > 0 ? _activeRoom!.viewerCount - 1 : 0);
-        _activeRoom = _activeRoom!.copyWith(viewerCount: newCount);
+        final effectiveCount = parsedCount != null ? (parsedCount >= 0 ? parsedCount : 0) : _viewers.length;
+        _activeRoom = _activeRoom!.copyWith(viewerCount: effectiveCount);
         notifyListeners();
       }
     });
 
     _socketViewerCountSub?.cancel();
     _socketViewerCountSub = _socketService.viewerCountStream.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
-      final count = data['viewerCount'] ?? data['count'];
-      if (count is int && _activeRoom != null) {
-        _activeRoom = _activeRoom!.copyWith(viewerCount: count);
+      final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
+      final count = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
+      if (count != null && _activeRoom != null) {
+        _activeRoom = _activeRoom!.copyWith(viewerCount: count >= 0 ? count : 0);
+        notifyListeners();
+      }
+    });
+
+    _socketSendingTotalSub?.cancel();
+    _socketSendingTotalSub = _socketService.onRoomSendingTotalUpdated.listen((data) {
+      if (!_matchesRoom(data)) return;
+      final rawTotal = data['roomSendingTotal'] ??
+          data['dailySendingTotal'] ??
+          data['totalCoins'] ??
+          data['trophyCoins'] ??
+          data['total'];
+      final total = (rawTotal is num)
+          ? rawTotal.toInt()
+          : (int.tryParse(rawTotal?.toString() ?? '') ?? 0);
+      if (total >= 0) {
+        _giftPoints = total;
+        if (_activeRoom != null) {
+          _activeRoom = _activeRoom!.copyWith(
+            totalGifts: total,
+            giftsReceivedCoins: total,
+          );
+        }
         notifyListeners();
       }
     });
 
     _socketRoomSnapshotSub?.cancel();
     _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
       final snapLikes =
@@ -615,6 +676,7 @@ class LiveProvider extends ChangeNotifier {
         _likeCount = snapLikes;
       }
       final snapGifts =
+          int.tryParse(data['roomSendingTotal']?.toString() ?? '') ??
           int.tryParse(data['dailySendingTotal']?.toString() ?? '') ??
           int.tryParse(data['totalGifts']?.toString() ?? '') ??
           int.tryParse(data['trophyCoins']?.toString() ?? '');
@@ -626,9 +688,7 @@ class LiveProvider extends ChangeNotifier {
 
     _socketRoomLikeSub?.cancel();
     _socketRoomLikeSub = _socketService.onRoomLike.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
       final senderMap = data['sender'] is Map
@@ -651,9 +711,7 @@ class LiveProvider extends ChangeNotifier {
 
     _socketGiftSentSub?.cancel();
     _socketGiftSentSub = _socketService.giftSentStream.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
       final txId = (data['transactionId'] ?? data['id'] ?? data['_id'] ?? '')
@@ -905,9 +963,7 @@ class LiveProvider extends ChangeNotifier {
     // ── Moderation Event Subscriptions ──────────────────────
     _socketRoomWarningSub?.cancel();
     _socketRoomWarningSub = _socketService.roomWarningStream.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
       final msg =
@@ -931,9 +987,7 @@ class LiveProvider extends ChangeNotifier {
 
     _socketRoomMutedSub?.cancel();
     _socketRoomMutedSub = _socketService.roomMutedStream.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
       final muted = data['isMuted'] == true || data['muted'] == true;
@@ -955,9 +1009,7 @@ class LiveProvider extends ChangeNotifier {
 
     _socketRoomUserMutedSub?.cancel();
     _socketRoomUserMutedSub = _socketService.onRoomUserMuted.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
       final targetId = data['targetUserId']?.toString();
@@ -983,9 +1035,7 @@ class LiveProvider extends ChangeNotifier {
 
     _socketUserKickedSub?.cancel();
     _socketUserKickedSub = _socketService.userKickedStream.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
       final targetId =
@@ -1015,9 +1065,7 @@ class LiveProvider extends ChangeNotifier {
 
     _socketRoomClosedSub?.cancel();
     _socketRoomClosedSub = _socketService.roomClosedStream.listen((data) {
-      if (_activeRoom != null &&
-          data['roomId'] != null &&
-          data['roomId'] != _activeRoom!.id) {
+      if (!_matchesRoom(data)) {
         return;
       }
       _isLiveEnded = true;
@@ -1066,6 +1114,10 @@ class LiveProvider extends ChangeNotifier {
     _socketPkCountdownSub?.cancel();
     _socketPkCountdownSub = _socketService.onPkCountdownStarted.listen((data) {
       _pkCountdown = 3;
+      if (_activePkBattle != null) {
+        _activePkBattle = _activePkBattle!.copyWith(status: 'COUNTDOWN');
+      }
+      debugPrint('[LiveProvider] PK Countdown started (3s)!');
       notifyListeners();
       Timer.periodic(const Duration(seconds: 1), (timer) {
         if (_pkCountdown > 0) {
@@ -1471,11 +1523,18 @@ class LiveProvider extends ChangeNotifier {
           }
         });
       }
-      _setupVideoPkRelay(pk);
     } else {
       _pkTimeRemainingSeconds = pk.durationSeconds > 0
           ? pk.durationSeconds
           : 300;
+    }
+
+    if (!pk.isEnded &&
+        (pk.isStarted ||
+            pk.isPreparing ||
+            pk.isCountdown ||
+            pk.isReady)) {
+      _setupVideoPkRelay(pk);
     }
     notifyListeners();
   }
@@ -1622,12 +1681,19 @@ class LiveProvider extends ChangeNotifier {
     final currentRoomId = _activeRoom?.id ?? '';
     final relay = pk.agoraRelay;
 
-    // Authoritative check if current viewer belongs to Room B
-    final isRoomB =
-        (currentRoomId.isNotEmpty && currentRoomId == pk.roomBId) ||
-        (relay != null &&
-            (currentRoomId == relay.channelB ||
-                _activeRoom?.agoraChannelName == relay.channelB));
+    // Authoritative check if current viewer belongs to Room B or is Host B
+    final isHostB = (_currentUser != null && _currentUser!.id == pk.hostB.id) ||
+        (_activeRoom?.host.id == pk.hostB.id) ||
+        (_activeRoom?.creatorUserId == pk.hostB.id);
+    final isHostA = (_currentUser != null && _currentUser!.id == pk.hostA.id) ||
+        (_activeRoom?.host.id == pk.hostA.id) ||
+        (_activeRoom?.creatorUserId == pk.hostA.id);
+
+    final isRoomB = isHostB ||
+        (!isHostA && (
+            (currentRoomId.isNotEmpty && (currentRoomId == pk.roomBId || matchesCurrentRoom(pk.roomBId))) ||
+            (relay != null && (currentRoomId == relay.channelB || _activeRoom?.agoraChannelName == relay.channelB))
+        ));
 
     final opponentRoomId = isRoomB ? pk.roomAId : pk.roomBId;
     final opponentHost = isRoomB ? pk.hostA : pk.hostB;
@@ -1806,6 +1872,7 @@ class LiveProvider extends ChangeNotifier {
     _socketUserJoinedSub?.cancel();
     _socketUserLeftSub?.cancel();
     _socketViewerCountSub?.cancel();
+    _socketSendingTotalSub?.cancel();
     _socketRoomLikeSub?.cancel();
     _socketGiftSentSub?.cancel();
     _socketChatMessageSub?.cancel();

@@ -219,10 +219,27 @@ export class PKService {
     const matchSnapshot = await this.repo.getMatchSnapshot(result.match.id);
 
     if (result.accepted) {
+      const sideB = matchSnapshot.sideB;
       const acceptedPayload = {
-        invitationId,
+        id: result.match.id,
         matchId: result.match.id,
+        invitationId,
         status: 'ACCEPTED',
+        roomAId: result.match.roomAId,
+        roomBId: result.match.roomBId,
+        hostAUserId: result.match.hostAUserId,
+        hostBUserId: result.match.hostBUserId,
+        opponent: sideB ? {
+          id: sideB.hostId,
+          userId: sideB.hostId,
+          name: sideB.displayName,
+          displayName: sideB.displayName,
+          username: sideB.displayName,
+          avatarUrl: sideB.avatarUrl || '',
+          avatarFrame: sideB.avatarFrame || null,
+          equippedFrame: sideB.equippedFrame || null,
+        } : null,
+        agoraRelay: matchSnapshot.agoraRelay,
         match: matchSnapshot,
       };
       // Broadcast preparing and invitation_accepted events to both rooms
@@ -307,6 +324,8 @@ export class PKService {
 
       socketEmitter.emitToRoom(updated.roomAId, 'pk:countdown_started', countdownPayload);
       socketEmitter.emitToRoom(updated.roomBId, 'pk:countdown_started', countdownPayload);
+      if (updated.hostAUserId) socketEmitter.emitToUser(updated.hostAUserId, 'pk:countdown_started', countdownPayload);
+      if (updated.hostBUserId) socketEmitter.emitToUser(updated.hostBUserId, 'pk:countdown_started', countdownPayload);
 
       // Trigger automatic start after 3 seconds
       setTimeout(() => {
@@ -328,6 +347,16 @@ export class PKService {
 
     socketEmitter.emitToRoom(started.roomAId, 'pk:match_started', snapshot);
     socketEmitter.emitToRoom(started.roomBId, 'pk:match_started', snapshot);
+    socketEmitter.emitToRoom(started.roomAId, 'pk:started', snapshot);
+    socketEmitter.emitToRoom(started.roomBId, 'pk:started', snapshot);
+    if (started.hostAUserId) {
+      socketEmitter.emitToUser(started.hostAUserId, 'pk:match_started', snapshot);
+      socketEmitter.emitToUser(started.hostAUserId, 'pk:started', snapshot);
+    }
+    if (started.hostBUserId) {
+      socketEmitter.emitToUser(started.hostBUserId, 'pk:match_started', snapshot);
+      socketEmitter.emitToUser(started.hostBUserId, 'pk:started', snapshot);
+    }
 
     // Schedule authoritative end timer
     const remainingMs = Math.max(0, new Date(started.endAt).getTime() - Date.now());

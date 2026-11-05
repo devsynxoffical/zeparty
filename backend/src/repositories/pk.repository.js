@@ -1,5 +1,6 @@
 import prisma from '../config/database.js';
 import { deriveAgoraUid } from '../utils/agoraToken.util.js';
+import { resolveUserAvatarFrame } from '../socket/room.socket.js';
 
 const TX_CONFIG = { maxWait: 15000, timeout: 30000 };
 
@@ -990,8 +991,30 @@ export class PKRepository {
             creator: { select: { id: true, username: true, avatarUrl: true, profile: true } },
           },
         },
-        hostA: { select: { id: true, username: true, avatarUrl: true, profile: true } },
-        hostB: { select: { id: true, username: true, avatarUrl: true, profile: true } },
+        hostA: {
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: true,
+            userAssets: {
+              where: { isEquipped: true, asset: { assetType: 'FRAME' } },
+              include: { asset: true },
+            },
+          },
+        },
+        hostB: {
+          select: {
+            id: true,
+            username: true,
+            avatarUrl: true,
+            profile: true,
+            userAssets: {
+              where: { isEquipped: true, asset: { assetType: 'FRAME' } },
+              include: { asset: true },
+            },
+          },
+        },
       },
     });
 
@@ -1006,6 +1029,9 @@ export class PKRepository {
     }
 
     const { sideASupporters, sideBSupporters } = await this.getTopSupporters(matchId, db);
+
+    const frameA = resolveUserAvatarFrame(match.hostA);
+    const frameB = resolveUserAvatarFrame(match.hostB);
 
     return {
       id: match.id,
@@ -1028,6 +1054,8 @@ export class PKRepository {
         hostId: match.hostAUserId,
         displayName: match.hostA?.profile?.displayName || match.hostA?.username || 'Host Blue',
         avatarUrl: match.hostA?.avatarUrl || '',
+        avatarFrame: frameA,
+        equippedFrame: frameA,
         score: match.scoreA.toString(),
         connectionStatus: match.hostAConnectionStatus,
         ready: match.readyA,
@@ -1039,6 +1067,8 @@ export class PKRepository {
         hostId: match.hostBUserId,
         displayName: match.hostB?.profile?.displayName || match.hostB?.username || 'Host Red',
         avatarUrl: match.hostB?.avatarUrl || '',
+        avatarFrame: frameB,
+        equippedFrame: frameB,
         score: match.scoreB.toString(),
         connectionStatus: match.hostBConnectionStatus,
         ready: match.readyB,

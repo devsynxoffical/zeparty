@@ -29,11 +29,17 @@ class PartyParticipantModel {
   });
 
   bool get isMuted => micStatus == MicStatus.muted;
+  String get avatarFrame => user.avatarFrame;
 
   factory PartyParticipantModel.fromRoomSeatJson(Map<String, dynamic> json, int index) {
     final userData = json['user'] is Map
         ? Map<String, dynamic>.from(json['user'] as Map)
         : (json['occupiedUser'] is Map ? Map<String, dynamic>.from(json['occupiedUser'] as Map) : <String, dynamic>{});
+
+    final rawFrame = json['avatarFrame'] ?? json['equippedFrame'] ?? json['frameUrl'] ?? json['userAssets'];
+    if (rawFrame != null && (userData['avatarFrame'] == null || userData['avatarFrame'].toString().isEmpty)) {
+      userData['avatarFrame'] = rawFrame;
+    }
 
     final user = userData.isNotEmpty
         ? UserModel.fromJson(userData)
@@ -42,6 +48,7 @@ class PartyParticipantModel {
             username: 'speaker_$index',
             name: 'Speaker ${index + 1}',
             avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
+            avatarFrame: rawFrame?.toString() ?? '',
           );
 
     final isMuted = json['isMuted'] == true;
@@ -70,6 +77,11 @@ class PartyParticipantModel {
 
   factory PartyParticipantModel.fromMemberJson(Map<String, dynamic> json) {
     final userData = json['user'] is Map ? Map<String, dynamic>.from(json['user'] as Map) : <String, dynamic>{};
+    final rawFrame = json['avatarFrame'] ?? json['equippedFrame'] ?? json['frameUrl'] ?? json['userAssets'];
+    if (rawFrame != null && (userData['avatarFrame'] == null || userData['avatarFrame'].toString().isEmpty)) {
+      userData['avatarFrame'] = rawFrame;
+    }
+
     final user = userData.isNotEmpty
         ? UserModel.fromJson(userData)
         : UserModel(
@@ -77,6 +89,7 @@ class PartyParticipantModel {
             username: 'viewer',
             name: 'Viewer',
             avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
+            avatarFrame: rawFrame?.toString() ?? '',
           );
 
     final roleStr = json['role']?.toString().toUpperCase() ?? 'LISTENER';

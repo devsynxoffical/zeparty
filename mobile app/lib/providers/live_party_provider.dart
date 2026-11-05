@@ -117,19 +117,31 @@ class LivePartyProvider extends ChangeNotifier {
     final agoraNorm = (_activeRoom?.agoraChannelName != null && _activeRoom!.agoraChannelName!.isNotEmpty)
         ? norm(_activeRoom!.agoraChannelName!)
         : '';
+    final numericNorm = (_activeRoom?.numericRoomId != null && _activeRoom!.numericRoomId!.isNotEmpty)
+        ? norm(_activeRoom!.numericRoomId!)
+        : '';
+    final shortNorm = (_activeRoom?.shortId != null && _activeRoom!.shortId!.isNotEmpty)
+        ? norm(_activeRoom!.shortId!)
+        : '';
 
     final validNormIds = <String>{
       if (currentNorm.isNotEmpty) currentNorm,
       if (initialNorm.isNotEmpty) initialNorm,
       if (agoraNorm.isNotEmpty) agoraNorm,
+      if (numericNorm.isNotEmpty) numericNorm,
+      if (shortNorm.isNotEmpty) shortNorm,
     };
     if (validNormIds.isEmpty) return true;
 
-    return validNormIds.contains(inNorm) ||
+    final matches = validNormIds.contains(inNorm) ||
         (inClientNorm.isNotEmpty && validNormIds.contains(inClientNorm)) ||
         validNormIds.any((id) =>
             (inNorm.isNotEmpty && (inNorm == id || inNorm.contains(id) || id.contains(inNorm))) ||
             (inClientNorm.isNotEmpty && (inClientNorm == id || inClientNorm.contains(id) || id.contains(inClientNorm))));
+    if (!matches) {
+      debugPrint('[LivePartyProvider] matchesCurrentRoom FALSE: incoming(roomId: $inRoomId, clientRoomId: $inClientRoomId) vs validNormIds: $validNormIds');
+    }
+    return matches;
   }
 
   LiveRoomModel? _activeRoom;
@@ -1485,6 +1497,7 @@ class LivePartyProvider extends ChangeNotifier {
         final currentAudienceCount = _participants.where((p) => p.role != ParticipantRole.host && p.user.id != _activeRoom?.host.id && p.user.id != _activeRoom?.creatorUserId).length;
         // Authoritative backend count: never overwrite server count with math.max or speculative calculations
         final effectiveCount = count != null ? (count >= 0 ? count : 0) : currentAudienceCount;
+        debugPrint('[LivePartyProvider] Authoritative viewer count updated: $effectiveCount (raw: $rawCount, audience: $currentAudienceCount)');
         _activeRoom = _activeRoom!.copyWith(viewerCount: effectiveCount);
         notifyListeners();
       }
@@ -2309,17 +2322,22 @@ class LivePartyProvider extends ChangeNotifier {
     // 20. Room Sending Coin Total Stream (Item 08)
     _socketSendingTotalSub?.cancel();
     _socketSendingTotalSub = _socketService.onRoomSendingTotalUpdated.listen((data) {
-      final rId = data['roomId']?.toString();
+      if (!matchesCurrentRoom(data)) return;
+      final rawTotal = data['roomSendingTotal'] ??
+          data['dailySendingTotal'] ??
+          data['totalCoins'] ??
+          data['trophyCoins'] ??
+          data['total'];
+      final total = (rawTotal is num)
+          ? rawTotal
+          : (num.tryParse(rawTotal?.toString() ?? '') ?? 0);
       final currentId = _activeRoom?.id ?? _initialRoomId ?? '';
-      if (rId == null || rId == currentId) {
-        final total = (data['totalCoins'] is num) ? (data['totalCoins'] as num) : num.tryParse(data['totalCoins']?.toString() ?? '') ?? 0;
-        if (total > _roomSendingTotal) {
-          _roomSendingTotal = total;
-          if (currentId.isNotEmpty) {
-            RoomConfigManager.instance.saveRoomSendingTotal(currentId, total);
-          }
-          notifyListeners();
+      if (total >= 0) {
+        _roomSendingTotal = total;
+        if (currentId.isNotEmpty) {
+          RoomConfigManager.instance.saveRoomSendingTotal(currentId, total);
         }
+        notifyListeners();
       }
     });
 
@@ -2471,6 +2489,10 @@ class LivePartyProvider extends ChangeNotifier {
     _socketPkCountdownSub?.cancel();
     _socketPkCountdownSub = _socketService.onPkCountdownStarted.listen((data) {
       _pkCountdown = 3;
+      if (_activePkBattle != null) {
+        _activePkBattle = _activePkBattle!.copyWith(status: 'COUNTDOWN');
+      }
+      debugPrint('[LivePartyProvider] PK Countdown started (3s)!');
       notifyListeners();
       Timer.periodic(const Duration(seconds: 1), (timer) {
         if (_pkCountdown > 0) {

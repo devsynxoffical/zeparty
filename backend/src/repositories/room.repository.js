@@ -131,6 +131,10 @@ export async function findRoomById(id, db = prisma) {
             nobleRank: true,
           },
         },
+        userAssets: {
+          where: { isEquipped: true, asset: { assetType: 'FRAME' } },
+          include: { asset: true },
+        },
       },
     },
     seats: {
@@ -152,6 +156,10 @@ export async function findRoomById(id, db = prisma) {
                 svipLevel: true,
                 nobleRank: true,
               },
+            },
+            userAssets: {
+              where: { isEquipped: true, asset: { assetType: 'FRAME' } },
+              include: { asset: true },
             },
           },
         },
@@ -175,6 +183,10 @@ export async function findRoomById(id, db = prisma) {
                 svipLevel: true,
                 nobleRank: true,
               },
+            },
+            userAssets: {
+              where: { isEquipped: true, asset: { assetType: 'FRAME' } },
+              include: { asset: true },
             },
           },
         },

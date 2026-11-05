@@ -316,7 +316,7 @@ class SocketService {
     _socket = IO.io(
       baseUrl,
       IO.OptionBuilder()
-          .setTransports(['websocket', 'polling'])
+          .setTransports(['polling', 'websocket'])
           .disableAutoConnect()
           .setAuth(authMap)
           .setExtraHeaders({'Authorization': 'Bearer $authToken'})
@@ -402,6 +402,7 @@ class SocketService {
           }
         }
         recentJoins[key] = now;
+        debugPrint('[SocketService] Received user joined for room: ${map['roomId']} (user: $uid, name: ${userObj['name'] ?? userObj['displayName']})');
         _userJoinedController.add(map);
       }
     }
@@ -418,7 +419,11 @@ class SocketService {
     _socket!.on('user:left', handleUserLeft);
 
     void handleViewerCount(dynamic data) {
-      if (data != null) _viewerCountController.add(safeMap(data));
+      if (data != null) {
+        final map = safeMap(data);
+        debugPrint('[SocketService] Received viewer count changed for room: ${map['roomId']} (count: ${map['viewerCount'] ?? map['count'] ?? map['currentViewersCount']})');
+        _viewerCountController.add(map);
+      }
     }
     _socket!.on('room:viewer_count_changed', handleViewerCount);
     _socket!.on('room:viewer_count', handleViewerCount);
@@ -508,6 +513,7 @@ class SocketService {
           recentChats.remove(recentChats.keys.first);
         }
 
+        debugPrint('[SocketService] Received chat message for room: ${map['roomId']} (msgId: $msgId, text: $text, sender: $senderId)');
         _roomChatMessageController.add(map);
       }
     }
@@ -1064,12 +1070,15 @@ class SocketService {
 
     if (_socket != null && _socket!.connected) {
       _socket!.emit('room:join', payload);
-      debugPrint('[SocketService] Subscribed to room:$roomId with user: ${targetUser?['name'] ?? targetUser?['username']}');
+      _socket!.emit('join_room', payload);
+      debugPrint('[SocketService] Subscribed to room:$roomId with user: ${targetUser?['name'] ?? targetUser?['username']} (socketId: ${_socket?.id})');
     } else {
+      debugPrint('[SocketService] Socket not yet connected for room:$roomId. Connecting first...');
       connect(user: targetUser).then((_) {
         if (_socket != null && _socket!.connected) {
           _socket!.emit('room:join', payload);
-          debugPrint('[SocketService] Subscribed to room:$roomId after connect with user: ${targetUser?['name'] ?? targetUser?['username']}');
+          _socket!.emit('join_room', payload);
+          debugPrint('[SocketService] Subscribed to room:$roomId after connect with user: ${targetUser?['name'] ?? targetUser?['username']} (socketId: ${_socket?.id})');
         }
       });
     }

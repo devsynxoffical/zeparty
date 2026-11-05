@@ -428,6 +428,7 @@ class _PKBattleScreenState extends State<PKBattleScreen>
     PKBattleModel pk,
   ) {
     final isStarted = pk.isStarted;
+    final isCountdown = pk.isCountdown || pk.status.toUpperCase() == 'COUNTDOWN';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -457,38 +458,45 @@ class _PKBattleScreenState extends State<PKBattleScreen>
             duration: const Duration(milliseconds: 300),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
-              gradient: !isStarted
+              gradient: isCountdown
                   ? const LinearGradient(
-                      colors: [Color(0xFF4A148C), Color(0xFF1E1035)],
+                      colors: [Color(0xFFFF6D00), Color(0xFFFFAB00)],
                     )
-                  : (seconds < 30
-                        ? const LinearGradient(
-                            colors: [Color(0xFFFF1744), Color(0xFFD50000)],
-                          )
-                        : LinearGradient(
-                            colors: [
-                              Colors.black.withValues(alpha: 0.75),
-                              const Color(0xFF1E1035),
-                            ],
-                          )),
+                  : (!isStarted
+                      ? const LinearGradient(
+                          colors: [Color(0xFF4A148C), Color(0xFF1E1035)],
+                        )
+                      : (seconds < 30
+                            ? const LinearGradient(
+                                colors: [Color(0xFFFF1744), Color(0xFFD50000)],
+                              )
+                            : LinearGradient(
+                                colors: [
+                                  Colors.black.withValues(alpha: 0.75),
+                                  const Color(0xFF1E1035),
+                                ],
+                              ))),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: !isStarted
-                    ? Colors.purpleAccent
-                    : (seconds < 30
-                          ? const Color(0xFFFF5252)
-                          : const Color(0xFFFFD700)),
+                color: isCountdown
+                    ? const Color(0xFFFFD600)
+                    : (!isStarted
+                        ? Colors.purpleAccent
+                        : (seconds < 30
+                              ? const Color(0xFFFF5252)
+                              : const Color(0xFFFFD700))),
                 width: 1.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color:
-                      (!isStarted
+                  color: (isCountdown
+                          ? const Color(0xFFFF6D00)
+                          : (!isStarted
                               ? Colors.purpleAccent
                               : (seconds < 30
                                     ? const Color(0xFFFF1744)
-                                    : const Color(0xFFFFD700)))
-                          .withValues(alpha: 0.5),
+                                    : const Color(0xFFFFD700))))
+                      .withValues(alpha: 0.5),
                   blurRadius: 10,
                 ),
               ],
@@ -497,17 +505,23 @@ class _PKBattleScreenState extends State<PKBattleScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  !isStarted
-                      ? Icons.hourglass_top_rounded
-                      : Icons.timer_outlined,
-                  color: !isStarted
-                      ? Colors.purpleAccent
-                      : const Color(0xFFFFD700),
+                  isCountdown
+                      ? Icons.timer
+                      : (!isStarted
+                          ? Icons.hourglass_top_rounded
+                          : Icons.timer_outlined),
+                  color: isCountdown
+                      ? Colors.white
+                      : (!isStarted
+                          ? Colors.purpleAccent
+                          : const Color(0xFFFFD700)),
                   size: 14,
                 ),
                 const SizedBox(width: 5),
                 Text(
-                  !isStarted ? 'PK READY' : 'PK $minutes:$remSecs',
+                  isCountdown
+                      ? 'COUNTDOWN'
+                      : (!isStarted ? 'PK READY' : 'PK $minutes:$remSecs'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,

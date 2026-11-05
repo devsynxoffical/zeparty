@@ -580,6 +580,7 @@ export async function joinRoom(roomId, userId, { pin = null, isApproved = false,
 
     const payload = {
       roomId: result.id || roomId,
+      clientRoomId: roomId,
       viewerCount,
       count: viewerCount,
       currentViewersCount: viewerCount,
@@ -588,6 +589,11 @@ export async function joinRoom(roomId, userId, { pin = null, isApproved = false,
       socketEmitter.emitToRoom(roomId, 'room:viewer_count_changed', payload);
       socketEmitter.emitToRoom(roomId, 'room:viewer_count', payload);
       socketEmitter.emitToRoom(roomId, 'viewer_count_changed', payload);
+      if (result.id && result.id !== roomId) {
+        socketEmitter.emitToRoom(result.id, 'room:viewer_count_changed', payload);
+        socketEmitter.emitToRoom(result.id, 'room:viewer_count', payload);
+        socketEmitter.emitToRoom(result.id, 'viewer_count_changed', payload);
+      }
     } catch (_) {}
 
     // Attach session-isolated trophy, gift, and like metrics

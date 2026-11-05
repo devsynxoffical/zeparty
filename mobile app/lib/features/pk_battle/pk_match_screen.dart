@@ -59,6 +59,7 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
   bool _isConfirmingReady = false;
   bool _isPreparing = false;
   bool _isLocalReady = false;
+  bool _hasExited = false;
 
   @override
   void initState() {
@@ -105,7 +106,8 @@ class _PkMatchScreenState extends State<PkMatchScreen> {
   }
 
   void _onOpponentAccepted({String? matchId}) {
-    if (!mounted) return;
+    if (!mounted || _hasExited) return;
+    _hasExited = true;
     _invitationTimer?.cancel();
     _invitationPollingTimer?.cancel();
 

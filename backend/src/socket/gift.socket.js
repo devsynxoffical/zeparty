@@ -4,6 +4,72 @@ import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
 import { withRateLimit } from './rateLimiter.socket.js';
 import privacyEligibilityService from '../services/privacyEligibility.service.js';
 
+/**
+ * Recalculates authoritative room gifting total from DB and broadcasts across all room aliases.
+ */
+export async function syncAndBroadcastRoomSendingTotal(io, roomId, canonicalRoomId, db = prisma) {
+  try {
+    const effectiveRoomId = canonicalRoomId || roomId;
+    if (!effectiveRoomId) return 0;
+
+    const todayUtc = new Date();
+    todayUtc.setUTCHours(0, 0, 0, 0);
+    let effectiveDailyStart = todayUtc;
+
+    const roomRec = await db.room.findUnique({
+      where: { id: effectiveRoomId },
+      select: { id: true, createdAt: true },
+    }).catch(() => null);
+
+    if (roomRec?.createdAt) {
+      const sessionStart = new Date(roomRec.createdAt);
+      if (sessionStart > todayUtc) {
+        effectiveDailyStart = sessionStart;
+      }
+    }
+
+    const dailyAggr = await db.giftTransaction.aggregate({
+      where: { roomId: effectiveRoomId, createdAt: { gte: effectiveDailyStart } },
+      _sum: { totalCoins: true },
+    });
+    const updatedTotal = Number(dailyAggr._sum?.totalCoins || 0);
+
+    // Atomically persist to DB so fresh room details queries have the latest ground truth
+    await db.room.update({
+      where: { id: effectiveRoomId },
+      data: {
+        roomSendingTotal: updatedTotal,
+        dailySendingTotal: updatedTotal,
+        periodTotalCoins: updatedTotal,
+        trophyCoins: updatedTotal,
+      },
+    }).catch(() => {});
+
+    const sendingTotalPayload = {
+      roomId: effectiveRoomId,
+      clientRoomId: roomId,
+      period: 'daily',
+      totalCoins: updatedTotal,
+      roomSendingTotal: updatedTotal,
+      dailySendingTotal: updatedTotal,
+      trophyCoins: updatedTotal,
+      timestamp: new Date().toISOString(),
+    };
+
+    const targetRoomIds = Array.from(new Set([String(roomId), String(effectiveRoomId)]));
+    if (io) {
+      const channelNames = targetRoomIds.map((rid) => `room:${rid}`);
+      io.to(channelNames).emit('room:sending_total_updated', sendingTotalPayload);
+      io.to(channelNames).emit('room:sending_total', sendingTotalPayload);
+      io.to(channelNames).emit(SOCKET_EVENTS.ROOM_SENDING_TOTAL_UPDATED, sendingTotalPayload);
+    }
+    return updatedTotal;
+  } catch (err) {
+    console.error('[GiftSocket] syncAndBroadcastRoomSendingTotal error:', err.message);
+    return 0;
+  }
+}
+
 export async function onSendGift(io, socket, data, callback) {
   try {
     const roomId = data?.roomId;
@@ -79,12 +145,11 @@ export async function onSendGift(io, socket, data, callback) {
         };
 
         if (io && roomId) {
-          io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_GIFT_SENT, ackPayload);
-          io.to(`room:${roomId}`).emit('room:gift_sent', ackPayload);
-          if (existingTx.roomId && existingTx.roomId !== roomId) {
-            io.to(`room:${existingTx.roomId}`).emit(SOCKET_EVENTS.ROOM_GIFT_SENT, ackPayload);
-            io.to(`room:${existingTx.roomId}`).emit('room:gift_sent', ackPayload);
-          }
+          const targetRooms = Array.from(new Set([String(roomId), String(existingTx.roomId || roomId)]));
+          const channelNames = targetRooms.map((r) => `room:${r}`);
+          io.to(channelNames).emit(SOCKET_EVENTS.ROOM_GIFT_SENT, ackPayload);
+          io.to(channelNames).emit('room:gift_sent', ackPayload);
+          await syncAndBroadcastRoomSendingTotal(io, roomId, existingTx.roomId || roomId, prisma);
         }
 
         if (typeof callback === 'function') {
@@ -177,9 +242,13 @@ export async function onSendGift(io, socket, data, callback) {
       timestamp: new Date().toISOString(),
     };
 
+    const canonicalRoomId = result?.giftTransaction?.roomId || giftData?.roomId || roomId;
     if (io && roomId) {
-      io.to(`room:${roomId}`).emit(SOCKET_EVENTS.ROOM_GIFT_SENT, broadcastPayload);
-      io.to(`room:${roomId}`).emit('room:gift_sent', broadcastPayload);
+      const targetRooms = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
+      const channelNames = targetRooms.map((r) => `room:${r}`);
+      io.to(channelNames).emit(SOCKET_EVENTS.ROOM_GIFT_SENT, broadcastPayload);
+      io.to(channelNames).emit('room:gift_sent', broadcastPayload);
+      await syncAndBroadcastRoomSendingTotal(io, roomId, canonicalRoomId, prisma);
     }
 
     if (typeof callback === 'function') {

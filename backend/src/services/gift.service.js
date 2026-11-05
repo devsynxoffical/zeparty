@@ -761,6 +761,16 @@ export async function sendGift(
             _sum: { totalCoins: true },
           });
           const updatedTotal = Number(dailyAggr._sum?.totalCoins || 0);
+          await (db || prisma).room.update({
+            where: { id: canonicalRoomId },
+            data: {
+              roomSendingTotal: updatedTotal,
+              dailySendingTotal: updatedTotal,
+              periodTotalCoins: updatedTotal,
+              trophyCoins: updatedTotal,
+            },
+          }).catch(() => {});
+
           const sendingTotalPayload = {
             roomId: canonicalRoomId,
             clientRoomId: roomId,
@@ -774,6 +784,7 @@ export async function sendGift(
           for (const rid of targetRoomIds) {
             socketEmitter.emitToRoom(rid, 'room:sending_total_updated', sendingTotalPayload);
             socketEmitter.emitToRoom(rid, 'room:sending_total', sendingTotalPayload);
+            socketEmitter.emitToRoom(rid, SOCKET_EVENTS.ROOM_SENDING_TOTAL_UPDATED, sendingTotalPayload);
           }
         } catch (_) {}
 

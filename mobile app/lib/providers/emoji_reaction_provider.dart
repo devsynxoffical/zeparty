@@ -7,7 +7,9 @@ class EmojiReactionProvider extends ChangeNotifier {
   final SocketService _socketService = SocketService.instance;
 
   String? _activeRoomId;
+  String? _secondaryRoomId;
   String? get activeRoomId => _activeRoomId;
+  String? get secondaryRoomId => _secondaryRoomId;
 
   final List<EmojiReactionModel> _activeReactions = [];
   List<EmojiReactionModel> get activeReactions => List.unmodifiable(_activeReactions);
@@ -25,9 +27,10 @@ class EmojiReactionProvider extends ChangeNotifier {
   static const int maxReactionsPerUser = 5;
   static const int maxTotalActiveReactions = 20;
 
-  void setActiveRoom(String roomId) {
-    if (_activeRoomId != roomId) {
+  void setActiveRoom(String roomId, {String? secondaryRoomId}) {
+    if (_activeRoomId != roomId || _secondaryRoomId != secondaryRoomId) {
       _activeRoomId = roomId;
+      _secondaryRoomId = secondaryRoomId;
       _activeReactions.clear();
       _processedReactionIds.clear();
       _lastUserReactionTimestamp.clear();
@@ -38,6 +41,7 @@ class EmojiReactionProvider extends ChangeNotifier {
 
   void clearRoom() {
     _activeRoomId = null;
+    _secondaryRoomId = null;
     _activeReactions.clear();
     _processedReactionIds.clear();
     _lastUserReactionTimestamp.clear();
@@ -50,7 +54,14 @@ class EmojiReactionProvider extends ChangeNotifier {
     _socketEmojiSub?.cancel();
     _socketEmojiSub = _socketService.onRoomEmoji.listen((data) {
       final roomId = data['roomId']?.toString() ?? '';
-      if (_activeRoomId != null && roomId.isNotEmpty && roomId != _activeRoomId) return;
+      final clientRoomId = data['clientRoomId']?.toString() ?? '';
+      if (_activeRoomId != null) {
+        final matches = (roomId.isEmpty && clientRoomId.isEmpty) ||
+            roomId == _activeRoomId ||
+            clientRoomId == _activeRoomId ||
+            (_secondaryRoomId != null && (roomId == _secondaryRoomId || clientRoomId == _secondaryRoomId));
+        if (!matches) return;
+      }
 
       // Parse and receive the incoming remote emoji reaction
       try {

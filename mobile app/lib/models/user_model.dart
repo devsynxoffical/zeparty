@@ -404,9 +404,11 @@ class UserModel {
       profile['wealthXp'] ?? profile['experience'] ?? profile['experiencePoints'] ?? json['wealthXp'] ?? json['experiencePoints'] ?? levels['wealthXp'],
       0,
     );
-    final int parsedWealthLevel = parsedWealthXp > 0
-        ? WealthLevelHelper.getLevelFromSending(parsedWealthXp)
-        : rawParsedWealthLevel.clamp(1, 100);
+    final int parsedWealthLevel = rawParsedWealthLevel > 1
+        ? rawParsedWealthLevel.clamp(1, 100)
+        : (parsedWealthXp > 0
+            ? WealthLevelHelper.getLevelFromSending(parsedWealthXp)
+            : rawParsedWealthLevel.clamp(1, 100));
     final int parsedCharmLevel = _parseIntSafe(
       profile['charmLevel'] ?? json['charmLevel'] ?? levels['charmLevel'] ?? levels['charm'],
       1,
@@ -432,6 +434,67 @@ class UserModel {
       0,
     );
     final bool isVipUser = json['isVip'] == true || (parsedWealthLevel > 10);
+
+    String resolveAvatarFrame(Map<dynamic, dynamic> src, Map<dynamic, dynamic> prof) {
+      String extractFromVal(dynamic v) {
+        if (v == null) return '';
+        if (v is String) {
+          final trimmed = v.trim();
+          return (trimmed == 'none' || trimmed == 'null') ? '' : trimmed;
+        }
+        if (v is Map) {
+          final url = v['fileUrl'] ??
+              v['url'] ??
+              v['thumbnailUrl'] ??
+              v['assetUrl'] ??
+              (v['asset'] is Map ? (v['asset']['fileUrl'] ?? v['asset']['thumbnailUrl']) : null);
+          if (url != null) {
+            final t = url.toString().trim();
+            return (t == 'none' || t == 'null') ? '' : t;
+          }
+        }
+        return '';
+      }
+
+      // 1. Direct explicit frame fields on root
+      final fromRootFrame = extractFromVal(src['avatarFrame']);
+      if (fromRootFrame.isNotEmpty) return fromRootFrame;
+      final fromRootEquipped = extractFromVal(src['equippedFrame']);
+      if (fromRootEquipped.isNotEmpty) return fromRootEquipped;
+      final fromRootFrameUrl = extractFromVal(src['frameUrl']);
+      if (fromRootFrameUrl.isNotEmpty) return fromRootFrameUrl;
+
+      // 2. Profile fields
+      final fromProfFrame = extractFromVal(prof['avatarFrame']);
+      if (fromProfFrame.isNotEmpty) return fromProfFrame;
+      final fromProfEquipped = extractFromVal(prof['equippedFrame']);
+      if (fromProfEquipped.isNotEmpty) return fromProfEquipped;
+      final fromProfFrameUrl = extractFromVal(prof['frameUrl']);
+      if (fromProfFrameUrl.isNotEmpty) return fromProfFrameUrl;
+
+      // 3. UserAssets or equippedAssets list
+      final assetsList = (src['userAssets'] is List)
+          ? (src['userAssets'] as List)
+          : ((prof['userAssets'] is List)
+              ? (prof['userAssets'] as List)
+              : ((src['equippedAssets'] is List) ? (src['equippedAssets'] as List) : []));
+
+      for (final a in assetsList) {
+        if (a is Map) {
+          final isEq = a['isEquipped'] == true || a['equipped'] == true || a['status'] == 'EQUIPPED';
+          final assetData = a['asset'] is Map ? Map<String, dynamic>.from(a['asset'] as Map) : a;
+          final type = (assetData['assetType'] ?? assetData['type'])?.toString().toUpperCase();
+          if ((isEq || assetsList.length == 1) && (type == 'FRAME' || type == 'AVATAR_FRAME')) {
+            final frameUrl = extractFromVal(assetData);
+            if (frameUrl.isNotEmpty) return frameUrl;
+          }
+        }
+      }
+
+      return '';
+    }
+
+    final parsedAvatarFrame = resolveAvatarFrame(json, profile);
 
     return UserModel(
       id: id,
@@ -486,7 +549,7 @@ class UserModel {
           json['currentRoomId']?.toString() ??
           json['roomId']?.toString() ??
           (json['currentRoom'] is Map ? (json['currentRoom']['id']?.toString() ?? json['currentRoom']['roomId']?.toString()) : null),
-      avatarFrame: json['avatarFrame']?.toString() ?? json['equippedFrame']?.toString() ?? profile['avatarFrame']?.toString() ?? profile['equippedFrame']?.toString() ?? '',
+      avatarFrame: parsedAvatarFrame,
       badge: json['badge']?.toString() ?? '',
       referralCode: json['referralCode']?.toString() ?? 'ZEP$id',
       referralCount: json['referralCount'] is int ? json['referralCount'] as int : 0,

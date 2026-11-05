@@ -22,6 +22,37 @@ import privacyEligibilityService from '../services/privacyEligibility.service.js
 import { getNobleStyle } from '../services/asset.service.js';
 
 /**
+ * Resolves the authoritative equipped avatar frame for any user object.
+ * Checks direct avatarFrame, equippedFrame, profile.avatarFrame, or userAssets.
+ */
+export function resolveUserAvatarFrame(user) {
+  if (!user) return null;
+  if (user.avatarFrame && user.avatarFrame !== 'none') return user.avatarFrame;
+  if (user.equippedFrame && user.equippedFrame !== 'none') return user.equippedFrame;
+  if (user.profile?.avatarFrame && user.profile.avatarFrame !== 'none') return user.profile.avatarFrame;
+  if (user.profile?.equippedFrame && user.profile.equippedFrame !== 'none') return user.profile.equippedFrame;
+  if (Array.isArray(user.userAssets)) {
+    for (const ua of user.userAssets) {
+      const asset = ua.asset;
+      if (!asset) continue;
+      const type = (asset.assetType || '').toUpperCase();
+      if (type === 'FRAME' && ua.isEquipped !== false) {
+        return asset.thumbnailUrl || asset.staticFileUrl || asset.animationFileUrl || asset.name || null;
+      }
+    }
+  }
+  if (Array.isArray(user.equippedAssets)) {
+    for (const eq of user.equippedAssets) {
+      const type = (eq.assetType || '').toUpperCase();
+      if (type === 'FRAME') {
+        return eq.imageUrl || eq.name || null;
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Builds a safe, public room snapshot containing no sensitive admin or private fields.
  */
 export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
@@ -61,6 +92,7 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       const isHost = mid === hostUserId;
       const displayName = u.profile?.displayName || u.displayName || u.username || (isHost ? 'Host' : 'User');
       const isRoomAdmin = (m.role === 'ADMIN' || m.role === 'MODERATOR');
+      const memberFrame = resolveUserAvatarFrame(u);
       return {
         userId: mid,
         role: isHost ? 'HOST' : (isRoomAdmin ? 'ADMIN' : (m.role || 'LISTENER')),
@@ -72,6 +104,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
           displayName,
           name: displayName,
           avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
+          avatarFrame: memberFrame,
+          equippedFrame: memberFrame,
         },
       };
     });
@@ -82,6 +116,7 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
   if (!hostIsOccupyingSeat && hostUserId && !existingMemberIds.has(hostUserId)) {
     const hostUser = room.creator || {};
     const hostDisplayName = hostUser.profile?.displayName || hostUser.displayName || hostUser.username || 'Host';
+    const hostFrame = resolveUserAvatarFrame(hostUser);
     membersList.unshift({
       userId: hostUserId,
       role: 'HOST',
@@ -93,6 +128,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
         displayName: hostDisplayName,
         name: hostDisplayName,
         avatarUrl: hostUser.avatarUrl || hostUser.profile?.avatarUrl || null,
+        avatarFrame: hostFrame,
+        equippedFrame: hostFrame,
       },
     });
     existingMemberIds.add(hostUserId);
@@ -107,6 +144,7 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       }
       const isHost = pid === hostUserId;
       const guestDisplayName = pres.displayName || pres.name || pres.username || (isHost ? 'Host' : `User_${String(pid).replace('guest_', '').substring(0, 5)}`);
+      const guestFrame = resolveUserAvatarFrame(pres);
       membersList.push({
         userId: pid,
         role: isHost ? 'HOST' : 'LISTENER',
@@ -118,6 +156,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
           displayName: guestDisplayName,
           name: guestDisplayName,
           avatarUrl: pres.avatarUrl || null,
+          avatarFrame: guestFrame,
+          equippedFrame: guestFrame,
         },
       });
       existingMemberIds.add(pid);
@@ -161,12 +201,15 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       username: room.creator.username,
       displayName: room.creator.profile?.displayName || room.creator.username,
       avatarUrl: room.creator.profile?.avatarUrl || null,
+      avatarFrame: resolveUserAvatarFrame(room.creator),
+      equippedFrame: resolveUserAvatarFrame(room.creator),
       nobleTitle: room.creator.profile?.nobleRank || room.creator.nobleTitle || null,
       nobleLevel: room.creator.profile?.nobleRank || room.creator.nobleTitle || null,
     } : null,
     seats: (room.seats || []).map((s) => {
       const u = s.occupiedUser || s.user;
       const isOccupied = Boolean(u && s.occupiedUserId);
+      const seatUserFrame = isOccupied ? resolveUserAvatarFrame(u) : null;
       return {
         seatIndex: s.seatIndex,
         seatNumber: s.seatIndex,
@@ -182,6 +225,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
           name: u.profile?.displayName || u.displayName || u.username,
           avatarUrl: u.profile?.avatarUrl || u.avatarUrl || null,
           avatar: u.profile?.avatarUrl || u.avatarUrl || null,
+          avatarFrame: seatUserFrame,
+          equippedFrame: seatUserFrame,
           level: u.profile?.level || 1,
           vipLevel: u.profile?.vipLevel || 0,
           nobleTitle: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
@@ -194,6 +239,7 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       const coHostUser = coHostSeat ? (coHostSeat.occupiedUser || coHostSeat.user) : null;
       if (!coHostUser) return null;
       const dName = coHostUser.profile?.displayName || coHostUser.displayName || coHostUser.username || 'Co-Host';
+      const coHostFrame = resolveUserAvatarFrame(coHostUser);
       return {
         id: coHostUser.id,
         userId: coHostUser.id,
@@ -201,6 +247,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
         displayName: dName,
         name: dName,
         avatarUrl: coHostUser.profile?.avatarUrl || coHostUser.avatarUrl || null,
+        avatarFrame: coHostFrame,
+        equippedFrame: coHostFrame,
         seatIndex: 1,
         seatNumber: 1,
         isCoHost: true,
@@ -481,16 +529,43 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       socket.emit('room:stage_updated', stageSnap);
     } catch (_) {}
 
-    // 6. Broadcast user joined event ONLY on genuine initial entry (not reconnects/pings)
-    if (isFirstSocket) {
-      const targetRoomIds = Array.from(new Set([String(roomId), String(room.id)]));
-      const roomChannelNames = targetRoomIds.map((id) => `room:${id}`);
-      const broadcastTarget = io
-        ? io.to(roomChannelNames)
-        : (socket.to ? socket.to(`room:${roomId}`) : socket);
+    // 6. Broadcast user joined event and authoritative viewer count to all room participants
+    const targetRoomIds = Array.from(new Set([String(roomId), String(room.id)]));
+    const roomChannelNames = targetRoomIds.map((id) => `room:${id}`);
+    const broadcastTarget = io
+      ? io.to(roomChannelNames)
+      : (socket.to ? socket.to(`room:${roomId}`) : socket);
 
-      const entryTimestamp = new Date().toISOString();
-      const entryEventId = `entry_${room.id}_${effectiveJoinedId}_${Date.now()}`;
+    const entryTimestamp = new Date().toISOString();
+    const entryEventId = `entry_${room.id}_${effectiveJoinedId}_${Date.now()}`;
+
+    // Authoritative Viewer Count Payload: ALWAYS broadcast to all room channels
+    const viewerPayload = {
+      roomId: room.id,
+      clientRoomId: roomId,
+      room: room.id,
+      viewerCount: currentCount,
+      count: currentCount,
+      currentViewersCount: currentCount,
+      timestamp: entryTimestamp,
+    };
+
+    for (const rid of targetRoomIds) {
+      if (io) {
+        io.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
+        io.to(`room:${rid}`).emit('room:viewer_count', viewerPayload);
+        io.to(`room:${rid}`).emit('viewer_count_changed', viewerPayload);
+      } else if (socket.to) {
+        socket.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
+      }
+    }
+    if (socket && typeof socket.emit === 'function') {
+      socket.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
+      socket.emit('room:viewer_count', viewerPayload);
+      socket.emit('viewer_count_changed', viewerPayload);
+    }
+
+    if (isFirstSocket) {
 
       // Check if user has ROOM_INVISIBLE / stealth_entry enabled and eligible
       let isStealthEntry = false;
@@ -538,6 +613,13 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       }
 
       const joinedAgoraUid = effectiveJoinedId ? deriveAgoraUid(effectiveJoinedId) : null;
+      const joinedFrame = resolveUserAvatarFrame(clientUser) ||
+        resolveUserAvatarFrame(socket.user) ||
+        clientUser.avatarFrame ||
+        clientUser.equippedFrame ||
+        socket.user?.avatarFrame ||
+        socket.user?.equippedFrame ||
+        null;
 
       const userPayload = {
         id: entryEventId,
@@ -551,6 +633,8 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         userId: effectiveJoinedId,
         agoraUid: joinedAgoraUid,
         uid: joinedAgoraUid,
+        avatarFrame: joinedFrame,
+        equippedFrame: joinedFrame,
         user: {
           id: effectiveJoinedId,
           userId: effectiveJoinedId,
@@ -558,6 +642,8 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           name: effectiveJoinedName,
           displayName: effectiveJoinedName,
           avatarUrl: effectiveJoinedAvatar,
+          avatarFrame: joinedFrame,
+          equippedFrame: joinedFrame,
           isVip: effectiveJoinedVip,
           nobleLevel: effectiveJoinedNoble,
           nobleTitle: effectiveJoinedNoble,
@@ -582,25 +668,17 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       };
 
       if (!isStealthEntry) {
-        broadcastTarget.emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
-        broadcastTarget.emit('user_joined', userPayload);
-        broadcastTarget.emit('user:joined', userPayload);
-        broadcastTarget.emit('room_user_joined', userPayload);
+        for (const rid of targetRoomIds) {
+          if (io) {
+            io.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
+            io.to(`room:${rid}`).emit('user_joined', userPayload);
+            io.to(`room:${rid}`).emit('user:joined', userPayload);
+            io.to(`room:${rid}`).emit('room_user_joined', userPayload);
+          } else if (socket.to) {
+            socket.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
+          }
+        }
       }
-
-      const viewerPayload = {
-        roomId: room.id,
-        clientRoomId: roomId,
-        room: room.id,
-        viewerCount: currentCount,
-        count: currentCount,
-        currentViewersCount: currentCount,
-        timestamp: entryTimestamp,
-      };
-
-      broadcastTarget.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
-      broadcastTarget.emit('room:viewer_count', viewerPayload);
-      broadcastTarget.emit('viewer_count_changed', viewerPayload);
 
       // 7. Broadcast system chat announcement so all room participants see "[User] has joined the party"
       const entryText = `${effectiveJoinedName} has joined the party 🎉`;
@@ -651,10 +729,16 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       };
 
       if (!isStealthEntry) {
-        broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
-        broadcastTarget.emit('room:chat', chatPayload);
-        broadcastTarget.emit('chat_message', chatPayload);
-        broadcastTarget.emit('room_chat_message', chatPayload);
+        for (const rid of targetRoomIds) {
+          if (io) {
+            io.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
+            io.to(`room:${rid}`).emit('room:chat', chatPayload);
+            io.to(`room:${rid}`).emit('chat_message', chatPayload);
+            io.to(`room:${rid}`).emit('room_chat_message', chatPayload);
+          } else if (socket.to) {
+            socket.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
+          }
+        }
       }
 
       // Ensure the entering user socket receives both events reliably if room broadcast didn't include socket
@@ -1272,7 +1356,7 @@ export async function onRequestActiveRooms(socket, data, callback, db = prisma) 
 }
 
 export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
-  const { io, socket, data, callback } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
   try {
     const roomId = data?.roomId;
     const emoji = (data?.emoji || '').trim();
@@ -1290,14 +1374,29 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
+    // Resolve canonical room ID if short ID was passed
+    let canonicalRoomId = roomId;
+    if (roomId && roomId.length <= 16) {
+      try {
+        const found = await roomRepository.findRoomById(roomId, db || prisma);
+        if (found) {
+          canonicalRoomId = found.id;
+        }
+      } catch (_) {}
+    }
+
     // Ensure socket is joined to room channel
     if (typeof socket.join === 'function') {
-      socket.join(`room:${roomId}`);
+      await socket.join(`room:${roomId}`);
+      if (canonicalRoomId !== roomId) {
+        await socket.join(`room:${canonicalRoomId}`);
+      }
     }
 
     const payload = {
       id: `emoji_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      roomId,
+      roomId: canonicalRoomId,
+      clientRoomId: roomId,
       emoji,
       targetUserId,
       seatId: typeof data?.seatId === 'number' ? data.seatId : (data?.seatId != null && !isNaN(parseInt(data.seatId, 10)) ? parseInt(data.seatId, 10) : null),
@@ -1311,9 +1410,25 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
       timestamp: new Date().toISOString(),
     };
 
-    // Broadcast to ALL room members including sender
-    const broadcastTarget = io ? io.to(`room:${roomId}`) : socket;
-    broadcastTarget.emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
+    // Broadcast to ALL room members across both canonical and client room channels
+    const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
+    for (const r of targetRoomIds) {
+      if (io) {
+        io.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
+        io.to(`room:${r}`).emit('room:emoji_received', payload);
+        io.to(`room:${r}`).emit('room:emoji', payload);
+        io.to(`room:${r}`).emit('emoji_received', payload);
+      } else if (socket.to) {
+        socket.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
+      }
+    }
+
+    if (socket && typeof socket.emit === 'function') {
+      socket.emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
+      socket.emit('room:emoji_received', payload);
+      socket.emit('room:emoji', payload);
+      socket.emit('emoji_received', payload);
+    }
 
     if (typeof callback === 'function') {
       return callback({ success: true, data: payload });
@@ -1362,9 +1477,9 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
 
     // Ensure socket is joined to room channel
     if (typeof socket.join === 'function') {
-      socket.join(`room:${roomId}`);
+      await socket.join(`room:${roomId}`);
       if (canonicalRoomId !== roomId) {
-        socket.join(`room:${canonicalRoomId}`);
+        await socket.join(`room:${canonicalRoomId}`);
       }
     }
 
@@ -1375,7 +1490,12 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
     let senderVip = Boolean(clientSender.isVip || socket.user?.isVip);
     let senderNoble = clientSender.nobleTitle || clientSender.nobleLevel || socket.user?.nobleTitle || socket.user?.nobleLevel;
     let senderRole = clientSender.role || socket.user?.role;
-    let senderFrame = clientSender.avatarFrame || clientSender.frameUrl || socket.user?.avatarFrame;
+    let senderFrame = resolveUserAvatarFrame(clientSender) ||
+      resolveUserAvatarFrame(socket.user) ||
+      clientSender.avatarFrame ||
+      clientSender.frameUrl ||
+      socket.user?.avatarFrame ||
+      null;
     let senderBubble = clientSender.chatBubble || clientSender.bubbleUrl || socket.user?.chatBubble;
 
     if (!senderName || senderName === 'User' || senderName === 'ZeParty Member' || senderName.startsWith('guest_')) {
@@ -1388,6 +1508,9 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
             senderVip = Boolean(dbUser.profile?.vipLevel > 0 || dbUser.profile?.svipLevel > 0);
             senderNoble = dbUser.profile?.nobleRank || senderNoble;
             senderRole = dbUser.userType || senderRole;
+            if (!senderFrame) {
+              senderFrame = resolveUserAvatarFrame(dbUser);
+            }
           }
         }
       } catch (_) {}
@@ -1413,6 +1536,7 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
         displayName: senderName || 'User',
         avatarUrl: senderAvatar || null,
         avatarFrame: senderFrame || null,
+        equippedFrame: senderFrame || null,
         chatBubble: senderBubble || null,
         isVip: senderVip,
         nobleLevel: senderNoble || null,
@@ -1422,27 +1546,27 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
         nobleStyle: senderNobleStyle,
         role: senderRole || null,
       },
+      avatarFrame: senderFrame || null,
+      equippedFrame: senderFrame || null,
       text: text.substring(0, 500),
       timestamp: new Date().toISOString(),
       type: data?.type || 'text',
     };
 
-    const broadcastTarget = io ? io.to(`room:${roomId}`) : (socket.to ? socket.to(`room:${roomId}`) : socket);
-    broadcastTarget.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
-    broadcastTarget.emit('room:chat_message', payload);
-    broadcastTarget.emit('room_chat_message', payload);
-    broadcastTarget.emit('chat_message', payload);
-    broadcastTarget.emit('room:comment', payload);
-
-    if (io && canonicalRoomId !== roomId) {
-      io.to(`room:${canonicalRoomId}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
-      io.to(`room:${canonicalRoomId}`).emit('room:chat_message', payload);
-      io.to(`room:${canonicalRoomId}`).emit('room_chat_message', payload);
-      io.to(`room:${canonicalRoomId}`).emit('chat_message', payload);
-      io.to(`room:${canonicalRoomId}`).emit('room:comment', payload);
+    const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
+    for (const r of targetRoomIds) {
+      if (io) {
+        io.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
+        io.to(`room:${r}`).emit('room:chat_message', payload);
+        io.to(`room:${r}`).emit('room_chat_message', payload);
+        io.to(`room:${r}`).emit('chat_message', payload);
+        io.to(`room:${r}`).emit('room:comment', payload);
+      } else if (socket.to) {
+        socket.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
+      }
     }
 
-    if (!io && socket && typeof socket.emit === 'function') {
+    if (socket && typeof socket.emit === 'function') {
       socket.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
       socket.emit('room:chat_message', payload);
       socket.emit('room_chat_message', payload);
@@ -1732,8 +1856,22 @@ export async function onSendRoomLike(arg1, arg2, arg3, arg4, arg5) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
+    // Resolve canonical room ID if short ID was passed
+    let canonicalRoomId = roomId;
+    if (roomId && roomId.length <= 16) {
+      try {
+        const found = await roomRepository.findRoomById(roomId);
+        if (found) {
+          canonicalRoomId = found.id;
+        }
+      } catch (_) {}
+    }
+
     if (typeof socket.join === 'function') {
       socket.join(`room:${roomId}`);
+      if (canonicalRoomId !== roomId) {
+        socket.join(`room:${canonicalRoomId}`);
+      }
     }
 
     const sender = data?.sender && typeof data.sender === 'object' ? data.sender : {
@@ -1750,11 +1888,12 @@ export async function onSendRoomLike(arg1, arg2, arg3, arg4, arg5) {
 
     let totalLikes = count;
     try {
-      totalLikes = await presenceService.incrementRoomLikes(roomId, count);
+      totalLikes = await presenceService.incrementRoomLikes(canonicalRoomId || roomId, count);
     } catch (_) {}
 
     const payload = {
-      roomId,
+      roomId: canonicalRoomId,
+      clientRoomId: roomId,
       count,
       totalLikes,
       likesCount: totalLikes,
@@ -1763,7 +1902,9 @@ export async function onSendRoomLike(arg1, arg2, arg3, arg4, arg5) {
       timestamp: new Date().toISOString(),
     };
 
-    const broadcastTarget = socket.to ? socket.to(`room:${roomId}`) : (io ? io.to(`room:${roomId}`) : socket);
+    const targetRooms = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
+    const channelNames = targetRooms.map((r) => `room:${r}`);
+    const broadcastTarget = socket.to ? socket.to(channelNames) : (io ? io.to(channelNames) : socket);
     broadcastTarget.emit('room:like', payload);
     broadcastTarget.emit('room:like_sent', payload);
     broadcastTarget.emit('room_like', payload);
