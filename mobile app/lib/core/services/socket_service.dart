@@ -14,8 +14,67 @@ class SocketService {
   Map<String, dynamic>? _cachedUserData;
   String? _cachedAuthToken;
   Completer<void>? _connectCompleter;
+  bool _isRefreshingToken = false;
+
+  final _connectionStateController = StreamController<bool>.broadcast();
+  Stream<bool> get onConnectionStateChanged => _connectionStateController.stream;
+
+  final List<Map<String, dynamic>> _pendingChatQueue = [];
+  final List<Map<String, dynamic>> _pendingSeatQueue = [];
+  final List<Map<String, dynamic>> _pendingGiftQueue = [];
+  final List<Map<String, dynamic>> _pendingEmojiQueue = [];
 
   bool get isConnected => _isConnected && _socket != null && _socket!.connected;
+
+  void _flushPendingMessages() {
+    if (_socket == null || !_socket!.connected) return;
+
+    if (_pendingChatQueue.isNotEmpty) {
+      final toSend = List<Map<String, dynamic>>.from(_pendingChatQueue);
+      _pendingChatQueue.clear();
+      for (final payload in toSend) {
+        _socket!.emit('room:chat_send', payload);
+        _logDiag('FLUSH_CHAT', 'Sent queued chat for room ${payload['roomId']} (msgId: ${payload['id']})');
+      }
+    }
+
+    if (_pendingSeatQueue.isNotEmpty) {
+      final toSend = List<Map<String, dynamic>>.from(_pendingSeatQueue);
+      _pendingSeatQueue.clear();
+      for (final item in toSend) {
+        final action = item['action'];
+        final data = item['data'];
+        if (action == 'occupy') {
+          _socket!.emit('room:seat_occupy', data);
+          _socket!.emit('seat:occupy', data);
+          _logDiag('FLUSH_SEAT_OCCUPY', 'Sent queued seat occupy for room ${data['roomId']} seat ${data['seatIndex']}');
+        } else if (action == 'leave') {
+          _socket!.emit('room:seat_leave', data);
+          _socket!.emit('seat:leave', data);
+          _logDiag('FLUSH_SEAT_LEAVE', 'Sent queued seat leave for room ${data['roomId']} seat ${data['seatIndex']}');
+        }
+      }
+    }
+
+    if (_pendingGiftQueue.isNotEmpty) {
+      final toSend = List<Map<String, dynamic>>.from(_pendingGiftQueue);
+      _pendingGiftQueue.clear();
+      for (final payload in toSend) {
+        _socket!.emit('room:gift_send', payload);
+        _logDiag('FLUSH_GIFT', 'Sent queued gift for room ${payload['roomId']} (txId: ${payload['transactionId']})');
+      }
+    }
+
+    if (_pendingEmojiQueue.isNotEmpty) {
+      final toSend = List<Map<String, dynamic>>.from(_pendingEmojiQueue);
+      _pendingEmojiQueue.clear();
+      for (final payload in toSend) {
+        _socket!.emit('room:emoji_send', payload);
+        _socket!.emit('room:emoji', payload);
+        _logDiag('FLUSH_EMOJI', 'Sent queued emoji for room ${payload['roomId']} (${payload['emoji']})');
+      }
+    }
+  }
 
   void _logDiag(String action, String details) {
     final ts = DateTime.now().toUtc().toIso8601String();
@@ -279,7 +338,15 @@ class SocketService {
 
   /// Connect to backend Socket.IO server with JWT token
   Future<void> connect({String? token, Map<String, dynamic>? user}) async {
-    final authToken = token ?? await ApiClient.instance.getAccessToken() ?? 'guest_anonymous';
+    String? authToken = token;
+    if (authToken == null || authToken.isEmpty) {
+      authToken = await ApiClient.instance.getAccessToken();
+      if (authToken == null || authToken.isEmpty) {
+        authToken = await ApiClient.instance.refreshToken();
+      }
+    }
+    authToken ??= 'guest_anonymous';
+    _cachedAuthToken = authToken;
 
     // Phase 1: Robust identity change & anonymous-to-auth detection
     final prevUser = _cachedUserData;
@@ -349,6 +416,7 @@ class SocketService {
 
     _socket!.onConnect((_) {
       _isConnected = true;
+      _connectionStateController.add(true);
       debugPrint('[SocketService] Connected to backend realtime server ($baseUrl)');
       if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
         _connectCompleter!.complete();
@@ -357,31 +425,65 @@ class SocketService {
       if (_currentRoomId != null) {
         joinRoomSubscription(_currentRoomId!, user: _cachedUserData);
       }
+      _flushPendingMessages();
     });
 
     _socket!.onReconnect((_) {
       _isConnected = true;
+      _connectionStateController.add(true);
       debugPrint('[SocketService] Reconnected to backend realtime server ($baseUrl)');
       _reconnectController.add(null);
       if (_currentRoomId != null) {
         joinRoomSubscription(_currentRoomId!, user: _cachedUserData);
       }
+      _flushPendingMessages();
     });
 
     _socket!.onDisconnect((reason) {
       _isConnected = false;
+      _connectionStateController.add(false);
       debugPrint('[SocketService] Disconnected from realtime server: $reason');
     });
 
-    _socket!.onConnectError((err) {
+    _socket!.onConnectError((err) async {
       _isConnected = false;
+      _connectionStateController.add(false);
       debugPrint('[SocketService] Connection notice: $err');
+
+      final errStr = err.toString().toLowerCase();
+      final isAuthError = errStr.contains('unauthorized') || 
+                          errStr.contains('expired') || 
+                          errStr.contains('jwt') ||
+                          errStr.contains('token');
+
+      if (isAuthError && !_isRefreshingToken) {
+        _isRefreshingToken = true;
+        try {
+          debugPrint('[SocketService] Detected expired or unauthorized token on socket. Refreshing token...');
+          final refreshedToken = await ApiClient.instance.refreshToken();
+          if (refreshedToken != null && refreshedToken.isNotEmpty) {
+            debugPrint('[SocketService] Token refreshed successfully. Reconnecting socket with new token...');
+            _cachedAuthToken = refreshedToken;
+            _isRefreshingToken = false;
+            disconnect(clearRoom: false);
+            connect(token: refreshedToken, user: _cachedUserData);
+            return;
+          }
+        } catch (refreshErr) {
+          debugPrint('[SocketService] Token refresh failed: $refreshErr');
+        } finally {
+          _isRefreshingToken = false;
+        }
+      }
+
       if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
         _connectCompleter!.complete();
       }
     });
 
     _socket!.onError((err) {
+      _isConnected = false;
+      _connectionStateController.add(false);
       debugPrint('[SocketService] Socket error: $err');
       if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
         _connectCompleter!.complete();
@@ -1146,27 +1248,35 @@ class SocketService {
 
   /// Occupy a seat via realtime socket emission
   void occupySeat(String roomId, int seatIndex, {Map<String, dynamic>? user}) {
-    if (_socket != null) {
-      _socket!.emit('room:seat_occupy', {
-        'roomId': roomId,
-        'seatIndex': seatIndex,
-        if (user != null) 'user': user,
-      });
-      _socket!.emit('seat:occupy', {
-        'roomId': roomId,
-        'seatIndex': seatIndex,
-        if (user != null) 'user': user,
-      });
+    final payload = {
+      'roomId': roomId,
+      'seatIndex': seatIndex,
+      if (user != null) 'user': user,
+      if (user != null && (user['id'] != null || user['_id'] != null))
+        'userId': user['id'] ?? user['_id'],
+    };
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('room:seat_occupy', payload);
+      _socket!.emit('seat:occupy', payload);
+      _logDiag('EMIT_SEAT_OCCUPY', 'room: $roomId, seatIndex: $seatIndex');
+    } else {
+      _pendingSeatQueue.add({'action': 'occupy', 'data': payload});
+      connect(user: user);
     }
   }
 
   /// Release a seat via realtime socket emission
   void leaveSeat(String roomId, int seatIndex) {
-    if (_socket != null) {
-      _socket!.emit('room:seat_leave', {
-        'roomId': roomId,
-        'seatIndex': seatIndex,
-      });
+    final payload = {
+      'roomId': roomId,
+      'seatIndex': seatIndex,
+    };
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('room:seat_leave', payload);
+      _socket!.emit('seat:leave', payload);
+      _logDiag('EMIT_SEAT_LEAVE', 'room: $roomId, seatIndex: $seatIndex');
+    } else {
+      _pendingSeatQueue.add({'action': 'leave', 'data': payload});
     }
   }
 
@@ -1199,12 +1309,8 @@ class SocketService {
       _socket!.emit('room:chat_send', payload);
       debugPrint('[SocketService] Sent room:chat_send for room:$roomId (msgId: $effectiveId)');
     } else {
-      connect(user: sender).then((_) {
-        if (_socket != null && _socket!.connected) {
-          _socket!.emit('room:chat_send', payload);
-          debugPrint('[SocketService] Sent room:chat_send after connect for room:$roomId (msgId: $effectiveId)');
-        }
-      });
+      _pendingChatQueue.add(payload);
+      connect(user: sender);
     }
   }
 
@@ -1246,12 +1352,8 @@ class SocketService {
       _socket!.emit('room:gift_send', payload);
       debugPrint('[SocketService] Sent room:gift_send for room:$roomId (txId: $effectiveTxId)');
     } else {
-      connect(user: sender).then((_) {
-        if (_socket != null && _socket!.connected) {
-          _socket!.emit('room:gift_send', payload);
-          debugPrint('[SocketService] Sent room:gift_send after connect for room:$roomId (txId: $effectiveTxId)');
-        }
-      });
+      _pendingGiftQueue.add(payload);
+      connect(user: sender);
     }
   }
 
@@ -1290,9 +1392,12 @@ class SocketService {
       if (gameResult != null) 'gameResult': gameResult,
       'timestamp': DateTime.now().toIso8601String(),
     };
-    if (_socket != null && _isConnected) {
+    if (_socket != null && _socket!.connected) {
       _socket!.emit('room:emoji_send', payload);
       _socket!.emit('room:emoji', payload);
+    } else {
+      _pendingEmojiQueue.add(payload);
+      connect();
     }
   }
 
@@ -1655,12 +1760,24 @@ class SocketService {
     _roomUserMutedController.add(data);
   }
 
+  /// Request full authoritative room snapshot from server
+  void requestRoomSnapshot(String roomId) {
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('room:snapshot', {'roomId': roomId});
+      _socket!.emit('room_snapshot', {'roomId': roomId});
+      _logDiag('REQUEST_ROOM_SNAPSHOT', 'room: $roomId');
+    }
+  }
+
   /// Disconnect socket cleanly
-  void disconnect() {
+  void disconnect({bool clearRoom = true}) {
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
     _isConnected = false;
-    _currentRoomId = null;
+    _connectionStateController.add(false);
+    if (clearRoom) {
+      _currentRoomId = null;
+    }
   }
 }

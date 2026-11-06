@@ -1653,6 +1653,33 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Realtime Socket Connection Status Spinner
+                  if (!provider.isSocketConnected) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                      margin: const EdgeInsets.only(right: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.7), width: 0.8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          SizedBox(
+                            width: 10,
+                            height: 10,
+                            child: CircularProgressIndicator(strokeWidth: 1.8, color: Colors.amberAccent),
+                          ),
+                          SizedBox(width: 5),
+                          Text(
+                            'Connecting...',
+                            style: TextStyle(color: Colors.amberAccent, fontSize: 9.5, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   // Trophy & Points
                   GestureDetector(
                     onTap: () {
