@@ -324,118 +324,118 @@ export async function onLeaveSeat(io, socket, data, callback, db = prisma) {
 export function registerSeatHandlers(io, socket) {
   socket.on(
     SOCKET_EVENTS.ROOM_SEAT_OCCUPY,
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
   );
   socket.on(
     'room_seat_occupy',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
   );
   socket.on(
     'seat_occupy',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
   );
   socket.on(
     'seat:occupy',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onOccupySeat(io, s, d, cb))
   );
 
   socket.on(
     SOCKET_EVENTS.ROOM_SEAT_LEAVE,
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
   socket.on(
     'room_seat_leave',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
   socket.on(
     'seat_leave',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
   socket.on(
     'seat:leave',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
 
   // Leave mic aliases for mobile client
   socket.on(
     'room:leave_mic',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
   socket.on(
     'leave_mic',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
   socket.on(
     'room_leave_mic',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
   socket.on(
     'seat:leave_mic',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
   socket.on(
     'seat_leave_mic',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
   socket.on(
     'mic:leave',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
   socket.on(
     'mic_leave',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLeaveSeat(io, s, d, cb))
   );
 
   // Issue 04: Mic Seat Locking Socket Events
   socket.on(
     'room:lock_seat',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLockSeat(io, s, { ...d, isLocked: true }, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLockSeat(io, s, { ...d, isLocked: true }, cb))
   );
   socket.on(
     'room_lock_seat',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLockSeat(io, s, { ...d, isLocked: true }, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLockSeat(io, s, { ...d, isLocked: true }, cb))
   );
   socket.on(
     'room:unlock_seat',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLockSeat(io, s, { ...d, isLocked: false }, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLockSeat(io, s, { ...d, isLocked: false }, cb))
   );
   socket.on(
     'room_unlock_seat',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLockSeat(io, s, { ...d, isLocked: false }, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLockSeat(io, s, { ...d, isLocked: false }, cb))
   );
   socket.on(
     'room:seat_lock',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLockSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLockSeat(io, s, d, cb))
   );
   socket.on(
     'room:seat_locked_status',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLockSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLockSeat(io, s, d, cb))
   );
   socket.on(
     'room_seat_locked_status',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onLockSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onLockSeat(io, s, d, cb))
   );
 
   // Mic Mute & Self-Toggle Events
   socket.on(
     'room:mute_seat',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
   );
   socket.on(
     'seat_mute',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
   );
   socket.on(
     'seat:mute',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
   );
   socket.on(
     'room:toggle_mute',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
   );
   socket.on(
     'toggle_mute',
-    withRateLimit('SEAT_ACTION', 5, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
+    withRateLimit('SEAT_ACTION', 25, 1000, (s, d, cb) => onMuteSeat(io, s, d, cb))
   );
 }
 

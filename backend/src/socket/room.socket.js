@@ -2106,19 +2106,19 @@ export function registerRoomHandlers(io, socket) {
 
   socket.on(
     SOCKET_EVENTS.ROOM_JOIN,
-    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
+    withRateLimit('ROOM_JOIN', 30, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
   );
   socket.on(
     'room_join',
-    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
+    withRateLimit('ROOM_JOIN', 30, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
   );
   socket.on(
     'join_room',
-    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
+    withRateLimit('ROOM_JOIN', 30, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
   );
   socket.on(
     'join:room',
-    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
+    withRateLimit('ROOM_JOIN', 30, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
   );
 
   socket.on(
@@ -2141,24 +2141,24 @@ export function registerRoomHandlers(io, socket) {
 
   socket.on(
     SOCKET_EVENTS.ROOM_CHAT_SEND,
-    withRateLimit('ROOM_CHAT', 25, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
+    withRateLimit('ROOM_CHAT', 60, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
   );
   socket.on(
     'room_chat_send',
-    withRateLimit('ROOM_CHAT', 25, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
+    withRateLimit('ROOM_CHAT', 60, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
   );
   socket.on(
     'send_room_chat',
-    withRateLimit('ROOM_CHAT', 25, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
+    withRateLimit('ROOM_CHAT', 60, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
   );
 
   socket.on(
     SOCKET_EVENTS.ROOM_EMOJI_SEND,
-    withRateLimit('ROOM_EMOJI', 30, 1000, (s, d, cb) => onSendRoomEmoji(io, s, d, cb))
+    withRateLimit('ROOM_EMOJI', 60, 1000, (s, d, cb) => onSendRoomEmoji(io, s, d, cb))
   );
   socket.on(
     'room_emoji_send',
-    withRateLimit('ROOM_EMOJI', 30, 1000, (s, d, cb) => onSendRoomEmoji(io, s, d, cb))
+    withRateLimit('ROOM_EMOJI', 60, 1000, (s, d, cb) => onSendRoomEmoji(io, s, d, cb))
   );
 
   // Real-time Room Likes
@@ -2182,11 +2182,11 @@ export function registerRoomHandlers(io, socket) {
   // Client user joined trigger
   socket.on(
     'room:user_joined',
-    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
+    withRateLimit('ROOM_JOIN', 30, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
   );
   socket.on(
     'room_user_joined',
-    withRateLimit('ROOM_JOIN', 10, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
+    withRateLimit('ROOM_JOIN', 30, 1000, (s, d, cb) => onJoinRoom(io, s, d, cb))
   );
 
   socket.on(

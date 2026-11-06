@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import env from '../config/env.js';
 import userRepository from '../repositories/user.repository.js';
 import { SOCKET_ERRORS } from './socket.constants.js';
+import { resolveUserAvatarFrame } from './room.socket.js';
 
 /**
  * Socket.IO connection authentication middleware using authoritative JWT & database verification.
@@ -167,6 +168,7 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
     socket.isGuest = false;
     socket.userId = user.id;
     console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [AUTH] socket=${socket.id} mode=AUTHENTICATED userId=${user.id} username=${user.username} role=${user.userType || 'USER'}`);
+    const equippedFrame = resolveUserAvatarFrame(user);
     socket.user = {
       id: user.id,
       userId: user.id,
@@ -174,6 +176,10 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
       name: effectiveName,
       displayName: effectiveName,
       avatarUrl: user.profile?.avatarUrl || user.avatarUrl || null,
+      avatarFrame: equippedFrame,
+      equippedFrame: equippedFrame,
+      userAssets: user.userAssets || [],
+      equippedAssets: user.equippedAssets || [],
       status: user.status || 'ACTIVE',
       isVip: Boolean(user.profile?.vipLevel > 0 || user.profile?.svipLevel > 0),
       isHost: user.userType === 'HOST' || Boolean(user.hostProfile),
