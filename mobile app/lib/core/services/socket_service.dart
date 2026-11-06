@@ -318,6 +318,7 @@ class SocketService {
       IO.OptionBuilder()
           .setTransports(['websocket'])
           .disableAutoConnect()
+          .enableForceNew()
           .setAuth(authMap)
           .setExtraHeaders({'Authorization': 'Bearer $authToken'})
           .enableReconnection()
