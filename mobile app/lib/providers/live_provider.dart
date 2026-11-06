@@ -615,7 +615,6 @@ class LiveProvider extends ChangeNotifier {
               text: '👋 $userName joined the room! 🔥',
               avatarUrl: userObj['avatarUrl']?.toString() ?? '',
               avatarFrame: entrantFrame,
-              isSystem: true,
               timestamp: DateTime.now(),
             ),
           );
