@@ -22,8 +22,13 @@ import 'wallet_screen.dart';
 
 /// ZeParty Gaming Lobby: featured game hero, all games grid, quick links.
 class GameCenterScreen extends StatefulWidget {
-  const GameCenterScreen({super.key, this.initialGameId});
+  const GameCenterScreen({super.key, this.initialGameId, this.embedded = false});
   final String? initialGameId;
+
+  /// True when the host app shows the Game Center inside its own tab bar: the
+  /// host already provides the status-bar inset and a page title, so the big
+  /// "Game Center" header and the top SafeArea are dropped.
+  final bool embedded;
 
   @override
   State<GameCenterScreen> createState() => _GameCenterScreenState();
@@ -72,6 +77,7 @@ class _GameCenterScreenState extends State<GameCenterScreen> {
     return Scaffold(
       body: ZpBackdrop(
         child: SafeArea(
+          top: !widget.embedded,
           child: RefreshIndicator(
             color: ZpColors.gold,
             backgroundColor: ZpColors.panel,
@@ -88,13 +94,15 @@ class _GameCenterScreenState extends State<GameCenterScreen> {
                     child: Row(
                       children: [
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('ZEPARTY', style: t.labelSmall?.copyWith(color: ZpColors.gold, letterSpacing: 4)),
-                              Text('Game Center', style: t.headlineLarge),
-                            ],
-                          ),
+                          child: widget.embedded
+                              ? Text('Multiplayer games', style: t.titleMedium?.copyWith(color: ZpColors.goldLight))
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('ZEPARTY', style: t.labelSmall?.copyWith(color: ZpColors.gold, letterSpacing: 4)),
+                                    Text('Game Center', style: t.headlineLarge),
+                                  ],
+                                ),
                         ),
                         _StatusDot(online: online),
                         const SizedBox(width: ZpSpace.sm),

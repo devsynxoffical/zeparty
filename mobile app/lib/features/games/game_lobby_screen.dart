@@ -93,6 +93,7 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> with AutomaticKeepAli
             key: ValueKey('games_root_${session.identity.userId}'),
             navigatorKey: _gamesNavKey,
             showInitialGameDetails: false,
+            embedded: true,
             request: GameLaunchRequest(gameId: widget.initialGameId, session: session),
           ),
         );

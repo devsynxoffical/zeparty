@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 
-/// ZeParty brand palette (gold on black) extended with the royal game accents.
+/// ZeParty brand palette (gold on black, mirrors the host app's AppColors) extended with the royal game accents.
 class ZpColors {
   ZpColors._();
 
-  static const Color obsidian = Color(0xFF0B0A0F);
-  static const Color charcoal = Color(0xFF15131C);
-  static const Color panel = Color(0xFF1E1A27);
-  static const Color panelRaised = Color(0xFF272133);
-  static const Color divider = Color(0x22FFFFFF);
+  static const Color obsidian = Color(0xFF080808); // AppColors.black
+  static const Color charcoal = Color(0xFF0D0D0D); // AppColors.darkBlack
+  static const Color panel = Color(0xFF141414); // AppColors.cardBlack
+  static const Color panelRaised = Color(0xFF1B1B1B); // AppColors.softBlack
+  static const Color divider = Color(0xFF3A2E14); // AppColors.borderGold
 
-  static const Color gold = Color(0xFFC9A227);
-  static const Color goldLight = Color(0xFFE8C96A);
-  static const Color goldDeep = Color(0xFF8E6E12);
-  static const Color champagne = Color(0xFFF1E3B8);
-  static const Color ivory = Color(0xFFF6F1E6);
+  static const Color gold = Color(0xFFCF9828); // AppColors.metallicGold
+  static const Color goldLight = Color(0xFFE7C55F); // AppColors.warmGold
+  static const Color goldDeep = Color(0xFF8C601C); // AppColors.deepBronze
+  static const Color champagne = Color(0xFFF4D982); // AppColors.lightGold
+  static const Color ivory = Color(0xFFFFFFFF); // AppColors.primaryText
 
   static const Color royalPurple = Color(0xFF3B1E63);
   static const Color royalPurpleDeep = Color(0xFF22113C);
@@ -24,8 +24,8 @@ class ZpColors {
   static const Color sapphire = Color(0xFF2650C8);
 
   static const Color textPrimary = ivory;
-  static const Color textSecondary = Color(0xB3F6F1E6);
-  static const Color textMuted = Color(0x66F6F1E6);
+  static const Color textSecondary = Color(0xFFB8B8B8); // AppColors.secondaryText
+  static const Color textMuted = Color(0xFF8A8A8A); // AppColors.mutedText, lifted for contrast on black
   static const Color success = Color(0xFF3DBE7A);
   static const Color danger = Color(0xFFE24B5C);
   static const Color info = Color(0xFF5B7CFF);

@@ -31,12 +31,38 @@ class ZpDurations {
   static const Duration page = Duration(milliseconds: 360);
 }
 
+/// Font families used by the games. The host app overrides these once at
+/// startup so the games render with the same typeface as the rest of the app
+/// (ZeParty uses Poppins everywhere); the demo keeps the Cinzel / Inter pair.
+class ZpFonts {
+  const ZpFonts({required this.display, required this.body});
+
+  /// Builds the text theme used for display and headline styles. Typed
+  /// loosely because google_fonts 6.x and 9.x return different TextTheme
+  /// classes; only the style getters are used.
+  final dynamic Function() display;
+
+  /// Builds the text theme used for titles, body and labels.
+  final dynamic Function() body;
+
+  static ZpFonts defaults() => ZpFonts(display: () => GoogleFonts.cinzelTextTheme(), body: () => GoogleFonts.interTextTheme());
+}
+
 class ZpTheme {
   ZpTheme._();
 
+  static ZpFonts _fonts = ZpFonts.defaults();
+
+  /// Current font configuration.
+  static ZpFonts get fonts => _fonts;
+
+  /// Host apps call this before the first game screen is built, e.g.
+  /// `ZpTheme.configureFonts(ZpFonts(display: GoogleFonts.poppinsTextTheme, body: GoogleFonts.poppinsTextTheme))`.
+  static void configureFonts(ZpFonts fonts) => _fonts = fonts;
+
   static TextTheme textTheme() {
-    final display = GoogleFonts.cinzelTextTheme();
-    final body = GoogleFonts.interTextTheme();
+    final dynamic display = _fonts.display();
+    final dynamic body = _fonts.body();
     return TextTheme(
       displayLarge: display.displayLarge?.copyWith(color: ZpColors.textPrimary, fontWeight: FontWeight.w700, letterSpacing: 1.5),
       displayMedium: display.displayMedium?.copyWith(color: ZpColors.textPrimary, fontWeight: FontWeight.w700, letterSpacing: 1.2),

@@ -18,12 +18,15 @@ import 'theme/zp_theme.dart';
 /// GameModuleRegistry.instance.register(LudoRoyaleModule());
 /// ```
 class ZePartyGamesRoot extends StatefulWidget {
-  const ZePartyGamesRoot({super.key, required this.request, this.wrapInTheme = true, this.showInitialGameDetails = true, this.navigatorKey});
+  const ZePartyGamesRoot({super.key, required this.request, this.wrapInTheme = true, this.showInitialGameDetails = true, this.navigatorKey, this.embedded = false});
   final GameLaunchRequest request;
 
   /// Optional key for the games' internal navigator so a host that embeds the
   /// root (for example as a tab) can route the system back button into it.
   final GlobalKey<NavigatorState>? navigatorKey;
+
+  /// Tab mode: see [GameCenterScreen.embedded].
+  final bool embedded;
 
   /// When false and no room is requested, the Game Center opens directly
   /// without pushing the details screen of [GameLaunchRequest.gameId]. Hosts
@@ -76,9 +79,9 @@ class _ZePartyGamesRootState extends State<ZePartyGamesRoot> {
       controller: _controller,
       child: Navigator(
         key: _navKey,
-        onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => GameCenterScreen(initialGameId: r.gameId)),
+        onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => GameCenterScreen(initialGameId: r.gameId, embedded: widget.embedded)),
         onGenerateInitialRoutes: (_, _) => [
-          MaterialPageRoute(builder: (_) => GameCenterScreen(initialGameId: r.gameId)),
+          MaterialPageRoute(builder: (_) => GameCenterScreen(initialGameId: r.gameId, embedded: widget.embedded)),
           if (r.roomId == null && widget.showInitialGameDetails) GameDetailsScreen.route(r.gameId),
         ],
       ),

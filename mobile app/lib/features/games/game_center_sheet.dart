@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:zeparty_game_assets/zeparty_game_assets.dart';
 import 'package:zeparty_game_core/zeparty_game_core.dart';
 
+import '../../core/theme/app_colors.dart';
 import 'games_bootstrap.dart';
 
 /// In-room game picker: the ten premium multiplayer games. Tapping a game
@@ -39,9 +40,9 @@ class GameCenterSheet extends StatelessWidget {
       child: Container(
         constraints: BoxConstraints(maxHeight: maxHeight),
         decoration: const BoxDecoration(
-          color: Color(0xFF0B0A0F),
+          color: AppColors.darkBlack,
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-          border: Border(top: BorderSide(color: Color(0xFFD4AF37), width: 1.5)),
+          border: Border(top: BorderSide(color: AppColors.goldBorder, width: 1.5)),
         ),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         child: Column(
@@ -58,7 +59,7 @@ class GameCenterSheet extends StatelessWidget {
               children: [
                 const Row(
                   children: [
-                    Icon(Icons.sports_esports_rounded, color: Color(0xFFD4AF37), size: 24),
+                    Icon(Icons.sports_esports_rounded, color: AppColors.warmGold, size: 24),
                     SizedBox(width: 8),
                     Text(
                       'Play Games in Room',
@@ -122,7 +123,7 @@ class _GameTile extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [entry.accent.withValues(alpha: 0.55), const Color(0xFF15131C)],
+                  colors: [entry.accent.withValues(alpha: 0.55), AppColors.cardBlack],
                 ),
               ),
             ),
@@ -136,7 +137,7 @@ class _GameTile extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.center,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Color(0xE60B0A0F)],
+                  colors: [Colors.transparent, Color(0xE6080808)],
                 ),
               ),
             ),

@@ -49,10 +49,14 @@ class _GameDetailsScreenState extends State<GameDetailsScreen> {
     final s = SessionScope.read(context);
     setState(() => _busy = true);
     try {
+      // Subscribe before sending: the server answers `room.create` with
+      // `room.state` within a few milliseconds, typically before the send()
+      // future resolves, and a broadcast stream does not replay it.
+      final created = s.socket.roomStream.firstWhere((r) => r != null && r.gameId == widget.gameId).timeout(const Duration(seconds: 8));
       await s.socket.createRoom(widget.gameId, isPrivate: private);
-      final room = await s.socket.roomStream.firstWhere((r) => r != null).timeout(const Duration(seconds: 5));
+      final room = s.socket.currentRoom?.gameId == widget.gameId ? s.socket.currentRoom! : (await created)!;
       if (!mounted) return;
-      Navigator.of(context).push(RoomScreen.route(room!.roomId));
+      Navigator.of(context).push(RoomScreen.route(room.roomId));
     } on ServerError catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {

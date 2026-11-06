@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import 'package:air_hockey/air_hockey.dart' show AirHockeyModule;
@@ -46,6 +47,8 @@ class GamesBootstrap {
   ];
 
   static void initialize() {
+    // Same typeface as the rest of the app (DarkTheme / LightTheme use Poppins).
+    ZpTheme.configureFonts(ZpFonts(display: () => GoogleFonts.poppinsTextTheme(), body: () => GoogleFonts.poppinsTextTheme()));
     registerAllGames();
     configureLauncher(apiBaseUrl: AppConfig.gamesApiBaseUrl, wsUrl: AppConfig.gamesWsUrl);
   }
