@@ -205,6 +205,9 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketRoomHostAbsentSub;
   StreamSubscription? _socketRoomHostReturnedSub;
   StreamSubscription? _socketPkActiveSub;
+  StreamSubscription? _socketConnectionSub;
+
+  bool get isSocketConnected => _socketService.isConnected;
 
   DateTime? _feedClearedAt;
   DateTime? get feedClearedAt => _feedClearedAt;
@@ -1085,6 +1088,18 @@ class LivePartyProvider extends ChangeNotifier {
 
   void _setupSocketSubscriptions(UserModel currentUser) {
     _currentUser = currentUser;
+
+    _socketConnectionSub?.cancel();
+    _socketConnectionSub = _socketService.onConnectionStateChanged.listen((connected) {
+      debugPrint('[LivePartyProvider] Socket connection state changed: $connected');
+      if (connected && _activeRoom != null) {
+        _socketService.joinRoom(_activeRoom!.id, user: _currentUser?.toJson());
+        _socketService.requestRoomSnapshot(_activeRoom!.id);
+        _syncRoomStateOnReconnect();
+      }
+      notifyListeners();
+    });
+
     // 1. Room Snapshot Subscription (Authoritative Seat & Participant State)
     _socketRoomSnapshotSub?.cancel();
     _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
@@ -2699,6 +2714,7 @@ class LivePartyProvider extends ChangeNotifier {
     _volumeIndicationSub?.cancel();
     _speakerSub?.cancel();
     _remoteUsersSub?.cancel();
+    _socketConnectionSub?.cancel();
     _socketRoomSnapshotSub?.cancel();
     _socketUserJoinedSub?.cancel();
     _socketUserLeftSub?.cancel();
@@ -3637,6 +3653,16 @@ class LivePartyProvider extends ChangeNotifier {
     _activeMicReactions[micIndex] = reactionEvent;
     notifyListeners();
 
+    _socketService.sendRoomEmoji(
+      roomId: _activeRoom?.id ?? _initialRoomId ?? 'room_101',
+      emoji: reactionAsset,
+      seatId: micIndex,
+      senderName: sender.name,
+      senderAvatar: sender.avatarUrl,
+      gameResult: gameResult,
+      reactionId: reactionEvent['id'] as String?,
+    );
+
     Future.delayed(Duration(seconds: _reactionDurationSeconds), () {
       if (_activeMicReactions[micIndex]?['id'] == reactionEvent['id']) {
         _activeMicReactions.remove(micIndex);
@@ -4247,6 +4273,19 @@ class LivePartyProvider extends ChangeNotifier {
   bool get isAudioMixing => _agoraService.isAudioMixing;
   bool get isAudioMixingPaused => _agoraService.isAudioMixingPaused;
   double get audioMixingVolume => _agoraService.audioMixingVolume;
+
+  Future<void> _syncRoomStateOnReconnect() async {
+    final roomId = _activeRoom?.id;
+    if (roomId == null || roomId.isEmpty) return;
+    try {
+      final details = await _roomRepository.getRoomDetails(roomId);
+      _activeRoom = details;
+      await fetchRoomMembers(roomId);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[LivePartyProvider] Reconnect sync error: $e');
+    }
+  }
 
   @override
   void dispose() {

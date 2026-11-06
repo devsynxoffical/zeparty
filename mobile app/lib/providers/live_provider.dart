@@ -77,6 +77,9 @@ class LiveProvider extends ChangeNotifier {
   StreamSubscription? _socketRoomMutedSub;
   StreamSubscription? _socketRoomUserMutedSub;
   StreamSubscription? _socketRoomSnapshotSub;
+  StreamSubscription? _socketConnectionSub;
+
+  bool get isSocketConnected => _socketService.isConnected;
   StreamSubscription? _socketPkCreatedSub;
   StreamSubscription? _socketPkParticipantJoinedSub;
   StreamSubscription? _socketPkReadySub;
@@ -413,6 +416,16 @@ class LiveProvider extends ChangeNotifier {
   }
 
   void _setupSocketSubscriptions(UserModel? currentUser) {
+    _socketConnectionSub?.cancel();
+    _socketConnectionSub = _socketService.onConnectionStateChanged.listen((connected) {
+      debugPrint('[LiveProvider] Socket connection state changed: $connected');
+      if (connected && _activeRoom != null) {
+        _socketService.joinRoom(_activeRoom!.id, user: currentUser?.toJson());
+        _socketService.requestRoomSnapshot(_activeRoom!.id);
+      }
+      notifyListeners();
+    });
+
     _socketRoomSnapshotSub?.cancel();
     _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
       if (!_matchesRoom(data)) {
@@ -1308,6 +1321,7 @@ class LiveProvider extends ChangeNotifier {
     _socketRoomWarningSub?.cancel();
     _socketRoomMutedSub?.cancel();
     _socketRoomUserMutedSub?.cancel();
+    _socketConnectionSub?.cancel();
     _socketRoomSnapshotSub?.cancel();
     _socketPkCreatedSub?.cancel();
     _socketPkParticipantJoinedSub?.cancel();
