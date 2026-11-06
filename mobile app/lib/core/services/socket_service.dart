@@ -268,18 +268,32 @@ class SocketService {
     }
   }
 
+  String? _lastJoinedRoomKey;
+  int _lastJoinedRoomTimestamp = 0;
+
   /// Connect to backend Socket.IO server with JWT token
   Future<void> connect({String? token, Map<String, dynamic>? user}) async {
     final authToken = token ?? await ApiClient.instance.getAccessToken() ?? 'guest_anonymous';
 
+    // Phase 1: Robust identity change & anonymous-to-auth detection
+    final prevUser = _cachedUserData;
+    final incomingUserId = user?['id']?.toString() ?? user?['_id']?.toString();
+    final prevUserId = prevUser?['id']?.toString() ?? prevUser?['_id']?.toString();
+
+    final isAnonymousToAuth = (prevUserId == null || prevUserId.isEmpty || prevUserId.startsWith('guest_')) &&
+        (incomingUserId != null && incomingUserId.isNotEmpty && !incomingUserId.startsWith('guest_'));
+
+    final bool hasSameUser = !isAnonymousToAuth && (
+      (user == null && prevUser == null) ||
+      (incomingUserId != null && incomingUserId == prevUserId)
+    );
+
+    // Update cached user state after identity comparison
     if (user != null) {
       _cachedUserData = user;
     }
 
-    final hasSameUser = user == null ||
-        (_cachedUserData != null &&
-         (user['id'] == _cachedUserData!['id'] || user['_id'] == _cachedUserData!['_id']));
-
+    // Reuse existing connected socket ONLY if user identity has not changed
     if (_socket != null && _socket!.connected && hasSameUser) {
       return;
     }
@@ -290,8 +304,8 @@ class SocketService {
 
     _connectCompleter = Completer<void>();
 
-    // Safety timeout to prevent awaiting forever if server is unreachable
-    Future.delayed(const Duration(seconds: 4), () {
+    // Safety timeout: 15 seconds to allow international cellular/TLS handshakes
+    Future.delayed(const Duration(seconds: 15), () {
       if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
         _connectCompleter!.complete();
       }
@@ -316,7 +330,7 @@ class SocketService {
     _socket = IO.io(
       baseUrl,
       IO.OptionBuilder()
-          .setTransports(['websocket'])
+          .setTransports(['websocket', 'polling'])
           .disableAutoConnect()
           .enableForceNew()
           .setAuth(authMap)
@@ -1069,16 +1083,28 @@ class SocketService {
         'userId': targetUser['id'] ?? targetUser['_id'],
     };
 
-    if (_socket != null && _socket!.connected) {
+    void doEmitJoin() {
+      if (_socket == null || !_socket!.connected) return;
+      final joinKey = '${roomId}_${_socket?.id}';
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (_lastJoinedRoomKey == joinKey && (now - _lastJoinedRoomTimestamp) < 1000) {
+        return;
+      }
+      _lastJoinedRoomKey = joinKey;
+      _lastJoinedRoomTimestamp = now;
+
       _socket!.emit('room:join', payload);
       _socket!.emit('join_room', payload);
       debugPrint('[SocketService] Subscribed to room:$roomId with user: ${targetUser?['name'] ?? targetUser?['username']} (socketId: ${_socket?.id})');
+    }
+
+    if (_socket != null && _socket!.connected) {
+      doEmitJoin();
     } else {
       debugPrint('[SocketService] Socket not yet connected for room:$roomId. Connecting first...');
       connect(user: targetUser).then((_) {
         if (_socket != null && _socket!.connected) {
-          _socket!.emit('room:join', payload);
-          _socket!.emit('join_room', payload);
+          doEmitJoin();
           debugPrint('[SocketService] Subscribed to room:$roomId after connect with user: ${targetUser?['name'] ?? targetUser?['username']} (socketId: ${_socket?.id})');
         }
       });
@@ -1089,13 +1115,14 @@ class SocketService {
 
   /// Unsubscribe from room channel on server
   void leaveRoomSubscription(String roomId) {
-    if (_socket != null) {
+    if (_socket != null && _socket!.connected) {
       _socket!.emit('room:leave', {'roomId': roomId});
       debugPrint('[SocketService] Unsubscribed from room:$roomId');
     }
     if (_currentRoomId == roomId) {
       _currentRoomId = null;
     }
+    _lastJoinedRoomKey = null;
   }
 
   void leaveRoom(String roomId) => leaveRoomSubscription(roomId);

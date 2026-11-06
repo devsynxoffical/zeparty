@@ -13,7 +13,7 @@ import 'package:provider/provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../core/services/room_lock_manager.dart';
 
-class LiveDiscoveryGrid extends StatelessWidget {
+class LiveDiscoveryGrid extends StatefulWidget {
   final List<LiveRoomModel> liveRooms;
   final bool isDark;
   final bool isPartyTab;
@@ -26,12 +26,48 @@ class LiveDiscoveryGrid extends StatelessWidget {
   });
 
   @override
+  State<LiveDiscoveryGrid> createState() => _LiveDiscoveryGridState();
+}
+
+class _LiveDiscoveryGridState extends State<LiveDiscoveryGrid> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (_scrollController.hasClients &&
+        _scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 250) {
+      if (BackendRepository.instance.hasMoreRooms && !BackendRepository.instance.isLoadingRooms) {
+        BackendRepository.instance.fetchLiveRooms(loadMore: true);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final roomsToDisplay = liveRooms;
+    // Deduplicate rooms safely by ID
+    final seen = <String>{};
+    final roomsToDisplay = <LiveRoomModel>[];
+    for (final r in widget.liveRooms) {
+      if (r.id.isNotEmpty && !seen.contains(r.id)) {
+        seen.add(r.id);
+        roomsToDisplay.add(r);
+      }
+    }
 
     if (roomsToDisplay.isEmpty) {
       return RefreshIndicator(
-        onRefresh: () => BackendRepository.instance.fetchLiveRooms(),
+        onRefresh: () => BackendRepository.instance.fetchLiveRooms(page: 1, loadMore: false),
         color: AppColors.primaryGold,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -41,32 +77,32 @@ class LiveDiscoveryGrid extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E1B2E) : const Color(0xFFF1F5F9),
+                  color: widget.isDark ? const Color(0xFF1E1B2E) : const Color(0xFFF1F5F9),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  isPartyTab ? Icons.mic_external_off_rounded : Icons.live_tv_rounded,
+                  widget.isPartyTab ? Icons.mic_external_off_rounded : Icons.live_tv_rounded,
                   size: 48,
-                  color: isDark ? AppColors.warmGold.withValues(alpha: 0.6) : AppColors.royalBlue.withValues(alpha: 0.6),
+                  color: widget.isDark ? AppColors.warmGold.withValues(alpha: 0.6) : AppColors.royalBlue.withValues(alpha: 0.6),
                 ),
               ),
             ),
             const SizedBox(height: 16),
             Text(
-              isPartyTab ? 'No Party Rooms Active' : 'No Live Streams Active',
+              widget.isPartyTab ? 'No Party Rooms Active' : 'No Live Streams Active',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: isDark ? Colors.white : Colors.black87,
+                color: widget.isDark ? Colors.white : Colors.black87,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 6),
             Text(
-              isPartyTab ? 'Start an audio party room and invite friends!' : 'Go live and connect with your audience!',
+              widget.isPartyTab ? 'Start an audio party room and invite friends!' : 'Go live and connect with your audience!',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: isDark ? Colors.white60 : Colors.black54,
+                color: widget.isDark ? Colors.white60 : Colors.black54,
                 fontSize: 13,
               ),
             ),
@@ -76,9 +112,10 @@ class LiveDiscoveryGrid extends StatelessWidget {
     }
 
     return RefreshIndicator(
-      onRefresh: () => BackendRepository.instance.fetchLiveRooms(),
+      onRefresh: () => BackendRepository.instance.fetchLiveRooms(page: 1, loadMore: false),
       color: AppColors.primaryGold,
       child: GridView.builder(
+        controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(left: 14, right: 14, top: 4, bottom: 115),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -167,7 +204,7 @@ class LiveDiscoveryGrid extends StatelessWidget {
                   );
                 }
               },
-              child: isPartyTab ? PartyRoomCard(room: room) : LiveRoomCard(room: room),
+              child: widget.isPartyTab ? PartyRoomCard(room: room) : LiveRoomCard(room: room),
             ),
           );
         },

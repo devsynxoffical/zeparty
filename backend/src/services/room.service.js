@@ -358,6 +358,7 @@ export async function cleanupStaleRooms(db = prisma) {
     const staleRooms = staleIds;
 
     // Immediately close any dummy/test/verification rooms left LIVE from automated test runs
+    // Phase 4: Only clean up rooms confirmed to be automated test data using reliable metadata
     const dummyRooms = await db.room.findMany({
       where: {
         status: 'LIVE',
@@ -365,7 +366,21 @@ export async function cleanupStaleRooms(db = prisma) {
           { title: { startsWith: 'Bug ', mode: 'insensitive' } },
           { title: { startsWith: 'Test ', mode: 'insensitive' } },
           { title: { contains: 'Verification Room', mode: 'insensitive' } },
+          { title: { startsWith: 'Concurrent Room Attempt', mode: 'insensitive' } },
+          { title: { startsWith: 'Room B - Owned by User B', mode: 'insensitive' } },
+          { title: { startsWith: 'Room C Attempt', mode: 'insensitive' } },
+          { title: { startsWith: 'Live Host Solo Broadcast', mode: 'insensitive' } },
+          { title: { startsWith: 'Audio Host Party Room', mode: 'insensitive' } },
+          { title: { startsWith: 'Co-Host Visibility Test Room', mode: 'insensitive' } },
+          { title: { startsWith: 'Timer Test Room', mode: 'insensitive' } },
+          { title: { startsWith: 'Room A - Second Room Attempt', mode: 'insensitive' } },
+          { title: { contains: 'Isolation Test', mode: 'insensitive' } },
+          { id: { startsWith: 'timer_room_' } },
+          { id: { startsWith: 'room_ch_' } },
           { creatorUserId: { startsWith: 'bug' } },
+          { creatorUserId: { startsWith: 'test_' } },
+          { creatorUserId: { startsWith: 'user_concurrent_' } },
+          { creatorUserId: { startsWith: 'user_owner_' } },
         ],
       },
       select: { id: true },

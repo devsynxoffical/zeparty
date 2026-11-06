@@ -599,6 +599,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                                     giftIcon: selectedGift!.icon,
                                     quantity: quantity,
                                     transactionId: txId,
+                                    emitSocket: false,
                                   );
                                 } catch (_) {}
                               }

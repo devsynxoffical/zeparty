@@ -193,7 +193,11 @@ class EmojiReactionProvider extends ChangeNotifier {
     if (reaction.emoji.trim().isEmpty || reaction.senderId.trim().isEmpty) return false;
 
     if (_activeRoomId != null && reaction.roomId != _activeRoomId) {
-      return false;
+      if (_secondaryRoomId == null || reaction.roomId != _secondaryRoomId) {
+        if (reaction.roomId.isNotEmpty) {
+          return false;
+        }
+      }
     }
 
     if (_processedReactionIds.contains(reaction.reactionId)) {

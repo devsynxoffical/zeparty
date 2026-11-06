@@ -1861,11 +1861,20 @@ class LivePartyProvider extends ChangeNotifier {
         if (text.isEmpty) return;
 
         // Message dropped if created before room feed clear boundary
+        // Apply clock skew grace window (30s) and distinguish live socket comments from historical playback
+        // so valid live messages from other devices are not discarded due to clock skew.
         final createdAtRaw = data['createdAt'] ?? data['timestamp'];
-        if (_feedClearedAt != null && createdAtRaw != null) {
-          final msgTime = DateTime.tryParse(createdAtRaw.toString());
-          if (msgTime != null && msgTime.isBefore(_feedClearedAt!)) {
+        final isHistorical = data['isHistorical'] == true || data['playbackType'] == 'HISTORY_ONLY';
+        if (_feedClearedAt != null) {
+          if (isHistorical) {
             return;
+          }
+          if (createdAtRaw != null) {
+            final msgTime = DateTime.tryParse(createdAtRaw.toString())?.toUtc();
+            final clearTimeUtc = _feedClearedAt!.toUtc();
+            if (msgTime != null && msgTime.isBefore(clearTimeUtc.subtract(const Duration(seconds: 30)))) {
+              return;
+            }
           }
         }
 
@@ -2458,6 +2467,9 @@ class LivePartyProvider extends ChangeNotifier {
               notifyListeners();
             }
           });
+        } else {
+          // Audience viewer reaction without a mic seat: notify listeners so UI updates
+          notifyListeners();
         }
       } catch (e) {
         debugPrint('[LivePartyProvider] onRoomEmoji incoming event error: $e');
@@ -2607,7 +2619,7 @@ class LivePartyProvider extends ChangeNotifier {
 
   /// Clears the room's lower feed messages and records clear timestamp
   void clearRoomFeed() {
-    _feedClearedAt = DateTime.now();
+    _feedClearedAt = DateTime.now().toUtc();
     _messages.clear();
     notifyListeners();
   }
@@ -4122,6 +4134,7 @@ class LivePartyProvider extends ChangeNotifier {
     required String giftIcon,
     String? giftId,
     String? transactionId,
+    bool emitSocket = false,
   }) {
     final catalogGift = GiftModel.findById(giftId) ?? GiftModel.findById(giftName);
     final resolvedGiftName = catalogGift?.name ?? giftName;
@@ -4169,8 +4182,9 @@ class LivePartyProvider extends ChangeNotifier {
 
     notifyListeners();
 
-    // Broadcast room gift event to all connected devices in this room
-    if (targetRoomId.isNotEmpty) {
+    // Broadcast room gift event to all connected devices in this room ONLY if requested
+    // (REST /v1/gifts/send already broadcasts room:gift_sent server-side to avoid duplicate transactions)
+    if (emitSocket && targetRoomId.isNotEmpty) {
       _socketService.sendRoomGift(
         roomId: targetRoomId,
         giftId: giftId ?? '',

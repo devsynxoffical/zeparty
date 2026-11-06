@@ -185,12 +185,36 @@ class BackendRepository extends ChangeNotifier {
     }).toList();
   }
 
-  /// Real Backend Room Discovery Integration
-  Future<List<LiveRoomModel>> fetchLiveRooms({String? category, int limit = 50}) async {
+  int _discoveryPage = 1;
+  bool _hasMoreRooms = true;
+  bool _isLoadingRooms = false;
+
+  int get currentDiscoveryPage => _discoveryPage;
+  bool get hasMoreRooms => _hasMoreRooms;
+  bool get isLoadingRooms => _isLoadingRooms;
+
+  /// Real Backend Room Discovery Integration with pagination support
+  Future<List<LiveRoomModel>> fetchLiveRooms({
+    String? category,
+    int limit = 50,
+    int page = 1,
+    bool loadMore = false,
+  }) async {
+    if (_isLoadingRooms) return _liveRooms;
+    _isLoadingRooms = true;
     try {
-      final remoteRooms = await RoomRepository.instance.getActiveRooms(category: category, limit: limit);
-      final seenIds = <String>{};
+      final targetPage = loadMore ? (_discoveryPage + 1) : page;
+      final remoteRooms = await RoomRepository.instance.getActiveRooms(
+        category: category,
+        limit: limit,
+        page: targetPage,
+      );
+
+      final seenIds = loadMore
+          ? _liveRooms.map((r) => r.id).toSet()
+          : <String>{};
       final uniqueRooms = <LiveRoomModel>[];
+
       for (final r in remoteRooms) {
         if (r.id.isNotEmpty && !seenIds.contains(r.id)) {
           final t = r.title.toLowerCase();
@@ -199,7 +223,17 @@ class BackendRepository extends ChangeNotifier {
           final isDummy = t.startsWith('bug ') ||
               t.startsWith('test ') ||
               t.contains('verification room') ||
+              t.startsWith('concurrent room') ||
+              t.startsWith('room b - owned') ||
+              t.startsWith('room c attempt') ||
+              t.startsWith('live host solo broadcast') ||
+              t.startsWith('audio host party room') ||
+              t.startsWith('co-host visibility test') ||
+              t.startsWith('timer test') ||
               creatorId.startsWith('bug') ||
+              creatorId.startsWith('test_') ||
+              creatorId.startsWith('user_concurrent_') ||
+              creatorId.startsWith('user_owner_') ||
               h.contains('other host') ||
               h.contains('master host');
           if (isDummy) continue;
@@ -208,12 +242,23 @@ class BackendRepository extends ChangeNotifier {
           uniqueRooms.add(r);
         }
       }
-      _liveRooms.clear();
-      _liveRooms.addAll(uniqueRooms);
+
+      if (loadMore) {
+        _liveRooms.addAll(uniqueRooms);
+        _discoveryPage = targetPage;
+      } else {
+        _liveRooms.clear();
+        _liveRooms.addAll(uniqueRooms);
+        _discoveryPage = 1;
+      }
+
+      _hasMoreRooms = remoteRooms.length >= limit;
       notifyListeners();
       return _liveRooms;
     } catch (_) {
       return _liveRooms;
+    } finally {
+      _isLoadingRooms = false;
     }
   }
 

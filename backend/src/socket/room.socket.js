@@ -411,7 +411,18 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       }
     }
 
-    // 2. Immediately subscribe socket to room channel so broadcasts & chat are reliably delivered
+    // 2. Persistent RoomMember registration via authoritative Room Service
+    let joinResult = null;
+    try {
+      const pin = data?.pin || data?.password || data?.roomPin;
+      const isApproved = Boolean(data?.isApproved);
+      joinResult = await roomService.joinRoom(room.id, userId, { pin, isApproved, attemptId }, db || prisma);
+    } catch (joinErr) {
+      console.error(`[RoomSocket] Error joining room ${roomId} for user ${userId}:`, joinErr.message || joinErr);
+      throw joinErr;
+    }
+
+    // 3. Immediately subscribe socket to room channel after successful roomService.joinRoom()
     if (typeof socket.join === 'function') {
       await socket.join(`room:${room.id}`);
       if (room.id !== roomId) {
@@ -422,30 +433,6 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     socket.joinedRooms.add(roomId);
     socket.joinedRooms.add(room.id);
 
-    // 3. Persistent RoomMember registration via authoritative Room Service
-    let joinResult = null;
-    try {
-      const pin = data?.pin || data?.password || data?.roomPin;
-      const isApproved = Boolean(data?.isApproved);
-      joinResult = await roomService.joinRoom(room.id, userId, { pin, isApproved, attemptId }, db || prisma);
-    } catch (joinErr) {
-      if (['ROOM_LOCKED_PIN_REQUIRED', 'INVALID_ROOM_PIN', 'ROOM_APPROVAL_REQUIRED'].includes(joinErr.code)) {
-        const errPayload = {
-          success: false,
-          attemptId,
-          error: {
-            code: joinErr.code,
-            message: joinErr.message,
-            stage: 'ROOM_AUTH',
-            recoverable: false,
-          },
-        };
-        if (typeof callback === 'function') return callback(errPayload);
-        return socket.emit(SOCKET_EVENTS.ERROR, errPayload);
-      }
-      console.warn(`[RoomSocket] Warning joining room ${roomId} for user ${userId}:`, joinErr.message);
-    }
-
     // Cancel any active host absence timer if host returned
     const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
     if (isHostUser) {
@@ -453,7 +440,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     }
 
     const clientUser = data?.user || {};
-    const effectiveJoinedId = clientUser.id || clientUser.userId || socket.user?.id || userId;
+    const effectiveJoinedId = userId;
     const fallbackGuestName = String(effectiveJoinedId).startsWith('guest_')
       ? `User_${String(effectiveJoinedId).replace('guest_', '').substring(0, 5)}`
       : `User_${String(effectiveJoinedId).substring(0, 6)}`;
@@ -832,7 +819,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       error: {
         code: err.code || SOCKET_ERRORS.INTERNAL_ERROR,
         message: err.message || 'Failed to join room',
-        stage: 'ROOM_JOIN',
+        stage: ['ROOM_LOCKED_PIN_REQUIRED', 'INVALID_ROOM_PIN', 'ROOM_APPROVAL_REQUIRED'].includes(err.code) ? 'ROOM_AUTH' : 'ROOM_JOIN',
         recoverable: !['ROOM_LOCKED_PIN_REQUIRED', 'INVALID_ROOM_PIN', 'ROOM_APPROVAL_REQUIRED', 'ROOM_NOT_LIVE', 'ROOM_KICKED', 'ROOM_BANNED', 'FORBIDDEN'].includes(err.code),
       },
     };

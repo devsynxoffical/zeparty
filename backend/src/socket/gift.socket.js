@@ -76,7 +76,7 @@ export async function onSendGift(io, socket, data, callback) {
     const recipientUserId = data?.recipientUserId || data?.receiverUserId || (data?.receiver && (data.receiver.id || data.receiver.userId));
     const giftId = data?.giftId;
     const quantity = Number(data?.quantity) || 1;
-    const clientTransactionId = data?.transactionId || data?.id;
+    const clientTransactionId = data?.transactionId || data?.id || data?.idempotencyKey;
 
     if (!roomId || !recipientUserId || !giftId || quantity < 1) {
       const err = {

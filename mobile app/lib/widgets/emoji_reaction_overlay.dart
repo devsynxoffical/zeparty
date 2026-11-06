@@ -86,21 +86,19 @@ class EmojiReactionOverlay extends StatelessWidget {
                 // 2. Try position by senderId anchor
                 startPos ??= provider.getAnchorPosition('user_${reaction.senderId}');
 
-                // In Audio Party Rooms, do not enable unwanted center screen reactions.
-                // Only render if a valid seat anchor was resolved.
-                if (startPos == null) {
-                  return const SizedBox.shrink();
-                }
+                // 3. Fallback for unseated audience viewers: render on live stage center
+                startPos ??= liveStageCenter;
               }
 
               final double reactionSize = isLiveRoom
                   ? (size.width * 0.35).clamp(120.0, 140.0)
                   : 84.0;
 
-              // In Audio Party Room, render floating smoothly above the microphone seat
-              final double topPos = isLiveRoom
-                  ? (startPos.dy - (reactionSize / 2))
-                  : (startPos.dy - reactionSize * 0.85);
+              // In Audio Party Room, render floating above mic seat or centered for unseated audience
+              final bool isSeatAnchored = !isLiveRoom && startPos != liveStageCenter;
+              final double topPos = isSeatAnchored
+                  ? (startPos.dy - reactionSize * 0.85)
+                  : (startPos.dy - (reactionSize / 2));
 
               return Positioned(
                 left: startPos.dx - (reactionSize / 2),

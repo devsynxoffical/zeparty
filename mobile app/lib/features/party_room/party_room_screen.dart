@@ -8,6 +8,7 @@ import '../../models/user_model.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/gift_dialog.dart';
 import '../../core/utils/noble_badge_helper.dart';
+import '../../core/services/socket_service.dart';
 
 class PartyRoomScreen extends StatefulWidget {
   final PartyRoomModel? partyRoom;
@@ -22,7 +23,7 @@ class _PartyRoomScreenState extends State<PartyRoomScreen> with SingleTickerProv
   bool _isMuted = false;
   bool _isSpeakerOn = true;
   int _listenerCount = 0;
-  Timer? _listenerTimer;
+  StreamSubscription<Map<String, dynamic>>? _viewerCountSubscription;
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
 
@@ -44,12 +45,17 @@ class _PartyRoomScreenState extends State<PartyRoomScreen> with SingleTickerProv
     );
     _listenerCount = party.totalListeners;
 
-    // Simulate live listener count fluctuation
-    _listenerTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (mounted) {
+        // Listen to authoritative server viewer count from SocketService
+    _viewerCountSubscription = SocketService.instance.viewerCountStream.listen((data) {
+      final roomId = data['roomId']?.toString();
+      if (roomId != null && party.id.isNotEmpty && party.id != 'party_default' && roomId != party.id) {
+        return;
+      }
+      final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
+      final count = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
+      if (count != null && mounted) {
         setState(() {
-          _listenerCount += (DateTime.now().second % 2 == 0) ? 3 : -1;
-          if (_listenerCount < 1) _listenerCount = 1;
+          _listenerCount = count >= 0 ? count : 0;
         });
       }
     });
@@ -63,7 +69,7 @@ class _PartyRoomScreenState extends State<PartyRoomScreen> with SingleTickerProv
 
   @override
   void dispose() {
-    _listenerTimer?.cancel();
+    _viewerCountSubscription?.cancel();
     _pulseController.dispose();
     super.dispose();
   }
