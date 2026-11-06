@@ -20,7 +20,7 @@ export function isPartyRoomType(roomType) {
 /**
  * Counts how many active users (socket presence or occupied mic seats) are currently inside a room.
  */
-export async function getActiveRoomParticipantCount(roomId, excludeUserId = null) {
+export async function getActiveRoomParticipantCount(roomId, excludeUserId = null, db = prisma) {
   if (!roomId) return 0;
   let activePresenceCount = 0;
   try {
@@ -37,7 +37,7 @@ export async function getActiveRoomParticipantCount(roomId, excludeUserId = null
 
   let occupiedSeatCount = 0;
   try {
-    const room = await roomRepository.findRoomById(roomId);
+    const room = await roomRepository.findRoomById(roomId, db);
     if (room && Array.isArray(room.seats)) {
       occupiedSeatCount = room.seats.filter(
         (s) => s.occupiedUserId && (!excludeUserId || String(s.occupiedUserId) !== String(excludeUserId))

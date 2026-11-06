@@ -148,7 +148,7 @@ class AuthProvider extends ChangeNotifier {
       }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_userSessionKey, jsonEncode(user.toJson()));
-      SocketService.instance.connect();
+      SocketService.instance.connect(user: user.toJson());
       BackendRepository.instance.fetchLiveRooms();
     } catch (e) {
       debugPrint('Failed to save user session locally: $e');

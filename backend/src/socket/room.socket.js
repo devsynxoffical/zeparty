@@ -359,6 +359,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
 
     const userId = socket.userId;
     const attemptId = data?.attemptId || null;
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [ROOM_JOIN_REQ] socket=${socket.id} user=${userId} room=${roomId} isGuest=${socket.isGuest}`);
 
     // 1. Authoritative Room Existence and Lifecycle Check
     let room = await roomRepository.findRoomById(roomId, db || prisma);
@@ -432,6 +433,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     socket.joinedRooms = socket.joinedRooms || new Set();
     socket.joinedRooms.add(roomId);
     socket.joinedRooms.add(room.id);
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [ROOM_JOIN_SUCCESS] socket=${socket.id} user=${userId} room=${room.id}`);
 
     // Cancel any active host absence timer if host returned
     const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
@@ -1442,6 +1444,7 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
       timestamp: new Date().toISOString(),
     };
 
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [EMOJI_SEND] socket=${socket.id} emoji=${emoji} room=${canonicalRoomId}`);
     // Broadcast to ALL room members across both canonical and client room channels
     const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
     for (const r of targetRoomIds) {
@@ -1585,6 +1588,7 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
       type: data?.type || 'text',
     };
 
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [CHAT_SEND] socket=${socket.id} sender=${senderId} room=${canonicalRoomId} msgId=${payload.id}`);
     const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
     for (const r of targetRoomIds) {
       if (io) {

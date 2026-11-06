@@ -12,9 +12,15 @@ class SocketService {
   bool _isConnected = false;
   String? _currentRoomId;
   Map<String, dynamic>? _cachedUserData;
+  String? _cachedAuthToken;
   Completer<void>? _connectCompleter;
 
-  bool get isConnected => _isConnected;
+  bool get isConnected => _isConnected && _socket != null && _socket!.connected;
+
+  void _logDiag(String action, String details) {
+    final ts = DateTime.now().toUtc().toIso8601String();
+    debugPrint('[RTC-DIAG][CLIENT] $ts [$action] $details');
+  }
   String? get currentRoomId => _currentRoomId;
 
   // Real-time Event Streams - Room
@@ -417,7 +423,7 @@ class SocketService {
           }
         }
         recentJoins[key] = now;
-        debugPrint('[SocketService] Received user joined for room: ${map['roomId']} (user: $uid, name: ${userObj['name'] ?? userObj['displayName']})');
+        _logDiag('RECV_USER_JOINED', 'room: ${map['roomId']}, user: $uid, name: ${userObj['name'] ?? userObj['displayName']}');
         _userJoinedController.add(map);
       }
     }
@@ -436,7 +442,7 @@ class SocketService {
     void handleViewerCount(dynamic data) {
       if (data != null) {
         final map = safeMap(data);
-        debugPrint('[SocketService] Received viewer count changed for room: ${map['roomId']} (count: ${map['viewerCount'] ?? map['count'] ?? map['currentViewersCount']})');
+        _logDiag('RECV_VIEWER_COUNT', 'room: ${map['roomId']}, count: ${map['viewerCount'] ?? map['count'] ?? map['currentViewersCount']}');
         _viewerCountController.add(map);
       }
     }
@@ -528,7 +534,7 @@ class SocketService {
           recentChats.remove(recentChats.keys.first);
         }
 
-        debugPrint('[SocketService] Received chat message for room: ${map['roomId']} (msgId: $msgId, text: $text, sender: $senderId)');
+        _logDiag('RECV_CHAT', 'room: ${map['roomId']}, msgId: $msgId, sender: $senderId, text: $text');
         _roomChatMessageController.add(map);
       }
     }
@@ -582,6 +588,7 @@ class SocketService {
         if (recentGifts.length > 1000) {
           recentGifts.remove(recentGifts.keys.first);
         }
+        _logDiag('RECV_GIFT', 'room: ${map['roomId']}, txId: $txId, gift: $giftId, qty: $qty, sender: $senderId');
         _giftSentController.add(map);
       }
     }
@@ -1095,7 +1102,7 @@ class SocketService {
 
       _socket!.emit('room:join', payload);
       _socket!.emit('join_room', payload);
-      debugPrint('[SocketService] Subscribed to room:$roomId with user: ${targetUser?['name'] ?? targetUser?['username']} (socketId: ${_socket?.id})');
+      _logDiag('EMIT_JOIN', 'room: $roomId, user: ${targetUser?['name'] ?? targetUser?['username']} (socketId: ${_socket?.id})');
     }
 
     if (_socket != null && _socket!.connected) {

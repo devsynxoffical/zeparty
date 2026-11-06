@@ -328,17 +328,36 @@ export async function getActiveRooms(filters, db = prisma) {
 export async function cleanupStaleRooms(db = prisma) {
   try {
     const cutoff = new Date(Date.now() - 4 * 60 * 60 * 1000); // 4 hours of inactivity
+    // Query candidate stale rooms using valid Room fields and relation activity filters:
+    // 1. Room is currently LIVE with 0 viewers
+    // 2. Room was created > 4 hours ago (createdAt < cutoff)
+    // 3. No seat was updated within the last 4 hours (seats.none.updatedAt >= cutoff)
+    // 4. No gift was sent within the last 4 hours (giftTransactions.none.createdAt >= cutoff)
     const candidateStaleRooms = await db.room.findMany({
       where: {
         status: 'LIVE',
-        updatedAt: { lt: cutoff },
+        createdAt: { lt: cutoff },
+        currentViewersCount: { lte: 0 },
+        seats: {
+          none: {
+            OR: [
+              { updatedAt: { gte: cutoff } },
+              { occupiedUserId: { not: null } },
+            ],
+          },
+        },
+        giftTransactions: {
+          none: {
+            createdAt: { gte: cutoff },
+          },
+        },
       },
-      select: { id: true },
+      select: { id: true, roomType: true },
     });
 
     const staleIds = [];
     for (const r of candidateStaleRooms) {
-      const activeCount = await getActiveRoomParticipantCount(r.id);
+      const activeCount = await getActiveRoomParticipantCount(r.id, null, db);
       if (activeCount <= 0) {
         staleIds.push(r.id);
       }

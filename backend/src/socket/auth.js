@@ -50,6 +50,7 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
 
       socket.isGuest = true;
       socket.userId = guestId;
+      console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [AUTH] socket=${socket.id} mode=GUEST userId=${guestId} name=${fallbackName}`);
       socket.user = {
         id: guestId,
         userId: guestId,
@@ -97,6 +98,7 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
       decoded = jwt.verify(token, env.JWT_SECRET);
       verifiedUserId = decoded.sub || decoded.userId || decoded.id || decoded.uid;
     } catch (jwtErr) {
+      console.warn(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [AUTH_ERROR] socket=${socket.id} reason=${jwtErr.message}`);
       const err = new Error(jwtErr.name === 'TokenExpiredError' ? 'Access token has expired' : 'Invalid or expired authentication token');
       err.data = { code: SOCKET_ERRORS.UNAUTHORIZED, reason: jwtErr.message };
       return next(err);
@@ -164,6 +166,7 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
     // Requirement 2 & 4: Preserve valid authenticated Host identity without converting to guest
     socket.isGuest = false;
     socket.userId = user.id;
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [AUTH] socket=${socket.id} mode=AUTHENTICATED userId=${user.id} username=${user.username} role=${user.userType || 'USER'}`);
     socket.user = {
       id: user.id,
       userId: user.id,

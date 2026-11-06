@@ -673,12 +673,19 @@ class LivePartyProvider extends ChangeNotifier {
       _socketService.joinRoom(room.id, user: currentUser.toJson());
       _setupSocketSubscriptions(currentUser);
 
-      // 2. Perform backend REST join
-      final joinResult = await _roomRepository.joinRoom(room.id, password: password);
-      final roomData = joinResult['room'] ?? joinResult;
-      if (roomData is Map<String, dynamic> && roomData.isNotEmpty) {
-        _activeRoom = LiveRoomModel.fromJson(roomData);
-        _socketService.joinRoom(_activeRoom!.id, user: currentUser.toJson());
+      // 2. Perform backend REST join (graceful fallback for guest mode / transient network)
+      try {
+        final joinResult = await _roomRepository.joinRoom(room.id, password: password);
+        final roomData = joinResult['room'] ?? joinResult;
+        if (roomData is Map<String, dynamic> && roomData.isNotEmpty) {
+          _activeRoom = LiveRoomModel.fromJson(roomData);
+          _socketService.joinRoom(_activeRoom!.id, user: currentUser.toJson());
+        }
+      } catch (restJoinErr) {
+        debugPrint('[LivePartyProvider] REST join warning (proceeding with socket subscription): $restJoinErr');
+        if (restJoinErr is ApiException && (restJoinErr.code == 'ROOM_LOCKED_PIN_REQUIRED' || (restJoinErr.statusCode == 403 && (restJoinErr.message.toLowerCase().contains('pin') || restJoinErr.message.toLowerCase().contains('lock'))))) {
+          rethrow;
+        }
       }
 
       // Re-fetch authoritative room details with seats state

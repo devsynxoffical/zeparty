@@ -243,6 +243,7 @@ export async function onSendGift(io, socket, data, callback) {
     };
 
     const canonicalRoomId = result?.giftTransaction?.roomId || giftData?.roomId || roomId;
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [GIFT_SEND] socket=${socket.id} sender=${senderUserId} gift=${giftId} qty=${quantity} room=${canonicalRoomId}`);
     if (io && roomId) {
       const targetRooms = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
       const channelNames = targetRooms.map((r) => `room:${r}`);

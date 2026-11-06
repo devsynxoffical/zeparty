@@ -10,6 +10,7 @@ export function registerPKHandlers(io, socket) {
     try {
       const { fromRoomId, targetRoomId, targetHostUserId, durationSeconds } = data || {};
       const callerUserId = getUserId();
+      console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [PK_INVITE] from=${callerUserId} target=${targetHostUserId} fromRoom=${fromRoomId} targetRoom=${targetRoomId}`);
 
       const result = await pkService.sendInvitation({
         fromRoomId,
@@ -61,6 +62,7 @@ export function registerPKHandlers(io, socket) {
     try {
       const { invitationId, reason } = data || {};
       const callerUserId = getUserId();
+      console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [PK_CANCEL] caller=${callerUserId} invitation=${invitationId}`);
 
       const result = await pkService.cancelInvitation({
         invitationId,
