@@ -1203,7 +1203,6 @@ class SocketService {
       _lastJoinedRoomTimestamp = now;
 
       _socket!.emit('room:join', payload);
-      _socket!.emit('join_room', payload);
       _logDiag('EMIT_JOIN', 'room: $roomId, user: ${targetUser?['name'] ?? targetUser?['username']} (socketId: ${_socket?.id})');
     }
 
@@ -1257,7 +1256,6 @@ class SocketService {
     };
     if (_socket != null && _socket!.connected) {
       _socket!.emit('room:seat_occupy', payload);
-      _socket!.emit('seat:occupy', payload);
       _logDiag('EMIT_SEAT_OCCUPY', 'room: $roomId, seatIndex: $seatIndex');
     } else {
       _pendingSeatQueue.add({'action': 'occupy', 'data': payload});
@@ -1273,7 +1271,6 @@ class SocketService {
     };
     if (_socket != null && _socket!.connected) {
       _socket!.emit('room:seat_leave', payload);
-      _socket!.emit('seat:leave', payload);
       _logDiag('EMIT_SEAT_LEAVE', 'room: $roomId, seatIndex: $seatIndex');
     } else {
       _pendingSeatQueue.add({'action': 'leave', 'data': payload});
@@ -1394,7 +1391,6 @@ class SocketService {
     };
     if (_socket != null && _socket!.connected) {
       _socket!.emit('room:emoji_send', payload);
-      _socket!.emit('room:emoji', payload);
     } else {
       _pendingEmojiQueue.add(payload);
       connect();

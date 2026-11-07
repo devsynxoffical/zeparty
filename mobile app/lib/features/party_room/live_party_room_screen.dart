@@ -1653,30 +1653,15 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Realtime Socket Connection Status Spinner
+                  // Realtime Socket Connection Status Spinner (Compact, 0 overflow)
                   if (!provider.isSocketConnected) ...[
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                      width: 14,
+                      height: 14,
                       margin: const EdgeInsets.only(right: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.amberAccent.withValues(alpha: 0.7), width: 0.8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          SizedBox(
-                            width: 10,
-                            height: 10,
-                            child: CircularProgressIndicator(strokeWidth: 1.8, color: Colors.amberAccent),
-                          ),
-                          SizedBox(width: 5),
-                          Text(
-                            'Connecting...',
-                            style: TextStyle(color: Colors.amberAccent, fontSize: 9.5, fontWeight: FontWeight.bold),
-                          ),
-                        ],
+                      child: const CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.amberAccent,
                       ),
                     ),
                   ],
@@ -1782,7 +1767,12 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
         children: [
           GestureDetector(
             onTap: () {
-              final viewerUsers = audience.map((p) => p.user).toList();
+              final hostId = provider.activeRoom?.host.id;
+              final creatorId = provider.activeRoom?.creatorUserId;
+              final viewerUsers = provider.participants
+                  .where((p) => p.user.id != hostId && p.user.id != creatorId)
+                  .map((p) => p.user)
+                  .toList();
               LiveViewersSheet.show(
                 context,
                 viewers: viewerUsers,

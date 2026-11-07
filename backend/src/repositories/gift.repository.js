@@ -1,20 +1,69 @@
 import prisma from '../config/database.js';
 
-export async function findGifts({ page = 1, limit = 20, giftCategory, isActive, search = '' }, db = prisma) {
-  const where = {};
+export async function findGifts(
+  { page = 1, limit = 50, giftCategory, category, appCategory, isActive, search = '' },
+  db = prisma
+) {
+  const andConditions = [];
 
-  if (giftCategory) {
-    where.giftCategory = giftCategory;
-  }
-
+  // Active / Inactive filter
   if (typeof isActive === 'boolean') {
-    where.isActive = isActive;
+    andConditions.push({ isActive });
   }
 
-  if (search) {
-    where.name = { contains: search, mode: 'insensitive' };
+  // Category filter: handles both App categories (Lucky Gift, Classic, Event, Privileges, Special)
+  // and DB Enum categories (POPULAR, LUXURY, VIP, AUDIO)
+  const rawCategory = category || appCategory || giftCategory;
+  if (rawCategory && typeof rawCategory === 'string' && rawCategory.trim().toUpperCase() !== 'ALL') {
+    const cat = rawCategory.trim();
+    const upper = cat.toUpperCase();
+
+    if (upper === 'LUCKY GIFT' || upper === 'LUCKY_GIFT' || upper === 'LG' || upper === 'LUCKY') {
+      andConditions.push({
+        OR: [
+          { id: { startsWith: 'lg', mode: 'insensitive' } },
+          { name: { contains: 'lucky', mode: 'insensitive' } },
+        ],
+      });
+    } else if (upper === 'CLASSIC' || upper === 'CG') {
+      andConditions.push({ id: { startsWith: 'cg', mode: 'insensitive' } });
+    } else if (upper === 'EVENT' || upper === 'EG') {
+      andConditions.push({ id: { startsWith: 'eg', mode: 'insensitive' } });
+    } else if (upper === 'PRIVILEGES' || upper === 'PRIVILEGES / VIP' || upper === 'PV') {
+      andConditions.push({
+        OR: [
+          { id: { startsWith: 'pv', mode: 'insensitive' } },
+          { giftCategory: 'VIP' },
+        ],
+      });
+    } else if (upper === 'SPECIAL' || upper === 'SP') {
+      andConditions.push({ id: { startsWith: 'sp', mode: 'insensitive' } });
+    } else if (['POPULAR', 'LUXURY', 'VIP', 'AUDIO'].includes(upper)) {
+      if (upper === 'VIP') {
+        andConditions.push({
+          OR: [
+            { giftCategory: 'VIP' },
+            { id: { startsWith: 'pv', mode: 'insensitive' } },
+          ],
+        });
+      } else {
+        andConditions.push({ giftCategory: upper });
+      }
+    }
   }
 
+  // Search filter: matches both gift.name (case-insensitive substring) and gift.id (case-insensitive substring)
+  if (search && typeof search === 'string' && search.trim() !== '') {
+    const q = search.trim();
+    andConditions.push({
+      OR: [
+        { name: { contains: q, mode: 'insensitive' } },
+        { id: { contains: q, mode: 'insensitive' } },
+      ],
+    });
+  }
+
+  const where = andConditions.length > 0 ? { AND: andConditions } : {};
   const skip = (page - 1) * limit;
 
   const [total, gifts] = await Promise.all([
@@ -30,8 +79,8 @@ export async function findGifts({ page = 1, limit = 20, giftCategory, isActive, 
   return {
     gifts,
     pagination: {
-      page,
-      limit,
+      page: Number(page),
+      limit: Number(limit),
       total,
       totalPages: Math.ceil(total / limit) || 1,
     },

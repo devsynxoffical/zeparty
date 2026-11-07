@@ -1969,7 +1969,10 @@ class LivePartyProvider extends ChangeNotifier {
           avatarUrl: senderMap['avatarUrl']?.toString() ?? '',
           isVip: senderMap['isVip'] == true || (senderMap['vipLevel'] is num && (senderMap['vipLevel'] as num) > 0),
           nobleTitle: senderMap['nobleTitle']?.toString() ?? senderMap['nobleLevel']?.toString(),
-          avatarFrame: senderMap['avatarFrame']?.toString() ?? '',
+          avatarFrame: senderMap['avatarFrame']?.toString() ??
+              senderMap['equippedFrame']?.toString() ??
+              senderMap['frameUrl']?.toString() ??
+              (senderMap['profile'] is Map ? senderMap['profile']['avatarFrame']?.toString() : null) ?? '',
           badge: senderMap['chatBubble']?.toString() ?? senderMap['badge']?.toString() ?? '',
           wealthLevel: (senderMap['wealthLevel'] is num) ? (senderMap['wealthLevel'] as num).toInt() : 1,
         );

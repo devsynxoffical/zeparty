@@ -23,6 +23,10 @@ export async function findById(id, db = prisma) {
       hostProfile: true,
       coinSeller: true,
       merchant: true,
+      userAssets: {
+        where: { isEquipped: true },
+        include: { asset: true },
+      },
       ownedAgencies: { select: { id: true, agencyName: true, status: true } },
     },
   });

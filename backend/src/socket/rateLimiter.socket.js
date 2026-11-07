@@ -12,7 +12,7 @@ const inMemoryRateLimits = new Map(); // key -> { count, resetAt }
  * @param {number} [windowMs=1000] - Window duration in milliseconds
  * @returns {Promise<boolean>} True if allowed, false if rate limited
  */
-export async function checkSocketRateLimit(userIdOrSocketId, action, maxAllowed = 10, windowMs = 1000) {
+export async function checkSocketRateLimit(userIdOrSocketId, action, maxAllowed = 30, windowMs = 1000) {
   if (!userIdOrSocketId) return { allowed: true, remaining: maxAllowed, retryAfterMs: 0 };
 
   const key = `ratelimit:socket:${userIdOrSocketId}:${action}`;

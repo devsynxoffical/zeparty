@@ -8,6 +8,7 @@ export const adminGiftRouter = express.Router();
 adminGiftRouter.use(authenticate);
 
 adminGiftRouter.get('/', requirePermission('view_gifts'), giftController.getAdminGifts);
+adminGiftRouter.post('/upload-sound', requirePermission('manage_gifts'), giftController.uploadGiftSound);
 adminGiftRouter.post('/', requirePermission('manage_gifts'), giftController.createGift);
 adminGiftRouter.get('/:id', requirePermission('view_gifts'), giftController.getGiftById);
 adminGiftRouter.put('/:id', requirePermission('manage_gifts'), giftController.updateGift);

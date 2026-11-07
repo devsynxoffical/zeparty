@@ -603,13 +603,23 @@ class LiveProvider extends ChangeNotifier {
       if (joinedId != null && joinedId != currentUser?.id) {
         if (!_announcedViewerIds.contains(joinedId)) {
           _announcedViewerIds.add(joinedId);
+          final entrantFrame = userObj['avatarFrame']?.toString() ??
+              userObj['equippedFrame']?.toString() ??
+              data['avatarFrame']?.toString() ??
+              data['equippedFrame']?.toString() ??
+              '';
           _messages.add(
             LiveMessage(
+              id: 'join_${DateTime.now().millisecondsSinceEpoch}_$joinedId',
               sender: 'System',
               text: '👋 $userName joined the room! 🔥',
+              avatarUrl: userObj['avatarUrl']?.toString() ?? '',
+              avatarFrame: entrantFrame,
+              timestamp: DateTime.now(),
             ),
           );
           if (_messages.length > _maxMessageBuffer) _messages.removeAt(0);
+          notifyListeners();
         }
 
         final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
@@ -941,7 +951,9 @@ class LiveProvider extends ChangeNotifier {
                 senderMap['nobleLevel']?.toString(),
             avatarFrame:
                 senderMap['avatarFrame']?.toString() ??
-                senderMap['frameUrl']?.toString(),
+                senderMap['equippedFrame']?.toString() ??
+                senderMap['frameUrl']?.toString() ??
+                (senderMap['profile'] is Map ? senderMap['profile']['avatarFrame']?.toString() : null),
             chatBubble:
                 senderMap['chatBubble']?.toString() ??
                 senderMap['bubbleUrl']?.toString(),

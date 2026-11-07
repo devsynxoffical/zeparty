@@ -148,12 +148,48 @@ export async function sendGift(req, res, next) {
   }
 }
 
+export async function uploadGiftSound(req, res, next) {
+  try {
+    const { dataBase64, mimeType, fileName } = req.body;
+
+    if (!dataBase64) {
+      return res.status(400).json({
+        success: false,
+        message: 'dataBase64 is required for gift sound upload',
+        error: { code: 'INVALID_PAYLOAD' },
+      });
+    }
+
+    const result = await giftService.uploadGiftSound({
+      dataBase64,
+      mimeType: mimeType || 'audio/mpeg',
+      fileName: fileName || 'gift_sound.mp3',
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Gift sound uploaded successfully',
+      data: result,
+    });
+  } catch (err) {
+    if (err.code === 'NO_AUDIO_TRACK' || err.code === 'CORRUPT_AUDIO' || err.code === 'INVALID_AUDIO_FORMAT') {
+      return res.status(400).json({
+        success: false,
+        message: err.message,
+        error: { code: err.code },
+      });
+    }
+    next(err);
+  }
+}
+
 export default {
   getAdminGifts,
   createGift,
   getGiftById,
   updateGift,
   deleteGift,
+  uploadGiftSound,
   getPublicGifts,
   sendGift,
 };
