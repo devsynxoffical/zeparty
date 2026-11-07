@@ -21,6 +21,112 @@ import stageService from '../services/stage.service.js';
 import privacyEligibilityService from '../services/privacyEligibility.service.js';
 import { getNobleStyle } from '../services/asset.service.js';
 import roomTrophyService from '../services/roomTrophy.service.js';
+import nobleService from '../services/noble.service.js';
+import { getRedisClient } from '../config/redis.js';
+
+/**
+ * Resolves the authoritative room entry effect for a user based on privilege hierarchy:
+ * Priority 1: Explicitly equipped VEHICLE / ENTRY_EFFECT in userAsset
+ * Priority 2: Active Noble entrance effect (Emperor, King, Duke, Marquis)
+ * Priority 3: Active SVIP entrance effect (SVIP level 6+)
+ * Priority 4: Default (null)
+ */
+export async function resolveUserRoomEntryEffect(userId, prismaInstance = prisma) {
+  if (!userId) return null;
+
+  // 1. Explicitly equipped ride / vehicle / entry effect
+  try {
+    const equippedRecord = await userAssetRepository.findEquippedEntryEffect(userId, prismaInstance);
+    if (equippedRecord?.asset) {
+      const a = equippedRecord.asset;
+      return {
+        id: a.id,
+        assetId: a.id,
+        name: a.name,
+        source: 'EQUIPPED_VEHICLE',
+        assetType: a.assetType,
+        assetSubcategory: a.assetSubcategory,
+        category: a.assetType === 'VEHICLE' ? 'Cars' : (a.assetSubcategory === 'BACKGROUND' ? 'Background' : 'Cars'),
+        categoryName: a.assetType === 'VEHICLE' ? 'Cars' : (a.assetSubcategory === 'BACKGROUND' ? 'Background' : 'Cars'),
+        thumbnailUrl: a.thumbnailUrl,
+        iconUrl: a.thumbnailUrl,
+        previewUrl: a.thumbnailUrl,
+        animationUrl: a.animationFileUrl || null,
+        videoUrl: a.animationFileUrl || null,
+        mediaUrl: a.animationFileUrl || a.thumbnailUrl,
+        soundUrl: a.soundFileUrl || null,
+        durationSeconds: a.durationSeconds || 5,
+        defaultVolumePercent: a.defaultVolumePercent || 100,
+        userAssetId: equippedRecord.id,
+        expiresAt: equippedRecord.expiresAt ? equippedRecord.expiresAt.toISOString() : null,
+      };
+    }
+  } catch (_) {}
+
+  // 2. Active Noble Entrance Privilege (Marquis, Duke, King, Emperor)
+  try {
+    const activeNoble = await nobleService.getActiveNoble(userId, { checkExpiry: true }, prismaInstance);
+    if (activeNoble && activeNoble.entranceEffectUrl) {
+      const tierLower = String(activeNoble.nobleTier).toLowerCase();
+      return {
+        id: `noble_entrance_${tierLower}`,
+        assetId: `noble_entrance_${tierLower}`,
+        name: `${activeNoble.nobleRank || activeNoble.nobleTitle} Royal Entrance`,
+        source: 'NOBLE_PRIVILEGE',
+        assetType: 'NOBLE_ENTRANCE',
+        assetSubcategory: 'ENTRANCE',
+        category: 'Nobles',
+        categoryName: 'Nobles',
+        thumbnailUrl: activeNoble.badgeUrl || activeNoble.entranceEffectUrl,
+        iconUrl: activeNoble.badgeUrl || activeNoble.entranceEffectUrl,
+        previewUrl: activeNoble.entranceEffectUrl,
+        animationUrl: activeNoble.entranceEffectUrl,
+        videoUrl: activeNoble.entranceEffectUrl,
+        mediaUrl: activeNoble.entranceEffectUrl,
+        soundUrl: null,
+        durationSeconds: 4,
+        defaultVolumePercent: 100,
+        nobleTier: activeNoble.nobleTier,
+        nobleRank: activeNoble.nobleRank,
+      };
+    }
+  } catch (_) {}
+
+  // 3. Active SVIP Entrance Privilege (SVIP Level 6+)
+  try {
+    const profile = await prismaInstance.userProfile.findUnique({
+      where: { userId },
+      select: { svipLevel: true },
+    }).catch(() => null);
+
+    const svipLvl = Number(profile?.svipLevel || 0);
+    if (svipLvl >= 6) {
+      const svipAsset = `assets/svip/svip-${svipLvl}_entry.webp`;
+      return {
+        id: `svip_entrance_${svipLvl}`,
+        assetId: `svip_entrance_${svipLvl}`,
+        name: `SVIP ${svipLvl} Exclusive Entrance`,
+        source: 'SVIP_PRIVILEGE',
+        assetType: 'SVIP_ENTRANCE',
+        assetSubcategory: 'ENTRANCE',
+        category: 'SVIP',
+        categoryName: 'SVIP',
+        thumbnailUrl: svipAsset,
+        iconUrl: svipAsset,
+        previewUrl: svipAsset,
+        animationUrl: svipAsset,
+        videoUrl: svipAsset,
+        mediaUrl: svipAsset,
+        soundUrl: null,
+        durationSeconds: 3,
+        defaultVolumePercent: 100,
+        svipLevel: svipLvl,
+      };
+    }
+  } catch (_) {}
+
+  return null;
+}
 
 /**
  * Resolves the authoritative equipped avatar frame for any user object.
@@ -530,9 +636,12 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       }));
     } catch (_) {}
 
-    // Issue 14: Calculate authoritative daily trophy total for room header
-    const trophyData = await roomTrophyService.getAuthoritativeRoomTrophy(room.id, {}, db || prisma);
-    const dailySendingTotal = trophyData.trophyCoins;
+    // Calculate authoritative daily trophy total for party room header (AUDIO_PARTY only; LIVE_VIDEO is session-isolated)
+    let dailySendingTotal = 0;
+    if (room.roomType === 'AUDIO_PARTY') {
+      const trophyData = await roomTrophyService.getAuthoritativeRoomTrophy(room.id, {}, db || prisma);
+      dailySendingTotal = trophyData.trophyCoins;
+    }
     room.dailySendingTotal = dailySendingTotal;
     room.roomSendingTotal = dailySendingTotal;
     room.periodTotalCoins = dailySendingTotal;
@@ -625,36 +734,35 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         } catch (_) {}
       }
 
-      // Resolve equipped room-entry effect (e.g. Car / Ride / Entry effect)
+      // Resolve room-entry effect (e.g. Equipped Car/Ride, or Active Noble Entrance, or Active SVIP Entrance)
       let equippedEntryEffect = null;
       if (!isGuestUser && effectiveJoinedId && !isStealthEntry) {
+        equippedEntryEffect = await resolveUserRoomEntryEffect(effectiveJoinedId, prisma);
+      }
+
+      // Reconnect Debounce Check (10-second cooldown window to prevent animation/audio spam on socket reconnect)
+      let isDebouncedReconnect = false;
+      if (effectiveJoinedId && room.id) {
+        const debounceKey = `presence:entry_debounced:${room.id}:${effectiveJoinedId}`;
         try {
-          const equippedRecord = await userAssetRepository.findEquippedEntryEffect(effectiveJoinedId, prisma);
-          if (equippedRecord?.asset) {
-            const a = equippedRecord.asset;
-            equippedEntryEffect = {
-              id: a.id,
-              assetId: a.id,
-              name: a.name,
-              assetType: a.assetType,
-              assetSubcategory: a.assetSubcategory,
-              category: a.assetType === 'VEHICLE' ? 'Cars' : (a.assetSubcategory === 'BACKGROUND' ? 'Background' : 'Cars'),
-              categoryName: a.assetType === 'VEHICLE' ? 'Cars' : (a.assetSubcategory === 'BACKGROUND' ? 'Background' : 'Cars'),
-              thumbnailUrl: a.thumbnailUrl,
-              iconUrl: a.thumbnailUrl,
-              previewUrl: a.thumbnailUrl,
-              animationUrl: a.animationFileUrl || null,
-              videoUrl: a.animationFileUrl || null,
-              mediaUrl: a.animationFileUrl || a.thumbnailUrl,
-              soundUrl: a.soundFileUrl || null,
-              durationSeconds: a.durationSeconds || 5,
-              defaultVolumePercent: a.defaultVolumePercent || 100,
-              userAssetId: equippedRecord.id,
-              expiresAt: equippedRecord.expiresAt ? equippedRecord.expiresAt.toISOString() : null,
-            };
+          const client = getRedisClient();
+          if (client && client.isOpen) {
+            const debounced = await client.get(debounceKey);
+            if (debounced) {
+              isDebouncedReconnect = true;
+            } else {
+              await client.set(debounceKey, '1', { EX: 10 });
+            }
           }
         } catch (_) {}
       }
+
+      const suppressAnimation = Boolean(isDebouncedReconnect);
+      const activeEntryEffect = equippedEntryEffect ? {
+        ...equippedEntryEffect,
+        suppressAnimation,
+        isDebouncedReconnect,
+      } : null;
 
       const joinedAgoraUid = effectiveJoinedId ? deriveAgoraUid(effectiveJoinedId) : null;
       const joinedFrame = resolveUserAvatarFrame(clientUser) ||
@@ -700,10 +808,12 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         },
         nobleColor: getNobleStyle(effectiveJoinedNoble)?.color || null,
         nobleStyle: getNobleStyle(effectiveJoinedNoble),
-        entryEffect: equippedEntryEffect,
-        equippedRide: equippedEntryEffect,
-        entryEffectId: equippedEntryEffect?.id || null,
-        entryEffectName: equippedEntryEffect?.name || null,
+        suppressAnimation,
+        isDebouncedReconnect,
+        entryEffect: activeEntryEffect,
+        equippedRide: activeEntryEffect,
+        entryEffectId: activeEntryEffect?.id || null,
+        entryEffectName: activeEntryEffect?.name || null,
         viewerCount: currentCount,
         count: currentCount,
         currentViewersCount: currentCount,
@@ -761,9 +871,11 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           isGuest: isGuestUser,
         },
         dedupKey: `${room.id}:${effectiveJoinedId}:${entryEventId}`,
-        entryEffect: equippedEntryEffect,
-        equippedRide: equippedEntryEffect,
-        entryEffectId: equippedEntryEffect?.id || null,
+        suppressAnimation,
+        isDebouncedReconnect,
+        entryEffect: activeEntryEffect,
+        equippedRide: activeEntryEffect,
+        entryEffectId: activeEntryEffect?.id || null,
         text: entryText,
         message: entryText,
         content: entryText,
@@ -951,7 +1063,7 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
         broadcastTarget.emit('viewer_count_changed', countPayload);
 
         if (room && isPartyRoomType(room.roomType)) {
-          await checkAndSchedulePartyRoomSleep(room.id, io, 12000, userId);
+          await checkAndSchedulePartyRoomSleep(room.id, io, 10000, userId);
         }
       }
 
@@ -1152,7 +1264,7 @@ export async function onSocketDisconnect(io, socket, db) {
             broadcastTarget.emit('viewer_count_changed', countPayload);
 
             if (isAudioParty) {
-              await checkAndSchedulePartyRoomSleep(room.id, io, 12000, userId);
+              await checkAndSchedulePartyRoomSleep(room.id, io, 10000, userId);
             }
           }
 

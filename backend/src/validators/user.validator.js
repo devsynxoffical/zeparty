@@ -122,6 +122,7 @@ export const assignParentBOSchema = z.object({
 });
 
 export const grantPropSchema = z.object({
+  category: z.string().trim().optional(),
   propType: z.string().trim().optional(),
   itemType: z.string().trim().optional(),
   propId: z.string().trim().optional(),
@@ -133,6 +134,7 @@ export const grantPropSchema = z.object({
   vipLevel: z.coerce.number().int().min(0).max(10).optional(),
   iconUrl: z.string().max(1000).optional(),
   reason: z.string().trim().max(500).optional(),
+  replaceExisting: z.boolean().optional(),
 });
 
 export const revokePropSchema = z.object({

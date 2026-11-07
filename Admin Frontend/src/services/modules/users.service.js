@@ -244,11 +244,33 @@ export async function deleteUser(id, reason = '') {
 
 export async function getPropsCatalog(category) {
   const res = await apiClient.get('/v1/admin/users/props/catalog', { params: { category } });
-  return res.data?.data || res.data?.items || [];
+  const raw = res.data;
+  if (!raw) return [];
+
+  // Normalize whatever response envelope is returned to a guaranteed Array
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw.data)) return raw.data;
+  if (Array.isArray(raw.items)) return raw.items;
+  if (raw.data && typeof raw.data === 'object' && Array.isArray(raw.data.items)) {
+    return raw.data.items;
+  }
+
+  console.warn('[users.service] getPropsCatalog received non-array data structure:', raw);
+  return [];
 }
 
 export async function grantPropToUser(userId, payload) {
-  const res = await apiClient.post(`/v1/admin/users/${userId}/grant-prop`, payload);
+  const normalizedPayload = {
+    ...payload,
+    category: payload.category || payload.propType || payload.itemType,
+    propType: payload.propType || payload.category || payload.itemType,
+    itemType: payload.itemType || payload.category || payload.propType,
+    propId: payload.propId || payload.itemId,
+    itemId: payload.itemId || payload.propId,
+    propName: payload.propName || payload.itemName,
+    itemName: payload.itemName || payload.propName,
+  };
+  const res = await apiClient.post(`/v1/admin/users/${userId}/grant-prop`, normalizedPayload);
   return res.data;
 }
 
@@ -265,6 +287,16 @@ export async function getNoblesCatalog() {
 export async function grantNobleToUser(userId, payload) {
   const res = await apiClient.post(`/v1/admin/users/${userId}/grant-noble`, payload);
   return res.data;
+}
+
+export async function grantSVIPToUser(userId, payload) {
+  const res = await apiClient.post(`/v1/admin/users/${userId}/grant-svip`, payload);
+  return res.data;
+}
+
+export async function lookupUserForGrant(query) {
+  const res = await apiClient.post('/v1/admin/users/verify-grant-target', { identifier: query });
+  return res.data?.data || res.data;
 }
 
 export async function reconcileUserWealth(userId) {
@@ -290,6 +322,8 @@ export default {
   assignSpecialIdToUser,
   getNoblesCatalog,
   grantNobleToUser,
+  grantSVIPToUser,
+  lookupUserForGrant,
   reconcileUserWealth,
 };
 

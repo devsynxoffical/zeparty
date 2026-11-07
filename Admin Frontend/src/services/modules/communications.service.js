@@ -96,23 +96,33 @@ export async function toggleAnnouncementPublish(id) {
 
 export async function getNotifications(params = {}) {
   const res = await apiClient.get('/v1/admin/notifications', { params });
-  if (res.data && res.data.success && Array.isArray(res.data.data)) {
-    return res.data.data;
+  if (res.data && res.data.success) {
+    if (Array.isArray(res.data.data)) return res.data.data;
+    if (Array.isArray(res.data.data?.items)) return res.data.data.items;
+    if (Array.isArray(res.data.items)) return res.data.items;
   }
   return [];
 }
 
 export async function broadcastNotification(data) {
   const payload = {
-    title: data.title,
-    body: data.body || data.message || '',
-    message: data.message || data.body || '',
-    type: data.type || 'SYSTEM',
-    targetSegment: data.targetSegment || 'All Users',
-    targetType: data.targetSegment === 'All Users' ? 'GLOBAL' : 'SEGMENT',
+    title: (data.title || '').trim(),
+    body: (data.body || data.message || '').trim(),
+    message: (data.message || data.body || '').trim(),
+    type: data.type || 'Push',
+    audience: data.audience || data.targetSegment || 'All Users',
+    targetSegment: data.targetSegment || data.audience || 'All Users',
+    destination: data.destination || data.data?.destination || null,
+    data: data.data || {},
+    customUserIds: data.customUserIds || [],
   };
 
   const res = await apiClient.post('/v1/admin/notifications', payload);
+  return res.data?.data?.broadcast || res.data?.data;
+}
+
+export async function retryNotificationBroadcast(id) {
+  const res = await apiClient.post(`/v1/admin/notifications/${id}/retry`);
   return res.data?.data;
 }
 
@@ -125,4 +135,5 @@ export default {
   toggleAnnouncementPublish,
   getNotifications,
   broadcastNotification,
+  retryNotificationBroadcast,
 };

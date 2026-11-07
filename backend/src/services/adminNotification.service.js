@@ -21,21 +21,35 @@ async function logAudit(
   db = prisma
 ) {
   try {
-    if (db.auditLog?.create) {
-      await db.auditLog.create({
-        data: {
-          adminId: adminId || null,
-          adminName: adminName || (adminId ? 'Administrator' : 'System Automation'),
-          action,
-          targetEntity,
-          targetEntityId,
-          beforeStateJson: beforeStateJson || null,
-          afterStateJson: afterStateJson || null,
-          reason: reason || null,
-          ipAddress: ipAddress || '127.0.0.1',
-        },
-      });
+    let validAdminId = adminId;
+    if (validAdminId) {
+      const existingAdmin = await db.admin?.findUnique?.({ where: { id: validAdminId } }).catch(() => null);
+      if (!existingAdmin) {
+        const fallbackAdmin = await db.admin?.findFirst?.({ select: { id: true, name: true } }).catch(() => null);
+        validAdminId = fallbackAdmin ? fallbackAdmin.id : null;
+        if (fallbackAdmin && !adminName) adminName = fallbackAdmin.name;
+      }
+    } else {
+      const fallbackAdmin = await db.admin?.findFirst?.({ select: { id: true, name: true } }).catch(() => null);
+      validAdminId = fallbackAdmin ? fallbackAdmin.id : null;
+      if (fallbackAdmin && !adminName) adminName = fallbackAdmin.name;
     }
+
+    if (!validAdminId || !db.auditLog?.create) return;
+
+    await db.auditLog.create({
+      data: {
+        adminId: validAdminId,
+        adminName: adminName || 'System Automation',
+        action,
+        targetEntity,
+        targetEntityId: targetEntityId ? String(targetEntityId) : null,
+        beforeStateJson: beforeStateJson || null,
+        afterStateJson: afterStateJson || null,
+        reason: reason || null,
+        ipAddress: ipAddress || '127.0.0.1',
+      },
+    });
   } catch (err) {
     console.error('Failed to write audit log in adminNotification.service:', err);
   }
@@ -101,40 +115,92 @@ export async function resolveTargetUserIds(audience, customUserIds = [], db = pr
  * Creates and dispatches a broadcast notification campaign.
  */
 export async function broadcastNotification(
-  {
+  payload,
+  secondArg = prisma,
+  thirdArg = prisma
+) {
+  // Support both (payload, db) and (payload, { adminId, ... }, db)
+  let db = prisma;
+  let options = {};
+
+  if (secondArg && typeof secondArg === 'object') {
+    if (secondArg.user || secondArg.$transaction) {
+      db = secondArg;
+    } else {
+      options = secondArg;
+      if (thirdArg && (thirdArg.user || thirdArg.$transaction)) {
+        db = thirdArg;
+      }
+    }
+  }
+
+  const {
     title,
     body,
+    message,
     type = 'Push',
     audience = 'All Users',
+    targetSegment = null,
+    destination = null,
     data = {},
     customUserIds = [],
-    adminId = null,
-    adminName = 'Super Admin',
-    ipAddress = '127.0.0.1',
-  },
-  db = prisma
-) {
-  if (!title || !body) {
-    const error = new Error('Title and body are required for notification broadcast');
+    userIds = [],
+    route = null,
+    adminId = options.adminId || null,
+    adminName = options.adminName || 'Super Admin',
+    ipAddress = options.ipAddress || '127.0.0.1',
+  } = { ...payload, ...options };
+
+  const effectiveTitle = (title || '').trim();
+  const effectiveBody = (body || message || '').trim();
+
+  if (!effectiveTitle || !effectiveBody) {
+    const error = new Error('Title and body/message are required for notification broadcast');
     error.statusCode = 400;
     error.code = 'INVALID_BROADCAST_PAYLOAD';
     throw error;
   }
 
-  // 1. Resolve Target Recipients Server-Side
-  const recipientIds = await resolveTargetUserIds(audience, customUserIds, db);
+  const effectiveAudience = audience || targetSegment || 'All Users';
+  const effectiveDestination = destination || route || data?.destination || data?.route || 'zeparty://home';
+  const targetUserIds = Array.isArray(customUserIds) && customUserIds.length > 0
+    ? customUserIds
+    : (Array.isArray(userIds) ? userIds : []);
 
-  // 2. Persist Broadcast Campaign Record
+  // 1. Resolve Target Recipients Server-Side
+  const recipientIds = (effectiveAudience === 'CUSTOM_USERS' || effectiveAudience === 'Selected Users') && targetUserIds.length > 0
+    ? targetUserIds
+    : await resolveTargetUserIds(effectiveAudience, targetUserIds, db);
+
+  // Resolve valid adminId to satisfy foreign key constraint
+  let validAdminId = adminId;
+  if (validAdminId) {
+    const existingAdmin = await db.admin.findUnique({ where: { id: validAdminId } }).catch(() => null);
+    if (!existingAdmin) {
+      const fallbackAdmin = await db.admin.findFirst().catch(() => null);
+      validAdminId = fallbackAdmin ? fallbackAdmin.id : null;
+    }
+  } else {
+    const fallbackAdmin = await db.admin.findFirst().catch(() => null);
+    validAdminId = fallbackAdmin ? fallbackAdmin.id : null;
+  }
+
+  // 2. Persist Initial Broadcast Campaign Record
   const broadcast = await broadcastRepository.createBroadcast(
     {
-      adminId,
-      title,
-      body,
-      type,
-      audience,
+      adminId: validAdminId,
+      title: effectiveTitle,
+      body: effectiveBody,
+      type: type || 'Push',
+      audience: effectiveAudience,
       recipientCount: recipientIds.length,
-      status: 'SENT',
-      metadataJson: { data, customUserIds: customUserIds.length > 0 ? customUserIds : undefined },
+      status: 'DISPATCHING',
+      metadataJson: {
+        destination: effectiveDestination,
+        data,
+        customUserIds: customUserIds.length > 0 ? customUserIds : undefined,
+        createdAt: new Date().toISOString(),
+      },
     },
     db
   );
@@ -143,11 +209,15 @@ export async function broadcastNotification(
   if (recipientIds.length > 0) {
     const notificationRecords = recipientIds.map((userId) => ({
       userId,
-      title,
-      body,
+      title: effectiveTitle,
+      body: effectiveBody,
       type: 'MARKETING',
       category: 'System',
-      dataJson: data,
+      dataJson: {
+        ...data,
+        destination: effectiveDestination,
+        broadcastId: broadcast.id,
+      },
       sourceType: 'CAMPAIGN',
       sourceId: broadcast.id,
       deliveryStatus: 'DELIVERED',
@@ -156,11 +226,94 @@ export async function broadcastNotification(
     const BATCH_SIZE = 500;
     for (let i = 0; i < notificationRecords.length; i += BATCH_SIZE) {
       const chunk = notificationRecords.slice(i, i + BATCH_SIZE);
-      await notificationRepository.createManyNotifications(chunk, db);
+      await notificationRepository.createManyNotifications(chunk, db).catch((err) => {
+        console.warn('Failed batch notification insert:', err.message);
+      });
     }
   }
 
-  // 4. Audit Log Entry
+  // 4. Multi-device Push Delivery Execution
+  let dispatchStats = {
+    recipientCount: recipientIds.length,
+    tokensCount: 0,
+    providerAcceptedCount: 0,
+    failedCount: 0,
+    invalidTokensCount: 0,
+    destination: effectiveDestination,
+    completedAt: new Date().toISOString(),
+  };
+
+  let finalStatus = 'SAVED';
+
+  try {
+    if (recipientIds.length > 0) {
+      const devices = await deviceRepository.findTokensByUserIds(recipientIds, db);
+      const tokens = devices.map((d) => d.deviceToken).filter(Boolean);
+      dispatchStats.tokensCount = tokens.length;
+
+      if (tokens.length > 0) {
+        const pushResult = await fcmAdapter.sendMulticast({
+          tokens,
+          title: effectiveTitle,
+          body: effectiveBody,
+          data: {
+            ...data,
+            destination: effectiveDestination,
+            broadcastId: broadcast.id,
+          },
+        });
+
+        dispatchStats.providerAcceptedCount = pushResult.sentCount || 0;
+        dispatchStats.failedCount = pushResult.failureCount || 0;
+        dispatchStats.invalidTokensCount = (pushResult.invalidTokens || []).length;
+        dispatchStats.providerStatus = pushResult.status || 'SENT';
+
+        if (pushResult.invalidTokens && pushResult.invalidTokens.length > 0) {
+          await deviceRepository.cleanupInvalidTokens(pushResult.invalidTokens, db).catch(() => {});
+        }
+
+        if (fcmAdapter.isMockMode && fcmAdapter.isMockMode()) {
+          finalStatus = 'SIMULATED';
+        } else if (pushResult.sentCount > 0 && pushResult.failureCount === 0) {
+          finalStatus = 'PROVIDER_ACCEPTED';
+        } else if (pushResult.sentCount > 0 && pushResult.failureCount > 0) {
+          finalStatus = 'PARTIALLY_DELIVERED';
+        } else if (pushResult.sentCount === 0 && pushResult.failureCount > 0) {
+          finalStatus = 'FAILED';
+        } else {
+          finalStatus = 'SENT';
+        }
+      } else {
+        finalStatus = recipientIds.length > 0 ? 'QUEUED' : 'SAVED';
+      }
+    }
+  } catch (pushErr) {
+    console.error('Push broadcast delivery error:', pushErr);
+    finalStatus = 'FAILED';
+    dispatchStats.error = pushErr.message;
+  }
+
+  // 5. Update Broadcast Campaign Record with Delivery Metrics
+  const updatedBroadcast = await db.notificationBroadcast.update({
+    where: { id: broadcast.id },
+    data: {
+      status: finalStatus,
+      metadataJson: {
+        destination: effectiveDestination,
+        route: effectiveDestination,
+        data,
+        customUserIds: customUserIds.length > 0 ? customUserIds : undefined,
+        dispatchStats,
+        admin: {
+          id: validAdminId,
+          name: adminName,
+          ip: ipAddress,
+        },
+      },
+    },
+  });
+
+  // 6. Audit Log Entry
   await logAudit(
     {
       adminId,
@@ -170,25 +323,113 @@ export async function broadcastNotification(
       targetEntityId: broadcast.id,
       afterStateJson: {
         id: broadcast.id,
-        title,
-        audience,
+        title: effectiveTitle,
+        audience: effectiveAudience,
         recipientCount: recipientIds.length,
+        status: finalStatus,
+        dispatchStats,
       },
-      reason: `Push broadcast sent to ${recipientIds.length} users (${audience})`,
+      reason: `Push broadcast sent to ${recipientIds.length} users (${effectiveAudience})`,
       ipAddress,
     },
     db
   );
 
-  // 5. Asynchronous Multi-device Push Delivery
-  dispatchBroadcastPush(recipientIds, { title, body, data }, db).catch((err) => {
-    console.error('Failed to dispatch broadcast FCM push:', err);
+  return {
+    ...updatedBroadcast,
+    success: true,
+    broadcast: updatedBroadcast,
+    recipientCount: recipientIds.length,
+    dispatchStats,
+  };
+}
+
+/**
+ * Retries a failed or partially delivered broadcast campaign.
+ */
+export async function retryBroadcast(broadcastId, { adminId, adminName, ipAddress } = {}, db = prisma) {
+  const broadcast = await broadcastRepository.findBroadcastById(broadcastId, db);
+  if (!broadcast) {
+    const error = new Error('Broadcast campaign not found');
+    error.statusCode = 404;
+    error.code = 'BROADCAST_NOT_FOUND';
+    throw error;
+  }
+
+  const customUserIds = broadcast.metadataJson?.customUserIds || [];
+  const recipientIds = await resolveTargetUserIds(broadcast.audience, customUserIds, db);
+
+  const devices = await deviceRepository.findTokensByUserIds(recipientIds, db);
+  const tokens = devices.map((d) => d.deviceToken).filter(Boolean);
+
+  let retryStats = {
+    retriedAt: new Date().toISOString(),
+    tokensCount: tokens.length,
+    providerAcceptedCount: 0,
+    failedCount: 0,
+  };
+
+  let finalStatus = broadcast.status;
+
+  if (tokens.length > 0) {
+    const pushResult = await fcmAdapter.sendMulticast({
+      tokens,
+      title: broadcast.title,
+      body: broadcast.body,
+      data: {
+        destination: broadcast.metadataJson?.destination || 'zeparty://home',
+        broadcastId: broadcast.id,
+      },
+    });
+
+    retryStats.providerAcceptedCount = pushResult.sentCount || 0;
+    retryStats.failedCount = pushResult.failureCount || 0;
+
+    if (pushResult.invalidTokens && pushResult.invalidTokens.length > 0) {
+      await deviceRepository.cleanupInvalidTokens(pushResult.invalidTokens, db).catch(() => {});
+    }
+
+    if (pushResult.sentCount > 0) {
+      finalStatus = pushResult.failureCount === 0 ? 'PROVIDER_ACCEPTED' : 'PARTIALLY_DELIVERED';
+    } else {
+      finalStatus = 'FAILED';
+    }
+  }
+
+  const nextRetryCount = (broadcast.metadataJson?.retryCount || 0) + 1;
+
+  const updated = await db.notificationBroadcast.update({
+    where: { id: broadcastId },
+    data: {
+      status: finalStatus,
+      metadataJson: {
+        ...broadcast.metadataJson,
+        retryCount: nextRetryCount,
+        lastRetry: retryStats,
+      },
+    },
   });
+
+  await logAudit(
+    {
+      adminId,
+      adminName,
+      action: 'NOTIFICATION_BROADCAST_RETRIED',
+      targetEntity: 'NotificationBroadcast',
+      targetEntityId: broadcastId,
+      afterStateJson: { id: broadcastId, status: finalStatus, retryStats, retryCount: nextRetryCount },
+      reason: `Retried push broadcast to ${tokens.length} devices`,
+      ipAddress,
+    },
+    db
+  );
 
   return {
     success: true,
-    broadcast,
-    recipientCount: recipientIds.length,
+    broadcast: updated,
+    retryCount: nextRetryCount,
+    dispatchedCount: tokens.length,
+    retryStats,
   };
 }
 
@@ -239,6 +480,7 @@ export async function getBroadcastDetails(id, db = prisma) {
 export default {
   resolveTargetUserIds,
   broadcastNotification,
+  retryBroadcast,
   listBroadcasts,
   getBroadcastDetails,
 };

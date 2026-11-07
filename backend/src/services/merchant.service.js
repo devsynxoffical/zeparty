@@ -9,15 +9,31 @@ function hashSecret(secret) {
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
+    let validAdminId = adminId;
+    if (validAdminId && validAdminId !== 'SYSTEM' && validAdminId !== 'ADMIN') {
+      const exists = await db.admin?.findUnique?.({ where: { id: validAdminId }, select: { id: true } });
+      if (!exists) {
+        const fallback = await db.admin?.findFirst?.({ select: { id: true, name: true } });
+        validAdminId = fallback ? fallback.id : null;
+        if (fallback && !adminName) adminName = fallback.name;
+      }
+    } else {
+      const fallback = await db.admin?.findFirst?.({ select: { id: true, name: true } });
+      validAdminId = fallback ? fallback.id : null;
+      if (fallback && !adminName) adminName = fallback.name;
+    }
+
+    if (!validAdminId || !db.auditLog?.create) return;
+
     await db.auditLog.create({
       data: {
-        adminId: adminId || 'SYSTEM',
+        adminId: validAdminId,
         adminName: adminName || 'System',
         action,
         targetEntity,
         targetEntityId: targetEntityId || null,
-        beforeStateJson: beforeStateJson ? JSON.parse(JSON.stringify(beforeStateJson)) : null,
-        afterStateJson: afterStateJson ? JSON.parse(JSON.stringify(afterStateJson)) : null,
+        beforeStateJson: beforeStateJson ? JSON.parse(JSON.stringify(beforeStateJson, (k, v) => typeof v === 'bigint' ? v.toString() : v)) : null,
+        afterStateJson: afterStateJson ? JSON.parse(JSON.stringify(afterStateJson, (k, v) => typeof v === 'bigint' ? v.toString() : v)) : null,
         reason: reason || null,
         ipAddress: ipAddress || '127.0.0.1',
       },
@@ -65,63 +81,21 @@ export async function createMerchant(data, { adminId, adminName, ipAddress } = {
     }
   }
 
-  const initialCoins = data.monthlyQuotaCoins ? BigInt(data.monthlyQuotaCoins) : (data.initialAllocation ? BigInt(data.initialAllocation) : 25200000n);
-
-  if (!targetUser) {
-    const rawUsername = (data.username || userIdentifier || `merchant_${Date.now()}`).replace('@', '').trim();
-    const cleanPhone = `+1888${Math.floor(1000000 + Math.random() * 9000000)}`;
-    const finalId = await generate7DigitUserId(db);
-    targetUser = await db.user.create({
-      data: {
-        id: finalId,
-        username: rawUsername,
-        phone: cleanPhone,
-        email: data.email || `${rawUsername}@zeparty.merchant`,
-        userType: 'MERCHANT',
-        status: 'ACTIVE',
-        countryCode: data.countryCode || data.country || 'US',
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-        profile: {
-          create: {
-            displayName: data.companyName || data.merchantName || rawUsername,
-          },
-        },
-        wallet: {
-          create: {
-            coinBalance: 0n,
-            diamondBalance: 0n,
-            sellerBalanceCoins: initialCoins,
-          },
-        },
-      },
-      include: { profile: true, wallet: true },
-    });
-  } else {
-    // Ensure wallet exists for existing user
-    if (!targetUser.wallet) {
-      await db.wallet.create({
-        data: {
-          userId: targetUser.id,
-          coinBalance: 0n,
-          diamondBalance: 0n,
-          sellerBalanceCoins: initialCoins,
-        },
-      });
-    } else {
-      await db.wallet.update({
-        where: { userId: targetUser.id },
-        data: { sellerBalanceCoins: initialCoins },
-      });
+  // Pre-creation verification: User must not already be linked to an existing merchant
+  if (targetUser) {
+    const existing = await merchantRepository.findMerchantByUserId(targetUser.id, db);
+    if (existing) {
+      const error = new Error(
+        `User ${targetUser.id} (${targetUser.profile?.displayName || targetUser.username}) is already assigned to Merchant "${existing.companyName}". A user can only be linked to one merchant.`
+      );
+      error.statusCode = 409;
+      error.code = 'MERCHANT_ALREADY_EXISTS';
+      error.existingMerchant = sanitizeMerchant(existing);
+      throw error;
     }
   }
 
-  const existing = await merchantRepository.findMerchantByUserId(targetUser.id, db);
-  if (existing) {
-    const error = new Error('User is already registered as a merchant');
-    error.statusCode = 409;
-    error.code = 'MERCHANT_ALREADY_EXISTS';
-    throw error;
-  }
+  const initialCoins = data.monthlyQuotaCoins ? BigInt(data.monthlyQuotaCoins) : (data.initialAllocation ? BigInt(data.initialAllocation) : 25200000n);
 
   // Generate secure API credentials server-side
   const rawApiKey = `zp_live_${crypto.randomBytes(16).toString('hex')}`;
@@ -129,23 +103,74 @@ export async function createMerchant(data, { adminId, adminName, ipAddress } = {
   const apiKeyHash = hashSecret(rawApiKey);
   const apiSecretHash = hashSecret(rawApiSecret);
 
+  // Pre-generate 7-digit ID outside transaction if user is new to avoid interactive tx timeout
+  const generatedId = !targetUser ? await generate7DigitUserId(db) : null;
+
   const merchant = await db.$transaction(async (tx) => {
+    let finalUser = targetUser;
+    if (!finalUser) {
+      const rawUsername = (data.username || userIdentifier || `merchant_${Date.now()}`).replace('@', '').trim();
+      const cleanPhone = `+1888${Math.floor(1000000 + Math.random() * 9000000)}`;
+      finalUser = await tx.user.create({
+        data: {
+          id: generatedId,
+          username: rawUsername,
+          phone: cleanPhone,
+          email: data.email || `${rawUsername}@zeparty.merchant`,
+          userType: 'MERCHANT',
+          status: 'ACTIVE',
+          countryCode: data.countryCode || data.country || 'US',
+          avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
+          profile: {
+            create: {
+              displayName: data.companyName || data.merchantName || rawUsername,
+            },
+          },
+          wallet: {
+            create: {
+              coinBalance: 0n,
+              diamondBalance: 0n,
+              sellerBalanceCoins: initialCoins,
+            },
+          },
+        },
+        include: { profile: true, wallet: true },
+      });
+    } else {
+      // Ensure wallet exists for existing user without corrupting balances
+      if (!finalUser.wallet) {
+        await tx.wallet.create({
+          data: {
+            userId: finalUser.id,
+            coinBalance: 0n,
+            diamondBalance: 0n,
+            sellerBalanceCoins: initialCoins,
+          },
+        });
+      } else {
+        await tx.wallet.update({
+          where: { userId: finalUser.id },
+          data: { sellerBalanceCoins: initialCoins },
+        });
+      }
+
+      await tx.user.update({
+        where: { id: finalUser.id },
+        data: { userType: 'MERCHANT' },
+      });
+    }
+
     const newMerchant = await merchantRepository.createMerchant({
-      userId: targetUser.id,
-      companyName: data.companyName || data.merchantName || targetUser.username,
+      userId: finalUser.id,
+      companyName: data.companyName || data.merchantName || finalUser.username,
       apiKeyHash,
       apiSecretHash,
       monthlyQuotaCoins: initialCoins,
       status: data.status ? data.status.toUpperCase() : 'ACTIVE',
     }, tx);
 
-    await tx.user.update({
-      where: { id: targetUser.id },
-      data: { userType: 'MERCHANT' },
-    });
-
     return newMerchant;
-  });
+  }, { timeout: 20000, maxWait: 10000 });
 
   await logAudit({
     adminId,
@@ -398,11 +423,281 @@ export async function getMerchantDetails(id, db = prisma) {
   return sanitizeMerchant(merchant);
 }
 
+export async function getMyMerchantCenter(userId, db = prisma) {
+  const merchant = await db.merchant.findUnique({
+    where: { userId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          username: true,
+          countryCode: true,
+          status: true,
+          profile: true,
+          wallet: true,
+        },
+      },
+    },
+  });
+
+  if (!merchant) {
+    const error = new Error('Merchant account not found for this user');
+    error.statusCode = 404;
+    error.code = 'MERCHANT_NOT_FOUND';
+    throw error;
+  }
+
+  return sanitizeMerchant(merchant);
+}
+
+export async function getMerchantDashboard(userId, db = prisma) {
+  const merchant = await getMyMerchantCenter(userId, db);
+
+  const walletId = merchant.user?.wallet?.id;
+  let recentTransactions = [];
+  let totalRechargeCount = 0;
+
+  if (walletId && db.walletLedger) {
+    const [txs, count] = await Promise.all([
+      db.walletLedger.findMany({
+        where: { walletId },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+      db.walletLedger.count({
+        where: { walletId },
+      }),
+    ]);
+    recentTransactions = txs.map((tx) => ({
+      ...tx,
+      coinDelta: tx.coinDelta ? tx.coinDelta.toString() : '0',
+      diamondDelta: tx.diamondDelta ? tx.diamondDelta.toString() : '0',
+    }));
+    totalRechargeCount = count;
+  }
+
+  return {
+    merchant,
+    quota: merchant.monthlyQuotaCoins,
+    totalSpentUSD: merchant.totalSpentUSD,
+    totalRechargeCount,
+    recentTransactions,
+  };
+}
+
+export async function getMerchantLedger(userId, { page = 1, limit = 20 } = {}, db = prisma) {
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    include: { wallet: true },
+  });
+
+  if (!user || !user.wallet) {
+    return {
+      transactions: [],
+      pagination: { page: Number(page), limit: Number(limit), total: 0, totalPages: 0 },
+    };
+  }
+
+  const p = Math.max(1, parseInt(page, 10) || 1);
+  const l = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+  const skip = (p - 1) * l;
+
+  const [items, total] = await Promise.all([
+    db.walletLedger.findMany({
+      where: { walletId: user.wallet.id },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: l,
+    }),
+    db.walletLedger.count({
+      where: { walletId: user.wallet.id },
+    }),
+  ]);
+
+  const transactions = items.map((t) => ({
+    ...t,
+    coinDelta: t.coinDelta ? t.coinDelta.toString() : '0',
+    diamondDelta: t.diamondDelta ? t.diamondDelta.toString() : '0',
+  }));
+
+  return {
+    transactions,
+    pagination: {
+      page: p,
+      limit: l,
+      total,
+      totalPages: Math.ceil(total / l),
+    },
+  };
+}
+
+export async function executeMerchantRecharge(merchantUserId, { recipientId, amountCoins, notes }, { ipAddress } = {}, db = prisma) {
+  const merchant = await db.merchant.findUnique({
+    where: { userId: merchantUserId },
+    include: {
+      user: {
+        include: { wallet: true },
+      },
+    },
+  });
+
+  if (!merchant || merchant.status !== 'ACTIVE') {
+    const error = new Error('Authorized active merchant account required');
+    error.statusCode = 403;
+    error.code = 'MERCHANT_INACTIVE';
+    throw error;
+  }
+
+  const cleanRecipient = String(recipientId || '').trim().replace('@', '');
+  if (!cleanRecipient) {
+    const error = new Error('Recipient identifier is required');
+    error.statusCode = 400;
+    error.code = 'INVALID_RECIPIENT';
+    throw error;
+  }
+
+  const recipient = await db.user.findFirst({
+    where: {
+      OR: [
+        { id: cleanRecipient },
+        { username: { equals: cleanRecipient, mode: 'insensitive' } },
+        { phone: cleanRecipient },
+      ],
+    },
+    include: { wallet: true, profile: true },
+  });
+
+  if (!recipient || recipient.status === 'DELETED' || recipient.status === 'BANNED') {
+    const error = new Error(`Recipient not found or unavailable`);
+    error.statusCode = 404;
+    error.code = 'RECIPIENT_NOT_FOUND';
+    throw error;
+  }
+
+  const amt = BigInt(amountCoins || 0);
+  if (amt <= 0n) {
+    const error = new Error('Recharge amount must be a positive integer');
+    error.statusCode = 400;
+    error.code = 'INVALID_AMOUNT';
+    throw error;
+  }
+
+  const currentQuota = merchant.monthlyQuotaCoins || 0n;
+  if (currentQuota < amt) {
+    const error = new Error(`Insufficient merchant coin allocation. Available: ${currentQuota.toString()}, Requested: ${amt.toString()}`);
+    error.statusCode = 400;
+    error.code = 'INSUFFICIENT_MERCHANT_QUOTA';
+    throw error;
+  }
+
+  const result = await db.$transaction(async (tx) => {
+    // 1. Deduct from merchant quota
+    const updatedMerchant = await tx.merchant.update({
+      where: { id: merchant.id },
+      data: {
+        monthlyQuotaCoins: currentQuota - amt,
+      },
+    });
+
+    // 2. Ensure recipient has wallet & credit coins
+    let recipientWallet = recipient.wallet;
+    if (!recipientWallet) {
+      recipientWallet = await tx.wallet.create({
+        data: {
+          userId: recipient.id,
+          coinBalance: amt,
+          diamondBalance: 0n,
+        },
+      });
+    } else {
+      recipientWallet = await tx.wallet.update({
+        where: { id: recipientWallet.id },
+        data: {
+          coinBalance: { increment: amt },
+        },
+      });
+    }
+
+    // 3. If merchant has wallet, update sellerBalanceCoins
+    let merchantWallet = merchant.user?.wallet;
+    if (merchantWallet) {
+      const currentSellerCoins = merchantWallet.sellerBalanceCoins || 0n;
+      const newSellerCoins = currentSellerCoins >= amt ? currentSellerCoins - amt : 0n;
+      await tx.wallet.update({
+        where: { id: merchantWallet.id },
+        data: {
+          sellerBalanceCoins: newSellerCoins,
+        },
+      });
+
+      // Record WalletLedger on merchant wallet
+      await tx.walletLedger.create({
+        data: {
+          walletId: merchantWallet.id,
+          transactionType: 'TRANSFER_OUT',
+          coinDelta: -amt,
+          balanceBefore: {
+            coinBalance: merchantWallet.coinBalance.toString(),
+            sellerBalanceCoins: merchantWallet.sellerBalanceCoins.toString(),
+          },
+          balanceAfter: {
+            coinBalance: merchantWallet.coinBalance.toString(),
+            sellerBalanceCoins: newSellerCoins.toString(),
+          },
+          reason: `Merchant Recharge to @${recipient.username} (${recipient.id}): ${notes || 'Recharge transfer'}`,
+          metadata: {
+            recipientId: recipient.id,
+            recipientUsername: recipient.username,
+            ipAddress,
+          },
+        },
+      });
+    }
+
+    // 4. Record WalletLedger on recipient wallet
+    await tx.walletLedger.create({
+      data: {
+        walletId: recipientWallet.id,
+        transactionType: 'TRANSFER_IN',
+        coinDelta: amt,
+        balanceBefore: {
+          coinBalance: (recipientWallet.coinBalance - amt).toString(),
+        },
+        balanceAfter: {
+          coinBalance: recipientWallet.coinBalance.toString(),
+        },
+        reason: `Merchant Recharge from ${merchant.companyName}: ${notes || 'Recharge transfer'}`,
+        metadata: {
+          merchantId: merchant.id,
+          merchantCompanyName: merchant.companyName,
+          ipAddress,
+        },
+      },
+    });
+
+    return {
+      merchantId: merchant.id,
+      companyName: merchant.companyName,
+      remainingQuota: (currentQuota - amt).toString(),
+      recipientId: recipient.id,
+      recipientUsername: recipient.username,
+      amountRecharged: amt.toString(),
+      recipientNewBalance: recipientWallet.coinBalance.toString(),
+    };
+  });
+
+  return result;
+}
+
 export default {
   createMerchant,
   updateMerchant,
   adjustMerchantBalance,
   deleteMerchant,
   getMerchantDetails,
+  getMyMerchantCenter,
+  getMerchantDashboard,
+  getMerchantLedger,
+  executeMerchantRecharge,
   sanitizeMerchant,
 };

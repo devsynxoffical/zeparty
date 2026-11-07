@@ -130,34 +130,38 @@ const nobleTiers = {
 };
 
 const roleFiles = {
-  admin: { badge: 'roles/admin_badge.webp', frame: 'roles/admin_frame.webp' },
-  agency: { badge: 'roles/agency_tag.webp', frame: 'roles/agency_frame.webp' },
-  assistant: { badge: 'roles/assistant_tag.webp', frame: 'roles/assistant_frame.webp' },
-  bd: { badge: 'roles/bd_tag.webp', frame: 'roles/bd_frame.webp' },
-  boss: { badge: 'roles/boss_tag.webp', frame: 'roles/boss_frame.webp' },
-  ceo: { badge: 'roles/ceo_tag.webp', frame: 'roles/ceo_frame.webp' },
-  coins_seller: { badge: 'roles/coins_saller_tag.webp', frame: 'roles/coins_saller_frame.webp' },
-  coin_seller: { badge: 'roles/coins_saller_tag.webp', frame: 'roles/coins_saller_frame.webp' },
-  cs: { badge: 'roles/cs_badge.webp', frame: 'roles/cs_frame.webp' },
-  game_master: { badge: 'roles/game_master_badge.webp', frame: 'roles/game_master_frame.webp' },
-  host: { badge: 'roles/host_badge.webp', frame: 'roles/host_frame.webp' },
-  lover: { badge: 'roles/lover_tag.webp', frame: 'roles/lover_frame.webp' },
-  manager: { badge: 'roles/manager_tag.webp', frame: 'roles/manager_frame.webp' },
-  merchant: { badge: 'roles/marchent_badge.webp', frame: 'roles/marchent_frame.webp' },
-  marchent: { badge: 'roles/marchent_badge.webp', frame: 'roles/marchent_frame.webp' },
-  official: { badge: 'roles/official_tag.webp', frame: 'roles/official_frame.webp' },
-  super_admin: { badge: 'roles/super_admin_tag.webp', frame: 'roles/super_admin_frame.webp' },
-  top_fan: { badge: 'roles/top_fan_badge.webp', frame: 'roles/top_fan_frame.webp' },
-  vip: { badge: 'roles/ZP-216_official_badge.webp', frame: 'roles/official_frame.webp' },
-  svip: { badge: 'svip/ZP-054_svip-1_badge.webp', frame: 'svip/svip1_frame.webp' },
-  dragon: { badge: 'nobles/emperor_badge.webp', frame: 'nobles/emperor_frame.webp' },
-  elite: { badge: 'nobles/king_badge.webp', frame: 'nobles/king_frame.webp' },
-  guardian: { badge: 'nobles/duke_badge.webp', frame: 'nobles/duke_frame.webp' },
-  singer: { badge: 'nobles/marquis_badge.webp', frame: 'nobles/marquis_frame.webp' },
-  family: { badge: 'nobles/count_badge.webp', frame: 'nobles/count_frame.webp' },
+  admin: { tag: 'roles/super_admin_tag.webp', badge: 'roles/ZP-179_admin_badge.webp', frame: 'roles/admin_frame.webp' },
+  agency: { tag: 'roles/agency_tag.webp', badge: 'roles/ZP-182_agency_badge.webp', frame: 'roles/agency_frame.webp' },
+  assistant: { tag: 'roles/assistant_tag.webp', badge: 'roles/ZP-185_assistant_badge.webp', frame: 'roles/assistant_frame.webp' },
+  bd: { tag: 'roles/bd_tag.webp', badge: 'roles/ZP-188_bd_badge.webp', frame: 'roles/bd_frame.webp' },
+  boss: { tag: 'roles/boss_tag.webp', badge: 'roles/ZP-191_boss_badge.webp', frame: 'roles/boss_frame.webp' },
+  ceo: { tag: 'roles/ceo_tag.webp', badge: 'roles/ZP-194_ceo_badge.webp', frame: 'roles/ceo_frame.webp' },
+  coins_seller: { tag: 'roles/coins_saller_tag.webp', badge: 'roles/ZP-196_coins-saller_badge.webp', frame: 'roles/coins_saller_frame.webp' },
+  coin_seller: { tag: 'roles/coins_saller_tag.webp', badge: 'roles/ZP-196_coins-saller_badge.webp', frame: 'roles/coins_saller_frame.webp' },
+  cs: { tag: 'roles/official_tag.webp', badge: 'roles/ZP-199_cs_badge.webp', frame: 'roles/cs_frame.webp' },
+  game_master: { tag: 'roles/official_tag.webp', badge: 'roles/game_master_badge.webp', frame: 'roles/game_master_frame.webp' },
+  host: { tag: 'roles/host_badge.webp', badge: 'roles/ZP-205_host_badge.webp', frame: 'roles/host_frame.webp' },
+  lover: { tag: 'roles/lover_tag.webp', badge: 'roles/ZP-208_lover_badge.webp', frame: 'roles/lover_frame.webp' },
+  manager: { tag: 'roles/manager_tag.webp', badge: 'roles/manager_tag.webp', frame: 'roles/manager_frame.webp' },
+  merchant: { tag: 'roles/official_tag.webp', badge: 'roles/ZP-213_marchent_badge.webp', frame: 'roles/marchent_frame.webp' },
+  marchent: { tag: 'roles/official_tag.webp', badge: 'roles/ZP-213_marchent_badge.webp', frame: 'roles/marchent_frame.webp' },
+  official: { tag: 'roles/official_tag.webp', badge: 'roles/ZP-216_official_badge.webp', frame: 'roles/official_frame.webp' },
+  super_admin: { tag: 'roles/super_admin_tag.webp', badge: 'roles/ZP-179_admin_badge.webp', frame: 'roles/super_admin_frame.webp' },
+  top_fan: { tag: 'roles/official_tag.webp', badge: 'roles/top_fan_badge.webp', frame: 'roles/top_fan_frame.webp' },
+  vip: { tag: 'roles/official_tag.webp', badge: 'roles/ZP-216_official_badge.webp', frame: 'roles/official_frame.webp' },
+  svip: { tag: 'svip/svip1_tag.png', badge: 'svip/ZP-054_svip-1_badge.webp', frame: 'svip/svip1_frame.webp' },
+  dragon: { tag: 'nobles/emperor_badge.webp', badge: 'nobles/emperor_badge.webp', frame: 'nobles/emperor_frame.webp' },
+  elite: { tag: 'nobles/king_badge.webp', badge: 'nobles/king_badge.webp', frame: 'nobles/king_frame.webp' },
+  guardian: { tag: 'nobles/duke_badge.webp', badge: 'nobles/duke_badge.webp', frame: 'nobles/duke_frame.webp' },
+  singer: { tag: 'nobles/marquis_badge.webp', badge: 'nobles/marquis_badge.webp', frame: 'nobles/marquis_frame.webp' },
+  family: { tag: 'nobles/count_badge.webp', badge: 'nobles/count_badge.webp', frame: 'nobles/count_frame.webp' },
 };
 
 const dbPathOverrides = {
+  'assets/nobles/ZP-034_tier-6-king_badge.webp': '/assets/nobles/king_badge.webp',
+  'assets/nobles/ZP-037_tier-6-king_badge.webp': '/assets/nobles/king_badge.webp',
+  'ZP-034_tier-6-king_badge.webp': '/assets/nobles/king_badge.webp',
+  'ZP-037_tier-6-king_badge.webp': '/assets/nobles/king_badge.webp',
   'assets/roles/ZP-220_top-fan_badge.webp': '/assets/roles/top_fan_badge.webp',
   'assets/roles/ZP-218_super-admin_badge.webp': '/assets/roles/super_admin_tag.webp',
   'assets/roles/ZP-215_official_badge.webp': '/assets/roles/ZP-216_official_badge.webp',
@@ -244,12 +248,14 @@ export function resolveAssetPath(url) {
     }
 
     // Check roles
-    const roleMatch = clean.match(/roles\/(badge|frame)_([a-z_]+)/);
+    const roleMatch = clean.match(/roles\/(badge|frame|tag)_([a-z_]+)/);
     if (roleMatch) {
       const type = roleMatch[1];
       const role = roleMatch[2];
       if (roleFiles[role]) {
-        return '/assets/' + (type === 'frame' ? roleFiles[role].frame : roleFiles[role].badge);
+        if (type === 'frame') return '/assets/' + roleFiles[role].frame;
+        if (type === 'tag') return '/assets/' + (roleFiles[role].tag || roleFiles[role].badge);
+        return '/assets/' + (roleFiles[role].badge || roleFiles[role].tag);
       }
     }
 

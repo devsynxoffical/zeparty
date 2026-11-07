@@ -16,6 +16,8 @@ userRoomRouter.get('/my-room', authenticate, roomController.getMyPartyRoom);
 userRoomRouter.get('/me', authenticate, roomController.getMyPartyRoom);
 userRoomRouter.get('/joined', authenticate, roomController.getUserJoinedRooms);
 userRoomRouter.get('/user/:userId/joined', roomController.getUserJoinedRooms);
+userRoomRouter.get('/active-session', authenticate, roomController.getActiveSession);
+userRoomRouter.post('/switch/live-to-party', authenticate, roomController.switchLiveToParty);
 userRoomRouter.get('/:id', roomController.getRoomDetails);
 userRoomRouter.get('/:id/level', roomController.getRoomLevelProgression);
 userRoomRouter.get('/:id/progression', roomController.getRoomLevelProgression);

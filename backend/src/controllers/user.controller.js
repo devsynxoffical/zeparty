@@ -383,12 +383,27 @@ export async function postAdminChangeUserCountry(req, res, next) {
 
 export async function postAdminVerifyUserForGrant(req, res, next) {
   try {
-    const query = req.body?.userId || req.body?.identifier || req.query?.userId || req.params?.userId;
+    const query = req.body?.userId || req.body?.identifier || req.body?.query || req.body?.targetQuery || req.query?.userId || req.query?.identifier || req.query?.query || req.query?.q || req.params?.userId;
     const result = await userService.verifyUserForUniqueGrant(query);
 
     return res.status(200).json({
       success: true,
       message: 'User verified for unique item grant',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAdminLookupUser(req, res, next) {
+  try {
+    const query = req.query?.query || req.query?.identifier || req.query?.userId || req.query?.q;
+    const result = await userService.verifyUserForUniqueGrant(query);
+
+    return res.status(200).json({
+      success: true,
+      message: 'User verified successfully',
       data: result,
     });
   } catch (err) {
@@ -1308,6 +1323,26 @@ export async function postAdminGrantNoble(req, res, next) {
   }
 }
 
+export async function postAdminGrantSVIP(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { svipLevel, durationDays, reason } = req.body;
+    const adminId = req.auth?.userId || 'ADMIN';
+    const adminName = req.admin?.name || req.auth?.username || 'Administrator';
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await userService.grantSVIPToUser(
+      id,
+      { svipLevel, durationDays, reason },
+      { adminId, adminName, ipAddress }
+    );
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
 
 export async function getUserActiveNoble(req, res, next) {
   try {
@@ -1891,6 +1926,8 @@ export default {
   postAdminAssignSpecialId,
   getAdminNoblesCatalog,
   postAdminGrantNoble,
+  postAdminGrantSVIP,
+  getAdminLookupUser,
   postAdminReconcileWealth,
   postAdminReconcileAllWealth,
   getUserActiveNoble,

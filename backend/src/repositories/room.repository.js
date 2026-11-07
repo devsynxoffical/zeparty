@@ -3,6 +3,26 @@ import presenceService from '../socket/presence.service.js';
 import bcrypt from 'bcryptjs';
 import { resolveCanonicalUser } from './social.repository.js';
 
+// In-process lock map to serialize concurrent creation requests for the same user
+const partyRoomCreationLocks = new Map();
+
+async function withUserPartyRoomLock(userId, fn) {
+  while (partyRoomCreationLocks.has(userId)) {
+    try {
+      await partyRoomCreationLocks.get(userId);
+    } catch (_) {}
+  }
+  let release;
+  const lockPromise = new Promise((resolve) => { release = resolve; });
+  partyRoomCreationLocks.set(userId, lockPromise);
+  try {
+    return await fn();
+  } finally {
+    partyRoomCreationLocks.delete(userId);
+    if (release) release();
+  }
+}
+
 export async function createRoomWithSeats(
   {
     creatorUserId,
@@ -19,12 +39,137 @@ export async function createRoomWithSeats(
   },
   db = prisma
 ) {
-  // Archive any previous active rooms created by this user to avoid multiple duplicate rooms
+  // Issue 18 Mandatory One-Room Ownership:
+  // Each account may own a maximum of ONE persistent Voice Party Room.
+  // We serialize concurrent party room creation requests per creatorUserId to guarantee exactly one room is created.
+  if (roomType === 'AUDIO_PARTY') {
+    return await withUserPartyRoomLock(creatorUserId, async () => {
+      const existingPartyRoom = await db.room.findFirst({
+        where: {
+          creatorUserId,
+          roomType: 'AUDIO_PARTY',
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              countryCode: true,
+              region: true,
+              userType: true,
+              profile: {
+                select: {
+                  displayName: true,
+                  level: true,
+                  vipLevel: true,
+                  svipLevel: true,
+                  nobleRank: true,
+                  followersCount: true,
+                  followingCount: true,
+                  isPrivate: true,
+                },
+              },
+            },
+          },
+          seats: {
+            orderBy: { seatIndex: 'asc' },
+            include: {
+              occupiedUser: {
+                select: {
+                  id: true,
+                  username: true,
+                  avatarUrl: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (existingPartyRoom) {
+        return existingPartyRoom;
+      }
+
+      // Initialize seats (defaults to 10 seats: host + co-host + 8 mic seats for standard layout; supports 8 to 30)
+      const totalSeats = Math.max(8, Math.min(30, parseInt(seatCapacity || capacity, 10) || 10));
+      const seatsData = Array.from({ length: totalSeats }, (_, i) => ({
+        seatIndex: i,
+        occupiedUserId: i === 0 ? creatorUserId : null,
+        isMuted: false,
+        isLocked: false,
+      }));
+
+      return await db.room.create({
+        data: {
+          creatorUserId,
+          title,
+          coverImageUrl,
+          backgroundImageUrl,
+          roomType: 'AUDIO_PARTY',
+          category,
+          isPrivate,
+          roomPin,
+          agoraChannelName,
+          status: 'LIVE',
+          currentViewersCount: 0,
+          members: {
+            create: {
+              userId: creatorUserId,
+            },
+          },
+          seats: {
+            create: seatsData,
+          },
+        },
+        include: {
+          creator: {
+            select: {
+              id: true,
+              username: true,
+              avatarUrl: true,
+              countryCode: true,
+              region: true,
+              userType: true,
+              profile: {
+                select: {
+                  displayName: true,
+                  level: true,
+                  vipLevel: true,
+                  svipLevel: true,
+                  nobleRank: true,
+                  followersCount: true,
+                  followingCount: true,
+                  isPrivate: true,
+                },
+              },
+            },
+          },
+          seats: {
+            orderBy: { seatIndex: 'asc' },
+            include: {
+              occupiedUser: {
+                select: {
+                  id: true,
+                  username: true,
+                  avatarUrl: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+  }
+
+  // Solo LIVE_VIDEO broadcast: only archive previous LIVE_VIDEO broadcasts of the same host
   try {
     await db.room.updateMany({
       where: {
         creatorUserId,
         status: 'LIVE',
+        roomType: 'LIVE_VIDEO',
       },
       data: {
         status: 'ENDED',
@@ -33,14 +178,14 @@ export async function createRoomWithSeats(
       },
     });
   } catch (err) {
-    console.warn('[RoomRepository] Could not archive previous rooms:', err?.message);
+    console.warn('[RoomRepository] Could not archive previous live broadcast:', err?.message);
   }
 
-  // Initialize seats (defaults to 10 seats: host + co-host + 8 mic seats for standard layout; supports 8 to 30)
+  // Initialize seats for solo live broadcast
   const totalSeats = Math.max(8, Math.min(30, parseInt(seatCapacity || capacity, 10) || 10));
   const seatsData = Array.from({ length: totalSeats }, (_, i) => ({
     seatIndex: i,
-    occupiedUserId: i === 0 && roomType === 'AUDIO_PARTY' ? creatorUserId : null,
+    occupiedUserId: null,
     isMuted: false,
     isLocked: false,
   }));
@@ -538,8 +683,19 @@ export async function findAdminRooms(
     const lockMode = hasPin ? 'PIN' : (r.isPrivate ? 'Approval' : 'NONE');
     const { roomPin: _confidentialPin, ...safeR } = r;
     const seatCount = (r.seats || []).length || 10;
+    const occupiedMicSeatsCount = (r.seats || []).filter((s) => s.occupiedUserId).length;
+    const isParty = String(r.roomType || '').toUpperCase() === 'AUDIO_PARTY';
+    const isLive = String(r.roomType || '').toUpperCase() === 'LIVE_VIDEO';
     return {
       ...safeR,
+      ownerId: r.creatorUserId,
+      partyRoomId: isParty ? r.id : null,
+      liveSessionId: isLive ? r.id : null,
+      occupiedMicSeatsCount,
+      occupiedSeatsCount: occupiedMicSeatsCount,
+      activeParticipantsCount: Number(r.currentViewersCount || 0),
+      partyActiveStatus: isParty ? (r.status === 'LIVE' ? 'ACTIVE' : 'INACTIVE') : null,
+      liveBroadcastStatus: isLive ? r.status : null,
       isLocked: Boolean(r.isPrivate),
       lockMode,
       seatCapacity: seatCount,

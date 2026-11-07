@@ -1,15 +1,25 @@
 import prisma from '../config/database.js';
 import { generate7DigitUserId } from '../utils/idGenerator.util.js';
 
+const standardUserInclude = {
+  profile: true,
+  wallet: true,
+  hostProfile: true,
+  coinSeller: true,
+  merchant: true,
+  userAssets: {
+    where: { isEquipped: true },
+    include: { asset: true },
+  },
+  ownedAgencies: { select: { id: true, agencyName: true, status: true } },
+  managedBDCenters: { select: { id: true, centerName: true, regionCode: true, currentTier: true } },
+};
+
 export async function findByPhone(phone, db = prisma) {
   if (!phone) return null;
   return await db.user.findUnique({
     where: { phone },
-    include: {
-      profile: true,
-      wallet: true,
-      hostProfile: true,
-    },
+    include: standardUserInclude,
   });
 }
 
@@ -17,18 +27,7 @@ export async function findById(id, db = prisma) {
   if (!id) return null;
   return await db.user.findUnique({
     where: { id },
-    include: {
-      profile: true,
-      wallet: true,
-      hostProfile: true,
-      coinSeller: true,
-      merchant: true,
-      userAssets: {
-        where: { isEquipped: true },
-        include: { asset: true },
-      },
-      ownedAgencies: { select: { id: true, agencyName: true, status: true } },
-    },
+    include: standardUserInclude,
   });
 }
 
@@ -38,10 +37,7 @@ export async function findByEmail(email, db = prisma) {
   if (!email) return null;
   return await db.user.findUnique({
     where: { email: email.trim().toLowerCase() },
-    include: {
-      profile: true,
-      wallet: true,
-    },
+    include: standardUserInclude,
   });
 }
 
@@ -49,11 +45,7 @@ export async function findByFirebaseUid(firebaseUid, db = prisma) {
   if (!firebaseUid) return null;
   return await db.user.findUnique({
     where: { firebaseUid },
-    include: {
-      profile: true,
-      wallet: true,
-      hostProfile: true,
-    },
+    include: standardUserInclude,
   });
 }
 
@@ -513,6 +505,35 @@ export async function findPublicProfileById(id, db = prisma) {
         hostType: true,
         hostLevel: true,
         hostStatus: true,
+      },
+    },
+    coinSeller: {
+      select: {
+        id: true,
+        businessName: true,
+        sellerStatus: true,
+      },
+    },
+    merchant: {
+      select: {
+        id: true,
+        companyName: true,
+        status: true,
+      },
+    },
+    managedBDCenters: {
+      select: {
+        id: true,
+        centerName: true,
+        regionCode: true,
+        currentTier: true,
+      },
+    },
+    ownedAgencies: {
+      select: {
+        id: true,
+        agencyName: true,
+        status: true,
       },
     },
   };

@@ -138,12 +138,39 @@ export const NOBLE_TIER_ASSETS = {
 
 /**
  * Normalizes input tier name to canonical upper-case noble tier.
+ * Strictly limits VIP Noble to exactly seven tiers (Baron through Emperor).
  */
 export function normalizeNobleTier(tier) {
-  if (!tier || typeof tier !== 'string') return null;
-  const upper = tier.trim().toUpperCase();
-  if (CANONICAL_NOBLE_TIERS.includes(upper)) return upper;
-  if (NOBLE_TIER_ALIASES[upper]) return NOBLE_TIER_ALIASES[upper];
+  if (!tier) return null;
+  const str = String(tier).trim().toUpperCase();
+
+  const numericMap = {
+    '1': 'BARON',
+    '2': 'VISCOUNT',
+    '3': 'COUNT',
+    '4': 'MARQUIS',
+    '5': 'DUKE',
+    '6': 'KING',
+    '7': 'EMPEROR',
+    'TIER 1': 'BARON',
+    'TIER 2': 'VISCOUNT',
+    'TIER 3': 'COUNT',
+    'TIER 4': 'MARQUIS',
+    'TIER 5': 'DUKE',
+    'TIER 6': 'KING',
+    'TIER 7': 'EMPEROR',
+    'VIP 1': 'BARON',
+    'VIP 2': 'VISCOUNT',
+    'VIP 3': 'COUNT',
+    'VIP 4': 'MARQUIS',
+    'VIP 5': 'DUKE',
+    'VIP 6': 'KING',
+    'VIP 7': 'EMPEROR',
+  };
+
+  if (numericMap[str]) return numericMap[str];
+  if (CANONICAL_NOBLE_TIERS.includes(str)) return str;
+  if (NOBLE_TIER_ALIASES[str]) return NOBLE_TIER_ALIASES[str];
   return null;
 }
 

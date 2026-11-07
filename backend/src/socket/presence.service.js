@@ -14,6 +14,8 @@ const memoryUserSockets = new Map();
 const memorySocketUser = new Map();
 // memoryUserRoom: userId -> roomId
 const memoryUserRoom = new Map();
+// memoryUserSession: userId -> { roomId, roomType, role, isHost, title, joinedAt }
+const memoryUserSession = new Map();
 // memoryUserLastSeen: userId -> ISO timestamp
 const memoryUserLastSeen = new Map();
 // memoryRoomFeedCleared: roomId -> ISO timestamp
@@ -232,6 +234,150 @@ export async function getUserActiveRoom(userId) {
   }
 
   return memoryUserRoom.get(uId) || null;
+}
+
+/**
+ * Sets the authoritative active session for a user (enforcing one active room session per account).
+ */
+export async function setUserActiveSession(userId, sessionData) {
+  if (!userId || !sessionData?.roomId) return;
+  const uId = String(userId);
+  const data = {
+    roomId: String(sessionData.roomId),
+    roomType: String(sessionData.roomType || 'AUDIO_PARTY'),
+    role: String(sessionData.role || 'VIEWER'),
+    isHost: Boolean(sessionData.isHost),
+    title: sessionData.title || null,
+    joinedAt: sessionData.joinedAt || new Date().toISOString(),
+  };
+
+  if (redisClient.isOpen) {
+    try {
+      await redisClient.set(`presence:user:${uId}:session`, JSON.stringify(data), { EX: 86400 });
+      await redisClient.set(`presence:user:${uId}:room`, data.roomId, { EX: 86400 });
+    } catch (_) {}
+  }
+
+  memoryUserSession.set(uId, data);
+  memoryUserRoom.set(uId, data.roomId);
+}
+
+/**
+ * Clears the authoritative active session for a user.
+ */
+export async function clearUserActiveSession(userId, roomId = null) {
+  if (!userId) return;
+  const uId = String(userId);
+  const sessionKey = `presence:user:${uId}:session`;
+  const roomKey = `presence:user:${uId}:room`;
+
+  if (redisClient.isOpen) {
+    try {
+      if (roomId) {
+        const raw = await redisClient.get(sessionKey);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed.roomId === String(roomId)) {
+              await redisClient.del(sessionKey);
+            }
+          } catch (_) {}
+        }
+        const currentRoom = await redisClient.get(roomKey);
+        if (currentRoom === String(roomId)) {
+          await redisClient.del(roomKey);
+        }
+      } else {
+        await redisClient.del(sessionKey);
+        await redisClient.del(roomKey);
+      }
+    } catch (_) {}
+  }
+
+  if (roomId) {
+    const cur = memoryUserSession.get(uId);
+    if (cur && cur.roomId === String(roomId)) {
+      memoryUserSession.delete(uId);
+    }
+    if (memoryUserRoom.get(uId) === String(roomId)) {
+      memoryUserRoom.delete(uId);
+    }
+  } else {
+    memoryUserSession.delete(uId);
+    memoryUserRoom.delete(uId);
+  }
+}
+
+/**
+ * Authoritatively retrieves the single valid active session for a user.
+ * Cross-references with PostgreSQL to guarantee ended rooms are not returned.
+ */
+export async function getUserActiveSession(userId, db = prisma) {
+  if (!userId) return null;
+  const uId = String(userId);
+
+  let session = null;
+  if (redisClient.isOpen) {
+    try {
+      const raw = await redisClient.get(`presence:user:${uId}:session`);
+      if (raw) {
+        session = JSON.parse(raw);
+      }
+    } catch (_) {}
+  }
+
+  if (!session) {
+    session = memoryUserSession.get(uId) || null;
+  }
+
+  // If no session found in Redis/memory, check if user is host of an active LIVE room in DB
+  if (!session && db) {
+    try {
+      const liveRoom = await db.room.findFirst({
+        where: {
+          creatorUserId: uId,
+          status: 'LIVE',
+        },
+        select: {
+          id: true,
+          roomType: true,
+          title: true,
+          status: true,
+        },
+      });
+      if (liveRoom) {
+        session = {
+          roomId: liveRoom.id,
+          roomType: liveRoom.roomType,
+          role: 'HOST',
+          isHost: true,
+          title: liveRoom.title,
+          joinedAt: new Date().toISOString(),
+        };
+        await setUserActiveSession(uId, session);
+      }
+    } catch (_) {}
+  }
+
+  // Cross-verify with database that the room is still open/LIVE
+  if (session && session.roomId && db) {
+    try {
+      const dbRoom = await db.room.findUnique({
+        where: { id: session.roomId },
+        select: { id: true, status: true, title: true, roomType: true, creatorUserId: true },
+      });
+      if (!dbRoom || dbRoom.status !== 'LIVE') {
+        // Room has ended or does not exist, clear stale session
+        await clearUserActiveSession(uId, session.roomId);
+        return null;
+      }
+      session.title = dbRoom.title;
+      session.roomType = dbRoom.roomType;
+      session.isHost = dbRoom.creatorUserId === uId;
+    } catch (_) {}
+  }
+
+  return session;
 }
 
 export async function getUserLastSeen(userId, db = prisma) {
@@ -913,6 +1059,9 @@ export default {
   setUserActiveRoom,
   clearUserActiveRoom,
   getUserActiveRoom,
+  setUserActiveSession,
+  clearUserActiveSession,
+  getUserActiveSession,
   getUserLastSeen,
   clearUserPresence,
   getUserPresence,

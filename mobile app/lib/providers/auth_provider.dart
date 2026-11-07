@@ -13,6 +13,7 @@ import '../core/repositories/social_repository.dart';
 import '../core/repositories/backend_repository.dart';
 import '../core/services/media_upload_service.dart';
 import '../core/utils/firebase_auth_errors.dart';
+import '../core/utils/wealth_level_helper.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthRepository _authRepository = AuthRepository.instance;
@@ -97,7 +98,7 @@ class AuthProvider extends ChangeNotifier {
       final user = _currentUser ?? UserModel.empty;
       final currentXp = user.wealthXp;
       final newWealthXp = currentXp + xpIncrement;
-      final newLevel = newWealthXp ~/ 10000;
+      final newLevel = WealthLevelHelper.getLevelFromSending(newWealthXp);
       _currentUser = user.copyWith(
         wealthXp: newWealthXp,
         wealthLevel: newLevel,

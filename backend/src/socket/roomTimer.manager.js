@@ -10,7 +10,7 @@ const hostAbsentTimers = new Map();
 // Map of roomId -> { timer: NodeJS.Timeout, roomType: string, startedAt: number, delayMs: number }
 const emptyRoomSleepTimers = new Map();
 
-const DEFAULT_PARTY_SLEEP_DELAY_MS = 12000; // 12 seconds (within 10-15s requirement)
+const DEFAULT_PARTY_SLEEP_DELAY_MS = 10000; // Exactly 10-second empty-room grace period
 
 export function isPartyRoomType(roomType) {
   const normalized = String(roomType || 'AUDIO_PARTY').toUpperCase();
@@ -37,13 +37,27 @@ export async function getActiveRoomParticipantCount(roomId, excludeUserId = null
 
   let occupiedSeatCount = 0;
   try {
-    const room = await roomRepository.findRoomById(roomId, db);
-    if (room && Array.isArray(room.seats)) {
-      occupiedSeatCount = room.seats.filter(
-        (s) => s.occupiedUserId && (!excludeUserId || String(s.occupiedUserId) !== String(excludeUserId))
-      ).length;
-    }
-  } catch {}
+    const seats = await prisma.roomSeat.findMany({
+      where: {
+        roomId,
+        occupiedUserId: { not: null },
+      },
+      select: { occupiedUserId: true },
+    });
+    occupiedSeatCount = seats.filter(
+      (s) => s.occupiedUserId && (!excludeUserId || String(s.occupiedUserId) !== String(excludeUserId))
+    ).length;
+  } catch {
+    try {
+      const room = await roomRepository.findRoomById(roomId, db);
+      if (room && Array.isArray(room.seats)) {
+        occupiedSeatCount = room.seats.filter((s) => {
+          const occId = s.occupiedUserId || s.occupiedUser?.id;
+          return occId && (!excludeUserId || String(occId) !== String(excludeUserId));
+        }).length;
+      }
+    } catch {}
+  }
 
   return Math.max(activePresenceCount, occupiedSeatCount);
 }

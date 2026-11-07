@@ -46,8 +46,8 @@ async function logAudit(
         action,
         targetEntity,
         targetEntityId: targetEntityId || null,
-        beforeStateJson: beforeStateJson ? JSON.parse(JSON.stringify(beforeStateJson)) : null,
-        afterStateJson: afterStateJson ? JSON.parse(JSON.stringify(afterStateJson)) : null,
+        beforeStateJson: beforeStateJson ? JSON.parse(JSON.stringify(beforeStateJson, (k, v) => typeof v === 'bigint' ? v.toString() : v)) : null,
+        afterStateJson: afterStateJson ? JSON.parse(JSON.stringify(afterStateJson, (k, v) => typeof v === 'bigint' ? v.toString() : v)) : null,
         reason: reason || null,
         ipAddress: ipAddress || '127.0.0.1',
       },
@@ -186,6 +186,228 @@ export async function getActiveRoomForUser(userId, db = prisma) {
     console.error('Error fetching active room for user:', e.message);
   }
   return null;
+}
+
+/**
+ * ISSUE 28: Separate role tags, badges, and cosmetic assets.
+ * Evaluates active server roles to return:
+ * - activeRoleTags: Horizontal tags positioned at the leading edge of the level strip next to SVIP.
+ * - badgeGallery: Circular badges positioned in the dedicated gallery below medals.
+ */
+export function resolveActiveRoleTagsAndBadges(user, activeNoble = null) {
+  if (!user) return { activeRoleTags: [], roleTags: [], badgeGallery: [] };
+
+  const activeRoleTags = [];
+  const badgeGallery = [];
+
+  // 1. Coin Seller (Requires active CoinSeller portal)
+  const hasActiveCoinSeller = Boolean(user.coinSeller && user.coinSeller.sellerStatus === 'ACTIVE');
+  if (hasActiveCoinSeller) {
+    activeRoleTags.push({
+      role: 'COIN_SELLER',
+      name: 'Coins Seller',
+      tagAsset: 'assets/roles/coins_saller_tag.webp',
+      tagUrl: '/assets/roles/coins_saller_tag.webp',
+      badgeAsset: 'assets/roles/ZP-196_coins-saller_badge.webp',
+      badgeUrl: '/assets/roles/coins_saller_tag.webp',
+      assetType: 'ROLE_TAG',
+      placement: 'PROFILE_IDENTITY_STRIP',
+      isActive: true,
+      displayPriority: 10,
+    });
+    badgeGallery.push({
+      id: 'badge_coin_seller',
+      role: 'COIN_SELLER',
+      name: 'Coins Seller Badge',
+      category: 'ROLE',
+      badgeAsset: 'assets/roles/ZP-196_coins-saller_badge.webp',
+      badgeUrl: '/assets/roles/coins_saller_tag.webp',
+      isUnlocked: true,
+      description: 'Authorized Platform Coin Seller',
+    });
+  }
+
+  // 2. Merchant (Requires active Merchant record)
+  const hasActiveMerchant = Boolean(user.merchant && user.merchant.status === 'ACTIVE');
+  if (hasActiveMerchant) {
+    activeRoleTags.push({
+      role: 'MERCHANT',
+      name: 'Merchant',
+      tagAsset: 'assets/roles/official_tag.webp',
+      tagUrl: '/assets/roles/official_tag.webp',
+      badgeAsset: 'assets/roles/ZP-213_marchent_badge.webp',
+      badgeUrl: '/assets/roles/ZP-213_marchent_badge.webp',
+      assetType: 'ROLE_TAG',
+      placement: 'PROFILE_IDENTITY_STRIP',
+      isActive: true,
+      displayPriority: 20,
+    });
+    badgeGallery.push({
+      id: 'badge_merchant',
+      role: 'MERCHANT',
+      name: 'Merchant Badge',
+      category: 'ROLE',
+      badgeAsset: 'assets/roles/ZP-213_marchent_badge.webp',
+      badgeUrl: '/assets/roles/ZP-213_marchent_badge.webp',
+      isUnlocked: true,
+      description: 'Authorized Platform Commercial Merchant',
+    });
+  }
+
+  // 3. BD (Business Developer) (Requires active BD Center or BD_AGENT role)
+  const hasActiveBD = Boolean(
+    (user.managedBDCenters && user.managedBDCenters.length > 0) ||
+    user.userType === 'BD_AGENT' ||
+    user.roles?.includes('BD') ||
+    user.roles?.includes('BD_AGENT')
+  );
+  if (hasActiveBD) {
+    activeRoleTags.push({
+      role: 'BD',
+      name: 'Business Developer',
+      tagAsset: 'assets/roles/bd_tag.webp',
+      tagUrl: '/assets/roles/bd_tag.webp',
+      badgeAsset: 'assets/roles/ZP-188_bd_badge.webp',
+      badgeUrl: '/assets/roles/ZP-188_bd_badge.webp',
+      assetType: 'ROLE_TAG',
+      placement: 'PROFILE_IDENTITY_STRIP',
+      isActive: true,
+      displayPriority: 30,
+    });
+    badgeGallery.push({
+      id: 'badge_bd',
+      role: 'BD',
+      name: 'BD Agent Badge',
+      category: 'ROLE',
+      badgeAsset: 'assets/roles/ZP-188_bd_badge.webp',
+      badgeUrl: '/assets/roles/ZP-188_bd_badge.webp',
+      isUnlocked: true,
+      description: 'Business Development Operation Center Lead',
+    });
+  }
+
+  // 4. Agency Owner (Requires active Agency ownership)
+  const hasActiveAgency = Boolean(
+    user.ownedAgencies &&
+    user.ownedAgencies.length > 0 &&
+    user.ownedAgencies.some((a) => !a.status || a.status === 'ACTIVE')
+  );
+  if (hasActiveAgency) {
+    activeRoleTags.push({
+      role: 'AGENCY_OWNER',
+      name: 'Agency Owner',
+      tagAsset: 'assets/roles/agency_tag.webp',
+      tagUrl: '/assets/roles/agency_tag.webp',
+      badgeAsset: 'assets/roles/ZP-182_agency_badge.webp',
+      badgeUrl: '/assets/roles/ZP-182_agency_badge.webp',
+      assetType: 'ROLE_TAG',
+      placement: 'PROFILE_IDENTITY_STRIP',
+      isActive: true,
+      displayPriority: 40,
+    });
+    badgeGallery.push({
+      id: 'badge_agency',
+      role: 'AGENCY_OWNER',
+      name: 'Agency Badge',
+      category: 'ROLE',
+      badgeAsset: 'assets/roles/ZP-182_agency_badge.webp',
+      badgeUrl: '/assets/roles/ZP-182_agency_badge.webp',
+      isUnlocked: true,
+      description: 'Authorized Talent Agency Lead',
+    });
+  }
+
+  // 5. Host (Requires active Host profile)
+  const hasActiveHost = Boolean(user.hostProfile && user.hostProfile.hostStatus === 'ACTIVE');
+  if (hasActiveHost) {
+    activeRoleTags.push({
+      role: 'HOST',
+      name: 'Official Host',
+      tagAsset: 'assets/roles/host_badge.webp',
+      tagUrl: '/assets/roles/host_badge.webp',
+      badgeAsset: 'assets/roles/ZP-205_host_badge.webp',
+      badgeUrl: '/assets/roles/ZP-205_host_badge.webp',
+      assetType: 'ROLE_TAG',
+      placement: 'PROFILE_IDENTITY_STRIP',
+      isActive: true,
+      displayPriority: 50,
+    });
+    badgeGallery.push({
+      id: 'badge_host',
+      role: 'HOST',
+      name: 'Live Host Badge',
+      category: 'ROLE',
+      badgeAsset: 'assets/roles/ZP-205_host_badge.webp',
+      badgeUrl: '/assets/roles/ZP-205_host_badge.webp',
+      isUnlocked: true,
+      description: 'Contracted Official Live Streamer',
+    });
+  }
+
+  // 6. Admin / Official
+  const isAdmin = user.userType === 'ADMIN' || user.userType === 'SUPER_ADMIN' || user.role === 'ADMIN' || user.role === 'SUPER_ADMIN';
+  if (isAdmin) {
+    activeRoleTags.push({
+      role: 'ADMIN',
+      name: 'Official Admin',
+      tagAsset: 'assets/roles/super_admin_tag.webp',
+      tagUrl: '/assets/roles/super_admin_tag.webp',
+      badgeAsset: 'assets/roles/ZP-179_admin_badge.webp',
+      badgeUrl: '/assets/roles/ZP-179_admin_badge.webp',
+      assetType: 'ROLE_TAG',
+      placement: 'PROFILE_IDENTITY_STRIP',
+      isActive: true,
+      displayPriority: 5,
+    });
+    badgeGallery.push({
+      id: 'badge_admin',
+      role: 'ADMIN',
+      name: 'Platform Official Badge',
+      category: 'ROLE',
+      badgeAsset: 'assets/roles/ZP-179_admin_badge.webp',
+      badgeUrl: '/assets/roles/ZP-179_admin_badge.webp',
+      isUnlocked: true,
+      description: 'ZeParty Official Platform Administration',
+    });
+  }
+
+  // SVIP in Badge Gallery
+  const svipLevel = user.profile?.svipLevel || 0;
+  if (svipLevel > 0) {
+    badgeGallery.push({
+      id: `badge_svip_${svipLevel}`,
+      role: 'SVIP',
+      name: `SVIP ${svipLevel} Badge`,
+      category: 'VIP',
+      badgeAsset: `assets/svip/svip${svipLevel}_badge.png`,
+      badgeUrl: `/assets/svip/svip${svipLevel}_badge.png`,
+      isUnlocked: true,
+      description: `Privileged VIP Member Tier SVIP ${svipLevel}`,
+    });
+  }
+
+  // Noble in Badge Gallery
+  if (activeNoble && activeNoble.nobleRank && activeNoble.nobleRank !== 'NONE') {
+    const tier = activeNoble.nobleRank.toLowerCase();
+    badgeGallery.push({
+      id: `badge_noble_${tier}`,
+      role: 'NOBLE',
+      name: `${activeNoble.nobleTitle || activeNoble.nobleRank} Badge`,
+      category: 'NOBLE',
+      badgeAsset: `assets/nobles/${tier}_badge.webp`,
+      badgeUrl: `/assets/nobles/${tier}_badge.webp`,
+      isUnlocked: true,
+      description: `Aristocratic Peerage: ${activeNoble.nobleTitle || activeNoble.nobleRank}`,
+    });
+  }
+
+  activeRoleTags.sort((a, b) => a.displayPriority - b.displayPriority);
+
+  return {
+    activeRoleTags,
+    roleTags: activeRoleTags,
+    badgeGallery,
+  };
 }
 
 export async function getSelfProfile(userId, db = prisma) {
@@ -345,16 +567,49 @@ export async function getSelfProfile(userId, db = prisma) {
   const sellerBalanceStr = (user.coinSeller?.resellerBalanceCoins ?? user.wallet?.sellerBalanceCoins ?? 0n).toString();
 
   // Multi-role resolution: ensure Host, Owner, Merchant, Agency Owner, BD, and Seller coexist
+  const hasActiveMerchant = Boolean(user.merchant && user.merchant.status === 'ACTIVE');
+  const hasActiveBD = Boolean((user.managedBDCenters && user.managedBDCenters.length > 0) || user.userType === 'BD_AGENT');
+  const bdCenter = (user.managedBDCenters && user.managedBDCenters.length > 0) ? user.managedBDCenters[0] : null;
+
   const userRoles = ['USER'];
   if (isHost) userRoles.push('HOST');
   if (isSeller) {
     userRoles.push('SELLER');
     userRoles.push('COIN_SELLER');
   }
-  if (user.merchant && user.merchant.status === 'ACTIVE') userRoles.push('MERCHANT');
+  if (hasActiveMerchant) userRoles.push('MERCHANT');
+  if (hasActiveBD) {
+    userRoles.push('BD');
+    userRoles.push('BD_AGENT');
+  }
   if (user.ownedAgencies && user.ownedAgencies.length > 0) userRoles.push('AGENCY_OWNER');
-  if (user.userType && user.userType !== 'COIN_SELLER' && user.userType !== 'HOST' && !userRoles.includes(user.userType)) userRoles.push(user.userType);
+  if (user.userType && !['COIN_SELLER', 'HOST', 'USER'].includes(user.userType) && !userRoles.includes(user.userType)) {
+    userRoles.push(user.userType);
+  }
   const roles = Array.from(new Set(userRoles));
+
+  const merchantData = user.merchant ? {
+    id: user.merchant.id,
+    userId: user.merchant.userId,
+    companyName: user.merchant.companyName,
+    status: user.merchant.status,
+    isActive: user.merchant.status === 'ACTIVE',
+    allocationBalanceCoins: user.merchant.allocationBalanceCoins ? user.merchant.allocationBalanceCoins.toString() : '0',
+    totalAllocatedCoins: user.merchant.totalAllocatedCoins ? user.merchant.totalAllocatedCoins.toString() : '0',
+    totalRechargedCoins: user.merchant.totalRechargedCoins ? user.merchant.totalRechargedCoins.toString() : '0',
+    totalRechargeUsd: user.merchant.totalRechargeUsd ? user.merchant.totalRechargeUsd.toString() : '0.00',
+    totalSalesUsd: user.merchant.totalSalesUsd ? user.merchant.totalSalesUsd.toString() : '0.00',
+    allocatedCoins: user.merchant.allocatedCoins ? user.merchant.allocatedCoins.toString() : '0',
+    rechargeCount: user.merchant.rechargeCount || 0,
+    country: user.merchant.country || user.countryCode,
+    countryCode: user.merchant.countryCode || user.countryCode,
+    currencyCode: user.merchant.currencyCode || 'USD',
+    profitMarginPercent: user.merchant.profitMarginPercent != null ? Number(user.merchant.profitMarginPercent) : 20,
+    minTargetUSD: user.merchant.minTargetUSD != null ? Number(user.merchant.minTargetUSD) : 1000,
+    allocationPriceUSD: user.merchant.allocationPriceUSD != null ? Number(user.merchant.allocationPriceUSD) : 3000,
+    createdAt: user.merchant.createdAt,
+    updatedAt: user.merchant.updatedAt,
+  } : null;
 
   const coinSellerData = user.coinSeller ? {
     id: user.coinSeller.id,
@@ -379,6 +634,7 @@ export async function getSelfProfile(userId, db = prisma) {
   const selfIsVip = Boolean(selfSvipLevel > 0 || selfVipLevel > 0);
   const selfSvipTag = selfSvipLevel > 0 ? ('assets/svip/svip' + selfSvipLevel + '_tag.png') : null;
   const selfVipDisplay = selfSvipLevel > 0 ? ('SVIP ' + selfSvipLevel) : (selfVipLevel > 0 ? ('VIP ' + selfVipLevel) : '0');
+  const { activeRoleTags, roleTags, badgeGallery } = resolveActiveRoleTagsAndBadges(user, activeNobleSelf);
   if (profileWithPresence) {
     profileWithPresence.nobleRank = selfNobleRank;
     profileWithPresence.nobleTitle = selfNobleRank;
@@ -391,6 +647,20 @@ export async function getSelfProfile(userId, db = prisma) {
     profileWithPresence.vipLevel = selfVipDisplay;
     profileWithPresence.isVip = selfIsVip;
     profileWithPresence.svipTag = selfSvipTag;
+    profileWithPresence.activeRoleTags = activeRoleTags;
+    profileWithPresence.roleTags = roleTags;
+    profileWithPresence.badgeGallery = badgeGallery;
+    profileWithPresence.levels = {
+      wealth: wealthLvl,
+      wealthLevel: wealthLvl,
+      wealthXp: wealthXpNum,
+      charm: charmLvl,
+      charmLevel: charmLvl,
+      charmXp: charmXpNum,
+      game: 1,
+      gameLevel: 1,
+      overall: wealthLvl,
+    };
   }
 
   return {
@@ -406,6 +676,20 @@ export async function getSelfProfile(userId, db = prisma) {
     joinedRoomsCount: roomCount,
     publicId,
     zePartyId: publicId,
+    activeRoleTags,
+    roleTags,
+    badgeGallery,
+    levels: {
+      wealth: wealthLvl,
+      wealthLevel: wealthLvl,
+      wealthXp: wealthXpNum,
+      charm: charmLvl,
+      charmLevel: charmLvl,
+      charmXp: charmXpNum,
+      game: 1,
+      gameLevel: 1,
+      overall: wealthLvl,
+    },
     nobleRank: selfNobleRank,
     nobleTitle: selfNobleRank,
     nobleLevel: selfNobleRank,
@@ -441,6 +725,24 @@ export async function getSelfProfile(userId, db = prisma) {
     sellerBalance: sellerBalanceNum,
     sellerBalanceCoins: sellerBalanceStr,
     coinSeller: coinSellerData,
+    isMerchant: hasActiveMerchant,
+    hasMerchantPortal: hasActiveMerchant,
+    merchantStatus: user.merchant ? user.merchant.status : null,
+    merchantId: user.merchant ? user.merchant.id : null,
+    merchant: merchantData,
+    isBd: hasActiveBD,
+    hasBdCenter: hasActiveBD,
+    bdStatus: hasActiveBD ? 'ACTIVE' : null,
+    bdCenterId: bdCenter ? bdCenter.id : null,
+    bdCenter: bdCenter ? {
+      id: bdCenter.id,
+      name: bdCenter.centerName,
+      centerName: bdCenter.centerName,
+      country: bdCenter.regionCode || bdCenter.country || 'PK',
+      regionCode: bdCenter.regionCode || 'PK',
+      status: 'ACTIVE',
+      currentTier: bdCenter.currentTier || 'BRONZE',
+    } : null,
     gender: user.gender || 'Not Specified',
     dob: user.dob || null,
     dateOfBirth: user.dob || null,
@@ -571,6 +873,27 @@ export async function getPublicProfile(userId, db = prisma) {
     ? 'approved'
     : (publicUser.hostProfile?.hostStatus?.toLowerCase() || 'none');
 
+  const hasActivePubMerchant = Boolean(publicUser.merchant && publicUser.merchant.status === 'ACTIVE');
+  const hasActivePubBD = Boolean((publicUser.managedBDCenters && publicUser.managedBDCenters.length > 0) || publicUser.userType === 'BD_AGENT');
+  const hasActivePubSeller = Boolean(publicUser.coinSeller && publicUser.coinSeller.sellerStatus === 'ACTIVE');
+  const pubBDCenter = (publicUser.managedBDCenters && publicUser.managedBDCenters.length > 0) ? publicUser.managedBDCenters[0] : null;
+
+  const pubUserRoles = ['USER'];
+  if (isHost) pubUserRoles.push('HOST');
+  if (hasActivePubSeller) {
+    pubUserRoles.push('SELLER');
+    pubUserRoles.push('COIN_SELLER');
+  }
+  if (hasActivePubMerchant) pubUserRoles.push('MERCHANT');
+  if (hasActivePubBD) {
+    pubUserRoles.push('BD');
+    pubUserRoles.push('BD_AGENT');
+  }
+  if (publicUser.userType && !['COIN_SELLER', 'HOST', 'USER'].includes(publicUser.userType) && !pubUserRoles.includes(publicUser.userType)) {
+    pubUserRoles.push(publicUser.userType);
+  }
+  const pubRoles = Array.from(new Set(pubUserRoles));
+
   const presence = await presenceService.getUserPresence(userId, db);
 
   const isOnline = Boolean(presence.isOnline);
@@ -643,6 +966,7 @@ export async function getPublicProfile(userId, db = prisma) {
   const pubIsVip = Boolean(pubSvipLevel > 0 || pubVipLevel > 0);
   const pubSvipTag = pubSvipLevel > 0 ? ('assets/svip/svip' + pubSvipLevel + '_tag.png') : null;
   const pubVipDisplay = pubSvipLevel > 0 ? ('SVIP ' + pubSvipLevel) : (pubVipLevel > 0 ? ('VIP ' + pubVipLevel) : '0');
+  const { activeRoleTags, roleTags, badgeGallery } = resolveActiveRoleTagsAndBadges(publicUser, activeNoblePub);
   if (profileWithPresence) {
     profileWithPresence.nobleRank = pubNobleRank;
     profileWithPresence.nobleTitle = pubNobleRank;
@@ -655,10 +979,16 @@ export async function getPublicProfile(userId, db = prisma) {
     profileWithPresence.vipLevel = pubVipDisplay;
     profileWithPresence.isVip = pubIsVip;
     profileWithPresence.svipTag = pubSvipTag;
+    profileWithPresence.activeRoleTags = activeRoleTags;
+    profileWithPresence.roleTags = roleTags;
+    profileWithPresence.badgeGallery = badgeGallery;
   }
 
   return {
     ...publicUser,
+    activeRoleTags,
+    roleTags,
+    badgeGallery,
     followersCount,
     followingCount,
     visitorsCount,
@@ -733,6 +1063,32 @@ export async function getPublicProfile(userId, db = prisma) {
     charmLevel: pubCharmLvl,
     charmXp: pubCharmXpNum,
     level: pubWealthLvl,
+    roles: pubRoles,
+    isSeller: hasActivePubSeller,
+    isCoinsSeller: hasActivePubSeller,
+    hasSellerPortal: hasActivePubSeller,
+    sellerStatus: publicUser.coinSeller ? publicUser.coinSeller.sellerStatus : null,
+    isMerchant: hasActivePubMerchant,
+    hasMerchantPortal: hasActivePubMerchant,
+    merchantStatus: publicUser.merchant ? publicUser.merchant.status : null,
+    merchant: publicUser.merchant ? {
+      id: publicUser.merchant.id,
+      companyName: publicUser.merchant.companyName,
+      status: publicUser.merchant.status,
+      isActive: publicUser.merchant.status === 'ACTIVE',
+    } : null,
+    isBd: hasActivePubBD,
+    hasBdCenter: hasActivePubBD,
+    bdStatus: hasActivePubBD ? 'ACTIVE' : null,
+    bdCenter: pubBDCenter ? {
+      id: pubBDCenter.id,
+      name: pubBDCenter.centerName,
+      centerName: pubBDCenter.centerName,
+      country: pubBDCenter.regionCode || pubBDCenter.country || 'PK',
+      regionCode: pubBDCenter.regionCode || 'PK',
+      status: 'ACTIVE',
+      currentTier: pubBDCenter.currentTier || 'BRONZE',
+    } : null,
   };
 }
 
@@ -1120,20 +1476,27 @@ export async function changeUserCountryByAdmin(
 }
 
 export async function verifyUserForUniqueGrant(targetQuery, db = prisma) {
-  if (!targetQuery || !targetQuery.trim()) {
+  if (!targetQuery || !String(targetQuery).trim()) {
     const error = new Error('User ID, username, or display ID is required');
     error.statusCode = 400;
     error.code = 'INVALID_USER_IDENTIFIER';
     throw error;
   }
 
-  const trimmed = targetQuery.trim();
+  const trimmed = String(targetQuery).trim();
+  const cleanUsername = trimmed.startsWith('@') ? trimmed.slice(1).trim() : trimmed;
+
   const user = await db.user.findFirst({
     where: {
+      status: { not: 'DELETED' },
+      deletedAt: null,
       OR: [
         { id: trimmed },
-        { username: trimmed },
-        { email: trimmed },
+        { id: cleanUsername },
+        { username: { equals: trimmed, mode: 'insensitive' } },
+        { username: { equals: cleanUsername, mode: 'insensitive' } },
+        { email: { equals: trimmed, mode: 'insensitive' } },
+        { phone: trimmed },
       ],
     },
     include: {
@@ -1161,6 +1524,7 @@ export async function verifyUserForUniqueGrant(targetQuery, db = prisma) {
     id: user.id,
     username: user.username,
     nickname: user.profile?.displayName || user.username,
+    displayName: user.profile?.displayName || user.username,
     avatarUrl: user.avatarUrl,
     countryCode: user.countryCode,
     status: user.status,
@@ -1297,6 +1661,16 @@ export async function grantUniqueItemToUser(
       }
     }
 
+    let userAsset = null;
+    const existingActiveAsset = await db.userAsset.findFirst({
+      where: {
+        userId,
+        assetId: targetAsset.id,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { expiresAt: 'desc' },
+    });
+
     if (replaceExisting) {
       await db.userAsset.deleteMany({
         where: {
@@ -1304,22 +1678,56 @@ export async function grantUniqueItemToUser(
           assetId: targetAsset.id,
         },
       });
-    }
+      userAsset = await db.userAsset.create({
+        data: {
+          userId,
+          assetId: targetAsset.id,
+          isEquipped: true,
+          expiresAt: calculatedExpiry,
+        },
+        include: {
+          asset: true,
+        },
+      });
+    } else if (existingActiveAsset) {
+      // Safe extension without duplicate rows or accidental reduction
+      let durationMs = 30 * 24 * 60 * 60 * 1000;
+      if (duration && duration !== 'PERMANENT') {
+        const dNum = Number(duration);
+        if (!isNaN(dNum)) durationMs = dNum * 24 * 60 * 60 * 1000;
+      } else if (duration === 'PERMANENT') {
+        durationMs = 100 * 365 * 24 * 60 * 60 * 1000;
+      }
+      const baseTime = Math.max(Date.now(), existingActiveAsset.expiresAt.getTime());
+      const extendedExpiry = new Date(baseTime + durationMs);
 
-    const userAsset = await db.userAsset.create({
-      data: {
-        userId,
-        assetId: targetAsset.id,
-        isEquipped: true,
-        expiresAt: calculatedExpiry,
-      },
-      include: {
-        asset: true,
-      },
-    });
+      userAsset = await db.userAsset.update({
+        where: { id: existingActiveAsset.id },
+        data: {
+          expiresAt: extendedExpiry,
+          isEquipped: true,
+        },
+        include: {
+          asset: true,
+        },
+      });
+    } else {
+      userAsset = await db.userAsset.create({
+        data: {
+          userId,
+          assetId: targetAsset.id,
+          isEquipped: true,
+          expiresAt: calculatedExpiry,
+        },
+        include: {
+          asset: true,
+        },
+      });
+    }
 
     grantedDetails.userAssetId = userAsset.id;
     grantedDetails.asset = userAsset.asset;
+    grantedDetails.expiresAt = userAsset.expiresAt;
   }
 
   await logAudit(
@@ -1569,6 +1977,7 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
   const activeNobleCard = await nobleService.getActiveNoble(targetUserId, { checkExpiry: true }, db);
   const nobleStyle = activeNobleCard ? activeNobleCard.style : null;
   const cardNobleRank = activeNobleCard ? activeNobleCard.nobleRank : null;
+  const { activeRoleTags, roleTags, badgeGallery } = resolveActiveRoleTagsAndBadges(user, activeNobleCard);
 
   return {
     id: user.id,
@@ -1582,6 +1991,9 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
     dob: user.dob || null,
     dateOfBirth: user.dob || null,
     countryCode: user.countryCode || 'GLOBAL',
+    activeRoleTags,
+    roleTags,
+    badgeGallery,
     level: effectiveWealthLevel,
     wealthLevel: effectiveWealthLevel,
     effectiveWealthLevel,
@@ -1608,6 +2020,9 @@ export async function getRoomUserProfileCard(targetUserId, viewerUserId, db = pr
       avatarFrame: equippedFrame,
       equippedFrame: equippedFrame,
       country: user.countryCode || 'GLOBAL',
+      activeRoleTags,
+      roleTags,
+      badgeGallery,
       gender: user.gender || 'Not Specified',
       dob: user.dob || null,
       dateOfBirth: user.dob || null,
@@ -2584,11 +2999,11 @@ export async function assignUserParentBOByAdmin(
 
 export async function grantUserPropByAdmin(
   userId,
-  { propType, itemType, propId, itemId, propName, itemName, duration = 'PERMANENT', durationDays, vipLevel = 1, iconUrl, reason },
+  { category, propType, itemType, propId, itemId, propName, itemName, duration = 'PERMANENT', durationDays, vipLevel = 1, iconUrl, reason, replaceExisting },
   { adminId, adminName, ipAddress },
   db = prisma
 ) {
-  const effectiveType = propType || itemType || 'SPECIAL';
+  const effectiveType = category || propType || itemType || 'SPECIAL';
   const effectiveId = propId || itemId || `${effectiveType.toLowerCase()}_${Date.now()}`;
   const effectiveName = propName || itemName || `${effectiveType} Special Grant`;
   const effectiveDuration = durationDays !== undefined ? durationDays : duration;
@@ -2602,6 +3017,7 @@ export async function grantUserPropByAdmin(
       duration: effectiveDuration,
       iconUrl,
       reason,
+      replaceExisting,
       adminId,
       adminName,
       ipAddress,
@@ -3797,26 +4213,33 @@ export async function grantNobleTitleToUser(
   { adminId, adminName, ipAddress } = {},
   db = prisma
 ) {
+  if (!reason || !String(reason).trim()) {
+    const error = new Error('A valid reason is required for manual noble title grant');
+    error.statusCode = 400;
+    error.code = 'REASON_REQUIRED';
+    throw error;
+  }
+
   const targetUser = await db.user.findUnique({
     where: { id: userId },
     include: { profile: true },
   });
 
-  if (!targetUser) {
+  if (!targetUser || targetUser.status === 'DELETED') {
     const error = new Error('Target user not found');
     error.statusCode = 404;
     error.code = 'USER_NOT_FOUND';
     throw error;
   }
 
-  // Issue 13: Single active noble enforcement through nobleService
+  // Issue 13 & 26: Single active noble enforcement through nobleService (strictly 7 tiers)
   const activated = await nobleService.activateNobleTier(
     userId,
     {
       nobleTier: nobleTitle,
-      durationDays,
+      durationDays: Number(durationDays) || 30,
       grantType: 'ADMIN_GRANT',
-      grantReason: reason || `Admin granted noble title "${nobleTitle}"`,
+      grantReason: String(reason).trim(),
       grantedBy: adminId || 'admin',
     },
     db
@@ -3831,6 +4254,95 @@ export async function grantNobleTitleToUser(
       id: targetUser.id,
       username: targetUser.username,
       nobleRank: activated.nobleRank,
+      svipLevel: targetUser.profile?.svipLevel || 0,
+      vipLevel: targetUser.profile?.vipLevel || 0,
+    },
+  };
+}
+
+/**
+ * Issue 26: Grant SVIP tier (1-16) to user directly from Admin Panel
+ * Independent of Noble title. SVIP 0 revokes SVIP status.
+ */
+export async function grantSVIPToUser(
+  userId,
+  { svipLevel, durationDays = 30, reason },
+  { adminId, adminName, ipAddress } = {},
+  db = prisma
+) {
+  if (!userId) {
+    const error = new Error('User ID is required');
+    error.statusCode = 400;
+    error.code = 'INVALID_USER_ID';
+    throw error;
+  }
+
+  if (reason === undefined || reason === null || !String(reason).trim()) {
+    const error = new Error('A valid reason is required for manual SVIP grant');
+    error.statusCode = 400;
+    error.code = 'REASON_REQUIRED';
+    throw error;
+  }
+
+  const parsedLevel = parseInt(svipLevel, 10);
+  if (isNaN(parsedLevel) || parsedLevel < 0 || parsedLevel > 16) {
+    const error = new Error('Invalid SVIP level. SVIP level must be an integer between 0 and 16.');
+    error.statusCode = 400;
+    error.code = 'INVALID_SVIP_LEVEL';
+    throw error;
+  }
+
+  const targetUser = await db.user.findUnique({
+    where: { id: userId },
+    include: { profile: true },
+  });
+
+  if (!targetUser || targetUser.status === 'DELETED') {
+    const error = new Error('Target user not found');
+    error.statusCode = 404;
+    error.code = 'USER_NOT_FOUND';
+    throw error;
+  }
+
+  const previousSvipLevel = targetUser.profile?.svipLevel || 0;
+
+  // Update UserProfile.svipLevel without modifying nobleRank
+  const updatedProfile = await db.userProfile.upsert({
+    where: { userId },
+    update: {
+      svipLevel: parsedLevel,
+    },
+    create: {
+      userId,
+      svipLevel: parsedLevel,
+    },
+  });
+
+  // Safe Audit log
+  await logAudit({
+    adminId,
+    adminName,
+    action: parsedLevel === 0 ? 'REVOKE_SVIP' : 'GRANT_SVIP',
+    targetEntity: 'UserProfile',
+    targetEntityId: userId,
+    beforeStateJson: { svipLevel: previousSvipLevel, nobleRank: targetUser.profile?.nobleRank },
+    afterStateJson: { svipLevel: parsedLevel, nobleRank: targetUser.profile?.nobleRank },
+    reason: String(reason).trim(),
+    ipAddress,
+  }, db);
+
+  return {
+    success: true,
+    svipLevel: updatedProfile.svipLevel,
+    message: parsedLevel === 0
+      ? `SVIP status revoked successfully for @${targetUser.username}.`
+      : `SVIP Level ${parsedLevel} granted successfully to @${targetUser.username}.`,
+    user: {
+      id: targetUser.id,
+      username: targetUser.username,
+      svipLevel: updatedProfile.svipLevel,
+      nobleRank: targetUser.profile?.nobleRank || null,
+      vipLevel: targetUser.profile?.vipLevel || 0,
     },
   };
 }
@@ -3909,7 +4421,9 @@ export default {
   assignSpecialIdToUser,
   getNoblesCatalog,
   grantNobleTitleToUser,
+  grantSVIPToUser,
   reconcileUserWealthXP,
+  resolveActiveRoleTagsAndBadges,
 };
 
 
