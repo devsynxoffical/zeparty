@@ -9,6 +9,7 @@ class LiveGiftEventModel {
   final String giftIcon;
   final String? iconUrl;
   final String? animationUrl;
+  final String? soundUrl;
   final GiftAnimationLevel animationLevel;
   final int giftValue;
   final int quantity;
@@ -29,6 +30,7 @@ class LiveGiftEventModel {
     required this.giftIcon,
     this.iconUrl,
     this.animationUrl,
+    this.soundUrl,
     required this.animationLevel,
     required this.giftValue,
     this.quantity = 1,
@@ -52,6 +54,7 @@ class LiveGiftEventModel {
     String? giftIcon,
     String? iconUrl,
     String? animationUrl,
+    String? soundUrl,
     GiftAnimationLevel? animationLevel,
     int? giftValue,
     int? quantity,
@@ -72,6 +75,7 @@ class LiveGiftEventModel {
       giftIcon: giftIcon ?? this.giftIcon,
       iconUrl: iconUrl ?? this.iconUrl,
       animationUrl: animationUrl ?? this.animationUrl,
+      soundUrl: soundUrl ?? this.soundUrl,
       animationLevel: animationLevel ?? this.animationLevel,
       giftValue: giftValue ?? this.giftValue,
       quantity: quantity ?? this.quantity,
@@ -95,6 +99,7 @@ class LiveGiftEventModel {
       'giftIcon': giftIcon,
       'iconUrl': iconUrl,
       'animationUrl': animationUrl,
+      'soundUrl': soundUrl,
       'animationLevel': animationLevel.name,
       'giftValue': giftValue,
       'quantity': quantity,
@@ -118,6 +123,7 @@ class LiveGiftEventModel {
       giftIcon: map['giftIcon'] as String? ?? '🎁',
       iconUrl: map['iconUrl'] as String?,
       animationUrl: map['animationUrl'] as String?,
+      soundUrl: map['soundUrl'] as String?,
       animationLevel: GiftAnimationLevel.values.firstWhere(
         (e) => e.name == (map['animationLevel'] as String? ?? 'basic'),
         orElse: () => GiftAnimationLevel.basic,
@@ -170,6 +176,11 @@ class LiveGiftEventModel {
       }
     }
 
+    final soundUrl = catalogGift?.soundAsset ??
+        giftObj['soundUrl']?.toString() ??
+        giftObj['soundAsset']?.toString() ??
+        json['soundUrl']?.toString();
+
     return LiveGiftEventModel(
       eventId: json['transactionId']?.toString() ?? json['id']?.toString() ?? 'tx_${DateTime.now().millisecondsSinceEpoch}',
       giftId: catalogGift?.id ?? rawGiftId,
@@ -177,6 +188,7 @@ class LiveGiftEventModel {
       giftIcon: giftIcon,
       iconUrl: iconUrl,
       animationUrl: animUrl,
+      soundUrl: soundUrl,
       animationLevel: animLevel,
       giftValue: unitCoins > 0 ? unitCoins : catalogPrice,
       quantity: qty,

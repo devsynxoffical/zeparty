@@ -15,8 +15,24 @@ import 'bd_invite_agent_screen.dart';
 import 'bd_agent_list_screen.dart';
 import 'bd_salary_screen.dart';
 
-class BDCenterDashboardScreen extends StatelessWidget {
+class BDCenterDashboardScreen extends StatefulWidget {
   const BDCenterDashboardScreen({super.key});
+
+  @override
+  State<BDCenterDashboardScreen> createState() => _BDCenterDashboardScreenState();
+}
+
+class _BDCenterDashboardScreenState extends State<BDCenterDashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<BDCenterProvider>().fetchBDDashboard();
+        context.read<BDCenterProvider>().fetchAgents();
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

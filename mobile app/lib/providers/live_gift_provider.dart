@@ -5,6 +5,7 @@ import '../models/live_gift_event_model.dart';
 import '../models/user_model.dart';
 import '../core/repositories/gift_repository.dart';
 import '../core/services/api_client.dart';
+import '../core/services/audio_service.dart';
 import '../core/services/socket_service.dart';
 import '../core/utils/performance_utils.dart';
 import 'auth_provider.dart';
@@ -336,6 +337,7 @@ class LiveGiftProvider extends ChangeNotifier {
         giftIcon: gift.icon,
         iconUrl: gift.iconUrl,
         animationUrl: gift.svgaAssetUrl,
+        soundUrl: gift.soundAsset,
         animationLevel: gift.animationLevel,
         giftValue: gift.priceCoins > 0 ? gift.priceCoins : gift.diamondPrice,
         quantity: quantity,
@@ -394,6 +396,9 @@ class LiveGiftProvider extends ChangeNotifier {
     }
 
     _currentActiveEvent = _eventQueue.removeAt(0);
+    if (_currentActiveEvent?.soundUrl != null && _currentActiveEvent!.soundUrl!.isNotEmpty) {
+      AudioService().playGiftSound(_currentActiveEvent!.soundUrl);
+    }
     notifyListeners();
   }
 

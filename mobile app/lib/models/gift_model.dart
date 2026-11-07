@@ -265,7 +265,7 @@ class GiftModel {
       animationLevel: animLevel,
       animationEffect: json['animationEffect'] as String? ?? 'sparkle',
       supportsCombo: json['supportsCombo'] as bool? ?? true,
-      soundAsset: json['soundAsset'] as String?,
+      soundAsset: json['soundAsset'] as String? ?? json['soundUrl'] as String? ?? json['audioUrl'] as String?,
       label: json['label'] as String?,
       isLuckyGift: json['isLuckyGift'] as bool? ?? (backendCat == 'AUDIO' || displayCategory == 'Lucky Gift'),
       luckyBadge: json['luckyBadge'] as String?,

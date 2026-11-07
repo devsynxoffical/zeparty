@@ -90,9 +90,12 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
           ? Map<String, dynamic>.from(data['entryEffect'] as Map)
           : ((data['equippedRide'] is Map) ? Map<String, dynamic>.from(data['equippedRide'] as Map) : null);
       final dedupKey = data['dedupKey']?.toString() ?? data['eventId']?.toString() ?? data['entryEventId']?.toString();
+      final bool suppressAnimation = data['suppressAnimation'] == true ||
+          data['isDebouncedReconnect'] == true;
 
       // If user is VIP, Noble, or has equipped an Entry Effect / Ride
       if (isVip || (nobleLevel != null && nobleLevel.isNotEmpty) || (vipLevel != null && vipLevel.isNotEmpty) || entryEffect != null) {
+        if (suppressAnimation) return;
         final entrant = UserModel(
           id: userId,
           username: userObj['username']?.toString() ?? displayName,
@@ -102,9 +105,16 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
           vipLevel: vipLevel ?? 'None',
           isVip: isVip,
         );
-        SvipEntryManager().showEntry(entrant, entryEffect: entryEffect, dedupKey: dedupKey);
+        SvipEntryManager().showEntry(
+          entrant,
+          entryEffect: entryEffect,
+          dedupKey: dedupKey,
+          suppressAnimation: suppressAnimation,
+        );
         return;
       }
+
+      if (suppressAnimation) return;
 
       _queueJoin({
         'userId': userId,

@@ -29,6 +29,8 @@ class AuthProvider extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _banSubscription;
   StreamSubscription<Map<String, dynamic>>? _restrictionSubscription;
   StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
+  StreamSubscription<Map<String, dynamic>>? _nobleSubscription;
+  StreamSubscription<Map<String, dynamic>>? _roleSubscription;
 
   late final Future<void> _initFuture;
 
@@ -71,6 +73,26 @@ class AuthProvider extends ChangeNotifier {
       final type = data['type']?.toString();
       final title = data['title']?.toString() ?? '';
       if (action == 'HOST_APPROVED' || action == 'HOST_STATUS_UPDATED' || type == 'HOST_APPLICATION' || title.contains('Host')) {
+        refreshCurrentUser();
+      }
+    });
+
+    _nobleSubscription = SocketService.instance.onUserNobleUpdated.listen((data) {
+      final targetUserId = data['userId']?.toString();
+      if (_currentUser != null && (_currentUser!.id == targetUserId || targetUserId == null)) {
+        final isActive = data['isActive'] == true;
+        final newNobleTitle = isActive
+            ? (data['nobleTitle']?.toString() ?? data['nobleRank']?.toString())
+            : null;
+        _currentUser = _currentUser!.copyWith(nobleTitle: newNobleTitle);
+        _saveUserLocalSession(_currentUser!);
+        notifyListeners();
+      }
+    });
+
+    _roleSubscription = SocketService.instance.onUserRoleUpdated.listen((data) {
+      final targetUserId = data['userId']?.toString();
+      if (_currentUser != null && (_currentUser!.id == targetUserId || targetUserId == null)) {
         refreshCurrentUser();
       }
     });
@@ -134,6 +156,8 @@ class AuthProvider extends ChangeNotifier {
     _banSubscription?.cancel();
     _restrictionSubscription?.cancel();
     _notificationSubscription?.cancel();
+    _nobleSubscription?.cancel();
+    _roleSubscription?.cancel();
     super.dispose();
   }
 

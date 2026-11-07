@@ -24,6 +24,12 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<MerchantProvider>().fetchMyMerchantCenter();
+        context.read<MerchantProvider>().fetchTransactions();
+      }
+    });
   }
 
   @override
@@ -236,11 +242,11 @@ class _MerchantCenterScreenState extends State<MerchantCenterScreen> with Single
                 backgroundColor: _selectedRecipientType == 'User Recharge' ? primary : Colors.amber.shade800,
                 foregroundColor: Colors.white,
               ),
-              onPressed: () {
+              onPressed: () async {
                 final coins = int.tryParse(_coinsController.text.trim()) ?? 0;
                 final pin = _pinController.text.trim();
 
-                final err = prov.executeMerchantRecharge(
+                final err = await prov.executeMerchantRecharge(
                   recipientType: _selectedRecipientType,
                   recipientId: _recipientIdController.text.trim(),
                   recipientName: _recipientNameController.text.trim(),

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../models/gift_model.dart';
+import '../core/services/audio_service.dart';
 import '../core/services/socket_service.dart';
 
 class GiftAnimationOverlay extends StatefulWidget {
@@ -154,6 +155,7 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
     _videoController?.pause();
     _videoController?.dispose();
     _videoController = null;
+    AudioService().stopAll();
     _isVideoPlaying = false;
     setState(() {
       _currentGift = null;
@@ -242,6 +244,9 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
       }
       controller.setVolume(1.0);
       controller.play();
+      if (gift.soundAsset != null && gift.soundAsset!.isNotEmpty) {
+        AudioService().playGiftSound(gift.soundAsset);
+      }
       setState(() {});
 
       final dur = controller.value.duration;

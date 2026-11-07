@@ -2547,21 +2547,29 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     if (_user != null) {
       if (_user!.role == UserRole.admin) {
         activeBadges.add({
-          'asset': 'assets/roles/super_admin_tag.webp',
+          'asset': 'assets/roles/ZP-179_admin_badge.webp',
           'label': 'Super Admin',
           'color': Colors.redAccent,
         });
       } else if (_user!.isAgency) {
         activeBadges.add({
-          'asset': 'assets/roles/agency_tag.webp',
+          'asset': 'assets/roles/ZP-182_agency_badge.webp',
           'label': 'Agency',
           'color': Colors.cyan,
         });
       } else if (_user!.isBd) {
         activeBadges.add({
-          'asset': 'assets/roles/bd_tag.webp',
+          'asset': 'assets/roles/ZP-188_bd_badge.webp',
           'label': 'BD Manager',
           'color': Colors.teal,
+        });
+      }
+
+      if (_user!.isMerchant) {
+        activeBadges.add({
+          'asset': 'assets/roles/ZP-213_marchent_badge.webp',
+          'label': 'Coin Merchant',
+          'color': Colors.blueAccent,
         });
       }
 
@@ -2594,15 +2602,15 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
 
       if (_user!.isHost) {
         activeBadges.add({
-          'asset': 'assets/roles/host_badge.webp',
+          'asset': 'assets/roles/ZP-205_host_badge.webp',
           'label': 'Official Host',
           'color': Colors.orangeAccent,
         });
       }
 
-      if (_user!.isSeller) {
+      if (_user!.isSeller && !_user!.isMerchant) {
         activeBadges.add({
-          'asset': 'assets/roles/coins_saller_tag.webp',
+          'asset': 'assets/roles/ZP-213_marchent_badge.webp',
           'label': 'Coin Seller',
           'color': Colors.lightGreenAccent,
         });
@@ -2928,7 +2936,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                       children: [
                         _buildBadgeModalItem(
                           'Super Admin',
-                          'assets/roles/super_admin_tag.webp',
+                          'assets/roles/ZP-179_admin_badge.webp',
                           'assets/roles/super_admin_frame.webp',
                           Colors.redAccent,
                           isUnlocked: _user?.role == UserRole.admin,
@@ -2942,14 +2950,14 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                         ),
                         _buildBadgeModalItem(
                           'Agency',
-                          'assets/roles/agency_tag.webp',
+                          'assets/roles/ZP-182_agency_badge.webp',
                           'assets/roles/agency_frame.webp',
                           Colors.cyan,
                           isUnlocked: _user?.isAgency == true,
                         ),
                         _buildBadgeModalItem(
                           'BD Manager',
-                          'assets/roles/bd_tag.webp',
+                          'assets/roles/ZP-188_bd_badge.webp',
                           'assets/roles/bd_frame.webp',
                           Colors.teal,
                           isUnlocked: _user?.isBd == true,
@@ -2963,17 +2971,19 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                         ),
                         _buildBadgeModalItem(
                           'Official Host',
-                          'assets/roles/host_badge.webp',
+                          'assets/roles/ZP-205_host_badge.webp',
                           'assets/roles/host_frame.webp',
                           Colors.orange,
                           isUnlocked: _user?.isHost == true,
                         ),
                         _buildBadgeModalItem(
                           'Coin Merchant',
-                          'assets/roles/marchent_badge.webp',
+                          'assets/roles/ZP-213_marchent_badge.webp',
                           'assets/roles/marchent_frame.webp',
                           Colors.blue,
-                          isUnlocked: _user?.isSeller == true,
+                          isUnlocked:
+                              _user?.isMerchant == true ||
+                              _user?.isSeller == true,
                         ),
                         _buildBadgeModalItem(
                           'Customer Service',
@@ -2984,7 +2994,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                         ),
                         _buildBadgeModalItem(
                           'CP Lover',
-                          'assets/roles/lover_tag.webp',
+                          'assets/roles/ZP-208_lover_badge.webp',
                           'assets/roles/lover_frame.webp',
                           Colors.pinkAccent,
                           isUnlocked:

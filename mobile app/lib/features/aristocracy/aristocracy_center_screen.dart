@@ -144,11 +144,11 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
       'badgeAsset': 'assets/nobles/ZP-037_tier-6-king_badge.webp',
       'frameAsset': 'assets/nobles/king_frame.webp',
       'privileges': [
-        {'name': 'Entrance Effect', 'asset': 'assets/nobles/ZP-037_tier-6-king_badge.webp', 'type': 'image'},
+        {'name': 'Entrance Effect', 'asset': 'assets/nobles/emperor_entrance.webp', 'type': 'image'},
         {'name': 'Profile Card', 'asset': 'assets/nobles/king_card.webp', 'type': 'image'},
         {'name': 'Frame', 'asset': 'assets/nobles/king_frame.webp', 'type': 'image'},
         {'name': 'Activate Effect', 'asset': 'assets/nobles/ZP-035_tier-6-king_badge.webp', 'type': 'image'},
-        {'name': 'Identify Badge', 'asset': 'assets/nobles/ZP-034_tier-6-king_badge.webp', 'type': 'image'},
+        {'name': 'Identify Badge', 'asset': 'assets/nobles/ZP-037_tier-6-king_badge.webp', 'type': 'image'},
         {'name': 'Colored Username', 'color': const Color(0xFFFFD54F), 'type': 'colored_name'},
         {'name': 'Bubble', 'asset': 'assets/nobles/ZP-036_tier-6-king_badge.webp', 'type': 'image'},
         {'name': 'Mic Wave', 'asset': 'assets/nobles/king_mic.webp', 'type': 'image'},
