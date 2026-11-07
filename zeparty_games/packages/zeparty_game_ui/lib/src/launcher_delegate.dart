@@ -42,12 +42,16 @@ class ZePartyGamesRoot extends StatefulWidget {
 }
 
 class _ZePartyGamesRootState extends State<ZePartyGamesRoot> {
-  late final SessionController _controller = SessionController(config: ZePartyGameLauncher.config, session: widget.request.session);
+  /// Mounted roots, oldest first. The last one is the active (visible) root.
+  static final ValueNotifier<List<_ZePartyGamesRootState>> _stack = ValueNotifier(const []);
+
+  late final SessionController _controller = SessionRegistry.acquire(ZePartyGameLauncher.config, widget.request.session);
   late final GlobalKey<NavigatorState> _navKey = widget.navigatorKey ?? GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
+    _stack.value = [..._stack.value, this];
     _controller.start().then((_) => _route());
     GraphicsSettings.instance.startAutoTuning();
   }
@@ -67,8 +71,9 @@ class _ZePartyGamesRootState extends State<ZePartyGamesRoot> {
 
   @override
   void dispose() {
+    _stack.value = _stack.value.where((r) => r != this).toList();
     GraphicsSettings.instance.stopAutoTuning();
-    _controller.dispose();
+    SessionRegistry.release(_controller);
     super.dispose();
   }
 
@@ -77,13 +82,17 @@ class _ZePartyGamesRootState extends State<ZePartyGamesRoot> {
     final r = widget.request;
     Widget body = SessionScope(
       controller: _controller,
-      child: Navigator(
+      child: ValueListenableBuilder<List<_ZePartyGamesRootState>>(
+        valueListenable: _stack,
+        builder: (context, stack, child) => GamesRootActivity(active: stack.isEmpty || stack.last == this, child: child!),
+        child: Navigator(
         key: _navKey,
         onGenerateRoute: (_) => MaterialPageRoute(builder: (_) => GameCenterScreen(initialGameId: r.gameId, embedded: widget.embedded)),
         onGenerateInitialRoutes: (_, _) => [
           MaterialPageRoute(builder: (_) => GameCenterScreen(initialGameId: r.gameId, embedded: widget.embedded)),
           if (r.roomId == null && widget.showInitialGameDetails) GameDetailsScreen.route(r.gameId),
         ],
+        ),
       ),
     );
     if (widget.wrapInTheme) body = Theme(data: ZpTheme.dark(), child: body);

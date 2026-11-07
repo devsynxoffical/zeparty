@@ -45,7 +45,7 @@ class _GameCenterScreenState extends State<GameCenterScreen> {
       s.invites.listen(_onInvite);
       s.socket.roomStream.listen((room) {
         // Matchmaking or an accepted invite can put us in a room from elsewhere.
-        if (room != null && mounted && ModalRoute.of(context)?.isCurrent == true) {
+        if (room != null && mounted && ModalRoute.of(context)?.isCurrent == true && GamesRootActivity.readActive(context)) {
           Navigator.of(context).push(RoomScreen.route(room.roomId));
         }
       });

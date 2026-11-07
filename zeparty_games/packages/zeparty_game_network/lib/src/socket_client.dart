@@ -82,10 +82,23 @@ class ZePartySocketClient extends ChangeNotifier {
     _setStatus(SocketStatus.disconnected);
   }
 
+  /// Server close code when the same user opened a newer connection.
+  static const int replacedCloseCode = 4004;
+
   void _onDone() {
+    final closeCode = _channel?.closeCode;
     _sub?.cancel();
     _channel = null;
     if (_closedByUser) return;
+    if (closeCode == replacedCloseCode) {
+      // Another connection for this user took over (second device, or a second
+      // session in the same app). Reconnecting would only steal it back and
+      // leave both sides without replies, so stay down and report it.
+      _closedByUser = true;
+      _setStatus(SocketStatus.disconnected);
+      _errors.add(const ServerError('replaced', 'This account connected to the games from another place', null));
+      return;
+    }
     _scheduleReconnect();
   }
 

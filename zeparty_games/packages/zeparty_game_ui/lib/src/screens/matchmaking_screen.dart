@@ -33,7 +33,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> {
     super.initState();
     final s = SessionScope.read(context);
     _sub = s.socket.roomStream.listen((room) {
-      if (room != null && mounted && _searching) {
+      if (room != null && mounted && _searching && GamesRootActivity.readActive(context)) {
         _timer?.cancel();
         Navigator.of(context).pushReplacement(RoomScreen.route(room.roomId));
       }

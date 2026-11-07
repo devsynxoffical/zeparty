@@ -50,7 +50,7 @@ class _RoomScreenState extends State<RoomScreen> {
       setState(() => _room = r);
     });
     _stateSub = s.socket.gameStateStream.listen((m) {
-      if (!mounted || _inGame) return;
+      if (!mounted || _inGame || !GamesRootActivity.readActive(context)) return;
       final room = _room;
       if (room == null || m['roomId'] != room.roomId) return;
       _enterGame(m);
