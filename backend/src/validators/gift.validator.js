@@ -15,8 +15,9 @@ export const createGiftSchema = z.object({
         return false;
       }
     }, 'Coin value must be a positive integer'),
-  iconUrl: z.string().url('Icon URL must be a valid URL'),
-  svgaAssetUrl: z.string().url('SVGA URL must be a valid URL').optional().nullable(),
+  iconUrl: z.string().min(1, 'Icon URL or asset path is required'),
+  svgaAssetUrl: z.string().optional().nullable(),
+  soundUrl: z.string().optional().nullable(),
   giftCategory: z
     .string()
     .transform((val) => val.toUpperCase())
@@ -53,16 +54,20 @@ export const queryGiftsSchema = z.object({
     .default(1),
   limit: z
     .union([z.string(), z.number()])
-    .transform((val) => Math.min(100, Math.max(1, Number(val) || 20)))
-    .default(20),
-  giftCategory: z
-    .string()
-    .transform((val) => val.toUpperCase())
-    .pipe(giftCategoryEnum)
-    .optional(),
+    .transform((val) => Math.min(250, Math.max(1, Number(val) || 50)))
+    .default(50),
+  giftCategory: z.string().optional(),
+  category: z.string().optional(),
+  appCategory: z.string().optional(),
   isActive: z
     .union([z.boolean(), z.string()])
-    .transform((val) => (typeof val === 'string' ? val.toLowerCase() === 'true' : Boolean(val)))
+    .transform((val) => {
+      if (typeof val === 'string') {
+        if (val.toLowerCase() === 'all' || val.trim() === '') return undefined;
+        return val.toLowerCase() === 'true';
+      }
+      return Boolean(val);
+    })
     .optional(),
   search: z.string().optional().default(''),
 });

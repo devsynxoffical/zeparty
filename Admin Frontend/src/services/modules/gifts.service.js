@@ -8,7 +8,13 @@ import { resolveMediaUrl } from '../../utils/imageUrl';
 export async function getGifts(params = {}) {
   const res = await apiClient.get('/v1/admin/gifts', { params });
   const items = res.data?.data || [];
-  return items.map((g) => {
+  const pagination = res.data?.pagination || {
+    page: 1,
+    limit: items.length || 50,
+    total: items.length,
+    totalPages: 1,
+  };
+  const mapped = items.map((g) => {
     const rawIcon = g.iconUrl || g.icon || '';
     const resolvedIcon = resolveMediaUrl(rawIcon, 'gift');
     const coinVal = Number(g.coinValue || g.coinPrice || g.diamondPrice || 0);
@@ -20,11 +26,15 @@ export async function getGifts(params = {}) {
       coinPrice: coinVal,
       coinValue: coinVal,
       diamondPrice: coinVal, // Backwards compatibility with diamondPrice references
-      category: cat,
+      category: g.category || cat,
       giftCategory: cat.toUpperCase(),
+      appCategory: g.appCategory || 'Classic',
       icon: resolvedIcon,
       iconUrl: resolvedIcon,
       svgaAssetUrl: resolveMediaUrl(g.svgaAssetUrl, 'gift'),
+      soundUrl: g.soundUrl || null,
+      soundAsset: g.soundAsset || g.soundUrl || null,
+      hasCustomSound: Boolean(g.soundUrl || g.hasCustomSound),
       isAnimated: Boolean(g.isAnimated),
       isFullScreen: Boolean(g.isFullScreen),
       active: Boolean(g.isActive),
@@ -33,6 +43,17 @@ export async function getGifts(params = {}) {
       updatedAt: g.updatedAt,
     };
   });
+  mapped.pagination = pagination;
+  return mapped;
+}
+
+export async function uploadGiftSound({ dataBase64, mimeType, fileName }) {
+  const res = await apiClient.post('/v1/admin/gifts/upload-sound', {
+    dataBase64,
+    mimeType,
+    fileName,
+  });
+  return res.data?.data;
 }
 
 export async function createGift(giftData) {
@@ -41,6 +62,7 @@ export async function createGift(giftData) {
     coinValue: Number(giftData.coinPrice || giftData.coinValue || giftData.diamondPrice || 100),
     iconUrl: giftData.iconUrl || giftData.icon || '/assets/images/party_gift_box.jpg',
     svgaAssetUrl: giftData.svgaAssetUrl || null,
+    soundUrl: giftData.soundUrl || null,
     giftCategory: (giftData.giftCategory || giftData.category || 'POPULAR').toUpperCase(),
     isAnimated: Boolean(giftData.isAnimated),
     isFullScreen: Boolean(giftData.isFullScreen),
@@ -56,6 +78,8 @@ export async function updateGift(id, giftData) {
     payload.coinValue = Number(giftData.coinPrice || giftData.coinValue);
   }
   if (giftData.iconUrl) payload.iconUrl = giftData.iconUrl;
+  if (giftData.svgaAssetUrl !== undefined) payload.svgaAssetUrl = giftData.svgaAssetUrl;
+  if (giftData.soundUrl !== undefined) payload.soundUrl = giftData.soundUrl;
   if (giftData.category) payload.giftCategory = giftData.category.toUpperCase();
   if (giftData.active !== undefined) payload.isActive = Boolean(giftData.active);
   if (giftData.isActive !== undefined) payload.isActive = Boolean(giftData.isActive);
@@ -79,6 +103,7 @@ export async function deleteGift(id) {
 
 export default {
   getGifts,
+  uploadGiftSound,
   createGift,
   updateGift,
   toggleGiftStatus,

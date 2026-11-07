@@ -1136,6 +1136,7 @@ model Gift {
   coinValue          BigInt
   iconUrl            String
   svgaAssetUrl       String?
+  soundUrl           String?
   giftCategory       GiftCategory @default(POPULAR)
   isAnimated         Boolean      @default(false)
   isFullScreen       Boolean      @default(false)

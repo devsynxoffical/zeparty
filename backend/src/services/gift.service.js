@@ -5,6 +5,8 @@ import hostRepository from '../repositories/host.repository.js';
 import agencyRepository from '../repositories/agency.repository.js';
 import ledgerService from './ledger.service.js';
 import policyService from './policy.service.js';
+import storageService from './storage.service.js';
+import { validateAudioUpload } from '../utils/audioValidator.util.js';
 import { generateReference } from '../utils/reference.util.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
@@ -92,16 +94,37 @@ export function normalizeGiftUrl(url) {
   return clean;
 }
 
+export function getAppCategory(gift) {
+  if (!gift) return 'Classic';
+  const idLower = (gift.id || '').toLowerCase();
+  if (idLower.startsWith('lg')) return 'Lucky Gift';
+  if (idLower.startsWith('cg')) return 'Classic';
+  if (idLower.startsWith('eg')) return 'Event';
+  if (idLower.startsWith('pv')) return 'Privileges';
+  if (idLower.startsWith('sp')) return 'Special';
+  if (gift.giftCategory === 'VIP') return 'Privileges';
+  return 'Classic';
+}
+
 export function serializeGift(gift) {
   if (!gift) return null;
   const iconUrl = normalizeGiftUrl(gift.iconUrl);
   const svgaAssetUrl = gift.svgaAssetUrl
     ? (gift.svgaAssetUrl.startsWith('assets/') ? '/' + gift.svgaAssetUrl : gift.svgaAssetUrl)
     : null;
+  const appCategory = getAppCategory(gift);
+  const soundUrl = gift.soundUrl || null;
+
   return {
     ...gift,
     iconUrl,
     svgaAssetUrl,
+    soundUrl,
+    soundAsset: soundUrl,
+    hasCustomSound: Boolean(soundUrl),
+    appCategory,
+    category: appCategory,
+    isLuckyGift: (gift.id || '').toLowerCase().startsWith('lg'),
     coinValue: gift.coinValue ? gift.coinValue.toString() : '0',
   };
 }
@@ -190,6 +213,48 @@ export async function getGiftDetails(id, db = prisma) {
     throw error;
   }
   return serializeGift(gift);
+}
+
+export async function uploadGiftSound({ dataBase64, mimeType, fileName, buffer }, db = prisma) {
+  let fileBuffer = buffer;
+  if (!fileBuffer && dataBase64) {
+    const cleanBase64 = dataBase64.replace(/^data:[^;]+;base64,/, '');
+    fileBuffer = Buffer.from(cleanBase64, 'base64');
+  }
+
+  if (!fileBuffer || fileBuffer.length === 0) {
+    const error = new Error('No audio file buffer provided.');
+    error.statusCode = 400;
+    error.code = 'MISSING_FILE_DATA';
+    throw error;
+  }
+
+  // Pure binary verification with audioValidator (validates MP3 or MP4 with audio track, rejects silent MP4s with NO_AUDIO_TRACK)
+  const validation = await validateAudioUpload({
+    buffer: fileBuffer,
+    mimeType,
+    fileName,
+  });
+
+  // Store in public/uploads/gift_sounds using storageService
+  const storageResult = await storageService.uploadFile({
+    buffer: fileBuffer,
+    mimeType: validation.mimeType || mimeType || 'audio/mpeg',
+    folder: 'gift_sounds',
+  });
+
+  const soundUrl = storageResult.publicUrl || storageResult.cdnUrl || storageResult.url;
+
+  return {
+    soundUrl,
+    soundAsset: soundUrl,
+    hasCustomSound: true,
+    storageKey: storageResult.storageKey,
+    fileName: fileName || (storageResult.storageKey ? storageResult.storageKey.split('/').pop() : 'sound.mp3'),
+    mimeType: validation.mimeType,
+    format: validation.format,
+    size: fileBuffer.length,
+  };
 }
 
 export async function getPublicGifts(query, db = prisma) {
@@ -548,6 +613,9 @@ export async function sendGift(
       name: gift.name,
       iconUrl: gift.iconUrl,
       svgaAssetUrl: gift.svgaAssetUrl,
+      soundUrl: gift.soundUrl || null,
+      soundAsset: gift.soundUrl || null,
+      hasCustomSound: Boolean(gift.soundUrl),
       isFullScreen: gift.isFullScreen,
     },
     quantity: qty,
@@ -695,6 +763,9 @@ export async function sendGift(
           giftId: gift.id,
           giftName: gift.name,
           giftIcon: gift.iconUrl || '🎁',
+          soundUrl: gift.soundUrl || null,
+          soundAsset: gift.soundUrl || null,
+          hasCustomSound: Boolean(gift.soundUrl),
           quantity: qty,
           totalCoins: totalCoins.toString(),
           senderUserId,
@@ -725,6 +796,9 @@ export async function sendGift(
             name: gift.name,
             iconUrl: gift.iconUrl || null,
             animationUrl: gift.svgaAssetUrl || null,
+            soundUrl: gift.soundUrl || null,
+            soundAsset: gift.soundUrl || null,
+            hasCustomSound: Boolean(gift.soundUrl),
             isFullScreen: gift.isFullScreen || false,
           },
           timestamp: new Date().toISOString(),
@@ -1005,6 +1079,7 @@ export async function reverseGiftTransaction(
 }
 
 export default {
+  getAppCategory,
   serializeGift,
   serializeGiftTransaction,
   createGift,
@@ -1012,6 +1087,7 @@ export default {
   deactivateGift,
   getGiftDetails,
   getPublicGifts,
+  uploadGiftSound,
   sendGift,
   reverseGiftTransaction,
 };
