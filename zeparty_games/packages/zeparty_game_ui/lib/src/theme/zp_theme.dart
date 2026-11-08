@@ -66,7 +66,7 @@ class ZpTheme {
     return TextTheme(
       displayLarge: display.displayLarge?.copyWith(color: ZpColors.textPrimary, fontWeight: FontWeight.w700, letterSpacing: 1.5),
       displayMedium: display.displayMedium?.copyWith(color: ZpColors.textPrimary, fontWeight: FontWeight.w700, letterSpacing: 1.2),
-      headlineLarge: display.headlineLarge?.copyWith(color: ZpColors.textPrimary, fontWeight: FontWeight.w700, letterSpacing: 1),
+      headlineLarge: display.headlineLarge?.copyWith(color: ZpColors.textPrimary, fontWeight: FontWeight.w700, letterSpacing: 1.0),
       headlineMedium: display.headlineMedium?.copyWith(color: ZpColors.textPrimary, fontWeight: FontWeight.w600, letterSpacing: 0.8),
       headlineSmall: display.headlineSmall?.copyWith(color: ZpColors.textPrimary, fontWeight: FontWeight.w600, letterSpacing: 0.6),
       titleLarge: body.titleLarge?.copyWith(color: ZpColors.textPrimary, fontWeight: FontWeight.w600),
