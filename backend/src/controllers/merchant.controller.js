@@ -45,6 +45,17 @@ export async function createMerchant(req, res, next) {
       data: result,
     });
   } catch (err) {
+    if (err.code === 'MERCHANT_ALREADY_EXISTS') {
+      return res.status(409).json({
+        success: false,
+        message: err.message,
+        error: {
+          code: 'MERCHANT_ALREADY_EXISTS',
+          existingMerchant: err.existingMerchant || null,
+        },
+        data: err.existingMerchant || null,
+      });
+    }
     next(err);
   }
 }
@@ -197,6 +208,108 @@ export async function verifyMerchantRecharge(req, res, next) {
   }
 }
 
+export async function getMyMerchantCenter(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const merchant = await merchantService.getMyMerchantCenter(userId);
+    return res.status(200).json({
+      success: true,
+      message: 'Merchant center profile retrieved successfully',
+      data: merchant,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getMerchantDashboard(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const dashboard = await merchantService.getMerchantDashboard(userId);
+    return res.status(200).json({
+      success: true,
+      message: 'Merchant dashboard retrieved successfully',
+      data: dashboard,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getMerchantLedger(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const { page, limit } = req.query;
+    const ledger = await merchantService.getMerchantLedger(userId, { page, limit });
+    return res.status(200).json({
+      success: true,
+      message: 'Merchant ledger retrieved successfully',
+      data: ledger.transactions,
+      pagination: ledger.pagination,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function executeMerchantRecharge(req, res, next) {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+        error: { code: 'UNAUTHORIZED' },
+      });
+    }
+
+    const { recipientId, amountCoins, amount, coins, notes } = req.body;
+    const ipAddress = req.ip || req.headers['x-forwarded-for'];
+
+    const result = await merchantService.executeMerchantRecharge(
+      userId,
+      {
+        recipientId,
+        amountCoins: amountCoins || amount || coins,
+        notes,
+      },
+      { ipAddress }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: 'Merchant recharge executed successfully',
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
   getMerchants,
   createMerchant,
@@ -205,4 +318,8 @@ export default {
   adjustBalance,
   deleteMerchant,
   verifyMerchantRecharge,
+  getMyMerchantCenter,
+  getMerchantDashboard,
+  getMerchantLedger,
+  executeMerchantRecharge,
 };

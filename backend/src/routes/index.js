@@ -39,7 +39,7 @@ import { userGameRouter, adminGameRouter } from './game.routes.js';
 import mediaRoutes from './media.routes.js';
 import { userPKRouter, adminPKRouter } from './pk.routes.js';
 import messageRouter from './message.routes.js';
-import leaderboardRouter from './leaderboard.routes.js';
+import { userLeaderboardRouter, adminLeaderboardRouter } from './leaderboard.routes.js';
 import { adminBDReactionRouter, userBDReactionRouter } from './reaction.routes.js';
 import { adminEmojiRouter, userEmojiRouter } from './emoji.routes.js';
 import { adminExchangeTransferRouter, userExchangeTransferRouter } from './exchangeTransfer.routes.js';
@@ -51,10 +51,12 @@ const router = express.Router();
 
 
 // Leaderboard & Global Rankings routes
-router.use('/v1/rankings', leaderboardRouter);
-router.use('/rankings', leaderboardRouter);
-router.use('/v1/leaderboard', leaderboardRouter);
-router.use('/leaderboard', leaderboardRouter);
+router.use('/v1/admin/rankings', adminLeaderboardRouter);
+router.use('/v1/admin/leaderboard', adminLeaderboardRouter);
+router.use('/v1/rankings', userLeaderboardRouter);
+router.use('/rankings', userLeaderboardRouter);
+router.use('/v1/leaderboard', userLeaderboardRouter);
+router.use('/leaderboard', userLeaderboardRouter);
 
 // Direct Messaging & Conversations routes
 router.use('/v1/messages', messageRouter);

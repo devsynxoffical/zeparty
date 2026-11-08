@@ -282,20 +282,32 @@ function sanitizeUser(user) {
   const hasActiveHost = Boolean(safeUser.hostProfile && safeUser.hostProfile.hostStatus === 'ACTIVE');
   const isHost = hasActiveHost;
 
+  // Authoritative Merchant evaluation (Issue 23)
+  const hasActiveMerchant = Boolean(safeUser.merchant && safeUser.merchant.status === 'ACTIVE');
+  const isMerchant = hasActiveMerchant;
+  const hasMerchantPortal = hasActiveMerchant;
+  const merchantStatus = safeUser.merchant ? safeUser.merchant.status : null;
+  const merchantId = safeUser.merchant ? safeUser.merchant.id : null;
+
+  // Authoritative BD Center evaluation (Issue 24)
+  const hasActiveBD = Boolean((safeUser.managedBDCenters && safeUser.managedBDCenters.length > 0) || safeUser.userType === 'BD_AGENT');
+  const bdCenter = (safeUser.managedBDCenters && safeUser.managedBDCenters.length > 0) ? safeUser.managedBDCenters[0] : null;
+
   // Multi-role resolution
   const userRoles = ['USER'];
+  if (isHost) userRoles.push('HOST');
   if (isSeller) {
     userRoles.push('SELLER');
     userRoles.push('COIN_SELLER');
   }
-  if (safeUser.merchant && safeUser.merchant.status === 'ACTIVE') userRoles.push('MERCHANT');
+  if (hasActiveMerchant) userRoles.push('MERCHANT');
+  if (hasActiveBD) {
+    userRoles.push('BD');
+    userRoles.push('BD_AGENT');
+  }
   if (safeUser.ownedAgencies && safeUser.ownedAgencies.length > 0) userRoles.push('AGENCY_OWNER');
-  if (safeUser.userType && safeUser.userType !== 'COIN_SELLER' && !userRoles.includes(safeUser.userType)) {
-    if (safeUser.userType === 'HOST') {
-      if (hasActiveHost) userRoles.push('HOST');
-    } else {
-      userRoles.push(safeUser.userType);
-    }
+  if (safeUser.userType && !['COIN_SELLER', 'HOST', 'USER'].includes(safeUser.userType) && !userRoles.includes(safeUser.userType)) {
+    userRoles.push(safeUser.userType);
   }
   const roles = Array.from(new Set(userRoles));
 
@@ -315,6 +327,30 @@ function sanitizeUser(user) {
     sellerPortalId,
     sellerBalance: sellerBalanceNum,
     sellerBalanceCoins: sellerBalanceStr,
+    isMerchant,
+    hasMerchantPortal,
+    merchantStatus,
+    merchantId,
+    merchant: safeUser.merchant ? {
+      id: safeUser.merchant.id,
+      companyName: safeUser.merchant.companyName,
+      status: safeUser.merchant.status,
+      isActive: safeUser.merchant.status === 'ACTIVE',
+      allocationBalanceCoins: safeUser.merchant.allocationBalanceCoins ? safeUser.merchant.allocationBalanceCoins.toString() : '0',
+    } : null,
+    isBd: hasActiveBD,
+    hasBdCenter: hasActiveBD,
+    bdStatus: hasActiveBD ? 'ACTIVE' : null,
+    bdCenterId: bdCenter ? bdCenter.id : null,
+    bdCenter: bdCenter ? {
+      id: bdCenter.id,
+      name: bdCenter.centerName,
+      centerName: bdCenter.centerName,
+      country: bdCenter.regionCode || bdCenter.country || 'PK',
+      regionCode: bdCenter.regionCode || 'PK',
+      status: 'ACTIVE',
+      currentTier: bdCenter.currentTier || 'BRONZE',
+    } : null,
     roles,
     profile: safeUser.profile
       ? {

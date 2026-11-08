@@ -49,6 +49,99 @@ async function logAudit(
   }
 }
 
+// In-process lock map to serialize concurrent session switching operations per user
+const userSessionSwitchLocks = new Map();
+
+export async function withUserSessionLock(userId, fn) {
+  if (!userId) return await fn();
+  while (userSessionSwitchLocks.has(userId)) {
+    try {
+      await userSessionSwitchLocks.get(userId);
+    } catch (_) {}
+  }
+  let release;
+  const lockPromise = new Promise((resolve) => { release = resolve; });
+  userSessionSwitchLocks.set(userId, lockPromise);
+  try {
+    return await fn();
+  } finally {
+    userSessionSwitchLocks.delete(userId);
+    if (release) release();
+  }
+}
+
+/**
+ * Handles a clean server-enforced exit when a user switches to another room or stream.
+ * Releases ONLY the switching user's seat and removes ONLY them from presence.
+ * Preserves the previous party room and other participants if any remain.
+ * If 0 participants remain in the party room, marks it inactive immediately.
+ */
+export async function handleCleanExitFromPreviousRoom(userId, prevRoomId, newRoomId = null, db = prisma) {
+  if (!userId || !prevRoomId) return;
+  try {
+    const prevRoom = await db.room.findUnique({
+      where: { id: prevRoomId },
+      select: { id: true, roomType: true, status: true, creatorUserId: true },
+    });
+    if (!prevRoom) return;
+
+    // Release any seat user occupied in the previous room
+    const occupiedSeat = await db.roomSeat.findFirst({
+      where: { roomId: prevRoomId, occupiedUserId: userId },
+    });
+    if (occupiedSeat) {
+      await db.roomSeat.update({
+        where: { id: occupiedSeat.id },
+        data: { occupiedUserId: null, isMuted: false, isMutedByModerator: false },
+      });
+      const seatPayload = { roomId: prevRoomId, seatIndex: occupiedSeat.seatIndex, userId };
+      socketEmitter.emitToRoom(prevRoomId, 'room:seat_left', seatPayload);
+      socketEmitter.emitToRoom(prevRoomId, 'seat:released', seatPayload);
+    }
+
+    // Leave presence in previous room
+    await presenceService.leaveRoomPresence(prevRoomId, userId);
+    socketEmitter.emitToRoom(prevRoomId, 'room:member_left', { roomId: prevRoomId, userId });
+
+    // Notify user socket of session termination elsewhere
+    socketEmitter.emitToUser(userId, 'session:terminated_elsewhere', {
+      previousRoomId: prevRoomId,
+      newRoomId,
+      reason: 'JOINED_ANOTHER_ROOM',
+      message: 'Your previous session was ended because you joined another room.',
+    });
+
+    // Check remaining viewer count in previous room
+    const remainingCount = await presenceService.getRoomViewerCount(prevRoomId, prevRoom.creatorUserId);
+    const countPayload = {
+      roomId: prevRoomId,
+      clientRoomId: prevRoomId,
+      viewerCount: remainingCount,
+      count: remainingCount,
+      currentViewersCount: remainingCount,
+    };
+    socketEmitter.emitToRoom(prevRoomId, 'room:viewer_count_changed', countPayload);
+    socketEmitter.emitToRoom(prevRoomId, 'viewer_count_changed', countPayload);
+
+    // If previous room is an AUDIO_PARTY room and 0 participants remain, mark inactive immediately
+    if (prevRoom.roomType === 'AUDIO_PARTY' && remainingCount <= 0 && prevRoom.status === 'LIVE') {
+      clearEmptyRoomSleepTimer(prevRoomId);
+      await db.room.update({
+        where: { id: prevRoomId },
+        data: { status: 'ENDED', endedAt: new Date(), currentViewersCount: 0 },
+      });
+      socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CLOSED, {
+        roomId: prevRoomId,
+        status: 'ENDED',
+        reason: 'ALL_PARTICIPANTS_LEFT',
+      });
+      socketEmitter.broadcastGlobal('room:closed', { roomId: prevRoomId, status: 'ENDED' });
+    }
+  } catch (err) {
+    console.warn('[RoomService] Error cleaning exit from previous room:', err?.message);
+  }
+}
+
 export async function createRoom(
   {
     userId,
@@ -76,12 +169,12 @@ export async function createRoom(
   // Note: For AUDIO_PARTY, hosts have a persistent party room. Resuming or reopening reactivates status to LIVE
   // and retains today's gifts for daily sending rankings. LIVE_VIDEO always establishes a fresh session.
   if (!isVideoLive) {
+    let existingRoom = null;
     try {
-      const existingRoom = await db.room.findFirst({
+      existingRoom = await db.room.findFirst({
         where: {
           creatorUserId: userId,
           roomType: 'AUDIO_PARTY',
-          status: { in: ['LIVE', 'ENDED'] },
         },
         orderBy: { createdAt: 'desc' },
         include: {
@@ -90,8 +183,12 @@ export async function createRoom(
           },
         },
       });
+    } catch (err) {
+      console.warn('[RoomService] Error querying existing party room:', err?.message);
+    }
 
-      if (existingRoom) {
+    if (existingRoom) {
+      try {
         const wasSleeping = existingRoom.status !== 'LIVE';
         clearHostAbsentTimer(existingRoom.id);
         clearEmptyRoomSleepTimer(existingRoom.id);
@@ -188,10 +285,63 @@ export async function createRoom(
           } catch (_) {}
         }
 
+        // Authoritatively set active session
+        await presenceService.setUserActiveSession(userId, {
+          roomId: refreshedRoom.id,
+          roomType: refreshedRoom.roomType,
+          role: 'HOST',
+          isHost: true,
+          title: refreshedRoom.title,
+        });
+
         return resumedPayload;
+      } catch (resumeErr) {
+        console.error('[RoomService] Error reopening existing room, returning safe existing payload:', resumeErr);
+        const safeRoom = await roomRepository.findRoomById(existingRoom.id, db).catch(() => existingRoom);
+        await presenceService.setUserActiveSession(userId, {
+          roomId: existingRoom.id,
+          roomType: existingRoom.roomType,
+          role: 'HOST',
+          isHost: true,
+          title: existingRoom.title,
+        }).catch(() => {});
+        return {
+          ...safeRoom,
+          alreadyHasRoom: true,
+          alreadyHadRoom: true,
+          isExistingRoom: true,
+          existingRoomId: existingRoom.id,
+          wasSleeping: existingRoom.status !== 'LIVE',
+          statusMessage: 'You already have a party room. Opening your existing room.',
+        };
       }
-    } catch (err) {
-      console.warn('[RoomService] Error resuming existing room:', err?.message);
+    }
+  }
+
+  // If starting a camera LIVE_VIDEO broadcast, check if user is currently participating in a Party room
+  if (isVideoLive) {
+    try {
+      const activeSeat = await db.roomSeat.findFirst({
+        where: {
+          occupiedUserId: userId,
+          room: { status: 'LIVE', roomType: 'AUDIO_PARTY' },
+        },
+        include: { room: true },
+      });
+      const activePartyRoomId = activeSeat?.roomId || (await presenceService.getUserActiveRoom(userId));
+      if (activePartyRoomId) {
+        const partyRoom = activeSeat?.room || (await db.room.findUnique({ where: { id: activePartyRoomId } }));
+        if (partyRoom && partyRoom.roomType === 'AUDIO_PARTY' && partyRoom.status === 'LIVE') {
+          // Release ONLY switching user's seat, remove only them from presence, preserve party if others remain
+          await handleCleanExitFromPreviousRoom(userId, activePartyRoomId, null, db);
+          socketEmitter.emitToUser(userId, 'session:switched_to_live', {
+            previousPartyRoomId: activePartyRoomId,
+            reason: 'STARTED_LIVE_STREAM',
+          });
+        }
+      }
+    } catch (switchErr) {
+      console.warn('[RoomService] Error transitioning from Party to Live:', switchErr?.message);
     }
   }
 
@@ -281,6 +431,15 @@ export async function createRoom(
     console.error('Failed to broadcast ROOM_CREATED socket event:', err);
   }
 
+  // Authoritatively set active session
+  await presenceService.setUserActiveSession(userId, {
+    roomId: room.id,
+    roomType: room.roomType,
+    role: 'HOST',
+    isHost: true,
+    title: room.title,
+  });
+
   return newRoomPayload;
 }
 
@@ -292,7 +451,6 @@ export async function getMyPartyRoom(userId, db = prisma) {
     where: {
       creatorUserId: userId,
       roomType: 'AUDIO_PARTY',
-      status: { in: ['LIVE', 'ENDED'] },
     },
     orderBy: { createdAt: 'desc' },
     select: { id: true, status: true },
@@ -567,8 +725,43 @@ export async function getRoomDetails(roomId, db = prisma) {
 }
 
 export async function joinRoom(roomId, userId, { pin = null, isApproved = false, attemptId = null, isVisitor = false, explicit = false } = {}, db = prisma) {
+  if (userId) {
+    // 1. Check if user is currently hosting an active LIVE broadcast
+    const activeLive = await db.room.findFirst({
+      where: {
+        creatorUserId: userId,
+        status: 'LIVE',
+        roomType: 'LIVE_VIDEO',
+        id: { not: roomId },
+      },
+      select: { id: true, title: true },
+    });
+    if (activeLive) {
+      const error = new Error('You are currently hosting a Live broadcast. Please confirm ending your broadcast to switch.');
+      error.statusCode = 409;
+      error.code = 'ACTIVE_LIVE_HOSTING_EXISTS';
+      error.activeLiveId = activeLive.id;
+      throw error;
+    }
+
+    // 2. Check if user has an active session in another room (enforce single active session)
+    const prevRoomId = await presenceService.getUserActiveRoom(userId);
+    if (prevRoomId && prevRoomId !== roomId) {
+      await handleCleanExitFromPreviousRoom(userId, prevRoomId, roomId, db);
+    }
+  }
+
   const result = await roomRepository.joinRoomTx({ roomId, userId, pin, isApproved, attemptId, isVisitor, explicit }, db);
   if (result) {
+    if (userId) {
+      await presenceService.setUserActiveSession(userId, {
+        roomId: result.id || roomId,
+        roomType: result.roomType || 'AUDIO_PARTY',
+        role: result.creatorUserId === userId ? 'HOST' : 'VIEWER',
+        isHost: result.creatorUserId === userId,
+        title: result.title,
+      });
+    }
     try {
       clearEmptyRoomSleepTimer(result.id || roomId);
     } catch (_) {}
@@ -738,10 +931,29 @@ export async function leaveRoom(roomId, userId, db = prisma) {
     await attendanceService.endBroadcastSession({ roomId: targetRoomId, hostUserId: userId }, db).catch(() => {});
   }
 
-  // If this is a Party Room, check if 0 participants remain and schedule the 12-second Empty Room Sleep Timer
+  // Clear active session for the leaving user
+  await presenceService.clearUserActiveSession(userId, targetRoomId);
+
+  // If this is a Party Room, distinguish explicit departure from unexpected network drop:
+  // - Explicit departure with 0 participants remaining: immediately mark inactive!
+  // - If participants remain: room continues without interruption.
   let sleepSchedule = { scheduled: false, activeCount: viewerCount };
   if (result && isPartyRoomType(result.roomType)) {
-    sleepSchedule = await checkAndSchedulePartyRoomSleep(targetRoomId, null, 12000, userId);
+    if (viewerCount <= 0) {
+      clearEmptyRoomSleepTimer(targetRoomId);
+      await db.room.update({
+        where: { id: targetRoomId },
+        data: { status: 'ENDED', endedAt: new Date(), currentViewersCount: 0 },
+      });
+      socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CLOSED, {
+        roomId: targetRoomId,
+        status: 'ENDED',
+        reason: 'EXPLICIT_DEPARTURE_EMPTY',
+      });
+      socketEmitter.broadcastGlobal('room:closed', { roomId: targetRoomId, status: 'ENDED' });
+    } else {
+      sleepSchedule = await checkAndSchedulePartyRoomSleep(targetRoomId, null, 10000, userId);
+    }
   }
 
   const targetIds = Array.from(new Set([String(roomId), String(targetRoomId)]));
@@ -977,7 +1189,7 @@ export async function closeMyRoom(roomId, userId, db = prisma) {
     socketEmitter.emitToRoom(room.id, 'room:host_away', hostLeftPayload);
     socketEmitter.emitToRoom(room.id, 'room:host_left', hostLeftPayload);
 
-    const sleepCheck = await checkAndSchedulePartyRoomSleep(room.id, null, 12000, userId);
+    const sleepCheck = await checkAndSchedulePartyRoomSleep(room.id, null, 10000, userId);
 
     return {
       ...leaveResult,
@@ -985,7 +1197,7 @@ export async function closeMyRoom(roomId, userId, db = prisma) {
       hostLeftOnly: true,
       roomStaysOpen: true,
       willSleepIfEmpty: sleepCheck.scheduled,
-      sleepAfterSeconds: sleepCheck.scheduled ? 12 : null,
+      sleepAfterSeconds: sleepCheck.scheduled ? 10 : null,
       summary,
     };
   }
@@ -3666,6 +3878,139 @@ export async function getUserJoinedRooms(userId, options = {}, db = prisma) {
   return await roomRepository.getUserJoinedRooms(userId, options, db);
 }
 
+/**
+ * Live-to-Party switching with server-side confirmation flow support.
+ *
+ * Requirements (Client Specification - 4 November 2026):
+ * 1. Live Host confirms: "End your Live broadcast and join this Party room?".
+ * 2. Validate destination party room exists and is valid.
+ * 3. End Live broadcast for all viewers (status = 'ENDED', reason = 'HOST_SWITCHED_TO_PARTY').
+ * 4. Stop host camera/mic publishing, remove broadcast from discovery.
+ * 5. ONLY after Live successfully ends, join selected Party Room (as participant/viewer, normal mic request flow, NO automatic mic occupancy).
+ * 6. If joining fails, Live stays ended and returns a retryable error (never restart Live).
+ * 7. Atomically serialized per userId using withUserSessionLock.
+ */
+export async function switchLiveToPartyRoom({ userId, partyRoomId, pin = null }, db = prisma) {
+  if (!userId) {
+    const error = new Error('Authentication required');
+    error.statusCode = 401;
+    throw error;
+  }
+  if (!partyRoomId) {
+    const error = new Error('Destination partyRoomId is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  return await withUserSessionLock(userId, async () => {
+    // 1. Validate destination party room exists
+    const partyRoom = await db.room.findUnique({
+      where: { id: partyRoomId },
+      select: {
+        id: true,
+        title: true,
+        roomType: true,
+        status: true,
+        creatorUserId: true,
+        isPrivate: true,
+        roomPin: true,
+      },
+    });
+
+    if (!partyRoom) {
+      const error = new Error('Destination party room not found');
+      error.statusCode = 404;
+      error.code = 'PARTY_ROOM_NOT_FOUND';
+      throw error;
+    }
+
+    // 2. Identify if user is hosting an active LIVE broadcast
+    const activeLive = await db.room.findFirst({
+      where: {
+        creatorUserId: userId,
+        status: 'LIVE',
+        roomType: 'LIVE_VIDEO',
+      },
+    });
+
+    // 3. If active Live broadcast exists, end it for all viewers
+    if (activeLive) {
+      try {
+        clearHostAbsentTimer(activeLive.id);
+        await presenceService.clearRoomLikes(activeLive.id).catch(() => {});
+        await presenceService.clearRoomPresence(activeLive.id).catch(() => {});
+        await db.room.update({
+          where: { id: activeLive.id },
+          data: {
+            status: 'ENDED',
+            endedAt: new Date(),
+            currentViewersCount: 0,
+          },
+        });
+
+        const endPayload = {
+          roomId: activeLive.id,
+          status: 'ENDED',
+          reason: 'HOST_SWITCHED_TO_PARTY',
+          message: 'The host has ended this Live broadcast to join a Party room.',
+        };
+        socketEmitter.emitToRoom(activeLive.id, 'room:closed', endPayload);
+        socketEmitter.emitToRoom(activeLive.id, 'room:ended', endPayload);
+        socketEmitter.emitToRoom(activeLive.id, 'live:ended', endPayload);
+        socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CLOSED, endPayload);
+      } catch (liveErr) {
+        console.warn('[RoomService] Error ending live broadcast during switch:', liveErr?.message);
+      }
+    }
+
+    // 4. Join the target Party Room
+    // User joins as regular participant/viewer (no automatic mic seat)
+    try {
+      const joinResult = await joinRoom(
+        partyRoom.id,
+        userId,
+        { pin, explicit: true, isVisitor: false },
+        db
+      );
+
+      // Update authoritative active session
+      await presenceService.setUserActiveSession(userId, {
+        roomId: partyRoom.id,
+        roomType: partyRoom.roomType,
+        role: partyRoom.creatorUserId === userId ? 'HOST' : 'VIEWER',
+        isHost: partyRoom.creatorUserId === userId,
+        title: partyRoom.title,
+      });
+
+      return {
+        success: true,
+        switched: true,
+        liveEnded: Boolean(activeLive),
+        partyJoined: true,
+        partyRoom: joinResult,
+      };
+    } catch (joinErr) {
+      // If joining fails (e.g. invalid PIN or kicked), Live broadcast remains ended!
+      // Never restart Live. Return retryable error payload.
+      return {
+        success: false,
+        liveEnded: Boolean(activeLive),
+        partyJoined: false,
+        canRetry: true,
+        code: joinErr.code || 'PARTY_JOIN_FAILED',
+        error: joinErr.message,
+      };
+    }
+  });
+}
+
+/**
+ * Authoritative endpoint for active-session recovery across reconnects, retries, and network drops.
+ */
+export async function getUserActiveSession(userId, db = prisma) {
+  return await presenceService.getUserActiveSession(userId, db);
+}
+
 export default {
   createRoom,
   getActiveRooms,
@@ -3675,6 +4020,10 @@ export default {
   leaveRoom,
   unjoinRoom,
   getUserJoinedRooms,
+  switchLiveToPartyRoom,
+  getUserActiveSession,
+  withUserSessionLock,
+  handleCleanExitFromPreviousRoom,
   occupySeat,
   leaveSeat,
   closeMyRoom,

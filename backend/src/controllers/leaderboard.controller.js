@@ -3,45 +3,63 @@ import leaderboardService from '../services/leaderboard.service.js';
 export async function getRankings(req, res, next) {
   try {
     const viewerUserId = req.auth?.userId || null;
-    const { category = 'wealth', period = 'daily', limit = 30 } = req.query;
-    let data = [];
+    const {
+      category = 'wealth',
+      period = 'daily',
+      scope = 'GLOBAL',
+      scopeValue = null,
+      country = null,
+      countryCode = null,
+      region = null,
+      limit = 30,
+      search = null,
+    } = req.query;
 
-    switch ((category || '').toLowerCase()) {
-      case 'room':
-        data = await leaderboardService.getRoomRankings({ period, limit, viewerUserId });
-        break;
-      case 'charm':
-        data = await leaderboardService.getCharmRankings({ period, limit, viewerUserId });
-        break;
-      case 'cp':
-      case 'couple':
-        data = await leaderboardService.getCpRankings({ period, limit, viewerUserId });
-        break;
-      case 'svip':
-      case 'vip':
-        data = await leaderboardService.getSvipRankings({ limit, viewerUserId });
-        break;
-      case 'aristocratic':
-      case 'aristocracy':
-      case 'noble':
-        data = await leaderboardService.getAristocraticRankings({ limit, viewerUserId });
-        break;
-      case 'lucky':
-        data = await leaderboardService.getLuckyRankings({ period, limit, viewerUserId });
-        break;
-      case 'wealth':
-      default:
-        data = await leaderboardService.getWealthRankings({ period, limit, viewerUserId });
-        break;
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Leaderboard rankings retrieved successfully',
+    const result = await leaderboardService.getUnifiedRankings({
       category,
       period,
-      data,
+      scope,
+      scopeValue: scopeValue || country || countryCode,
+      countryCode: countryCode || country || scopeValue,
+      region,
+      limit,
+      search,
+      viewerUserId,
     });
+
+    return res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAdminRankings(req, res, next) {
+  try {
+    const {
+      category = 'wealth',
+      period = 'daily',
+      scope = 'GLOBAL',
+      scopeValue = null,
+      country = null,
+      countryCode = null,
+      region = null,
+      limit = 50,
+      search = null,
+    } = req.query;
+
+    const result = await leaderboardService.getUnifiedRankings({
+      category,
+      period,
+      scope,
+      scopeValue: scopeValue || country || countryCode,
+      countryCode: countryCode || country || scopeValue,
+      region,
+      limit,
+      search,
+      viewerUserId: null,
+    });
+
+    return res.status(200).json(result);
   } catch (err) {
     next(err);
   }
@@ -65,5 +83,6 @@ export async function getLuckyGiftRecords(req, res, next) {
 
 export default {
   getRankings,
+  getAdminRankings,
   getLuckyGiftRecords,
 };

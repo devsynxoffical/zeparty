@@ -329,6 +329,7 @@ export async function recordGiftAttribution(
     recipientId,
     senderId,
     hostProfile,
+    roomId,
     gift,
     giftId,
     giftName,
@@ -389,6 +390,16 @@ export async function recordGiftAttribution(
     }).catch(() => null);
   }
 
+  // Resolve room and session mode to enforce Issue 17 Role-and-Mode Target Accounting
+  let resolvedRoom = null;
+  const targetRoomId = giftTransaction?.roomId || roomId || null;
+  if (targetRoomId) {
+    resolvedRoom = await db.room.findUnique({
+      where: { id: targetRoomId },
+      select: { id: true, roomType: true },
+    }).catch(() => null);
+  }
+
   let resolvedGift = gift;
   if (!resolvedGift && (giftTransaction.giftId || giftId)) {
     resolvedGift = await db.gift.findUnique({
@@ -407,7 +418,7 @@ export async function recordGiftAttribution(
   const hostType = resolvedHost?.hostType || 'LIVE_HOST';
   const qty = Number(quantity || giftTransaction.giftCount || 1);
 
-  // 3. Evaluate Target Scope & Contribution
+  // 3. Evaluate Target Scope & Contribution with Server-Enforced Role-and-Mode Accounting (Issue 17)
   let targetScope = 'NONE';
   let agencyId = null;
   let targetCoins = 0n;
@@ -425,17 +436,47 @@ export async function recordGiftAttribution(
     if (paramStatus && paramStatus !== 'COMPLETED') {
       status = 'INELIGIBLE_STATUS';
       targetCoins = 0n;
-    } else if (isHostActive) {
-      if (hostType === 'AUDIO_HOST') {
-        targetScope = 'AUDIO_HOST';
-        agencyId = resolvedHost.agencyId || null;
-        targetCoins = contrib.targetCoins;
-        status = 'ATTRIBUTED';
+    } else if (!resolvedRoom) {
+      // Direct inbox gift (no room): does not count toward live or audio host targets
+      status = 'NON_ROOM_GIFT';
+      targetScope = 'NONE';
+      targetCoins = 0n;
+    } else if (!isHostActive) {
+      status = 'NON_HOST_GIFT';
+      targetScope = 'NONE';
+      targetCoins = 0n;
+    } else {
+      const isLiveBroadcast = (resolvedRoom.roomType === 'LIVE_VIDEO');
+      const isPartyRoom = (resolvedRoom.roomType === 'AUDIO_PARTY');
+
+      if (isLiveBroadcast) {
+        if (hostType === 'LIVE_HOST' || hostType === 'BOTH') {
+          targetScope = 'LIVE_HOST';
+          agencyId = null; // Direct live hosts never contribute to agency aggregates
+          targetCoins = contrib.targetCoins;
+          status = 'ATTRIBUTED';
+        } else {
+          // Recipient is AUDIO_HOST only in a LIVE_VIDEO broadcast -> no target credit
+          targetScope = 'NONE';
+          targetCoins = 0n;
+          status = 'INELIGIBLE_MODE_MISMATCH';
+        }
+      } else if (isPartyRoom) {
+        if (hostType === 'AUDIO_HOST' || hostType === 'BOTH') {
+          targetScope = 'AUDIO_HOST';
+          agencyId = resolvedHost.agencyId || null;
+          targetCoins = contrib.targetCoins;
+          status = 'ATTRIBUTED';
+        } else {
+          // Recipient is LIVE_HOST only in an AUDIO_PARTY room -> no target credit
+          targetScope = 'NONE';
+          targetCoins = 0n;
+          status = 'INELIGIBLE_MODE_MISMATCH';
+        }
       } else {
-        targetScope = 'LIVE_HOST';
-        agencyId = null; // Direct live hosts never contribute to agency aggregates
-        targetCoins = contrib.targetCoins;
-        status = 'ATTRIBUTED';
+        targetScope = 'NONE';
+        targetCoins = 0n;
+        status = 'INELIGIBLE_MODE_MISMATCH';
       }
     }
   }
@@ -1016,8 +1057,8 @@ export async function reconcileHistoricalTargets(
   const txIds = giftTransactions.map((t) => t.id);
   const existingAttributions = txIds.length > 0
     ? await db.hostTargetAttribution.findMany({
-        where: { giftTransactionId: { in: txIds } },
-      })
+      where: { giftTransactionId: { in: txIds } },
+    })
     : [];
   const existingMap = new Map(existingAttributions.map((a) => [a.giftTransactionId, a]));
 
@@ -1322,6 +1363,85 @@ export async function getTargetReconciliationRuns(
   };
 }
 
+export async function auditCrossModeAttributions({ dryRun = true, limit = 1000 } = {}, db = prisma) {
+  const attributions = await db.hostTargetAttribution.findMany({
+    where: {
+      status: 'ATTRIBUTED',
+    },
+    take: limit,
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const discrepancies = [];
+  let totalMismatchedCoins = 0n;
+
+  for (const a of attributions) {
+    const tx = await db.giftTransaction.findUnique({
+      where: { id: a.giftTransactionId },
+      include: {
+        room: { select: { id: true, roomType: true } },
+      },
+    });
+
+    const sessionMode = tx?.room?.roomType || (tx?.roomId ? 'UNKNOWN_ROOM' : 'NON_ROOM');
+    const hostProfile = a.hostProfileId
+      ? await db.hostProfile.findUnique({ where: { id: a.hostProfileId } })
+      : await db.hostProfile.findUnique({ where: { userId: a.recipientUserId } });
+
+    const hostType = hostProfile?.hostType || 'UNKNOWN';
+
+    let expectedScope = 'NONE';
+    let expectedStatus = 'ATTRIBUTED';
+
+    if (!tx?.roomId || !tx?.room) {
+      expectedScope = 'NONE';
+      expectedStatus = 'NON_ROOM_GIFT';
+    } else if (tx.room.roomType === 'LIVE_VIDEO') {
+      if (hostType === 'LIVE_HOST' || hostType === 'BOTH') {
+        expectedScope = 'LIVE_HOST';
+      } else {
+        expectedScope = 'NONE';
+        expectedStatus = 'INELIGIBLE_MODE_MISMATCH';
+      }
+    } else if (tx.room.roomType === 'AUDIO_PARTY') {
+      if (hostType === 'AUDIO_HOST' || hostType === 'BOTH') {
+        expectedScope = 'AUDIO_HOST';
+      } else {
+        expectedScope = 'NONE';
+        expectedStatus = 'INELIGIBLE_MODE_MISMATCH';
+      }
+    }
+
+    const isMismatch = (a.targetScope !== expectedScope);
+    if (isMismatch) {
+      totalMismatchedCoins += BigInt(a.targetCoins || 0n);
+      discrepancies.push({
+        attributionId: a.id,
+        giftTransactionId: a.giftTransactionId,
+        senderUserId: tx?.senderUserId || 'UNKNOWN',
+        recipientUserId: a.recipientUserId,
+        sessionType: sessionMode,
+        sessionId: tx?.roomId || null,
+        recipientRole: hostType,
+        existingTargetScope: a.targetScope,
+        existingTargetCoins: Number(a.targetCoins),
+        correctTargetScope: expectedScope,
+        correctTargetCoins: expectedScope === 'NONE' ? 0 : Number(a.targetCoins),
+        proposedCorrectionStatus: expectedStatus,
+        evidence: tx?.room ? `Room ${tx.room.id} (${tx.room.roomType}) verified` : 'Direct inbox gift without room record',
+      });
+    }
+  }
+
+  return {
+    dryRun: Boolean(dryRun),
+    inspectedCount: attributions.length,
+    mismatchCount: discrepancies.length,
+    totalMismatchedCoins: Number(totalMismatchedCoins),
+    discrepancies,
+  };
+}
+
 export default {
   isLuckyGift,
   calculateGiftTargetContribution,
@@ -1334,4 +1454,5 @@ export default {
   getAgencyTargetProgress,
   reconcileHistoricalTargets,
   getTargetReconciliationRuns,
+  auditCrossModeAttributions,
 };

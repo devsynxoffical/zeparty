@@ -7,20 +7,20 @@ import hostRepository from '../repositories/host.repository.js';
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
     let validAdminId = adminId;
-    if (validAdminId) {
-      const existingAdmin = await db.admin.findUnique({ where: { id: validAdminId } });
+    if (validAdminId && validAdminId !== 'SYSTEM' && validAdminId !== 'ADMIN') {
+      const existingAdmin = await prisma.admin.findUnique({ where: { id: validAdminId } }).catch(() => null);
       if (!existingAdmin) {
-        const fallbackAdmin = await db.admin.findFirst();
+        const fallbackAdmin = await prisma.admin.findFirst().catch(() => null);
         validAdminId = fallbackAdmin ? fallbackAdmin.id : null;
       }
     } else {
-      const fallbackAdmin = await db.admin.findFirst();
+      const fallbackAdmin = await prisma.admin.findFirst().catch(() => null);
       validAdminId = fallbackAdmin ? fallbackAdmin.id : null;
     }
 
     if (!validAdminId) return;
 
-    await db.auditLog.create({
+    await prisma.auditLog.create({
       data: {
         adminId: validAdminId,
         adminName: adminName || 'System / BD Manager',
@@ -32,7 +32,7 @@ async function logAudit({ adminId, adminName, action, targetEntity, targetEntity
         reason: reason || null,
         ipAddress: ipAddress || '127.0.0.1',
       },
-    });
+    }).catch(() => {});
   } catch (err) {
     console.error('Failed to write audit log in bdCenter.service:', err);
   }
@@ -47,18 +47,32 @@ export async function lookupUserForBD(searchQuery, db = prisma) {
     throw error;
   }
 
-  const user = await db.user.findFirst({
+  // 1. Prioritize exact match by user ID among non-deleted accounts
+  let user = await db.user.findFirst({
     where: {
-      OR: [
-        { id: query },
-        { username: { equals: query, mode: 'insensitive' } },
-        { phone: query },
-      ],
+      id: query,
+      status: { not: 'DELETED' },
     },
     include: {
       profile: true,
     },
   });
+
+  // 2. Fallback to username or phone search if not matched by ID
+  if (!user) {
+    user = await db.user.findFirst({
+      where: {
+        status: { not: 'DELETED' },
+        OR: [
+          { username: { equals: query, mode: 'insensitive' } },
+          { phone: query },
+        ],
+      },
+      include: {
+        profile: true,
+      },
+    });
+  }
 
   if (!user) {
     const error = new Error(`No registered user found matching "${query}".`);
@@ -71,22 +85,32 @@ export async function lookupUserForBD(searchQuery, db = prisma) {
     where: { managerUserId: user.id },
   });
 
+  const userPayload = {
+    id: user.id,
+    uniqueId: user.id,
+    userId: user.id,
+    username: user.username,
+    displayName: user.profile?.displayName || user.username,
+    avatarUrl: user.avatarUrl || '',
+    country: user.countryCode || 'PK',
+    countryCode: user.countryCode || 'PK',
+    userType: user.userType,
+    hasActiveBD: Boolean(existingBD),
+    isAlreadyBD: Boolean(existingBD),
+    existingBDCenter: existingBD ? {
+      id: existingBD.id,
+      name: existingBD.centerName,
+    } : null,
+    existingBDCenterName: existingBD?.centerName || null,
+    existingBDCenterId: existingBD?.id || null,
+  };
+
   return {
     success: true,
+    data: userPayload,
+    user: userPayload,
     id: user.id,
     hasActiveBD: Boolean(existingBD),
-    user: {
-      id: user.id,
-      username: user.username,
-      displayName: user.profile?.displayName || user.username,
-      avatarUrl: user.avatarUrl || '',
-      countryCode: user.countryCode || 'GLOBAL',
-      userType: user.userType,
-      isAlreadyBD: Boolean(existingBD),
-      hasActiveBD: Boolean(existingBD),
-      existingBDCenterName: existingBD?.centerName || null,
-      existingBDCenterId: existingBD?.id || null,
-    },
   };
 }
 
@@ -99,15 +123,27 @@ export async function createBDCenter(data, { adminId, adminName, ipAddress } = {
     throw error;
   }
 
-  const user = await db.user.findFirst({
+  const cleanTarget = String(targetUserId).trim();
+  let user = await db.user.findFirst({
     where: {
-      OR: [
-        { id: String(targetUserId).trim() },
-        { username: { equals: String(targetUserId).trim(), mode: 'insensitive' } },
-      ],
+      id: cleanTarget,
+      status: { not: 'DELETED' },
     },
     include: { profile: true },
   });
+
+  if (!user) {
+    user = await db.user.findFirst({
+      where: {
+        status: { not: 'DELETED' },
+        OR: [
+          { username: { equals: cleanTarget, mode: 'insensitive' } },
+          { phone: cleanTarget },
+        ],
+      },
+      include: { profile: true },
+    });
+  }
 
   if (!user) {
     const error = new Error(`User not found with ID "${targetUserId}". Please verify the account before saving.`);
@@ -138,12 +174,15 @@ export async function createBDCenter(data, { adminId, adminName, ipAddress } = {
     const created = await bdCenterRepository.createBDCenter(centerData, tx);
 
     // Bind BD Center role and access to the existing user
-    await tx.user.update({
-      where: { id: user.id },
-      data: {
-        userType: 'BD_AGENT',
-      },
-    });
+    // Preserve other specific privileged roles if already assigned (e.g. MERCHANT, ADMIN)
+    if (user.userType === 'USER' || !user.userType) {
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          userType: 'BD_AGENT',
+        },
+      });
+    }
 
     await logAudit({
       adminId,
@@ -189,31 +228,49 @@ export async function removeBDRole({ bdCenterId, adminId, adminName, reason, ipA
   }
 
   return await db.$transaction(async (tx) => {
-    // 1. Mark BD Center deactivated
-    const updatedCenter = await tx.bDCenter.update({
-      where: { id: bdCenterId },
-      data: {
-        // Flag as terminated / inactive
-        currentTier: 'BRONZE',
-        baseSalaryUSD: 0,
-      },
-    });
-
-    // 2. Revert manager userType to USER if no other privileged role
-    if (center.managerUserId) {
-      await tx.user.update({
-        where: { id: center.managerUserId },
-        data: {
-          userType: 'USER',
-        },
-      });
-    }
-
-    // 3. Flag active team and agency links for reassignment while preserving historical attribution
+    // 1. Unlink active agencies and remove invites
     await tx.agency.updateMany({
       where: { bdCenterId },
       data: { bdCenterId: null },
     });
+    if (tx.bDInvite?.deleteMany) {
+      await tx.bDInvite.deleteMany({
+        where: { bdCenterId },
+      }).catch(() => {});
+    }
+
+    // 2. Remove the BDCenter record to fully release the manager
+    await tx.bDCenter.delete({
+      where: { id: bdCenterId },
+    });
+
+    // 3. Revert manager userType to USER if no other privileged role
+    if (center.managerUserId) {
+      const managerUser = await tx.user.findUnique({
+        where: { id: center.managerUserId },
+        include: { merchant: true, coinSeller: true, hostProfile: true },
+      });
+
+      if (managerUser) {
+        let remainingRole = 'USER';
+        if (managerUser.merchant && managerUser.merchant.status === 'ACTIVE') {
+          remainingRole = 'MERCHANT';
+        } else if (managerUser.coinSeller && managerUser.coinSeller.sellerStatus === 'ACTIVE') {
+          remainingRole = 'COIN_SELLER';
+        } else if (managerUser.hostProfile && managerUser.hostProfile.hostStatus === 'ACTIVE') {
+          remainingRole = 'HOST';
+        } else if (managerUser.userType === 'ADMIN') {
+          remainingRole = 'ADMIN';
+        }
+
+        await tx.user.update({
+          where: { id: center.managerUserId },
+          data: {
+            userType: remainingRole,
+          },
+        });
+      }
+    }
 
     // 4. Log Audit Log
     await logAudit({
@@ -238,9 +295,9 @@ export async function removeBDRole({ bdCenterId, adminId, adminName, reason, ipA
     return {
       success: true,
       message: `BD Center "${center.centerName}" role removed successfully. User account and historical earnings preserved.`,
-      center: updatedCenter,
+      center: { id: bdCenterId, centerName: center.centerName, status: 'REMOVED' },
     };
-  });
+  }, { maxWait: 15000, timeout: 30000 });
 }
 
 export async function updateBDCenter(id, updates, { adminId, adminName, ipAddress } = {}, db = prisma) {

@@ -29,6 +29,7 @@ import {
   assignSpecialIdToUser,
   getNoblesCatalog,
   grantNobleToUser,
+  grantSVIPToUser,
   reconcileUserWealth
 } from '../../services/modules/users.service';
 import { getBDCenters } from '../../services/modules/bdCenter.service';
@@ -78,6 +79,7 @@ export function UserDetailPage() {
   // Props Catalog & Real Grant State
   const [propsCatalog, setPropsCatalog] = useState([]);
   const [isLoadingPropsCatalog, setIsLoadingPropsCatalog] = useState(false);
+  const [propsCatalogError, setPropsCatalogError] = useState(null);
   const [propsSearchQuery, setPropsSearchQuery] = useState('');
   const [selectedCatalogItem, setSelectedCatalogItem] = useState(null);
   const [propDurationDays, setPropDurationDays] = useState(30);
@@ -93,6 +95,11 @@ export function UserDetailPage() {
   const [selectedNoble, setSelectedNoble] = useState(null);
   const [nobleDurationDays, setNobleDurationDays] = useState(30);
   const [isGrantingNoble, setIsGrantingNoble] = useState(false);
+
+  // SVIP Grant State
+  const [selectedSvipLevel, setSelectedSvipLevel] = useState(1);
+  const [svipDurationDays, setSvipDurationDays] = useState(30);
+  const [isGrantingSvip, setIsGrantingSvip] = useState(false);
 
   // Wealth Reconcile State
   const [isReconcilingWealth, setIsReconcilingWealth] = useState(false);
@@ -269,14 +276,24 @@ export function UserDetailPage() {
 
   const loadPropsCatalog = async (category) => {
     setIsLoadingPropsCatalog(true);
+    setPropsCatalogError(null);
     try {
       const items = await getPropsCatalog(category);
-      setPropsCatalog(items || []);
-      if (items?.length > 0) setSelectedCatalogItem(items[0]);
-      else setSelectedCatalogItem(null);
+      if (Array.isArray(items)) {
+        setPropsCatalog(items);
+        if (items.length > 0) setSelectedCatalogItem(items[0]);
+        else setSelectedCatalogItem(null);
+      } else {
+        console.warn('Invalid props catalog format returned from server:', items);
+        setPropsCatalog([]);
+        setSelectedCatalogItem(null);
+        setPropsCatalogError('Catalog returned an unexpected response format from server.');
+      }
     } catch (err) {
       console.error('Failed to load props catalog:', err);
       setPropsCatalog([]);
+      setSelectedCatalogItem(null);
+      setPropsCatalogError(err.response?.data?.message || err.message || 'Failed to load catalog items from server.');
     } finally {
       setIsLoadingPropsCatalog(false);
     }
@@ -396,6 +413,34 @@ export function UserDetailPage() {
       showToast(err.response?.data?.message || err.message || 'Failed to grant noble title', 'error', 'Grant Failed');
     } finally {
       setIsGrantingNoble(false);
+    }
+  };
+
+  const handleGrantSvip = async () => {
+    setIsGrantingSvip(true);
+    try {
+      const res = await grantSVIPToUser(user.id, {
+        svipLevel: Number(selectedSvipLevel),
+        durationDays: Number(svipDurationDays) || 30,
+        reason: actionReason || 'Admin manual SVIP grant'
+      });
+      setUser({ ...user, svipLevel: Number(selectedSvipLevel) > 0 ? `SVIP ${selectedSvipLevel}` : null });
+      showToast(res?.message || `SVIP Level ${selectedSvipLevel} granted successfully!`, 'success', 'SVIP Granted');
+      await logEvent({
+        action: selectedSvipLevel === 0 ? 'REVOKE_SVIP' : `GRANT_SVIP_${selectedSvipLevel}`,
+        targetId: user.id,
+        targetType: 'USER',
+        operatorName: 'Super Admin',
+        reason: actionReason || `Assigned SVIP Level ${selectedSvipLevel}`,
+        riskLevel: 'HIGH',
+        status: 'SUCCESS',
+      });
+      setModalAction(null);
+      setActionReason('');
+    } catch (err) {
+      showToast(err.response?.data?.message || err.message || 'Failed to grant SVIP', 'error', 'Grant Failed');
+    } finally {
+      setIsGrantingSvip(false);
     }
   };
 
@@ -710,6 +755,17 @@ export function UserDetailPage() {
               }}
             >
               <Crown className="h-4 w-4 mr-1 text-purple-400" /> Grant Noble
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setModalAction('grant_svip');
+                const existingNum = user.svipLevel ? parseInt(String(user.svipLevel).replace(/\D/g, ''), 10) || 1 : 1;
+                setSelectedSvipLevel(existingNum);
+              }}
+            >
+              <Sparkles className="h-4 w-4 mr-1 text-purple-400" /> Grant SVIP
             </Button>
             <Button
               variant="outline"
@@ -1351,14 +1407,14 @@ export function UserDetailPage() {
                     2. Browse & Select from Real Item Catalog
                   </label>
                   <span className="text-[11px] text-slate-500 font-mono">
-                    {propsCatalog.length} items available
+                    {Array.isArray(propsCatalog) ? propsCatalog.length : 0} items available
                   </span>
                 </div>
 
                 {/* Filter / Search input */}
                 <Input
                   size="sm"
-                  placeholder="Search item name in this category..."
+                  placeholder="Search item name or ID in this category..."
                   value={propsSearchQuery}
                   onChange={(e) => setPropsSearchQuery(e.target.value)}
                 />
@@ -1370,11 +1426,30 @@ export function UserDetailPage() {
                       <RefreshCw className="w-4 h-4 animate-spin mx-auto mb-1 text-gold-400" />
                       Loading catalog items from server...
                     </div>
-                  ) : propsCatalog.length === 0 ? (
+                  ) : propsCatalogError ? (
+                    <div className="p-4 text-center space-y-2 bg-rose-950/30 border border-rose-500/30 rounded-lg text-rose-300 text-xs">
+                      <AlertTriangle className="w-5 h-5 mx-auto text-rose-400" />
+                      <p>{propsCatalogError}</p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-1 inline-flex items-center gap-1.5"
+                        onClick={() => loadPropsCatalog(selectedProp)}
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" /> Retry
+                      </Button>
+                    </div>
+                  ) : !Array.isArray(propsCatalog) || propsCatalog.length === 0 ? (
                     <p className="p-4 text-center text-slate-500 italic text-xs">No items currently available in this catalog category.</p>
                   ) : (
-                    propsCatalog
-                      .filter((item) => !propsSearchQuery || item.name.toLowerCase().includes(propsSearchQuery.toLowerCase()))
+                    (Array.isArray(propsCatalog) ? propsCatalog : [])
+                      .filter((item) => {
+                        if (!item) return false;
+                        if (!propsSearchQuery) return true;
+                        const q = propsSearchQuery.toLowerCase();
+                        return (item.name || '').toLowerCase().includes(q) || String(item.id || '').toLowerCase().includes(q);
+                      })
                       .map((item) => {
                         const isSelected = selectedCatalogItem?.id === item.id;
                         return (
@@ -1388,9 +1463,9 @@ export function UserDetailPage() {
                             }`}
                           >
                             <div className="flex items-center gap-2.5">
-                              {item.iconUrl || item.animationUrl ? (
+                              {item.iconUrl || item.animationUrl || item.thumbnailUrl ? (
                                 <img
-                                  src={resolveMediaUrl(item.iconUrl || item.animationUrl, (item.type || selectedProp || 'frame').toLowerCase())}
+                                  src={resolveMediaUrl(item.iconUrl || item.animationUrl || item.thumbnailUrl, (item.type || selectedProp || 'frame').toLowerCase())}
                                   alt={item.name}
                                   onError={(e) => handleImageError(e, (item.type || selectedProp || 'frame').toLowerCase())}
                                   className="w-8 h-8 rounded object-contain bg-slate-950 p-0.5 border border-slate-700"
@@ -1498,7 +1573,7 @@ export function UserDetailPage() {
                 Select Configured Noble Title
               </label>
               <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
-                {noblesCatalog.map((noble) => {
+                {(Array.isArray(noblesCatalog) ? noblesCatalog : []).map((noble) => {
                   const isSelected = selectedNoble?.tier === noble.tier;
                   return (
                     <div
@@ -1562,6 +1637,87 @@ export function UserDetailPage() {
                 disabled={isGrantingNoble || !selectedNoble}
               >
                 {isGrantingNoble ? 'Granting...' : `Confirm Grant: ${selectedNoble ? selectedNoble.title : 'Noble'}`}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Grant SVIP Modal */}
+      {modalAction === 'grant_svip' && (
+        <Modal
+          isOpen={true}
+          onClose={() => setModalAction(null)}
+          title={`Grant SVIP Supreme — @${user.username}`}
+          size="md"
+        >
+          <div className="space-y-4 text-xs text-slate-300">
+            <div className="p-3.5 rounded-xl bg-purple-950/20 border border-purple-500/30 space-y-1.5">
+              <div className="flex items-center gap-2 text-purple-400 font-bold">
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                <span>SVIP Supreme Level Management</span>
+              </div>
+              <p className="text-slate-300 text-[11px]">
+                SVIP levels range from 1 to 16. Setting level to 0 revokes SVIP status. SVIP status is completely independent of VIP Noble titles.
+              </p>
+              {user.svipLevel && (
+                <p className="text-purple-300 font-semibold text-[11px] pt-1 border-t border-purple-500/30">
+                  Current SVIP Status: {user.svipLevel}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="text-[11px] font-semibold text-slate-400 mb-1 block">Select SVIP Level (1 - 16)</label>
+              <select
+                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                value={selectedSvipLevel}
+                onChange={(e) => setSelectedSvipLevel(Number(e.target.value))}
+              >
+                <option value={0}>0 — Revoke SVIP Status</option>
+                {Array.from({ length: 16 }, (_, i) => i + 1).map((lvl) => (
+                  <option key={lvl} value={lvl}>SVIP {lvl} — Supreme Tier {lvl}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 mb-1 block">Validity Duration</label>
+                <select
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                  value={svipDurationDays}
+                  onChange={(e) => setSvipDurationDays(Number(e.target.value))}
+                >
+                  <option value={30}>30 Days (Standard)</option>
+                  <option value={90}>90 Days (Quarterly)</option>
+                  <option value={365}>365 Days (1 Year)</option>
+                  <option value={0}>Permanent Grant</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-400 mb-1 block">Audit Reason</label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none"
+                  placeholder="e.g. VIP top spender compensation"
+                  value={actionReason}
+                  onChange={(e) => setActionReason(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
+              <Button variant="outline" size="sm" onClick={() => setModalAction(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleGrantSvip}
+                disabled={isGrantingSvip}
+              >
+                {isGrantingSvip ? 'Applying...' : selectedSvipLevel === 0 ? 'Confirm SVIP Revocation' : `Confirm SVIP ${selectedSvipLevel}`}
               </Button>
             </div>
           </div>

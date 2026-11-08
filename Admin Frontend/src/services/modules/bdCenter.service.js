@@ -56,7 +56,7 @@ export async function getBDCenterInvites(id) {
 
 export async function lookupUserForBD(query) {
   const res = await apiClient.get('/v1/admin/bd-centers/lookup-user', { params: { query } });
-  return res.data?.data;
+  return res.data?.data || res.data?.user || (res.data?.id ? res.data : null);
 }
 
 export async function removeBDRole(id, reason) {

@@ -487,14 +487,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ? Icons.female_rounded 
                                 : Icons.male_rounded,
                             size: 11,
-                            color: Colors.blueAccent,
+                            color: user.gender.toLowerCase() == 'female'
+                                ? Colors.pinkAccent
+                                : Colors.blueAccent,
                           ),
                           const SizedBox(width: 2),
                           Text(
                             user.age > 0 ? '${user.age}' : user.gender,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 10,
-                              color: Colors.blueAccent,
+                              color: user.gender.toLowerCase() == 'female'
+                                  ? Colors.pinkAccent
+                                  : Colors.blueAccent,
                               fontWeight: FontWeight.bold,
                             ),
                           ),

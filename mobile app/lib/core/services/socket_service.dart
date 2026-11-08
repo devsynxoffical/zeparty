@@ -202,6 +202,10 @@ class SocketService {
   final _userRoleUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onUserRoleUpdated => _userRoleUpdatedController.stream;
 
+  // User Noble Title Updated Stream (Issue 26)
+  final _userNobleUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onUserNobleUpdated => _userNobleUpdatedController.stream;
+
   // Authoritative Stage Streams (Item 49)
   final _roomStageUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onRoomStageUpdated => _roomStageUpdatedController.stream;
@@ -825,6 +829,17 @@ class SocketService {
     _socket!.on('seller:status_updated', handleRoleUpdate);
     _socket!.off('seller:revoked');
     _socket!.on('seller:revoked', handleRoleUpdate);
+
+    // Issue 26: User Noble Dynamic Synchronization
+    void handleNobleUpdate(dynamic data) {
+      if (data != null) {
+        final map = safeMap(data);
+        _userNobleUpdatedController.add(map);
+        _userRoleUpdatedController.add(map);
+      }
+    }
+    _socket!.off('user:noble_updated');
+    _socket!.on('user:noble_updated', handleNobleUpdate);
 
     // Item 49: Authoritative Stage State & Mic Synchronization
     void handleStageUpdate(dynamic data) {

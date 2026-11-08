@@ -167,7 +167,9 @@ export function LiveRoomsPage() {
         <div className="max-w-xs">
           <p className="font-bold text-white text-sm leading-tight truncate">{row.title}</p>
           <div className="flex flex-wrap items-center gap-1.5 mt-1">
-            <Badge variant="default" className="text-[10px] font-mono">{row.id}</Badge>
+            <Badge variant="default" className="text-[10px] font-mono">
+              {row.roomType === 'party' ? `Party: ${row.id}` : `Live: ${row.id}`}
+            </Badge>
             <Badge variant="purple" className="text-[10px]">{row.category}</Badge>
             <Badge variant="info" className="text-[10px] font-semibold flex items-center gap-1.5 px-2 py-0.5">
               <CountryFlag code={row.country} className="w-3.5 h-2.5 object-cover rounded-sm shrink-0" />
@@ -179,27 +181,52 @@ export function LiveRoomsPage() {
     },
     {
       key: 'host',
-      header: 'Host Profile',
+      header: 'Host / Owner',
       render: (row) => (
         <div>
           <p className="text-sm text-white font-semibold">{row.hostName}</p>
-          <p className="text-xs text-slate-400">{row.hostUsername}</p>
+          <p className="text-xs text-slate-400">@{row.hostUsername}</p>
+          {row.ownerId && (
+            <p className="text-[10px] text-slate-500 font-mono">Owner: {row.ownerId}</p>
+          )}
         </div>
       ),
     },
     {
       key: 'status',
       header: 'Status',
-      render: (row) => <StatusBadge status={row.status} />,
+      render: (row) => (
+        <div>
+          <StatusBadge status={row.status} />
+          {row.roomType === 'party' && (
+            <span className="block text-[10px] text-slate-400 mt-0.5">
+              {row.status === 'active' ? 'Party Active' : 'Party Sleeping'}
+            </span>
+          )}
+          {row.roomType === 'live' && (
+            <span className="block text-[10px] text-slate-400 mt-0.5">
+              {row.status === 'active' ? 'Live Streaming' : 'Live Ended'}
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       key: 'viewers',
       header: 'Audience / Listeners',
       render: (row) => (
-        <div className="flex items-center gap-1.5 text-sm">
-          <Users className="h-3.5 w-3.5 text-sky-400" />
-          <span className="text-sky-300 font-semibold">{formatNumber(row.viewers)}</span>
-          <span className="text-[10px] text-slate-500">/ peak {formatNumber(row.peakViewers)}</span>
+        <div>
+          <div className="flex items-center gap-1.5 text-sm">
+            <Users className="h-3.5 w-3.5 text-sky-400" />
+            <span className="text-sky-300 font-semibold">{formatNumber(row.viewers)}</span>
+            <span className="text-[10px] text-slate-500">/ peak {formatNumber(row.peakViewers)}</span>
+          </div>
+          {row.roomType === 'party' && (
+            <div className="text-[10px] text-emerald-400 mt-0.5 flex items-center gap-1 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
+              {row.occupiedSeatsCount || 0} / {row.seats?.length || 10} Mics Occupied
+            </div>
+          )}
         </div>
       ),
     },

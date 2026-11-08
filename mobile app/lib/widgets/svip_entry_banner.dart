@@ -8,11 +8,13 @@ class SvipEntryEvent {
   final UserModel user;
   final Map<String, dynamic>? entryEffect;
   final String? dedupKey;
+  final bool suppressAnimation;
 
   const SvipEntryEvent({
     required this.user,
     this.entryEffect,
     this.dedupKey,
+    this.suppressAnimation = false,
   });
 }
 
@@ -52,7 +54,8 @@ class SvipEntryManager {
         (now - _lastShownEntryTimestamp[key]! < _dedupWindowMs);
   }
 
-  void showEntry(UserModel user, {Map<String, dynamic>? entryEffect, String? dedupKey}) {
+  void showEntry(UserModel user, {Map<String, dynamic>? entryEffect, String? dedupKey, bool suppressAnimation = false}) {
+    if (suppressAnimation) return;
     final hasVipOrNoble = user.isVip ||
         (user.nobleTitle != null && user.nobleTitle!.isNotEmpty) ||
         (user.vipLevel.isNotEmpty && user.vipLevel != 'None') ||
@@ -74,7 +77,12 @@ class SvipEntryManager {
       _lastShownEntryTimestamp[key] = now;
     }
 
-    _eventController.add(SvipEntryEvent(user: user, entryEffect: entryEffect, dedupKey: dedupKey));
+    _eventController.add(SvipEntryEvent(
+      user: user,
+      entryEffect: entryEffect,
+      dedupKey: dedupKey,
+      suppressAnimation: suppressAnimation,
+    ));
   }
 }
 
@@ -161,9 +169,9 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
       child: SlideTransition(
         position: _slideAnimation,
         child: Align(
-          alignment: Alignment.centerLeft,
+          alignment: Alignment.center,
           child: Container(
-            constraints: const BoxConstraints(maxWidth: 210),
+            constraints: const BoxConstraints(maxWidth: 320),
             margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(

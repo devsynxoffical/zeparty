@@ -13,6 +13,7 @@ import '../core/repositories/social_repository.dart';
 import '../core/repositories/backend_repository.dart';
 import '../core/services/media_upload_service.dart';
 import '../core/utils/firebase_auth_errors.dart';
+import '../core/utils/wealth_level_helper.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthRepository _authRepository = AuthRepository.instance;
@@ -28,6 +29,8 @@ class AuthProvider extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _banSubscription;
   StreamSubscription<Map<String, dynamic>>? _restrictionSubscription;
   StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
+  StreamSubscription<Map<String, dynamic>>? _nobleSubscription;
+  StreamSubscription<Map<String, dynamic>>? _roleSubscription;
 
   late final Future<void> _initFuture;
 
@@ -73,6 +76,26 @@ class AuthProvider extends ChangeNotifier {
         refreshCurrentUser();
       }
     });
+
+    _nobleSubscription = SocketService.instance.onUserNobleUpdated.listen((data) {
+      final targetUserId = data['userId']?.toString();
+      if (_currentUser != null && (_currentUser!.id == targetUserId || targetUserId == null)) {
+        final isActive = data['isActive'] == true;
+        final newNobleTitle = isActive
+            ? (data['nobleTitle']?.toString() ?? data['nobleRank']?.toString())
+            : null;
+        _currentUser = _currentUser!.copyWith(nobleTitle: newNobleTitle);
+        _saveUserLocalSession(_currentUser!);
+        notifyListeners();
+      }
+    });
+
+    _roleSubscription = SocketService.instance.onUserRoleUpdated.listen((data) {
+      final targetUserId = data['userId']?.toString();
+      if (_currentUser != null && (_currentUser!.id == targetUserId || targetUserId == null)) {
+        refreshCurrentUser();
+      }
+    });
   }
 
   void updateAvatarFrame(String frame) {
@@ -97,7 +120,7 @@ class AuthProvider extends ChangeNotifier {
       final user = _currentUser ?? UserModel.empty;
       final currentXp = user.wealthXp;
       final newWealthXp = currentXp + xpIncrement;
-      final newLevel = newWealthXp ~/ 10000;
+      final newLevel = WealthLevelHelper.getLevelFromSending(newWealthXp);
       _currentUser = user.copyWith(
         wealthXp: newWealthXp,
         wealthLevel: newLevel,
@@ -133,6 +156,8 @@ class AuthProvider extends ChangeNotifier {
     _banSubscription?.cancel();
     _restrictionSubscription?.cancel();
     _notificationSubscription?.cancel();
+    _nobleSubscription?.cancel();
+    _roleSubscription?.cancel();
     super.dispose();
   }
 

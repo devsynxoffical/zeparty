@@ -38,7 +38,7 @@ class NobleBadgeHelper {
 
     // Noble Badges
     if (lower.contains('emperor') || lower.contains('imperial')) return 'assets/nobles/emperor_badge.webp';
-    if (lower.contains('king') || lower.contains('prince')) return 'assets/nobles/ZP-034_tier-6-king_badge.webp';
+    if (lower.contains('king') || lower.contains('prince')) return 'assets/nobles/ZP-037_tier-6-king_badge.webp';
     if (lower.contains('duke')) return 'assets/nobles/duke_badge.webp';
     if (lower.contains('marquis')) return 'assets/nobles/marquis_badge.webp';
     if (lower.contains('viscount')) return 'assets/nobles/viscount_badge.webp';
@@ -57,22 +57,22 @@ class NobleBadgeHelper {
       return 'assets/svip/SVIP01_badge_live.webp';
     }
 
-    // Role Badges
-    if (lower.contains('admin') && lower.contains('super')) return 'assets/roles/super_admin_tag.webp';
-    if (lower.contains('admin')) return 'assets/roles/admin_badge.webp';
-    if (lower.contains('agency')) return 'assets/roles/agency_tag.webp';
-    if (lower.contains('assistant')) return 'assets/roles/assistant_tag.webp';
-    if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/bd_tag.webp';
-    if (lower.contains('boss')) return 'assets/roles/boss_tag.webp';
-    if (lower.contains('ceo')) return 'assets/roles/ceo_tag.webp';
-    if (lower.contains('cs') || lower.contains('support') || lower.contains('service')) return 'assets/roles/cs_badge.webp';
+    // Role Badges (Circular badges for badge gallery / medal slots)
+    if (lower.contains('admin')) return 'assets/roles/ZP-179_admin_badge.webp';
+    if (lower.contains('agency')) return 'assets/roles/ZP-182_agency_badge.webp';
+    if (lower.contains('assistant')) return 'assets/roles/ZP-185_assistant_badge.webp';
+    if (lower == 'bd' || lower.contains('bd ')) return 'assets/roles/ZP-188_bd_badge.webp';
+    if (lower.contains('boss')) return 'assets/roles/ZP-191_boss_badge.webp';
+    if (lower.contains('ceo')) return 'assets/roles/ZP-194_ceo_badge.webp';
+    if (lower.contains('cs') || lower.contains('support') || lower.contains('service')) return 'assets/roles/ZP-199_cs_badge.webp';
     if (lower.contains('master') || lower.contains('game master')) return 'assets/roles/game_master_badge.webp';
-    if (lower.contains('live host') || lower.contains('audio host')) return 'assets/roles/host_badge.webp';
-    if (lower.contains('host')) return 'assets/roles/host_badge.webp';
-    if (lower.contains('coins') || lower.contains('seller')) return 'assets/roles/coins_saller_tag.webp';
-    if (lower.contains('recharge') || lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/marchent_badge.webp';
+    if (lower.contains('live host') || lower.contains('audio host') || lower.contains('host')) return 'assets/roles/ZP-205_host_badge.webp';
+    if (lower.contains('coins') || lower.contains('seller') || lower.contains('recharge') || lower.contains('merchant') || lower.contains('marchent')) return 'assets/roles/ZP-213_marchent_badge.webp';
     if (lower.contains('top fan')) return 'assets/roles/top_fan_badge.webp';
-    if (lower.contains('lover')) return 'assets/roles/lover_tag.webp';
+    if (lower.contains('lover')) return 'assets/roles/ZP-208_lover_badge.webp';
+    if (lower.contains('official')) return 'assets/roles/ZP-216_official_badge.webp';
+    if (lower.contains('manager')) return 'assets/roles/manager_tag.webp';
+    if (lower.contains('mystery')) return 'assets/animations/mystery_badge.webp';
     if (lower.contains('official')) return 'assets/roles/official_tag.webp';
     if (lower.contains('manager')) return 'assets/roles/manager_tag.webp';
     if (lower.contains('mystery')) return 'assets/animations/mystery_badge.webp';

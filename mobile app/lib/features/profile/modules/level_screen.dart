@@ -5,6 +5,7 @@ import '../../../../widgets/user_avatar.dart';
 import '../../../../widgets/skeleton_widgets.dart';
 import '../../../../providers/auth_provider.dart';
 import '../../../../models/user_model.dart';
+import '../../../../core/utils/wealth_level_helper.dart';
 
 class LevelScreen extends StatefulWidget {
   const LevelScreen({super.key});
@@ -112,16 +113,26 @@ class _LevelScreenState extends State<LevelScreen> with SingleTickerProviderStat
   }
 
   Widget _buildWealthTab(bool isDark, Color primary, UserModel user) {
-    int totalXp = 825000000;
+    final progress = WealthLevelHelper.getProgress(user.wealthXp);
+    final int displayLevel = progress.currentLevel;
+    final int progressInLevel = progress.isMax ? progress.currentLevelThreshold : progress.progressInLevel;
+    final int additionalRequired = progress.isMax ? progress.currentLevelThreshold : (progress.additionalRequired > 0 ? progress.additionalRequired : 1);
+    final int remaining = progress.isMax ? 0 : (progress.additionalRequired - progress.progressInLevel);
+    final String nextExpText = progress.isMax
+        ? 'Maximum Level (Lv. 100)'
+        : 'Need ${_formatNumber(remaining)} EXP to upgrade';
+    final String nextLevelText = progress.isMax ? 'MAX' : 'Lv. ${progress.nextLevel ?? 100}';
+
     return _buildLevelSystem(
       isDark: isDark,
       title: 'Wealth Level',
-      level: user.wealthLevel,
+      level: displayLevel,
+      nextLevelText: nextLevelText,
       avatarUrl: user.avatarUrl,
       gradientColors: [const Color(0xFFFFD700), const Color(0xFFFDB931)], // Gold gradient
-      currentXp: user.wealthXp,
-      totalXp: totalXp,
-      nextLevelXPNeeded: 'Need ${_formatNumber(totalXp - user.wealthXp)} EXP to upgrade',
+      currentXp: progressInLevel,
+      totalXp: additionalRequired,
+      nextLevelXPNeeded: nextExpText,
     );
   }
 
@@ -157,6 +168,7 @@ class _LevelScreenState extends State<LevelScreen> with SingleTickerProviderStat
     required bool isDark,
     required String title,
     required int level,
+    String? nextLevelText,
     required String avatarUrl,
     required List<Color> gradientColors,
     required int currentXp,
@@ -225,7 +237,7 @@ class _LevelScreenState extends State<LevelScreen> with SingleTickerProviderStat
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          'Lv. ${level + 1}',
+                          nextLevelText ?? 'Lv. ${level + 1}',
                           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                         ),
                         const SizedBox(height: 2),
@@ -321,6 +333,10 @@ class _LevelScreenState extends State<LevelScreen> with SingleTickerProviderStat
       {'range': 'Lv 31-40', 'min': 31, 'max': 40},
       {'range': 'Lv 41-50', 'min': 41, 'max': 50},
       {'range': 'Lv 51-60', 'min': 51, 'max': 60},
+      {'range': 'Lv 61-70', 'min': 61, 'max': 70},
+      {'range': 'Lv 71-80', 'min': 71, 'max': 80},
+      {'range': 'Lv 81-90', 'min': 81, 'max': 90},
+      {'range': 'Lv 91-100', 'min': 91, 'max': 100},
     ];
 
     return GridView.builder(

@@ -101,6 +101,7 @@ export function BDCentersPage() {
 
   // BD User ID Lookup State
   const [bdUserQuery, setBdUserQuery] = useState('');
+  const [verifiedQuery, setVerifiedQuery] = useState('');
   const [isSearchingUser, setIsSearchingUser] = useState(false);
   const [matchedBDUser, setMatchedBDUser] = useState(null);
   const [bdLookupError, setBdLookupError] = useState(null);
@@ -298,26 +299,36 @@ export function BDCentersPage() {
   // BD User ID Lookup
   const handleLookupBDUser = async (e) => {
     if (e) e.preventDefault();
-    if (!bdUserQuery.trim()) {
+    const query = bdUserQuery.trim();
+    if (!query) {
       setBdLookupError('Please enter a User ID or Username');
+      setMatchedBDUser(null);
+      setVerifiedQuery('');
+      setFormData((prev) => ({ ...prev, userId: '' }));
       return;
     }
     setIsSearchingUser(true);
     setBdLookupError(null);
     try {
-      const user = await lookupUserForBD(bdUserQuery.trim());
+      const user = await lookupUserForBD(query);
+      if (!user || !user.id) {
+        throw new Error('User not found. Please verify the User ID.');
+      }
       setMatchedBDUser(user);
+      setVerifiedQuery(query);
       setFormData((prev) => ({
         ...prev,
         userId: user.id,
         name: prev.name || `${user.displayName || user.username}'s BD Center`,
         managerName: user.displayName || user.username,
         managerEmail: user.email || prev.managerEmail,
-        country: user.country || 'PK',
+        country: user.country || user.countryCode || 'PK',
       }));
     } catch (err) {
       setMatchedBDUser(null);
-      setBdLookupError(err.response?.data?.message || 'User not found. Please verify the User ID.');
+      setVerifiedQuery('');
+      setFormData((prev) => ({ ...prev, userId: '' }));
+      setBdLookupError(err.response?.data?.message || err.message || 'User not found. Please verify the User ID.');
     } finally {
       setIsSearchingUser(false);
     }
@@ -326,8 +337,13 @@ export function BDCentersPage() {
   // BD Creation with User Binding
   const handleCreateCenter = async (e) => {
     e.preventDefault();
-    if (!formData.name || !formData.userId) {
-      setBdLookupError('A verified User ID is required before saving.');
+    if (!formData.name?.trim() || !formData.userId) {
+      setBdLookupError('A verified User ID and BD Center Display Name are required before saving.');
+      return;
+    }
+
+    if (bdUserQuery.trim() !== verifiedQuery) {
+      setBdLookupError('User ID has been modified. Please verify the user before saving.');
       return;
     }
 
@@ -351,10 +367,11 @@ export function BDCentersPage() {
       setFormData({ name: '', managerName: '', managerEmail: '', country: 'PK', region: 'Asia Pacific', targetCoins: 15000000, notes: '', userId: '' });
       setMatchedBDUser(null);
       setBdUserQuery('');
+      setVerifiedQuery('');
       setBdLookupError(null);
       loadCenters();
     } catch (err) {
-      setBdLookupError(err.response?.data?.message || 'Failed to create BD center');
+      setBdLookupError(err.response?.data?.message || err.message || 'Failed to create BD center');
     }
   };
 
@@ -1404,8 +1421,13 @@ export function BDCentersPage() {
                     size="sm"
                     value={bdUserQuery}
                     onChange={(e) => {
-                      setBdUserQuery(e.target.value);
+                      const val = e.target.value;
+                      setBdUserQuery(val);
                       if (bdLookupError) setBdLookupError(null);
+                      if (verifiedQuery && val.trim() !== verifiedQuery) {
+                        setMatchedBDUser(null);
+                        setFormData((prev) => ({ ...prev, userId: '' }));
+                      }
                     }}
                     placeholder="Enter Unique User ID or Username (e.g. 786 or dev_user)"
                     required
@@ -1503,7 +1525,13 @@ export function BDCentersPage() {
                 type="submit"
                 variant="primary"
                 size="sm"
-                disabled={!matchedBDUser || matchedBDUser.hasActiveBD || !formData.name.trim()}
+                disabled={
+                  !matchedBDUser ||
+                  matchedBDUser.hasActiveBD ||
+                  !formData.name.trim() ||
+                  bdUserQuery.trim() !== verifiedQuery ||
+                  isSearchingUser
+                }
               >
                 Save & Assign BD Account
               </Button>

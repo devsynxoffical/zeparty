@@ -1672,7 +1672,40 @@ export async function postAdminReconcileAllRoomLevels(req, res, next) {
   }
 }
 
+export async function switchLiveToParty(req, res, next) {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    const { partyRoomId, pin } = req.body || {};
+    const result = await roomService.switchLiveToPartyRoom({
+      userId,
+      partyRoomId,
+      pin,
+    });
+    const statusCode = result.success ? 200 : (result.code === 'PARTY_ROOM_NOT_FOUND' ? 404 : 400);
+    return res.status(statusCode).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getActiveSession(req, res, next) {
+  try {
+    const userId = req.user?.id || req.user?.userId;
+    const activeSession = await roomService.getUserActiveSession(userId);
+    return res.status(200).json({
+      success: true,
+      data: {
+        activeSession: activeSession || null,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export default {
+  switchLiveToParty,
+  getActiveSession,
   respondCoHostInvite,
   leaveCoHost,
   removeCoHost,

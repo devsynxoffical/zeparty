@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../core/theme/app_colors.dart';
 import '../models/user_model.dart';
+import '../core/utils/wealth_level_helper.dart';
 import '../providers/svip_provider.dart';
 import '../features/profile/level_center_screen.dart';
 import '../features/svip/svip_center_screen.dart';
@@ -32,8 +33,9 @@ class ProfileStatusStrip extends StatelessWidget {
 
     final svipLevel = svip.currentLevel;
     final isSvipActive = svipLevel > 0;
-    final wealthLevel = currentUser?.wealthLevel ?? 0;
     final wealthXp = currentUser?.wealthXp ?? 0;
+    final wealthProgress = WealthLevelHelper.getProgress(wealthXp);
+    final wealthLevel = currentUser?.computedWealthLevel ?? (currentUser?.wealthLevel != null && currentUser!.wealthLevel > 0 ? currentUser!.wealthLevel : wealthProgress.currentLevel);
     final charmLevel = currentUser?.charmLevel ?? 0;
     final charmXp = currentUser?.charmXp ?? 0;
     final gameLevel = currentUser?.gameLevel ?? 0;
@@ -100,7 +102,7 @@ class ProfileStatusStrip extends StatelessWidget {
                     subtitle: 'Sending',
                     icon: Icons.diamond_rounded,
                     accentColor: _getTierColor(wealthLevel, wealthPalette),
-                    progress: (wealthXp / 1000000000).clamp(0.02, 1.0),
+                    progress: wealthProgress.progressRatio.clamp(0.02, 1.0),
                     isDark: isDark,
                     onTap: () {
                       Navigator.push(

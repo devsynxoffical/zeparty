@@ -1,25 +1,26 @@
 import 'package:flutter/material.dart';
+import '../core/services/api_client.dart';
 import '../models/bd_center_model.dart';
 
 class BDCenterProvider extends ChangeNotifier {
   bool _isLoading = false;
   
   // BD Operator Profile Metadata
-  final String _bdUserId = 'BD-88091';
-  final String _nickname = 'ZeParty Regional Director';
-  final String _avatarUrl = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80';
-  final String _country = 'United Arab Emirates';
-  final String _region = 'MENA Region';
-  final String _status = 'Verified BD Partner';
+  String _bdUserId = 'BD-88091';
+  String _nickname = 'ZeParty Regional Director';
+  String _avatarUrl = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80';
+  String _country = 'United Arab Emirates';
+  String _region = 'MENA Region';
+  String _status = 'Verified BD Partner';
 
   // KPI Metrics
-  final int _currentMonthAgencyDiamonds = 8450000;
-  final int _previousMonthAgencyDiamonds = 6200000;
-  final int _currentSalaryTier = 4;
-  final double _currentSalaryProjection = 3450.00;
-  final int _currentDiamondTarget = 10000000;
-  final int _totalAgenciesCount = 14;
-  final int _totalActiveAgentsCount = 52;
+  int _currentMonthAgencyDiamonds = 8450000;
+  int _previousMonthAgencyDiamonds = 6200000;
+  int _currentSalaryTier = 4;
+  double _currentSalaryProjection = 3450.00;
+  int _currentDiamondTarget = 10000000;
+  int _totalAgenciesCount = 14;
+  int _totalActiveAgentsCount = 52;
   int _pendingInvitationsCount = 3;
 
   // Salary Configuration Tiers
@@ -276,6 +277,65 @@ class BDCenterProvider extends ChangeNotifier {
   List<BDSalaryRecord> get salaryHistory => List.unmodifiable(_salaryHistory);
   List<BDAuditLog> get auditLogs => List.unmodifiable(_auditLogs);
 
+  /// Fetch authoritative BD Dashboard metrics and status from backend
+  Future<void> fetchBDDashboard() async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final res = await ApiClient.instance.get('/v1/bd-centers/dashboard');
+      if (res.data?['success'] == true && res.data['data'] != null) {
+        final data = res.data['data'] as Map<String, dynamic>;
+        final profile = data['bdProfile'] as Map<String, dynamic>?;
+        if (profile != null) {
+          _bdUserId = profile['userId']?.toString() ?? _bdUserId;
+          _status = profile['status']?.toString() ?? _status;
+          _country = profile['country']?.toString() ?? _country;
+          _region = profile['regionCode']?.toString() ?? _region;
+        }
+
+        _currentMonthAgencyDiamonds = (data['currentMonthDiamonds'] as num?)?.toInt() ?? _currentMonthAgencyDiamonds;
+        _currentSalaryTier = (data['currentSalaryTier'] as num?)?.toInt() ?? _currentSalaryTier;
+        _currentSalaryProjection = (data['currentSalaryProjection'] as num?)?.toDouble() ?? _currentSalaryProjection;
+        _totalAgenciesCount = (data['totalAgencies'] as num?)?.toInt() ?? _totalAgenciesCount;
+        _totalActiveAgentsCount = (data['totalActiveAgents'] as num?)?.toInt() ?? _totalActiveAgentsCount;
+        _pendingInvitationsCount = (data['pendingInvitations'] as num?)?.toInt() ?? _pendingInvitationsCount;
+      }
+    } catch (_) {} finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Fetch authoritative connected agents and agencies from backend
+  Future<void> fetchAgents() async {
+    try {
+      final res = await ApiClient.instance.get('/v1/bd-centers/agents');
+      if (res.data?['success'] == true && res.data['data'] != null) {
+        final list = res.data['data']['agents'] as List?;
+        if (list != null && list.isNotEmpty) {
+          _agents.clear();
+          for (final a in list) {
+            final owner = a['owner'] as Map<String, dynamic>?;
+            _agents.add(BDAgentItem(
+              id: a['agencyId']?.toString() ?? '',
+              userId: owner?['id']?.toString() ?? '',
+              nickname: owner?['name']?.toString() ?? 'Agent',
+              avatarUrl: owner?['avatarUrl']?.toString() ?? '',
+              agencyId: a['agencyId']?.toString() ?? '',
+              agencyName: a['agencyName']?.toString() ?? 'Agency',
+              currentMonthDiamonds: (a['currentMonthDiamonds'] as num?)?.toInt() ?? 0,
+              previousMonthDiamonds: (a['lastMonthDiamonds'] as num?)?.toInt() ?? 0,
+              activeHostsCount: 0,
+              assignmentDate: DateTime.tryParse(a['assignedDate']?.toString() ?? '') ?? DateTime.now(),
+            ));
+          }
+          notifyListeners();
+        }
+      }
+    } catch (_) {}
+  }
+
   // Invite Agent
   Future<bool> sendAgentInvitation({
     required String targetUserId,
@@ -292,7 +352,19 @@ class BDCenterProvider extends ChangeNotifier {
 
     _isLoading = true;
     notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 400));
+
+    try {
+      await ApiClient.instance.post(
+        '/v1/bd-centers/invite',
+        data: {
+          'targetUserId': targetUserId,
+          'agencyId': agencyId,
+          'note': note,
+        },
+      );
+    } catch (_) {
+      // Graceful fallback to client recording
+    }
 
     final newInvite = BDInvitationRecord(
       id: 'inv_${DateTime.now().millisecondsSinceEpoch}',

@@ -78,6 +78,9 @@ export function MerchantsPage() {
   const [selectedMerchant, setSelectedMerchant] = useState(null);
   const [editModal, setEditModal] = useState(null);
   const [addModal, setAddModal] = useState(false);
+  const [isSubmittingMerchant, setIsSubmittingMerchant] = useState(false);
+  const [addModalError, setAddModalError] = useState(null);
+  const [duplicateMerchantInfo, setDuplicateMerchantInfo] = useState(null);
   const [configModal, setConfigModal] = useState({ open: false, merchant: null });
   const [allocationModal, setAllocationModal] = useState({ open: false, merchant: null, newAllocation: '' });
   const [historyModal, setHistoryModal] = useState({ open: false, merchant: null });
@@ -112,6 +115,17 @@ export function MerchantsPage() {
     dailyLimitUSD: '10000',
     paymentMethods: 'Bank Wire Transfer, USDT (TRC20)',
   });
+
+  const existingForUserRef = useMemo(() => {
+    const ref = newForm.userRef?.trim().toLowerCase();
+    if (!ref) return null;
+    return merchants.find(
+      (m) =>
+        (m.userRef && String(m.userRef).toLowerCase() === ref) ||
+        (m.user?.username && m.user.username.toLowerCase() === ref) ||
+        (m.user?.id && String(m.user.id).toLowerCase() === ref)
+    );
+  }, [newForm.userRef, merchants]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -436,16 +450,36 @@ export function MerchantsPage() {
 
   // Add Merchant
   const handleAddMerchant = async () => {
-    if (!newForm.merchantName || !newForm.contactPerson || !newForm.email) return;
+    setAddModalError(null);
+    setDuplicateMerchantInfo(null);
 
+    const company = newForm.merchantName?.trim();
+    const contact = newForm.contactPerson?.trim();
+    const email = newForm.email?.trim();
+
+    if (!company) {
+      setAddModalError('Merchant / Company Name is required.');
+      return;
+    }
+    if (!contact) {
+      setAddModalError('Contact Person Name is required.');
+      return;
+    }
+    if (!email) {
+      setAddModalError('Email address is required.');
+      return;
+    }
+
+    setIsSubmittingMerchant(true);
     try {
       await createMerchant({
-        userRef: newForm.userRef,
-        username: newForm.userRef,
-        companyName: newForm.merchantName,
-        merchantName: newForm.merchantName,
-        contactPerson: newForm.contactPerson,
-        email: newForm.email,
+        userRef: newForm.userRef?.trim(),
+        userId: newForm.userRef?.trim(),
+        username: newForm.userRef?.trim(),
+        companyName: company,
+        merchantName: company,
+        contactPerson: contact,
+        email: email,
         country: newForm.country || 'US',
         countryCode: newForm.country || 'US',
         initialAllocation: Number(newForm.initialAllocation) || 25200000,
@@ -456,14 +490,16 @@ export function MerchantsPage() {
         action: 'MERCHANT_ADDED',
         module: 'Merchants',
         targetType: 'merchant',
-        targetId: newForm.merchantName,
-        targetName: newForm.merchantName,
-        reason: `Added merchant with account ref ${newForm.userRef || newForm.merchantName}`,
+        targetId: company,
+        targetName: company,
+        reason: `Added merchant with account ref ${newForm.userRef || company}`,
         riskLevel: 'HIGH',
       });
 
       await fetchMerchantsData();
       setAddModal(false);
+      setAddModalError(null);
+      setDuplicateMerchantInfo(null);
       setNewForm({
         userRef: '',
         merchantName: '',
@@ -472,9 +508,28 @@ export function MerchantsPage() {
         country: 'US',
         initialAllocation: '25200000',
       });
-      showFeedback(`New merchant "${newForm.merchantName}" added.`);
+      showFeedback(`New merchant "${company}" added successfully.`);
     } catch (err) {
-      showFeedback(err?.response?.data?.message || 'Failed to create merchant');
+      console.error('Failed to create merchant:', err);
+      const resData = err?.response?.data;
+      if (resData?.error?.code === 'MERCHANT_ALREADY_EXISTS' || err?.response?.status === 409) {
+        const existingData = resData?.data || resData?.error?.existingMerchant;
+        const matched =
+          merchants.find(
+            (m) =>
+              (m.userRef && String(m.userRef) === String(newForm.userRef?.trim())) ||
+              (m.id && existingData?.id && m.id === existingData.id)
+          ) || existingData;
+        setDuplicateMerchantInfo(matched);
+        setAddModalError(
+          resData?.message ||
+            `User ${newForm.userRef} is already assigned as an active Merchant. Duplicate merchant profiles cannot be created for the same user.`
+        );
+      } else {
+        setAddModalError(resData?.message || err?.message || 'Failed to create merchant account.');
+      }
+    } finally {
+      setIsSubmittingMerchant(false);
     }
   };
 
@@ -691,7 +746,15 @@ export function MerchantsPage() {
           <Button variant="ghost" size="sm" onClick={fetchMerchantsData} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </Button>
-          <Button variant="primary" size="sm" onClick={() => setAddModal(true)}>
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setAddModalError(null);
+              setDuplicateMerchantInfo(null);
+              setAddModal(true);
+            }}
+          >
             <Plus className="h-4 w-4 mr-1.5" /> Add Merchant
           </Button>
         </div>
@@ -1023,51 +1086,157 @@ export function MerchantsPage() {
 
       {/* Add Merchant Modal */}
       {addModal && (
-        <Modal isOpen={true} onClose={() => setAddModal(false)} title="Add New Merchant" size="md">
+        <Modal
+          isOpen={true}
+          onClose={() => {
+            if (!isSubmittingMerchant) {
+              setAddModal(false);
+              setAddModalError(null);
+              setDuplicateMerchantInfo(null);
+            }
+          }}
+          title="Add New Merchant"
+          size="md"
+        >
           <div className="space-y-4 text-xs text-slate-300">
+            {addModalError && (
+              <div className="p-3 bg-red-500/15 border border-red-500/30 rounded-xl text-red-300 text-xs flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 space-y-1">
+                  <p className="font-semibold text-red-200">Unable to create merchant</p>
+                  <p className="text-[11px] leading-relaxed text-red-300/90">{addModalError}</p>
+                </div>
+              </div>
+            )}
+
+            {(existingForUserRef || duplicateMerchantInfo) && (
+              <div className="p-3.5 bg-amber-500/15 border border-amber-500/30 rounded-xl text-amber-300 text-xs space-y-2">
+                <div className="flex items-center gap-2 font-bold text-amber-200">
+                  <AlertTriangle className="h-4 w-4 text-amber-400 flex-shrink-0" />
+                  <span>
+                    Existing Assignment Found: "{(existingForUserRef || duplicateMerchantInfo).merchantName || (existingForUserRef || duplicateMerchantInfo).companyName}"
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                  User Ref <strong className="text-white font-mono">{newForm.userRef || (existingForUserRef || duplicateMerchantInfo).userRef}</strong> is already assigned as an active merchant. A single user account cannot hold duplicate merchant profiles.
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    onClick={() => {
+                      const target = existingForUserRef || duplicateMerchantInfo;
+                      setAddModal(false);
+                      setAddModalError(null);
+                      setDuplicateMerchantInfo(null);
+                      const found = merchants.find((m) => m.id === target.id) || target;
+                      setSelectedMerchant(found);
+                    }}
+                  >
+                    <Eye className="h-3 w-3 mr-1" /> View Existing Profile
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => {
+                      const target = existingForUserRef || duplicateMerchantInfo;
+                      setAddModal(false);
+                      setAddModalError(null);
+                      setDuplicateMerchantInfo(null);
+                      const found = merchants.find((m) => m.id === target.id) || target;
+                      handleOpenEdit(found);
+                    }}
+                  >
+                    <Edit className="h-3 w-3 mr-1" /> Edit Existing Assignment
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <Input
               label="Existing User ID or Username (Optional Ref)"
               value={newForm.userRef}
-              onChange={(e) => setNewForm({ ...newForm, userRef: e.target.value })}
-              placeholder="e.g. usr_123 or leave blank to auto-create user"
+              onChange={(e) => {
+                setNewForm({ ...newForm, userRef: e.target.value });
+                if (addModalError) setAddModalError(null);
+                if (duplicateMerchantInfo) setDuplicateMerchantInfo(null);
+              }}
+              placeholder="e.g. 9202535 or leave blank to auto-create user"
+              disabled={isSubmittingMerchant}
             />
             <Input
               label="Merchant / Company Name *"
               value={newForm.merchantName}
-              onChange={(e) => setNewForm({ ...newForm, merchantName: e.target.value })}
+              onChange={(e) => {
+                setNewForm({ ...newForm, merchantName: e.target.value });
+                if (addModalError) setAddModalError(null);
+              }}
               placeholder="e.g. Global Pay Ltd"
+              disabled={isSubmittingMerchant}
             />
             <Input
               label="Contact Person Name *"
               value={newForm.contactPerson}
-              onChange={(e) => setNewForm({ ...newForm, contactPerson: e.target.value })}
+              onChange={(e) => {
+                setNewForm({ ...newForm, contactPerson: e.target.value });
+                if (addModalError) setAddModalError(null);
+              }}
               placeholder="e.g. Marcus Vance"
+              disabled={isSubmittingMerchant}
             />
             <Input
               label="Email *"
               value={newForm.email}
-              onChange={(e) => setNewForm({ ...newForm, email: e.target.value })}
+              onChange={(e) => {
+                setNewForm({ ...newForm, email: e.target.value });
+                if (addModalError) setAddModalError(null);
+              }}
               placeholder="e.g. marcus@globalpay.com"
+              disabled={isSubmittingMerchant}
             />
             <div className="grid grid-cols-2 gap-3">
               <CountrySelect
                 label="Country"
                 value={newForm.country}
                 onChange={(code) => setNewForm({ ...newForm, country: code })}
+                disabled={isSubmittingMerchant}
               />
               <Input
                 label="Initial Coin Allocation"
                 type="number"
                 value={newForm.initialAllocation}
                 onChange={(e) => setNewForm({ ...newForm, initialAllocation: e.target.value })}
+                disabled={isSubmittingMerchant}
               />
             </div>
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
-              <Button variant="ghost" size="sm" onClick={() => setAddModal(false)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setAddModal(false);
+                  setAddModalError(null);
+                  setDuplicateMerchantInfo(null);
+                }}
+                disabled={isSubmittingMerchant}
+              >
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" onClick={handleAddMerchant}>
-                Create Merchant
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleAddMerchant}
+                disabled={isSubmittingMerchant}
+              >
+                {isSubmittingMerchant ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-1.5 animate-spin" /> Creating Merchant...
+                  </>
+                ) : (
+                  'Create Merchant'
+                )}
               </Button>
             </div>
           </div>

@@ -9,7 +9,9 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get('/', requirePermission('view_notifications'), adminNotificationController.listBroadcasts);
+router.post('/', requirePermission('manage_notifications'), adminNotificationController.broadcastNotification);
 router.post('/broadcast', requirePermission('manage_notifications'), adminNotificationController.broadcastNotification);
+router.post('/:id/retry', requirePermission('manage_notifications'), adminNotificationController.retryBroadcast);
 router.get('/:id', requirePermission('view_notifications'), adminNotificationController.getBroadcastDetails);
 
 export default router;

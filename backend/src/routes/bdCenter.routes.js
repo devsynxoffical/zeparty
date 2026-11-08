@@ -1,6 +1,7 @@
 import express from 'express';
 import authenticate from '../middlewares/authenticate.js';
 import requirePermission from '../middlewares/requirePermission.js';
+import { requireActiveBD } from '../middlewares/bdAuth.js';
 import bdCenterController from '../controllers/bdCenter.controller.js';
 
 export const adminBDCenterRouter = express.Router();
@@ -22,34 +23,36 @@ userBDCenterRouter.get('/policy/commission-table', bdCenterController.getCommiss
 userBDCenterRouter.get('/invite/:code', bdCenterController.validateInvite);
 userBDCenterRouter.post('/invite/accept', authenticate, bdCenterController.acceptInvite);
 userBDCenterRouter.get('/my-status', authenticate, bdCenterController.getMyBDStatus);
-userBDCenterRouter.get('/dashboard', authenticate, bdCenterController.getBDDashboard);
-userBDCenterRouter.get('/agents', authenticate, bdCenterController.getBDAgentsList);
-userBDCenterRouter.post('/invite', authenticate, bdCenterController.sendAgentInvitation);
-userBDCenterRouter.get('/salary', authenticate, bdCenterController.getBDSalary);
-userBDCenterRouter.get('/salary/history', authenticate, bdCenterController.getBDSalaryHistory);
-userBDCenterRouter.get('/targets', authenticate, bdCenterController.getBDTargets);
-userBDCenterRouter.get('/income', authenticate, bdCenterController.getBDIncome);
-userBDCenterRouter.get('/commission', authenticate, bdCenterController.getBDCommission);
-userBDCenterRouter.get('/settings', authenticate, bdCenterController.getBDSettings);
-userBDCenterRouter.get('/audit-history', authenticate, bdCenterController.getBDAuditHistory);
+
+// BD Agent & Center Manager Protected Operations
+userBDCenterRouter.get('/dashboard', authenticate, requireActiveBD, bdCenterController.getBDDashboard);
+userBDCenterRouter.get('/agents', authenticate, requireActiveBD, bdCenterController.getBDAgentsList);
+userBDCenterRouter.post('/invite', authenticate, requireActiveBD, bdCenterController.sendAgentInvitation);
+userBDCenterRouter.get('/salary', authenticate, requireActiveBD, bdCenterController.getBDSalary);
+userBDCenterRouter.get('/salary/history', authenticate, requireActiveBD, bdCenterController.getBDSalaryHistory);
+userBDCenterRouter.get('/targets', authenticate, requireActiveBD, bdCenterController.getBDTargets);
+userBDCenterRouter.get('/income', authenticate, requireActiveBD, bdCenterController.getBDIncome);
+userBDCenterRouter.get('/commission', authenticate, requireActiveBD, bdCenterController.getBDCommission);
+userBDCenterRouter.get('/settings', authenticate, requireActiveBD, bdCenterController.getBDSettings);
+userBDCenterRouter.get('/audit-history', authenticate, requireActiveBD, bdCenterController.getBDAuditHistory);
 
 // SVIP Control (BD Center & Admin)
-userBDCenterRouter.get('/svip/search', authenticate, bdCenterController.searchUserSVIP);
-userBDCenterRouter.post('/svip/manage', authenticate, bdCenterController.manageUserSVIP);
-userBDCenterRouter.get('/svip/history/:userId', authenticate, bdCenterController.getSVIPHistory);
+userBDCenterRouter.get('/svip/search', authenticate, requireActiveBD, bdCenterController.searchUserSVIP);
+userBDCenterRouter.post('/svip/manage', authenticate, requireActiveBD, bdCenterController.manageUserSVIP);
+userBDCenterRouter.get('/svip/history/:userId', authenticate, requireActiveBD, bdCenterController.getSVIPHistory);
 
 // Noble Control (BD Center & Admin)
-userBDCenterRouter.get('/noble/search', authenticate, bdCenterController.searchUserNoble);
-userBDCenterRouter.post('/noble/manage', authenticate, bdCenterController.manageUserNoble);
-userBDCenterRouter.get('/noble/history/:userId', authenticate, bdCenterController.getNobleHistory);
+userBDCenterRouter.get('/noble/search', authenticate, requireActiveBD, bdCenterController.searchUserNoble);
+userBDCenterRouter.post('/noble/manage', authenticate, requireActiveBD, bdCenterController.manageUserNoble);
+userBDCenterRouter.get('/noble/history/:userId', authenticate, requireActiveBD, bdCenterController.getNobleHistory);
 
 // Event Management (BD Center & Admin)
-userBDCenterRouter.get('/events', authenticate, bdCenterController.listEvents);
-userBDCenterRouter.post('/events', authenticate, bdCenterController.createEvent);
-userBDCenterRouter.get('/events/:id', authenticate, bdCenterController.getEventDetails);
-userBDCenterRouter.put('/events/:id', authenticate, bdCenterController.updateEvent);
-userBDCenterRouter.post('/events/:id/settle', authenticate, bdCenterController.settleEvent);
-userBDCenterRouter.get('/events/:id/history', authenticate, bdCenterController.getEventHistory);
+userBDCenterRouter.get('/events', authenticate, requireActiveBD, bdCenterController.listEvents);
+userBDCenterRouter.post('/events', authenticate, requireActiveBD, bdCenterController.createEvent);
+userBDCenterRouter.get('/events/:id', authenticate, requireActiveBD, bdCenterController.getEventDetails);
+userBDCenterRouter.put('/events/:id', authenticate, requireActiveBD, bdCenterController.updateEvent);
+userBDCenterRouter.post('/events/:id/settle', authenticate, requireActiveBD, bdCenterController.settleEvent);
+userBDCenterRouter.get('/events/:id/history', authenticate, requireActiveBD, bdCenterController.getEventHistory);
 
 export default {
   adminBDCenterRouter,

@@ -410,6 +410,24 @@ export function LiveRoomDetailPage() {
             <h1 className="text-2xl font-bold text-white">{room.title}</h1>
             <StatusBadge status={room.status} />
           </div>
+          <div className="flex flex-wrap items-center gap-2 mt-1">
+            <Badge variant="default" className="text-xs font-mono">
+              {room.roomType === 'party' ? `Party Room ID: ${room.id}` : `Live Session ID: ${room.id}`}
+            </Badge>
+            {room.hostId && (
+              <Badge variant="muted" className="text-xs font-mono">
+                Owner ID: {room.hostId}
+              </Badge>
+            )}
+            <Badge variant="purple" className="text-xs">
+              {room.roomType === 'party' ? 'Voice Party Room' : 'Live Video Broadcast'}
+            </Badge>
+            {room.roomType === 'party' && (
+              <Badge variant="success" className="text-xs">
+                {room.status === 'active' ? 'Party Active' : 'Party Sleeping'}
+              </Badge>
+            )}
+          </div>
           <p className="text-sm text-slate-400">
             Hosted by {room.hostName} ({room.hostUsername})
           </p>

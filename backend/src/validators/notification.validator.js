@@ -38,12 +38,21 @@ export const notificationQuerySchema = z.object({
 });
 
 export const broadcastNotificationSchema = z.object({
-  title: z.string().min(1, 'Title cannot be empty').max(200, 'Title max 200 characters'),
-  body: z.string().min(1, 'Body cannot be empty').max(1000, 'Body max 1000 characters'),
-  type: z.enum(['Push', 'Promotional', 'Transactional', 'System']).default('Push').optional(),
-  audience: z.enum(['All Users', 'Active Users', 'VIP Users', 'Hosts Only', 'Selected Users']).default('All Users').optional(),
+  title: z.string().trim().min(1, 'Title cannot be empty').max(200, 'Title max 200 characters'),
+  body: z.string().trim().min(1, 'Body cannot be empty').max(1000, 'Body max 1000 characters').optional(),
+  message: z.string().trim().min(1, 'Message cannot be empty').max(1000, 'Message max 1000 characters').optional(),
+  type: z.string().max(50).default('Push').optional(),
+  audience: z.string().max(100).default('All Users').optional(),
+  targetSegment: z.string().max(100).optional(),
+  targetType: z.string().max(50).optional(),
+  destination: z.string().max(255).optional().nullable(),
+  route: z.string().max(255).optional().nullable(),
+  idempotencyKey: z.string().max(128).optional().nullable(),
   data: z.record(z.any()).optional().nullable(),
-  customUserIds: z.array(z.string().uuid()).optional(),
+  customUserIds: z.array(z.string()).optional(),
+}).refine((data) => data.body || data.message, {
+  message: 'Body or message is required',
+  path: ['body'],
 });
 
 export default {

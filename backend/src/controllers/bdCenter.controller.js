@@ -544,7 +544,14 @@ export async function lookupUserForBD(req, res, next) {
   try {
     const { query } = req.query;
     const result = await bdCenterService.lookupUserForBD(query);
-    return res.status(200).json(result);
+    return res.status(200).json({
+      success: true,
+      message: 'User found for BD assignment',
+      data: result.data || result.user || result,
+      user: result.user || result.data || result,
+      id: result.id,
+      hasActiveBD: Boolean(result.hasActiveBD),
+    });
   } catch (err) {
     next(err);
   }

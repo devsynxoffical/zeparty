@@ -13,6 +13,8 @@ export const userProfileRouter = express.Router();
 adminUserRouter.use(authenticate);
 adminUserRouter.get('/', requirePermission('view_users'), userController.getAdminUsers);
 adminUserRouter.post('/', requirePermission('view_users'), userController.postAdminUser);
+adminUserRouter.get('/lookup', requirePermission('view_users'), userController.getAdminLookupUser);
+adminUserRouter.post('/lookup', requirePermission('view_users'), userController.postAdminVerifyUserForGrant);
 adminUserRouter.post('/verify-grant-target', requirePermission('view_users'), userController.postAdminVerifyUserForGrant);
 adminUserRouter.post('/verify-unique', requirePermission('view_users'), userController.postAdminVerifyUserForGrant);
 adminUserRouter.post('/grant-unique', requirePermission('view_users'), userController.postAdminGrantUniqueItem);
@@ -43,6 +45,7 @@ adminUserRouter.post('/:id/props/revoke', requirePermission('view_users'), userC
 adminUserRouter.post('/:id/props/reset', requirePermission('view_users'), userController.postAdminResetProps);
 adminUserRouter.post('/:id/assign-special-id', requirePermission('view_users'), userController.postAdminAssignSpecialId);
 adminUserRouter.post('/:id/grant-noble', requirePermission('view_users'), userController.postAdminGrantNoble);
+adminUserRouter.post('/:id/grant-svip', requirePermission('view_users'), userController.postAdminGrantSVIP);
 adminUserRouter.get('/noble/reconcile-dry-run', requirePermission('view_users'), userController.getAdminNobleReconciliation);
 adminUserRouter.post('/noble/reconcile', requirePermission('view_users'), userController.postAdminNobleReconcile);
 adminUserRouter.post('/:id/revoke-noble', requirePermission('view_users'), userController.postAdminRevokeNoble);
@@ -96,6 +99,8 @@ adminUserRouter.delete('/:id/purge', requirePermission('suspend_users'), userCon
 
 // User Self & Public Profile Routes
 userProfileRouter.get('/search', optionalAuthenticate, userController.searchUsers);
+userProfileRouter.get('/nobles/catalog', optionalAuthenticate, userController.getAdminNoblesCatalog);
+userProfileRouter.get('/noble/catalog', optionalAuthenticate, userController.getAdminNoblesCatalog);
 userProfileRouter.get('/noble-palette', userController.getNoblePalette);
 // Noble Single-Active Routes (User)
 userProfileRouter.get('/noble/active', authenticate, userController.getUserActiveNoble);

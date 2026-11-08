@@ -39,6 +39,31 @@ export async function listBroadcasts(req, res, next) {
 
     res.status(200).json({
       success: true,
+      data: result.items || result,
+      items: result.items,
+      pagination: result.pagination,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function retryBroadcast(req, res, next) {
+  try {
+    const { id } = req.params;
+    const adminId = typeof req.auth?.userId === 'object' ? req.auth.userId?.id : req.auth?.userId;
+    const adminName = req.admin?.name || req.auth?.username || 'Administrator';
+    const ipAddress = req.ip || req.headers?.['x-forwarded-for'] || '127.0.0.1';
+
+    const result = await adminNotificationService.retryBroadcast(id, {
+      adminId,
+      adminName,
+      ipAddress,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Broadcast re-dispatched successfully`,
       data: result,
     });
   } catch (err) {
@@ -63,5 +88,6 @@ export async function getBroadcastDetails(req, res, next) {
 export default {
   broadcastNotification,
   listBroadcasts,
+  retryBroadcast,
   getBroadcastDetails,
 };
