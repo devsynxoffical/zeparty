@@ -399,7 +399,7 @@ class StoreRepository {
       name: 'Cyber Hoverjet',
       categoryId: 'Cars',
       assetType: 'CAR_MOUNT',
-      imageUrl: 'assets/svip/svip12_entry.png',
+      imageUrl: 'assets/svip/svip12_entry.webp',
       priceCoins: 150000,
       durationDays: 30,
     ),

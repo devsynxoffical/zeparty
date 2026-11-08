@@ -299,7 +299,7 @@ class NobleBadgeHelper {
     if (lower.contains('svip')) {
       for (int i = 16; i >= 1; i--) {
         if (lower.contains('svip $i') || lower.contains('svip$i')) {
-          if (i == 13) return 'assets/svip/ZP-124_svip-14_entry.webp';
+          if (i == 13) return 'assets/svip/svip13_entry.webp'; // byte-identical to the old ZP-124_svip-14_entry.webp
           return 'assets/svip/svip${i}_entry.webp';
         }
       }

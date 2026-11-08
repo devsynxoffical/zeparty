@@ -54,14 +54,38 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // R8 code shrinking + resource shrinking. Keep rules for Flutter, Agora, Socket.IO,
+            // Gson and Google Sign-In live in proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = if (keystoreFile.exists()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            // A release build must be signed with the upload keystore. Falling back to the debug
+            // key silently produced store-rejected builds; opt in explicitly for local testing with
+            //   flutter build apk --release -PallowDebugSigning=true
+            if (keystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            } else if (project.findProperty("allowDebugSigning") == "true") {
+                signingConfig = signingConfigs.getByName("debug")
+            } else {
+                throw GradleException(
+                    "Release signing keystore not found (android/key.properties -> storeFile, or android/app/upload-keystore.jks). " +
+                    "Add it, or pass -PallowDebugSigning=true for a local debug-signed test build."
+                )
+            }
         }
+    }
+
+    // Native libraries (Agora, Flutter engine) are the second largest part of the download.
+    // Ship them per ABI: `flutter build appbundle` lets Play deliver one ABI per device, and
+    // `flutter build apk --split-per-abi` produces one APK per ABI for sideloading.
+    // (Do not configure `splits {}` here: the Flutter Gradle plugin manages it for those commands.)
+    bundle {
+        abi { enableSplit = true }
+        density { enableSplit = true }
+        language { enableSplit = true }
     }
 }
 

@@ -913,8 +913,8 @@ class _SVIPCenterScreenState extends State<SVIPCenterScreen> {
   }
 
   String _getVipVehicleAsset(int level) {
-    final clamped = level.clamp(1, 16);
-    return 'assets/svip/svip${clamped}_vehicle.png';
+    // Only one vehicle artwork exists (SVIP 6+); the per-level files were byte-identical copies.
+    return 'assets/svip/svip6_vehicle.png';
   }
 
   String _getVipVehicleFallback(int level) {
