@@ -2703,8 +2703,24 @@ class LivePartyProvider extends ChangeNotifier {
     await leaveParty();
   }
 
+  bool _isLeaving = false;
+
   Future<void> leaveParty() async {
+    // Idempotent: socket events (room:closed, kicked, ...) can arrive several times in a
+    // burst; re-entering here used to emit `room:leave` and POST /leave once per event,
+    // tripping the server rate limiter.
+    if (_isLeaving) return;
+    _isLeaving = true;
+    try {
+      await _leavePartyInternal();
+    } finally {
+      _isLeaving = false;
+    }
+  }
+
+  Future<void> _leavePartyInternal() async {
     final roomId = _activeRoom?.id;
+    _activeRoom = null;
     if (roomId != null) {
       try {
         _socketService.leaveRoom(roomId);

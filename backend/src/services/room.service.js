@@ -937,20 +937,44 @@ export async function leaveRoom(roomId, userId, db = prisma) {
   // If this is a Party Room, distinguish explicit departure from unexpected network drop:
   // - Explicit departure with 0 participants remaining: immediately mark inactive!
   // - If participants remain: room continues without interruption.
+  // NOTE: `viewerCount` above intentionally excludes the host (it is the audience number shown
+  // in the UI). It must NOT be used to decide whether the room is empty: when the last guest
+  // leaves while the host is still inside it is 0, and the old code then marked the room ENDED
+  // and broadcast `room:closed` to everyone, tearing down the host's session mid-party
+  // (host stopped receiving joins/chat/gifts from later users).
   let sleepSchedule = { scheduled: false, activeCount: viewerCount };
   if (result && isPartyRoomType(result.roomType)) {
-    if (viewerCount <= 0) {
+    let remainingParticipants = 0;
+    try {
+      remainingParticipants = await getActiveRoomParticipantCount(targetRoomId, userId);
+    } catch (_) {
+      remainingParticipants = viewerCount;
+    }
+    if (remainingParticipants <= 0) {
+      // Truly empty (host included): put the room to sleep right away. Sleep keeps the room
+      // joinable by its permanent ID and is announced as `room:sleeping`, never `room:closed`.
       clearEmptyRoomSleepTimer(targetRoomId);
+      await attendanceService.endBroadcastSession({ roomId: targetRoomId }, db).catch(() => {});
+      await presenceService.clearRoomPresence(targetRoomId).catch(() => {});
       await db.room.update({
         where: { id: targetRoomId },
         data: { status: 'ENDED', endedAt: new Date(), currentViewersCount: 0 },
       });
-      socketEmitter.broadcastGlobal(SOCKET_EVENTS.ROOM_CLOSED, {
+      const sleepPayload = {
         roomId: targetRoomId,
-        status: 'ENDED',
+        clientRoomId: roomId,
+        status: 'SLEEPING',
+        dbStatus: 'ENDED',
+        isSleeping: true,
+        roomStaysOpen: true,
+        currentViewersCount: 0,
+        viewerCount: 0,
         reason: 'EXPLICIT_DEPARTURE_EMPTY',
-      });
-      socketEmitter.broadcastGlobal('room:closed', { roomId: targetRoomId, status: 'ENDED' });
+        message: 'Room is now sleeping because no users are inside. Join by Room ID to wake it up.',
+      };
+      socketEmitter.broadcastGlobal('room:sleeping', sleepPayload);
+      socketEmitter.broadcastGlobal('room:updated', sleepPayload);
+      sleepSchedule = { scheduled: false, activeCount: 0, sleptImmediately: true };
     } else {
       sleepSchedule = await checkAndSchedulePartyRoomSleep(targetRoomId, null, 10000, userId);
     }
