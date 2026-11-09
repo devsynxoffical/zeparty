@@ -50,9 +50,14 @@ export function createApp(deps) {
     };
     // ---------------------------------------------------------------------------------------
     app.get('/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
-    // Dev-only identity issuing. Disabled automatically when AUTH_ADAPTER=jwt.
+    // Dev-only identity issuing. Disabled automatically when AUTH_ADAPTER=jwt, and in
+    // production unless GAMES_ALLOW_DEV_LOGIN=true: the ZeParty app gets its games token
+    // from /v1/games/token after a real login, so an open dev-login would let anyone mint
+    // a games identity (wallet, rooms) for any userId.
     app.post('/auth/dev-login', wrap((req) => {
         if (!(deps.auth instanceof MockAuthAdapter))
+            throw new HttpError(404, 'not_found');
+        if (process.env.NODE_ENV === 'production' && process.env.GAMES_ALLOW_DEV_LOGIN !== 'true')
             throw new HttpError(404, 'not_found');
         const body = parse(z.object({ userId: z.string().min(1).max(64), displayName: z.string().min(1).max(40), avatarUrl: z.string().url().nullable().optional() }), req.body);
         const token = deps.auth.issue({ userId: body.userId, displayName: body.displayName, avatarUrl: body.avatarUrl ?? null });
