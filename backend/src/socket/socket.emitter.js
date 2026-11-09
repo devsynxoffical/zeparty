@@ -1,6 +1,18 @@
 let ioInstance = null;
 
 /**
+ * A Socket.IO packet whose event name is not a string is rejected by every client as a
+ * "parse error", and the client then drops the whole connection. An undefined constant
+ * emitted after each gift did exactly that to every socket in the room (the host stopped
+ * receiving joins, chats and gifts until they re-entered). Never let that happen again.
+ */
+function validEvent(event, where) {
+  if (typeof event === 'string' && event.length > 0) return true;
+  console.error(`[SocketEmitter] refusing to ${where} an event with an invalid name:`, event, new Error().stack?.split('\n')[2]?.trim());
+  return false;
+}
+
+/**
  * Sets the global Socket.IO server instance.
  */
 export function setSocketServerInstance(io) {
@@ -22,7 +34,7 @@ export function getSocketServerInstance() {
  * @param {Object} payload - Event payload
  */
 export function emitToRoom(roomId, event, payload) {
-  if (!ioInstance || !roomId) return false;
+  if (!ioInstance || !roomId || !validEvent(event, 'emitToRoom')) return false;
   try {
     ioInstance.to(`room:${roomId}`).emit(event, payload);
     return true;
@@ -39,7 +51,7 @@ export function emitToRoom(roomId, event, payload) {
  * @param {Object} payload - Event payload
  */
 export function emitToUser(userId, event, payload) {
-  if (!ioInstance || !userId) return false;
+  if (!ioInstance || !userId || !validEvent(event, 'emitToUser')) return false;
   try {
     ioInstance.to(`user:${userId}`).emit(event, payload);
     return true;
@@ -55,7 +67,7 @@ export function emitToUser(userId, event, payload) {
  * @param {Object} payload - Event payload
  */
 export function broadcastGlobal(event, payload) {
-  if (!ioInstance) return false;
+  if (!ioInstance || !validEvent(event, 'broadcastGlobal')) return false;
   try {
     ioInstance.emit(event, payload);
     return true;

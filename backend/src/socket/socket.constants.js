@@ -40,6 +40,7 @@ export const SOCKET_EVENTS = {
   // Gifting & Tipping
   ROOM_GIFT_SEND: 'room:gift_send',
   ROOM_GIFT_SENT: 'room:gift_sent',
+  ROOM_SENDING_TOTAL_UPDATED: 'room:sending_total_updated',
 
   // Moderation & Seat/User Management
   ROOM_KICK_USER: 'room:kick_user',
@@ -146,6 +147,8 @@ export const SOCKET_ERRORS = {
   CANNOT_INVITE_SELF: 'CANNOT_INVITE_SELF',
   CANNOT_INVITE_OWNER: 'CANNOT_INVITE_OWNER',
   TARGET_NOT_IN_ROOM: 'TARGET_NOT_IN_ROOM',
+  PERMISSION_DENIED: 'PERMISSION_DENIED',
+  INVALID_ROOM_ID: 'INVALID_ROOM_ID',
 };
 
 export default {
