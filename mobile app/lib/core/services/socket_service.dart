@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 import '../../models/live_cohost_invitation_model.dart';
 import 'api_client.dart';
@@ -411,10 +412,22 @@ class SocketService {
           .setAuth(authMap)
           .setExtraHeaders({'Authorization': 'Bearer $authToken'})
           .enableReconnection()
-          .setReconnectionAttempts(10)
-          .setReconnectionDelay(2000)
+          // Never give up: after 10 failed attempts the client used to stop reconnecting for
+          // good, so a 40-second network blip left the room silent until the user re-entered it.
+          .setReconnectionAttempts(1 << 30)
+          .setReconnectionDelay(1000)
+          .setReconnectionDelayMax(8000)
+          .setTimeout(20000)
           .build(),
     );
+
+    _ensureWatchdog();
+
+    _socket!.onReconnectFailed((_) {
+      debugPrint('[SocketService] Reconnection exhausted; the watchdog will open a fresh connection.');
+      _isConnected = false;
+      _connectionStateController.add(false);
+    });
 
     _socket!.onConnect((_) {
       _isConnected = true;
@@ -1778,7 +1791,48 @@ class SocketService {
   }
 
   /// Disconnect socket cleanly
+  // ── Connection watchdog ────────────────────────────────────────────────────
+  // Socket.IO's own reconnection covers short drops. Two cases it does not cover made rooms go
+  // silent on phones: the OS freezing the socket while the app was in the background, and a
+  // transport that is "connected" but never delivers. Every 15 s, and on every return to the
+  // foreground, verify the connection and the room subscription, and re-establish both if needed.
+  Timer? _watchdog;
+  _SocketLifecycleHook? _lifecycleHook;
+  bool _userDisconnected = false;
+
+  void _ensureWatchdog() {
+    _userDisconnected = false;
+    _watchdog ??= Timer.periodic(const Duration(seconds: 15), (_) => _checkConnection('watchdog'));
+    if (_lifecycleHook == null) {
+      _lifecycleHook = _SocketLifecycleHook(() => _checkConnection('resume'));
+      WidgetsBinding.instance.addObserver(_lifecycleHook!);
+    }
+  }
+
+  void _checkConnection(String trigger) {
+    if (_userDisconnected) return;
+    final sock = _socket;
+    if (sock == null) return;
+    if (sock.connected) {
+      // Connected but not subscribed to the room we are supposed to be in: re-join.
+      if (_currentRoomId != null && _lastJoinedRoomKey == null) {
+        debugPrint('[SocketService] $trigger: connected without room subscription, re-joining $_currentRoomId');
+        joinRoomSubscription(_currentRoomId!, user: _cachedUserData);
+      }
+      return;
+    }
+    debugPrint('[SocketService] $trigger: socket not connected (active=${sock.active}); reconnecting');
+    try {
+      if (!sock.active) {
+        sock.connect();
+      }
+    } catch (e) {
+      debugPrint('[SocketService] $trigger: reconnect attempt failed: $e');
+    }
+  }
+
   void disconnect({bool clearRoom = true}) {
+    _userDisconnected = true;
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
@@ -1787,5 +1841,14 @@ class SocketService {
     if (clearRoom) {
       _currentRoomId = null;
     }
+  }
+}
+
+class _SocketLifecycleHook extends WidgetsBindingObserver {
+  _SocketLifecycleHook(this.onResume);
+  final VoidCallback onResume;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) onResume();
   }
 }

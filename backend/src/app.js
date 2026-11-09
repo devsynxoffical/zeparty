@@ -12,6 +12,7 @@ import { serializerMiddleware } from './utils/serializer.util.js';
 import prisma from './config/database.js';
 import redisClient from './config/redis.js';
 
+process.env.APP_STARTED_AT = process.env.APP_STARTED_AT || new Date().toISOString();
 const app = express();
 
 // Correlation / Request ID Middleware
@@ -191,6 +192,8 @@ app.get('/health', async (req, res) => {
   return res.status(statusCode).json({
     success: !hasError,
     status: hasError ? 'degraded' : 'healthy',
+    commit: (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || 'unknown').slice(0, 12),
+    startedAt: process.env.APP_STARTED_AT,
     services,
   });
 });
