@@ -276,12 +276,18 @@ export class RoomManager {
             winnerIds: [],
             participants: room.players.map((p) => ({ userId: p.userId, seat: p.seat, placement: null, score: 0 })),
         });
-        for (const p of room.players) {
+        // Quest progress is bookkeeping: never let a slow or failing database delay the match
+        // start (players saw "nothing happens after Start" while this awaited the DB).
+        void (async () => {
             try {
                 const { recordActivity } = await import('../../../services/quest.service.js');
-                await recordActivity(p.userId, 'MINI_GAME', { gameId: room.gameId, matchId: match.matchId });
-            } catch (_) {}
-        }
+                await Promise.all(room.players.map((p) => Promise.race([
+                    recordActivity(p.userId, 'MINI_GAME', { gameId: room.gameId, matchId: match.matchId }),
+                    new Promise((resolve) => setTimeout(resolve, 5000)),
+                ]).catch(() => undefined)));
+            }
+            catch (_) { /* optional */ }
+        })();
         this.broadcastRoom(room);
         for (const p of room.players)
             this.sendState(room, p.userId);
@@ -390,10 +396,22 @@ export class RoomManager {
             this.resync(userId, 0);
             throw new RoomError('version_mismatch', `expected ${version}`);
         }
-        const v = engine.validateAction(room.match.state, seat, action);
-        if (!v.ok)
-            throw new RoomError(v.code, v.message);
-        const step = engine.applyAction(room.match.state, seat, action, this.rng);
+        let step;
+        try {
+            const v = engine.validateAction(room.match.state, seat, action);
+            if (!v.ok)
+                throw new RoomError(v.code, v.message);
+            step = engine.applyAction(room.match.state, seat, action, this.rng);
+        }
+        catch (e) {
+            if (e instanceof RoomError)
+                throw e;
+            // Engines throw plain Errors for states they cannot handle (e.g. "unknown seat 2"
+            // after a player rejoined into a new seat). Report them with a stable code and the
+            // engine's message, and push a fresh snapshot so the client recovers.
+            this.resync(userId, 0);
+            throw new RoomError('engine_error', `${room.gameId}: ${e?.message ?? e}`);
+        }
         await this.commitStep(room, step, seat);
     }
     async commitStep(room, step, actorSeat) {

@@ -218,8 +218,11 @@ export class GameSocketServer {
           try { this.rooms.resync(session.identity.userId, 0); } catch { /* no room for this user */ }
         }
       } else {
-        this.log.error({ err }, 'unhandled ws error');
-        this.send(session, { type: 'error', code: 'internal', message: 'internal error', reqId });
+        this.log.error({ err, userId: session.identity?.userId, msgType: msg.type, roomId: msg.roomId, matchId: msg.matchId }, 'unhandled ws error');
+        // Surface the reason: the app shows it in the "Action rejected (...)" toast, which is the
+        // only diagnostic a tester can relay.
+        const detail = String(err?.message ?? 'internal error').replace(/\s+/g, ' ').slice(0, 160);
+        this.send(session, { type: 'error', code: 'internal', message: detail, reqId });
       }
     }
   }

@@ -441,6 +441,13 @@ class _StrokeReplayer extends Component {
 /// `ServerError.toString()` is `code: message`; surface the code so a rejected
 /// action can be diagnosed from the toast ("Action rejected (stale_match)").
 String _rejectionCode(String raw) {
-  final m = RegExp(r'^([a-z_]+)(?::|$)').firstMatch(raw.trim());
-  return m == null ? '' : ' (${m.group(1)})';
+  final m = RegExp(r'^([a-z_]+)(?::\s*(.*))?$').firstMatch(raw.trim());
+  if (m == null) return '';
+  final code = m.group(1)!;
+  final detail = (m.group(2) ?? '').trim();
+  // Keep the server's detail for codes that need diagnosing (internal / engine_error).
+  if ((code == 'internal' || code == 'engine_error') && detail.isNotEmpty) {
+    return ' ($code: ${detail.length > 70 ? '${detail.substring(0, 70)}…' : detail})';
+  }
+  return ' ($code)';
 }
