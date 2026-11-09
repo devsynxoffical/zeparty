@@ -4,8 +4,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/theme_provider.dart';
-import '../../providers/auth_provider.dart';
-import '../../providers/seller_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/design/gold_button.dart';

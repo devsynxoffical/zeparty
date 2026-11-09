@@ -35,7 +35,7 @@ class ProfileStatusStrip extends StatelessWidget {
     final isSvipActive = svipLevel > 0;
     final wealthXp = currentUser?.wealthXp ?? 0;
     final wealthProgress = WealthLevelHelper.getProgress(wealthXp);
-    final wealthLevel = currentUser?.computedWealthLevel ?? (currentUser?.wealthLevel != null && currentUser!.wealthLevel > 0 ? currentUser!.wealthLevel : wealthProgress.currentLevel);
+    final wealthLevel = currentUser?.computedWealthLevel ?? (currentUser?.wealthLevel != null && currentUser!.wealthLevel > 0 ? currentUser.wealthLevel : wealthProgress.currentLevel);
     final charmLevel = currentUser?.charmLevel ?? 0;
     final charmXp = currentUser?.charmXp ?? 0;
     final gameLevel = currentUser?.gameLevel ?? 0;

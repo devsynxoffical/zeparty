@@ -13,7 +13,6 @@ import '../../models/live_room_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/live_party_provider.dart';
 import '../../providers/live_provider.dart';
-import '../../providers/room_overlay_provider.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/design/gold_button.dart';
 import '../party_room/live_party_room_screen.dart';
@@ -413,7 +412,6 @@ class _CreateLiveRoomScreenState extends State<CreateLiveRoomScreen> {
                         final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
 
                         // Check if user already has an active room
-                        final overlayProvider = Provider.of<RoomOverlayProvider>(context, listen: false);
                         final partyProvider = Provider.of<LivePartyProvider>(context, listen: false);
                         final liveProvider = Provider.of<LiveProvider>(context, listen: false);
 

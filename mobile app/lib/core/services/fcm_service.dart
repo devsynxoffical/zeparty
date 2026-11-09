@@ -27,11 +27,6 @@ class FcmService {
 
     // Generate or fetch local device identifier token
     try {
-      final platformName = Platform.isAndroid
-          ? 'android'
-          : Platform.isIOS
-              ? 'ios'
-              : 'web';
 
       // Fallback pseudo device token if native FCM is pending platform provisioning
       _currentDeviceToken = 'fcm_token_${Platform.operatingSystem}_${DateTime.now().millisecondsSinceEpoch}';
@@ -112,7 +107,6 @@ class FcmService {
     final targetType = (data['targetType'] ?? data['type'] ?? data['sourceType'] ?? '')
         .toString()
         .toUpperCase();
-    final targetId = (data['targetId'] ?? data['sourceId'] ?? data['id'] ?? '').toString();
 
     switch (targetType) {
       case 'ROOM':

@@ -205,7 +205,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
         builder: (dialogCtx, setDialogState) {
-          final isDark = Theme.of(dialogCtx).brightness == Brightness.dark;
 
           return AlertDialog(
             title: Row(

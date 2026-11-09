@@ -7,7 +7,6 @@ import '../../models/party_room_model.dart';
 import '../../models/user_model.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/gift_dialog.dart';
-import '../../core/utils/noble_badge_helper.dart';
 import '../../core/services/socket_service.dart';
 
 class PartyRoomScreen extends StatefulWidget {

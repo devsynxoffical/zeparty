@@ -549,42 +549,6 @@ class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
   bool shouldRebuild(_StickyTabBarDelegate oldDelegate) => false;
 }
 
-class _PostSearchDelegate extends SearchDelegate<String> {
-  final List<dynamic> posts;
-  _PostSearchDelegate(this.posts);
-
-  @override
-  List<Widget> buildActions(BuildContext context) => [
-        IconButton(icon: const Icon(Icons.clear), onPressed: () => query = ''),
-      ];
-
-  @override
-  Widget buildLeading(BuildContext context) =>
-      IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => close(context, ''));
-
-  @override
-  Widget buildResults(BuildContext context) => _buildSearchBody();
-
-  @override
-  Widget buildSuggestions(BuildContext context) => _buildSearchBody();
-
-  Widget _buildSearchBody() {
-    final filtered = posts
-        .where((p) => (p.content as String).toLowerCase().contains(query.toLowerCase()))
-        .toList();
-    return ListView.builder(
-      itemCount: filtered.length,
-      itemBuilder: (context, index) {
-        final post = filtered[index];
-        return ListTile(
-          leading: const Icon(Icons.article_rounded, color: AppColors.primary),
-          title: Text(post.content as String, maxLines: 2, overflow: TextOverflow.ellipsis),
-          subtitle: Text(post.author.name as String),
-        );
-      },
-    );
-  }
-}
 
 class _FullStoryViewerDialog extends StatefulWidget {
   final List<PostModel> stories;

@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/theme/app_colors.dart';
-import '../../core/utils/formatters.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/bd_center_provider.dart';
 import '../../providers/usd_balance_provider.dart';
 import '../../providers/messaging_provider.dart';
 import '../../widgets/user_avatar.dart';
-import '../../widgets/design/premium_card.dart';
 
 import 'bd_invite_agent_screen.dart';
 import 'bd_agent_list_screen.dart';

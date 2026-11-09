@@ -185,15 +185,6 @@ class _PKBattleScreenState extends State<PKBattleScreen>
     _winnerController.forward(from: 0.0);
   }
 
-  void _openGiftSheet(BuildContext context, bool isForHostA, PKBattleModel pk) {
-    if (pk.participants.isEmpty) return;
-    final participant = isForHostA
-        ? pk.participants[0]
-        : (pk.participants.length > 1
-              ? pk.participants[1]
-              : pk.participants[0]);
-    _openGiftSheetForParticipant(context, participant);
-  }
 
   void _openGiftSheetForParticipant(
     BuildContext context,

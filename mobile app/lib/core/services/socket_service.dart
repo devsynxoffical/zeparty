@@ -12,7 +12,6 @@ class SocketService {
   bool _isConnected = false;
   String? _currentRoomId;
   Map<String, dynamic>? _cachedUserData;
-  String? _cachedAuthToken;
   Completer<void>? _connectCompleter;
   bool _isRefreshingToken = false;
 
@@ -350,7 +349,6 @@ class SocketService {
       }
     }
     authToken ??= 'guest_anonymous';
-    _cachedAuthToken = authToken;
 
     // Phase 1: Robust identity change & anonymous-to-auth detection
     final prevUser = _cachedUserData;
@@ -467,7 +465,6 @@ class SocketService {
           final refreshedToken = await ApiClient.instance.refreshToken();
           if (refreshedToken != null && refreshedToken.isNotEmpty) {
             debugPrint('[SocketService] Token refreshed successfully. Reconnecting socket with new token...');
-            _cachedAuthToken = refreshedToken;
             _isRefreshingToken = false;
             disconnect(clearRoom: false);
             connect(token: refreshedToken, user: _cachedUserData);

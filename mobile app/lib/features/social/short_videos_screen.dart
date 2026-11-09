@@ -28,7 +28,6 @@ class _ShortVideosScreenState extends State<ShortVideosScreen> with SingleTicker
   late PageController _pageController;
   late AnimationController _discAnimController;
   final List<FloatingHeartAnimation> _floatingHearts = [];
-  int _selectedTabIndex = 1; // 0 = Following, 1 = For You
   int _currentPageIndex = 0;
 
   @override

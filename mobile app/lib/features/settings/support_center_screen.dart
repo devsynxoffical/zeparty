@@ -35,7 +35,6 @@ class _SupportCenterScreenState extends State<SupportCenterScreen> with SingleTi
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<SupportProvider>();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(

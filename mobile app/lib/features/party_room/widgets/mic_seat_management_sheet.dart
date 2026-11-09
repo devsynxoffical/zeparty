@@ -5,7 +5,6 @@ import '../../../models/user_model.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/live_party_provider.dart';
 import '../../../widgets/user_avatar.dart';
-import '../../../core/utils/noble_badge_helper.dart';
 
 class MicSeatManagementSheet extends StatefulWidget {
   final int micIndex;
