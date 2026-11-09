@@ -2311,7 +2311,9 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
       context.read<LiveHostProvider>().stopBroadcastHeartbeat();
     } catch (_) {}
     try {
-      context.read<LiveProvider>().leaveRoom();
+      final overlay = context.read<RoomOverlayProvider>();
+      final minimizedThisRoom = overlay.isMinimized && overlay.activeRoom?.id == widget.room.id;
+      if (!minimizedThisRoom) context.read<LiveProvider>().leaveRoom();
     } catch (_) {}
     try {
       final giftProv = Provider.of<LiveGiftProvider>(context, listen: false);

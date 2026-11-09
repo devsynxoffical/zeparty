@@ -571,8 +571,14 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       giftProv.clearRoom();
       final emojiProv = Provider.of<EmojiReactionProvider>(context, listen: false);
       emojiProv.clearRoom();
-      final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
-      partyProv.leaveParty();
+      // Minimize keeps the party running behind the floating bubble: only leave when the
+      // screen is closed for real. The bubble's close button leaves via RoomOverlayProvider.
+      final overlay = Provider.of<RoomOverlayProvider>(context, listen: false);
+      final minimizedThisRoom = overlay.isMinimized && overlay.activeRoom?.id == widget.room.id;
+      if (!minimizedThisRoom) {
+        final partyProv = Provider.of<LivePartyProvider>(context, listen: false);
+        partyProv.leaveParty();
+      }
     } catch (_) {}
 
     super.dispose();
