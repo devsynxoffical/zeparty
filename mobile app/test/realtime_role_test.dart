@@ -54,7 +54,7 @@ void main() {
 
     LiveRoomModel room;
     if (role == 'host') {
-      final c = await ApiClient.instance.post('/v1/rooms', data: {'title': 'Flutter E2E Party', 'roomType': 'AUDIO_PARTY'});
+      final c = await ApiClient.instance.post('/v1/rooms', data: {'title': 'Flutter E2E Party', 'roomType': 'AUDIO_PARTY', 'forceNew': true});
       final rd = c.data['data'];
       room = LiveRoomModel.fromJson(Map<String, dynamic>.from((rd['room'] ?? rd) as Map));
       roomFile.writeAsStringSync(room.id);
