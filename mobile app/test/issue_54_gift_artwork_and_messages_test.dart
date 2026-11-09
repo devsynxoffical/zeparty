@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zeparty/core/constants/animated_gifts_catalog.dart';
-import 'package:zeparty/models/gift_model.dart';
 import 'package:zeparty/widgets/animated_live_comment_item.dart';
 
 void main() {

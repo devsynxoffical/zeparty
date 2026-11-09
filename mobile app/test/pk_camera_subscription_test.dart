@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zeparty/core/services/agora_rtc_service.dart';
 import 'package:zeparty/models/pk_battle_model.dart';
 import 'package:zeparty/models/user_model.dart';
-import 'package:zeparty/models/live_room_model.dart';
 
 void main() {
   group('PK Opponent Camera & Agora Subscription Verification', () {
