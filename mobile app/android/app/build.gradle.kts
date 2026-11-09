@@ -16,6 +16,12 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+val keystoreFile = if (keystoreProperties.getProperty("storeFile") != null) {
+    file(keystoreProperties.getProperty("storeFile"))
+} else {
+    file("upload-keystore.jks")
+}
+
 android {
     namespace = "com.zeparty.app"
     compileSdk = 36
@@ -24,12 +30,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    val keystoreFile = if (keystoreProperties.getProperty("storeFile") != null) {
-        file(keystoreProperties.getProperty("storeFile"))
-    } else {
-        file("upload-keystore.jks")
     }
 
     signingConfigs {
@@ -54,27 +54,15 @@ android {
 
     buildTypes {
         release {
-            // R8 code shrinking + resource shrinking. Keep rules for Flutter, Agora, Socket.IO,
-            // Gson and Google Sign-In live in proguard-rules.pro.
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Shrinking is left as the project had it (off). Turning R8 on needs a device test
+            // pass for Agora / Socket.IO / Firebase reflection paths before shipping.
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // A release build must be signed with the upload keystore. Falling back to the debug
-            // key silently produced store-rejected builds; opt in explicitly for local testing with
-            //   flutter build apk --release -PallowDebugSigning=true
-            if (keystoreFile.exists()) {
-                signingConfig = signingConfigs.getByName("release")
-            } else if (project.findProperty("allowDebugSigning") == "true") {
-                signingConfig = signingConfigs.getByName("debug")
-            } else {
-                throw GradleException(
-                    "Release signing keystore not found (android/key.properties -> storeFile, or android/app/upload-keystore.jks). " +
-                    "Add it, or pass -PallowDebugSigning=true for a local debug-signed test build."
-                )
-            }
+            signingConfig = if (keystoreFile.exists()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 
@@ -86,6 +74,23 @@ android {
         abi { enableSplit = true }
         density { enableSplit = true }
         language { enableSplit = true }
+    }
+}
+
+// A release artifact must be signed with the upload keystore. The old silent fallback to the
+// debug key produced builds the stores reject. This only fails the release assemble/bundle
+// tasks themselves (debug builds and `flutter run` are unaffected); opt in to a debug-signed
+// release for local testing with:  flutter build apk --release -PallowDebugSigning=true
+if (!keystoreFile.exists() && project.findProperty("allowDebugSigning") != "true") {
+    tasks.configureEach {
+        if (name.matches(Regex("(assemble|bundle|package)\\w*Release\\w*"))) {
+            doFirst {
+                throw GradleException(
+                    "Release signing keystore not found (android/key.properties -> storeFile, or android/app/upload-keystore.jks). " +
+                    "Add it, or pass -PallowDebugSigning=true for a local debug-signed test build."
+                )
+            }
+        }
     }
 }
 
