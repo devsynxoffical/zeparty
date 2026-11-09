@@ -19,11 +19,16 @@ class GiftDialog extends StatefulWidget {
   final UserModel? targetReceiver;
   final ValueChanged<GiftModel>? onGiftSent;
 
+  /// Room the gift is sent in. When null the dialog falls back to whichever room
+  /// provider is active, preferring the party room over a (possibly stale) live room.
+  final String? roomId;
+
   const GiftDialog({
     super.key,
     this.streamerName = 'Streamer',
     this.targetReceiver,
     this.onGiftSent,
+    this.roomId,
   });
 
   @override
@@ -572,7 +577,7 @@ class _GiftDialogState extends State<GiftDialog> with SingleTickerProviderStateM
                             }
 
                             int totalSuccess = 0;
-                            final roomId = liveProv.activeRoom?.id ?? partyLiveProv.activeRoom?.id ?? '';
+                            final roomId = widget.roomId ?? partyLiveProv.activeRoom?.id ?? liveProv.activeRoom?.id ?? '';
                             final svipProv = context.read<SVIPProvider>();
 
                             for (final targetUser in validRecipients) {

@@ -999,6 +999,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       isScrollControlled: true,
       builder: (_) => GiftDialog(
         streamerName: widget.room.host.name,
+        roomId: Provider.of<LivePartyProvider>(context, listen: false).activeRoom?.id ?? widget.room.id,
         targetReceiver: targetReceiver,
         onGiftSent: (gift) {
           final liveGiftProv = Provider.of<LiveGiftProvider>(context, listen: false);

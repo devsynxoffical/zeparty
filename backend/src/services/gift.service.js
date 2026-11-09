@@ -1,4 +1,5 @@
 import prisma from '../config/database.js';
+import { resolveCatalogGiftId } from '../database/seedGiftCatalog.js';
 import giftRepository from '../repositories/gift.repository.js';
 import walletRepository from '../repositories/wallet.repository.js';
 import hostRepository from '../repositories/host.repository.js';
@@ -326,22 +327,23 @@ export async function sendGift(
   }
   const qty = parsedQty;
 
-  // 1. Load active Gift
+  // 1. Load active Gift. Ids are matched case-insensitively against the canonical catalog
+  // (the app sends 'cg01', older data used 'CG01'). Unknown gifts are rejected: the previous
+  // behaviour auto-created them at a flat 100 coins, which let a 20,000-coin gift be sent
+  // for 100.
   let gift = await giftRepository.findGiftById(giftId, db);
   if (!gift || !gift.isActive) {
-    try {
-      gift = await db.gift.create({
-        data: {
-          id: giftId,
-          name: giftId.toUpperCase(),
-          coinValue: BigInt(100),
-          iconUrl: '🎁',
-          giftCategory: 'POPULAR',
-          isActive: true,
-        },
-      });
-    } catch (_) {
-      gift = await giftRepository.findGiftById(giftId, db);
+    const canonicalId = resolveCatalogGiftId(giftId);
+    if (canonicalId && canonicalId !== giftId) {
+      gift = await giftRepository.findGiftById(canonicalId, db);
+    }
+    if ((!gift || !gift.isActive) && typeof giftId === 'string') {
+      for (const variant of [giftId.toUpperCase(), giftId.toLowerCase()]) {
+        if (variant !== giftId) {
+          gift = await giftRepository.findGiftById(variant, db);
+          if (gift && gift.isActive) break;
+        }
+      }
     }
   }
   if (!gift || !gift.isActive) {

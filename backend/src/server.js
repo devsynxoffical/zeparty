@@ -6,6 +6,7 @@ import { ensureDatabaseSchema } from './config/schemaMigrator.js';
 import redisClient from './config/redis.js';
 import { initSocketServer } from './socket/index.js';
 import { attachGamesWebSocketServer, shutdownGamesEngine } from './gamesEngine/src/index.js';
+import { seedGiftCatalog } from './database/seedGiftCatalog.js';
 import {
   runStartupRecoverySweep,
   startAutoRestoreScheduler,
@@ -62,6 +63,8 @@ async function startServer() {
     // 2. Initialize Database connection with automatic retry
     connectDatabaseWithRetry()
       .then(async () => {
+        // Keep the gift catalog identical to the one shipped in the mobile app
+        await seedGiftCatalog().catch((e) => console.warn('Gift catalog sync warning:', e.message));
         // Run Phase 7 Auto-Restore Startup Recovery Sweep
         await runStartupRecoverySweep().catch((e) => console.warn('Recovery sweep warning:', e.message));
         // Run stale and orphaned rooms recovery sweep

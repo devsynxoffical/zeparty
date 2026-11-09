@@ -69,20 +69,32 @@ void main() {
     final ok = await provider.joinParty(room, user);
     debugPrint('[$role] joinParty -> $ok activeRoom=${provider.activeRoom?.id} socketConnected=${SocketService.instance.isConnected}');
 
+    final giftEvents = <String>[];
+    final giftSub = SocketService.instance.giftSentStream.listen((d) => giftEvents.add('${d['giftId']}:${d['senderUserId']}'));
     if (role == 'guest') {
       await Future<void>.delayed(const Duration(seconds: 3));
       provider.sendMessage(user, 'hello from guest');
       debugPrint('[$role] sent chat');
-      await Future<void>.delayed(const Duration(seconds: 10));
-      final sawHost = provider.messages.any((m) => m.toString().contains('hello from host') || (m.text.contains('hello from host')));
-      debugPrint('[$role] RESULT sawHostChat=$sawHost joinEventsSeen=$joinSeen participants=${provider.participants.length} messages=${provider.messages.length}');
+      // Gift flow exactly as the gift dialog does it: REST /v1/gifts/send with the room id.
+      await Future<void>.delayed(const Duration(seconds: 2));
+      try {
+        final g = await ApiClient.instance.post('/v1/gifts/send', data: {'giftId': 'cg01', 'recipientUserId': room.host.id, 'quantity': 1, 'roomId': room.id});
+        debugPrint('[$role] gift sent: ${g.data['success']} tx=${g.data['data']?['transactionId']}');
+      } catch (e) {
+        debugPrint('[$role] GIFT SEND FAILED: $e');
+      }
+      await Future<void>.delayed(const Duration(seconds: 8));
+      final sawHost = provider.messages.any((m) => m.text.contains('hello from host'));
+      debugPrint('[$role] RESULT sawHostChat=$sawHost joinEventsSeen=$joinSeen participants=${provider.participants.length} messages=${provider.messages.length} giftEvents=$giftEvents');
     } else {
       await Future<void>.delayed(const Duration(seconds: 14));
       provider.sendMessage(user, 'hello from host');
       await Future<void>.delayed(const Duration(seconds: 8));
       final sawGuest = provider.messages.any((m) => m.text.contains('hello from guest'));
-      debugPrint('[$role] RESULT sawGuestChat=$sawGuest joinEventsSeen=$joinSeen participants=${provider.participants.length} messages=${provider.messages.length} texts=${provider.messages.map((m) => m.text).toList()}');
+      final sawGift = provider.messages.any((m) => m.isGiftMessage);
+      debugPrint('[$role] RESULT sawGuestChat=$sawGuest sawGuestGift=$sawGift giftEvents=$giftEvents joinEventsSeen=$joinSeen participants=${provider.participants.length} messages=${provider.messages.length} texts=${provider.messages.map((m) => m.text).toList()}');
     }
+    await giftSub.cancel();
     await sub.cancel();
   }, timeout: const Timeout(Duration(seconds: 120)));
 }

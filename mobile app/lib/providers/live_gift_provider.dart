@@ -221,60 +221,9 @@ class LiveGiftProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } on ApiException catch (e) {
-      final isNotActiveOrMissing = e.code == 'GIFT_NOT_ACTIVE' ||
-          e.message.toLowerCase().contains('does not exist') ||
-          e.message.toLowerCase().contains('not active');
-
-      if (isNotActiveOrMissing) {
-        debugPrint('[LiveGiftProvider] Backend does not have gift ${gift.id} yet. Executing local delivery.');
-        _isSending = false;
-        _activeSendingIdempotencyKeys.remove(idempotencyKey);
-
-        // Authoritative client coin deduction
-        walletProvider.spendCoins(totalCost, 'Sent ${gift.name}');
-
-        // Credit sender Wealth XP
-        if (authProvider != null && totalCost > 0) {
-          authProvider.addWealthXp(totalCost);
-        }
-
-        // Note: SVIP points are strictly earned via official recharge / SVIP store purchases (Issue 24)
-
-        // Broadcast real-time gift over socket so room viewers and receiver see it
-        final txId = idempotencyKey;
-        _lastTransactionId = txId;
-        _processedTransactionIds.add(txId);
-        _socketService.emit('room:gift_sent', {
-          'transactionId': txId,
-          'roomId': roomId,
-          'senderUserId': sender.id,
-          'recipientUserId': receiver.id,
-          'sender': {'id': sender.id, 'name': sender.name, 'avatarUrl': sender.avatarUrl},
-          'recipient': {'id': receiver.id, 'name': receiver.name, 'avatarUrl': receiver.avatarUrl},
-          'gift': gift.toJson(),
-          'giftId': gift.id,
-          'giftName': gift.name,
-          'giftIcon': gift.icon,
-          'giftValue': unitPrice,
-          'quantity': quantity,
-          'totalCoins': totalCost,
-          'timestamp': DateTime.now().toIso8601String(),
-        });
-
-        // Trigger local animation & combo aggregation (only for non-video gifts)
-        _enqueueLocalComboEvent(
-          txId: txId,
-          gift: gift,
-          sender: sender,
-          receiver: receiver,
-          roomId: roomId,
-          quantity: quantity,
-        );
-
-        notifyListeners();
-        return true;
-      }
-
+      // No sender-only "local delivery" any more: when the server does not accept the gift,
+      // nobody else in the room would ever see it (the client-emitted room:gift_sent has no
+      // server handler) and no coins move, so the sender was shown a gift that never happened.
       _isSending = false;
       _activeSendingIdempotencyKeys.remove(idempotencyKey);
       _lastError = e.message;
