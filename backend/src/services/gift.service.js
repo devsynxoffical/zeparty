@@ -838,15 +838,9 @@ export async function sendGift(
             _sum: { totalCoins: true },
           });
           const updatedTotal = Number(dailyAggr._sum?.totalCoins || 0);
-          await (db || prisma).room.update({
-            where: { id: canonicalRoomId },
-            data: {
-              roomSendingTotal: updatedTotal,
-              dailySendingTotal: updatedTotal,
-              periodTotalCoins: updatedTotal,
-              trophyCoins: updatedTotal,
-            },
-          }).catch(() => {});
+          // The total is derived from GiftTransaction on demand (see roomTrophy/roomLevel
+          // services); Room has no sending-total columns, and the old update here failed
+          // with a Prisma validation error on every gift.
 
           const sendingTotalPayload = {
             roomId: canonicalRoomId,
