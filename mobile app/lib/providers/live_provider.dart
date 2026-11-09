@@ -235,6 +235,14 @@ class LiveProvider extends ChangeNotifier {
   // ── Core Methods ─────────────────────────────────────────
 
   Future<void> joinRoom(LiveRoomModel room, {UserModel? currentUser}) async {
+    final myGeneration = ++_sessionGeneration;
+    final pendingLeave = _pendingLeave;
+    if (pendingLeave != null) {
+      try {
+        await pendingLeave;
+      } catch (_) {}
+      if (myGeneration != _sessionGeneration) return;
+    }
     final isRejoiningSameRoom =
         (_activeRoom != null && _activeRoom!.id == room.id);
     final isHost =
@@ -293,11 +301,13 @@ class LiveProvider extends ChangeNotifier {
     try {
       // 1. Connect Socket.IO
       await _socketService.connect(user: currentUser?.toJson());
+      if (myGeneration != _sessionGeneration) return; // superseded by a newer join/leave
       _socketService.joinRoom(room.id, user: currentUser?.toJson());
       _setupSocketSubscriptions(currentUser);
 
       // 2. REST Join
       final joinResult = await _roomRepository.joinRoom(room.id);
+      if (myGeneration != _sessionGeneration) return;
       final roomData = joinResult['room'] ?? joinResult;
       if (roomData is Map<String, dynamic>) {
         final rawCount =
@@ -376,6 +386,7 @@ class LiveProvider extends ChangeNotifier {
           final appId = agoraData['appId'] as String?;
 
           await _agoraService.initialize(appId: appId, enableVideo: isVideo);
+          if (myGeneration != _sessionGeneration) return;
           await _agoraService.joinChannel(
             token,
             channelName,
@@ -1307,20 +1318,22 @@ class LiveProvider extends ChangeNotifier {
     await leaveRoom();
   }
 
-  Future<void> leaveRoom() async {
-    final roomId = _activeRoom?.id;
+  /// See LivePartyProvider: a join or leave in flight from an older generation must never
+  /// write into a newer session.
+  int _sessionGeneration = 0;
+  Future<void>? _pendingLeave;
 
+  Future<void> leaveRoom() async {
+    // Synchronous teardown first; the network and Agora work happens last and touches no
+    // provider state, so a quick re-entry (screen dispose + new screen join) cannot lose
+    // the new session's subscriptions. Mirrors the LivePartyProvider fix.
+    _sessionGeneration++;
+    final roomId = _activeRoom?.id;
     if (roomId != null) {
       try {
         _socketService.leaveRoom(roomId);
-        await _roomRepository.leaveRoom(roomId);
       } catch (_) {}
     }
-
-    try {
-      await _agoraService.leaveOpponentPKChannel();
-    } catch (_) {}
-    await _agoraService.leaveChannel();
 
     _socketUserJoinedSub?.cancel();
     _socketUserLeftSub?.cancel();
@@ -1359,6 +1372,26 @@ class LiveProvider extends ChangeNotifier {
     _currentMusicTrack = null;
     _luckyBagActive = false;
     notifyListeners();
+
+    final leaveWork = () async {
+      if (roomId != null) {
+        try {
+          await _roomRepository.leaveRoom(roomId);
+        } catch (_) {}
+      }
+      try {
+        await _agoraService.leaveOpponentPKChannel();
+      } catch (_) {}
+      try {
+        await _agoraService.leaveChannel();
+      } catch (_) {}
+    }();
+    _pendingLeave = leaveWork;
+    try {
+      await leaveWork;
+    } finally {
+      if (identical(_pendingLeave, leaveWork)) _pendingLeave = null;
+    }
   }
 
   /// Toggle local mic mute and sync state. Returns new muted value.

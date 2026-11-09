@@ -60,13 +60,23 @@ void main() {
       roomFile.writeAsStringSync(room.id);
       debugPrint('[$role] created room ${room.id}');
     } else {
-      await Future<void>.delayed(const Duration(seconds: 7));
+      for (var i = 0; i < 120 && !roomFile.existsSync(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      await Future<void>.delayed(const Duration(seconds: 3));
       final id = roomFile.readAsStringSync().trim();
       final r = await ApiClient.instance.get('/v1/rooms/$id');
       room = LiveRoomModel.fromJson(Map<String, dynamic>.from(r.data['data'] as Map));
       debugPrint('[$role] fetched room ${room.id} status=${room.status}');
     }
-    await provider.joinRoom(room, currentUser: user); final ok = provider.activeRoom != null;
+    await provider.joinRoom(room, currentUser: user); var ok = provider.activeRoom != null;
+    if (role == 'host' && const bool.fromEnvironment('RACE')) {
+      // ignore: unawaited_futures
+      provider.leaveRoom();
+      await provider.joinRoom(room, currentUser: user);
+      ok = provider.activeRoom != null;
+      debugPrint('[$role] RACE re-join -> $ok');
+    }
     debugPrint('[$role] joinParty -> $ok activeRoom=${provider.activeRoom?.id} socketConnected=${SocketService.instance.isConnected}');
 
     if (role == 'guest') {

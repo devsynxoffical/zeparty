@@ -70,8 +70,16 @@ void main() {
       room = LiveRoomModel.fromJson(Map<String, dynamic>.from(r.data['data'] as Map));
       debugPrint('[$role] fetched room ${room.id} status=${room.status}');
     }
-    final ok = await provider.joinParty(room, user);
+    var ok = await provider.joinParty(room, user);
     debugPrint('[$role] joinParty -> $ok activeRoom=${provider.activeRoom?.id} socketConnected=${SocketService.instance.isConnected}');
+    if (role == 'host' && const bool.fromEnvironment('RACE')) {
+      // What the phone does when the host backs out and re-enters quickly: the screen's dispose()
+      // calls leaveParty() without awaiting it, and the next screen's initState calls joinParty().
+      // ignore: unawaited_futures
+      provider.leaveParty();
+      ok = await provider.joinParty(room, user);
+      debugPrint('[$role] RACE re-join -> $ok activeRoom=${provider.activeRoom?.id}');
+    }
 
     final giftEvents = <String>[];
     final giftSub = SocketService.instance.giftSentStream.listen((d) => giftEvents.add('${d['giftId']}:${d['senderUserId']}'));

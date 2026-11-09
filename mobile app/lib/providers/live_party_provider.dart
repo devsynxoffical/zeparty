@@ -615,6 +615,15 @@ class LivePartyProvider extends ChangeNotifier {
 
   Future<bool> joinParty(LiveRoomModel room, UserModel currentUser, {String? password}) async {
     final currentAttempt = ++_joinAttemptCounter;
+    final myGeneration = ++_sessionGeneration;
+    // Let a previous leave finish its Agora teardown before joining a channel again.
+    final pendingLeave = _pendingLeave;
+    if (pendingLeave != null) {
+      try {
+        await pendingLeave;
+      } catch (_) {}
+      if (myGeneration != _sessionGeneration) return false;
+    }
     _isLoading = true;
     _errorMessage = null;
     final isDifferentRoom = (_activeRoom != null && _activeRoom!.id != room.id);
@@ -673,6 +682,7 @@ class LivePartyProvider extends ChangeNotifier {
     try {
       // 1. Connect Socket.IO
       await _socketService.connect(user: currentUser.toJson());
+      if (myGeneration != _sessionGeneration) return false; // superseded by a newer join/leave
       _socketService.joinRoom(room.id, user: currentUser.toJson());
       _setupSocketSubscriptions(currentUser);
 
@@ -694,8 +704,10 @@ class LivePartyProvider extends ChangeNotifier {
       // Re-fetch authoritative room details with seats state
       try {
         final details = await _roomRepository.getRoomDetails(room.id);
+        if (myGeneration != _sessionGeneration) return false;
         _activeRoom = details;
       } catch (_) {}
+      if (myGeneration != _sessionGeneration) return false;
 
       // Apply persistent room configuration overrides (Item 09, 11, 04, 08)
       if (_activeRoom != null) {
@@ -896,6 +908,7 @@ class LivePartyProvider extends ChangeNotifier {
       } catch (agoraErr) {
         debugPrint('[LivePartyProvider] Agora token/channel join warning: $agoraErr');
       }
+      if (myGeneration != _sessionGeneration) return false;
 
       // 4. Listen to Agora Active Speaker stream
       _speakerSub?.cancel();
@@ -2718,17 +2731,29 @@ class LivePartyProvider extends ChangeNotifier {
     }
   }
 
+  /// Generation counter: every joinParty() / leaveParty() bumps it, and any join still in
+  /// flight from an older generation gives up instead of writing into the newer session.
+  int _sessionGeneration = 0;
+
+  /// Network + Agora part of the last leave; the next join waits for it before joining Agora.
+  Future<void>? _pendingLeave;
+
   Future<void> _leavePartyInternal() async {
+    // Root cause of "host sees nothing until re-entering": this used to await the REST leave
+    // and the Agora leave FIRST and cancel the socket subscriptions / wipe state AFTERWARDS.
+    // The party screen's dispose() calls leaveParty() without awaiting it, so when the user
+    // re-entered within a few seconds the new joinParty() had already subscribed, and this
+    // continuation then cancelled those fresh subscriptions and emptied participants/messages.
+    // Order now: synchronous teardown first, network/Agora last, no state writes after awaits.
+    _sessionGeneration++;
     final roomId = _activeRoom?.id;
     _activeRoom = null;
     if (roomId != null) {
       try {
         _socketService.leaveRoom(roomId);
-        await _roomRepository.leaveRoom(roomId);
       } catch (_) {}
     }
 
-    await _agoraService.leaveChannel();
 
     _volumeIndicationSub?.cancel();
     _speakerSub?.cancel();
@@ -2793,7 +2818,25 @@ class LivePartyProvider extends ChangeNotifier {
     _seatVoiceLevels.clear();
     _announcedJoinedUserIds.clear();
     _recentSystemMessages.clear();
+    _activeRoom = null;
     notifyListeners();
+
+    final leaveWork = () async {
+      if (roomId != null) {
+        try {
+          await _roomRepository.leaveRoom(roomId);
+        } catch (_) {}
+      }
+      try {
+        await _agoraService.leaveChannel();
+      } catch (_) {}
+    }();
+    _pendingLeave = leaveWork;
+    try {
+      await leaveWork;
+    } finally {
+      if (identical(_pendingLeave, leaveWork)) _pendingLeave = null;
+    }
   }
 
   Future<void> closeRoom() async {
