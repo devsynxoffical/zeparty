@@ -162,7 +162,8 @@ export async function initSocketServer(httpServer) {
     });
 
     socket.on('disconnect', (reason) => {
-      // Handled in room.socket.js onSocketDisconnect
+      // Handled in room.socket.js onSocketDisconnect; keep the transport reason for diagnostics.
+      socket._disconnectReason = reason;
     });
   });
 

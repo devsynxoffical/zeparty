@@ -452,6 +452,23 @@ function resolveArgs(arg1, arg2, arg3, arg4, arg5) {
   return { io: null, socket, data, callback, db };
 }
 
+
+/** RTC-DIAG: userIds of the sockets currently subscribed to a room channel (local adapter view). */
+export function describeRoomChannel(socket, roomId) {
+  try {
+    const ids = socket.nsp?.adapter?.rooms?.get(`room:${roomId}`);
+    if (!ids) return 'members=0 []';
+    const users = [];
+    for (const sid of ids) {
+      const s = socket.nsp.sockets.get(sid);
+      users.push(`${s?.userId ?? '?'}@${sid.slice(0, 6)}`);
+    }
+    return `members=${users.length} [${users.join(', ')}]`;
+  } catch (e) {
+    return `members=? (${e?.message})`;
+  }
+}
+
 export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
   const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
 
@@ -539,7 +556,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     socket.joinedRooms = socket.joinedRooms || new Set();
     socket.joinedRooms.add(roomId);
     socket.joinedRooms.add(room.id);
-    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [ROOM_JOIN_SUCCESS] socket=${socket.id} user=${userId} room=${room.id}`);
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [ROOM_JOIN_SUCCESS] socket=${socket.id} user=${userId} room=${room.id} ${describeRoomChannel(socket, room.id)}`);
 
     // Cancel any active host absence timer if host returned
     const isHostUser = room.creatorUserId === userId || room.creator?.id === userId;
@@ -954,6 +971,7 @@ export async function onLeaveRoom(arg1, arg2, arg3, arg4, arg5) {
     }
 
     const userId = socket.userId;
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [ROOM_LEAVE_REQ] socket=${socket.id} user=${userId} room=${roomId} before: ${describeRoomChannel(socket, roomId)}`);
 
     // 1. Remove socket from room
     if (typeof socket.leave === 'function') {
@@ -1139,6 +1157,7 @@ export async function onSocketDisconnect(io, socket, db) {
   try {
     const userId = socket.userId;
     if (!userId) return;
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [DISCONNECT] socket=${socket.id} user=${userId} reason=${socket._disconnectReason ?? 'unknown'} rooms=${[...(socket.rooms ?? [])].filter((r) => String(r).startsWith('room:')).join(',')}`);
 
     // Track rooms cleaned up for this socket to ensure idempotency across 'disconnecting' and 'disconnect'
     socket._cleanedRooms = socket._cleanedRooms || new Set();
@@ -1700,7 +1719,7 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
       type: data?.type || 'text',
     };
 
-    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [CHAT_SEND] socket=${socket.id} sender=${senderId} room=${canonicalRoomId} msgId=${payload.id}`);
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [CHAT_SEND] socket=${socket.id} sender=${senderId} room=${canonicalRoomId} msgId=${payload.id} ${describeRoomChannel(socket, canonicalRoomId)}`);
     const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
     for (const r of targetRoomIds) {
       if (io) {
@@ -2725,7 +2744,7 @@ export function registerRoomHandlers(io, socket) {
   socket.on('room:stage_camera_toggle', (d, cb) => onStageCameraToggle(io, socket, d, cb));
 
   // Handle both disconnecting (before leaveAll) and disconnect (as safety fallback)
-  socket.on('disconnecting', () => onSocketDisconnect(io, socket));
+  socket.on('disconnecting', (reason) => { socket._disconnectReason = reason; return onSocketDisconnect(io, socket); });
   socket.on(SOCKET_EVENTS.DISCONNECT, () => onSocketDisconnect(io, socket));
 }
 
