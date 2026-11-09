@@ -45,6 +45,11 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
   VideoPlayerController? _videoController;
   Timer? _videoTimer;
   bool _isVideoPlaying = false;
+
+  /// Observable state for tests and diagnostics.
+  GiftModel? get currentGift => _currentGift;
+  bool get isVideoPlaying => _isVideoPlaying;
+  int get queuedVideoGifts => _videoQueue.length;
   final List<_QueuedVideoGift> _videoQueue = [];
 
   /// Skia ColorMatrix that eliminates black video backgrounds via Luma-keying:

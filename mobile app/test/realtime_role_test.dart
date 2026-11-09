@@ -60,7 +60,11 @@ void main() {
       roomFile.writeAsStringSync(room.id);
       debugPrint('[$role] created room ${room.id}');
     } else {
-      await Future<void>.delayed(const Duration(seconds: 7));
+      // Wait for the host process to publish the room id (it may still be logging in / creating).
+      for (var i = 0; i < 120 && !roomFile.existsSync(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      await Future<void>.delayed(const Duration(seconds: 3));
       final id = roomFile.readAsStringSync().trim();
       final r = await ApiClient.instance.get('/v1/rooms/$id');
       room = LiveRoomModel.fromJson(Map<String, dynamic>.from(r.data['data'] as Map));
@@ -78,8 +82,11 @@ void main() {
       // Gift flow exactly as the gift dialog does it: REST /v1/gifts/send with the room id.
       await Future<void>.delayed(const Duration(seconds: 2));
       try {
-        final g = await ApiClient.instance.post('/v1/gifts/send', data: {'giftId': 'cg01', 'recipientUserId': room.host.id, 'quantity': 1, 'roomId': room.id});
-        debugPrint('[$role] gift sent: ${g.data['success']} tx=${g.data['data']?['transactionId']}');
+        for (final giftId in ['cg01', 'lg01']) {
+          final g = await ApiClient.instance.post('/v1/gifts/send', data: {'giftId': giftId, 'recipientUserId': room.host.id, 'quantity': 1, 'roomId': room.id});
+          debugPrint('[$role] gift $giftId sent: ${g.data['success']} tx=${g.data['data']?['transactionId']}');
+          await Future<void>.delayed(const Duration(seconds: 2));
+        }
       } catch (e) {
         debugPrint('[$role] GIFT SEND FAILED: $e');
       }
