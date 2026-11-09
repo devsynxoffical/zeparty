@@ -93,7 +93,9 @@ export class GameSocketServer {
 
   send(session, message) {
     if (session.socket.readyState === session.socket.OPEN) {
-      session.socket.send(JSON.stringify(message));
+      // `t` lets clients align turn deadlines / chess clocks to the server's clock
+      // instead of the device clock (see ServerClock in zeparty_game_core).
+      session.socket.send(JSON.stringify({ ...message, t: Date.now() }));
     }
   }
 
@@ -208,7 +210,13 @@ export class GameSocketServer {
       }
     } catch (err) {
       if (err instanceof RoomError) {
+        this.log.warn({ userId: session.identity?.userId, msgType: msg.type, code: err.code, roomId: msg.roomId, matchId: msg.matchId }, 'ws command rejected');
         this.send(session, { type: 'error', code: err.code, message: err.message, reqId });
+        // The client's idea of the room/match is behind the server's: push the
+        // current state so it recovers without a reconnect.
+        if (session.identity && (err.code === 'stale_match' || err.code === 'no_active_match' || err.code === 'not_a_player')) {
+          try { this.rooms.resync(session.identity.userId, 0); } catch { /* no room for this user */ }
+        }
       } else {
         this.log.error({ err }, 'unhandled ws error');
         this.send(session, { type: 'error', code: 'internal', message: 'internal error', reqId });

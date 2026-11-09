@@ -48,13 +48,13 @@ class _GameShellState extends State<GameShell> {
     _subs.add(s.socket.roomStream.listen((r) {
       if (!mounted) return;
       if (r == null) {
-        Navigator.of(context).pop();
+        _popIfActive();
         return;
       }
       setState(() => _room = r);
       // Rematch accepted by everyone: server starts a new match and sends game.state;
       // RoomScreen below us handles entering it, so pop this shell.
-      if (_result != null && r.status == RoomStatus.playing && r.matchId != widget.context.matchId) Navigator.of(context).pop();
+      if (_result != null && r.status == RoomStatus.playing && r.matchId != widget.context.matchId) _popIfActive();
     }));
     _subs.add(s.host.hostCloseRequests.listen((_) => _leave()));
     WidgetsBinding.instance.addPostFrameCallback((_) => _preload());
@@ -80,9 +80,20 @@ class _GameShellState extends State<GameShell> {
     super.dispose();
   }
 
+  /// Pop this shell only while its route is still live. After "Back to lobby"
+  /// the shell is already being popped when the server's `room.closed` arrives
+  /// (within the ~300 ms exit transition the State is still mounted); popping
+  /// again from here removed the Game Center itself and left the host's Games
+  /// tab black until the app was restarted.
+  void _popIfActive() {
+    final route = ModalRoute.of(context);
+    if (route != null && route.isActive) Navigator.of(context).pop();
+  }
+
   void _leave() {
     SessionScope.read(context).socket.leaveRoom();
-    if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
+    final route = ModalRoute.of(context);
+    if (mounted && route != null && route.isActive) Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
   @override

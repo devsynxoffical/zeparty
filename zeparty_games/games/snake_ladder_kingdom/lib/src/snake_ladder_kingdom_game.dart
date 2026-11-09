@@ -203,7 +203,7 @@ class SnakeLadderKingdomGame extends FlameGame {
     if (s.contains('not_your_turn')) return 'Not your turn';
     if (s.contains('version_mismatch')) return 'Syncing with the kingdom';
     if (s.contains('match_finished')) return 'The match is over';
-    return 'Action rejected';
+    return 'Action rejected${_rejectionCode(s)}';
   }
 
   // ---------------------------------------------------------------------------
@@ -416,4 +416,11 @@ class SnakeLadderKingdomGame extends FlameGame {
     dice.enabled = myTurn && s.phase == KingdomPhase.roll && !awaitingServer.value;
     if (s.phase != KingdomPhase.finished) characters[s.turnSeat]?.highlight = true;
   }
+}
+
+/// `ServerError.toString()` is `code: message`; surface the code so a rejected
+/// action can be diagnosed from the toast ("Action rejected (stale_match)").
+String _rejectionCode(String raw) {
+  final m = RegExp(r'^([a-z_]+)(?::|$)').firstMatch(raw.trim());
+  return m == null ? '' : ' (${m.group(1)})';
 }

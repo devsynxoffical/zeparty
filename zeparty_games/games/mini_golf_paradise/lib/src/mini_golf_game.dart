@@ -216,7 +216,7 @@ class MiniGolfGame extends FlameGame {
     if (s.contains('version_mismatch')) return 'Syncing with the course';
     if (s.contains('bad_power') || s.contains('bad_angle')) return 'Drag back from your ball to putt';
     if (s.contains('inactive_seat')) return 'You have finished this hole';
-    return 'Action rejected';
+    return 'Action rejected${_rejectionCode(s)}';
   }
 
   void toggleScorecard() {
@@ -436,4 +436,11 @@ class _StrokeReplayer extends Component {
       _done.complete();
     }
   }
+}
+
+/// `ServerError.toString()` is `code: message`; surface the code so a rejected
+/// action can be diagnosed from the toast ("Action rejected (stale_match)").
+String _rejectionCode(String raw) {
+  final m = RegExp(r'^([a-z_]+)(?::|$)').firstMatch(raw.trim());
+  return m == null ? '' : ' (${m.group(1)})';
 }

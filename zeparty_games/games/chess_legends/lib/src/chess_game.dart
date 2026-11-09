@@ -308,7 +308,7 @@ class ChessGame extends FlameGame {
     if (s.contains('version_mismatch')) return 'Syncing with the hall';
     if (s.contains('offer_pending')) return 'Offer already pending';
     if (s.contains('match_finished')) return 'The game is over';
-    return 'Action rejected';
+    return 'Action rejected${_rejectionCode(s)}';
   }
 
   // ---------------------------------------------------------------------------
@@ -525,4 +525,11 @@ class ChessGame extends FlameGame {
       world.add(fx.confetti(Vector2.all(boardSize), accent: ZpColors.champagne));
     }
   }
+}
+
+/// `ServerError.toString()` is `code: message`; surface the code so a rejected
+/// action can be diagnosed from the toast ("Action rejected (stale_match)").
+String _rejectionCode(String raw) {
+  final m = RegExp(r'^([a-z_]+)(?::|$)').firstMatch(raw.trim());
+  return m == null ? '' : ' (${m.group(1)})';
 }

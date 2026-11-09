@@ -120,6 +120,8 @@ class ZePartySocketClient extends ChangeNotifier {
   void _onMessage(dynamic raw) {
     final msg = jsonDecode(raw as String) as Map<String, dynamic>;
     final type = msg['type'] as String;
+    final serverT = msg['t'];
+    if (serverT is int) ServerClock.instance.observe(serverT);
     switch (type) {
       case 'player.presence':
         if (_status != SocketStatus.connected) {

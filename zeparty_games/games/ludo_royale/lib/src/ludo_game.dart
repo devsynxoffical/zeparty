@@ -211,7 +211,7 @@ class LudoGame extends FlameGame {
     if (s.contains('illegal_move')) return 'That token cannot move';
     if (s.contains('version_mismatch')) return 'Syncing with the table';
     if (s.contains('wrong_phase')) return 'Wait for the dice';
-    return 'Action rejected';
+    return 'Action rejected${_rejectionCode(s)}';
   }
 
   // ---------------------------------------------------------------------------
@@ -410,4 +410,11 @@ class LudoGame extends FlameGame {
     }
     if (s.phase == LudoPhase.finished) dice.enabled = false;
   }
+}
+
+/// `ServerError.toString()` is `code: message`; surface the code so a rejected
+/// action can be diagnosed from the toast ("Action rejected (stale_match)").
+String _rejectionCode(String raw) {
+  final m = RegExp(r'^([a-z_]+)(?::|$)').firstMatch(raw.trim());
+  return m == null ? '' : ' (${m.group(1)})';
 }

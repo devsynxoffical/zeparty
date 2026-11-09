@@ -352,7 +352,7 @@ class _ClockBoxState extends State<_ClockBox> {
     if (!widget.active || s.finished) return s.clockFor(widget.color);
     final dl = s.turnDeadline;
     if (dl == null) return s.clockFor(widget.color);
-    return math.max(0, dl - DateTime.now().millisecondsSinceEpoch);
+    return math.max(0, dl - ServerClock.instance.nowMs);
   }
 
   @override

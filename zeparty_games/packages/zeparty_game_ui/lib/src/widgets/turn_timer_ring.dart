@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../theme/zp_colors.dart';
+import 'package:zeparty_game_core/zeparty_game_core.dart';
 
 /// Countdown ring driven by an absolute server deadline (epoch ms) so every
 /// client shows the same remaining time regardless of when it joined.
@@ -49,7 +50,7 @@ class _TurnTimerRingState extends State<TurnTimerRing> with SingleTickerProvider
     double frac = 1;
     int remaining = 0;
     if (dl != null) {
-      remaining = math.max(0, dl - DateTime.now().millisecondsSinceEpoch);
+      remaining = math.max(0, dl - ServerClock.instance.nowMs);
       frac = widget.totalMs <= 0 ? 1 : (remaining / widget.totalMs).clamp(0.0, 1.0);
       if (remaining < 5000 && remaining > 0 && !_warned) {
         _warned = true;

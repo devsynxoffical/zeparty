@@ -44,7 +44,11 @@ class _RoomScreenState extends State<RoomScreen> {
     _roomSub = s.socket.roomStream.listen((r) {
       if (!mounted) return;
       if (r == null) {
-        Navigator.of(context).popUntil((route) => route.isFirst || route.settings.name == 'game_details');
+        // Only while this screen is still live (see GameShell._popIfActive).
+        final route = ModalRoute.of(context);
+        if (route != null && route.isActive) {
+          Navigator.of(context).popUntil((route) => route.isFirst || route.settings.name == 'game_details');
+        }
         return;
       }
       setState(() => _room = r);

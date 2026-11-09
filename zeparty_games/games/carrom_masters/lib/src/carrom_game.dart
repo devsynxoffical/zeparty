@@ -320,7 +320,7 @@ class CarromGame extends FlameGame {
     if (s.contains('version_mismatch')) return 'Syncing with the table';
     if (s.contains('bad_x')) return 'Place the striker on the baseline';
     if (s.contains('bad_power')) return 'Pull back to strike';
-    return 'Shot rejected';
+    return 'Shot rejected${_rejectionCode(s)}';
   }
 
   // ---------------------------------------------------------------------------
@@ -556,4 +556,11 @@ class _InputLayer extends PositionComponent with DragCallbacks {
     super.onDragCancel(event);
     game.onDragCancelWorld();
   }
+}
+
+/// `ServerError.toString()` is `code: message`; surface the code so a rejected
+/// action can be diagnosed from the toast ("Action rejected (stale_match)").
+String _rejectionCode(String raw) {
+  final m = RegExp(r'^([a-z_]+)(?::|$)').firstMatch(raw.trim());
+  return m == null ? '' : ' (${m.group(1)})';
 }
