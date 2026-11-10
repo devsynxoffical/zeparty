@@ -257,6 +257,17 @@ export class PKService {
         socketEmitter.emitToUser(result.invitation.targetHostUserId, 'pk:invitation_accepted', acceptedPayload);
         socketEmitter.emitToUser(result.invitation.targetHostUserId, 'pk:preparing', matchSnapshot);
       }
+
+      // Safety timeout: 16-second preparation fallback to prevent deadlock if a client disconnects
+      setTimeout(async () => {
+        try {
+          const current = await this.repo.getMatchSnapshot(result.match.id);
+          if (current && current.status === 'PREPARING') {
+            console.log(`[PKService] Preparation timeout reached for match ${result.match.id}. Aborting.`);
+            await this.abortMatch(result.match.id, 'SYSTEM', 'PREPARATION_TIMEOUT');
+          }
+        } catch (_) {}
+      }, 16000);
     } else {
       // Notify inviter room of rejection
       socketEmitter.emitToRoom(result.match.roomAId, 'pk:invitation_responded', {

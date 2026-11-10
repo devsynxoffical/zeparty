@@ -1071,12 +1071,6 @@ class SocketService {
     _socket!.on('pk:ready', (data) {
       if (data is Map) _pkReadyController.add(Map<String, dynamic>.from(data));
     });
-    _socket!.on('pk:started', (data) {
-      if (data is Map) {
-        final map = Map<String, dynamic>.from(data);
-        _pkStartedController.add(map);
-      }
-    });
     _socket!.on('pk:active', (data) {
       if (data is Map) _pkActiveController.add(Map<String, dynamic>.from(data));
     });
@@ -1101,12 +1095,22 @@ class SocketService {
     _socket!.on('pk:countdown_started', (data) {
       if (data is Map) _pkCountdownStartedController.add(Map<String, dynamic>.from(data));
     });
-    _socket!.on('pk:match_started', (data) {
-      if (data is Map) {
-        final map = Map<String, dynamic>.from(data);
-        _pkStartedController.add(map);
+    String? lastStartedPkMatchId;
+    int lastStartedPkTimestamp = 0;
+    void handlePkStarted(dynamic data) {
+      if (data is! Map) return;
+      final map = Map<String, dynamic>.from(data);
+      final matchId = map['id']?.toString() ?? map['matchId']?.toString();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (matchId != null && matchId == lastStartedPkMatchId && (now - lastStartedPkTimestamp < 4000)) {
+        return; // Suppress duplicate alias event within 4s
       }
-    });
+      lastStartedPkMatchId = matchId;
+      lastStartedPkTimestamp = now;
+      _pkStartedController.add(map);
+    }
+    _socket!.on('pk:started', handlePkStarted);
+    _socket!.on('pk:match_started', handlePkStarted);
     _socket!.on('pk:host_connection_changed', (data) {
       if (data is Map) _pkHostConnectionChangedController.add(Map<String, dynamic>.from(data));
     });
@@ -1787,6 +1791,17 @@ class SocketService {
       _socket!.emit('room:snapshot', {'roomId': roomId});
       _socket!.emit('room_snapshot', {'roomId': roomId});
       _logDiag('REQUEST_ROOM_SNAPSHOT', 'room: $roomId');
+    }
+  }
+
+  /// Inform server that host has reconnected to an active PK match to clear disconnect grace
+  void emitPkHostReconnect({required String roomId, String? matchId}) {
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('pk:host_reconnect', {
+        'roomId': roomId,
+        if (matchId != null) 'matchId': matchId,
+      });
+      _logDiag('EMIT_PK_HOST_RECONNECT', 'roomId: $roomId, matchId: $matchId');
     }
   }
 

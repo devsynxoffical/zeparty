@@ -542,14 +542,16 @@ class AgoraRtcService {
     _pkOpponentUid = (opponentUid != null && opponentUid > 0)
         ? opponentUid
         : _pkOpponentUid;
-    _pkOpponentLocalUid = localUid;
+    // Use ephemeral subscriber UID if matching local publisher UID to prevent Agora -2 ERR_INVALID_ARGUMENT
+    final effectiveLocalUid = (localUid > 0 && localUid != _currentUid) ? localUid : 0;
+    _pkOpponentLocalUid = effectiveLocalUid;
     if (_engine == null) return;
     try {
       await _engine!.joinChannelEx(
         token: (token != null && token.isNotEmpty) ? token : '',
         connection: RtcConnection(
           channelId: opponentChannel,
-          localUid: localUid,
+          localUid: effectiveLocalUid,
         ),
         options: ChannelMediaOptions(
           autoSubscribeAudio: true,

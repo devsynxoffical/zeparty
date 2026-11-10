@@ -564,6 +564,9 @@ class LivePartyProvider extends ChangeNotifier {
     if (targetId != null && targetId.isNotEmpty) {
       _socketService.joinRoom(targetId, user: user.toJson());
       _setupSocketSubscriptions(user);
+      if (_activePkBattle != null && isHost) {
+        _socketService.emitPkHostReconnect(roomId: targetId, matchId: _activePkBattle!.id);
+      }
     }
   }
 
@@ -1898,18 +1901,19 @@ class LivePartyProvider extends ChangeNotifier {
         // Message dropped if created before room feed clear boundary
         // Apply clock skew grace window (30s) and distinguish live socket comments from historical playback
         // so valid live messages from other devices are not discarded due to clock skew.
+        // Distinguish live socket comments from historical playback:
+        // Live socket messages (arriving over active realtime connection) must NEVER be dropped by clock-skew.
         final createdAtRaw = data['createdAt'] ?? data['timestamp'];
         final isHistorical = data['isHistorical'] == true || data['playbackType'] == 'HISTORY_ONLY';
-        if (_feedClearedAt != null) {
-          if (isHistorical) {
-            return;
-          }
+        if (_feedClearedAt != null && isHistorical) {
           if (createdAtRaw != null) {
             final msgTime = DateTime.tryParse(createdAtRaw.toString())?.toUtc();
             final clearTimeUtc = _feedClearedAt!.toUtc();
-            if (msgTime != null && msgTime.isBefore(clearTimeUtc.subtract(const Duration(seconds: 30)))) {
+            if (msgTime != null && msgTime.isBefore(clearTimeUtc)) {
               return;
             }
+          } else {
+            return;
           }
         }
 
@@ -3856,23 +3860,31 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _setupAudioPkRelay(PKBattleModel battle) {
+  Future<void> _setupAudioPkRelay(PKBattleModel battle) async {
     if (battle.agoraRelay == null) return;
     final relay = battle.agoraRelay!;
     final currentRoomId = _activeRoom?.id ?? '';
-    String opponentChannel = relay.channelB;
-    int opponentUid = relay.hostBUid;
+    final isRoomB = currentRoomId == battle.roomBId || currentRoomId == relay.channelB;
+    final opponentChannel = isRoomB ? relay.channelA : relay.channelB;
+    final opponentUid = isRoomB ? relay.hostAUid : relay.hostBUid;
+    final opponentRoomId = isRoomB ? battle.roomAId : battle.roomBId;
 
-    if (currentRoomId == battle.roomBId || currentRoomId == relay.channelB) {
-      opponentChannel = relay.channelA;
-      opponentUid = relay.hostAUid;
+    String? token;
+    try {
+      if (opponentRoomId.isNotEmpty) {
+        final agoraData = await _roomRepository.getAgoraToken(opponentRoomId);
+        token = agoraData['token'] as String?;
+      }
+    } catch (e) {
+      debugPrint('[LivePartyProvider] Fetch opponent Agora token notice: $e');
     }
 
     final localUid = _agoraService.currentUid ?? 0;
-    _agoraService.joinOpponentPKChannel(
+    await _agoraService.joinOpponentPKChannel(
       opponentChannel: opponentChannel,
       localUid: localUid,
       opponentUid: opponentUid,
+      token: token,
       isVideo: false,
     );
   }

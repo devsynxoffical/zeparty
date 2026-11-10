@@ -22,6 +22,7 @@ import privacyEligibilityService from '../services/privacyEligibility.service.js
 import { getNobleStyle } from '../services/asset.service.js';
 import roomTrophyService from '../services/roomTrophy.service.js';
 import nobleService from '../services/noble.service.js';
+import pkService from '../services/pk.service.js';
 import { getRedisClient } from '../config/redis.js';
 
 /**
@@ -669,6 +670,11 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       totalLikes = await presenceService.getRoomLikes(room.id);
     } catch (_) {}
 
+    let activePkBattle = null;
+    try {
+      activePkBattle = await pkService.getActiveMatchForRoom(room.id);
+    } catch (_) {}
+
     const snapshot = buildRoomSnapshot(room, currentCount, activeUsers);
     snapshot.attemptId = attemptId;
     snapshot.feedClearedAt = feedClearedAt;
@@ -679,9 +685,15 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     snapshot.trophyCoins = dailySendingTotal;
     snapshot.totalLikes = totalLikes;
     snapshot.likesCount = totalLikes;
+    if (activePkBattle) {
+      snapshot.activePkBattle = activePkBattle;
+      snapshot.pkBattle = activePkBattle;
+    }
     socket.emit(SOCKET_EVENTS.ROOM_SNAPSHOT, {
       room: snapshot,
       ...snapshot,
+      activePkBattle,
+      pkBattle: activePkBattle,
       seats: snapshot.seats || [],
       members: snapshot.members || [],
       currentViewersCount: currentCount,

@@ -1019,7 +1019,10 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
           );
 
           if (provider.isPkActive) {
-            provider.addPkScore(true, gift.diamondPrice);
+            final activePk = provider.activePkBattle;
+            final currentRoomId = provider.activeRoom?.id ?? widget.room.id;
+            final isSideA = activePk == null || activePk.roomAId == currentRoomId;
+            provider.addPkScore(isSideA, gift.diamondPrice);
           }
         },
       ),

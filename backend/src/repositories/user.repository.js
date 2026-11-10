@@ -58,6 +58,7 @@ export async function findByUsername(username, db = prisma) {
         mode: 'insensitive',
       },
     },
+    include: standardUserInclude,
   });
 }
 
