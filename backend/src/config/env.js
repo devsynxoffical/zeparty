@@ -43,8 +43,8 @@ const envSchema = z.object({
   OTP_ENCRYPTION_KEY: z.string().min(16).default('zeparty-otp-encryption-master-key-32b!'),
 
   // Agora Realtime Streaming
-  AGORA_APP_ID: z.string().default('mock_agora_app_id_test_environment_12345'),
-  AGORA_APP_CERTIFICATE: z.string().default('mock_agora_app_cert_test_environment_67890'),
+  AGORA_APP_ID: z.string().default('970ca35de60c44645bbae8a215061401'),
+  AGORA_APP_CERTIFICATE: z.string().default('5cfd2fd1755d40ecb72977518be15d3b'),
   AGORA_TOKEN_EXPIRY_SECONDS: z.coerce.number().min(60).max(86400).default(3600),
   AGORA_MOCK_MODE: z.coerce.boolean().default(false),
 

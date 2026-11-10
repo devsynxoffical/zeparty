@@ -72,7 +72,7 @@ class AgoraRtcService {
   }
 
   Future<void> initialize({String? appId, bool enableVideo = true}) async {
-    final targetAppId = (appId != null && appId.isNotEmpty)
+    final targetAppId = (appId != null && appId.isNotEmpty && !appId.contains('mock'))
         ? appId
         : _currentAppId;
     if (_isInitialized && _engine != null && targetAppId == _currentAppId) {
@@ -542,8 +542,11 @@ class AgoraRtcService {
     _pkOpponentUid = (opponentUid != null && opponentUid > 0)
         ? opponentUid
         : _pkOpponentUid;
-    // Use ephemeral subscriber UID if matching local publisher UID to prevent Agora -2 ERR_INVALID_ARGUMENT
-    final effectiveLocalUid = (localUid > 0 && localUid != _currentUid) ? localUid : 0;
+    // In Agora 4.x, when a signed token is provided, connection.localUid MUST match the UID
+    // for which the token was minted to prevent Agora Error 110 (ERR_INVALID_TOKEN).
+    final effectiveLocalUid = (token != null && token.isNotEmpty && localUid > 0)
+        ? localUid
+        : ((localUid > 0 && localUid != _currentUid) ? localUid : 0);
     _pkOpponentLocalUid = effectiveLocalUid;
     if (_engine == null) return;
     try {

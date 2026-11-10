@@ -36,11 +36,14 @@ export function deriveAgoraUid(userId) {
   return uid;
 }
 
-function normalizeHex32(str, fallbackSeed = 'seed') {
-  if (typeof str === 'string' && /^[0-9a-fA-F]{32}$/.test(str)) {
-    return str;
+const PROD_AGORA_APP_ID = '970ca35de60c44645bbae8a215061401';
+const PROD_AGORA_APP_CERT = '5cfd2fd1755d40ecb72977518be15d3b';
+
+function resolveValidAgoraHex32(candidate, defaultHex) {
+  if (typeof candidate === 'string' && !candidate.includes('mock_agora') && /^[0-9a-fA-F]{32}$/.test(candidate.trim())) {
+    return candidate.trim();
   }
-  return crypto.createHash('md5').update(String(str || fallbackSeed)).digest('hex');
+  return defaultHex;
 }
 
 /**
@@ -56,15 +59,15 @@ function normalizeHex32(str, fallbackSeed = 'seed') {
  * @returns {string} The signed Agora RTC token
  */
 export function generateAgoraRtcToken({
-  appId = env.AGORA_APP_ID || '970ca35de60c44645bbae8a215061401',
-  appCertificate = env.AGORA_APP_CERTIFICATE || '5cfd2fd1755d40ecb72977518be15d3b',
+  appId = env.AGORA_APP_ID || PROD_AGORA_APP_ID,
+  appCertificate = env.AGORA_APP_CERTIFICATE || PROD_AGORA_APP_CERT,
   channelName,
   uid,
   role = AGORA_ROLES.AUDIENCE,
   expirySeconds = 3600,
 }) {
-  const effectiveAppId = normalizeHex32(appId || env.AGORA_APP_ID, 'zeparty_agora_app_id');
-  const effectiveAppCert = normalizeHex32(appCertificate || env.AGORA_APP_CERTIFICATE, 'zeparty_agora_app_cert');
+  const effectiveAppId = resolveValidAgoraHex32(appId || env.AGORA_APP_ID, PROD_AGORA_APP_ID);
+  const effectiveAppCert = resolveValidAgoraHex32(appCertificate || env.AGORA_APP_CERTIFICATE, PROD_AGORA_APP_CERT);
 
   if (!channelName || typeof channelName !== 'string' || channelName.trim() === '') {
     throw new Error('channelName is required for Agora token generation');
