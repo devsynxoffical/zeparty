@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 /**
  * Shared contract every ZeParty game engine implements. Engines are pure: they take state
  * and an action and return new state plus events. The room layer owns persistence,
@@ -71,21 +73,19 @@ export class SeededRng implements Rng {
 }
 
 export class CryptoRng implements Rng {
-  private readonly crypto = globalThis.crypto;
   float(): number {
-    const buf = new Uint32Array(1);
-    this.crypto.getRandomValues(buf);
-    return (buf[0] ?? 0) / 4294967296;
+    const buf = randomBytes(4);
+    const val = buf.readUInt32LE(0);
+    return val / 4294967296;
   }
   int(min: number, max: number): number {
     // rejection sampling to avoid modulo bias
     const range = max - min + 1;
     const limit = Math.floor(4294967296 / range) * range;
-    const buf = new Uint32Array(1);
     let v: number;
     do {
-      this.crypto.getRandomValues(buf);
-      v = buf[0] ?? 0;
+      const buf = randomBytes(4);
+      v = buf.readUInt32LE(0);
     } while (v >= limit);
     return min + (v % range);
   }

@@ -113,9 +113,7 @@ class PoolGame extends FlameGame {
   int _collisionIdx = 0;
   final Set<int> _dropped = {};
   async.Completer<void>? _replayDone;
-  double _zoomFactor = 1;
   double? _baseZoom;
-  Vector2? _zoomTarget;
 
   // Input state
   _DragMode _drag = _DragMode.none;
@@ -588,17 +586,11 @@ class PoolGame extends FlameGame {
     _dropped.clear();
     replaying.value = true;
     _replayDone = async.Completer<void>();
-    if (replay.isBreak) {
-      _zoomFactor = 1;
-      _zoomTarget = toWorld(table.footSpot.x + table.ballRadius * 3, table.footSpot.y);
-    }
     await _replayDone!.future;
   }
 
   void _abortReplay() {
     _replay = null;
-    _zoomFactor = 1;
-    _zoomTarget = null;
     replaying.value = false;
     final c = _replayDone;
     if (c != null && !c.isCompleted) c.complete();
@@ -663,19 +655,8 @@ class PoolGame extends FlameGame {
       }
     }
 
-    // Break: slow push towards the rack, then ease back as the balls spread.
-    if (r.isBreak) {
-      if (t < 0.6) {
-        _zoomFactor = 1 + 0.14 * Curves.easeOut.transform(t / 0.6);
-      } else {
-        _zoomFactor = 1 + 0.14 * (1 - Curves.easeInOut.transform(((t - 0.6) / 1.4).clamp(0.0, 1.0)));
-      }
-    }
-
     if (t >= r.duration + 0.2) {
       _replay = null;
-      _zoomFactor = 1;
-      _zoomTarget = null;
       replaying.value = false;
       final c = _replayDone;
       _replayDone = null;
@@ -684,13 +665,9 @@ class PoolGame extends FlameGame {
   }
 
   void _stepCamera(double dt) {
+    // Keep camera fixed so only balls move
     final vf = camera.viewfinder;
-    if (_zoomFactor != 1 && _zoomTarget != null) {
-      _baseZoom ??= vf.zoom;
-      vf.zoom = _baseZoom! * _zoomFactor;
-      final k = (_zoomFactor - 1) / 0.14;
-      vf.position = worldCenter + (_zoomTarget! - worldCenter) * (k * 0.5);
-    } else if (_baseZoom != null) {
+    if (_baseZoom != null) {
       vf.zoom = _baseZoom!;
       vf.position = worldCenter;
       _baseZoom = null;

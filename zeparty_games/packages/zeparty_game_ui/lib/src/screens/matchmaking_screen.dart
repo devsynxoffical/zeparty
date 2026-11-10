@@ -71,7 +71,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> {
     final e = s.entry(widget.gameId);
     final t = Theme.of(context).textTheme;
     final sizes = [for (var n = e?.minPlayers ?? 2; n <= (e?.maxPlayers ?? 4); n++) n];
-    _tableSize ??= sizes.last;
+    _tableSize ??= sizes.first;
     return Scaffold(
       appBar: AppBar(title: const Text('Quick match')),
       body: ZpBackdrop(

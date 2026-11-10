@@ -97,9 +97,9 @@ class CarromGame extends FlameGame {
   g.BPoint? _aimDir;
   double _aimPower = 0;
 
-  int? get mySeat => session.mySeat;
-  bool get isSpectator => session.isSpectator;
-  int get version => _version;
+  int? get mySeat => session.mySeat ?? session.room.playerById(session.session.identity.userId)?.seat;
+  bool get isSpectator => mySeat == null;
+  int get version => latestState.value?.version ?? _version;
 
   /// Edge whose baseline the viewer sees at the bottom.
   int get viewerEdge => displayState.value?.seatOrNull(mySeat)?.edge ?? 0;
@@ -303,7 +303,7 @@ class CarromGame extends FlameGame {
       }
     });
     try {
-      await channel.submit({'type': 'shot', 'x': x, 'angle': angle, 'power': power}, version: _version);
+      await channel.submit({'type': 'shot', 'x': x, 'angle': angle, 'power': power}, version: latestState.value?.version ?? _version);
     } catch (e) {
       awaitingServer.value = false;
       _notify(CarromNotice(_friendly(e), icon: Icons.error_outline_rounded, color: ZpColors.danger));
@@ -328,6 +328,7 @@ class CarromGame extends FlameGame {
   // ---------------------------------------------------------------------------
 
   void _onUpdate(GameUpdate u) {
+    _version = u.version;
     latestState.value = CarromState.fromJson(u.state);
     _queue.add(u);
     _drain();

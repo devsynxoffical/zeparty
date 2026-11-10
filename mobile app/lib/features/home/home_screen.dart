@@ -80,6 +80,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       body: SafeArea(
         bottom: false,
         child: NestedScrollView(
+          physics: _tabController.index == 3 ? const NeverScrollableScrollPhysics() : const AlwaysScrollableScrollPhysics(),
           headerSliverBuilder: (context, innerBoxIsScrolled) {
             return [
               SliverAppBar(

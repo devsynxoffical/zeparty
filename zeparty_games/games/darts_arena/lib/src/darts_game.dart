@@ -329,9 +329,8 @@ class DartsGame extends FlameGame {
   }
 
   void _zoomToward(Vector2 worldPoint) {
-    if (GraphicsSettings.instance.reduceEffects) return;
-    _zoomPoint = worldPoint;
-    _zoomT = 0;
+    // Keep board static so only the dart moves
+    return;
   }
 
   // ---------------------------------------------------------------------------
