@@ -50,7 +50,9 @@ class ZpAssets {
     var done = 0;
     for (final l in logicals) {
       if (!context.mounted) return;
-      await precacheImage(image(l), context);
+      try {
+        await precacheImage(image(l), context, onError: (e, stack) {});
+      } catch (_) {}
       done++;
       onProgress?.call(done, logicals.length);
     }

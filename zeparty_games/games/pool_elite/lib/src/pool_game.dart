@@ -122,9 +122,9 @@ class PoolGame extends FlameGame {
   double _lastDragAngle = 0;
   Vector2? _placement;
 
-  int? get mySeat => session.mySeat;
-  bool get isSpectator => session.isSpectator;
-  int get version => _version;
+  int? get mySeat => session.mySeat ?? session.room.playerById(session.session.identity.userId)?.seat;
+  bool get isSpectator => mySeat == null;
+  int get version => latestState.value?.version ?? _version;
 
   Vector2 get worldCenter => Vector2(table.width * unit / 2, table.height * unit / 2);
   Vector2 toWorld(double x, double y) => Vector2(x * unit, y * unit);
@@ -366,7 +366,7 @@ class PoolGame extends FlameGame {
         'angle': aimAngle.value,
         'power': p,
         'spin': {'x': spin.value.dx, 'y': spin.value.dy},
-      }, version: _version);
+      }, version: latestState.value?.version ?? _version);
     } catch (e) {
       awaitingServer.value = false;
       _notify(PoolNotice(_friendly(e), icon: Icons.error_outline_rounded, color: ZpColors.danger));
@@ -388,7 +388,7 @@ class PoolGame extends FlameGame {
     if (s == null || !canAct || !s.ballInHand) return;
     awaitingServer.value = true;
     try {
-      await channel.submit({'type': 'place_cue', 'x': x, 'y': y}, version: _version);
+      await channel.submit({'type': 'place_cue', 'x': x, 'y': y}, version: latestState.value?.version ?? _version);
     } catch (e) {
       awaitingServer.value = false;
       _placement = null;
@@ -413,6 +413,7 @@ class PoolGame extends FlameGame {
   // ---------------------------------------------------------------------------
 
   void _onUpdate(GameUpdate u) {
+    _version = u.version;
     latestState.value = PoolState.fromJson(u.state);
     _queue.add(u);
     _drain();

@@ -77,9 +77,9 @@ class Connect4Game extends FlameGame {
   final List<StreamSubscription<dynamic>> _subs = [];
   async.Timer? _pendingTimeout;
 
-  int? get mySeat => session.mySeat;
-  bool get isSpectator => session.isSpectator;
-  int get version => _version;
+  int? get mySeat => session.mySeat ?? session.room.playerById(session.session.identity.userId)?.seat;
+  bool get isSpectator => mySeat == null;
+  int get version => latestState.value?.version ?? _version;
 
   @override
   Color backgroundColor() => Colors.transparent;
@@ -206,7 +206,7 @@ class Connect4Game extends FlameGame {
       }
     });
     try {
-      await channel.submit({'type': 'drop', 'column': column}, version: _version);
+      await channel.submit({'type': 'drop', 'column': column}, version: latestState.value?.version ?? _version);
     } catch (e) {
       awaitingServer.value = false;
       selectColumn(null);
@@ -228,6 +228,7 @@ class Connect4Game extends FlameGame {
   // ---------------------------------------------------------------------------
 
   void _onUpdate(GameUpdate u) {
+    _version = u.version;
     latestState.value = Connect4State.fromJson(u.state);
     _queue.add(u);
     _drain();

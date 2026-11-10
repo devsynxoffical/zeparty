@@ -68,9 +68,9 @@ class ColorClashGame extends FlameGame {
   final List<StreamSubscription<dynamic>> _subs = [];
   async.Timer? _pendingTimeout;
 
-  int? get mySeat => session.mySeat;
-  bool get isSpectator => session.isSpectator;
-  int get version => _version;
+  int? get mySeat => session.mySeat ?? session.room.playerById(session.session.identity.userId)?.seat;
+  bool get isSpectator => mySeat == null;
+  int get version => latestState.value?.version ?? _version;
 
   @override
   Color backgroundColor() => Colors.transparent;
@@ -257,7 +257,7 @@ class ColorClashGame extends FlameGame {
       }
     });
     try {
-      await channel.submit(action, version: _version);
+      await channel.submit(action, version: latestState.value?.version ?? _version);
     } catch (e) {
       awaitingServer.value = false;
       _notify(CcNotice(_friendly(e), icon: Icons.error_outline_rounded, color: ZpColors.danger));
@@ -282,6 +282,7 @@ class ColorClashGame extends FlameGame {
   // ---------------------------------------------------------------------------
 
   void _onUpdate(GameUpdate u) {
+    _version = u.version;
     latestState.value = CcView.fromJson(u.state);
     _queue.add(u);
     _drain();

@@ -68,8 +68,8 @@ class LudoGame extends FlameGame {
   final List<StreamSubscription<dynamic>> _subs = [];
   async.Timer? _pendingRollTimeout;
 
-  int? get mySeat => session.mySeat;
-  bool get isSpectator => session.isSpectator;
+  int? get mySeat => session.mySeat ?? session.room.playerById(session.session.identity.userId)?.seat;
+  bool get isSpectator => mySeat == null;
 
   @override
   Color backgroundColor() => Colors.transparent;
@@ -171,7 +171,8 @@ class LudoGame extends FlameGame {
       }
     });
     try {
-      await channel.submit({'type': 'roll'}, version: _version);
+      final v = latestState.value?.version ?? _version;
+      await channel.submit({'type': 'roll'}, version: v);
     } catch (e) {
       awaitingServer.value = false;
       dice.settle(dice.face);
@@ -197,7 +198,8 @@ class LudoGame extends FlameGame {
       t.selected = t.index == tokenIndex;
     }
     try {
-      await channel.submit({'type': 'move', 'token': tokenIndex}, version: _version);
+      final v = latestState.value?.version ?? _version;
+      await channel.submit({'type': 'move', 'token': tokenIndex}, version: v);
     } catch (e) {
       awaitingServer.value = false;
       _notify(LudoNotice(_friendly(e), icon: Icons.error_outline_rounded, color: ZpColors.danger));
@@ -219,6 +221,7 @@ class LudoGame extends FlameGame {
   // ---------------------------------------------------------------------------
 
   void _onUpdate(GameUpdate u) {
+    _version = u.version;
     latestState.value = LudoState.fromJson(u.state);
     _queue.add(u);
     _drain();
@@ -265,6 +268,10 @@ class LudoGame extends FlameGame {
           awaitingServer.value = false;
           if (e.seat == mySeat) {
             rollsThisTurn.value += 1;
+            if (!dice.rolling) {
+              dice.startRolling();
+              LudoAudio.instance.play('dice_roll');
+            }
           } else {
             dice.startRolling();
             LudoAudio.instance.play('dice_roll');

@@ -70,8 +70,8 @@ class SnakeLadderKingdomGame extends FlameGame {
   /// Images that were actually loaded (null entries fell back to procedural art).
   final Map<String, ui.Image?> loadedImages = {};
 
-  int? get mySeat => session.mySeat;
-  bool get isSpectator => session.isSpectator;
+  int? get mySeat => session.mySeat ?? session.room.playerById(session.session.identity.userId)?.seat;
+  bool get isSpectator => mySeat == null;
   int get version => _version;
 
   @override
@@ -189,7 +189,8 @@ class SnakeLadderKingdomGame extends FlameGame {
       }
     });
     try {
-      await channel.submit({'type': 'roll'}, version: _version);
+      final v = latestState.value?.version ?? _version;
+      await channel.submit({'type': 'roll'}, version: v);
     } catch (e) {
       awaitingServer.value = false;
       dice.settle(dice.face);
@@ -211,6 +212,7 @@ class SnakeLadderKingdomGame extends FlameGame {
   // ---------------------------------------------------------------------------
 
   void _onUpdate(GameUpdate u) {
+    _version = u.version;
     latestState.value = KingdomState.fromJson(u.state);
     _queue.add(u);
     _drain();
@@ -258,6 +260,11 @@ class SnakeLadderKingdomGame extends FlameGame {
           if (e.seat != mySeat) {
             dice.startRolling();
             KingdomAudio.instance.play('dice_roll');
+          } else {
+            if (!dice.rolling) {
+              dice.startRolling();
+              KingdomAudio.instance.play('dice_roll');
+            }
           }
           await dice.settle(value);
           if (e.seat != mySeat) await Future<void>.delayed(const Duration(milliseconds: 150));

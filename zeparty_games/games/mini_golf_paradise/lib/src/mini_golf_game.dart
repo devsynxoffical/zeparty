@@ -83,9 +83,9 @@ class MiniGolfGame extends FlameGame {
   async.Timer? _pendingTimeout;
   async.Timer? _scorecardTimer;
 
-  int? get mySeat => session.mySeat;
-  bool get isSpectator => session.isSpectator;
-  int get version => _version;
+  int? get mySeat => session.mySeat ?? session.room.playerById(session.session.identity.userId)?.seat;
+  bool get isSpectator => mySeat == null;
+  int get version => latestState.value?.version ?? _version;
 
   @override
   Color backgroundColor() => Colors.transparent;
@@ -202,7 +202,7 @@ class MiniGolfGame extends FlameGame {
       }
     });
     try {
-      await channel.submit({'type': 'putt', 'angle': angle, 'power': p}, version: _version);
+      await channel.submit({'type': 'putt', 'angle': angle, 'power': p}, version: latestState.value?.version ?? _version);
     } catch (e) {
       awaitingServer.value = false;
       _refreshInteractivity(displayState.value);
@@ -229,6 +229,7 @@ class MiniGolfGame extends FlameGame {
   // ---------------------------------------------------------------------------
 
   void _onUpdate(GameUpdate u) {
+    _version = u.version;
     latestState.value = MiniGolfState.fromJson(u.state);
     _queue.add(u);
     _drain();

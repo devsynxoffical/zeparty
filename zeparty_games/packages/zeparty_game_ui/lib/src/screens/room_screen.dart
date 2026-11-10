@@ -40,7 +40,10 @@ class _RoomScreenState extends State<RoomScreen> {
   void initState() {
     super.initState();
     final s = SessionScope.read(context);
-    _room = s.socket.currentRoom;
+    final current = s.socket.currentRoom;
+    if (current != null && current.roomId == widget.roomId) {
+      _room = current;
+    }
     _roomSub = s.socket.roomStream.listen((r) {
       if (!mounted) return;
       if (r == null) {
@@ -52,11 +55,24 @@ class _RoomScreenState extends State<RoomScreen> {
         return;
       }
       setState(() => _room = r);
+
+      // Auto-start for host when all required players become ready
+      final isHost = r.hostUserId == s.userId;
+      final everyoneReady = r.players.where((p) => p.userId != r.hostUserId).every((p) => p.ready);
+      final enough = r.players.length >= r.minPlayers;
+      if (isHost && everyoneReady && enough && !_starting && !_inGame && r.status == RoomStatus.waiting) {
+        _startMatch();
+      }
+
+      // If a match is already running (or just started), ensure we sync game state
+      if (r.status == RoomStatus.playing && !_inGame) {
+        s.socket.resync();
+      }
     });
     _stateSub = s.socket.gameStateStream.listen((m) {
-      if (!mounted || _inGame || !GamesRootActivity.readActive(context)) return;
-      final room = _room;
-      if (room == null || m['roomId'] != room.roomId) return;
+      if (!mounted || _inGame) return;
+      final roomId = m['roomId'] as String?;
+      if (roomId != widget.roomId && roomId != _room?.roomId) return;
       _enterGame(m);
     });
     _errSub = s.socket.errorStream.listen((e) {
@@ -68,6 +84,24 @@ class _RoomScreenState extends State<RoomScreen> {
     if (_room?.status == RoomStatus.playing) s.socket.resync();
   }
 
+  Future<void> _startMatch() async {
+    if (_starting || _inGame) return;
+    setState(() => _starting = true);
+    try {
+      await SessionScope.read(context).socket.startMatch();
+    } on ServerError catch (e) {
+      if (mounted) {
+        setState(() => _starting = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_friendly(e))));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _starting = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not start match: $e')));
+      }
+    }
+  }
+
   String _friendly(ServerError e) => switch (e.code) {
         'players_not_ready' => 'Waiting for: ${e.message.split(': ').last}',
         'not_enough_players' => 'Need more players to start',
@@ -76,19 +110,24 @@ class _RoomScreenState extends State<RoomScreen> {
       };
 
   Future<void> _enterGame(Map<String, dynamic> stateMsg) async {
+    if (_inGame) return;
     final s = SessionScope.read(context);
-    final room = _room!;
+    final room = _room ?? s.socket.currentRoom;
+    if (room == null) return;
     _inGame = true;
     setState(() => _starting = false);
-    final mySeat = stateMsg['yourSeat'] as int?;
+
+    // Authoritative seat resolution
+    final mySeat = (stateMsg['yourSeat'] as int?) ?? room.playerById(s.userId)?.seat;
+
     final ctx = GameSessionContext(
       session: s.session,
       room: room,
       mySeat: mySeat,
       matchId: stateMsg['matchId'] as String,
       initialState: stateMsg['state'] as Map<String, dynamic>,
-      initialVersion: stateMsg['version'] as int,
-      initialSeq: stateMsg['seq'] as int,
+      initialVersion: stateMsg['version'] as int? ?? 0,
+      initialSeq: stateMsg['seq'] as int? ?? 0,
       deadline: stateMsg['deadline'] as int?,
     );
     await Navigator.of(context).push(GameShell.route(ctx));
@@ -202,12 +241,7 @@ class _RoomScreenState extends State<RoomScreen> {
                                 icon: Icons.play_arrow_rounded,
                                 expand: true,
                                 loading: _starting,
-                                onPressed: canStart && !_starting
-                                    ? () {
-                                        setState(() => _starting = true);
-                                        s.socket.startMatch().ignore();
-                                      }
-                                    : null,
+                                onPressed: canStart && !_starting ? _startMatch : null,
                               )
                             else
                               ZpButton(
@@ -215,7 +249,15 @@ class _RoomScreenState extends State<RoomScreen> {
                                 icon: me.ready ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
                                 kind: me.ready ? ZpButtonKind.primary : ZpButtonKind.secondary,
                                 expand: true,
-                                onPressed: () => s.socket.setReady(!me.ready),
+                                onPressed: () async {
+                                  try {
+                                    await s.socket.setReady(!me.ready);
+                                  } catch (e) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not update ready state: $e')));
+                                    }
+                                  }
+                                },
                               ),
                             const SizedBox(height: ZpSpace.md),
                             Row(children: [

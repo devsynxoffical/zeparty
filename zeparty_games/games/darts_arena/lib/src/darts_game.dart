@@ -111,9 +111,9 @@ class DartsGame extends FlameGame {
   Vector2? _zoomPoint;
   double _zoomT = 0;
 
-  int? get mySeat => session.mySeat;
-  bool get isSpectator => session.isSpectator;
-  int get version => _version;
+  int? get mySeat => session.mySeat ?? session.room.playerById(session.session.identity.userId)?.seat;
+  bool get isSpectator => mySeat == null;
+  int get version => latestState.value?.version ?? _version;
 
   /// Current aim in board units (base plus sway), the value sent on release.
   Vector2 get aimPoint => _aimPoint.clone();
@@ -270,7 +270,7 @@ class DartsGame extends FlameGame {
         'aimX': _round(aim.x),
         'aimY': _round(aim.y),
         'release': _round(release.clamp(0.0, 1.0)),
-      }, version: _version);
+      }, version: latestState.value?.version ?? _version);
     } catch (e) {
       awaitingServer.value = false;
       cancelAim();
@@ -339,6 +339,7 @@ class DartsGame extends FlameGame {
   // ---------------------------------------------------------------------------
 
   void _onUpdate(GameUpdate u) {
+    _version = u.version;
     latestState.value = DartsState.fromJson(u.state);
     _queue.add(u);
     _drain();

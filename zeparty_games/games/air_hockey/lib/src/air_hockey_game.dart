@@ -82,8 +82,8 @@ class AirHockeyGame extends FlameGame with DragCallbacks {
   bool _realtimeUnsupported = false;
   int _version = 0;
 
-  int? get mySeat => session.mySeat;
-  bool get isSpectator => session.isSpectator;
+  int? get mySeat => session.mySeat ?? session.room.playerById(session.session.identity.userId)?.seat;
+  bool get isSpectator => mySeat == null;
   /// Seat 1 plays on a table rotated 180 degrees so it also defends the bottom.
   bool get flipped => mySeat == 1;
   /// The seat shown at the bottom of the view.

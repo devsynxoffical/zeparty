@@ -63,13 +63,18 @@ class _GameShellState extends State<GameShell> {
   Future<void> _preload() async {
     final m = _module;
     if (m == null) {
-      setState(() => _loaded = true);
+      if (mounted) setState(() => _loaded = true);
       return;
     }
-    await ZpAssets.precache(context, m.preloadAssets, onProgress: (d, t) {
-      if (mounted) setState(() => _progress = d / t);
-    });
-    if (mounted) setState(() => _loaded = true);
+    try {
+      await ZpAssets.precache(context, m.preloadAssets, onProgress: (d, t) {
+        if (mounted) setState(() => _progress = d / t);
+      }).timeout(const Duration(seconds: 4), onTimeout: () {});
+    } catch (_) {
+      // Proceed even if asset caching had an error or timed out
+    } finally {
+      if (mounted) setState(() => _loaded = true);
+    }
   }
 
   @override
