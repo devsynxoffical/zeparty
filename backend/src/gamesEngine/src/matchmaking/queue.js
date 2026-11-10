@@ -102,7 +102,9 @@ export class MatchmakingQueue {
       const full = list.length >= first.tableSize;
       const relaxed = list.length >= cfg.minPlayers && this.now() - first.enqueuedAt >= this.relaxAfterMs;
       if (!full && !relaxed) continue;
-      const group = list.splice(0, Math.min(first.tableSize, list.length));
+      let count = Math.min(first.tableSize, list.length);
+      if (first.gameId === 'carrom_masters' && count === 3) count = 2;
+      const group = list.splice(0, count);
       this.tickets.set(key, list);
       for (const t of group) this.byUser.delete(t.identity.userId);
       await this.launchMatchedGroup(first.gameId, group, Math.max(first.tableSize, group.length));
