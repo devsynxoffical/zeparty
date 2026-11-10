@@ -173,9 +173,10 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     (s) => (s.occupiedUserId === hostUserId || s.user?.id === hostUserId)
   );
 
-  const activeSet = new Set(
+  const activePresenceSet = new Set(
     (activePresenceUsers || []).map((u) => u.userId || u.id).filter(Boolean)
   );
+  const activeSet = new Set(activePresenceSet);
   for (const s of room.seats || []) {
     if (s.occupiedUserId) activeSet.add(s.occupiedUserId);
   }
@@ -188,8 +189,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       if (mid === hostUserId && hostIsOccupyingSeat) {
         return false;
       }
-      // Stale member exclusion: when active presence is known, exclude departed members
-      if (activeSet.size > 0 && !activeSet.has(mid)) {
+      // Stale member exclusion: when active presence list is explicitly populated, exclude departed members
+      if (activePresenceSet.size > 0 && !activeSet.has(mid)) {
         return false;
       }
       return true;

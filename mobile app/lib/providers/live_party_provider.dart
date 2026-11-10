@@ -2930,15 +2930,15 @@ class LivePartyProvider extends ChangeNotifier {
     }
 
     try {
-      await _roomRepository.occupySeat(_activeRoom!.id, seatIndex);
-    } catch (e) {
-      debugPrint('[LivePartyProvider] Backend REST occupySeat notice: $e');
-    }
-
-    try {
       _socketService.occupySeat(_activeRoom!.id, seatIndex, user: actor.toJson());
     } catch (e) {
       debugPrint('[LivePartyProvider] Socket occupySeat notice: $e');
+    }
+
+    try {
+      await _roomRepository.occupySeat(_activeRoom!.id, seatIndex);
+    } catch (e) {
+      debugPrint('[LivePartyProvider] Backend REST occupySeat notice: $e');
     }
 
     // Update local state with real user object
@@ -3116,17 +3116,17 @@ class LivePartyProvider extends ChangeNotifier {
     }
 
     try {
-      // 2. Authoritative backend REST release
-      await _roomRepository.leaveSeat(_activeRoom!.id, targetSeatIndex);
-    } catch (e) {
-      debugPrint('[LivePartyProvider] Backend REST leaveSeat notice: $e');
-    }
-
-    try {
-      // 3. Broadcast release via socket
+      // 2. Broadcast release via socket immediately
       _socketService.leaveSeat(_activeRoom!.id, targetSeatIndex);
     } catch (e) {
       debugPrint('[LivePartyProvider] Socket leaveSeat notice: $e');
+    }
+
+    try {
+      // 3. Authoritative backend REST release
+      await _roomRepository.leaveSeat(_activeRoom!.id, targetSeatIndex);
+    } catch (e) {
+      debugPrint('[LivePartyProvider] Backend REST leaveSeat notice: $e');
     }
 
     try {

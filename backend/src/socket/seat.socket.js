@@ -89,18 +89,8 @@ export async function onOccupySeat(io, socket, data, callback, db) {
       timestamp: new Date().toISOString(),
     };
 
-    // If user is ALREADY on this seat (idempotent tap / retry), return early to caller without re-broadcasting duplicate notifications
-    if (result?.isNoop) {
-      if (typeof callback === 'function') {
-        return callback({
-          success: true,
-          message: `Already occupying seat ${seatIndex}`,
-          data: payload,
-        });
-      }
-      return;
-    }
-
+    // Even if database occupancy was idempotent/noop (e.g. client called REST occupySeat first),
+    // we MUST still broadcast the authoritative seat state so other clients in the room receive it in real-time.
     const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
 
     // If moving from a previous seat, broadcast seat release for old seat first across all aliases
@@ -220,18 +210,7 @@ export async function onLeaveSeat(io, socket, data, callback, db = prisma) {
 
     // Delegate to authoritative room service for seat release authorization
     const releasedSeat = await roomService.leaveSeat(roomId, seatIndex, userId, isAdmin, db);
-
-    if (releasedSeat?.isNoop) {
-      const alreadyEmptyPayload = {
-        roomId: resolvedRoomId,
-        clientRoomId: roomId,
-        seatIndex,
-        releasedByUserId: userId,
-        message: 'Seat already empty',
-      };
-      if (typeof callback === 'function') return callback({ success: true, data: alreadyEmptyPayload });
-      return;
-    }
+    const effectiveVacatedSeatIndex = typeof releasedSeat?.seatIndex === 'number' ? releasedSeat.seatIndex : seatIndex;
 
     // Fetch refreshed room snapshot so seats and audience members list are fully up to date
     let updatedSnapshot = null;
@@ -246,7 +225,7 @@ export async function onLeaveSeat(io, socket, data, callback, db = prisma) {
     } catch (_) {}
 
     const isRoomOwner = updatedSnapshot ? (updatedSnapshot.creatorUserId === userId) : false;
-    const leaveEventId = `seat_rel_${resolvedRoomId}_${releasedSeat.seatIndex}_${userId}_${Date.now()}`;
+    const leaveEventId = `seat_rel_${resolvedRoomId}_${effectiveVacatedSeatIndex}_${userId}_${Date.now()}`;
 
     const payload = {
       id: leaveEventId,
@@ -254,8 +233,8 @@ export async function onLeaveSeat(io, socket, data, callback, db = prisma) {
       roomId: updatedSnapshot ? updatedSnapshot.id : resolvedRoomId,
       canonicalRoomId: resolvedRoomId,
       clientRoomId: roomId,
-      seatIndex: releasedSeat.seatIndex,
-      seatNumber: releasedSeat.seatIndex,
+      seatIndex: effectiveVacatedSeatIndex,
+      seatNumber: effectiveVacatedSeatIndex,
       releasedByUserId: userId,
       userId,
       previousUserId: userId,

@@ -580,12 +580,24 @@ class SocketService {
     _socket!.on('room:snapshot', handleSnapshot);
     _socket!.on('room_snapshot', handleSnapshot);
 
-    _socket!.on('room:seat_occupied', (data) {
+    void handleSeatOccupied(dynamic data) {
       if (data != null) _seatOccupiedController.add(safeMap(data));
-    });
-    _socket!.on('room:seat_released', (data) {
+    }
+    _socket!.on('room:seat_occupied', handleSeatOccupied);
+    _socket!.on('room_seat_occupied', handleSeatOccupied);
+    _socket!.on('seat_occupied', handleSeatOccupied);
+    _socket!.on('seat:occupied', handleSeatOccupied);
+
+    void handleSeatReleased(dynamic data) {
       if (data != null) _seatReleasedController.add(safeMap(data));
-    });
+    }
+    _socket!.on('room:seat_released', handleSeatReleased);
+    _socket!.on('room_seat_released', handleSeatReleased);
+    _socket!.on('seat_released', handleSeatReleased);
+    _socket!.on('seat:released', handleSeatReleased);
+    _socket!.on('room:seat_left', handleSeatReleased);
+    _socket!.on('room_seat_left', handleSeatReleased);
+    _socket!.on('mic:left', handleSeatReleased);
     void handleRoomCreated(dynamic data) {
       if (data != null) _roomCreatedController.add(safeMap(data));
     }

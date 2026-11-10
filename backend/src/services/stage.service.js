@@ -332,9 +332,12 @@ export async function notifyStageOccupied(
     timestamp: new Date().toISOString(),
   };
 
-  // Emit standard room:seat_occupied listened to by mobile Flutter apps
+  // Emit standard room:seat_occupied listened to by mobile Flutter apps across all aliases
   socketEmitter.emitToRoom(roomId, 'room:seat_occupied', seatOccupiedPayload);
   socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_SEAT_OCCUPIED, seatOccupiedPayload);
+  socketEmitter.emitToRoom(roomId, 'room_seat_occupied', seatOccupiedPayload);
+  socketEmitter.emitToRoom(roomId, 'seat_occupied', seatOccupiedPayload);
+  socketEmitter.emitToRoom(roomId, 'seat:occupied', seatOccupiedPayload);
   socketEmitter.emitToRoom(roomId, 'room:seat_updated', seatOccupiedPayload);
 
   // If Co-Host seat (Index 1) is occupied, emit co-host specific events
@@ -402,6 +405,12 @@ export async function notifyStageReleased(
 
   socketEmitter.emitToRoom(roomId, 'room:seat_released', seatReleasedPayload);
   socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_SEAT_RELEASED, seatReleasedPayload);
+  socketEmitter.emitToRoom(roomId, 'room_seat_released', seatReleasedPayload);
+  socketEmitter.emitToRoom(roomId, 'seat_released', seatReleasedPayload);
+  socketEmitter.emitToRoom(roomId, 'seat:released', seatReleasedPayload);
+  socketEmitter.emitToRoom(roomId, 'room:seat_left', seatReleasedPayload);
+  socketEmitter.emitToRoom(roomId, 'room_seat_left', seatReleasedPayload);
+  socketEmitter.emitToRoom(roomId, 'mic:left', seatReleasedPayload);
   socketEmitter.emitToRoom(roomId, 'room:seat_updated', seatReleasedPayload);
 
   if (seatIndex === 1) {
