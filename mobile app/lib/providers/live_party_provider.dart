@@ -1575,7 +1575,7 @@ class LivePartyProvider extends ChangeNotifier {
       if (!matchesCurrentRoom(data)) return;
       try {
         final matchData = data['match'] is Map ? Map<String, dynamic>.from(data['match'] as Map) : data;
-        final pkMatch = PKMatchModel.fromJson(matchData);
+        final pkMatch = PKBattleModel.fromJson(matchData);
         _activePkBattle = pkMatch;
         if (data['agoraUidMap'] != null) {
           _applyAgoraUidMap(data['agoraUidMap']);

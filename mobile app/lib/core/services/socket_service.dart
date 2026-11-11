@@ -425,7 +425,7 @@ class SocketService {
       }
     }
 
-    final headers = <String, dynamic>{};
+    final headers = <String, String>{};
     if (authToken != null && authToken.isNotEmpty && authToken != 'guest_anonymous') {
       headers['Authorization'] = 'Bearer $authToken';
     }
@@ -538,20 +538,7 @@ class SocketService {
     });
 
     // Helper for recursive safe string-key mapping
-    Map<String, dynamic> safeMap(dynamic data) {
-      if (data is! Map) return <String, dynamic>{};
-      return data.map((key, value) {
-        if (value is Map) {
-          return MapEntry(key.toString(), safeMap(value));
-        } else if (value is List) {
-          return MapEntry(
-            key.toString(),
-            value.map((e) => e is Map ? safeMap(e) : e).toList(),
-          );
-        }
-        return MapEntry(key.toString(), value);
-      });
-    }
+    Map<String, dynamic> safeMap(dynamic data) => _safeMap(data);
 
     // Register Authoritative Room Event Listeners with multi-alias support & deduplication
     final Map<String, int> recentJoins = {};
@@ -1701,6 +1688,21 @@ class SocketService {
     emit('room:toggle_mute', payload);
   }
 
+  static Map<String, dynamic> _safeMap(dynamic data) {
+    if (data is! Map) return <String, dynamic>{};
+    return data.map((key, value) {
+      if (value is Map) {
+        return MapEntry(key.toString(), _safeMap(value));
+      } else if (value is List) {
+        return MapEntry(
+          key.toString(),
+          value.map((e) => e is Map ? _safeMap(e) : e).toList(),
+        );
+      }
+      return MapEntry(key.toString(), value);
+    });
+  }
+
   /// Request backend to resolve an Agora UID or userId to authoritative ZeParty UserIdentity
   void resolveIdentity({
     required String roomId,
@@ -1716,7 +1718,7 @@ class SocketService {
       };
       _socket!.emitWithAck('room:resolve_identity', payload, ack: (dynamic ackData) {
         if (ackData is Map) {
-          final res = safeMap(ackData);
+          final res = _safeMap(ackData);
           if (res['ok'] == true && res['data'] is Map) {
             onResolved?.call(Map<String, dynamic>.from(res['data'] as Map));
           } else {

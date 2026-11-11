@@ -438,15 +438,16 @@ class LiveProvider extends ChangeNotifier {
               : (agoraData['uid'] is int
                   ? agoraData['uid'] as int
                   : int.tryParse(agoraData['agoraUid']?.toString() ?? agoraData['uid']?.toString() ?? ''));
+          final currentUserId = currentUser?.id ?? '';
           final uid = (rawUid != null && rawUid > 0)
               ? rawUid
-              : AgoraRtcService.deriveUid(currentUser.id);
+              : AgoraRtcService.deriveUid(currentUserId);
           final appId = agoraData['appId'] as String?;
 
           if (agoraData['agoraUidMap'] != null) {
             _applyAgoraUidMap(agoraData['agoraUidMap']);
           }
-          if (currentUser.id.isNotEmpty) {
+          if (currentUser != null && currentUser.id.isNotEmpty) {
             _agoraUidToUser[uid] = currentUser;
           }
 
@@ -678,7 +679,7 @@ class LiveProvider extends ChangeNotifier {
       if (!_matchesRoom(data)) return;
       try {
         final matchData = data['match'] is Map ? Map<String, dynamic>.from(data['match'] as Map) : data;
-        final pkMatch = PKMatchModel.fromJson(matchData);
+        final pkMatch = PKBattleModel.fromJson(matchData);
         setPkBattle(pkMatch);
         if (data['agoraUidMap'] != null) {
           _applyAgoraUidMap(data['agoraUidMap']);
