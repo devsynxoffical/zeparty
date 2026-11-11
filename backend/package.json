@@ -4,6 +4,9 @@
   "description": "Shared Node.js + Express.js backend for ZeParty Flutter Mobile App and React Admin Dashboard",
   "main": "src/server.js",
   "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "nodemon src/server.js",
     "build": "prisma generate",

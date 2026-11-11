@@ -106,6 +106,7 @@ class _RoomScreenState extends State<RoomScreen> {
         'players_not_ready' => 'Waiting for: ${e.message.split(': ').last}',
         'not_enough_players' => 'Need more players to start',
         'not_host' => 'Only the host can do that',
+        'internal' when e.message.contains('getRandomValues') => 'Server crypto initialization error. Please retry starting match.',
         _ => e.message,
       };
 

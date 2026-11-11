@@ -170,6 +170,15 @@ class RoomRepository {
     return response.data?['data'] as Map<String, dynamic>? ?? {};
   }
 
+  /// Retrieve authoritative participant identities and agoraUidMap from backend
+  Future<Map<String, dynamic>> getRoomIdentities(String roomId, {int? agoraUid, String? userId}) async {
+    final queryParams = <String, dynamic>{};
+    if (agoraUid != null) queryParams['agoraUid'] = agoraUid;
+    if (userId != null && userId.isNotEmpty) queryParams['userId'] = userId;
+    final response = await _apiClient.get('/v1/rooms/$roomId/identities', queryParameters: queryParams);
+    return response.data?['data'] as Map<String, dynamic>? ?? {};
+  }
+
   /// Get room members with optional search filtering
   Future<Map<String, dynamic>> getRoomMembers(String roomId, {String? search}) async {
     final queryParams = <String, dynamic>{};

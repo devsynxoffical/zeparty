@@ -65,15 +65,19 @@ class EmojiReactionProvider extends ChangeNotifier {
 
       // Parse and receive the incoming remote emoji reaction
       try {
-        final senderId = (data['sender'] is Map ? (data['sender'] as Map)['id'] : data['senderId'])?.toString() ?? '';
-        final senderName = (data['sender'] is Map ? (data['sender'] as Map)['displayName'] : data['senderName'])?.toString();
-        final senderAvatar = (data['sender'] is Map ? (data['sender'] as Map)['avatarUrl'] : data['senderAvatar'])?.toString();
-        final emoji = data['emoji']?.toString() ?? '';
+        final senderMap = data['sender'] is Map
+            ? (data['sender'] as Map)
+            : (data['user'] is Map ? (data['user'] as Map) : {});
+        final senderId = (senderMap['id'] ?? senderMap['userId'] ?? data['senderUserId'] ?? data['userId'] ?? data['senderId'])?.toString() ?? '';
+        final senderName = (senderMap['displayName'] ?? senderMap['name'] ?? senderMap['username'] ?? data['senderName'])?.toString();
+        final senderAvatar = (senderMap['avatarUrl'] ?? senderMap['avatar'] ?? data['senderAvatar'])?.toString();
+        final emoji = (data['emoji'] ?? data['reaction'] ?? '').toString();
         final reactionId = data['id']?.toString() ?? 'remote_${DateTime.now().millisecondsSinceEpoch}';
         final targetUserId = data['targetUserId']?.toString();
-        final seatId = data['seatId'] is num
-            ? (data['seatId'] as num).toInt()
-            : int.tryParse(data['seatId']?.toString() ?? '');
+        final rawSeat = data['seatIndex'] ?? data['seatId'];
+        final seatId = rawSeat is num
+            ? rawSeat.toInt()
+            : int.tryParse(rawSeat?.toString() ?? '');
         final gameResult = data['gameResult'] is num
             ? (data['gameResult'] as num).toInt()
             : int.tryParse(data['gameResult']?.toString() ?? '');

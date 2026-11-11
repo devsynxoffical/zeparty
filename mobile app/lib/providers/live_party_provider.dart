@@ -88,6 +88,59 @@ class LivePartyProvider extends ChangeNotifier {
     }
   }
 
+  final Map<int, UserModel> _agoraUidToUser = {};
+  Map<int, UserModel> get agoraUidMap => Map.unmodifiable(_agoraUidToUser);
+
+  void _applyAgoraUidMap(dynamic mapRaw) {
+    if (mapRaw is! Map) return;
+    mapRaw.forEach((k, v) {
+      if (v is Map) {
+        final uMap = Map<String, dynamic>.from(v);
+        final parsedUid = int.tryParse(k.toString()) ?? parseAgoraUid(uMap['agoraUid'] ?? uMap['uid']);
+        if (parsedUid != null && parsedUid > 0) {
+          final user = UserModel.fromJson(uMap);
+          _agoraUidToUser[parsedUid] = user;
+          if (user.id.isNotEmpty) {
+            registerAgoraUidMapping(parsedUid, user.id);
+          }
+        }
+      }
+    });
+  }
+
+  void _resolveMissingAgoraIdentity(int remoteUid) {
+    if (remoteUid <= 0 || _activeRoom == null) return;
+    if (_agoraUidToUser.containsKey(remoteUid)) return;
+
+    _socketService.resolveIdentity(
+      roomId: _activeRoom!.id,
+      agoraUid: remoteUid,
+      onResolved: (data) {
+        if (data['agoraUidMap'] != null) {
+          _applyAgoraUidMap(data['agoraUidMap']);
+        }
+        if (data['resolvedIdentity'] is Map) {
+          final user = UserModel.fromJson(Map<String, dynamic>.from(data['resolvedIdentity'] as Map));
+          _agoraUidToUser[remoteUid] = user;
+          registerAgoraUidMapping(remoteUid, user.id);
+          notifyListeners();
+        }
+      },
+    );
+
+    _roomRepository.getRoomIdentities(_activeRoom!.id, agoraUid: remoteUid).then((data) {
+      if (data['agoraUidMap'] != null) {
+        _applyAgoraUidMap(data['agoraUidMap']);
+      }
+      if (data['resolvedIdentity'] is Map) {
+        final user = UserModel.fromJson(Map<String, dynamic>.from(data['resolvedIdentity'] as Map));
+        _agoraUidToUser[remoteUid] = user;
+        registerAgoraUidMapping(remoteUid, user.id);
+        notifyListeners();
+      }
+    }).catchError((_) {});
+  }
+
   String? getUserIdForAgoraUid(int agoraUid) => _agoraUidToUserId[agoraUid];
   int? getAgoraUidForUserId(String userId) => _userIdToAgoraUid[userId.trim()];
 
@@ -892,11 +945,17 @@ class LivePartyProvider extends ChangeNotifier {
         if (agoraData['token'] != null) {
           final token = agoraData['token'] as String;
           final channelName = agoraData['channelName'] as String? ?? room.agoraChannelName ?? room.id;
-          final uid = parseAgoraUid(agoraData['uid'] ?? agoraData['agoraUid']) ?? 0;
+          final rawUid = parseAgoraUid(agoraData['agoraUid'] ?? agoraData['uid']);
+          final uid = (rawUid != null && rawUid > 0) ? rawUid : AgoraRtcService.deriveUid(currentUser.id);
           final appId = agoraData['appId'] as String?;
 
-          if (uid > 0 && currentUser.id.isNotEmpty) {
+          if (agoraData['agoraUidMap'] != null) {
+            _applyAgoraUidMap(agoraData['agoraUidMap']);
+          }
+
+          if (currentUser.id.isNotEmpty) {
             registerAgoraUidMapping(uid, currentUser.id);
+            _agoraUidToUser[uid] = currentUser;
           }
 
           await _agoraService.initialize(appId: appId, enableVideo: false);
@@ -1008,17 +1067,20 @@ class LivePartyProvider extends ChangeNotifier {
         }
       });
 
-      // 5. Listen to Agora Remote Users (Do NOT override with dummy Guest IDs)
+      // 5. Listen to Agora Remote Users (Authoritative Identity Mapping)
       _remoteUsersSub?.cancel();
       _remoteUsersSub = _agoraService.remoteUsersStream.listen((uids) {
         for (final uid in uids) {
           _activeRemoteAgoraUids.add(uid);
-          if (!_agoraUidToUserId.containsKey(uid)) {
+          if (!_agoraUidToUser.containsKey(uid) || !_agoraUidToUserId.containsKey(uid)) {
             final matching = _participants.where((p) =>
               p.agoraUid == uid || p.user.id == uid.toString() || deriveAgoraUid(p.user.id) == uid
             ).firstOrNull;
             if (matching != null) {
               registerAgoraUidMapping(uid, matching.user.id);
+              _agoraUidToUser[uid] = matching.user;
+            } else {
+              _resolveMissingAgoraIdentity(uid);
             }
           }
         }
@@ -1101,6 +1163,10 @@ class LivePartyProvider extends ChangeNotifier {
   }
 
   StreamSubscription? _socketRoomSnapshotSub;
+  StreamSubscription? _socketPresenceSyncSub;
+  StreamSubscription? _socketStageSyncSub;
+  StreamSubscription? _socketSeatUpdatedSub;
+  StreamSubscription? _socketPkSnapshotSub;
 
   void _setupSocketSubscriptions(UserModel currentUser) {
     _currentUser = currentUser;
@@ -1111,6 +1177,7 @@ class LivePartyProvider extends ChangeNotifier {
       if (connected && _activeRoom != null) {
         _socketService.joinRoom(_activeRoom!.id, user: _currentUser?.toJson());
         _socketService.requestRoomSnapshot(_activeRoom!.id);
+        _socketService.requestPkSync(_activeRoom!.id);
         _syncRoomStateOnReconnect();
       }
       notifyListeners();
@@ -1123,6 +1190,12 @@ class LivePartyProvider extends ChangeNotifier {
         final roomObj = data['room'] is Map ? Map<String, dynamic>.from(data['room'] as Map) : <String, dynamic>{};
         if (roomObj.isNotEmpty) {
           _activeRoom = LiveRoomModel.fromJson(roomObj);
+        }
+
+        if (data['agoraUidMap'] != null) {
+          _applyAgoraUidMap(data['agoraUidMap']);
+        } else if (roomObj['agoraUidMap'] != null) {
+          _applyAgoraUidMap(roomObj['agoraUidMap']);
         }
 
         final hostAgoraUid = parseAgoraUid(data['agoraHostUid'] ?? roomObj['agoraHostUid']);
@@ -1335,6 +1408,181 @@ class LivePartyProvider extends ChangeNotifier {
         notifyListeners();
       } catch (e) {
         debugPrint('[LivePartyProvider] Snapshot processing error: $e');
+      }
+    });
+
+    // 1b. Presence Sync Subscription (Authoritative Realtime Viewer Count & Agora Map)
+    _socketPresenceSyncSub?.cancel();
+    _socketPresenceSyncSub = _socketService.onRoomPresenceSync.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
+      try {
+        final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
+        final parsedCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
+        if (parsedCount != null && _activeRoom != null) {
+          _activeRoom = _activeRoom!.copyWith(viewerCount: parsedCount >= 0 ? parsedCount : 0);
+        }
+        if (data['agoraUidMap'] != null) {
+          _applyAgoraUidMap(data['agoraUidMap']);
+        }
+        final usersList = data['users'] is List ? (data['users'] as List) : (data['participants'] is List ? (data['participants'] as List) : []);
+        for (final uRaw in usersList) {
+          if (uRaw is Map) {
+            final uMap = Map<String, dynamic>.from(uRaw);
+            final user = UserModel.fromJson(uMap);
+            final aUid = parseAgoraUid(uMap['agoraUid'] ?? uMap['uid']) ?? deriveAgoraUid(user.id);
+            _agoraUidToUser[aUid] = user;
+            registerAgoraUidMapping(aUid, user.id);
+          }
+        }
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LivePartyProvider] PresenceSync error: $e');
+      }
+    });
+
+    // 1c. Stage Sync Subscription (Authoritative 10-Seat Layout & Host Seat 0)
+    _socketStageSyncSub?.cancel();
+    _socketStageSyncSub = _socketService.onRoomStageSync.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
+      try {
+        if (data['agoraUidMap'] != null) {
+          _applyAgoraUidMap(data['agoraUidMap']);
+        }
+        final stageObj = data['stage'] is Map ? Map<String, dynamic>.from(data['stage'] as Map) : data;
+        final hostObj = stageObj['host'] is Map ? stageObj['host'] as Map : (data['host'] is Map ? data['host'] as Map : null);
+        if (hostObj != null) {
+          final hostUser = UserModel.fromJson(Map<String, dynamic>.from(hostObj));
+          final hostAgoraUid = parseAgoraUid(data['agoraHostUid'] ?? hostObj['agoraUid'] ?? hostObj['uid']) ?? deriveAgoraUid(hostUser.id);
+          _agoraUidToUser[hostAgoraUid] = hostUser;
+          registerAgoraUidMapping(hostAgoraUid, hostUser.id);
+        }
+
+        final seatsList = stageObj['seats'] is List
+            ? (stageObj['seats'] as List)
+            : (data['seats'] is List ? (data['seats'] as List) : []);
+
+        for (final seatRaw in seatsList) {
+          if (seatRaw is! Map) continue;
+          final seatMap = Map<String, dynamic>.from(seatRaw);
+          final rawIdx = seatMap['seatIndex'] ?? seatMap['seatNumber'];
+          final seatIndex = (rawIdx is num) ? rawIdx.toInt() : int.tryParse(rawIdx?.toString() ?? '');
+          if (seatIndex == null) continue;
+
+          final userRaw = seatMap['user'] ?? seatMap['occupiedUser'];
+          if (userRaw is Map && userRaw['id'] != null && userRaw['id'].toString().isNotEmpty) {
+            final userObj = UserModel.fromJson(Map<String, dynamic>.from(userRaw));
+            final effectiveSeatAgoraUid = parseAgoraUid(userRaw['agoraUid'] ?? userRaw['uid'] ?? seatMap['agoraUid'] ?? seatMap['uid']) ?? deriveAgoraUid(userObj.id);
+            _agoraUidToUser[effectiveSeatAgoraUid] = userObj;
+            registerAgoraUidMapping(effectiveSeatAgoraUid, userObj.id);
+
+            final isSeatHost = seatIndex == 0 || (_activeRoom != null && (_activeRoom!.host.id == userObj.id || _activeRoom!.creatorUserId == userObj.id));
+            final existingIdx = _participants.indexWhere((p) => p.user.id == userObj.id || p.seatNumber == seatIndex);
+            final resolvedRole = isSeatHost ? ParticipantRole.host : ParticipantRole.speaker;
+
+            if (existingIdx != -1) {
+              _participants[existingIdx] = _participants[existingIdx].copyWith(
+                user: userObj,
+                seatNumber: seatIndex,
+                role: resolvedRole,
+                micStatus: seatMap['isMuted'] == true ? MicStatus.muted : MicStatus.on,
+                agoraUid: effectiveSeatAgoraUid,
+              );
+            } else {
+              _participants.add(PartyParticipantModel(
+                user: userObj,
+                role: resolvedRole,
+                seatNumber: seatIndex,
+                micStatus: seatMap['isMuted'] == true ? MicStatus.muted : MicStatus.on,
+                joinedAt: DateTime.now(),
+                agoraUid: effectiveSeatAgoraUid,
+              ));
+            }
+          } else {
+            // Vacate this seat
+            final occupantIdx = _participants.indexWhere((p) => p.seatNumber == seatIndex);
+            if (occupantIdx != -1) {
+              final occupant = _participants[occupantIdx];
+              _participants[occupantIdx] = occupant.copyWith(
+                clearSeat: true,
+                role: occupant.user.id == _activeRoom?.host.id ? ParticipantRole.host : ParticipantRole.listener,
+                micStatus: MicStatus.muted,
+              );
+            }
+          }
+        }
+        _deduplicateParticipants();
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LivePartyProvider] StageSync error: $e');
+      }
+    });
+
+    // 1d. Seat Updated Subscription
+    _socketSeatUpdatedSub?.cancel();
+    _socketSeatUpdatedSub = _socketService.onSeatUpdated.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
+      try {
+        final rawIdx = data['seatIndex'] ?? data['seatNumber'];
+        final seatIndex = (rawIdx is num) ? rawIdx.toInt() : int.tryParse(rawIdx?.toString() ?? '');
+        if (seatIndex == null) return;
+
+        final userRaw = data['user'] ?? data['occupiedUser'];
+        if (userRaw is Map && userRaw['id'] != null && userRaw['id'].toString().isNotEmpty) {
+          final userObj = UserModel.fromJson(Map<String, dynamic>.from(userRaw));
+          final aUid = parseAgoraUid(userRaw['agoraUid'] ?? userRaw['uid'] ?? data['agoraUid']) ?? deriveAgoraUid(userObj.id);
+          _agoraUidToUser[aUid] = userObj;
+          registerAgoraUidMapping(aUid, userObj.id);
+
+          final existingIdx = _participants.indexWhere((p) => p.user.id == userObj.id || p.seatNumber == seatIndex);
+          if (existingIdx != -1) {
+            _participants[existingIdx] = _participants[existingIdx].copyWith(
+              user: userObj,
+              seatNumber: seatIndex,
+              role: seatIndex == 0 ? ParticipantRole.host : ParticipantRole.speaker,
+              micStatus: data['isMuted'] == true ? MicStatus.muted : MicStatus.on,
+              agoraUid: aUid,
+            );
+          } else {
+            _participants.add(PartyParticipantModel(
+              user: userObj,
+              role: seatIndex == 0 ? ParticipantRole.host : ParticipantRole.speaker,
+              seatNumber: seatIndex,
+              micStatus: data['isMuted'] == true ? MicStatus.muted : MicStatus.on,
+              joinedAt: DateTime.now(),
+              agoraUid: aUid,
+            ));
+          }
+        } else if (data['isVacant'] == true || userRaw == null) {
+          final occupantIdx = _participants.indexWhere((p) => p.seatNumber == seatIndex);
+          if (occupantIdx != -1) {
+            _participants[occupantIdx] = _participants[occupantIdx].copyWith(
+              clearSeat: true,
+              role: ParticipantRole.listener,
+              micStatus: MicStatus.muted,
+            );
+          }
+        }
+        _deduplicateParticipants();
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LivePartyProvider] SeatUpdated error: $e');
+      }
+    });
+
+    // 1e. PK Snapshot Subscription
+    _socketPkSnapshotSub?.cancel();
+    _socketPkSnapshotSub = _socketService.onPkSnapshot.listen((data) {
+      if (!matchesCurrentRoom(data)) return;
+      try {
+        final matchData = data['match'] is Map ? Map<String, dynamic>.from(data['match'] as Map) : data;
+        final pkMatch = PKMatchModel.fromJson(matchData);
+        _activePkBattle = pkMatch;
+        if (data['agoraUidMap'] != null) {
+          _applyAgoraUidMap(data['agoraUidMap']);
+        }
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LivePartyProvider] PkSnapshot error: $e');
       }
     });
 
@@ -2764,6 +3012,11 @@ class LivePartyProvider extends ChangeNotifier {
     _remoteUsersSub?.cancel();
     _socketConnectionSub?.cancel();
     _socketRoomSnapshotSub?.cancel();
+    _socketPresenceSyncSub?.cancel();
+    _socketStageSyncSub?.cancel();
+    _socketSeatUpdatedSub?.cancel();
+    _socketPkSnapshotSub?.cancel();
+    _agoraUidToUser.clear();
     _socketUserJoinedSub?.cancel();
     _socketUserLeftSub?.cancel();
     _socketSeatOccupiedSub?.cancel();

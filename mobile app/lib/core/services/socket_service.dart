@@ -113,6 +113,10 @@ class SocketService {
   final _roomHostAbsentController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomHostReturnedController = StreamController<Map<String, dynamic>>.broadcast();
   final _roomBackgroundUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomPresenceSyncController = StreamController<Map<String, dynamic>>.broadcast();
+  final _roomStageSyncController = StreamController<Map<String, dynamic>>.broadcast();
+  final _seatUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  final _pkSnapshotController = StreamController<Map<String, dynamic>>.broadcast();
 
   // Social realtime event streams
   final _postCreatedController = StreamController<Map<String, dynamic>>.broadcast();
@@ -280,6 +284,10 @@ class SocketService {
   Stream<Map<String, dynamic>> get onRoomHostAbsent => _roomHostAbsentController.stream;
   Stream<Map<String, dynamic>> get onRoomHostReturned => _roomHostReturnedController.stream;
   Stream<Map<String, dynamic>> get onRoomBackgroundUpdated => _roomBackgroundUpdatedController.stream;
+  Stream<Map<String, dynamic>> get onRoomPresenceSync => _roomPresenceSyncController.stream;
+  Stream<Map<String, dynamic>> get onRoomStageSync => _roomStageSyncController.stream;
+  Stream<Map<String, dynamic>> get onSeatUpdated => _seatUpdatedController.stream;
+  Stream<Map<String, dynamic>> get onPkSnapshot => _pkSnapshotController.stream;
 
   // Stream aliases for backwards compatibility
   Stream<Map<String, dynamic>> get roomCreatedStream => onRoomCreated;
@@ -342,14 +350,26 @@ class SocketService {
 
   /// Connect to backend Socket.IO server with JWT token
   Future<void> connect({String? token, Map<String, dynamic>? user}) async {
+    final effectiveUser = user ?? _cachedUserData;
+    final effectiveUserId = effectiveUser?['id']?.toString() ?? effectiveUser?['_id']?.toString() ?? '';
+    final bool isUserAuthenticated = effectiveUserId.isNotEmpty && !effectiveUserId.startsWith('guest_');
+
     String? authToken = token;
     if (authToken == null || authToken.isEmpty) {
       authToken = await ApiClient.instance.getAccessToken();
-      if (authToken == null || authToken.isEmpty) {
+      if ((authToken == null || authToken.isEmpty) && isUserAuthenticated) {
         authToken = await ApiClient.instance.refreshToken();
       }
     }
-    authToken ??= 'guest_anonymous';
+
+    // STRICT CONTRACT: Never send 'guest_anonymous' for an authenticated account
+    if (authToken == null || authToken.isEmpty) {
+      if (isUserAuthenticated) {
+        debugPrint('[SocketService] Notice: Authenticated user without cached token, attempting refresh...');
+        authToken = await ApiClient.instance.refreshToken();
+      }
+    }
+    authToken ??= (isUserAuthenticated ? null : 'guest_anonymous');
 
     // Phase 1: Robust identity change & anonymous-to-auth detection
     final prevUser = _cachedUserData;
@@ -394,13 +414,20 @@ class SocketService {
 
     final baseUrl = ApiClient.baseUrl;
 
-    final authMap = <String, dynamic>{'token': authToken};
+    final authMap = <String, dynamic>{
+      if (authToken != null && authToken.isNotEmpty) 'token': authToken,
+    };
     if (user != null || _cachedUserData != null) {
       final u = user ?? _cachedUserData;
       authMap['user'] = u;
       if (u != null && (u['id'] != null || u['_id'] != null)) {
         authMap['userId'] = u['id'] ?? u['_id'];
       }
+    }
+
+    final headers = <String, dynamic>{};
+    if (authToken != null && authToken.isNotEmpty && authToken != 'guest_anonymous') {
+      headers['Authorization'] = 'Bearer $authToken';
     }
 
     _socket = IO.io(
@@ -410,7 +437,7 @@ class SocketService {
           .disableAutoConnect()
           .enableForceNew()
           .setAuth(authMap)
-          .setExtraHeaders({'Authorization': 'Bearer $authToken'})
+          .setExtraHeaders(headers)
           .enableReconnection()
           // Never give up: after 10 failed attempts the client used to stop reconnecting for
           // good, so a 40-second network blip left the room silent until the user re-entered it.
@@ -439,6 +466,7 @@ class SocketService {
       _reconnectController.add(null);
       if (_currentRoomId != null) {
         joinRoomSubscription(_currentRoomId!, user: _cachedUserData);
+        requestRoomSnapshot(_currentRoomId!);
       }
       _flushPendingMessages();
     });
@@ -450,6 +478,7 @@ class SocketService {
       _reconnectController.add(null);
       if (_currentRoomId != null) {
         joinRoomSubscription(_currentRoomId!, user: _cachedUserData);
+        requestRoomSnapshot(_currentRoomId!);
       }
       _flushPendingMessages();
     });
@@ -565,6 +594,22 @@ class SocketService {
     _socket!.on('room:viewer_count_changed', handleViewerCount);
     _socket!.on('room:viewer_count', handleViewerCount);
     _socket!.on('viewer_count_changed', handleViewerCount);
+
+    void handlePresenceSync(dynamic data) {
+      if (data != null) {
+        final map = safeMap(data);
+        _logDiag('RECV_PRESENCE_SYNC', 'room: ${map['roomId']}, count: ${map['viewerCount'] ?? map['count']}');
+        _roomPresenceSyncController.add(map);
+        final rawCount = map['viewerCount'] ?? map['count'] ?? map['currentViewersCount'];
+        if (rawCount != null) {
+          _viewerCountController.add(map);
+        }
+      }
+    }
+    _socket!.off('room:presence_sync');
+    _socket!.on('room:presence_sync', handlePresenceSync);
+    _socket!.off('presence_sync');
+    _socket!.on('presence_sync', handlePresenceSync);
 
     void handleRoomLike(dynamic data) {
       if (data != null) _roomLikeController.add(safeMap(data));
@@ -732,6 +777,12 @@ class SocketService {
     _socket!.on('room:gift', handleGiftSent);
     _socket!.off('room_gift');
     _socket!.on('room_gift', handleGiftSent);
+    _socket!.off('gift:received');
+    _socket!.on('gift:received', handleGiftSent);
+    _socket!.off('room:gift_received');
+    _socket!.on('room:gift_received', handleGiftSent);
+    _socket!.off('gift:new');
+    _socket!.on('gift:new', handleGiftSent);
     _socket!.off('live:gift');
     _socket!.on('live:gift', handleGiftSent);
 
@@ -783,10 +834,18 @@ class SocketService {
     _socket!.on('seat_unmuted', (data) {
       if (data != null) _roomUserMutedController.add(safeMap(data));
     });
-    // Emoji reactions broadcast from backend
-    _socket!.on('room:emoji', (data) {
+    // Emoji reactions broadcast from backend (canonical + documented aliases)
+    void handleRoomEmoji(dynamic data) {
       if (data != null) _roomEmojiController.add(safeMap(data));
-    });
+    }
+    _socket!.off('room:emoji');
+    _socket!.on('room:emoji', handleRoomEmoji);
+    _socket!.off('room:emoji_received');
+    _socket!.on('room:emoji_received', handleRoomEmoji);
+    _socket!.off('room:reaction');
+    _socket!.on('room:reaction', handleRoomEmoji);
+    _socket!.off('room:reaction_received');
+    _socket!.on('room:reaction_received', handleRoomEmoji);
     _socket!.on('room:role_updated', (data) {
       if (data != null) _roomRoleUpdatedController.add(safeMap(data));
     });
@@ -863,16 +922,37 @@ class SocketService {
     _socket!.off('user:noble_updated');
     _socket!.on('user:noble_updated', handleNobleUpdate);
 
-    // Item 49: Authoritative Stage State & Mic Synchronization
-    void handleStageUpdate(dynamic data) {
-      if (data != null) _roomStageUpdatedController.add(safeMap(data));
+    // Stage Synchronization & Realtime Seats
+    void handleStageSync(dynamic data) {
+      if (data != null) {
+        final map = safeMap(data);
+        _roomStageSyncController.add(map);
+        _roomStageUpdatedController.add(map);
+      }
     }
+    _socket!.off('room:stage_sync');
+    _socket!.on('room:stage_sync', handleStageSync);
+    _socket!.off('stage_sync');
+    _socket!.on('stage_sync', handleStageSync);
+    _socket!.off('stage:sync');
+    _socket!.on('stage:sync', handleStageSync);
     _socket!.off('room:stage_updated');
-    _socket!.on('room:stage_updated', handleStageUpdate);
+    _socket!.on('room:stage_updated', handleStageSync);
     _socket!.off('stage:updated');
-    _socket!.on('stage:updated', handleStageUpdate);
+    _socket!.on('stage:updated', handleStageSync);
     _socket!.off('room:stage_snapshot');
-    _socket!.on('room:stage_snapshot', handleStageUpdate);
+    _socket!.on('room:stage_snapshot', handleStageSync);
+
+    void handleSeatUpdated(dynamic data) {
+      if (data != null) {
+        final map = safeMap(data);
+        _seatUpdatedController.add(map);
+      }
+    }
+    _socket!.off('seat:updated');
+    _socket!.on('seat:updated', handleSeatUpdated);
+    _socket!.off('seat_updated');
+    _socket!.on('seat_updated', handleSeatUpdated);
 
     // Item 44: Rocket Tool Realtime Events
     void handleRocket(dynamic data) {
@@ -1086,9 +1166,23 @@ class SocketService {
     _socket!.on('pk:active', (data) {
       if (data is Map) _pkActiveController.add(Map<String, dynamic>.from(data));
     });
-    _socket!.on('pk:score_updated', (data) {
-      if (data is Map) _pkScoreUpdatedController.add(Map<String, dynamic>.from(data));
-    });
+    void handlePkSnapshot(dynamic data) {
+      if (data != null) _pkSnapshotController.add(safeMap(data));
+    }
+    _socket!.off('pk:snapshot');
+    _socket!.on('pk:snapshot', handlePkSnapshot);
+    _socket!.off('pk_snapshot');
+    _socket!.on('pk_snapshot', handlePkSnapshot);
+
+    void handlePkScoreUpdate(dynamic data) {
+      if (data is Map) _pkScoreUpdatedController.add(safeMap(data));
+    }
+    _socket!.off('pk:score_update');
+    _socket!.on('pk:score_update', handlePkScoreUpdate);
+    _socket!.off('pk:score_updated');
+    _socket!.on('pk:score_updated', handlePkScoreUpdate);
+    _socket!.off('pk_score_updated');
+    _socket!.on('pk_score_updated', handlePkScoreUpdate);
     _socket!.on('pk:ended', (data) {
       if (data is Map) _pkEndedController.add(Map<String, dynamic>.from(data));
     });
@@ -1296,6 +1390,7 @@ class SocketService {
         'userId': user['id'] ?? user['_id'],
     };
     if (_socket != null && _socket!.connected) {
+      _socket!.emit('seat:occupy', payload);
       _socket!.emit('room:seat_occupy', payload);
       _logDiag('EMIT_SEAT_OCCUPY', 'room: $roomId, seatIndex: $seatIndex');
     } else {
@@ -1311,6 +1406,7 @@ class SocketService {
       'seatIndex': seatIndex,
     };
     if (_socket != null && _socket!.connected) {
+      _socket!.emit('seat:leave', payload);
       _socket!.emit('room:seat_leave', payload);
       _logDiag('EMIT_SEAT_LEAVE', 'room: $roomId, seatIndex: $seatIndex');
     } else {
@@ -1344,8 +1440,9 @@ class SocketService {
     };
 
     if (_socket != null && _socket!.connected) {
+      _socket!.emit('room:chat', payload);
       _socket!.emit('room:chat_send', payload);
-      debugPrint('[SocketService] Sent room:chat_send for room:$roomId (msgId: $effectiveId)');
+      debugPrint('[SocketService] Sent room:chat for room:$roomId (msgId: $effectiveId)');
     } else {
       _pendingChatQueue.add(payload);
       connect(user: sender);
@@ -1423,14 +1520,18 @@ class SocketService {
       'id': reactionId ?? 'emoji_${DateTime.now().millisecondsSinceEpoch}',
       'roomId': roomId,
       'emoji': emoji,
+      'reaction': emoji,
       if (targetUserId != null) 'targetUserId': targetUserId,
       if (seatId != null) 'seatId': seatId,
+      if (seatId != null) 'seatIndex': seatId,
       if (senderName != null) 'senderName': senderName,
       if (senderAvatar != null) 'senderAvatar': senderAvatar,
       if (gameResult != null) 'gameResult': gameResult,
       'timestamp': DateTime.now().toIso8601String(),
     };
     if (_socket != null && _socket!.connected) {
+      _socket!.emit('room:emoji', payload);
+      _socket!.emit('send_room_emoji', payload);
       _socket!.emit('room:emoji_send', payload);
     } else {
       _pendingEmojiQueue.add(payload);
@@ -1594,9 +1695,45 @@ class SocketService {
       if (reason != null && reason.isNotEmpty) 'reason': reason,
       'timestamp': DateTime.now().toIso8601String(),
     };
+    emit('seat:mute_toggle', payload);
     emit('room:mute_seat', payload);
     emit('seat_mute', payload);
     emit('room:toggle_mute', payload);
+  }
+
+  /// Request backend to resolve an Agora UID or userId to authoritative ZeParty UserIdentity
+  void resolveIdentity({
+    required String roomId,
+    int? agoraUid,
+    String? userId,
+    void Function(Map<String, dynamic> data)? onResolved,
+  }) {
+    if (_socket != null && _socket!.connected) {
+      final payload = {
+        'roomId': roomId,
+        if (agoraUid != null) 'agoraUid': agoraUid,
+        if (userId != null && userId.isNotEmpty) 'userId': userId,
+      };
+      _socket!.emitWithAck('room:resolve_identity', payload, ack: (dynamic ackData) {
+        if (ackData is Map) {
+          final res = safeMap(ackData);
+          if (res['ok'] == true && res['data'] is Map) {
+            onResolved?.call(Map<String, dynamic>.from(res['data'] as Map));
+          } else {
+            onResolved?.call(res);
+          }
+        }
+      });
+      _logDiag('EMIT_RESOLVE_IDENTITY', 'room: $roomId, agoraUid: $agoraUid, userId: $userId');
+    }
+  }
+
+  /// Request authoritative PK match snapshot for a room
+  void requestPkSync(String roomId) {
+    if (_socket != null && _socket!.connected) {
+      _socket!.emit('pk:sync', {'roomId': roomId});
+      _logDiag('EMIT_PK_SYNC', 'room: $roomId');
+    }
   }
 
   /// Alias for seat mute action (Item 32)

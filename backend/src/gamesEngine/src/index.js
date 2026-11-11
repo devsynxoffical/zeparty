@@ -1,3 +1,13 @@
+import crypto from 'node:crypto';
+
+// Polyfill global WebCrypto for Prisma WASM Query Engine & Rust getrandom
+if (typeof globalThis.crypto === 'undefined' || !globalThis.crypto.getRandomValues) {
+  globalThis.crypto = crypto.webcrypto;
+}
+if (typeof global.crypto === 'undefined' || !global.crypto.getRandomValues) {
+  global.crypto = crypto.webcrypto;
+}
+
 import pino from 'pino';
 import env from '../../config/env.js';
 import { MockAuthAdapter } from './auth/adapters.js';

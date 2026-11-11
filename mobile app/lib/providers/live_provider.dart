@@ -78,6 +78,58 @@ class LiveProvider extends ChangeNotifier {
   StreamSubscription? _socketRoomUserMutedSub;
   StreamSubscription? _socketRoomSnapshotSub;
   StreamSubscription? _socketConnectionSub;
+  StreamSubscription? _socketPresenceSyncSub;
+  StreamSubscription? _socketPkSnapshotSub;
+  StreamSubscription? _remoteUsersSub;
+
+  final Map<int, UserModel> _agoraUidToUser = {};
+  Map<int, UserModel> get agoraUidMap => Map.unmodifiable(_agoraUidToUser);
+
+  void _applyAgoraUidMap(dynamic mapRaw) {
+    if (mapRaw is! Map) return;
+    mapRaw.forEach((k, v) {
+      if (v is Map) {
+        final uMap = Map<String, dynamic>.from(v);
+        final rawUid = uMap['agoraUid'] ?? uMap['uid'] ?? k;
+        final parsedUid = rawUid is int ? rawUid : int.tryParse(rawUid.toString());
+        if (parsedUid != null && parsedUid > 0) {
+          final user = UserModel.fromJson(uMap);
+          _agoraUidToUser[parsedUid] = user;
+        }
+      }
+    });
+  }
+
+  void _resolveMissingAgoraIdentity(int remoteUid) {
+    if (remoteUid <= 0 || _activeRoom == null) return;
+    if (_agoraUidToUser.containsKey(remoteUid)) return;
+
+    _socketService.resolveIdentity(
+      roomId: _activeRoom!.id,
+      agoraUid: remoteUid,
+      onResolved: (data) {
+        if (data['agoraUidMap'] != null) {
+          _applyAgoraUidMap(data['agoraUidMap']);
+        }
+        if (data['resolvedIdentity'] is Map) {
+          final user = UserModel.fromJson(Map<String, dynamic>.from(data['resolvedIdentity'] as Map));
+          _agoraUidToUser[remoteUid] = user;
+          notifyListeners();
+        }
+      },
+    );
+
+    _roomRepository.getRoomIdentities(_activeRoom!.id, agoraUid: remoteUid).then((data) {
+      if (data['agoraUidMap'] != null) {
+        _applyAgoraUidMap(data['agoraUidMap']);
+      }
+      if (data['resolvedIdentity'] is Map) {
+        final user = UserModel.fromJson(Map<String, dynamic>.from(data['resolvedIdentity'] as Map));
+        _agoraUidToUser[remoteUid] = user;
+        notifyListeners();
+      }
+    }).catchError((_) {});
+  }
 
   bool get isSocketConnected => _socketService.isConnected;
   StreamSubscription? _socketPkCreatedSub;
@@ -381,9 +433,22 @@ class LiveProvider extends ChangeNotifier {
               agoraData['channelName'] as String? ??
               room.agoraChannelName ??
               room.id;
-          final uid =
-              agoraData['uid'] as int? ?? agoraData['agoraUid'] as int? ?? 0;
+          final rawUid = agoraData['agoraUid'] is int
+              ? agoraData['agoraUid'] as int
+              : (agoraData['uid'] is int
+                  ? agoraData['uid'] as int
+                  : int.tryParse(agoraData['agoraUid']?.toString() ?? agoraData['uid']?.toString() ?? ''));
+          final uid = (rawUid != null && rawUid > 0)
+              ? rawUid
+              : AgoraRtcService.deriveUid(currentUser.id);
           final appId = agoraData['appId'] as String?;
+
+          if (agoraData['agoraUidMap'] != null) {
+            _applyAgoraUidMap(agoraData['agoraUidMap']);
+          }
+          if (currentUser.id.isNotEmpty) {
+            _agoraUidToUser[uid] = currentUser;
+          }
 
           await _agoraService.initialize(appId: appId, enableVideo: isVideo);
           if (myGeneration != _sessionGeneration) return;
@@ -433,11 +498,16 @@ class LiveProvider extends ChangeNotifier {
       if (connected && _activeRoom != null) {
         _socketService.joinRoom(_activeRoom!.id, user: currentUser?.toJson());
         _socketService.requestRoomSnapshot(_activeRoom!.id);
+        _socketService.requestPkSync(_activeRoom!.id);
       }
       notifyListeners();
     });
 
     _socketRoomSnapshotSub?.cancel();
+    _socketPresenceSyncSub?.cancel();
+    _socketPkSnapshotSub?.cancel();
+    _remoteUsersSub?.cancel();
+    _agoraUidToUser.clear();
     _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
       if (!_matchesRoom(data)) {
         return;
@@ -445,6 +515,12 @@ class LiveProvider extends ChangeNotifier {
       final roomObj = data['room'] is Map
           ? Map<String, dynamic>.from(data['room'] as Map)
           : <String, dynamic>{};
+
+      if (data['agoraUidMap'] != null) {
+        _applyAgoraUidMap(data['agoraUidMap']);
+      } else if (roomObj['agoraUidMap'] != null) {
+        _applyAgoraUidMap(roomObj['agoraUidMap']);
+      }
       final rawCount =
           data['viewerCount'] ??
           roomObj['currentViewersCount'] ??
@@ -565,6 +641,61 @@ class LiveProvider extends ChangeNotifier {
       }
 
       notifyListeners();
+    });
+
+    _socketPresenceSyncSub?.cancel();
+    _socketPresenceSyncSub = _socketService.onRoomPresenceSync.listen((data) {
+      if (!_matchesRoom(data)) return;
+      try {
+        final rawCount = data['viewerCount'] ?? data['count'] ?? data['currentViewersCount'];
+        final parsedCount = (rawCount is num) ? rawCount.toInt() : int.tryParse(rawCount?.toString() ?? '');
+        if (parsedCount != null && _activeRoom != null) {
+          _activeRoom = _activeRoom!.copyWith(viewerCount: parsedCount >= 0 ? parsedCount : 0);
+        }
+        if (data['agoraUidMap'] != null) {
+          _applyAgoraUidMap(data['agoraUidMap']);
+        }
+        final usersList = data['users'] is List ? (data['users'] as List) : (data['participants'] is List ? (data['participants'] as List) : []);
+        for (final uRaw in usersList) {
+          if (uRaw is Map) {
+            final uMap = Map<String, dynamic>.from(uRaw);
+            final user = UserModel.fromJson(uMap);
+            final aUid = uMap['agoraUid'] is int ? uMap['agoraUid'] as int : int.tryParse(uMap['agoraUid']?.toString() ?? '') ?? AgoraRtcService.deriveUid(user.id);
+            _agoraUidToUser[aUid] = user;
+            if (user.id.isNotEmpty && !_viewers.any((v) => v.id == user.id)) {
+              _viewers.add(user);
+            }
+          }
+        }
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LiveProvider] PresenceSync error: $e');
+      }
+    });
+
+    _socketPkSnapshotSub?.cancel();
+    _socketPkSnapshotSub = _socketService.onPkSnapshot.listen((data) {
+      if (!_matchesRoom(data)) return;
+      try {
+        final matchData = data['match'] is Map ? Map<String, dynamic>.from(data['match'] as Map) : data;
+        final pkMatch = PKMatchModel.fromJson(matchData);
+        setPkBattle(pkMatch);
+        if (data['agoraUidMap'] != null) {
+          _applyAgoraUidMap(data['agoraUidMap']);
+        }
+        notifyListeners();
+      } catch (e) {
+        debugPrint('[LiveProvider] PkSnapshot error: $e');
+      }
+    });
+
+    _remoteUsersSub?.cancel();
+    _remoteUsersSub = _agoraService.remoteUsersStream.listen((uids) {
+      for (final uid in uids) {
+        if (!_agoraUidToUser.containsKey(uid)) {
+          _resolveMissingAgoraIdentity(uid);
+        }
+      }
     });
 
     _socketUserJoinedSub?.cancel();
@@ -699,6 +830,10 @@ class LiveProvider extends ChangeNotifier {
     });
 
     _socketRoomSnapshotSub?.cancel();
+    _socketPresenceSyncSub?.cancel();
+    _socketPkSnapshotSub?.cancel();
+    _remoteUsersSub?.cancel();
+    _agoraUidToUser.clear();
     _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
       if (!_matchesRoom(data)) {
         return;
@@ -982,6 +1117,10 @@ class LiveProvider extends ChangeNotifier {
 
     // ── Snapshot Subscription ─────────────────────────────────
     _socketRoomSnapshotSub?.cancel();
+    _socketPresenceSyncSub?.cancel();
+    _socketPkSnapshotSub?.cancel();
+    _remoteUsersSub?.cancel();
+    _agoraUidToUser.clear();
     _socketRoomSnapshotSub = _socketService.roomSnapshotStream.listen((data) {
       try {
         final roomObj = data['room'] is Map
@@ -1348,6 +1487,10 @@ class LiveProvider extends ChangeNotifier {
     _socketRoomUserMutedSub?.cancel();
     _socketConnectionSub?.cancel();
     _socketRoomSnapshotSub?.cancel();
+    _socketPresenceSyncSub?.cancel();
+    _socketPkSnapshotSub?.cancel();
+    _remoteUsersSub?.cancel();
+    _agoraUidToUser.clear();
     _socketPkCreatedSub?.cancel();
     _socketPkParticipantJoinedSub?.cancel();
     _socketPkReadySub?.cancel();
