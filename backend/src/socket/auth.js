@@ -3,6 +3,7 @@ import env from '../config/env.js';
 import userRepository from '../repositories/user.repository.js';
 import { SOCKET_ERRORS } from './socket.constants.js';
 import { resolveUserAvatarFrame } from './room.socket.js';
+import { deriveAgoraUid, extractEquippedAsset } from '../utils/agoraToken.util.js';
 
 /**
  * Socket.IO connection authentication middleware using authoritative JWT & database verification.
@@ -14,14 +15,27 @@ import { resolveUserAvatarFrame } from './room.socket.js';
  */
 export async function socketAuthMiddleware(socket, next, customUserLookup = null) {
   try {
-    let token = socket.handshake.auth?.token;
+    const candidateTokens = [
+      socket.handshake.auth?.token,
+      socket.handshake.auth?.accessToken,
+      socket.handshake.auth?.jwt,
+      socket.handshake.headers?.authorization,
+      socket.handshake.query?.token,
+    ];
 
-    if (!token && socket.handshake.headers?.authorization) {
-      const authHeader = socket.handshake.headers.authorization;
-      if (authHeader.startsWith('Bearer ')) {
-        token = authHeader.substring(7);
-      } else {
-        token = authHeader;
+    let token = null;
+    let sawGuestAnonymousFlag = false;
+    for (const candidate of candidateTokens) {
+      if (typeof candidate !== 'string') continue;
+      const trimmed = candidate.trim();
+      const stripped = trimmed.startsWith('Bearer ') ? trimmed.substring(7).trim() : trimmed;
+      if (stripped === 'guest_anonymous') {
+        sawGuestAnonymousFlag = true;
+        continue;
+      }
+      if (stripped && stripped !== 'null' && stripped !== 'undefined') {
+        token = stripped;
+        break;
       }
     }
 
@@ -32,8 +46,11 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
       socket.handshake.auth?.user?.userId;
 
     const isAnonymousGuestRequested = Boolean(
-      token === 'guest_anonymous' ||
-      (!token && (!clientClaimedUserId || String(clientClaimedUserId).startsWith('guest_')))
+      !token && (
+        sawGuestAnonymousFlag ||
+        !clientClaimedUserId ||
+        String(clientClaimedUserId).startsWith('guest_')
+      )
     );
 
     // -------------------------------------------------------------
@@ -49,12 +66,16 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
       const fallbackName = clientUser?.displayName || clientUser?.name || clientUser?.username ||
         `User_${String(guestId).replace('guest_', '').substring(0, 5)}`;
 
+      const guestAgoraUid = deriveAgoraUid(guestId);
       socket.isGuest = true;
       socket.userId = guestId;
-      console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [AUTH] socket=${socket.id} mode=GUEST userId=${guestId} name=${fallbackName}`);
+      socket.agoraUid = guestAgoraUid;
+      console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [AUTH] socket=${socket.id} mode=GUEST userId=${guestId} agoraUid=${guestAgoraUid} name=${fallbackName}`);
       socket.user = {
         id: guestId,
         userId: guestId,
+        agoraUid: guestAgoraUid,
+        uid: guestAgoraUid,
         username: fallbackName,
         displayName: fallbackName,
         name: fallbackName,
@@ -139,7 +160,8 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
         user = await customUserLookup.findByEmail(lookupEmail).catch(() => null);
       }
     } else {
-      user = await (userRepository.findById ? userRepository.findById(lookupId) : userRepository.findUserById(lookupId)).catch(() => null);
+      const lookupFn = userRepository.findByIdForIdentity || userRepository.findById || userRepository.findUserById;
+      user = await lookupFn(lookupId).catch(() => null);
 
       if (!user && userRepository.findByFirebaseUid) {
         user = await userRepository.findByFirebaseUid(lookupUid || lookupId).catch(() => null);
@@ -163,21 +185,38 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
     }
 
     const effectiveName = user.profile?.displayName || user.name || user.username || 'User';
+    const effectiveAvatarUrl = user.avatarUrl || user.profile?.avatarUrl || null;
+    const agoraUid = deriveAgoraUid(user.id);
+    const equippedFrame = resolveUserAvatarFrame(user);
+    const equippedChatBubble = extractEquippedAsset(user, 'CHAT_BUBBLE');
+    const equippedEntryEffect = extractEquippedAsset(user, 'ENTRY_EFFECT');
 
     // Requirement 2 & 4: Preserve valid authenticated Host identity without converting to guest
     socket.isGuest = false;
     socket.userId = user.id;
-    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [AUTH] socket=${socket.id} mode=AUTHENTICATED userId=${user.id} username=${user.username} role=${user.userType || 'USER'}`);
-    const equippedFrame = resolveUserAvatarFrame(user);
+    socket.agoraUid = agoraUid;
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [AUTH] socket=${socket.id} mode=AUTHENTICATED userId=${user.id} agoraUid=${agoraUid} username=${user.username} role=${user.userType || 'USER'}`);
     socket.user = {
       id: user.id,
       userId: user.id,
+      publicId: user.id,
+      agoraUid,
+      uid: agoraUid,
       username: user.username,
       name: effectiveName,
       displayName: effectiveName,
-      avatarUrl: user.profile?.avatarUrl || user.avatarUrl || null,
+      avatarUrl: effectiveAvatarUrl,
+      avatar: effectiveAvatarUrl,
+      countryCode: user.countryCode || 'GLOBAL',
+      level: Number(user.profile?.level ?? 1),
+      wealthLevel: Number(user.profile?.level ?? 1),
+      vipLevel: Number(user.profile?.vipLevel ?? 0),
+      svipLevel: Number(user.profile?.svipLevel ?? 0),
+      nobleRank: user.profile?.nobleRank || null,
       avatarFrame: equippedFrame,
       equippedFrame: equippedFrame,
+      chatBubble: equippedChatBubble,
+      entryEffect: equippedEntryEffect,
       userAssets: user.userAssets || [],
       equippedAssets: user.equippedAssets || [],
       status: user.status || 'ACTIVE',
@@ -189,8 +228,21 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
       isOwner: Boolean(decoded?.isOwner),
       role: user.userType || decoded?.role || 'USER',
       isGuest: false,
-      profile: user.profile || { displayName: effectiveName },
+      profile: {
+        ...(user.profile || {}),
+        displayName: effectiveName,
+        avatarUrl: effectiveAvatarUrl,
+        level: Number(user.profile?.level ?? 1),
+        vipLevel: Number(user.profile?.vipLevel ?? 0),
+        svipLevel: Number(user.profile?.svipLevel ?? 0),
+        nobleRank: user.profile?.nobleRank || null,
+      },
     };
+
+    socket.data = socket.data || {};
+    socket.data.user = socket.user;
+    socket.data.userId = socket.userId;
+    socket.data.agoraUid = socket.agoraUid;
 
     return next();
   } catch (err) {

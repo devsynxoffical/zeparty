@@ -54,38 +54,42 @@ export function serializeData(data, seen = new WeakSet()) {
     return data.toString();
   }
 
-  // Prevent Circular References
+  // Prevent Circular References (track active ancestor chain; remove after traversing children so shared DAG references serialize normally)
   if (seen.has(data)) {
     return '[Circular]';
   }
   seen.add(data);
 
-  // Handle Arrays
-  if (Array.isArray(data)) {
-    return data.map((item) => serializeData(item, seen));
-  }
-
-  // Handle Sets
-  if (data instanceof Set) {
-    return Array.from(data).map((item) => serializeData(item, seen));
-  }
-
-  // Handle Maps
-  if (data instanceof Map) {
-    const obj = {};
-    for (const [key, value] of data.entries()) {
-      obj[String(key)] = serializeData(value, seen);
+  try {
+    // Handle Arrays
+    if (Array.isArray(data)) {
+      return data.map((item) => serializeData(item, seen));
     }
-    return obj;
-  }
 
-  // Handle Plain Objects and Class instances
-  const result = {};
-  for (const [key, value] of Object.entries(data)) {
-    result[key] = serializeData(value, seen);
-  }
+    // Handle Sets
+    if (data instanceof Set) {
+      return Array.from(data).map((item) => serializeData(item, seen));
+    }
 
-  return result;
+    // Handle Maps
+    if (data instanceof Map) {
+      const obj = {};
+      for (const [key, value] of data.entries()) {
+        obj[String(key)] = serializeData(value, seen);
+      }
+      return obj;
+    }
+
+    // Handle Plain Objects and Class instances
+    const result = {};
+    for (const [key, value] of Object.entries(data)) {
+      result[key] = serializeData(value, seen);
+    }
+
+    return result;
+  } finally {
+    seen.delete(data);
+  }
 }
 
 /**

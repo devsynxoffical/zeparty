@@ -13,7 +13,11 @@ import {
   checkAndSchedulePartyRoomSleep,
   isPartyRoomType,
 } from './roomTimer.manager.js';
-import { deriveAgoraUid } from '../utils/agoraToken.util.js';
+import {
+  deriveAgoraUid,
+  formatAuthoritativeUserIdentity,
+  buildAgoraUidIdentityMap,
+} from '../utils/agoraToken.util.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
 import { withRateLimit } from './rateLimiter.socket.js';
 import * as attendanceService from '../services/attendance.service.js';
@@ -32,12 +36,23 @@ import { getRedisClient } from '../config/redis.js';
  * Priority 3: Active SVIP entrance effect (SVIP level 6+)
  * Priority 4: Default (null)
  */
-export async function resolveUserRoomEntryEffect(userId, prismaInstance = prisma) {
+export async function resolveUserRoomEntryEffect(userId, prismaInstance = prisma, preloadedUser = null) {
   if (!userId) return null;
 
   // 1. Explicitly equipped ride / vehicle / entry effect
   try {
-    const equippedRecord = await userAssetRepository.findEquippedEntryEffect(userId, prismaInstance);
+    let equippedRecord = null;
+    if (Array.isArray(preloadedUser?.userAssets)) {
+      const now = new Date();
+      equippedRecord = preloadedUser.userAssets.find((ua) => {
+        if (!ua?.asset || ua.isEquipped === false) return false;
+        if (ua.expiresAt && new Date(ua.expiresAt) <= now) return false;
+        const t = String(ua.asset.assetType || '').toUpperCase();
+        return t === 'VEHICLE' || t === 'ENTRY_EFFECT';
+      }) || null;
+    } else {
+      equippedRecord = await userAssetRepository.findEquippedEntryEffect(userId, prismaInstance);
+    }
     if (equippedRecord?.asset) {
       const a = equippedRecord.asset;
       return {
@@ -59,46 +74,51 @@ export async function resolveUserRoomEntryEffect(userId, prismaInstance = prisma
         durationSeconds: a.durationSeconds || 5,
         defaultVolumePercent: a.defaultVolumePercent || 100,
         userAssetId: equippedRecord.id,
-        expiresAt: equippedRecord.expiresAt ? equippedRecord.expiresAt.toISOString() : null,
+        expiresAt: equippedRecord.expiresAt ? new Date(equippedRecord.expiresAt).toISOString() : null,
       };
     }
   } catch (_) {}
 
   // 2. Active Noble Entrance Privilege (Marquis, Duke, King, Emperor)
   try {
-    const activeNoble = await nobleService.getActiveNoble(userId, { checkExpiry: true }, prismaInstance);
-    if (activeNoble && activeNoble.entranceEffectUrl) {
-      const tierLower = String(activeNoble.nobleTier).toLowerCase();
-      return {
-        id: `noble_entrance_${tierLower}`,
-        assetId: `noble_entrance_${tierLower}`,
-        name: `${activeNoble.nobleRank || activeNoble.nobleTitle} Royal Entrance`,
-        source: 'NOBLE_PRIVILEGE',
-        assetType: 'NOBLE_ENTRANCE',
-        assetSubcategory: 'ENTRANCE',
-        category: 'Nobles',
-        categoryName: 'Nobles',
-        thumbnailUrl: activeNoble.badgeUrl || activeNoble.entranceEffectUrl,
-        iconUrl: activeNoble.badgeUrl || activeNoble.entranceEffectUrl,
-        previewUrl: activeNoble.entranceEffectUrl,
-        animationUrl: activeNoble.entranceEffectUrl,
-        videoUrl: activeNoble.entranceEffectUrl,
-        mediaUrl: activeNoble.entranceEffectUrl,
-        soundUrl: null,
-        durationSeconds: 4,
-        defaultVolumePercent: 100,
-        nobleTier: activeNoble.nobleTier,
-        nobleRank: activeNoble.nobleRank,
-      };
+    const hasPotentialNoble = !preloadedUser?.profile || Boolean(preloadedUser.profile.nobleRank);
+    if (hasPotentialNoble) {
+      const activeNoble = await nobleService.getActiveNoble(userId, { checkExpiry: true }, prismaInstance);
+      if (activeNoble && activeNoble.entranceEffectUrl) {
+        const tierLower = String(activeNoble.nobleTier).toLowerCase();
+        return {
+          id: `noble_entrance_${tierLower}`,
+          assetId: `noble_entrance_${tierLower}`,
+          name: `${activeNoble.nobleRank || activeNoble.nobleTitle} Royal Entrance`,
+          source: 'NOBLE_PRIVILEGE',
+          assetType: 'NOBLE_ENTRANCE',
+          assetSubcategory: 'ENTRANCE',
+          category: 'Nobles',
+          categoryName: 'Nobles',
+          thumbnailUrl: activeNoble.badgeUrl || activeNoble.entranceEffectUrl,
+          iconUrl: activeNoble.badgeUrl || activeNoble.entranceEffectUrl,
+          previewUrl: activeNoble.entranceEffectUrl,
+          animationUrl: activeNoble.entranceEffectUrl,
+          videoUrl: activeNoble.entranceEffectUrl,
+          mediaUrl: activeNoble.entranceEffectUrl,
+          soundUrl: null,
+          durationSeconds: 4,
+          defaultVolumePercent: 100,
+          nobleTier: activeNoble.nobleTier,
+          nobleRank: activeNoble.nobleRank,
+        };
+      }
     }
   } catch (_) {}
 
   // 3. Active SVIP Entrance Privilege (SVIP Level 6+)
   try {
-    const profile = await prismaInstance.userProfile.findUnique({
-      where: { userId },
-      select: { svipLevel: true },
-    }).catch(() => null);
+    const profile = preloadedUser?.profile !== undefined
+      ? preloadedUser.profile
+      : await prismaInstance.userProfile.findUnique({
+          where: { userId },
+          select: { svipLevel: true },
+        }).catch(() => null);
 
     const svipLvl = Number(profile?.svipLevel || 0);
     if (svipLvl >= 6) {
@@ -202,19 +222,32 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       const displayName = u.profile?.displayName || u.displayName || u.username || (isHost ? 'Host' : 'User');
       const isRoomAdmin = (m.role === 'ADMIN' || m.role === 'MODERATOR');
       const memberFrame = resolveUserAvatarFrame(u);
+      const memberAgoraUid = mid ? deriveAgoraUid(mid) : null;
+      const memberAvatarUrl = u.avatarUrl || u.profile?.avatarUrl || null;
       return {
         userId: mid,
+        agoraUid: memberAgoraUid,
+        uid: memberAgoraUid,
         role: isHost ? 'HOST' : (isRoomAdmin ? 'ADMIN' : (m.role || 'LISTENER')),
         isHost,
         isOwner: isHost,
         user: {
           id: mid,
+          userId: mid,
+          agoraUid: memberAgoraUid,
+          uid: memberAgoraUid,
           username: u.username || displayName,
           displayName,
           name: displayName,
-          avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
+          avatarUrl: memberAvatarUrl,
+          avatar: memberAvatarUrl,
           avatarFrame: memberFrame,
           equippedFrame: memberFrame,
+          level: u.profile?.level || 1,
+          vipLevel: u.profile?.vipLevel || 0,
+          svipLevel: u.profile?.svipLevel || 0,
+          nobleRank: u.profile?.nobleRank || null,
+          nobleTitle: u.profile?.nobleRank || null,
         },
       };
     });
@@ -226,25 +259,38 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     const hostUser = room.creator || {};
     const hostDisplayName = hostUser.profile?.displayName || hostUser.displayName || hostUser.username || 'Host';
     const hostFrame = resolveUserAvatarFrame(hostUser);
+    const hostAgoraUid = deriveAgoraUid(hostUserId);
+    const hostAvatarUrl = hostUser.avatarUrl || hostUser.profile?.avatarUrl || null;
     membersList.unshift({
       userId: hostUserId,
+      agoraUid: hostAgoraUid,
+      uid: hostAgoraUid,
       role: 'HOST',
       isHost: true,
       isOwner: true,
       user: {
         id: hostUserId,
+        userId: hostUserId,
+        agoraUid: hostAgoraUid,
+        uid: hostAgoraUid,
         username: hostUser.username || hostDisplayName,
         displayName: hostDisplayName,
         name: hostDisplayName,
-        avatarUrl: hostUser.avatarUrl || hostUser.profile?.avatarUrl || null,
+        avatarUrl: hostAvatarUrl,
+        avatar: hostAvatarUrl,
         avatarFrame: hostFrame,
         equippedFrame: hostFrame,
+        level: hostUser.profile?.level || 1,
+        vipLevel: hostUser.profile?.vipLevel || 0,
+        svipLevel: hostUser.profile?.svipLevel || 0,
+        nobleRank: hostUser.profile?.nobleRank || null,
+        nobleTitle: hostUser.profile?.nobleRank || null,
       },
     });
     existingMemberIds.add(hostUserId);
   }
 
-  // Merge active guest participants
+  // Merge active presence participants
   for (const pres of (activePresenceUsers || [])) {
     const pid = pres.userId || pres.id;
     if (pid && !existingMemberIds.has(pid)) {
@@ -254,19 +300,31 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       const isHost = pid === hostUserId;
       const guestDisplayName = pres.displayName || pres.name || pres.username || (isHost ? 'Host' : `User_${String(pid).replace('guest_', '').substring(0, 5)}`);
       const guestFrame = resolveUserAvatarFrame(pres);
+      const presAgoraUid = pres.agoraUid || pres.uid || deriveAgoraUid(pid);
       membersList.push({
         userId: pid,
+        agoraUid: presAgoraUid,
+        uid: presAgoraUid,
         role: isHost ? 'HOST' : 'LISTENER',
         isHost,
         isOwner: isHost,
         user: {
           id: pid,
-          username: guestDisplayName,
+          userId: pid,
+          agoraUid: presAgoraUid,
+          uid: presAgoraUid,
+          username: pres.username || guestDisplayName,
           displayName: guestDisplayName,
           name: guestDisplayName,
           avatarUrl: pres.avatarUrl || null,
+          avatar: pres.avatarUrl || null,
           avatarFrame: guestFrame,
           equippedFrame: guestFrame,
+          level: pres.level || 1,
+          vipLevel: pres.vipLevel || 0,
+          svipLevel: pres.svipLevel || 0,
+          nobleRank: pres.nobleRank || pres.nobleTitle || null,
+          nobleTitle: pres.nobleTitle || pres.nobleRank || null,
         },
       });
       existingMemberIds.add(pid);
@@ -275,6 +333,101 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
 
   const hasPin = Boolean(room.roomPin);
   const lockMode = hasPin ? 'PIN' : (room.isPrivate ? 'Approval' : 'NONE');
+  const hostAgoraUid = hostUserId ? deriveAgoraUid(hostUserId) : null;
+  const hostAvatarResolved = room.creator?.avatarUrl || room.creator?.profile?.avatarUrl || null;
+  const hostDisplayNameResolved = room.creator?.profile?.displayName || room.creator?.displayName || room.creator?.username || 'Host';
+
+  const formattedSeats = (room.seats || []).map((s) => {
+    const u = s.occupiedUser || s.user;
+    const isOccupied = Boolean(u && s.occupiedUserId);
+    const seatUserFrame = isOccupied ? resolveUserAvatarFrame(u) : null;
+    const occupantId = isOccupied ? (u.id || s.occupiedUserId) : null;
+    const seatAgoraUid = occupantId ? deriveAgoraUid(occupantId) : null;
+    const occupantAvatar = isOccupied ? (u.avatarUrl || u.profile?.avatarUrl || null) : null;
+    const occupantDisplayName = isOccupied ? (u.profile?.displayName || u.displayName || u.username) : null;
+    return {
+      seatIndex: s.seatIndex,
+      seatNumber: s.seatIndex,
+      occupiedUserId: occupantId,
+      agoraUid: seatAgoraUid,
+      uid: seatAgoraUid,
+      isLocked: Boolean(s.isLocked),
+      isMuted: Boolean(s.isMuted),
+      isMutedByModerator: Boolean(s.isMutedByModerator),
+      user: isOccupied ? {
+        id: u.id,
+        userId: u.id,
+        agoraUid: seatAgoraUid,
+        uid: seatAgoraUid,
+        username: u.username,
+        displayName: occupantDisplayName,
+        name: occupantDisplayName,
+        avatarUrl: occupantAvatar,
+        avatar: occupantAvatar,
+        avatarFrame: seatUserFrame,
+        equippedFrame: seatUserFrame,
+        level: u.profile?.level || 1,
+        vipLevel: u.profile?.vipLevel || 0,
+        svipLevel: u.profile?.svipLevel || 0,
+        nobleTitle: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
+        nobleLevel: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
+        nobleRank: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
+        nobleColor: getNobleStyle(u.profile?.nobleRank || u.nobleTitle || u.nobleLevel)?.color || null,
+        nobleStyle: getNobleStyle(u.profile?.nobleRank || u.nobleTitle || u.nobleLevel),
+      } : null,
+    };
+  });
+
+  const hostObject = room.creator ? {
+    id: room.creator.id,
+    userId: room.creator.id,
+    agoraUid: hostAgoraUid,
+    uid: hostAgoraUid,
+    username: room.creator.username,
+    displayName: hostDisplayNameResolved,
+    name: hostDisplayNameResolved,
+    avatarUrl: hostAvatarResolved,
+    avatar: hostAvatarResolved,
+    avatarFrame: resolveUserAvatarFrame(room.creator),
+    equippedFrame: resolveUserAvatarFrame(room.creator),
+    level: room.creator.profile?.level || 1,
+    vipLevel: room.creator.profile?.vipLevel || 0,
+    svipLevel: room.creator.profile?.svipLevel || 0,
+    nobleTitle: room.creator.profile?.nobleRank || room.creator.nobleTitle || null,
+    nobleLevel: room.creator.profile?.nobleRank || room.creator.nobleTitle || null,
+    nobleRank: room.creator.profile?.nobleRank || room.creator.nobleTitle || null,
+  } : null;
+
+  // Build authoritative Agora UID -> ZeParty User Identity map
+  const agoraUidMap = {};
+  if (hostObject && hostObject.agoraUid) {
+    agoraUidMap[String(hostObject.agoraUid)] = {
+      ...hostObject,
+      role: 'HOST',
+      isHost: true,
+      seatIndex: 0,
+    };
+  }
+  for (const s of formattedSeats) {
+    if (s.agoraUid && s.user) {
+      agoraUidMap[String(s.agoraUid)] = {
+        ...s.user,
+        role: s.seatIndex === 0 ? 'HOST' : (s.seatIndex === 1 ? 'CO_HOST' : 'SPEAKER'),
+        seatIndex: s.seatIndex,
+        isMuted: s.isMuted,
+      };
+    }
+  }
+  for (const m of membersList) {
+    if (m.agoraUid && m.user && !agoraUidMap[String(m.agoraUid)]) {
+      agoraUidMap[String(m.agoraUid)] = {
+        ...m.user,
+        role: m.role,
+        isHost: m.isHost,
+        seatIndex: null,
+      };
+    }
+  }
 
   return {
     id: room.id,
@@ -296,7 +449,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     viewerCount: typeof viewerCount === 'number' ? viewerCount : (room.currentViewersCount || 0),
     feedClearedAt: room.feedClearedAt || null,
     agoraChannelName: room.agoraChannelName || null,
-    agoraHostUid: hostUserId ? deriveAgoraUid(hostUserId) : null,
+    agoraHostUid: hostAgoraUid,
+    agoraUidMap,
     isLocked: Boolean(room.isPrivate),
     lockMode,
     seatCapacity: (room.seats || []).length || 10,
@@ -305,47 +459,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     dailySendingTotal: room.dailySendingTotal || room.roomSendingTotal || 0,
     periodTotalCoins: room.periodTotalCoins || room.dailySendingTotal || 0,
     trophyCoins: room.trophyCoins || room.dailySendingTotal || 0,
-    host: room.creator ? {
-      id: room.creator.id,
-      username: room.creator.username,
-      displayName: room.creator.profile?.displayName || room.creator.username,
-      avatarUrl: room.creator.profile?.avatarUrl || null,
-      avatarFrame: resolveUserAvatarFrame(room.creator),
-      equippedFrame: resolveUserAvatarFrame(room.creator),
-      nobleTitle: room.creator.profile?.nobleRank || room.creator.nobleTitle || null,
-      nobleLevel: room.creator.profile?.nobleRank || room.creator.nobleTitle || null,
-    } : null,
-    seats: (room.seats || []).map((s) => {
-      const u = s.occupiedUser || s.user;
-      const isOccupied = Boolean(u && s.occupiedUserId);
-      const seatUserFrame = isOccupied ? resolveUserAvatarFrame(u) : null;
-      return {
-        seatIndex: s.seatIndex,
-        seatNumber: s.seatIndex,
-        occupiedUserId: isOccupied ? (u.id || s.occupiedUserId) : null,
-        isLocked: Boolean(s.isLocked),
-        isMuted: Boolean(s.isMuted),
-        isMutedByModerator: Boolean(s.isMutedByModerator),
-        user: isOccupied ? {
-          id: u.id,
-          userId: u.id,
-          username: u.username,
-          displayName: u.profile?.displayName || u.displayName || u.username,
-          name: u.profile?.displayName || u.displayName || u.username,
-          avatarUrl: u.profile?.avatarUrl || u.avatarUrl || null,
-          avatar: u.profile?.avatarUrl || u.avatarUrl || null,
-          avatarFrame: seatUserFrame,
-          equippedFrame: seatUserFrame,
-          level: u.profile?.level || 1,
-          vipLevel: u.profile?.vipLevel || 0,
-          nobleTitle: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
-          nobleLevel: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
-          nobleRank: u.profile?.nobleRank || u.nobleTitle || u.nobleLevel || null,
-          nobleColor: getNobleStyle(u.profile?.nobleRank || u.nobleTitle || u.nobleLevel)?.color || null,
-          nobleStyle: getNobleStyle(u.profile?.nobleRank || u.nobleTitle || u.nobleLevel),
-        } : null,
-      };
-    }),
+    host: hostObject,
+    seats: formattedSeats,
     coHost: (() => {
       const coHostSeat = (room.seats || []).find((s) => s.seatIndex === 1 && s.occupiedUserId);
       const coHostUser = coHostSeat ? (coHostSeat.occupiedUser || coHostSeat.user) : null;
@@ -353,13 +468,15 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       const dName = coHostUser.profile?.displayName || coHostUser.displayName || coHostUser.username || 'Co-Host';
       const coHostFrame = resolveUserAvatarFrame(coHostUser);
       const agoraUid = deriveAgoraUid(coHostUser.id);
+      const coHostAvatar = coHostUser.avatarUrl || coHostUser.profile?.avatarUrl || null;
       return {
         id: coHostUser.id,
         userId: coHostUser.id,
         username: coHostUser.username,
         displayName: dName,
         name: dName,
-        avatarUrl: coHostUser.profile?.avatarUrl || coHostUser.avatarUrl || null,
+        avatarUrl: coHostAvatar,
+        avatar: coHostAvatar,
         avatarFrame: coHostFrame,
         equippedFrame: coHostFrame,
         seatIndex: 1,
@@ -367,6 +484,7 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
         isCoHost: true,
         role: 'CO_HOST',
         agoraUid,
+        uid: agoraUid,
         mediaUid: agoraUid,
         hasAudio: true,
         hasVideo: true,
@@ -382,13 +500,15 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
       const dName = coHostUser.profile?.displayName || coHostUser.displayName || coHostUser.username || 'Co-Host';
       const coHostFrame = resolveUserAvatarFrame(coHostUser);
       const agoraUid = deriveAgoraUid(coHostUser.id);
+      const coHostAvatar = coHostUser.avatarUrl || coHostUser.profile?.avatarUrl || null;
       return [{
         id: coHostUser.id,
         userId: coHostUser.id,
         username: coHostUser.username,
         displayName: dName,
         name: dName,
-        avatarUrl: coHostUser.profile?.avatarUrl || coHostUser.avatarUrl || null,
+        avatarUrl: coHostAvatar,
+        avatar: coHostAvatar,
         avatarFrame: coHostFrame,
         equippedFrame: coHostFrame,
         seatIndex: 1,
@@ -396,6 +516,7 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
         isCoHost: true,
         role: 'CO_HOST',
         agoraUid,
+        uid: agoraUid,
         mediaUid: agoraUid,
         hasAudio: true,
         hasVideo: true,
@@ -407,6 +528,8 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     stage: (room.seats || []).map((s) => {
       const u = s.occupiedUser || s.user;
       const isOccupied = Boolean(u && s.occupiedUserId);
+      const stageUid = isOccupied ? deriveAgoraUid(u.id || s.occupiedUserId) : null;
+      const stageAvatar = isOccupied ? (u.avatarUrl || u.profile?.avatarUrl || null) : null;
       return {
         slotIndex: s.seatIndex,
         seatIndex: s.seatIndex,
@@ -416,15 +539,19 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
         user: isOccupied ? {
           id: u.id,
           userId: u.id,
+          agoraUid: stageUid,
+          uid: stageUid,
           username: u.username,
           displayName: u.profile?.displayName || u.displayName || u.username,
           name: u.profile?.displayName || u.displayName || u.username,
-          avatarUrl: u.profile?.avatarUrl || u.avatarUrl || null,
+          avatarUrl: stageAvatar,
+          avatar: stageAvatar,
         } : null,
         isLocked: Boolean(s.isLocked),
         isMuted: Boolean(s.isMuted),
         isCoHost: s.seatIndex === 1 && isOccupied,
-        agoraUid: isOccupied ? deriveAgoraUid(u.id || s.occupiedUserId) : null,
+        agoraUid: stageUid,
+        uid: stageUid,
       };
     }),
     isCoHosting: Boolean((room.seats || []).some((s) => s.seatIndex === 1 && s.occupiedUserId)),
@@ -542,7 +669,14 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     try {
       const pin = data?.pin || data?.password || data?.roomPin;
       const isApproved = Boolean(data?.isApproved);
-      joinResult = await roomService.joinRoom(room.id, userId, { pin, isApproved, attemptId }, db || prisma);
+      const explicit = Boolean(data?.explicit);
+      const isVisitor = data?.isVisitor !== undefined ? Boolean(data.isVisitor) : !explicit;
+      joinResult = await roomService.joinRoom(
+        room.id,
+        userId,
+        { pin, isApproved, attemptId, explicit, isVisitor },
+        db || prisma
+      );
     } catch (joinErr) {
       console.error(`[RoomSocket] Error joining room ${roomId} for user ${userId}:`, joinErr.message || joinErr);
       throw joinErr;
@@ -568,61 +702,97 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
 
     const clientUser = data?.user || {};
     const effectiveJoinedId = userId;
+    const isGuestUser = Boolean(socket.isGuest || String(effectiveJoinedId).startsWith('guest_'));
     const fallbackGuestName = String(effectiveJoinedId).startsWith('guest_')
       ? `User_${String(effectiveJoinedId).replace('guest_', '').substring(0, 5)}`
       : `User_${String(effectiveJoinedId).substring(0, 6)}`;
-    const effectiveJoinedName = clientUser.displayName || clientUser.name || clientUser.username || socket.user?.displayName || socket.user?.name || socket.user?.username || fallbackGuestName;
-    let effectiveJoinedAvatar = clientUser.avatarUrl || socket.user?.avatarUrl || null;
-    const effectiveJoinedVip = Boolean(clientUser.isVip || socket.user?.isVip);
-    const effectiveJoinedNoble = clientUser.nobleTitle || socket.user?.nobleTitle || null;
-    const isGuestUser = Boolean(socket.isGuest || String(effectiveJoinedId).startsWith('guest_'));
 
-    if (!effectiveJoinedAvatar && effectiveJoinedId && !isGuestUser) {
-      try {
-        const uRec = await (db || prisma).user.findUnique({
-          where: { id: effectiveJoinedId },
-          select: { avatarUrl: true },
-        });
-        effectiveJoinedAvatar = uRec?.avatarUrl || null;
-      } catch (_) {}
+    let dbJoinedUser = null;
+    if (!isGuestUser && effectiveJoinedId) {
+      if (socket.user && socket.user.id === effectiveJoinedId && socket.user.username && socket.user.profile) {
+        dbJoinedUser = socket.user;
+      } else {
+        try {
+          const lookupFn = userRepository.findByIdForIdentity || userRepository.findById;
+          dbJoinedUser = await lookupFn(effectiveJoinedId);
+        } catch (_) {}
+      }
     }
+
+    // Authoritative ZeParty user identity takes strict precedence over unverified client fields
+    const effectiveJoinedUsername =
+      dbJoinedUser?.username ||
+      (!isGuestUser ? socket.user?.username : null) ||
+      clientUser.username ||
+      fallbackGuestName;
+    const effectiveJoinedName =
+      dbJoinedUser?.profile?.displayName ||
+      dbJoinedUser?.displayName ||
+      dbJoinedUser?.username ||
+      (!isGuestUser ? (socket.user?.displayName || socket.user?.name || socket.user?.username) : null) ||
+      clientUser.displayName ||
+      clientUser.name ||
+      clientUser.username ||
+      fallbackGuestName;
+    const effectiveJoinedAvatar =
+      dbJoinedUser?.avatarUrl ||
+      dbJoinedUser?.profile?.avatarUrl ||
+      (!isGuestUser ? (socket.user?.avatarUrl || socket.user?.profile?.avatarUrl) : null) ||
+      clientUser.avatarUrl ||
+      null;
+    const effectiveJoinedVip = Boolean(
+      (dbJoinedUser?.profile?.vipLevel ?? 0) > 0 ||
+      (dbJoinedUser?.profile?.svipLevel ?? 0) > 0 ||
+      socket.user?.isVip ||
+      clientUser.isVip
+    );
+    const effectiveJoinedNoble =
+      dbJoinedUser?.profile?.nobleRank ||
+      socket.user?.nobleTitle ||
+      socket.user?.nobleRank ||
+      clientUser.nobleTitle ||
+      null;
+    const joinedAgoraUid = effectiveJoinedId ? deriveAgoraUid(effectiveJoinedId) : null;
 
     // 4. Ephemeral Presence Tracking with rich user metadata
     let isFirstSocket = true;
     try {
       const pres = await presenceService.addSocketToRoom(room.id, effectiveJoinedId, socket.id, {
+        id: effectiveJoinedId,
+        userId: effectiveJoinedId,
+        agoraUid: joinedAgoraUid,
+        uid: joinedAgoraUid,
+        username: effectiveJoinedUsername,
         displayName: effectiveJoinedName,
+        name: effectiveJoinedName,
         avatarUrl: effectiveJoinedAvatar,
+        nobleRank: effectiveJoinedNoble,
+        nobleTitle: effectiveJoinedNoble,
+        vipLevel: dbJoinedUser?.profile?.vipLevel || socket.user?.vipLevel || 0,
+        svipLevel: dbJoinedUser?.profile?.svipLevel || socket.user?.svipLevel || 0,
+        level: dbJoinedUser?.profile?.level || socket.user?.level || 1,
         isGuest: isGuestUser,
         joinedAt: new Date().toISOString(),
       });
       isFirstSocket = pres?.isFirstSocket ?? true;
     } catch (_) {}
 
-    // 5. Generate and Send Authoritative Room Snapshot
-    let currentCount = 0;
-    try {
-      currentCount = await presenceService.getRoomViewerCount(room.id, room.creatorUserId);
-    } catch (_) {
-      currentCount = typeof joinResult?.currentViewersCount === 'number'
-        ? joinResult.currentViewersCount
-        : (typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 1);
-    }
-
-    let activeUsers = [];
-    try {
-      activeUsers = await presenceService.getRoomActiveUsers(room.id);
-    } catch (_) {}
-
-    let feedClearedAt = null;
-    try {
-      feedClearedAt = await presenceService.getRoomFeedClearedAt(room.id);
-    } catch (_) {}
-
-    let recentGifts = [];
+    // 5. Generate and Send Authoritative Room Snapshot (parallelized to minimize DB round-trip latency)
     const sessionStart = room.createdAt ? new Date(room.createdAt) : new Date(0);
-    try {
-      const recentTxs = await (db || prisma).giftTransaction.findMany({
+    const [
+      currentCountResult,
+      activeUsersResult,
+      feedClearedAtResult,
+      recentTxsResult,
+      trophyDataResult,
+      totalLikesResult,
+      activePkBattleResult,
+      stageSnapResult,
+    ] = await Promise.all([
+      presenceService.getRoomViewerCount(room.id, room.creatorUserId).catch(() => null),
+      presenceService.getRoomActiveUsers(room.id).catch(() => []),
+      presenceService.getRoomFeedClearedAt(room.id).catch(() => null),
+      (db || prisma).giftTransaction.findMany({
         where: { roomId: room.id, createdAt: { gte: sessionStart } },
         orderBy: { createdAt: 'desc' },
         take: 20,
@@ -631,50 +801,56 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           sender: { select: { id: true, username: true, avatarUrl: true, profile: { select: { displayName: true } } } },
           recipient: { select: { id: true, username: true, avatarUrl: true, profile: { select: { displayName: true } } } },
         },
-      });
-      recentGifts = recentTxs.reverse().map((tx) => ({
-        id: tx.id,
-        transactionId: tx.id,
-        eventId: `hist_gift_${tx.id}`,
-        isHistorical: true,
-        isLive: false,
-        playbackType: 'HISTORY_ONLY',
-        replayAnimation: false,
-        roomId: room.id,
-        giftId: tx.giftId,
-        giftName: tx.gift?.name || 'Gift',
-        giftIcon: tx.gift?.iconUrl || '🎁',
-        quantity: tx.giftCount,
-        senderUserId: tx.senderUserId,
-        senderName: tx.sender?.profile?.displayName || tx.sender?.username || 'User',
-        senderAvatar: tx.sender?.avatarUrl || '',
-        receiverUserId: tx.recipientUserId,
-        receiverName: tx.recipient?.profile?.displayName || tx.recipient?.username || 'Host',
-        receiverAvatar: tx.recipient?.avatarUrl || '',
-        timestamp: tx.createdAt.toISOString(),
-      }));
-    } catch (_) {}
+      }).catch(() => []),
+      room.roomType === 'AUDIO_PARTY'
+        ? (joinResult?.trophyCoins !== undefined
+            ? Promise.resolve({ trophyCoins: joinResult.trophyCoins })
+            : roomTrophyService.getAuthoritativeRoomTrophy(room.id, {}, db || prisma).catch(() => ({ trophyCoins: 0 })))
+        : Promise.resolve({ trophyCoins: 0 }),
+      joinResult?.totalLikes !== undefined
+        ? Promise.resolve(joinResult.totalLikes)
+        : presenceService.getRoomLikes(room.id).catch(() => 0),
+      pkService.getActiveMatchForRoom(room.id).catch(() => null),
+      stageService.getStageSnapshot(room, db || prisma).catch(() => null),
+    ]);
 
-    // Calculate authoritative daily trophy total for party room header (AUDIO_PARTY only; LIVE_VIDEO is session-isolated)
-    let dailySendingTotal = 0;
-    if (room.roomType === 'AUDIO_PARTY') {
-      const trophyData = await roomTrophyService.getAuthoritativeRoomTrophy(room.id, {}, db || prisma);
-      dailySendingTotal = trophyData.trophyCoins;
-    }
+    const currentCount = typeof currentCountResult === 'number'
+      ? currentCountResult
+      : (typeof joinResult?.currentViewersCount === 'number'
+        ? joinResult.currentViewersCount
+        : (typeof room.currentViewersCount === 'number' ? room.currentViewersCount : 1));
+    const activeUsers = Array.isArray(activeUsersResult) ? activeUsersResult : [];
+    const feedClearedAt = feedClearedAtResult || null;
+    const recentGifts = (Array.isArray(recentTxsResult) ? recentTxsResult : []).slice().reverse().map((tx) => ({
+      id: tx.id,
+      transactionId: tx.id,
+      eventId: `hist_gift_${tx.id}`,
+      isHistorical: true,
+      isLive: false,
+      playbackType: 'HISTORY_ONLY',
+      replayAnimation: false,
+      roomId: room.id,
+      giftId: tx.giftId,
+      giftName: tx.gift?.name || 'Gift',
+      giftIcon: tx.gift?.iconUrl || '🎁',
+      quantity: tx.giftCount,
+      senderUserId: tx.senderUserId,
+      senderName: tx.sender?.profile?.displayName || tx.sender?.username || 'User',
+      senderAvatar: tx.sender?.avatarUrl || '',
+      receiverUserId: tx.recipientUserId,
+      receiverName: tx.recipient?.profile?.displayName || tx.recipient?.username || 'Host',
+      receiverAvatar: tx.recipient?.avatarUrl || '',
+      timestamp: tx.createdAt.toISOString(),
+    }));
+
+    const dailySendingTotal = trophyDataResult?.trophyCoins || 0;
     room.dailySendingTotal = dailySendingTotal;
     room.roomSendingTotal = dailySendingTotal;
     room.periodTotalCoins = dailySendingTotal;
     room.trophyCoins = dailySendingTotal;
 
-    let totalLikes = 0;
-    try {
-      totalLikes = await presenceService.getRoomLikes(room.id);
-    } catch (_) {}
-
-    let activePkBattle = null;
-    try {
-      activePkBattle = await pkService.getActiveMatchForRoom(room.id);
-    } catch (_) {}
+    const totalLikes = totalLikesResult || 0;
+    const activePkBattle = activePkBattleResult || null;
 
     const snapshot = buildRoomSnapshot(room, currentCount, activeUsers);
     snapshot.attemptId = attemptId;
@@ -705,12 +881,11 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       likesCount: totalLikes,
     });
 
-    try {
-      const stageSnap = await stageService.getStageSnapshot(room.id, db || prisma);
-      socket.emit('room:stage_snapshot', stageSnap);
-      socket.emit('stage:snapshot', stageSnap);
-      socket.emit('room:stage_updated', stageSnap);
-    } catch (_) {}
+    if (stageSnapResult) {
+      socket.emit('room:stage_snapshot', stageSnapResult);
+      socket.emit('stage:snapshot', stageSnapResult);
+      socket.emit('room:stage_updated', stageSnapResult);
+    }
 
     // 6. Broadcast user joined event and authoritative viewer count to all room participants
     const targetRoomIds = Array.from(new Set([String(roomId), String(room.id)]));
@@ -750,24 +925,27 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
 
     // Always broadcast user joined on explicit room join
 
-      // Check if user has ROOM_INVISIBLE / stealth_entry enabled and eligible
+      // Resolve stealth entry & room-entry effect in parallel (using preloaded dbJoinedUser to avoid redundant DB queries)
       let isStealthEntry = false;
-      if (!isGuestUser && effectiveJoinedId) {
-        try {
-          const prefs = await privacyEligibilityService.getUserPreferences(effectiveJoinedId, prisma);
-          if (prefs.ROOM_INVISIBLE || prefs.STEALTH_ENTRY) {
-            const eligibility = await privacyEligibilityService.checkUserEligibility(effectiveJoinedId, 'ROOM_INVISIBLE', prisma);
-            if (eligibility.isEligible) {
-              isStealthEntry = true;
-            }
-          }
-        } catch (_) {}
-      }
-
-      // Resolve room-entry effect (e.g. Equipped Car/Ride, or Active Noble Entrance, or Active SVIP Entrance)
       let equippedEntryEffect = null;
-      if (!isGuestUser && effectiveJoinedId && !isStealthEntry) {
-        equippedEntryEffect = await resolveUserRoomEntryEffect(effectiveJoinedId, prisma);
+      if (!isGuestUser && effectiveJoinedId) {
+        const [stealthCheck, resolvedEffect] = await Promise.all([
+          (async () => {
+            try {
+              const prefs = await privacyEligibilityService.getUserPreferences(effectiveJoinedId, prisma);
+              if (prefs.ROOM_INVISIBLE || prefs.STEALTH_ENTRY) {
+                const eligibility = await privacyEligibilityService.checkUserEligibility(effectiveJoinedId, 'ROOM_INVISIBLE', prisma);
+                return Boolean(eligibility.isEligible);
+              }
+            } catch (_) {}
+            return false;
+          })(),
+          resolveUserRoomEntryEffect(effectiveJoinedId, prisma, dbJoinedUser).catch(() => null),
+        ]);
+        isStealthEntry = stealthCheck;
+        if (!isStealthEntry) {
+          equippedEntryEffect = resolvedEffect;
+        }
       }
 
       // Reconnect Debounce Check (10-second cooldown window to prevent animation/audio spam on socket reconnect)
@@ -794,13 +972,13 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         isDebouncedReconnect,
       } : null;
 
-      const joinedAgoraUid = effectiveJoinedId ? deriveAgoraUid(effectiveJoinedId) : null;
-      const joinedFrame = resolveUserAvatarFrame(clientUser) ||
+      const joinedFrame = resolveUserAvatarFrame(dbJoinedUser) ||
         resolveUserAvatarFrame(socket.user) ||
-        clientUser.avatarFrame ||
-        clientUser.equippedFrame ||
+        resolveUserAvatarFrame(clientUser) ||
         socket.user?.avatarFrame ||
         socket.user?.equippedFrame ||
+        clientUser.avatarFrame ||
+        clientUser.equippedFrame ||
         null;
 
       const userPayload = {
@@ -820,10 +998,11 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         user: {
           id: effectiveJoinedId,
           userId: effectiveJoinedId,
-          username: clientUser.username || socket.user?.username || effectiveJoinedName,
+          username: effectiveJoinedUsername,
           name: effectiveJoinedName,
           displayName: effectiveJoinedName,
           avatarUrl: effectiveJoinedAvatar,
+          avatar: effectiveJoinedAvatar,
           avatarFrame: joinedFrame,
           equippedFrame: joinedFrame,
           isVip: effectiveJoinedVip,
@@ -941,15 +1120,18 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     if (userId && !socket.isGuest && !String(userId).startsWith('guest_')) {
       try {
         await presenceService.setUserActiveRoom(userId, room.id);
-        const pres = await presenceService.getUserPresence(userId, db || prisma);
-        if (io) {
-          presenceService.broadcastPresenceChange(io, userId, pres);
-        }
+        presenceService
+          .getUserPresence(userId, db || prisma)
+          .then((pres) => {
+            if (io && pres) presenceService.broadcastPresenceChange(io, userId, pres);
+          })
+          .catch(() => {});
       } catch (_) {}
     }
 
     if (typeof callback === 'function') {
       return callback({
+        ok: true,
         success: true,
         data: snapshot,
         attemptId: attemptId || data?.attemptId,
@@ -1536,11 +1718,20 @@ export async function onRequestActiveRooms(socket, data, callback, db = prisma) 
 export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
   const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
   try {
-    const roomId = data?.roomId;
-    const emoji = (data?.emoji || '').trim();
+    const rawRoomId =
+      data?.roomId ||
+      data?.sessionId ||
+      data?.liveSessionId ||
+      data?.partyRoomId ||
+      data?.channelName ||
+      data?.pkId ||
+      data?.matchId ||
+      socket.currentRoomId;
+    const emojiId = data?.emojiId || data?.emoji || data?.reaction || data?.icon || null;
+    const emoji = (data?.emoji || data?.reaction || data?.icon || data?.emojiId || '').trim();
     const targetUserId = data?.targetUserId || null;
 
-    if (!roomId || !emoji) {
+    if (!rawRoomId || !emoji) {
       const err = {
         success: false,
         error: {
@@ -1552,65 +1743,193 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    // Resolve canonical room ID if short ID was passed
-    let canonicalRoomId = roomId;
-    if (roomId && roomId.length <= 16) {
-      try {
-        const found = await roomRepository.findRoomById(roomId, db || prisma);
-        if (found) {
-          canonicalRoomId = found.id;
-        }
-      } catch (_) {}
+    const senderId = (!socket.isGuest && socket.userId)
+      ? socket.userId
+      : (socket.user?.id || socket.userId || data?.senderId || data?.userId);
+
+    // Resolve canonical room & validate session lifecycle
+    let canonicalRoomId = String(rawRoomId);
+    let room = null;
+    try {
+      room = await (roomRepository.resolveCanonicalRoom
+        ? roomRepository.resolveCanonicalRoom(rawRoomId, { senderUserId: senderId }, db || prisma)
+        : roomRepository.findRoomById(rawRoomId, db || prisma));
+      if (room) {
+        canonicalRoomId = room.id;
+      }
+    } catch (_) {}
+
+    if (room && room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(String(room.status).toUpperCase())) {
+      const err = {
+        success: false,
+        error: {
+          code: SOCKET_ERRORS.ROOM_NOT_LIVE,
+          message: 'Room session has ended or is not active',
+        },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    // Ensure socket is joined to room channel
+    // Ensure sender socket and host socket are subscribed to the canonical room channel
     if (typeof socket.join === 'function') {
-      await socket.join(`room:${roomId}`);
-      if (canonicalRoomId !== roomId) {
+      await socket.join(`room:${rawRoomId}`);
+      if (canonicalRoomId !== rawRoomId) {
         await socket.join(`room:${canonicalRoomId}`);
       }
     }
+    if (io && typeof io.in === 'function' && room?.creatorUserId) {
+      try {
+        io.in(`user:${room.creatorUserId}`).socketsJoin(`room:${canonicalRoomId}`);
+      } catch (_) {}
+    }
+
+    // Authoritative sender identity lookup
+    let dbSender = null;
+    if (senderId && !String(senderId).startsWith('guest_')) {
+      if (socket.user && socket.user.id === senderId && socket.user.username && socket.user.avatarUrl) {
+        dbSender = socket.user;
+      } else {
+        try {
+          dbSender = await userRepository.findById(senderId);
+        } catch (_) {}
+      }
+    }
+
+    const senderAgoraUid = senderId ? deriveAgoraUid(senderId) : null;
+    const senderUsername =
+      dbSender?.username ||
+      (!socket.isGuest ? socket.user?.username : null) ||
+      data?.sender?.username ||
+      `User_${String(senderId || '').replace('guest_', '').substring(0, 5)}`;
+    const senderDisplayName =
+      dbSender?.profile?.displayName ||
+      dbSender?.displayName ||
+      dbSender?.username ||
+      (!socket.isGuest ? (socket.user?.displayName || socket.user?.name || socket.user?.username) : null) ||
+      data?.sender?.displayName ||
+      data?.sender?.name ||
+      senderUsername;
+    const senderAvatarUrl =
+      dbSender?.avatarUrl ||
+      dbSender?.profile?.avatarUrl ||
+      (!socket.isGuest ? (socket.user?.avatarUrl || socket.user?.profile?.avatarUrl) : null) ||
+      data?.sender?.avatarUrl ||
+      null;
+    const senderFrame =
+      resolveUserAvatarFrame(dbSender) ||
+      resolveUserAvatarFrame(socket.user) ||
+      data?.sender?.avatarFrame ||
+      null;
+
+    // Resolve seatId / seatIndex if sender is seated or is the room host
+    const rawSeatCandidate = data?.seatId ?? data?.seatIndex ?? data?.micIndex;
+    let resolvedSeatId =
+      typeof rawSeatCandidate === 'number'
+        ? rawSeatCandidate
+        : (rawSeatCandidate != null && !isNaN(parseInt(rawSeatCandidate, 10))
+          ? parseInt(rawSeatCandidate, 10)
+          : null);
+
+    if (resolvedSeatId === null && room && senderId) {
+      const occupiedSeat = (room.seats || []).find((s) => s.occupiedUserId === senderId);
+      if (occupiedSeat) {
+        resolvedSeatId = occupiedSeat.seatIndex;
+      } else if (room.creatorUserId === senderId) {
+        resolvedSeatId = 0;
+      }
+    }
+
+    const senderIdentity = {
+      id: senderId,
+      userId: senderId,
+      agoraUid: senderAgoraUid,
+      uid: senderAgoraUid,
+      username: senderUsername,
+      displayName: senderDisplayName,
+      name: senderDisplayName,
+      avatarUrl: senderAvatarUrl,
+      avatar: senderAvatarUrl,
+      avatarFrame: senderFrame,
+      equippedFrame: senderFrame,
+      level: dbSender?.profile?.level || socket.user?.level || 1,
+      vipLevel: dbSender?.profile?.vipLevel || socket.user?.vipLevel || 0,
+      svipLevel: dbSender?.profile?.svipLevel || socket.user?.svipLevel || 0,
+      nobleRank: dbSender?.profile?.nobleRank || socket.user?.nobleRank || null,
+      isHost: Boolean(room && room.creatorUserId === senderId),
+    };
 
     const payload = {
       id: `emoji_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       roomId: canonicalRoomId,
-      clientRoomId: roomId,
+      sessionId: canonicalRoomId,
+      clientRoomId: rawRoomId,
+      emojiId: emojiId || emoji,
       emoji,
+      reaction: emoji,
       targetUserId,
-      seatId: typeof data?.seatId === 'number' ? data.seatId : (data?.seatId != null && !isNaN(parseInt(data.seatId, 10)) ? parseInt(data.seatId, 10) : null),
+      seatId: resolvedSeatId,
+      seatIndex: resolvedSeatId,
+      micIndex: resolvedSeatId,
       gameResult: typeof data?.gameResult === 'number' ? data.gameResult : (data?.gameResult != null && !isNaN(parseInt(data.gameResult, 10)) ? parseInt(data.gameResult, 10) : null),
-      sender: {
-        id: socket.user?.id || socket.userId,
-        username: socket.user?.username || 'user',
-        displayName: socket.user?.displayName || socket.user?.username || 'User',
-        avatarUrl: socket.user?.avatarUrl || socket.user?.profile?.avatarUrl || null,
-      },
+      senderId,
+      senderUserId: senderId,
+      userId: senderId,
+      agoraUid: senderAgoraUid,
+      uid: senderAgoraUid,
+      username: senderUsername,
+      displayName: senderDisplayName,
+      name: senderDisplayName,
+      avatarUrl: senderAvatarUrl,
+      avatar: senderAvatarUrl,
+      senderName: senderDisplayName,
+      senderUsername,
+      senderAvatar: senderAvatarUrl,
+      sender: senderIdentity,
+      user: senderIdentity,
       timestamp: new Date().toISOString(),
     };
 
-    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [EMOJI_SEND] socket=${socket.id} emoji=${emoji} room=${canonicalRoomId}`);
-    // Broadcast to ALL room members across both canonical and client room channels
-    const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
+    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [EMOJI_SEND] socket=${socket.id} sender=${senderId} emoji=${emoji} room=${canonicalRoomId}`);
+    const targetRoomIds = new Set([String(rawRoomId), String(canonicalRoomId)]);
+
+    // If this room is in an active PK match and reaction was sent during PK, also deliver to paired PK room
+    try {
+      const activePk = await pkService.getActiveMatchForRoom(canonicalRoomId);
+      if (activePk && activePk.status === 'ACTIVE') {
+        if (activePk.roomAId) targetRoomIds.add(String(activePk.roomAId));
+        if (activePk.roomBId) targetRoomIds.add(String(activePk.roomBId));
+        if (activePk.id) targetRoomIds.add(String(activePk.id));
+        payload.pkMatchId = activePk.id;
+      }
+    } catch (_) {}
+
     for (const r of targetRoomIds) {
       if (io) {
         io.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
         io.to(`room:${r}`).emit('room:emoji_received', payload);
         io.to(`room:${r}`).emit('room:emoji', payload);
         io.to(`room:${r}`).emit('emoji_received', payload);
+        io.to(`room:${r}`).emit('room:reaction', payload);
       } else if (socket.to) {
         socket.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
+        socket.to(`room:${r}`).emit('room:emoji', payload);
       }
     }
 
     if (socket && typeof socket.emit === 'function') {
-      socket.emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
-      socket.emit('room:emoji_received', payload);
-      socket.emit('room:emoji', payload);
-      socket.emit('emoji_received', payload);
+      const socketInRoom = socket.rooms && typeof socket.rooms.has === 'function' &&
+        (socket.rooms.has(`room:${canonicalRoomId}`) || socket.rooms.has(`room:${rawRoomId}`));
+      if (!io || !socketInRoom) {
+        socket.emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
+        socket.emit('room:emoji_received', payload);
+        socket.emit('room:emoji', payload);
+        socket.emit('emoji_received', payload);
+      }
     }
 
     if (typeof callback === 'function') {
-      return callback({ success: true, data: payload });
+      return callback({ ok: true, success: true, data: payload });
     }
   } catch (err) {
     const errorResponse = {
@@ -1628,10 +1947,18 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
 export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
   const { io, socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
   try {
-    const roomId = data?.roomId;
-    const text = (data?.text || '').trim();
+    const rawRoomId =
+      data?.roomId ||
+      data?.sessionId ||
+      data?.liveSessionId ||
+      data?.partyRoomId ||
+      data?.channelName ||
+      data?.pkId ||
+      data?.matchId ||
+      socket.currentRoomId;
+    const text = (data?.text || data?.message || data?.content || data?.comment || '').trim();
 
-    if (!roomId || !text) {
+    if (!rawRoomId || !text) {
       const err = {
         success: false,
         error: {
@@ -1643,119 +1970,249 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
       return socket.emit(SOCKET_EVENTS.ERROR, err);
     }
 
-    // Resolve canonical room ID if short ID was passed
-    let canonicalRoomId = roomId;
-    if (roomId && roomId.length <= 16) {
+    const clientSender = data?.sender || data?.user || {};
+    // Authoritative sender ID: authenticated socket user always takes precedence over client payload
+    const senderId = (!socket.isGuest && socket.userId)
+      ? socket.userId
+      : (socket.user?.id || socket.userId || clientSender.id || clientSender.userId);
+
+    // Resolve canonical room ID and check room lifecycle & moderation
+    let canonicalRoomId = String(rawRoomId);
+    let room = null;
+    try {
+      room = await (roomRepository.resolveCanonicalRoom
+        ? roomRepository.resolveCanonicalRoom(rawRoomId, { senderUserId: senderId }, db || prisma)
+        : roomRepository.findRoomById(rawRoomId, db || prisma));
+      if (room) {
+        canonicalRoomId = room.id;
+      }
+    } catch (_) {}
+
+    if (room && room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(String(room.status).toUpperCase())) {
+      const err = {
+        success: false,
+        error: {
+          code: SOCKET_ERRORS.ROOM_NOT_LIVE,
+          message: 'Room session has ended or is not active',
+        },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    // Check active chat mute or kick moderation in this room
+    if (canonicalRoomId && senderId && !String(senderId).startsWith('guest_')) {
       try {
-        const found = await roomRepository.findRoomById(roomId, db || prisma);
-        if (found) {
-          canonicalRoomId = found.id;
+        const activeMod = await (db || prisma).roomModeration?.findFirst?.({
+          where: {
+            roomId: canonicalRoomId,
+            targetUserId: String(senderId),
+            actionType: { in: ['KICK', 'MUTE_MIC', 'BAN_ROOM'] },
+          },
+        });
+        if (activeMod) {
+          const err = {
+            success: false,
+            error: {
+              code: activeMod.actionType === 'KICK' || activeMod.actionType === 'BAN_ROOM' ? 'ROOM_KICKED' : 'CHAT_MUTED',
+              message: activeMod.actionType === 'KICK' || activeMod.actionType === 'BAN_ROOM'
+                ? 'You have been removed from this room session'
+                : 'You are muted from chatting in this room',
+            },
+          };
+          if (typeof callback === 'function') return callback(err);
+          return socket.emit(SOCKET_EVENTS.ERROR, err);
         }
       } catch (_) {}
     }
 
-    // Ensure socket is joined to room channel
+    // Ensure sender socket and host socket are joined to canonical room channel
     if (typeof socket.join === 'function') {
-      await socket.join(`room:${roomId}`);
-      if (canonicalRoomId !== roomId) {
+      await socket.join(`room:${rawRoomId}`);
+      if (canonicalRoomId !== rawRoomId) {
         await socket.join(`room:${canonicalRoomId}`);
       }
     }
-
-    const clientSender = data?.sender || data?.user || {};
-    const senderId = clientSender.id || clientSender.userId || socket.user?.id || socket.userId;
-    let senderName = clientSender.displayName || clientSender.name || clientSender.username || socket.user?.displayName || socket.user?.name || socket.user?.username;
-    let senderAvatar = clientSender.avatarUrl || socket.user?.avatarUrl;
-    let senderVip = Boolean(clientSender.isVip || socket.user?.isVip);
-    let senderNoble = clientSender.nobleTitle || clientSender.nobleLevel || socket.user?.nobleTitle || socket.user?.nobleLevel;
-    let senderRole = clientSender.role || socket.user?.role;
-    let senderFrame = resolveUserAvatarFrame(clientSender) ||
-      resolveUserAvatarFrame(socket.user) ||
-      clientSender.avatarFrame ||
-      clientSender.frameUrl ||
-      socket.user?.avatarFrame ||
-      null;
-    let senderBubble = clientSender.chatBubble || clientSender.bubbleUrl || socket.user?.chatBubble;
-
-    if (!senderName || senderName === 'User' || senderName === 'ZeParty Member' || senderName.startsWith('guest_')) {
+    if (io && typeof io.in === 'function' && room?.creatorUserId) {
       try {
-        if (senderId && !String(senderId).startsWith('guest_')) {
-          const dbUser = await userRepository.findById(senderId);
-          if (dbUser) {
-            senderName = dbUser.profile?.displayName || dbUser.name || dbUser.username || senderName;
-            senderAvatar = dbUser.profile?.avatarUrl || dbUser.avatarUrl || senderAvatar;
-            senderVip = Boolean(dbUser.profile?.vipLevel > 0 || dbUser.profile?.svipLevel > 0);
-            senderNoble = dbUser.profile?.nobleRank || senderNoble;
-            senderRole = dbUser.userType || senderRole;
-            if (!senderFrame) {
-              senderFrame = resolveUserAvatarFrame(dbUser);
-            }
-          }
-        }
+        io.in(`user:${room.creatorUserId}`).socketsJoin(`room:${canonicalRoomId}`);
       } catch (_) {}
     }
 
-    if (!senderName || senderName === 'ZeParty Member') {
+    // Resolve authoritative user identity from PostgreSQL database / verified socket.user
+    let dbUser = null;
+    if (senderId && !String(senderId).startsWith('guest_')) {
+      if (socket.user && socket.user.id === senderId && socket.user.username && socket.user.profile) {
+        dbUser = socket.user;
+      } else {
+        try {
+          const lookupFn = userRepository.findByIdForIdentity || userRepository.findById;
+          dbUser = await lookupFn(senderId);
+        } catch (_) {}
+      }
+    }
+
+    const isHostSender = Boolean(room && room.creatorUserId === senderId);
+    const senderAgoraUid = senderId ? deriveAgoraUid(senderId) : null;
+    const senderUsername =
+      dbUser?.username ||
+      (!socket.isGuest ? socket.user?.username : null) ||
+      clientSender.username ||
+      `User_${String(senderId).replace('guest_', '').substring(0, 5)}`;
+
+    let senderName =
+      dbUser?.profile?.displayName ||
+      dbUser?.displayName ||
+      dbUser?.name ||
+      dbUser?.username ||
+      (!socket.isGuest ? (socket.user?.displayName || socket.user?.name || socket.user?.username) : null) ||
+      clientSender.displayName ||
+      clientSender.name ||
+      clientSender.username;
+
+    if (!senderName || senderName === 'ZeParty Member' || senderName.startsWith('guest_')) {
       senderName = `User_${String(senderId).replace('guest_', '').substring(0, 5)}`;
     }
 
-    const senderNobleStyle = getNobleStyle(senderNoble);
+    const senderAvatar =
+      dbUser?.avatarUrl ||
+      dbUser?.profile?.avatarUrl ||
+      (!socket.isGuest ? (socket.user?.avatarUrl || socket.user?.profile?.avatarUrl) : null) ||
+      clientSender.avatarUrl ||
+      null;
 
+    const senderVip = Boolean(
+      (dbUser?.profile?.vipLevel ?? 0) > 0 ||
+      (dbUser?.profile?.svipLevel ?? 0) > 0 ||
+      socket.user?.isVip ||
+      clientSender.isVip
+    );
+    const senderNoble =
+      dbUser?.profile?.nobleRank ||
+      socket.user?.nobleTitle ||
+      socket.user?.nobleLevel ||
+      clientSender.nobleTitle ||
+      clientSender.nobleLevel ||
+      null;
+    const senderRole = isHostSender
+      ? 'HOST'
+      : (dbUser?.userType || socket.user?.role || clientSender.role || 'USER');
+    const senderFrame =
+      resolveUserAvatarFrame(dbUser) ||
+      resolveUserAvatarFrame(socket.user) ||
+      resolveUserAvatarFrame(clientSender) ||
+      socket.user?.avatarFrame ||
+      clientSender.avatarFrame ||
+      clientSender.frameUrl ||
+      null;
+    const senderBubble =
+      socket.user?.chatBubble ||
+      clientSender.chatBubble ||
+      clientSender.bubbleUrl ||
+      null;
+
+    const senderNobleStyle = getNobleStyle(senderNoble);
+    const senderIdentity = {
+      id: senderId,
+      userId: senderId,
+      agoraUid: senderAgoraUid,
+      uid: senderAgoraUid,
+      username: senderUsername,
+      name: senderName || 'User',
+      displayName: senderName || 'User',
+      avatarUrl: senderAvatar || null,
+      avatar: senderAvatar || null,
+      avatarFrame: senderFrame || null,
+      equippedFrame: senderFrame || null,
+      chatBubble: senderBubble || null,
+      level: dbUser?.profile?.level || socket.user?.level || 1,
+      vipLevel: dbUser?.profile?.vipLevel || socket.user?.vipLevel || 0,
+      svipLevel: dbUser?.profile?.svipLevel || socket.user?.svipLevel || 0,
+      isVip: senderVip,
+      isHost: isHostSender,
+      nobleLevel: senderNoble || null,
+      nobleTitle: senderNoble || null,
+      nobleRank: senderNoble || null,
+      nobleColor: senderNobleStyle?.color || null,
+      nobleStyle: senderNobleStyle,
+      role: senderRole || null,
+    };
+
+    const cleanText = text.substring(0, 500);
     const payload = {
       id: data?.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       clientMessageId: data?.clientMessageId || data?.clientMsgId || null,
       roomId: canonicalRoomId,
-      clientRoomId: roomId,
+      sessionId: canonicalRoomId,
+      clientRoomId: rawRoomId,
       senderUserId: senderId,
-      sender: {
-        id: senderId,
-        userId: senderId,
-        username: clientSender.username || socket.user?.username || senderName,
-        name: senderName || 'User',
-        displayName: senderName || 'User',
-        avatarUrl: senderAvatar || null,
-        avatarFrame: senderFrame || null,
-        equippedFrame: senderFrame || null,
-        chatBubble: senderBubble || null,
-        isVip: senderVip,
-        nobleLevel: senderNoble || null,
-        nobleTitle: senderNoble || null,
-        nobleRank: senderNoble || null,
-        nobleColor: senderNobleStyle?.color || null,
-        nobleStyle: senderNobleStyle,
-        role: senderRole || null,
-      },
+      senderId,
+      userId: senderId,
+      agoraUid: senderAgoraUid,
+      uid: senderAgoraUid,
+      username: senderUsername,
+      displayName: senderName || 'User',
+      name: senderName || 'User',
+      avatarUrl: senderAvatar || null,
+      avatar: senderAvatar || null,
+      senderName: senderName || 'User',
+      senderUsername,
+      senderAvatar: senderAvatar || null,
+      sender: senderIdentity,
+      user: senderIdentity,
       avatarFrame: senderFrame || null,
       equippedFrame: senderFrame || null,
-      text: text.substring(0, 500),
+      text: cleanText,
+      message: cleanText,
+      comment: cleanText,
+      content: cleanText,
       timestamp: new Date().toISOString(),
       type: data?.type || 'text',
     };
 
     console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [CHAT_SEND] socket=${socket.id} sender=${senderId} room=${canonicalRoomId} msgId=${payload.id} ${describeRoomChannel(socket, canonicalRoomId)}`);
-    const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
+    const targetRoomIds = new Set([String(rawRoomId), String(canonicalRoomId)]);
+
+    // If this comment was sent in an active PK match, broadcast to both PK sides so all PK participants see it
+    try {
+      const activePk = await pkService.getActiveMatchForRoom(canonicalRoomId);
+      if (activePk && activePk.status === 'ACTIVE') {
+        if (activePk.roomAId) targetRoomIds.add(String(activePk.roomAId));
+        if (activePk.roomBId) targetRoomIds.add(String(activePk.roomBId));
+        if (activePk.id) targetRoomIds.add(String(activePk.id));
+        payload.pkMatchId = activePk.id;
+      }
+    } catch (_) {}
+
     for (const r of targetRoomIds) {
       if (io) {
         io.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
         io.to(`room:${r}`).emit('room:chat_message', payload);
         io.to(`room:${r}`).emit('room_chat_message', payload);
         io.to(`room:${r}`).emit('chat_message', payload);
+        io.to(`room:${r}`).emit('room:chat', payload);
         io.to(`room:${r}`).emit('room:comment', payload);
       } else if (socket.to) {
         socket.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
+        socket.to(`room:${r}`).emit('room:chat_message', payload);
+        socket.to(`room:${r}`).emit('room:chat', payload);
       }
     }
 
     if (socket && typeof socket.emit === 'function') {
-      socket.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
-      socket.emit('room:chat_message', payload);
-      socket.emit('room_chat_message', payload);
-      socket.emit('chat_message', payload);
-      socket.emit('room:comment', payload);
+      const socketInRoom = socket.rooms && typeof socket.rooms.has === 'function' &&
+        (socket.rooms.has(`room:${canonicalRoomId}`) || socket.rooms.has(`room:${rawRoomId}`));
+      if (!io || !socketInRoom) {
+        socket.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
+        socket.emit('room:chat_message', payload);
+        socket.emit('room_chat_message', payload);
+        socket.emit('chat_message', payload);
+        socket.emit('room:comment', payload);
+      }
     }
 
     if (typeof callback === 'function') {
-      return callback({ success: true, data: payload });
+      return callback({ ok: true, success: true, data: payload });
     }
   } catch (err) {
     const errorResponse = {
@@ -2091,7 +2548,7 @@ export async function onSendRoomLike(arg1, arg2, arg3, arg4, arg5) {
     broadcastTarget.emit('like_sent', payload);
 
     if (typeof callback === 'function') {
-      return callback({ success: true, data: payload });
+      return callback({ ok: true, success: true, data: payload });
     }
   } catch (err) {
     const errorResponse = {
@@ -2295,6 +2752,34 @@ export function registerRoomHandlers(io, socket) {
     'send_room_chat',
     withRateLimit('ROOM_CHAT', 60, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
   );
+  socket.on(
+    'room:comment',
+    withRateLimit('ROOM_CHAT', 60, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
+  );
+  socket.on(
+    'room:comment_send',
+    withRateLimit('ROOM_CHAT', 60, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
+  );
+  socket.on(
+    'chat:send',
+    withRateLimit('ROOM_CHAT', 60, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
+  );
+  socket.on(
+    'room:chat',
+    withRateLimit('ROOM_CHAT', 60, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
+  );
+  socket.on(
+    'room_chat',
+    withRateLimit('ROOM_CHAT', 60, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
+  );
+  socket.on(
+    'send_chat',
+    withRateLimit('ROOM_CHAT', 60, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
+  );
+  socket.on(
+    'comment:send',
+    withRateLimit('ROOM_CHAT', 60, 1000, (s, d, cb) => onSendRoomChat(io, s, d, cb))
+  );
 
   socket.on(
     SOCKET_EVENTS.ROOM_EMOJI_SEND,
@@ -2303,6 +2788,32 @@ export function registerRoomHandlers(io, socket) {
   socket.on(
     'room_emoji_send',
     withRateLimit('ROOM_EMOJI', 60, 1000, (s, d, cb) => onSendRoomEmoji(io, s, d, cb))
+  );
+  socket.on(
+    'send_room_emoji',
+    withRateLimit('ROOM_EMOJI', 60, 1000, (s, d, cb) => onSendRoomEmoji(io, s, d, cb))
+  );
+  socket.on(
+    'room:emoji',
+    withRateLimit('ROOM_EMOJI', 60, 1000, (s, d, cb) => onSendRoomEmoji(io, s, d, cb))
+  );
+  socket.on(
+    'room:reaction',
+    withRateLimit('ROOM_EMOJI', 60, 1000, (s, d, cb) => onSendRoomEmoji(io, s, d, cb))
+  );
+  socket.on(
+    'room:reaction_send',
+    withRateLimit('ROOM_EMOJI', 60, 1000, (s, d, cb) => onSendRoomEmoji(io, s, d, cb))
+  );
+
+  // Authoritative Agora UID / User Identity Resolution
+  socket.on(
+    'room:resolve_identity',
+    withRateLimit('ROOM_IDENTITY', 30, 1000, (s, d, cb) => onResolveIdentity(io, s, d, cb))
+  );
+  socket.on(
+    'agora:resolve_uid',
+    withRateLimit('ROOM_IDENTITY', 30, 1000, (s, d, cb) => onResolveIdentity(io, s, d, cb))
   );
 
   // Real-time Room Likes
@@ -2931,6 +3442,47 @@ export async function onStageCameraToggle(io, socket, data, callback) {
   }
 }
 
+export async function onResolveIdentity(arg1, arg2, arg3, arg4, arg5) {
+  const { socket, data, callback, db } = resolveArgs(arg1, arg2, arg3, arg4, arg5);
+  try {
+    const roomId = data?.roomId || data?.sessionId || data?.liveSessionId || socket.currentRoomId;
+    const requestedAgoraUid = data?.agoraUid ?? data?.uid ?? null;
+    const requestedUserId = data?.userId || data?.id || null;
+
+    if (roomId) {
+      const result = await roomService.getRoomIdentities(roomId, {
+        agoraUid: requestedAgoraUid,
+        userId: requestedUserId,
+      }, db || prisma);
+
+      socket.emit('room:identity_resolved', result);
+      if (typeof callback === 'function') {
+        return callback({ ok: true, success: true, data: result });
+      }
+      return;
+    }
+
+    if (requestedUserId) {
+      const u = await userRepository.findById(String(requestedUserId));
+      const identity = formatAuthoritativeUserIdentity(u);
+      const res = { identity, agoraUidMap: identity ? { [String(identity.agoraUid)]: identity } : {} };
+      socket.emit('room:identity_resolved', res);
+      if (typeof callback === 'function') {
+        return callback({ ok: true, success: true, data: res });
+      }
+      return;
+    }
+
+    const err = { success: false, error: { code: SOCKET_ERRORS.VALIDATION_ERROR, message: 'roomId, userId, or agoraUid is required' } };
+    if (typeof callback === 'function') return callback(err);
+    return socket.emit(SOCKET_EVENTS.ERROR, err);
+  } catch (err) {
+    const errPayload = { success: false, error: { code: err.code || SOCKET_ERRORS.INTERNAL_ERROR, message: err.message || 'Failed to resolve identity' } };
+    if (typeof callback === 'function') return callback(errPayload);
+    return socket.emit(SOCKET_EVENTS.ERROR, errPayload);
+  }
+}
+
 export default {
   buildRoomSnapshot,
   onJoinRoom,
@@ -2958,5 +3510,6 @@ export default {
   onGetStageSnapshot,
   onStageMicToggle,
   onStageCameraToggle,
+  onResolveIdentity,
   registerRoomHandlers,
 };

@@ -183,12 +183,31 @@ export function LiveRoomsPage() {
       key: 'host',
       header: 'Host / Owner',
       render: (row) => (
-        <div>
-          <p className="text-sm text-white font-semibold">{row.hostName}</p>
-          <p className="text-xs text-slate-400">@{row.hostUsername}</p>
-          {row.ownerId && (
-            <p className="text-[10px] text-slate-500 font-mono">Owner: {row.ownerId}</p>
+        <div className="flex items-center gap-2.5">
+          {row.hostAvatar ? (
+            <img
+              src={row.hostAvatar}
+              alt={row.hostName}
+              className="w-8 h-8 rounded-full object-cover border border-slate-700 shrink-0"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-xs font-bold text-indigo-300 shrink-0">
+              {(row.hostName || 'H').charAt(0).toUpperCase()}
+            </div>
           )}
+          <div>
+            <p className="text-sm text-white font-semibold">{row.hostName}</p>
+            <p className="text-xs text-slate-400">@{row.hostUsername}</p>
+            {row.ownerId && (
+              <p className="text-[10px] text-slate-500 font-mono">
+                ID: {row.ownerId}
+                {row.agoraHostUid ? ` • Agora UID: ${row.agoraHostUid}` : ''}
+              </p>
+            )}
+          </div>
         </div>
       ),
     },

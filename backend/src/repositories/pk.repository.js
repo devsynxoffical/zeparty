@@ -956,11 +956,19 @@ export class PKRepository {
 
       return items.map((item, idx) => {
         const u = users.find((user) => user.id === item.userId);
+        const supporterAgoraUid = item.userId ? deriveAgoraUid(item.userId) : null;
+        const supporterDisplayName = u?.profile?.displayName || u?.username || 'Supporter';
+        const supporterAvatar = u?.avatarUrl || u?.profile?.avatarUrl || '';
         return {
           rank: idx + 1,
+          id: item.userId,
           userId: item.userId,
-          displayName: u?.profile?.displayName || u?.username || 'Supporter',
-          avatarUrl: u?.avatarUrl || '',
+          agoraUid: supporterAgoraUid,
+          uid: supporterAgoraUid,
+          username: u?.username || supporterDisplayName,
+          displayName: supporterDisplayName,
+          name: supporterDisplayName,
+          avatarUrl: supporterAvatar,
           totalCoins: Number(item.totalCoins),
         };
       });
@@ -1032,9 +1040,75 @@ export class PKRepository {
 
     const frameA = resolveUserAvatarFrame(match.hostA);
     const frameB = resolveUserAvatarFrame(match.hostB);
+    const hostAUid = match.hostAUserId ? deriveAgoraUid(match.hostAUserId) : null;
+    const hostBUid = match.hostBUserId ? deriveAgoraUid(match.hostBUserId) : null;
+    const hostAAvatar = match.hostA?.avatarUrl || match.hostA?.profile?.avatarUrl || '';
+    const hostBAvatar = match.hostB?.avatarUrl || match.hostB?.profile?.avatarUrl || '';
+    const hostADisplayName = match.hostA?.profile?.displayName || match.hostA?.username || 'Host Blue';
+    const hostBDisplayName = match.hostB?.profile?.displayName || match.hostB?.username || 'Host Red';
+
+    const sideA = {
+      id: match.hostAUserId,
+      userId: match.hostAUserId,
+      roomId: match.roomAId,
+      roomTitle: match.roomA?.title || '',
+      hostId: match.hostAUserId,
+      agoraUid: hostAUid,
+      uid: hostAUid,
+      username: match.hostA?.username || hostADisplayName,
+      displayName: hostADisplayName,
+      name: hostADisplayName,
+      avatarUrl: hostAAvatar,
+      avatar: hostAAvatar,
+      avatarFrame: frameA,
+      equippedFrame: frameA,
+      level: match.hostA?.profile?.level || 1,
+      vipLevel: match.hostA?.profile?.vipLevel || 0,
+      svipLevel: match.hostA?.profile?.svipLevel || 0,
+      nobleRank: match.hostA?.profile?.nobleRank || null,
+      score: match.scoreA.toString(),
+      connectionStatus: match.hostAConnectionStatus,
+      ready: match.readyA,
+      mediaPrepared: match.mediaPreparedA,
+    };
+
+    const sideB = {
+      id: match.hostBUserId,
+      userId: match.hostBUserId,
+      roomId: match.roomBId,
+      roomTitle: match.roomB?.title || '',
+      hostId: match.hostBUserId,
+      agoraUid: hostBUid,
+      uid: hostBUid,
+      username: match.hostB?.username || hostBDisplayName,
+      displayName: hostBDisplayName,
+      name: hostBDisplayName,
+      avatarUrl: hostBAvatar,
+      avatar: hostBAvatar,
+      avatarFrame: frameB,
+      equippedFrame: frameB,
+      level: match.hostB?.profile?.level || 1,
+      vipLevel: match.hostB?.profile?.vipLevel || 0,
+      svipLevel: match.hostB?.profile?.svipLevel || 0,
+      nobleRank: match.hostB?.profile?.nobleRank || null,
+      score: match.scoreB.toString(),
+      connectionStatus: match.hostBConnectionStatus,
+      ready: match.readyB,
+      mediaPrepared: match.mediaPreparedB,
+    };
+
+    const agoraUidMap = {};
+    if (hostAUid) {
+      agoraUidMap[String(hostAUid)] = { ...sideA, role: 'PK_HOST_A', isHost: true };
+    }
+    if (hostBUid) {
+      agoraUidMap[String(hostBUid)] = { ...sideB, role: 'PK_HOST_B', isHost: true };
+    }
 
     return {
       id: match.id,
+      matchId: match.id,
+      pkId: match.id,
       status: match.status,
       stateVersion: match.stateVersion,
       roomType: match.roomType,
@@ -1048,40 +1122,21 @@ export class PKRepository {
       winnerHostId: match.winnerHostId,
       isDraw: match.isDraw,
       endReason: match.endReason,
-      sideA: {
-        roomId: match.roomAId,
-        roomTitle: match.roomA?.title || '',
-        hostId: match.hostAUserId,
-        displayName: match.hostA?.profile?.displayName || match.hostA?.username || 'Host Blue',
-        avatarUrl: match.hostA?.avatarUrl || '',
-        avatarFrame: frameA,
-        equippedFrame: frameA,
-        score: match.scoreA.toString(),
-        connectionStatus: match.hostAConnectionStatus,
-        ready: match.readyA,
-        mediaPrepared: match.mediaPreparedA,
-      },
-      sideB: {
-        roomId: match.roomBId,
-        roomTitle: match.roomB?.title || '',
-        hostId: match.hostBUserId,
-        displayName: match.hostB?.profile?.displayName || match.hostB?.username || 'Host Red',
-        avatarUrl: match.hostB?.avatarUrl || '',
-        avatarFrame: frameB,
-        equippedFrame: frameB,
-        score: match.scoreB.toString(),
-        connectionStatus: match.hostBConnectionStatus,
-        ready: match.readyB,
-        mediaPrepared: match.mediaPreparedB,
-      },
+      roomAId: match.roomAId,
+      roomBId: match.roomBId,
+      hostAUserId: match.hostAUserId,
+      hostBUserId: match.hostBUserId,
+      sideA,
+      sideB,
       topSupportersA: sideASupporters,
       topSupportersB: sideBSupporters,
       agoraRelay: {
         channelA: match.roomA?.agoraChannelName || match.roomAId,
         channelB: match.roomB?.agoraChannelName || match.roomBId,
-        hostAUid: deriveAgoraUid(match.hostAUserId),
-        hostBUid: deriveAgoraUid(match.hostBUserId),
+        hostAUid,
+        hostBUid,
       },
+      agoraUidMap,
       createdAt: match.createdAt.toISOString(),
     };
   }

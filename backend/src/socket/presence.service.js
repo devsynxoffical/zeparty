@@ -635,14 +635,22 @@ export async function addSocketToRoom(roomId, userId, socketId, userInfo = null)
 
       if (userInfo) {
         await redisClient.set(infoKey, JSON.stringify({
+          id: userId,
           userId,
+          agoraUid: userInfo.agoraUid || userInfo.uid || null,
+          uid: userInfo.uid || userInfo.agoraUid || null,
+          username: userInfo.username || userInfo.displayName || userInfo.name || `User_${String(userId).substring(0, 6)}`,
           displayName: userInfo.displayName || userInfo.name || `User_${String(userId).substring(0, 6)}`,
+          name: userInfo.displayName || userInfo.name || `User_${String(userId).substring(0, 6)}`,
           avatarUrl: userInfo.avatarUrl || null,
+          avatarFrame: userInfo.avatarFrame || null,
           isGuest: Boolean(userInfo.isGuest || String(userId).startsWith('guest_')),
           joinedAt: userInfo.joinedAt || new Date().toISOString(),
           nobleRank: userInfo.nobleRank || userInfo.nobleTitle || null,
           nobleTitle: userInfo.nobleRank || userInfo.nobleTitle || null,
+          vipLevel: userInfo.vipLevel || 0,
           svipLevel: userInfo.svipLevel || 0,
+          level: userInfo.level || 1,
         }), { EX: 86400 });
       }
 
@@ -668,14 +676,27 @@ export async function addSocketToRoom(roomId, userId, socketId, userInfo = null)
     userMap.set(userId, {
       sockets: new Set(),
       userInfo: userInfo ? {
+        id: userId,
         userId,
+        agoraUid: userInfo.agoraUid || userInfo.uid || null,
+        uid: userInfo.uid || userInfo.agoraUid || null,
+        username: userInfo.username || userInfo.displayName || userInfo.name || `User_${String(userId).substring(0, 6)}`,
         displayName: userInfo.displayName || userInfo.name || `User_${String(userId).substring(0, 6)}`,
+        name: userInfo.displayName || userInfo.name || `User_${String(userId).substring(0, 6)}`,
         avatarUrl: userInfo.avatarUrl || null,
+        avatarFrame: userInfo.avatarFrame || null,
+        nobleRank: userInfo.nobleRank || userInfo.nobleTitle || null,
+        nobleTitle: userInfo.nobleRank || userInfo.nobleTitle || null,
+        vipLevel: userInfo.vipLevel || 0,
+        svipLevel: userInfo.svipLevel || 0,
+        level: userInfo.level || 1,
         isGuest: Boolean(userInfo.isGuest || String(userId).startsWith('guest_')),
         joinedAt: userInfo.joinedAt || new Date().toISOString(),
       } : {
+        id: userId,
         userId,
         displayName: `User_${String(userId).substring(0, 6)}`,
+        name: `User_${String(userId).substring(0, 6)}`,
         avatarUrl: null,
         isGuest: Boolean(String(userId).startsWith('guest_')),
         joinedAt: new Date().toISOString(),

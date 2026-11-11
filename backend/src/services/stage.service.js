@@ -80,8 +80,11 @@ export async function setParticipantCameraState(roomId, userId, isCameraOn) {
  * Generates the authoritative stage snapshot for a room session.
  * Guaranteed to return consistent state across owner, co-host, and audience viewers.
  */
-export async function getStageSnapshot(roomId, db = prisma) {
-  const room = await roomRepository.findRoomById(roomId, db);
+export async function getStageSnapshot(roomIdOrRoom, db = prisma) {
+  const room =
+    roomIdOrRoom && typeof roomIdOrRoom === 'object' && roomIdOrRoom.id
+      ? roomIdOrRoom
+      : await roomRepository.findRoomById(roomIdOrRoom, db);
   if (!room) {
     const error = new Error('Room not found');
     error.statusCode = 404;
@@ -199,41 +202,59 @@ export async function getStageSnapshot(roomId, db = prisma) {
           occupantUser = {
             id: hostUserId,
             userId: hostUserId,
+            agoraUid: hostAgoraUid,
+            uid: hostAgoraUid,
             username: hostUser?.username || 'host',
             displayName: hostDisplayName,
             name: hostDisplayName,
             avatarUrl: hostAvatar,
+            avatar: hostAvatar,
             level: hostUser?.profile?.level || 1,
             vipLevel: hostUser?.profile?.vipLevel || 0,
+            svipLevel: hostUser?.profile?.svipLevel || 0,
+            nobleRank: hostUser?.profile?.nobleRank || null,
           };
         } else if (isSeatCoHost && coHostPayload && occupantId === coHostPayload.id) {
+          const coHostUid = coHostPayload.agoraUid || deriveAgoraUid(coHostPayload.id);
           occupantUser = {
             id: coHostPayload.id,
             userId: coHostPayload.id,
+            agoraUid: coHostUid,
+            uid: coHostUid,
             username: coHostPayload.username,
             displayName: coHostPayload.displayName,
             name: coHostPayload.name,
             avatarUrl: coHostPayload.avatarUrl,
+            avatar: coHostPayload.avatarUrl,
             level: s.occupiedUser?.profile?.level || 1,
             vipLevel: s.occupiedUser?.profile?.vipLevel || 0,
+            svipLevel: s.occupiedUser?.profile?.svipLevel || 0,
+            nobleRank: s.occupiedUser?.profile?.nobleRank || null,
           };
         } else if (s.occupiedUser) {
           const u = s.occupiedUser;
           const dName = u.profile?.displayName || u.displayName || u.username || 'Speaker';
+          const uAgoraUid = deriveAgoraUid(u.id);
           occupantUser = {
             id: u.id,
             userId: u.id,
+            agoraUid: uAgoraUid,
+            uid: uAgoraUid,
             username: u.username,
             displayName: dName,
             name: dName,
             avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
+            avatar: u.avatarUrl || u.profile?.avatarUrl || null,
             level: u.profile?.level || 1,
             vipLevel: u.profile?.vipLevel || 0,
+            svipLevel: u.profile?.svipLevel || 0,
+            nobleRank: u.profile?.nobleRank || null,
           };
         }
       }
 
       const role = isSeatHost ? 'HOST' : (isSeatCoHost && isOccupied ? 'CO_HOST' : (isOccupied ? 'SPEAKER' : 'NONE'));
+      const slotAgoraUid = isOccupied ? deriveAgoraUid(occupantId) : null;
 
       return {
         id: s.id,
@@ -246,10 +267,30 @@ export async function getStageSnapshot(roomId, db = prisma) {
         isCameraOn,
         role,
         occupiedUserId: isOccupied ? occupantId : null,
+        agoraUid: slotAgoraUid,
+        uid: slotAgoraUid,
         user: occupantUser,
       };
     })
   );
+
+  const agoraUidMap = {};
+  if (hostPayload?.agoraUid) {
+    agoraUidMap[String(hostPayload.agoraUid)] = hostPayload;
+  }
+  if (coHostPayload?.agoraUid) {
+    agoraUidMap[String(coHostPayload.agoraUid)] = coHostPayload;
+  }
+  for (const slot of slots) {
+    if (slot.agoraUid && slot.user) {
+      agoraUidMap[String(slot.agoraUid)] = {
+        ...slot.user,
+        role: slot.role,
+        seatIndex: slot.seatIndex,
+        isMuted: slot.isMuted,
+      };
+    }
+  }
 
   const cohosts = coHostPayload ? [coHostPayload] : [];
   return {
@@ -266,6 +307,8 @@ export async function getStageSnapshot(roomId, db = prisma) {
     seats: slots,
     stageCapacity: slots.length,
     agoraChannelName: room.agoraChannelName || `room_${room.id.replace(/-/g, '')}`,
+    agoraHostUid: hostAgoraUid,
+    agoraUidMap,
   };
 }
 

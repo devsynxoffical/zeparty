@@ -31,6 +31,21 @@ export async function findById(id, db = prisma) {
   });
 }
 
+export async function findByIdForIdentity(id, db = prisma) {
+  if (!id) return null;
+  return await db.user.findUnique({
+    where: { id },
+    include: {
+      profile: true,
+      hostProfile: { select: { id: true } },
+      userAssets: {
+        where: { isEquipped: true },
+        include: { asset: true },
+      },
+    },
+  });
+}
+
 export const findUserById = findById;
 
 export async function findByEmail(email, db = prisma) {
@@ -930,6 +945,7 @@ export async function findUsersByIds(ids, db = prisma) {
 export default {
   findByPhone,
   findById,
+  findByIdForIdentity,
   findUserById: findById,
   findByEmail,
   findByFirebaseUid,

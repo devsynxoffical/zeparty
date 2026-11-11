@@ -1,3 +1,4 @@
+import prisma from '../config/database.js';
 import roomRepository from '../repositories/room.repository.js';
 import presenceService from './presence.service.js';
 import socketEmitter from './socket.emitter.js';

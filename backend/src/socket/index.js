@@ -62,7 +62,7 @@ export async function initSocketServer(httpServer) {
 
   // Connection Handler
   io.on('connection', async (socket) => {
-    // Automatically join authenticated user's private channel
+    // Automatically join authenticated user's private channel synchronously before any async I/O
     socket.join(`user:${socket.userId}`);
     if (socket.userId && String(socket.userId).startsWith('guest_')) {
       const strippedId = String(socket.userId).replace('guest_', '');
@@ -72,20 +72,8 @@ export async function initSocketServer(httpServer) {
       socket.join(`user:${socket.user.id}`);
     }
 
-    // Register global presence tracking for registered users
-    if (socket.userId && !socket.isGuest && !String(socket.userId).startsWith('guest_')) {
-      try {
-        const { isFirstSocket } = await presenceService.registerUserSocket(socket.userId, socket.id);
-        if (isFirstSocket) {
-          const pres = await presenceService.getUserPresence(socket.userId);
-          presenceService.broadcastPresenceChange(io, socket.userId, pres);
-        }
-      } catch (presErr) {
-        console.warn('[Socket] Presence register warning:', presErr.message);
-      }
-    }
-
-    // Register domain handlers
+    // Register domain handlers synchronously BEFORE any await calls so client events emitted
+    // immediately upon socket 'connect' (e.g. 'room:join', 'gift:send', 'room:chat') are never dropped
     registerRoomHandlers(io, socket);
     registerSeatHandlers(io, socket);
     registerGiftHandlers(io, socket);
@@ -102,6 +90,47 @@ export async function initSocketServer(httpServer) {
         });
       }
     });
+
+    // Register global presence tracking for registered users
+    if (socket.userId && !socket.isGuest && !String(socket.userId).startsWith('guest_')) {
+      try {
+        const { isFirstSocket } = await presenceService.registerUserSocket(socket.userId, socket.id);
+        if (isFirstSocket) {
+          presenceService
+            .getUserPresence(socket.userId)
+            .then((pres) => {
+              if (pres) presenceService.broadcastPresenceChange(io, socket.userId, pres);
+            })
+            .catch(() => {});
+        }
+
+        // Automatically attach socket to the user's active LIVE room session (if hosting or joined via REST)
+        const activeSession = await presenceService.getUserActiveSession(socket.userId);
+        if (activeSession?.roomId) {
+          socket.join(`room:${activeSession.roomId}`);
+          socket.joinedRooms = socket.joinedRooms || new Set();
+          socket.joinedRooms.add(activeSession.roomId);
+          socket.currentRoomId = activeSession.roomId;
+          await presenceService.addSocketToRoom(activeSession.roomId, socket.userId, socket.id, {
+            id: socket.userId,
+            userId: socket.userId,
+            agoraUid: socket.agoraUid || socket.user?.agoraUid || null,
+            uid: socket.agoraUid || socket.user?.uid || null,
+            username: socket.user?.username,
+            displayName: socket.user?.displayName || socket.user?.name || socket.user?.username,
+            name: socket.user?.name || socket.user?.displayName || socket.user?.username,
+            avatarUrl: socket.user?.avatarUrl || null,
+            avatarFrame: socket.user?.avatarFrame || null,
+            nobleRank: socket.user?.nobleRank || socket.user?.nobleTitle || null,
+            vipLevel: socket.user?.vipLevel || 0,
+            svipLevel: socket.user?.svipLevel || 0,
+            isGuest: false,
+          });
+        }
+      } catch (presErr) {
+        console.warn('[Socket] Presence register warning:', presErr.message);
+      }
+    }
 
     // Real-time Agency & Host Invitation Delivery (Mutual Exclusion Guarded)
     socket.on('agency:invite_member', async (data) => {

@@ -1,8 +1,14 @@
 import crypto from 'crypto';
 import prisma from '../config/database.js';
 import roomRepository from '../repositories/room.repository.js';
+import userRepository from '../repositories/user.repository.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
+import {
+  deriveAgoraUid,
+  formatAuthoritativeUserIdentity,
+  buildAgoraUidIdentityMap,
+} from '../utils/agoraToken.util.js';
 import {
   clearHostAbsentTimer,
   clearEmptyRoomSleepTimer,
@@ -21,6 +27,230 @@ import roomRoleAuditService from './roomRoleAudit.service.js';
 import { getNobleStyle } from './asset.service.js';
 import roomLevelService from './roomLevel.service.js';
 import roomTrophyService from './roomTrophy.service.js';
+
+/**
+ * Enriches a room object with authoritative ZeParty identities, Agora UIDs,
+ * participants array, and agoraUidMap across Party, Live, and Admin APIs.
+ */
+export function enrichRoomIdentitySnapshot(room, activePresenceUsers = []) {
+  if (!room || typeof room !== 'object') return room;
+
+  const hostUserId = room.creatorUserId || room.creator?.id || room.host?.id || null;
+  const hostAgoraUid = hostUserId ? deriveAgoraUid(hostUserId) : 0;
+
+  const creatorIdentity = room.creator
+    ? formatAuthoritativeUserIdentity(room.creator, { role: 'HOST', isHost: true, seatIndex: 0 })
+    : hostUserId
+    ? formatAuthoritativeUserIdentity({ id: hostUserId, username: room.hostUsername || 'Host' }, { role: 'HOST', isHost: true, seatIndex: 0 })
+    : null;
+
+  const enrichedCreator = room.creator
+    ? {
+        ...room.creator,
+        id: room.creator.id || hostUserId,
+        userId: room.creator.id || hostUserId,
+        username: creatorIdentity?.username || room.creator.username,
+        displayName: creatorIdentity?.displayName || room.creator.profile?.displayName || room.creator.username,
+        name: creatorIdentity?.displayName || room.creator.profile?.displayName || room.creator.username,
+        avatarUrl: creatorIdentity?.avatarUrl || null,
+        agoraUid: hostAgoraUid,
+        uid: hostAgoraUid,
+      }
+    : creatorIdentity;
+
+  const enrichedSeats = Array.isArray(room.seats)
+    ? room.seats.map((s) => {
+        const occRaw = s.occupiedUser || s.user || null;
+        const occUserId = s.occupiedUserId || occRaw?.id || occRaw?.userId || null;
+        const occIdentity = occRaw
+          ? formatAuthoritativeUserIdentity(occRaw, {
+              role: occUserId === hostUserId ? 'HOST' : s.seatIndex === 1 ? 'CO_HOST' : 'SPEAKER',
+              seatIndex: s.seatIndex,
+            })
+          : occUserId
+          ? formatAuthoritativeUserIdentity(
+              { id: occUserId },
+              {
+                role: occUserId === hostUserId ? 'HOST' : s.seatIndex === 1 ? 'CO_HOST' : 'SPEAKER',
+                seatIndex: s.seatIndex,
+              }
+            )
+          : null;
+
+        const enrichedOcc = occIdentity
+          ? {
+              ...(occRaw || {}),
+              ...occIdentity,
+              id: occIdentity.id,
+              userId: occIdentity.userId,
+              agoraUid: occIdentity.agoraUid,
+              uid: occIdentity.uid,
+              username: occIdentity.username,
+              displayName: occIdentity.displayName,
+              name: occIdentity.name,
+              avatarUrl: occIdentity.avatarUrl,
+            }
+          : null;
+
+        return {
+          ...s,
+          agoraUid: occIdentity?.agoraUid || null,
+          uid: occIdentity?.uid || null,
+          occupiedUser: enrichedOcc,
+          user: enrichedOcc,
+        };
+      })
+    : [];
+
+  const seatedMap = new Map();
+  for (const s of enrichedSeats) {
+    if (s.occupiedUserId) {
+      seatedMap.set(s.occupiedUserId, s);
+    }
+  }
+
+  const enrichedMembers = Array.isArray(room.members)
+    ? room.members.map((m) => {
+        const uRaw = m.user || m;
+        const mUserId = m.userId || uRaw?.id || uRaw?.userId;
+        const isHost = mUserId === hostUserId;
+        const seatObj = seatedMap.get(mUserId) || null;
+        const mIdentity = formatAuthoritativeUserIdentity(
+          {
+            ...uRaw,
+            id: mUserId,
+          },
+          {
+            role: isHost ? 'HOST' : m.role || (seatObj ? 'SPEAKER' : 'VIEWER'),
+            seatIndex: seatObj ? seatObj.seatIndex : null,
+          }
+        );
+
+        return {
+          ...m,
+          id: mUserId,
+          userId: mUserId,
+          agoraUid: mIdentity?.agoraUid || deriveAgoraUid(mUserId),
+          uid: mIdentity?.uid || deriveAgoraUid(mUserId),
+          username: mIdentity?.username || uRaw?.username || mUserId,
+          displayName: mIdentity?.displayName || uRaw?.displayName || uRaw?.username || mUserId,
+          name: mIdentity?.name || uRaw?.displayName || uRaw?.username || mUserId,
+          avatarUrl: mIdentity?.avatarUrl || null,
+          role: isHost ? 'HOST' : m.role || (seatObj ? 'SPEAKER' : 'VIEWER'),
+          isHost,
+          seatIndex: seatObj ? seatObj.seatIndex : null,
+          micOn: seatObj ? !seatObj.isMuted : false,
+          user: {
+            ...(m.user || {}),
+            ...(mIdentity || {}),
+            id: mUserId,
+            userId: mUserId,
+            agoraUid: mIdentity?.agoraUid || deriveAgoraUid(mUserId),
+            uid: mIdentity?.uid || deriveAgoraUid(mUserId),
+          },
+        };
+      })
+    : [];
+
+  // Build unified participants list (Host + Seated + Members + Active Presence)
+  const participantMap = new Map();
+
+  if (creatorIdentity && hostUserId) {
+    const hostSeat = seatedMap.get(hostUserId) || null;
+    participantMap.set(hostUserId, {
+      ...creatorIdentity,
+      id: hostUserId,
+      userId: hostUserId,
+      role: 'HOST',
+      isHost: true,
+      seatIndex: hostSeat ? hostSeat.seatIndex : 0,
+      micOn: hostSeat ? !hostSeat.isMuted : true,
+    });
+  }
+
+  for (const s of enrichedSeats) {
+    if (s.occupiedUserId && s.user) {
+      participantMap.set(s.occupiedUserId, {
+        ...s.user,
+        id: s.occupiedUserId,
+        userId: s.occupiedUserId,
+        role: s.occupiedUserId === hostUserId ? 'HOST' : s.seatIndex === 1 ? 'CO_HOST' : 'SPEAKER',
+        isHost: s.occupiedUserId === hostUserId,
+        seatIndex: s.seatIndex,
+        micOn: !s.isMuted,
+      });
+    }
+  }
+
+  for (const m of enrichedMembers) {
+    if (m.userId && !participantMap.has(m.userId)) {
+      participantMap.set(m.userId, {
+        ...(m.user || {}),
+        id: m.userId,
+        userId: m.userId,
+        agoraUid: m.agoraUid,
+        uid: m.uid,
+        username: m.username,
+        displayName: m.displayName,
+        name: m.name,
+        avatarUrl: m.avatarUrl,
+        role: m.role || 'VIEWER',
+        isHost: m.isHost,
+        seatIndex: m.seatIndex,
+        micOn: Boolean(m.micOn),
+      });
+    }
+  }
+
+  if (Array.isArray(activePresenceUsers)) {
+    for (const p of activePresenceUsers) {
+      const pUserId = p?.userId || p?.id;
+      if (!pUserId) continue;
+      if (!participantMap.has(pUserId)) {
+        const seatObj = seatedMap.get(pUserId) || null;
+        const pIdentity = formatAuthoritativeUserIdentity(p, {
+          role: pUserId === hostUserId ? 'HOST' : seatObj ? 'SPEAKER' : 'VIEWER',
+          seatIndex: seatObj ? seatObj.seatIndex : null,
+        });
+        if (pIdentity) {
+          participantMap.set(pUserId, {
+            ...pIdentity,
+            seatIndex: seatObj ? seatObj.seatIndex : null,
+            micOn: seatObj ? !seatObj.isMuted : false,
+          });
+        }
+      }
+    }
+  }
+
+  const participants = Array.from(participantMap.values());
+  const agoraUidMap = buildAgoraUidIdentityMap(participants);
+
+  return {
+    ...room,
+    agoraHostUid: hostAgoraUid,
+    hostAgoraUid,
+    creator: enrichedCreator,
+    host: creatorIdentity
+      ? {
+          ...creatorIdentity,
+          ...(room.host || {}),
+          id: hostUserId,
+          userId: hostUserId,
+          agoraUid: hostAgoraUid,
+          uid: hostAgoraUid,
+          username: creatorIdentity.username,
+          displayName: creatorIdentity.displayName,
+          name: creatorIdentity.name,
+          avatarUrl: creatorIdentity.avatarUrl,
+        }
+      : room.host || null,
+    seats: enrichedSeats,
+    members: enrichedMembers,
+    participants,
+    agoraUidMap,
+  };
+}
 
 async function logAudit(
   { adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress },
@@ -99,8 +329,9 @@ export async function handleCleanExitFromPreviousRoom(userId, prevRoomId, newRoo
       socketEmitter.emitToRoom(prevRoomId, 'seat:released', seatPayload);
     }
 
-    // Leave presence in previous room
+    // Leave presence and socket channel in previous room
     await presenceService.leaveRoomPresence(prevRoomId, userId);
+    await socketEmitter.leaveUserSocketsFromRoom(userId, prevRoomId).catch(() => {});
     socketEmitter.emitToRoom(prevRoomId, 'room:member_left', { roomId: prevRoomId, userId });
 
     // Notify user socket of session termination elsewhere
@@ -285,7 +516,7 @@ export async function createRoom(
           } catch (_) {}
         }
 
-        // Authoritatively set active session
+        // Authoritatively set active session and subscribe host sockets to room channel
         await presenceService.setUserActiveSession(userId, {
           roomId: refreshedRoom.id,
           roomType: refreshedRoom.roomType,
@@ -293,8 +524,9 @@ export async function createRoom(
           isHost: true,
           title: refreshedRoom.title,
         });
+        await socketEmitter.joinUserSocketsToRoom(userId, refreshedRoom.id, refreshedRoom.creator).catch(() => {});
 
-        return resumedPayload;
+        return enrichRoomIdentitySnapshot(resumedPayload);
       } catch (resumeErr) {
         console.error('[RoomService] Error reopening existing room, returning safe existing payload:', resumeErr);
         const safeRoom = await roomRepository.findRoomById(existingRoom.id, db).catch(() => existingRoom);
@@ -305,7 +537,8 @@ export async function createRoom(
           isHost: true,
           title: existingRoom.title,
         }).catch(() => {});
-        return {
+        await socketEmitter.joinUserSocketsToRoom(userId, existingRoom.id, safeRoom?.creator).catch(() => {});
+        return enrichRoomIdentitySnapshot({
           ...safeRoom,
           alreadyHasRoom: true,
           alreadyHadRoom: true,
@@ -313,7 +546,7 @@ export async function createRoom(
           existingRoomId: existingRoom.id,
           wasSleeping: existingRoom.status !== 'LIVE',
           statusMessage: 'You already have a party room. Opening your existing room.',
-        };
+        });
       }
     }
   }
@@ -416,10 +649,10 @@ export async function createRoom(
     likesCount: 0,
   };
 
-  const newRoomPayload = {
+  const newRoomPayload = enrichRoomIdentitySnapshot({
     ...room,
     ...freshSessionScores,
-  };
+  });
 
   // Broadcast new room creation to global realtime discovery subscribers
   try {
@@ -431,7 +664,7 @@ export async function createRoom(
     console.error('Failed to broadcast ROOM_CREATED socket event:', err);
   }
 
-  // Authoritatively set active session
+  // Authoritatively set active session and subscribe host sockets to room channel
   await presenceService.setUserActiveSession(userId, {
     roomId: room.id,
     roomType: room.roomType,
@@ -439,6 +672,7 @@ export async function createRoom(
     isHost: true,
     title: room.title,
   });
+  await socketEmitter.joinUserSocketsToRoom(userId, room.id, newRoomPayload.creator).catch(() => {});
 
   return newRoomPayload;
 }
@@ -462,6 +696,9 @@ export async function getMyPartyRoom(userId, db = prisma) {
 
   const roomDetails = await getRoomDetails(existingRoom.id, db);
   const isSleeping = existingRoom.status !== 'LIVE';
+  if (!isSleeping) {
+    await socketEmitter.joinUserSocketsToRoom(userId, existingRoom.id, roomDetails?.creator).catch(() => {});
+  }
   return {
     hasRoom: true,
     alreadyHasRoom: true,
@@ -480,7 +717,11 @@ export async function getMyPartyRoom(userId, db = prisma) {
 }
 
 export async function getActiveRooms(filters, db = prisma) {
-  return await roomRepository.findActiveRooms(filters, db);
+  const result = await roomRepository.findActiveRooms(filters, db);
+  if (result && Array.isArray(result.rooms)) {
+    result.rooms = result.rooms.map((r) => enrichRoomIdentitySnapshot(r));
+  }
+  return result;
 }
 
 export async function cleanupStaleRooms(db = prisma) {
@@ -682,46 +923,54 @@ export async function getRoomDetails(roomId, db = prisma) {
     totalLikes = await presenceService.getRoomLikes(room.id);
   } catch (_) {}
 
+  let activePresenceUsers = [];
+  try {
+    activePresenceUsers = await presenceService.getRoomActiveUsers(room.id);
+  } catch (_) {}
+
   const isSleeping = room.status !== 'LIVE';
   const isParty = isPartyRoomType(room.roomType);
   const roomLevelData = await roomLevelService.getRoomLevelData(room.id, {}, db);
-  return {
-    ...safeRoom,
-    status: isParty && room.status !== 'CLOSED_BY_ADMIN' ? 'LIVE' : room.status,
-    dbStatus: room.status,
-    level: roomLevelData.level,
-    roomLevel: roomLevelData.level,
-    displayLevel: roomLevelData.displayLevel,
-    roomDisplayLevel: roomLevelData.displayLevel,
-    roomLevelProgress: roomLevelData,
-    cumulativeRoomCoins: roomLevelData.cumulativeCoins,
-    isSleeping,
-    sleepState: isSleeping ? 'SLEEPING' : 'ACTIVE',
-    currentViewersCount: viewerCount,
-    viewerCount,
-    count: viewerCount,
-    peakViewers: peakViewers > 0 ? peakViewers : viewerCount,
-    backgroundImageUrl: room.backgroundImageUrl || null,
-    background: room.backgroundImageUrl || null,
-    themeUrl: room.backgroundImageUrl || null,
-    theme: room.backgroundImageUrl || null,
-    giftsReceivedCoins: totalGiftCoins,
-    totalGifts: totalGiftCoins,
-    roomSendingTotal: dailyGiftCoins,
-    dailySendingTotal: dailyGiftCoins,
-    periodTotalCoins: dailyGiftCoins,
-    trophyCoins: dailyGiftCoins,
-    dailyTrophyCoins: dailyGiftCoins,
-    dailyTrophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
-    trophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
-    totalLikes,
-    likesCount: totalLikes,
-    seatCapacity: (room.seats || []).length || 10,
-    capacity: (room.seats || []).length || 10,
-    isLocked: Boolean(room.isPrivate),
-    lockMode,
-    isMuted: isRoomMuted,
-  };
+  return enrichRoomIdentitySnapshot(
+    {
+      ...safeRoom,
+      status: isParty && room.status !== 'CLOSED_BY_ADMIN' ? 'LIVE' : room.status,
+      dbStatus: room.status,
+      level: roomLevelData.level,
+      roomLevel: roomLevelData.level,
+      displayLevel: roomLevelData.displayLevel,
+      roomDisplayLevel: roomLevelData.displayLevel,
+      roomLevelProgress: roomLevelData,
+      cumulativeRoomCoins: roomLevelData.cumulativeCoins,
+      isSleeping,
+      sleepState: isSleeping ? 'SLEEPING' : 'ACTIVE',
+      currentViewersCount: viewerCount,
+      viewerCount,
+      count: viewerCount,
+      peakViewers: peakViewers > 0 ? peakViewers : viewerCount,
+      backgroundImageUrl: room.backgroundImageUrl || null,
+      background: room.backgroundImageUrl || null,
+      themeUrl: room.backgroundImageUrl || null,
+      theme: room.backgroundImageUrl || null,
+      giftsReceivedCoins: totalGiftCoins,
+      totalGifts: totalGiftCoins,
+      roomSendingTotal: dailyGiftCoins,
+      dailySendingTotal: dailyGiftCoins,
+      periodTotalCoins: dailyGiftCoins,
+      trophyCoins: dailyGiftCoins,
+      dailyTrophyCoins: dailyGiftCoins,
+      dailyTrophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
+      trophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
+      totalLikes,
+      likesCount: totalLikes,
+      seatCapacity: (room.seats || []).length || 10,
+      capacity: (room.seats || []).length || 10,
+      isLocked: Boolean(room.isPrivate),
+      lockMode,
+      isMuted: isRoomMuted,
+    },
+    activePresenceUsers
+  );
 }
 
 export async function joinRoom(roomId, userId, { pin = null, isApproved = false, attemptId = null, isVisitor = false, explicit = false } = {}, db = prisma) {
@@ -835,6 +1084,19 @@ export async function joinRoom(roomId, userId, { pin = null, isApproved = false,
     result.trophyCoins = dailyGiftCoins;
     result.totalLikes = totalLikes;
     result.likesCount = totalLikes;
+
+    if (userId) {
+      await socketEmitter.joinUserSocketsToRoom(userId, result.id || roomId).catch(() => {});
+    }
+    if (result.creatorUserId) {
+      await socketEmitter.joinUserSocketsToRoom(result.creatorUserId, result.id || roomId).catch(() => {});
+    }
+
+    let activePresenceUsers = [];
+    try {
+      activePresenceUsers = await presenceService.getRoomActiveUsers(result.id || roomId);
+    } catch (_) {}
+    return enrichRoomIdentitySnapshot(result, activePresenceUsers);
   }
   return result;
 }
@@ -890,9 +1152,15 @@ export async function leaveRoom(roomId, userId, db = prisma) {
   const result = await roomRepository.leaveRoomTx({ roomId, userId }, db);
   const targetRoomId = result?.id || roomId;
 
-  // Clear presence and roomMember membership to prevent stale viewers
+  // Clear presence, socket room membership, and roomMember membership to prevent stale viewers
   try {
     await presenceService.leaveRoomPresence(targetRoomId, userId);
+  } catch (_) {}
+  try {
+    await socketEmitter.leaveUserSocketsFromRoom(userId, targetRoomId);
+    if (roomId && roomId !== targetRoomId) {
+      await socketEmitter.leaveUserSocketsFromRoom(userId, roomId);
+    }
   } catch (_) {}
   try {
     await db.roomMember.deleteMany({
@@ -1002,7 +1270,12 @@ export async function leaveRoom(roomId, userId, db = prisma) {
 }
 
 export async function occupySeat(roomId, seatIndex, userId, db = prisma) {
-  return await roomRepository.occupySeatTx({ roomId, seatIndex, userId }, db);
+  const res = await roomRepository.occupySeatTx({ roomId, seatIndex, userId }, db);
+  const canonicalRoomId = res?.updatedSeat?.roomId || res?.roomId || roomId;
+  if (userId && canonicalRoomId) {
+    await socketEmitter.joinUserSocketsToRoom(userId, canonicalRoomId).catch(() => {});
+  }
+  return res;
 }
 
 export async function leaveSeat(roomId, seatIndex, userId, options = {}, db = prisma) {
@@ -1244,6 +1517,7 @@ export async function closeMyRoom(roomId, userId, db = prisma) {
 
   socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, closePayload);
   socketEmitter.broadcastGlobal('room:closed', closePayload);
+  await socketEmitter.clearRoomSockets(roomId).catch(() => {});
 
   return {
     ...closedRoom,
@@ -1252,7 +1526,11 @@ export async function closeMyRoom(roomId, userId, db = prisma) {
 }
 
 export async function listRoomsForAdmin(filters, db = prisma) {
-  return await roomRepository.findAdminRooms(filters, db);
+  const result = await roomRepository.findAdminRooms(filters, db);
+  if (result && Array.isArray(result.rooms)) {
+    result.rooms = result.rooms.map((r) => enrichRoomIdentitySnapshot(r));
+  }
+  return result;
 }
 
 export async function adminPinRoom(
@@ -1437,6 +1715,7 @@ export async function adminCloseRoom(
 
   socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, closePayload);
   socketEmitter.broadcastGlobal('room:closed', closePayload);
+  await socketEmitter.clearRoomSockets(roomId).catch(() => {});
 
   return {
     ...updatedRoom,
@@ -1629,6 +1908,7 @@ export async function adminKickUser(
     };
     socketEmitter.emitToRoom(roomId, SOCKET_EVENTS.ROOM_CLOSED, closePayload);
     socketEmitter.broadcastGlobal('room:closed', closePayload);
+    await socketEmitter.clearRoomSockets(roomId).catch(() => {});
 
     await logAudit(
       {
@@ -1648,6 +1928,7 @@ export async function adminKickUser(
 
   // Regular participant/speaker/viewer
   await roomRepository.kickUserFromRoomTx({ roomId, targetUserId }, db);
+  await socketEmitter.leaveUserSocketsFromRoom(targetUserId, roomId).catch(() => {});
 
   const kickPayload = {
     roomId,
@@ -1864,11 +2145,14 @@ export async function getRoomMembers(roomId, { search, page = 1, limit = 50, onl
     const publicId = m.user?.username || m.user?.id || m.userId;
 
     const nobleStyle = getNobleStyle(m.user?.profile?.nobleRank);
+    const mAgoraUid = deriveAgoraUid(m.userId);
 
     return {
       id: m.userId,
       memberId: m.id || `member_${m.userId}`,
       userId: m.userId,
+      agoraUid: mAgoraUid,
+      uid: mAgoraUid,
       publicUserId: publicId,
       publicId,
       username: m.user?.username || m.userId,
@@ -1897,6 +2181,8 @@ export async function getRoomMembers(roomId, { search, page = 1, limit = 50, onl
       user: {
         id: m.userId,
         userId: m.userId,
+        agoraUid: mAgoraUid,
+        uid: mAgoraUid,
         username: m.user?.username || m.userId,
         displayName,
         avatarUrl: m.user?.avatarUrl || '',
@@ -1920,10 +2206,13 @@ export async function getRoomMembers(roomId, { search, page = 1, limit = 50, onl
       const seatInfo = seatedUserMap.get(uId) || null;
       const dName = ap.displayName || ap.name || ap.username || `User_${String(uId).substring(0, 6)}`;
       const nobleStyle = getNobleStyle(ap.nobleRank);
+      const apAgoraUid = ap.agoraUid || deriveAgoraUid(uId);
       formattedList.push({
         id: uId,
         memberId: `viewer_${uId}`,
         userId: uId,
+        agoraUid: apAgoraUid,
+        uid: apAgoraUid,
         publicUserId: ap.username || uId,
         publicId: ap.username || uId,
         username: ap.username || uId,
@@ -1952,6 +2241,8 @@ export async function getRoomMembers(roomId, { search, page = 1, limit = 50, onl
         user: {
           id: uId,
           userId: uId,
+          agoraUid: apAgoraUid,
+          uid: apAgoraUid,
           username: ap.username || uId,
           displayName: dName,
           avatarUrl: ap.avatarUrl || '',
@@ -2861,17 +3152,90 @@ export async function manageMicSeatAction(roomId, { seatIndex = 0, action = 'LOC
 /**
  * Module 08: Mic Reaction & Sticker Display Anchored to Seat
  */
-export async function sendMicReaction(roomId, { seatIndex = 0, reactionId, reactionType = 'EMOJI', actorUserId }, db = prisma) {
-  return {
-    success: true,
-    roomId,
+export async function sendMicReaction(
+  roomId,
+  { seatIndex = 0, reactionId, emoji, stickerUrl, reactionType = 'EMOJI', actorUserId },
+  db = prisma
+) {
+  const room = await roomRepository
+    .resolveCanonicalRoom(roomId, { senderUserId: actorUserId, allowActiveFallback: false }, db)
+    .catch(() => null);
+  const canonicalRoomId = room?.id || roomId;
+
+  let senderUser = null;
+  if (actorUserId) {
+    senderUser = await userRepository.findById(actorUserId, db).catch(() => null);
+  }
+
+  let resolvedSeatIndex = seatIndex !== undefined && seatIndex !== null ? Number(seatIndex) : null;
+  if ((resolvedSeatIndex === null || Number.isNaN(resolvedSeatIndex)) && room && Array.isArray(room.seats)) {
+    const occupiedSeat = room.seats.find((s) => s.occupiedUserId === actorUserId);
+    if (occupiedSeat) {
+      resolvedSeatIndex = occupiedSeat.seatIndex;
+    } else if (room.creatorUserId === actorUserId) {
+      resolvedSeatIndex = 0;
+    }
+  }
+
+  const senderIdentity = formatAuthoritativeUserIdentity(
+    senderUser || { id: actorUserId, username: 'User' },
+    {
+      role: room?.creatorUserId === actorUserId ? 'HOST' : resolvedSeatIndex !== null ? 'SPEAKER' : 'VIEWER',
+      seatIndex: resolvedSeatIndex,
+    }
+  );
+
+  const effectiveEmoji = emoji || reactionId || 'react_popular_01';
+  const eventId = `evt-mic-react-${canonicalRoomId}-${actorUserId || 'anon'}-${Date.now()}`;
+  const reactionPayload = {
+    id: eventId,
+    eventId,
+    roomId: canonicalRoomId,
+    sessionId: canonicalRoomId,
+    clientRoomId: roomId,
+    userId: actorUserId,
+    senderId: actorUserId,
     senderUserId: actorUserId,
-    seatIndex: Number(seatIndex),
-    reactionId: reactionId || 'react_popular_01',
+    agoraUid: senderIdentity?.agoraUid || deriveAgoraUid(actorUserId),
+    uid: senderIdentity?.agoraUid || deriveAgoraUid(actorUserId),
+    username: senderIdentity?.username || 'User',
+    displayName: senderIdentity?.displayName || 'User',
+    name: senderIdentity?.displayName || 'User',
+    avatarUrl: senderIdentity?.avatarUrl || null,
+    avatar: senderIdentity?.avatarUrl || null,
+    seatId: resolvedSeatIndex,
+    seatIndex: resolvedSeatIndex,
+    micIndex: resolvedSeatIndex,
+    emoji: effectiveEmoji,
+    reactionId: reactionId || effectiveEmoji,
+    stickerUrl: stickerUrl || null,
     reactionType,
     displayAnchor: 'OCCUPIED_MIC_TOP',
     durationSeconds: 3,
+    user: senderIdentity,
+    sender: senderIdentity,
     timestamp: new Date().toISOString(),
+  };
+
+  if (canonicalRoomId) {
+    if (room?.creatorUserId) {
+      await socketEmitter.joinUserSocketsToRoom(room.creatorUserId, canonicalRoomId).catch(() => {});
+    }
+    if (actorUserId) {
+      await socketEmitter.joinUserSocketsToRoom(actorUserId, canonicalRoomId).catch(() => {});
+    }
+    socketEmitter.emitToRoom(canonicalRoomId, SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, reactionPayload);
+    socketEmitter.emitToRoom(canonicalRoomId, 'room:emoji', reactionPayload);
+    socketEmitter.emitToRoom(canonicalRoomId, 'room:emoji_received', reactionPayload);
+    socketEmitter.emitToRoom(canonicalRoomId, 'room_emoji', reactionPayload);
+    socketEmitter.emitToRoom(canonicalRoomId, 'emoji_received', reactionPayload);
+    socketEmitter.emitToRoom(canonicalRoomId, 'room:reaction', reactionPayload);
+    socketEmitter.emitToRoom(canonicalRoomId, 'room:mic_reaction', reactionPayload);
+  }
+
+  return {
+    success: true,
+    ...reactionPayload,
   };
 }
 
@@ -3492,6 +3856,9 @@ export async function kickRoomUser(roomId, actorUserId, { targetUserId, reason }
   try {
     await presenceService.leaveRoomPresence(room.id, targetUserId);
   } catch (_) {}
+  try {
+    await socketEmitter.leaveUserSocketsFromRoom(targetUserId, room.id);
+  } catch (_) {}
 
   const updatedRoom = await roomRepository.findRoomById(room.id, db);
   let viewerCount = updatedRoom?.currentViewersCount || 0;
@@ -4035,11 +4402,90 @@ export async function getUserActiveSession(userId, db = prisma) {
   return await presenceService.getUserActiveSession(userId, db);
 }
 
+/**
+ * Resolves and returns the complete Agora UID <-> ZeParty User Identity map for a room.
+ */
+export async function getRoomIdentities(
+  roomId,
+  { agoraUid = null, userId = null } = {},
+  db = prisma
+) {
+  const roomDetails = await getRoomDetails(roomId, db);
+  const participants = Array.isArray(roomDetails?.participants) ? roomDetails.participants : [];
+  const agoraUidMap = roomDetails?.agoraUidMap || buildAgoraUidIdentityMap(participants);
+
+  let resolvedIdentity = null;
+  if (userId) {
+    resolvedIdentity = participants.find((p) => String(p.id || p.userId) === String(userId)) || null;
+    if (!resolvedIdentity || !resolvedIdentity.avatarUrl) {
+      const dbUser = await userRepository.findById(String(userId), db).catch(() => null);
+      if (dbUser) {
+        resolvedIdentity = formatAuthoritativeUserIdentity(dbUser, resolvedIdentity || {});
+      }
+    } else {
+      resolvedIdentity = formatAuthoritativeUserIdentity(resolvedIdentity, resolvedIdentity);
+    }
+  } else if (agoraUid !== null && agoraUid !== undefined && agoraUid !== '') {
+    const uidKey = String(agoraUid);
+    resolvedIdentity = agoraUidMap[uidKey] || null;
+    if (resolvedIdentity) {
+      resolvedIdentity = formatAuthoritativeUserIdentity(resolvedIdentity, resolvedIdentity);
+    }
+
+    // If not yet in room snapshot map, check connected sockets for matching agoraUid
+    if (!resolvedIdentity) {
+      const io = socketEmitter.getSocketServerInstance?.();
+      if (io?.sockets?.sockets) {
+        for (const [, sock] of io.sockets.sockets) {
+          const sUid = sock.agoraUid || sock.data?.agoraUid || (sock.userId ? deriveAgoraUid(sock.userId) : null);
+          if (sUid && String(sUid) === uidKey && sock.userId) {
+            const dbUser = await userRepository.findById(String(sock.userId), db).catch(() => null);
+            if (dbUser) {
+              resolvedIdentity = formatAuthoritativeUserIdentity(dbUser);
+              agoraUidMap[uidKey] = resolvedIdentity;
+            }
+            break;
+          }
+        }
+      }
+    } else if (
+      (resolvedIdentity.id || resolvedIdentity.userId) &&
+      !String(resolvedIdentity.id || resolvedIdentity.userId).startsWith('guest_') &&
+      (!resolvedIdentity.avatarUrl || String(resolvedIdentity.username || '').startsWith('User_'))
+    ) {
+      const targetUserId = String(resolvedIdentity.id || resolvedIdentity.userId);
+      const dbUser = await userRepository.findById(targetUserId, db).catch(() => null);
+      if (dbUser) {
+        resolvedIdentity = formatAuthoritativeUserIdentity(dbUser, {
+          role: resolvedIdentity.role,
+          seatIndex: resolvedIdentity.seatIndex,
+        });
+        agoraUidMap[uidKey] = resolvedIdentity;
+      }
+    }
+  }
+
+  return {
+    roomId: roomDetails.id,
+    roomType: roomDetails.roomType,
+    status: roomDetails.status,
+    agoraChannelName: roomDetails.agoraChannelName,
+    hostUserId: roomDetails.creatorUserId,
+    agoraHostUid: roomDetails.agoraHostUid || deriveAgoraUid(roomDetails.creatorUserId),
+    host: roomDetails.host || roomDetails.creator,
+    participants,
+    agoraUidMap,
+    resolvedIdentity,
+  };
+}
+
 export default {
   createRoom,
   getActiveRooms,
   cleanupStaleRooms,
   getRoomDetails,
+  getRoomIdentities,
+  enrichRoomIdentitySnapshot,
   joinRoom,
   leaveRoom,
   unjoinRoom,

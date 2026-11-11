@@ -81,6 +81,8 @@ export async function createRoomWithSeats(
                   id: true,
                   username: true,
                   avatarUrl: true,
+                  countryCode: true,
+                  profile: true,
                 },
               },
             },
@@ -154,6 +156,8 @@ export async function createRoomWithSeats(
                   id: true,
                   username: true,
                   avatarUrl: true,
+                  countryCode: true,
+                  profile: true,
                 },
               },
             },
@@ -359,7 +363,99 @@ export async function findRoomById(id, db = prisma) {
     }).catch(() => null);
   }
 
+  if (!room) {
+    room = await db.room.findFirst({
+      where: {
+        agoraChannelName: cleanId,
+      },
+      orderBy: { createdAt: 'desc' },
+      include,
+    }).catch(() => null);
+  }
+
   return room;
+}
+
+/**
+ * Resolves a room from any session/room/channel/PK identifier:
+ * 1. Room ID or prefix or agoraChannelName (via findRoomById)
+ * 2. Active PKMatch ID -> resolves the relevant room in the PK match
+ * 3. Creator/Host User ID -> resolves their active LIVE room
+ */
+export async function resolveCanonicalRoom(
+  identifier,
+  { senderUserId = null, recipientUserId = null, allowActiveFallback = false } = {},
+  db = prisma
+) {
+  const hasExplicitIdentifier = Boolean(identifier && typeof identifier === 'string' && identifier.trim() !== '');
+  if (hasExplicitIdentifier) {
+    const clean = identifier.trim();
+    const directRoom = await findRoomById(clean, db);
+    if (directRoom) return directRoom;
+
+    // Check if identifier is a PKMatch ID
+    if (db.pKMatch?.findUnique) {
+      const pkMatch = await db.pKMatch.findUnique({
+        where: { id: clean },
+      }).catch(() => null);
+      if (pkMatch) {
+        let targetRoomId = pkMatch.roomAId;
+        if (recipientUserId && pkMatch.hostBUserId === recipientUserId && pkMatch.roomBId) {
+          targetRoomId = pkMatch.roomBId;
+        } else if (senderUserId && pkMatch.hostBUserId === senderUserId && pkMatch.roomBId) {
+          targetRoomId = pkMatch.roomBId;
+        }
+        if (targetRoomId) {
+          const pkRoom = await findRoomById(targetRoomId, db);
+          if (pkRoom) return pkRoom;
+        }
+      }
+    }
+
+    // Check if identifier is a host's userId with an active LIVE room
+    const hostLiveRoom = await db.room.findFirst({
+      where: {
+        creatorUserId: clean,
+        status: 'LIVE',
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    }).catch(() => null);
+    if (hostLiveRoom?.id) {
+      return await findRoomById(hostLiveRoom.id, db);
+    }
+
+    if (!allowActiveFallback) {
+      return null;
+    }
+  }
+
+  // Fallback to recipient's or sender's active room when identifier was omitted (or allowActiveFallback=true)
+  if (recipientUserId) {
+    const recipientActiveRoomId = await presenceService.getUserActiveRoom(recipientUserId).catch(() => null);
+    if (recipientActiveRoomId) {
+      const rRoom = await findRoomById(recipientActiveRoomId, db);
+      if (rRoom && rRoom.status === 'LIVE') return rRoom;
+    }
+    const recipientHostedRoom = await db.room.findFirst({
+      where: { creatorUserId: String(recipientUserId), status: 'LIVE' },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true },
+    }).catch(() => null);
+    if (recipientHostedRoom?.id) {
+      return await findRoomById(recipientHostedRoom.id, db);
+    }
+  }
+
+  if (senderUserId) {
+    const senderActiveRoomId = await presenceService.getUserActiveRoom(senderUserId).catch(() => null);
+    if (senderActiveRoomId) {
+      const sRoom = await findRoomById(senderActiveRoomId, db);
+      if (sRoom && sRoom.status === 'LIVE') return sRoom;
+    }
+  }
+
+  return null;
 }
 
 export async function findActiveRooms(
@@ -491,6 +587,23 @@ export async function findActiveRooms(
             occupiedUserId: true,
             isLocked: true,
             isMuted: true,
+            occupiedUser: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                countryCode: true,
+                profile: {
+                  select: {
+                    displayName: true,
+                    level: true,
+                    vipLevel: true,
+                    svipLevel: true,
+                    nobleRank: true,
+                  },
+                },
+              },
+            },
           },
           orderBy: { seatIndex: 'asc' },
         },
@@ -1953,6 +2066,7 @@ export async function getUserJoinedRooms(userId, { page = 1, limit = 20, viewerU
 export default {
   createRoomWithSeats,
   findRoomById,
+  resolveCanonicalRoom,
   findActiveRooms,
   findAdminRooms,
   joinRoomTx,

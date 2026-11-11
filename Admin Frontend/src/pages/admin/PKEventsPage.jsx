@@ -508,21 +508,34 @@ export function PKEventsPage() {
               {
                 key: 'sideA',
                 header: 'Side A (Blue)',
-                render: (m) => (
-                  <div className="flex items-center gap-2">
-                    <img
-                      src={m.hostA?.avatarUrl || 'https://via.placeholder.com/32'}
-                      alt="Host A"
-                      className="w-7 h-7 rounded-full border border-sky-500/40 object-cover"
-                    />
-                    <div>
-                      <p className="text-xs font-bold text-sky-300">
-                        {m.hostA?.profile?.displayName || m.hostA?.username || m.hostAUserId}
-                      </p>
-                      <p className="text-[10px] text-slate-400 truncate max-w-[120px]">{m.roomA?.title || m.roomAId}</p>
+                render: (m) => {
+                  const hostAvatar = m.hostA?.avatarUrl || m.hostA?.profile?.avatarUrl;
+                  const hostDisplay = m.hostA?.profile?.displayName || m.hostA?.username || m.hostAUserId;
+                  return (
+                    <div className="flex items-center gap-2">
+                      {hostAvatar ? (
+                        <img
+                          src={hostAvatar}
+                          alt="Host A"
+                          className="w-7 h-7 rounded-full border border-sky-500/40 object-cover shrink-0"
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-sky-900/50 border border-sky-500/40 flex items-center justify-center text-[11px] font-bold text-sky-300 shrink-0">
+                          {String(hostDisplay || 'A').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-xs font-bold text-sky-300">{hostDisplay}</p>
+                        {m.hostA?.username && (
+                          <p className="text-[10px] text-slate-400">@{m.hostA.username}</p>
+                        )}
+                        <p className="text-[10px] text-slate-500 truncate max-w-[140px]">
+                          {m.roomA?.title || m.roomAId}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ),
+                  );
+                },
               },
               {
                 key: 'scores',
@@ -546,21 +559,34 @@ export function PKEventsPage() {
               {
                 key: 'sideB',
                 header: 'Side B (Red)',
-                render: (m) => (
-                  <div className="flex items-center gap-2">
-                    <img
-                      src={m.hostB?.avatarUrl || 'https://via.placeholder.com/32'}
-                      alt="Host B"
-                      className="w-7 h-7 rounded-full border border-rose-500/40 object-cover"
-                    />
-                    <div>
-                      <p className="text-xs font-bold text-rose-300">
-                        {m.hostB?.profile?.displayName || m.hostB?.username || m.hostBUserId}
-                      </p>
-                      <p className="text-[10px] text-slate-400 truncate max-w-[120px]">{m.roomB?.title || m.roomBId}</p>
+                render: (m) => {
+                  const hostAvatar = m.hostB?.avatarUrl || m.hostB?.profile?.avatarUrl;
+                  const hostDisplay = m.hostB?.profile?.displayName || m.hostB?.username || m.hostBUserId;
+                  return (
+                    <div className="flex items-center gap-2">
+                      {hostAvatar ? (
+                        <img
+                          src={hostAvatar}
+                          alt="Host B"
+                          className="w-7 h-7 rounded-full border border-rose-500/40 object-cover shrink-0"
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-rose-900/50 border border-rose-500/40 flex items-center justify-center text-[11px] font-bold text-rose-300 shrink-0">
+                          {String(hostDisplay || 'B').charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-xs font-bold text-rose-300">{hostDisplay}</p>
+                        {m.hostB?.username && (
+                          <p className="text-[10px] text-slate-400">@{m.hostB.username}</p>
+                        )}
+                        <p className="text-[10px] text-slate-500 truncate max-w-[140px]">
+                          {m.roomB?.title || m.roomBId}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ),
+                  );
+                },
               },
               {
                 key: 'status',
@@ -1087,15 +1113,27 @@ export function PKEventsPage() {
                     </Badge>
                   </div>
                   <div className="flex items-center gap-3">
-                    <img
-                      src={inspectedMatch.sideA?.avatarUrl || 'https://via.placeholder.com/48'}
-                      alt="Host A"
-                      className="w-12 h-12 rounded-full border border-sky-500 object-cover"
-                    />
+                    {inspectedMatch.sideA?.avatarUrl ? (
+                      <img
+                        src={inspectedMatch.sideA.avatarUrl}
+                        alt="Host A"
+                        className="w-12 h-12 rounded-full border border-sky-500 object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-sky-900/50 border border-sky-500 flex items-center justify-center text-base font-bold text-sky-300 shrink-0">
+                        {String(inspectedMatch.sideA?.displayName || 'A').charAt(0).toUpperCase()}
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-bold text-white">{inspectedMatch.sideA?.displayName}</p>
-                      <p className="text-xs text-slate-400">Host ID: {inspectedMatch.sideA?.hostId}</p>
-                      <p className="text-xs text-slate-400">Room: {inspectedMatch.sideA?.roomId}</p>
+                      {inspectedMatch.sideA?.username && (
+                        <p className="text-xs text-sky-300">@{inspectedMatch.sideA.username}</p>
+                      )}
+                      <p className="text-xs text-slate-400 font-mono">
+                        Host ID: {inspectedMatch.sideA?.hostId}
+                        {inspectedMatch.sideA?.agoraUid ? ` • Agora: ${inspectedMatch.sideA.agoraUid}` : ''}
+                      </p>
+                      <p className="text-xs text-slate-400 font-mono">Room: {inspectedMatch.sideA?.roomId}</p>
                     </div>
                   </div>
                   <div className="pt-2 border-t border-sky-900/40 flex justify-between items-center">
@@ -1113,7 +1151,8 @@ export function PKEventsPage() {
                         {inspectedMatch.topSupportersA.map((s, idx) => (
                           <div key={idx} className="flex items-center justify-between text-xs bg-slate-900/60 p-1.5 rounded">
                             <span className="text-slate-300">
-                              #{s.rank} {s.displayName || s.userId}
+                              #{s.rank} {s.displayName || s.username || s.userId}
+                              {s.username ? ` (@${s.username})` : ''}
                             </span>
                             <span className="font-mono text-gold-400 font-semibold">{formatNumber(s.totalCoins)} coins</span>
                           </div>
@@ -1134,15 +1173,27 @@ export function PKEventsPage() {
                     </Badge>
                   </div>
                   <div className="flex items-center gap-3">
-                    <img
-                      src={inspectedMatch.sideB?.avatarUrl || 'https://via.placeholder.com/48'}
-                      alt="Host B"
-                      className="w-12 h-12 rounded-full border border-rose-500 object-cover"
-                    />
+                    {inspectedMatch.sideB?.avatarUrl ? (
+                      <img
+                        src={inspectedMatch.sideB.avatarUrl}
+                        alt="Host B"
+                        className="w-12 h-12 rounded-full border border-rose-500 object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-full bg-rose-900/50 border border-rose-500 flex items-center justify-center text-base font-bold text-rose-300 shrink-0">
+                        {String(inspectedMatch.sideB?.displayName || 'B').charAt(0).toUpperCase()}
+                      </div>
+                    )}
                     <div>
                       <p className="text-sm font-bold text-white">{inspectedMatch.sideB?.displayName}</p>
-                      <p className="text-xs text-slate-400">Host ID: {inspectedMatch.sideB?.hostId}</p>
-                      <p className="text-xs text-slate-400">Room: {inspectedMatch.sideB?.roomId}</p>
+                      {inspectedMatch.sideB?.username && (
+                        <p className="text-xs text-rose-300">@{inspectedMatch.sideB.username}</p>
+                      )}
+                      <p className="text-xs text-slate-400 font-mono">
+                        Host ID: {inspectedMatch.sideB?.hostId}
+                        {inspectedMatch.sideB?.agoraUid ? ` • Agora: ${inspectedMatch.sideB.agoraUid}` : ''}
+                      </p>
+                      <p className="text-xs text-slate-400 font-mono">Room: {inspectedMatch.sideB?.roomId}</p>
                     </div>
                   </div>
                   <div className="pt-2 border-t border-rose-900/40 flex justify-between items-center">
@@ -1160,7 +1211,8 @@ export function PKEventsPage() {
                         {inspectedMatch.topSupportersB.map((s, idx) => (
                           <div key={idx} className="flex items-center justify-between text-xs bg-slate-900/60 p-1.5 rounded">
                             <span className="text-slate-300">
-                              #{s.rank} {s.displayName || s.userId}
+                              #{s.rank} {s.displayName || s.username || s.userId}
+                              {s.username ? ` (@${s.username})` : ''}
                             </span>
                             <span className="font-mono text-gold-400 font-semibold">{formatNumber(s.totalCoins)} coins</span>
                           </div>

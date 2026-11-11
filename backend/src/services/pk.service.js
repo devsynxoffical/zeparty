@@ -443,6 +443,8 @@ export class PKService {
       if (!rid) continue;
       socketEmitter.emitToRoom(rid, 'pk:score_updated', scorePayload);
       socketEmitter.emitToRoom(rid, 'pk_score_updated', scorePayload);
+      socketEmitter.emitToRoom(rid, 'pk:score_update', scorePayload);
+      socketEmitter.emitToRoom(rid, 'pk_score_update', scorePayload);
     }
 
     return result;

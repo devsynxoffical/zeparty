@@ -1,8 +1,9 @@
 import giftService from '../services/gift.service.js';
+import roomRepository from '../repositories/room.repository.js';
 import prisma from '../config/database.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
 import { withRateLimit } from './rateLimiter.socket.js';
-import privacyEligibilityService from '../services/privacyEligibility.service.js';
+import { deriveAgoraUid, formatAuthoritativeUserIdentity } from '../utils/agoraToken.util.js';
 
 /**
  * Recalculates authoritative room gifting total from DB and broadcasts across all room aliases.
@@ -34,17 +35,6 @@ export async function syncAndBroadcastRoomSendingTotal(io, roomId, canonicalRoom
     });
     const updatedTotal = Number(dailyAggr._sum?.totalCoins || 0);
 
-    // Atomically persist to DB so fresh room details queries have the latest ground truth
-    await db.room.update({
-      where: { id: effectiveRoomId },
-      data: {
-        roomSendingTotal: updatedTotal,
-        dailySendingTotal: updatedTotal,
-        periodTotalCoins: updatedTotal,
-        trophyCoins: updatedTotal,
-      },
-    }).catch(() => {});
-
     const sendingTotalPayload = {
       roomId: effectiveRoomId,
       clientRoomId: roomId,
@@ -72,18 +62,31 @@ export async function syncAndBroadcastRoomSendingTotal(io, roomId, canonicalRoom
 
 export async function onSendGift(io, socket, data, callback) {
   try {
-    const roomId = data?.roomId;
-    const recipientUserId = data?.recipientUserId || data?.receiverUserId || (data?.receiver && (data.receiver.id || data.receiver.userId));
-    const giftId = data?.giftId;
-    const quantity = Number(data?.quantity) || 1;
+    const rawRoomId =
+      data?.roomId ||
+      data?.sessionId ||
+      data?.liveSessionId ||
+      data?.partyRoomId ||
+      data?.channelName ||
+      data?.pkId ||
+      data?.matchId ||
+      socket.currentRoomId;
+    const recipientUserId =
+      data?.recipientUserId ||
+      data?.receiverUserId ||
+      data?.recipientId ||
+      (data?.receiver && (data.receiver.id || data.receiver.userId)) ||
+      (data?.recipient && (data.recipient.id || data.recipient.userId));
+    const giftId = data?.giftId || data?.gift?.id;
+    const quantity = Number(data?.quantity ?? data?.count ?? 1);
     const clientTransactionId = data?.transactionId || data?.id || data?.idempotencyKey;
 
-    if (!roomId || !recipientUserId || !giftId || quantity < 1) {
+    if (!rawRoomId || !recipientUserId || !giftId || !Number.isInteger(quantity) || quantity < 1) {
       const err = {
         success: false,
         error: {
           code: SOCKET_ERRORS.VALIDATION_ERROR,
-          message: 'Valid roomId, recipientUserId, giftId, and positive quantity are required',
+          message: 'Valid roomId, recipientUserId, giftId, and positive integer quantity are required',
         },
       };
       if (typeof callback === 'function') return callback(err);
@@ -91,172 +94,174 @@ export async function onSendGift(io, socket, data, callback) {
     }
 
     const senderUserId = socket.userId || socket.user?.id;
+    if (!senderUserId || socket.isGuest) {
+      const err = {
+        success: false,
+        error: {
+          code: SOCKET_ERRORS.UNAUTHORIZED,
+          message: 'Authenticated account is required to send gifts',
+        },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const resolvedRoom = await roomRepository
+      .resolveCanonicalRoom(rawRoomId, { senderUserId, recipientUserId, allowActiveFallback: false }, prisma)
+      .catch(() => null);
+
+    if (!resolvedRoom) {
+      const err = {
+        success: false,
+        error: {
+          code: 'ROOM_NOT_FOUND',
+          message: 'Room not found',
+        },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    if (!['LIVE', 'ACTIVE', 'OPEN'].includes(resolvedRoom.status)) {
+      const err = {
+        success: false,
+        error: {
+          code: 'ROOM_NOT_LIVE',
+          message: 'Room is not available or has ended',
+        },
+      };
+      if (typeof callback === 'function') return callback(err);
+      return socket.emit(SOCKET_EVENTS.ERROR, err);
+    }
+
+    const canonicalRoomId = resolvedRoom.id;
+    socket.join(`room:${canonicalRoomId}`);
+    if (resolvedRoom.creatorUserId) {
+      io.in(`user:${resolvedRoom.creatorUserId}`).socketsJoin(`room:${canonicalRoomId}`);
+    }
 
     // Idempotency: check if this transaction was already processed by the REST endpoint
     if (clientTransactionId && typeof clientTransactionId === 'string' && clientTransactionId.length > 5) {
-      const existingTx = await prisma.giftTransaction.findUnique({
-        where: { id: clientTransactionId },
-        include: {
-          gift: { select: { id: true, name: true, iconUrl: true, svgaAssetUrl: true } },
-          sender: { select: { id: true, username: true, avatarUrl: true, profile: true } },
-          recipient: { select: { id: true, username: true, avatarUrl: true, profile: true } },
-        },
-      }).catch(() => null);
+      const existingTx = await prisma.giftTransaction
+        .findUnique({
+          where: { id: clientTransactionId },
+          include: {
+            gift: {
+              select: {
+                id: true,
+                name: true,
+                coinValue: true,
+                iconUrl: true,
+                svgaAssetUrl: true,
+                soundUrl: true,
+                isFullScreen: true,
+              },
+            },
+            sender: { select: { id: true, username: true, avatarUrl: true, countryCode: true, profile: true } },
+            recipient: { select: { id: true, username: true, avatarUrl: true, countryCode: true, profile: true } },
+          },
+        })
+        .catch(() => null);
 
       if (existingTx) {
-        const senderName = existingTx.sender?.profile?.displayName || existingTx.sender?.username || 'User';
-        const receiverName = existingTx.recipient?.profile?.displayName || existingTx.recipient?.username || 'Host';
+        const senderIdentity = formatAuthoritativeUserIdentity(existingTx.sender || { id: existingTx.senderUserId });
+        const receiverIdentity = formatAuthoritativeUserIdentity(
+          existingTx.recipient || { id: existingTx.recipientUserId }
+        );
+        const senderName = senderIdentity?.displayName || 'User';
+        const receiverName = receiverIdentity?.displayName || 'Host';
         const ackPayload = {
           id: existingTx.id,
           transactionId: existingTx.id,
-          roomId: existingTx.roomId || roomId,
-          clientRoomId: roomId,
+          roomId: existingTx.roomId || canonicalRoomId,
+          sessionId: existingTx.roomId || canonicalRoomId,
+          clientRoomId: rawRoomId,
           giftId: existingTx.giftId,
           giftName: existingTx.gift?.name || 'Gift',
           giftIcon: existingTx.gift?.iconUrl || '🎁',
+          iconUrl: existingTx.gift?.iconUrl || null,
+          animationUrl: existingTx.gift?.svgaAssetUrl || null,
+          svgaAssetUrl: existingTx.gift?.svgaAssetUrl || null,
+          soundUrl: existingTx.gift?.soundUrl || null,
           quantity: existingTx.giftCount,
+          totalCoins: existingTx.totalCoins?.toString?.() || '0',
           senderUserId: existingTx.senderUserId,
+          senderAgoraUid: senderIdentity?.agoraUid || deriveAgoraUid(existingTx.senderUserId),
           senderName,
-          sender: {
-            id: existingTx.senderUserId,
-            userId: existingTx.senderUserId,
-            name: senderName,
-            displayName: senderName,
-            username: existingTx.sender?.username || senderName,
-            avatarUrl: existingTx.sender?.avatarUrl || existingTx.sender?.profile?.avatarUrl || null,
-          },
+          senderUsername: senderIdentity?.username || senderName,
+          senderAvatar: senderIdentity?.avatarUrl || null,
+          sender: senderIdentity,
+          recipientUserId: existingTx.recipientUserId,
           receiverUserId: existingTx.recipientUserId,
+          recipientAgoraUid: receiverIdentity?.agoraUid || deriveAgoraUid(existingTx.recipientUserId),
           receiverName,
-          receiver: {
-            id: existingTx.recipientUserId,
-            userId: existingTx.recipientUserId,
-            name: receiverName,
-            displayName: receiverName,
-            username: existingTx.recipient?.username || receiverName,
-            avatarUrl: existingTx.recipient?.avatarUrl || existingTx.recipient?.profile?.avatarUrl || null,
-          },
+          recipientName: receiverName,
+          receiverUsername: receiverIdentity?.username || receiverName,
+          receiverAvatar: receiverIdentity?.avatarUrl || null,
+          receiver: receiverIdentity,
+          recipient: receiverIdentity,
           gift: {
             id: existingTx.giftId,
             name: existingTx.gift?.name || 'Gift',
+            coinValue: existingTx.gift?.coinValue?.toString?.() || '0',
             iconUrl: existingTx.gift?.iconUrl || '🎁',
             animationUrl: existingTx.gift?.svgaAssetUrl || null,
+            svgaAssetUrl: existingTx.gift?.svgaAssetUrl || null,
+            soundUrl: existingTx.gift?.soundUrl || null,
+            isFullScreen: Boolean(existingTx.gift?.isFullScreen),
           },
           timestamp: existingTx.createdAt.toISOString(),
         };
 
-        if (io && roomId) {
-          const targetRooms = Array.from(new Set([String(roomId), String(existingTx.roomId || roomId)]));
+        // Only broadcast if the original REST call did not have a roomId attached
+        if (io && !existingTx.roomId && canonicalRoomId) {
+          await prisma.giftTransaction
+            .update({ where: { id: existingTx.id }, data: { roomId: canonicalRoomId } })
+            .catch(() => null);
+          const targetRooms = Array.from(new Set([String(rawRoomId), String(canonicalRoomId)]));
           const channelNames = targetRooms.map((r) => `room:${r}`);
           io.to(channelNames).emit(SOCKET_EVENTS.ROOM_GIFT_SENT, ackPayload);
-          io.to(channelNames).emit('room:gift_sent', ackPayload);
-          await syncAndBroadcastRoomSendingTotal(io, roomId, existingTx.roomId || roomId, prisma);
+          await syncAndBroadcastRoomSendingTotal(io, rawRoomId, canonicalRoomId, prisma);
         }
 
         if (typeof callback === 'function') {
           return callback({
+            ok: true,
             success: true,
+            deduplicated: true,
             message: 'Gift already recorded successfully.',
-            data: ackPayload,
+            data: { ...ackPayload, deduplicated: true },
           });
         }
         return;
       }
     }
 
-    // Execute Phase 3 Authoritative Financial Gifting Transaction (wallet lock, split, ledger posting)
+    // Execute Authoritative Financial Gifting Transaction + Unified Room/PK Broadcast
     const result = await giftService.sendGift(
       {
         senderUserId,
         recipientUserId,
         giftId,
         quantity,
-        roomId,
+        roomId: canonicalRoomId,
+        transactionId: clientTransactionId,
+        idempotencyKey: clientTransactionId,
       },
       {
         ipAddress: socket.handshake?.address || '127.0.0.1',
       }
     );
 
-    const giftData = result?.data || result;
-    const transactionId = giftData?.transactionId || giftData?.transaction?.id || result?.giftTransaction?.id || 'tx_unknown';
-    const giftInfo = giftData?.gift || result?.gift || {};
-
-    let isAnonymous = false;
-    try {
-      const prefs = await privacyEligibilityService.getUserPreferences(senderUserId);
-      if (prefs.HIDE_GIFT_RECORD || prefs.ANONYMOUS_GIFTING) {
-        const el = await privacyEligibilityService.checkUserEligibility(senderUserId, 'HIDE_GIFT_RECORD');
-        if (el.isEligible) {
-          isAnonymous = true;
-        }
-      }
-    } catch (_) {}
-
-    const senderInfo = isAnonymous
-      ? {
-          id: 'anonymous',
-          username: 'Mysterious Sender',
-          displayName: 'Mysterious Sender',
-          name: 'Mysterious Sender',
-          avatarUrl: null,
-          isAnonymous: true,
-        }
-      : {
-          id: socket.user?.id || senderUserId,
-          username: socket.user?.username || 'user',
-          displayName: socket.user?.displayName || socket.user?.name || socket.user?.username || 'User',
-          name: socket.user?.displayName || socket.user?.name || socket.user?.username || 'User',
-          avatarUrl: socket.user?.avatarUrl || null,
-          isAnonymous: false,
-        };
-
-    const broadcastPayload = {
-      id: transactionId,
-      transactionId,
-      roomId,
-      clientRoomId: roomId,
-      senderUserId: isAnonymous ? 'anonymous' : senderUserId,
-      sender: senderInfo,
-      recipientUserId,
-      receiverUserId: recipientUserId,
-      receiverName: giftData?.recipient?.displayName || giftData?.recipient?.name || 'Host',
-      receiver: {
-        id: recipientUserId,
-        userId: recipientUserId,
-        username: giftData?.recipient?.username || 'Host',
-        displayName: giftData?.recipient?.displayName || giftData?.recipient?.name || 'Host',
-        name: giftData?.recipient?.displayName || giftData?.recipient?.name || 'Host',
-        avatarUrl: giftData?.recipient?.avatarUrl || null,
-      },
-      gift: {
-        id: giftInfo.id || giftId,
-        name: giftInfo.name || 'Gift',
-        iconUrl: giftInfo.iconUrl || null,
-        animationUrl: giftInfo.animationUrl || giftInfo.svgaAssetUrl || null,
-      },
-      giftId: giftInfo.id || giftId,
-      giftName: giftInfo.name || 'Gift',
-      giftIcon: giftInfo.iconUrl || '🎁',
-      quantity,
-      isAnonymous,
-      timestamp: new Date().toISOString(),
-    };
-
-    const canonicalRoomId = result?.giftTransaction?.roomId || giftData?.roomId || roomId;
-    console.log(`[RTC-DIAG][SERVER] ${new Date().toISOString()} [GIFT_SEND] socket=${socket.id} sender=${senderUserId} gift=${giftId} qty=${quantity} room=${canonicalRoomId}`);
-    if (io && roomId) {
-      const targetRooms = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
-      const channelNames = targetRooms.map((r) => `room:${r}`);
-      io.to(channelNames).emit(SOCKET_EVENTS.ROOM_GIFT_SENT, broadcastPayload);
-      io.to(channelNames).emit('room:gift_sent', broadcastPayload);
-      await syncAndBroadcastRoomSendingTotal(io, roomId, canonicalRoomId, prisma);
-    }
+    const broadcastPayload = result?.broadcastPayload || result?.data?.broadcastPayload || result?.data || result;
 
     if (typeof callback === 'function') {
       return callback({
+        ok: true,
         success: true,
+        deduplicated: Boolean(result?.deduplicated),
         message: 'Gift sent successfully.',
-        data: broadcastPayload,
+        data: { ...broadcastPayload, deduplicated: Boolean(result?.deduplicated) },
       });
     }
   } catch (err) {

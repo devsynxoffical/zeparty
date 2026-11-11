@@ -2,7 +2,13 @@ import env from '../config/env.js';
 import prisma from '../config/database.js';
 import roomRepository from '../repositories/room.repository.js';
 import userRepository from '../repositories/user.repository.js';
-import { deriveAgoraUid, generateAgoraRtcToken, AGORA_ROLES } from '../utils/agoraToken.util.js';
+import socketEmitter from '../socket/socket.emitter.js';
+import {
+  deriveAgoraUid,
+  generateAgoraRtcToken,
+  AGORA_ROLES,
+  formatAuthoritativeUserIdentity,
+} from '../utils/agoraToken.util.js';
 
 /**
  * Issues a short-lived Agora RTC token for a user in a live room after strict authorization.
@@ -152,11 +158,25 @@ export async function issueRoomAgoraToken({ roomId, userId }, db = prisma) {
     expirySeconds,
   });
 
+  // Subscribe connected sockets of regular user to the room channel
+  let userIdentity = null;
+  if (user) {
+    userIdentity = formatAuthoritativeUserIdentity(user, {
+      role: room.creatorUserId === userId ? 'HOST' : 'PARTICIPANT',
+    });
+    await socketEmitter.joinUserSocketsToRoom(userId, room.id, userIdentity).catch(() => {});
+  }
+
   return {
     token,
+    roomId: room.id,
     channelName: room.agoraChannelName,
     agoraUid: uid,
     uid,
+    hostUserId: room.creatorUserId,
+    hostAgoraUid: deriveAgoraUid(room.creatorUserId),
+    userId,
+    userIdentity,
     role,
     appId: (env.AGORA_APP_ID && !env.AGORA_APP_ID.includes('mock_agora')) ? env.AGORA_APP_ID : '970ca35de60c44645bbae8a215061401',
     expiresInSeconds: expirySeconds,

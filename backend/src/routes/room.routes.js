@@ -19,6 +19,8 @@ userRoomRouter.get('/user/:userId/joined', roomController.getUserJoinedRooms);
 userRoomRouter.get('/active-session', authenticate, roomController.getActiveSession);
 userRoomRouter.post('/switch/live-to-party', authenticate, roomController.switchLiveToParty);
 userRoomRouter.get('/:id', roomController.getRoomDetails);
+userRoomRouter.get('/:id/identities', roomController.getRoomIdentities);
+userRoomRouter.get('/:id/agora-map', roomController.getRoomIdentities);
 userRoomRouter.get('/:id/level', roomController.getRoomLevelProgression);
 userRoomRouter.get('/:id/progression', roomController.getRoomLevelProgression);
 userRoomRouter.get('/:id/trophy', roomController.getRoomTrophy);

@@ -34,18 +34,37 @@ export const createGiftSchema = z.object({
 
 export const updateGiftSchema = createGiftSchema.partial();
 
-export const sendGiftSchema = z.object({
-  giftId: z.string().min(1, 'Gift ID is required'),
-  recipientUserId: z.string().min(1, 'Recipient User ID is required'),
-  quantity: z
-    .union([z.number(), z.string()])
-    .transform((val) => Number(val))
-    .refine((val) => Number.isInteger(val) && val >= 1 && val <= 10000, {
-      message: 'Quantity must be an integer between 1 and 10,000',
-    })
-    .default(1),
-  roomId: z.string().optional().nullable(),
-});
+export const sendGiftSchema = z
+  .object({
+    giftId: z.string().min(1, 'Gift ID is required'),
+    recipientUserId: z.string().min(1).optional(),
+    receiverUserId: z.string().min(1).optional(),
+    recipientId: z.string().min(1).optional(),
+    quantity: z
+      .union([z.number(), z.string()])
+      .transform((val) => Number(val))
+      .refine((val) => Number.isInteger(val) && val >= 1 && val <= 10000, {
+        message: 'Quantity must be an integer between 1 and 10,000',
+      })
+      .default(1),
+    roomId: z.string().optional().nullable(),
+    sessionId: z.string().optional().nullable(),
+    liveSessionId: z.string().optional().nullable(),
+    partyRoomId: z.string().optional().nullable(),
+    channelName: z.string().optional().nullable(),
+    pkId: z.string().optional().nullable(),
+    matchId: z.string().optional().nullable(),
+    transactionId: z.string().optional().nullable(),
+    idempotencyKey: z.string().optional().nullable(),
+  })
+  .refine((data) => Boolean(data.recipientUserId || data.receiverUserId || data.recipientId), {
+    message: 'Recipient User ID is required',
+    path: ['recipientUserId'],
+  })
+  .transform((data) => ({
+    ...data,
+    recipientUserId: data.recipientUserId || data.receiverUserId || data.recipientId,
+  }));
 
 export const queryGiftsSchema = z.object({
   page: z

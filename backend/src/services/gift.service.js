@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import { resolveCatalogGiftId } from '../database/seedGiftCatalog.js';
 import giftRepository from '../repositories/gift.repository.js';
+import roomRepository from '../repositories/room.repository.js';
 import walletRepository from '../repositories/wallet.repository.js';
 import hostRepository from '../repositories/host.repository.js';
 import agencyRepository from '../repositories/agency.repository.js';
@@ -9,6 +10,7 @@ import policyService from './policy.service.js';
 import storageService from './storage.service.js';
 import { validateAudioUpload } from '../utils/audioValidator.util.js';
 import { generateReference } from '../utils/reference.util.js';
+import { deriveAgoraUid, formatAuthoritativeUserIdentity } from '../utils/agoraToken.util.js';
 import socketEmitter from '../socket/socket.emitter.js';
 import { SOCKET_EVENTS } from '../socket/socket.constants.js';
 import pkService from './pk.service.js';
@@ -16,6 +18,8 @@ import hostTargetService from './hostTarget.service.js';
 import wealthLevelService from './wealthLevel.service.js';
 import roomLevelService from './roomLevel.service.js';
 import roomTrophyService from './roomTrophy.service.js';
+
+const giftIdempotencyCache = new Map();
 
 async function logAudit({ adminId, adminName, action, targetEntity, targetEntityId, beforeStateJson, afterStateJson, reason, ipAddress }, db = prisma) {
   try {
@@ -267,7 +271,23 @@ export async function getPublicGifts(query, db = prisma) {
 }
 
 export async function sendGift(
-  { senderUserId, recipientUserId, senderId, recipientId, giftId, quantity = 1, roomId = null },
+  {
+    senderUserId,
+    recipientUserId,
+    senderId,
+    recipientId,
+    giftId,
+    quantity = 1,
+    roomId = null,
+    sessionId = null,
+    liveSessionId = null,
+    partyRoomId = null,
+    channelName = null,
+    pkId = null,
+    matchId = null,
+    transactionId = null,
+    idempotencyKey = null,
+  },
   { ipAddress } = {},
   db = prisma
 ) {
@@ -276,43 +296,115 @@ export async function sendGift(
   const resolvedSenderUserId = effectiveSenderId;
   const resolvedRecipientUserId = effectiveRecipientId;
 
-  // Handle self-gifting rule (Issue 03: Allow self-gifting in party rooms and live rooms)
-  if (resolvedSenderUserId === resolvedRecipientUserId) {
-    if (!roomId || typeof roomId !== 'string' || roomId.trim() === '') {
-      const error = new Error('Users cannot send gifts to themselves outside of live or party rooms');
-      error.statusCode = 400;
-      error.code = 'CANNOT_GIFT_SELF';
-      throw error;
+  const rawRoomIdentifier =
+    roomId || sessionId || liveSessionId || partyRoomId || channelName || pkId || matchId || null;
+
+  // Idempotency protection: prevent duplicate financial processing or duplicate broadcast
+  const clientTxKey =
+    (idempotencyKey && String(idempotencyKey).trim()) ||
+    (transactionId && String(transactionId).trim()) ||
+    null;
+
+  if (clientTxKey) {
+    const cacheKey = `${resolvedSenderUserId}:${clientTxKey}`;
+    const cachedResult = giftIdempotencyCache.get(cacheKey);
+    if (cachedResult) {
+      return {
+        ...cachedResult,
+        deduplicated: true,
+        data: {
+          ...cachedResult.data,
+          deduplicated: true,
+        },
+      };
     }
 
-    // Verify room existence and valid active status
-    let targetRoom = await db.room.findUnique({
-      where: { id: roomId },
-      select: { id: true, status: true, roomType: true },
-    }).catch(() => null);
+    const existingTx = await db.giftTransaction
+      .findUnique({
+        where: { id: clientTxKey },
+        include: {
+          gift: true,
+        },
+      })
+      .catch(() => null);
 
-    if (!targetRoom && roomId.length <= 16) {
-      targetRoom = await db.room.findFirst({
-        where: { id: { startsWith: roomId, mode: 'insensitive' } },
-        select: { id: true, status: true, roomType: true },
-      }).catch(() => null);
+    if (existingTx && existingTx.senderUserId === resolvedSenderUserId) {
+      const currentWallet = await walletRepository.findByUserId(resolvedSenderUserId, db).catch(() => null);
+      const balanceStr = currentWallet ? BigInt(currentWallet.coinBalance).toString() : '0';
+      const dedupPayload = {
+        success: true,
+        deduplicated: true,
+        message: 'Gift already processed.',
+        giftTransaction: existingTx,
+        transactionId: existingTx.id,
+        senderNewBalance: balanceStr,
+        updatedCoinBalance: balanceStr,
+        data: {
+          status: 'CONFIRMED',
+          deduplicated: true,
+          transactionId: existingTx.id,
+          gift: existingTx.gift
+            ? {
+                id: existingTx.gift.id,
+                name: existingTx.gift.name,
+                iconUrl: existingTx.gift.iconUrl,
+                svgaAssetUrl: existingTx.gift.svgaAssetUrl,
+                soundUrl: existingTx.gift.soundUrl || null,
+                isFullScreen: existingTx.gift.isFullScreen,
+              }
+            : { id: existingTx.giftId },
+          quantity: existingTx.giftCount,
+          totalCoinsDebited: existingTx.totalCoins.toString(),
+          hostDiamondsCredited: existingTx.hostDiamonds.toString(),
+          senderNewBalance: balanceStr,
+          updatedCoinBalance: balanceStr,
+          newCoinBalance: balanceStr,
+          remainingBalance: balanceStr,
+        },
+      };
+      giftIdempotencyCache.set(cacheKey, dedupPayload);
+      return dedupPayload;
     }
+  }
 
-    if (!targetRoom) {
-      const error = new Error('Self-gifting is only permitted in active party rooms and live rooms');
-      error.statusCode = 404;
-      error.code = 'ROOM_NOT_FOUND';
-      throw error;
-    }
+  // Resolve room if an identifier was supplied
+  let resolvedRoom = null;
+  if (rawRoomIdentifier && typeof rawRoomIdentifier === 'string' && rawRoomIdentifier.trim() !== '') {
+    resolvedRoom = await roomRepository
+      .resolveCanonicalRoom(
+        rawRoomIdentifier,
+        { senderUserId: resolvedSenderUserId, recipientUserId: resolvedRecipientUserId, allowActiveFallback: false },
+        db
+      )
+      .catch(() => null);
 
-    const isRoomActive = ['LIVE', 'ACTIVE', 'OPEN'].includes(targetRoom.status);
-    if (!isRoomActive) {
+    if (resolvedRoom && !['LIVE', 'ACTIVE', 'OPEN'].includes(resolvedRoom.status)) {
       const error = new Error('Room is not available or has ended');
       error.statusCode = 400;
       error.code = 'ROOM_NOT_LIVE';
       throw error;
     }
   }
+
+  // Handle self-gifting rule (Issue 03: Allow self-gifting in party rooms and live rooms)
+  if (resolvedSenderUserId === resolvedRecipientUserId) {
+    if (!rawRoomIdentifier || typeof rawRoomIdentifier !== 'string' || rawRoomIdentifier.trim() === '') {
+      const error = new Error('Users cannot send gifts to themselves outside of live or party rooms');
+      error.statusCode = 400;
+      error.code = 'CANNOT_GIFT_SELF';
+      throw error;
+    }
+
+    if (!resolvedRoom) {
+      const error = new Error('Self-gifting is only permitted in active party rooms and live rooms');
+      error.statusCode = 404;
+      error.code = 'ROOM_NOT_FOUND';
+      throw error;
+    }
+  }
+
+  const effectiveCanonicalRoomId = resolvedRoom ? resolvedRoom.id : (rawRoomIdentifier ? String(rawRoomIdentifier).trim() : null);
+  roomId = effectiveCanonicalRoomId;
 
   // Alias for backward compatibility throughout the function
   senderUserId = resolvedSenderUserId;
@@ -370,7 +462,11 @@ export async function sendGift(
     walletRepository.findByUserId(senderUserId, db),
     walletRepository.findByUserId(recipientUserId, db),
     policyService.getEffectivePolicy('ECONOMY', db).catch(() => null),
-    roomId ? db.room.findUnique({ where: { id: roomId } }).catch(() => null) : Promise.resolve(null),
+    resolvedRoom
+      ? Promise.resolve(resolvedRoom)
+      : roomId
+      ? db.room.findUnique({ where: { id: roomId } }).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   if (!recipientUser) {
@@ -606,20 +702,222 @@ export async function sendGift(
     };
   }, { maxWait: 10000, timeout: 30000 });
 
+  // Load authoritative sender & recipient user details for rich real-time display & Agora UID mapping
+  let senderUser = null;
+  let recipientUserObj = null;
+  try {
+    [senderUser, recipientUserObj] = await Promise.all([
+      db.user.findUnique({
+        where: { id: senderUserId },
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          countryCode: true,
+          profile: {
+            select: {
+              displayName: true,
+              level: true,
+              vipLevel: true,
+              svipLevel: true,
+              nobleRank: true,
+            },
+          },
+          userAssets: {
+            where: { isEquipped: true },
+            include: { asset: true },
+          },
+        },
+      }),
+      db.user.findUnique({
+        where: { id: recipientUserId },
+        select: {
+          id: true,
+          username: true,
+          avatarUrl: true,
+          countryCode: true,
+          profile: {
+            select: {
+              displayName: true,
+              level: true,
+              vipLevel: true,
+              svipLevel: true,
+              nobleRank: true,
+            },
+          },
+          userAssets: {
+            where: { isEquipped: true },
+            include: { asset: true },
+          },
+        },
+      }),
+    ]);
+  } catch (_) {}
+
+  const senderIdentity = formatAuthoritativeUserIdentity(
+    senderUser || { id: senderUserId, username: 'User' },
+    { role: roomRecord?.creatorUserId === senderUserId ? 'HOST' : 'VIEWER' }
+  );
+  const recipientIdentity = formatAuthoritativeUserIdentity(
+    recipientUserObj || recipientUser || { id: recipientUserId, username: 'Host' },
+    { role: roomRecord?.creatorUserId === recipientUserId ? 'HOST' : 'PARTICIPANT' }
+  );
+
+  const senderDisplayName = senderIdentity?.displayName || 'User';
+  const senderAvatarUrl = senderIdentity?.avatarUrl || '';
+  const recipientDisplayName = recipientIdentity?.displayName || 'Host';
+  const recipientAvatarUrl = recipientIdentity?.avatarUrl || '';
+
+  let broadcastPayload = null;
+  if (roomId) {
+    const canonicalRoomId = resolvedRoom?.id || roomRecord?.id || roomId;
+
+    // Ensure host is subscribed to the canonical room channel so host always receives gift events
+    if (roomRecord?.creatorUserId) {
+      await socketEmitter.joinUserSocketsToRoom(roomRecord.creatorUserId, canonicalRoomId).catch(() => {});
+    }
+
+    // Bug #28: Tag live broadcast with explicit playback & replay flags + authoritative ZeParty & Agora identities
+    broadcastPayload = {
+      id: result.giftTransaction.id,
+      transactionId: result.giftTransaction.id,
+      eventId: `live_gift_${result.giftTransaction.id}`,
+      isLive: true,
+      isHistorical: false,
+      playbackType: 'ANIMATE_ONCE',
+      replayAnimation: true,
+      roomId: canonicalRoomId,
+      sessionId: canonicalRoomId,
+      clientRoomId: rawRoomIdentifier || canonicalRoomId,
+      room: canonicalRoomId,
+      agoraChannelName: resolvedRoom?.agoraChannelName || roomRecord?.agoraChannelName || null,
+      giftId: gift.id,
+      giftName: gift.name,
+      giftIcon: gift.iconUrl || '🎁',
+      iconUrl: gift.iconUrl || null,
+      animationUrl: gift.svgaAssetUrl || null,
+      svgaAssetUrl: gift.svgaAssetUrl || null,
+      soundUrl: gift.soundUrl || null,
+      soundAsset: gift.soundUrl || null,
+      hasCustomSound: Boolean(gift.soundUrl),
+      isFullScreen: Boolean(gift.isFullScreen),
+      coinValue: gift.coinValue.toString(),
+      quantity: qty,
+      totalCoins: totalCoins.toString(),
+      senderUserId,
+      senderAgoraUid: senderIdentity?.agoraUid || deriveAgoraUid(senderUserId),
+      senderName: senderDisplayName,
+      senderUsername: senderIdentity?.username || senderDisplayName,
+      senderAvatar: senderAvatarUrl,
+      sender: {
+        ...senderIdentity,
+        id: senderUserId,
+        userId: senderUserId,
+        name: senderDisplayName,
+        displayName: senderDisplayName,
+        username: senderIdentity?.username || senderDisplayName,
+        avatarUrl: senderAvatarUrl || null,
+        agoraUid: senderIdentity?.agoraUid || deriveAgoraUid(senderUserId),
+        uid: senderIdentity?.agoraUid || deriveAgoraUid(senderUserId),
+      },
+      recipientUserId,
+      receiverUserId: recipientUserId,
+      recipientAgoraUid: recipientIdentity?.agoraUid || deriveAgoraUid(recipientUserId),
+      receiverName: recipientDisplayName,
+      recipientName: recipientDisplayName,
+      receiverUsername: recipientIdentity?.username || recipientDisplayName,
+      receiverAvatar: recipientAvatarUrl,
+      recipientAvatar: recipientAvatarUrl,
+      receiver: {
+        ...recipientIdentity,
+        id: recipientUserId,
+        userId: recipientUserId,
+        name: recipientDisplayName,
+        displayName: recipientDisplayName,
+        username: recipientIdentity?.username || recipientDisplayName,
+        avatarUrl: recipientAvatarUrl || null,
+        agoraUid: recipientIdentity?.agoraUid || deriveAgoraUid(recipientUserId),
+        uid: recipientIdentity?.agoraUid || deriveAgoraUid(recipientUserId),
+      },
+      recipient: {
+        ...recipientIdentity,
+        id: recipientUserId,
+        userId: recipientUserId,
+        name: recipientDisplayName,
+        displayName: recipientDisplayName,
+        username: recipientIdentity?.username || recipientDisplayName,
+        avatarUrl: recipientAvatarUrl || null,
+        agoraUid: recipientIdentity?.agoraUid || deriveAgoraUid(recipientUserId),
+        uid: recipientIdentity?.agoraUid || deriveAgoraUid(recipientUserId),
+      },
+      gift: {
+        id: gift.id,
+        name: gift.name,
+        coinValue: gift.coinValue.toString(),
+        iconUrl: gift.iconUrl || null,
+        svgaAssetUrl: gift.svgaAssetUrl || null,
+        animationUrl: gift.svgaAssetUrl || null,
+        soundUrl: gift.soundUrl || null,
+        soundAsset: gift.soundUrl || null,
+        hasCustomSound: Boolean(gift.soundUrl),
+        isFullScreen: gift.isFullScreen || false,
+      },
+      timestamp: new Date().toISOString(),
+    };
+
+    const targetRoomIdsSet = new Set([String(canonicalRoomId)]);
+    if (rawRoomIdentifier && String(rawRoomIdentifier) !== String(canonicalRoomId)) {
+      targetRoomIdsSet.add(String(rawRoomIdentifier));
+    }
+
+    // Check if room is participating in an ACTIVE PK match so both PK rooms receive the gift event
+    try {
+      const activePkMatch = await db.pKMatch
+        .findFirst({
+          where: {
+            status: 'ACTIVE',
+            OR: [{ roomAId: canonicalRoomId }, { roomBId: canonicalRoomId }],
+          },
+          select: { id: true, roomAId: true, roomBId: true },
+        })
+        .catch(() => null);
+      if (activePkMatch) {
+        broadcastPayload.pkMatchId = activePkMatch.id;
+        if (activePkMatch.roomAId) targetRoomIdsSet.add(String(activePkMatch.roomAId));
+        if (activePkMatch.roomBId) targetRoomIdsSet.add(String(activePkMatch.roomBId));
+      }
+    } catch (_) {}
+
+    const targetRoomIds = Array.from(targetRoomIdsSet);
+    for (const rid of targetRoomIds) {
+      socketEmitter.emitToRoom(rid, SOCKET_EVENTS.ROOM_GIFT_SENT, broadcastPayload);
+      socketEmitter.emitToRoom(rid, 'room_gift_sent', broadcastPayload);
+      socketEmitter.emitToRoom(rid, 'gift:sent', broadcastPayload);
+      socketEmitter.emitToRoom(rid, 'gift_sent', broadcastPayload);
+      socketEmitter.emitToRoom(rid, 'room:gift', broadcastPayload);
+    }
+  }
+
   // Prepare immediate confirmed HTTP response payload (Bug #26: sub-50ms latency)
   const responseData = {
     referenceId: refId,
     status: 'CONFIRMED',
+    roomId: roomId || null,
     gift: {
       id: gift.id,
       name: gift.name,
+      coinValue: gift.coinValue.toString(),
       iconUrl: gift.iconUrl,
       svgaAssetUrl: gift.svgaAssetUrl,
+      animationUrl: gift.svgaAssetUrl || null,
       soundUrl: gift.soundUrl || null,
       soundAsset: gift.soundUrl || null,
       hasCustomSound: Boolean(gift.soundUrl),
       isFullScreen: gift.isFullScreen,
     },
+    sender: senderIdentity,
+    recipient: recipientIdentity,
+    receiver: recipientIdentity,
     quantity: qty,
     totalCoinsDebited: totalCoins.toString(),
     hostDiamondsCredited: hostDiamonds.toString(),
@@ -634,6 +932,7 @@ export async function sendGift(
     senderNewLevel: result.senderWealth.wealthLevel,
     senderWealth: result.senderWealth,
     hostTarget: null,
+    broadcastPayload,
   };
 
   const returnPayload = {
@@ -646,12 +945,32 @@ export async function sendGift(
     wealthXPAdded: Number(result.senderWealth.addedXp),
     senderNewLevel: result.senderWealth.wealthLevel,
     senderWealth: result.senderWealth,
+    broadcastPayload,
     data: responseData,
   };
 
-  // Asynchronous background execution: target attribution, audit log, socket emissions, PK sync, and high-value notifications
+  if (clientTxKey) {
+    giftIdempotencyCache.set(`${senderUserId}:${clientTxKey}`, returnPayload);
+  }
+  giftIdempotencyCache.set(`${senderUserId}:${result.giftTransaction.id}`, returnPayload);
+
+  // Asynchronous background execution: PK sync first (real-time critical), then target attribution, audit log, room trophy/level, and high-value notifications
   setImmediate(async () => {
     try {
+      if (roomId) {
+        const canonicalRoomIdForPk = resolvedRoom?.id || roomRecord?.id || roomId;
+        try {
+          await pkService.recordGiftContribution({
+            giftTransactionId: result.giftTransaction.id,
+            senderUserId,
+            recipientUserId,
+            roomId: canonicalRoomIdForPk,
+            coins: Number(totalCoins),
+            commitTimestamp: result.giftTransaction.createdAt,
+          });
+        } catch (_) {}
+      }
+
       // 1. Authoritative Persistent Gift-Target Attribution (Counting Key = giftTransaction.id)
       try {
         await hostTargetService.recordGiftAttribution(
@@ -700,121 +1019,10 @@ export async function sendGift(
         ipAddress,
       }, db);
 
-      // Load sender & recipient user details for rich real-time display
-      let senderUser = null;
-      let recipientUserObj = null;
-      try {
-        [senderUser, recipientUserObj] = await Promise.all([
-          db.user.findUnique({
-            where: { id: senderUserId },
-            select: {
-              id: true,
-              username: true,
-              avatarUrl: true,
-              profile: { select: { displayName: true } },
-            },
-          }),
-          db.user.findUnique({
-            where: { id: recipientUserId },
-            select: {
-              id: true,
-              username: true,
-              avatarUrl: true,
-              profile: { select: { displayName: true } },
-            },
-          }),
-        ]);
-      } catch (_) {}
-
-      const senderDisplayName = senderUser?.profile?.displayName || senderUser?.username || 'User';
-      const senderAvatarUrl = senderUser?.profile?.avatarUrl || senderUser?.avatarUrl || '';
-      const recipientDisplayName = recipientUserObj?.profile?.displayName || recipientUserObj?.username || 'Host';
-      const recipientAvatarUrl = recipientUserObj?.profile?.avatarUrl || recipientUserObj?.avatarUrl || '';
-
-      // 3. Realtime Room Socket Broadcasts vs Direct Inbox Messaging
+      // 3. Realtime Room Trophy/Level/PK vs Direct Inbox Messaging
       if (roomId) {
-        let canonicalRoomId = roomId;
-        try {
-          const roomRec = await db.room.findUnique({
-            where: { id: roomId },
-            select: { id: true },
-          });
-          if (roomRec) {
-            canonicalRoomId = roomRec.id;
-          } else if (roomId.length <= 16) {
-            const found = await db.room.findFirst({
-              where: { id: { startsWith: roomId, mode: 'insensitive' } },
-              select: { id: true },
-            });
-            if (found) canonicalRoomId = found.id;
-          }
-        } catch (_) {}
-
-        // Bug #28: Tag live broadcast with explicit playback & replay flags
-        const broadcastPayload = {
-          id: result.giftTransaction.id,
-          transactionId: result.giftTransaction.id,
-          eventId: `live_gift_${result.giftTransaction.id}`,
-          isLive: true,
-          isHistorical: false,
-          playbackType: 'ANIMATE_ONCE',
-          replayAnimation: true,
-          roomId: canonicalRoomId,
-          clientRoomId: roomId,
-          room: canonicalRoomId,
-          giftId: gift.id,
-          giftName: gift.name,
-          giftIcon: gift.iconUrl || '🎁',
-          soundUrl: gift.soundUrl || null,
-          soundAsset: gift.soundUrl || null,
-          hasCustomSound: Boolean(gift.soundUrl),
-          quantity: qty,
-          totalCoins: totalCoins.toString(),
-          senderUserId,
-          senderName: senderDisplayName,
-          senderAvatar: senderAvatarUrl,
-          sender: {
-            id: senderUserId,
-            userId: senderUserId,
-            name: senderDisplayName,
-            displayName: senderDisplayName,
-            username: senderUser?.username || senderDisplayName,
-            avatarUrl: senderAvatarUrl,
-          },
-          recipientUserId,
-          receiverUserId: recipientUserId,
-          receiverName: recipientDisplayName,
-          receiverAvatar: recipientAvatarUrl,
-          receiver: {
-            id: recipientUserId,
-            userId: recipientUserId,
-            name: recipientDisplayName,
-            displayName: recipientDisplayName,
-            username: recipientUserObj?.username || recipientDisplayName,
-            avatarUrl: recipientAvatarUrl,
-          },
-          gift: {
-            id: gift.id,
-            name: gift.name,
-            iconUrl: gift.iconUrl || null,
-            animationUrl: gift.svgaAssetUrl || null,
-            soundUrl: gift.soundUrl || null,
-            soundAsset: gift.soundUrl || null,
-            hasCustomSound: Boolean(gift.soundUrl),
-            isFullScreen: gift.isFullScreen || false,
-          },
-          timestamp: new Date().toISOString(),
-        };
-
+        const canonicalRoomId = resolvedRoom?.id || roomRecord?.id || roomId;
         const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
-        for (const rid of targetRoomIds) {
-          socketEmitter.emitToRoom(rid, SOCKET_EVENTS.ROOM_GIFT_SENT, broadcastPayload);
-          socketEmitter.emitToRoom(rid, 'room:gift_sent', broadcastPayload);
-          socketEmitter.emitToRoom(rid, 'room_gift_sent', broadcastPayload);
-          socketEmitter.emitToRoom(rid, 'gift:sent', broadcastPayload);
-          socketEmitter.emitToRoom(rid, 'gift_sent', broadcastPayload);
-          socketEmitter.emitToRoom(rid, 'room:gift', broadcastPayload);
-        }
 
         // Room Sending Coin Total Sync (Trophy Counter)
         try {

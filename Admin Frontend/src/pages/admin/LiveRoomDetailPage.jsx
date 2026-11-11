@@ -70,6 +70,9 @@ export function LiveRoomDetailPage() {
               realParticipants.push({
                 id: found.hostId || 'host',
                 name: found.hostName || 'Host',
+                username: found.hostUsername || found.creator?.username || null,
+                avatarUrl: found.hostAvatar || found.creator?.avatarUrl || found.creator?.profile?.avatarUrl || null,
+                agoraUid: found.agoraHostUid || found.creator?.agoraUid || null,
                 role: 'host',
                 micOn: !isHostMuted,
                 seatIndex: hostSeat?.seatIndex ?? 0,
@@ -80,7 +83,10 @@ export function LiveRoomDetailPage() {
                 if (s.occupiedUser && s.occupiedUser.id !== found.hostId) {
                   realParticipants.push({
                     id: s.occupiedUser.id,
-                    name: s.occupiedUser.profile?.displayName || s.occupiedUser.username || `Speaker ${s.seatIndex + 1}`,
+                    name: s.occupiedUser.profile?.displayName || s.occupiedUser.displayName || s.occupiedUser.username || `Speaker ${s.seatIndex + 1}`,
+                    username: s.occupiedUser.username || null,
+                    avatarUrl: s.occupiedUser.avatarUrl || s.occupiedUser.profile?.avatarUrl || null,
+                    agoraUid: s.occupiedUser.agoraUid || s.agoraUid || null,
                     role: 'speaker',
                     micOn: !Boolean(found.isMuted || s.isMuted),
                     seatIndex: s.seatIndex,
@@ -95,10 +101,31 @@ export function LiveRoomDetailPage() {
                   const memberRole = String(m.role || '').toLowerCase() === 'admin' ? 'admin' : 'viewer';
                   realParticipants.push({
                     id: u.id,
-                    name: u.profile?.displayName || u.username || 'Viewer',
+                    name: u.profile?.displayName || u.displayName || u.username || 'Viewer',
+                    username: u.username || null,
+                    avatarUrl: u.avatarUrl || u.profile?.avatarUrl || null,
+                    agoraUid: u.agoraUid || m.agoraUid || null,
                     role: memberRole,
                     isOnline: m.isOnline !== undefined ? Boolean(m.isOnline) : true,
                     micOn: false,
+                  });
+                }
+              });
+            }
+            if (Array.isArray(found.participants)) {
+              found.participants.forEach((p) => {
+                const uid = p.id || p.userId;
+                if (uid && !realParticipants.some((existing) => existing.id === uid)) {
+                  realParticipants.push({
+                    id: uid,
+                    name: p.displayName || p.name || p.username || 'Participant',
+                    username: p.username || null,
+                    avatarUrl: p.avatarUrl || p.avatar || null,
+                    agoraUid: p.agoraUid || p.uid || null,
+                    role: String(p.role || 'viewer').toLowerCase(),
+                    isOnline: true,
+                    micOn: false,
+                    seatIndex: p.seatIndex ?? null,
                   });
                 }
               });
@@ -332,7 +359,36 @@ export function LiveRoomDetailPage() {
   }
 
   const participantsColumns = [
-    { key: 'user', header: 'User', render: (row) => <span className="text-white font-medium">{row.name}</span> },
+    {
+      key: 'user',
+      header: 'User Identity',
+      render: (row) => (
+        <div className="flex items-center gap-2.5">
+          {row.avatarUrl ? (
+            <img
+              src={row.avatarUrl}
+              alt={row.name}
+              className="w-8 h-8 rounded-full object-cover border border-slate-700 shrink-0"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-xs font-bold text-indigo-300 shrink-0">
+              {(row.name || 'U').charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div>
+            <p className="text-white font-semibold text-sm">{row.name}</p>
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+              {row.username && <span>@{row.username}</span>}
+              {row.id && <span className="font-mono text-slate-500">ID: {row.id}</span>}
+              {row.agoraUid && <span className="font-mono text-sky-400">Agora: {row.agoraUid}</span>}
+            </div>
+          </div>
+        </div>
+      ),
+    },
     {
       key: 'role',
       header: 'Role',

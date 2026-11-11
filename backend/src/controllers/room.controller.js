@@ -110,6 +110,23 @@ export async function getRoomDetails(req, res, next) {
   }
 }
 
+export async function getRoomIdentities(req, res, next) {
+  try {
+    const { id } = roomIdParamSchema.parse(req.params);
+    const agoraUid = req.query.agoraUid || req.query.uid || null;
+    const userId = req.query.userId || null;
+    const data = await roomService.getRoomIdentities(id, { agoraUid, userId });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Room participant identities and Agora UID map retrieved successfully',
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function joinRoom(req, res, next) {
   try {
     const { id } = roomIdParamSchema.parse(req.params);
@@ -1714,6 +1731,7 @@ export default {
   createRoom,
   getActiveRooms,
   getRoomDetails,
+  getRoomIdentities,
   joinRoom,
   leaveRoom,
   occupySeat,
