@@ -1070,6 +1070,9 @@ model Room {
   status              RoomStatus   @default(LIVE)
   createdAt           DateTime     @default(now())
   endedAt             DateTime?
+  sessionStartedAt    DateTime?
+  activeSessionId     String?
+  lastSessionEndedAt  DateTime?
 
   seats             RoomSeat[]
   members           RoomMember[]
@@ -1082,6 +1085,8 @@ model Room {
 
   @@index([roomType, status, isPinnedTop])
   @@index([creatorUserId])
+  @@index([activeSessionId])
+  @@index([sessionStartedAt])
 }
 
 model RoomSeat {
@@ -1163,11 +1168,13 @@ model GiftTransaction {
   giftCount       Int      @default(1)
   totalCoins      BigInt
   hostDiamonds    BigInt
+  sessionId       String?
   createdAt       DateTime @default(now())
 
   @@index([senderUserId])
   @@index([recipientUserId])
   @@index([roomId])
+  @@index([roomId, sessionId])
 }
 
 model Asset {

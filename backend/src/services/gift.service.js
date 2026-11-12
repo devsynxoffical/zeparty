@@ -18,6 +18,7 @@ import hostTargetService from './hostTarget.service.js';
 import wealthLevelService from './wealthLevel.service.js';
 import roomLevelService from './roomLevel.service.js';
 import roomTrophyService from './roomTrophy.service.js';
+import { getAuthoritativeRoomSessionScore } from './roomSession.service.js';
 
 const giftIdempotencyCache = new Map();
 
@@ -657,6 +658,7 @@ export async function sendGift(
         senderUserId,
         recipientUserId,
         roomId,
+        sessionId: roomRecord?.activeSessionId || null,
         giftCount: qty,
         totalCoins,
         hostDiamonds,
@@ -1024,36 +1026,17 @@ export async function sendGift(
         const canonicalRoomId = resolvedRoom?.id || roomRecord?.id || roomId;
         const targetRoomIds = Array.from(new Set([String(roomId), String(canonicalRoomId)]));
 
-        // Room Sending Coin Total Sync (Trophy Counter)
+        // Room Sending Coin Total Sync (Active Session Score)
         try {
-          const todayUtc = new Date();
-          todayUtc.setUTCHours(0, 0, 0, 0);
-          let effectiveDailyStart = todayUtc;
-          if (canonicalRoomId) {
-            const roomRec = await (db || prisma).room.findUnique({
-              where: { id: canonicalRoomId },
-              select: { createdAt: true },
-            }).catch(() => null);
-            if (roomRec?.createdAt) {
-              const sessionStart = new Date(roomRec.createdAt);
-              if (sessionStart > todayUtc) {
-                effectiveDailyStart = sessionStart;
-              }
-            }
-          }
-          const dailyAggr = await (db || prisma).giftTransaction.aggregate({
-            where: { roomId: canonicalRoomId, createdAt: { gte: effectiveDailyStart } },
-            _sum: { totalCoins: true },
-          });
-          const updatedTotal = Number(dailyAggr._sum?.totalCoins || 0);
-          // The total is derived from GiftTransaction on demand (see roomTrophy/roomLevel
-          // services); Room has no sending-total columns, and the old update here failed
-          // with a Prisma validation error on every gift.
+          const sessionScoreData = await getAuthoritativeRoomSessionScore(canonicalRoomId, db || prisma);
+          const updatedTotal = sessionScoreData.sessionScore;
 
           const sendingTotalPayload = {
             roomId: canonicalRoomId,
             clientRoomId: roomId,
-            period: 'daily',
+            sessionId: sessionScoreData.sessionId,
+            sessionStartedAt: sessionScoreData.sessionStartedAt,
+            period: 'session',
             totalCoins: updatedTotal,
             roomSendingTotal: updatedTotal,
             dailySendingTotal: updatedTotal,

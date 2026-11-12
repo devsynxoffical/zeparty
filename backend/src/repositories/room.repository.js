@@ -103,6 +103,8 @@ export async function createRoomWithSeats(
         isLocked: false,
       }));
 
+      const activeSessionId = crypto.randomUUID();
+      const sessionStartedAt = new Date();
       return await db.room.create({
         data: {
           creatorUserId,
@@ -115,6 +117,8 @@ export async function createRoomWithSeats(
           roomPin,
           agoraChannelName,
           status: 'LIVE',
+          activeSessionId,
+          sessionStartedAt,
           currentViewersCount: 0,
           members: {
             create: {
@@ -194,6 +198,8 @@ export async function createRoomWithSeats(
     isLocked: false,
   }));
 
+  const liveSessionId = crypto.randomUUID();
+  const liveSessionStartedAt = new Date();
   return await db.room.create({
     data: {
       creatorUserId,
@@ -206,6 +212,8 @@ export async function createRoomWithSeats(
       roomPin,
       agoraChannelName,
       status: 'LIVE',
+      activeSessionId: liveSessionId,
+      sessionStartedAt: liveSessionStartedAt,
       currentViewersCount: 0, // Audience viewer count starts at 0 (host is not an audience viewer)
       members: {
         create: {
@@ -856,17 +864,32 @@ export async function joinRoomTx({ roomId, userId, pin = null, isApproved = fals
 
   if (!isRoomOpen) {
     // Persistent Party Room Wake-from-Sleep:
-    // When any user searches and joins a sleeping Party Room by its Room ID, automatically wake it back to LIVE!
-    if (isPartyRoom && room.status !== 'CLOSED_BY_ADMIN') {
-      room = await db.room.update({
-        where: { id: resolvedRoomId },
+    // Only legitimately sleeping rooms (status === 'ENDED') may wake up.
+    // Moderation-restricted rooms (CLOSED_BY_ADMIN, HOST_KICKED) must never wake.
+    if (isPartyRoom && room.status === 'ENDED') {
+      const newSessionId = crypto.randomUUID();
+      const newSessionStartedAt = new Date();
+      // Atomic conditional update ensures concurrency safety: if concurrent join requests hit, only first activates.
+      // Strictly matches status: 'ENDED' so concurrent admin closure cannot be overwritten.
+      const updateResult = await db.room.updateMany({
+        where: {
+          id: resolvedRoomId,
+          status: 'ENDED',
+        },
         data: {
           status: 'LIVE',
           endedAt: null,
+          activeSessionId: newSessionId,
+          sessionStartedAt: newSessionStartedAt,
         },
       });
-      isRoomOpen = true;
-      wokeFromSleep = true;
+
+      // Reload room to verify latest status
+      room = await db.room.findUnique({ where: { id: resolvedRoomId } });
+      if (room && ['LIVE', 'ACTIVE', 'OPEN'].includes(room.status)) {
+        isRoomOpen = true;
+        wokeFromSleep = true;
+      }
     } else if (room.creatorUserId) {
       // For solo LIVE_VIDEO, check if the host has started a new active room session
       const activeRoom = await db.room.findFirst({
@@ -884,6 +907,12 @@ export async function joinRoomTx({ roomId, userId, pin = null, isApproved = fals
     }
 
     if (!isRoomOpen) {
+      if (['CLOSED_BY_ADMIN', 'HOST_KICKED'].includes(room.status)) {
+        const error = new Error('Room has been closed by administration and is not available');
+        error.statusCode = 403;
+        error.code = 'ROOM_CLOSED_BY_ADMIN';
+        throw error;
+      }
       const error = new Error('Room is not available or has ended');
       error.statusCode = 400;
       error.code = 'ROOM_NOT_LIVE';
@@ -892,11 +921,20 @@ export async function joinRoomTx({ roomId, userId, pin = null, isApproved = fals
   }
 
   // Check if user was kicked from this room session
+  const now = new Date();
   const activeKick = await db.roomModeration.findFirst({
     where: {
       roomId: resolvedRoomId,
       targetUserId: userId,
       actionType: 'KICK',
+      AND: [
+        {
+          OR: [
+            { expiresAt: null },
+            { expiresAt: { gt: now } },
+          ],
+        },
+      ],
     },
   });
 
@@ -1198,12 +1236,20 @@ export async function occupySeatTx({ roomId, seatIndex, userId }, db = prisma) {
     if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
       const isParty = String(room.roomType || '').toUpperCase().includes('PARTY') ||
         String(room.roomType || '').toUpperCase().includes('AUDIO');
-      if (isParty && room.status !== 'CLOSED_BY_ADMIN') {
-        room = await tx.room.update({
-          where: { id: resolvedRoomId },
+      if (isParty && room.status === 'ENDED') {
+        const updateResult = await tx.room.updateMany({
+          where: { id: resolvedRoomId, status: 'ENDED' },
           data: { status: 'LIVE', endedAt: null },
         });
-      } else {
+        room = await tx.room.findUnique({ where: { id: resolvedRoomId } });
+      }
+      if (!room || !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
+        if (['CLOSED_BY_ADMIN', 'HOST_KICKED'].includes(room?.status)) {
+          const error = new Error('Room has been closed by administration');
+          error.statusCode = 403;
+          error.code = 'ROOM_CLOSED_BY_ADMIN';
+          throw error;
+        }
         const error = new Error('Room is not live');
         error.statusCode = 400;
         error.code = 'ROOM_NOT_LIVE';
@@ -1447,9 +1493,11 @@ export async function closeRoomTx({ roomId, status = 'ENDED', endedAt = new Date
       throw error;
     }
 
-    const isAlreadyEnded = ['ENDED', 'CLOSED_BY_ADMIN', 'HOST_KICKED'].includes(existing.status);
+    // If a room is explicitly being closed by admin moderation, transition it immediately even if previously ENDED
+    const isModerationClosure = ['CLOSED_BY_ADMIN', 'HOST_KICKED'].includes(status);
+    const isAlreadyEnded = !isModerationClosure && ['ENDED', 'CLOSED_BY_ADMIN', 'HOST_KICKED'].includes(existing.status);
     const resolvedEndedAt = (isAlreadyEnded && existing.endedAt) ? existing.endedAt : (endedAt || new Date());
-    const resolvedStatus = isAlreadyEnded ? existing.status : status;
+    const resolvedStatus = isModerationClosure ? status : (isAlreadyEnded ? existing.status : status);
 
     // Release all seats
     await tx.roomSeat.updateMany({
@@ -1468,6 +1516,7 @@ export async function closeRoomTx({ roomId, status = 'ENDED', endedAt = new Date
       data: {
         status: resolvedStatus,
         endedAt: resolvedEndedAt,
+        lastSessionEndedAt: resolvedEndedAt,
         currentViewersCount: 0,
       },
     });

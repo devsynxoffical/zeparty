@@ -77,16 +77,26 @@ export async function issueRoomAgoraToken({ roomId, userId }, db = prisma) {
   if (room.status !== 'LIVE') {
     const isParty = String(room.roomType || '').toUpperCase().includes('PARTY') ||
       String(room.roomType || '').toUpperCase().includes('AUDIO');
-    if (isParty && room.status !== 'CLOSED_BY_ADMIN') {
+    if (isParty && room.status === 'ENDED') {
       try {
-        await db.room.update({
-          where: { id: room.id },
+        await db.room.updateMany({
+          where: { id: room.id, status: 'ENDED' },
           data: { status: 'LIVE', endedAt: null },
         });
-        room.status = 'LIVE';
+        const fresh = await db.room.findUnique({ where: { id: room.id }, select: { status: true } });
+        if (fresh?.status) room.status = fresh.status;
       } catch (_) {}
     }
     if (room.status !== 'LIVE') {
+      if (['CLOSED_BY_ADMIN', 'HOST_KICKED'].includes(room.status)) {
+        const error = new Error(`Room has been closed by administration (status: ${room.status})`);
+        error.statusCode = 403;
+        error.status = 403;
+        error.code = 'ROOM_CLOSED_BY_ADMIN';
+        error.roomEnded = true;
+        error.recoverable = false;
+        throw error;
+      }
       const error = new Error(`Room is not live (current status: ${room.status})`);
       error.statusCode = 410;
       error.status = 410;

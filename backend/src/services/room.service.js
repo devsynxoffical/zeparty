@@ -27,6 +27,7 @@ import roomRoleAuditService from './roomRoleAudit.service.js';
 import { getNobleStyle } from './asset.service.js';
 import roomLevelService from './roomLevel.service.js';
 import roomTrophyService from './roomTrophy.service.js';
+import { getAuthoritativeRoomSessionScore, ensureActiveRoomSession } from './roomSession.service.js';
 
 /**
  * Enriches a room object with authoritative ZeParty identities, Agora UIDs,
@@ -354,8 +355,14 @@ export async function handleCleanExitFromPreviousRoom(userId, prevRoomId, newRoo
     socketEmitter.emitToRoom(prevRoomId, 'room:viewer_count_changed', countPayload);
     socketEmitter.emitToRoom(prevRoomId, 'viewer_count_changed', countPayload);
 
-    // If previous room is an AUDIO_PARTY room and 0 participants remain, mark inactive immediately
-    if (prevRoom.roomType === 'AUDIO_PARTY' && remainingCount <= 0 && prevRoom.status === 'LIVE') {
+    // If previous room is an AUDIO_PARTY room and 0 participants remain (host included), mark inactive immediately
+    let remainingParticipants = 0;
+    try {
+      remainingParticipants = await getActiveRoomParticipantCount(prevRoomId, userId);
+    } catch (_) {
+      remainingParticipants = remainingCount;
+    }
+    if (prevRoom.roomType === 'AUDIO_PARTY' && remainingParticipants <= 0 && prevRoom.status === 'LIVE') {
       clearEmptyRoomSleepTimer(prevRoomId);
       await db.room.update({
         where: { id: prevRoomId },
@@ -419,14 +426,30 @@ export async function createRoom(
     }
 
     if (existingRoom) {
+      if (['CLOSED_BY_ADMIN', 'HOST_KICKED'].includes(existingRoom.status)) {
+        const error = new Error('This room has been closed by administration and cannot be reopened.');
+        error.statusCode = 403;
+        error.code = 'ROOM_CLOSED_BY_ADMIN';
+        throw error;
+      }
+
+      if (existingRoom.status !== 'LIVE' && existingRoom.status !== 'ENDED') {
+        const error = new Error('Room cannot be opened from its current status');
+        error.statusCode = 400;
+        error.code = 'ROOM_NOT_AVAILABLE';
+        throw error;
+      }
+
       try {
-        const wasSleeping = existingRoom.status !== 'LIVE';
+        const wasSleeping = existingRoom.status === 'ENDED';
         clearHostAbsentTimer(existingRoom.id);
         clearEmptyRoomSleepTimer(existingRoom.id);
         const updateData = {};
-        if (existingRoom.status !== 'LIVE') {
+        if (wasSleeping) {
           updateData.status = 'LIVE';
           updateData.endedAt = null;
+          updateData.activeSessionId = crypto.randomUUID();
+          updateData.sessionStartedAt = new Date();
         }
         if (title && typeof title === 'string' && title.trim() && title.trim() !== existingRoom.title) {
           updateData.title = title.trim();
@@ -471,9 +494,13 @@ export async function createRoom(
 
         const refreshedRoom = await roomRepository.findRoomById(existingRoom.id, db);
 
-        // Calculate session scores for resumed active room across today UTC (Issue 14 Authoritative Persistence)
-        const trophyData = await roomTrophyService.getAuthoritativeRoomTrophy(refreshedRoom.id, {}, db);
-        const dailyGiftCoins = trophyData.trophyCoins;
+        // Calculate authoritative session scores:
+        // When reopening a sleeping room, session score starts strictly at 0.
+        // When joining/resuming an awake room, session score preserves accumulated session gifts.
+        const sessionScoreData = wasSleeping
+          ? { sessionScore: 0, sessionId: updateData.activeSessionId, sessionStartedAt: updateData.sessionStartedAt?.toISOString() }
+          : await getAuthoritativeRoomSessionScore(refreshedRoom.id, db);
+        const sessionGiftCoins = sessionScoreData.sessionScore;
 
         let totalLikes = 0;
         try {
@@ -489,21 +516,23 @@ export async function createRoom(
           existingRoomId: refreshedRoom.id,
           wasSleeping,
           statusMessage: 'You already have a party room. Opening your existing room.',
+          sessionId: refreshedRoom.activeSessionId || sessionScoreData.sessionId,
+          sessionStartedAt: refreshedRoom.sessionStartedAt ? new Date(refreshedRoom.sessionStartedAt).toISOString() : sessionScoreData.sessionStartedAt,
           level: roomLevelData.level,
           roomLevel: roomLevelData.level,
           displayLevel: roomLevelData.displayLevel,
           roomDisplayLevel: roomLevelData.displayLevel,
           roomLevelProgress: roomLevelData,
           cumulativeRoomCoins: roomLevelData.cumulativeCoins,
-          totalGifts: dailyGiftCoins,
-          giftsReceivedCoins: dailyGiftCoins,
-          roomSendingTotal: dailyGiftCoins,
-          dailySendingTotal: dailyGiftCoins,
-          periodTotalCoins: dailyGiftCoins,
-          trophyCoins: dailyGiftCoins,
-          dailyTrophyCoins: dailyGiftCoins,
-          dailyTrophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
-          trophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
+          totalGifts: sessionGiftCoins,
+          giftsReceivedCoins: sessionGiftCoins,
+          roomSendingTotal: sessionGiftCoins,
+          dailySendingTotal: sessionGiftCoins,
+          periodTotalCoins: sessionGiftCoins,
+          trophyCoins: sessionGiftCoins,
+          dailyTrophyCoins: sessionGiftCoins,
+          dailyTrophyDisplay: Number(sessionGiftCoins).toLocaleString('en-US'),
+          trophyDisplay: Number(sessionGiftCoins).toLocaleString('en-US'),
           totalLikes,
           likesCount: totalLikes,
         };
@@ -647,6 +676,8 @@ export async function createRoom(
     trophyCoins: 0,
     totalLikes: 0,
     likesCount: 0,
+    sessionId: room.activeSessionId || null,
+    sessionStartedAt: room.sessionStartedAt ? new Date(room.sessionStartedAt).toISOString() : null,
   };
 
   const newRoomPayload = enrichRoomIdentitySnapshot({
@@ -885,26 +916,9 @@ export async function getRoomDetails(roomId, db = prisma) {
     }
   } catch (_) {}
 
-  // Calculate gift coin total from transactions for current session
-  const sessionStart = room.createdAt ? new Date(room.createdAt) : new Date(0);
-  let totalGiftCoins = 0;
-  if (Array.isArray(room.giftTransactions) && room.giftTransactions.length > 0) {
-    totalGiftCoins = room.giftTransactions
-      .filter((tx) => tx.createdAt && new Date(tx.createdAt) >= sessionStart)
-      .reduce((sum, tx) => sum + Number(tx.totalCoins || 0), 0);
-  } else {
-    try {
-      const allTx = await db.giftTransaction.aggregate({
-        where: { roomId: room.id, createdAt: { gte: sessionStart } },
-        _sum: { totalCoins: true },
-      });
-      totalGiftCoins = Number(allTx._sum?.totalCoins || 0);
-    } catch (_) {}
-  }
-
-  // Calculate today's daily gift coin total (Issue 14: Trophy Counter Persistence)
-  const trophyData = await roomTrophyService.getAuthoritativeRoomTrophy(room.id, {}, db);
-  const dailyGiftCoins = trophyData.trophyCoins;
+  // Calculate gift coin total from transactions for authoritative active session
+  const sessionScoreData = await getAuthoritativeRoomSessionScore(room.id, db);
+  const sessionGiftCoins = sessionScoreData.sessionScore;
 
   // Check if any seats are muted to determine room-level mute flag
   const isRoomMuted = Array.isArray(room.seats) && room.seats.length > 0 && room.seats.every((s) => s.isMuted);
@@ -952,15 +966,17 @@ export async function getRoomDetails(roomId, db = prisma) {
       background: room.backgroundImageUrl || null,
       themeUrl: room.backgroundImageUrl || null,
       theme: room.backgroundImageUrl || null,
-      giftsReceivedCoins: totalGiftCoins,
-      totalGifts: totalGiftCoins,
-      roomSendingTotal: dailyGiftCoins,
-      dailySendingTotal: dailyGiftCoins,
-      periodTotalCoins: dailyGiftCoins,
-      trophyCoins: dailyGiftCoins,
-      dailyTrophyCoins: dailyGiftCoins,
-      dailyTrophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
-      trophyDisplay: Number(dailyGiftCoins).toLocaleString('en-US'),
+      giftsReceivedCoins: sessionGiftCoins,
+      totalGifts: sessionGiftCoins,
+      roomSendingTotal: sessionGiftCoins,
+      dailySendingTotal: sessionGiftCoins,
+      periodTotalCoins: sessionGiftCoins,
+      trophyCoins: sessionGiftCoins,
+      dailyTrophyCoins: sessionGiftCoins,
+      dailyTrophyDisplay: Number(sessionGiftCoins).toLocaleString('en-US'),
+      trophyDisplay: Number(sessionGiftCoins).toLocaleString('en-US'),
+      sessionId: sessionScoreData.sessionId,
+      sessionStartedAt: sessionScoreData.sessionStartedAt,
       totalLikes,
       likesCount: totalLikes,
       seatCapacity: (room.seats || []).length || 10,
@@ -1057,31 +1073,23 @@ export async function joinRoom(roomId, userId, { pin = null, isApproved = false,
       }
     } catch (_) {}
 
-    // Attach session-isolated trophy, gift, and like metrics (Issue 14 Persistence)
-    const sessionStart = result.createdAt ? new Date(result.createdAt) : new Date(0);
-    const trophyData = await roomTrophyService.getAuthoritativeRoomTrophy(result.id || roomId, {}, db);
-    const dailyGiftCoins = trophyData.trophyCoins;
-
-    let totalSessionGifts = 0;
-    try {
-      const sessionAggr = await db.giftTransaction.aggregate({
-        where: { roomId: result.id || roomId, createdAt: { gte: sessionStart } },
-        _sum: { totalCoins: true },
-      });
-      totalSessionGifts = Number(sessionAggr._sum?.totalCoins || 0);
-    } catch (_) {}
+    // Attach authoritative session-isolated gift, trophy, and like metrics
+    const sessionScoreData = await getAuthoritativeRoomSessionScore(result.id || roomId, db);
+    const sessionGiftCoins = sessionScoreData.sessionScore;
 
     let totalLikes = 0;
     try {
       totalLikes = await presenceService.getRoomLikes(result.id || roomId);
     } catch (_) {}
 
-    result.totalGifts = totalSessionGifts;
-    result.giftsReceivedCoins = totalSessionGifts;
-    result.roomSendingTotal = dailyGiftCoins;
-    result.dailySendingTotal = dailyGiftCoins;
-    result.periodTotalCoins = dailyGiftCoins;
-    result.trophyCoins = dailyGiftCoins;
+    result.totalGifts = sessionGiftCoins;
+    result.giftsReceivedCoins = sessionGiftCoins;
+    result.roomSendingTotal = sessionGiftCoins;
+    result.dailySendingTotal = sessionGiftCoins;
+    result.periodTotalCoins = sessionGiftCoins;
+    result.trophyCoins = sessionGiftCoins;
+    result.sessionId = sessionScoreData.sessionId;
+    result.sessionStartedAt = sessionScoreData.sessionStartedAt;
     result.totalLikes = totalLikes;
     result.likesCount = totalLikes;
 

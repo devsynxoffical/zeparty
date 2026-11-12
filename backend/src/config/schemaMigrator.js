@@ -660,6 +660,32 @@ export async function ensureDatabaseSchema(db = prisma) {
     console.warn('ProfileVisit DDL note:', err.message);
   }
 
+  // 18. Ensure Room session lifecycle and GiftTransaction session attribution columns exist
+  try {
+    const roomSessionColumns = [
+      `ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "activeSessionId" TEXT;`,
+      `ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "sessionStartedAt" TIMESTAMP(3);`,
+      `ALTER TABLE "Room" ADD COLUMN IF NOT EXISTS "lastSessionEndedAt" TIMESTAMP(3);`,
+      `CREATE INDEX IF NOT EXISTS "Room_activeSessionId_idx" ON "Room"("activeSessionId");`,
+      `CREATE INDEX IF NOT EXISTS "Room_sessionStartedAt_idx" ON "Room"("sessionStartedAt");`,
+    ];
+    for (const ddl of roomSessionColumns) {
+      await db.$executeRawUnsafe(ddl);
+    }
+
+    const giftTxSessionColumns = [
+      `ALTER TABLE "GiftTransaction" ADD COLUMN IF NOT EXISTS "sessionId" TEXT;`,
+      `CREATE INDEX IF NOT EXISTS "GiftTransaction_roomId_sessionId_idx" ON "GiftTransaction"("roomId", "sessionId");`,
+      `CREATE INDEX IF NOT EXISTS "GiftTransaction_roomId_createdAt_idx" ON "GiftTransaction"("roomId", "createdAt");`,
+    ];
+    for (const ddl of giftTxSessionColumns) {
+      await db.$executeRawUnsafe(ddl);
+    }
+    console.log('✅ Room session tracking and GiftTransaction sessionId schema verified');
+  } catch (err) {
+    console.warn('Room session tracking DDL note:', err.message);
+  }
+
   console.log('✅ Database schema and platform analytics verified and synchronized successfully');
 }
 

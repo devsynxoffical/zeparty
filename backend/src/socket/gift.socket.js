@@ -1,5 +1,6 @@
 import giftService from '../services/gift.service.js';
 import roomRepository from '../repositories/room.repository.js';
+import { getAuthoritativeRoomSessionScore } from '../services/roomSession.service.js';
 import prisma from '../config/database.js';
 import { SOCKET_EVENTS, SOCKET_ERRORS } from './socket.constants.js';
 import { withRateLimit } from './rateLimiter.socket.js';
@@ -13,32 +14,15 @@ export async function syncAndBroadcastRoomSendingTotal(io, roomId, canonicalRoom
     const effectiveRoomId = canonicalRoomId || roomId;
     if (!effectiveRoomId) return 0;
 
-    const todayUtc = new Date();
-    todayUtc.setUTCHours(0, 0, 0, 0);
-    let effectiveDailyStart = todayUtc;
-
-    const roomRec = await db.room.findUnique({
-      where: { id: effectiveRoomId },
-      select: { id: true, createdAt: true },
-    }).catch(() => null);
-
-    if (roomRec?.createdAt) {
-      const sessionStart = new Date(roomRec.createdAt);
-      if (sessionStart > todayUtc) {
-        effectiveDailyStart = sessionStart;
-      }
-    }
-
-    const dailyAggr = await db.giftTransaction.aggregate({
-      where: { roomId: effectiveRoomId, createdAt: { gte: effectiveDailyStart } },
-      _sum: { totalCoins: true },
-    });
-    const updatedTotal = Number(dailyAggr._sum?.totalCoins || 0);
+    const sessionScoreData = await getAuthoritativeRoomSessionScore(effectiveRoomId, db);
+    const updatedTotal = sessionScoreData.sessionScore;
 
     const sendingTotalPayload = {
       roomId: effectiveRoomId,
       clientRoomId: roomId,
-      period: 'daily',
+      sessionId: sessionScoreData.sessionId,
+      sessionStartedAt: sessionScoreData.sessionStartedAt,
+      period: 'session',
       totalCoins: updatedTotal,
       roomSendingTotal: updatedTotal,
       dailySendingTotal: updatedTotal,

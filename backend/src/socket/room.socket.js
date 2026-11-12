@@ -26,6 +26,7 @@ import privacyEligibilityService from '../services/privacyEligibility.service.js
 import { getNobleStyle } from '../services/asset.service.js';
 import roomTrophyService from '../services/roomTrophy.service.js';
 import nobleService from '../services/noble.service.js';
+import { getAuthoritativeRoomSessionScore } from '../services/roomSession.service.js';
 import pkService from '../services/pk.service.js';
 import { getRedisClient } from '../config/redis.js';
 
@@ -455,10 +456,12 @@ export function buildRoomSnapshot(room, viewerCount, activePresenceUsers = []) {
     lockMode,
     seatCapacity: (room.seats || []).length || 10,
     capacity: (room.seats || []).length || 10,
-    roomSendingTotal: room.roomSendingTotal || room.dailySendingTotal || 0,
-    dailySendingTotal: room.dailySendingTotal || room.roomSendingTotal || 0,
-    periodTotalCoins: room.periodTotalCoins || room.dailySendingTotal || 0,
-    trophyCoins: room.trophyCoins || room.dailySendingTotal || 0,
+    roomSendingTotal: room.roomSendingTotal !== undefined ? room.roomSendingTotal : (room.dailySendingTotal || 0),
+    dailySendingTotal: room.dailySendingTotal !== undefined ? room.dailySendingTotal : (room.roomSendingTotal || 0),
+    periodTotalCoins: room.periodTotalCoins !== undefined ? room.periodTotalCoins : (room.roomSendingTotal || 0),
+    trophyCoins: room.trophyCoins !== undefined ? room.trophyCoins : (room.roomSendingTotal || 0),
+    sessionId: room.sessionId || room.activeSessionId || null,
+    sessionStartedAt: room.sessionStartedAt ? (room.sessionStartedAt instanceof Date ? room.sessionStartedAt.toISOString() : String(room.sessionStartedAt)) : null,
     host: hostObject,
     seats: formattedSeats,
     coHost: (() => {
@@ -625,10 +628,11 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
 
     if (room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(room.status.toUpperCase())) {
       // Persistent Party Room Wake-from-Sleep:
-      // Any user joining a sleeping Party Room by Room ID automatically wakes it up to LIVE!
-      if (isPartyRoomType(room.roomType) && room.status.toUpperCase() !== 'CLOSED_BY_ADMIN') {
-        await (db || prisma).room.update({
-          where: { id: room.id },
+      // Only legitimately sleeping rooms (status === 'ENDED') may wake up.
+      // Moderation-restricted rooms (CLOSED_BY_ADMIN, HOST_KICKED) must never wake.
+      if (isPartyRoomType(room.roomType) && room.status.toUpperCase() === 'ENDED') {
+        await (db || prisma).room.updateMany({
+          where: { id: room.id, status: 'ENDED' },
           data: { status: 'LIVE', endedAt: null },
         }).catch(() => {});
         const refreshed = await roomRepository.findRoomById(room.id, db || prisma);
@@ -802,11 +806,13 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
           recipient: { select: { id: true, username: true, avatarUrl: true, profile: { select: { displayName: true } } } },
         },
       }).catch(() => []),
-      room.roomType === 'AUDIO_PARTY'
-        ? (joinResult?.trophyCoins !== undefined
-            ? Promise.resolve({ trophyCoins: joinResult.trophyCoins })
-            : roomTrophyService.getAuthoritativeRoomTrophy(room.id, {}, db || prisma).catch(() => ({ trophyCoins: 0 })))
-        : Promise.resolve({ trophyCoins: 0 }),
+      joinResult?.roomSendingTotal !== undefined
+        ? Promise.resolve({
+            sessionScore: joinResult.roomSendingTotal,
+            sessionId: joinResult.sessionId || null,
+            sessionStartedAt: joinResult.sessionStartedAt || null,
+          })
+        : getAuthoritativeRoomSessionScore(room.id, db || prisma).catch(() => ({ sessionScore: 0, sessionId: null, sessionStartedAt: null })),
       joinResult?.totalLikes !== undefined
         ? Promise.resolve(joinResult.totalLikes)
         : presenceService.getRoomLikes(room.id).catch(() => 0),
@@ -843,11 +849,16 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       timestamp: tx.createdAt.toISOString(),
     }));
 
-    const dailySendingTotal = trophyDataResult?.trophyCoins || 0;
-    room.dailySendingTotal = dailySendingTotal;
-    room.roomSendingTotal = dailySendingTotal;
-    room.periodTotalCoins = dailySendingTotal;
-    room.trophyCoins = dailySendingTotal;
+    const sessionScore = trophyDataResult?.sessionScore || 0;
+    const activeSessionId = trophyDataResult?.sessionId || room.activeSessionId || null;
+    const activeSessionStartedAt = trophyDataResult?.sessionStartedAt || (room.sessionStartedAt ? new Date(room.sessionStartedAt).toISOString() : null);
+
+    room.dailySendingTotal = sessionScore;
+    room.roomSendingTotal = sessionScore;
+    room.periodTotalCoins = sessionScore;
+    room.trophyCoins = sessionScore;
+    room.sessionId = activeSessionId;
+    room.sessionStartedAt = activeSessionStartedAt;
 
     const totalLikes = totalLikesResult || 0;
     const activePkBattle = activePkBattleResult || null;
@@ -856,10 +867,12 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
     snapshot.attemptId = attemptId;
     snapshot.feedClearedAt = feedClearedAt;
     snapshot.recentGifts = recentGifts;
-    snapshot.dailySendingTotal = dailySendingTotal;
-    snapshot.roomSendingTotal = dailySendingTotal;
-    snapshot.periodTotalCoins = dailySendingTotal;
-    snapshot.trophyCoins = dailySendingTotal;
+    snapshot.dailySendingTotal = sessionScore;
+    snapshot.roomSendingTotal = sessionScore;
+    snapshot.periodTotalCoins = sessionScore;
+    snapshot.trophyCoins = sessionScore;
+    snapshot.sessionId = activeSessionId;
+    snapshot.sessionStartedAt = activeSessionStartedAt;
     snapshot.totalLikes = totalLikes;
     snapshot.likesCount = totalLikes;
     if (activePkBattle) {
@@ -1619,12 +1632,17 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       }));
     } catch (_) {}
 
-    const trophyDataRes = await roomTrophyService.getAuthoritativeRoomTrophy(room.id, {}, db || prisma);
-    const dailySendingTotal = trophyDataRes.trophyCoins;
-    room.dailySendingTotal = dailySendingTotal;
-    room.roomSendingTotal = dailySendingTotal;
-    room.periodTotalCoins = dailySendingTotal;
-    room.trophyCoins = dailySendingTotal;
+    const sessionScoreRes = await getAuthoritativeRoomSessionScore(room.id, db || prisma).catch(() => ({ sessionScore: 0, sessionId: null, sessionStartedAt: null }));
+    const sessionScore = sessionScoreRes.sessionScore;
+    const activeSessionId = sessionScoreRes.sessionId || room.activeSessionId || null;
+    const activeSessionStartedAt = sessionScoreRes.sessionStartedAt || (room.sessionStartedAt ? new Date(room.sessionStartedAt).toISOString() : null);
+
+    room.dailySendingTotal = sessionScore;
+    room.roomSendingTotal = sessionScore;
+    room.periodTotalCoins = sessionScore;
+    room.trophyCoins = sessionScore;
+    room.sessionId = activeSessionId;
+    room.sessionStartedAt = activeSessionStartedAt;
 
     let totalLikes = 0;
     try {
@@ -1634,10 +1652,12 @@ export async function onRequestSnapshot(socket, data, callback, db) {
     const snapshot = buildRoomSnapshot(room, viewerCount, activeUsers);
     snapshot.feedClearedAt = feedClearedAt;
     snapshot.recentGifts = recentGifts;
-    snapshot.dailySendingTotal = dailySendingTotal;
-    snapshot.roomSendingTotal = dailySendingTotal;
-    snapshot.periodTotalCoins = dailySendingTotal;
-    snapshot.trophyCoins = dailySendingTotal;
+    snapshot.dailySendingTotal = sessionScore;
+    snapshot.roomSendingTotal = sessionScore;
+    snapshot.periodTotalCoins = sessionScore;
+    snapshot.trophyCoins = sessionScore;
+    snapshot.sessionId = activeSessionId;
+    snapshot.sessionStartedAt = activeSessionStartedAt;
     snapshot.totalLikes = totalLikes;
     snapshot.likesCount = totalLikes;
     const responsePayload = {
@@ -1650,10 +1670,12 @@ export async function onRequestSnapshot(socket, data, callback, db) {
       viewerCount,
       feedClearedAt,
       recentGifts,
-      dailySendingTotal,
-      roomSendingTotal: dailySendingTotal,
-      periodTotalCoins: dailySendingTotal,
-      trophyCoins: dailySendingTotal,
+      dailySendingTotal: sessionScore,
+      roomSendingTotal: sessionScore,
+      periodTotalCoins: sessionScore,
+      trophyCoins: sessionScore,
+      sessionId: activeSessionId,
+      sessionStartedAt: activeSessionStartedAt,
       totalLikes,
       likesCount: totalLikes,
       timestamp: new Date().toISOString(),
@@ -1760,15 +1782,40 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
     } catch (_) {}
 
     if (room && room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(String(room.status).toUpperCase())) {
-      const err = {
-        success: false,
-        error: {
-          code: SOCKET_ERRORS.ROOM_NOT_LIVE,
-          message: 'Room session has ended or is not active',
-        },
-      };
-      if (typeof callback === 'function') return callback(err);
-      return socket.emit(SOCKET_EVENTS.ERROR, err);
+      const statusUpper = String(room.status).toUpperCase();
+      if (statusUpper === 'CLOSED_BY_ADMIN' || statusUpper === 'HOST_KICKED') {
+        const err = {
+          success: false,
+          error: {
+            code: 'ROOM_RESTRICTED',
+            message: 'Room has been closed by moderation and cannot receive reactions',
+            recoverable: false,
+          },
+        };
+        if (typeof callback === 'function') return callback(err);
+        return socket.emit(SOCKET_EVENTS.ERROR, err);
+      }
+
+      // If room is ENDED, do not independently wake the room.
+      // Check if an in-progress wake or activation already completed in database
+      const refreshed = await (roomRepository.findRoomById
+        ? roomRepository.findRoomById(canonicalRoomId, db || prisma)
+        : null).catch(() => null);
+      if (refreshed && ['LIVE', 'ACTIVE', 'OPEN'].includes(String(refreshed.status).toUpperCase())) {
+        room = refreshed;
+      } else {
+        const err = {
+          success: false,
+          error: {
+            code: SOCKET_ERRORS.ROOM_NOT_LIVE,
+            message: 'Room session is currently inactive or waking up. Please wait for room to reopen.',
+            recoverable: true,
+            retryable: true,
+          },
+        };
+        if (typeof callback === 'function') return callback(err);
+        return socket.emit(SOCKET_EVENTS.ERROR, err);
+      }
     }
 
     // Ensure sender socket and host socket are subscribed to the canonical room channel
@@ -1786,8 +1833,8 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
 
     // Authoritative sender identity lookup
     let dbSender = null;
-    if (senderId && !String(senderId).startsWith('guest_')) {
-      if (socket.user && socket.user.id === senderId && socket.user.username && socket.user.avatarUrl) {
+    if (senderId && !String(senderId).startsWith('guest_') && !socket.isGuest) {
+      if (socket.user && (socket.user.id === senderId || socket.userId === senderId) && socket.user.username) {
         dbSender = socket.user;
       } else {
         try {
@@ -1904,17 +1951,21 @@ export async function onSendRoomEmoji(arg1, arg2, arg3, arg4, arg5) {
       }
     } catch (_) {}
 
-    for (const r of targetRoomIds) {
-      if (io) {
-        io.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
-        io.to(`room:${r}`).emit('room:emoji_received', payload);
-        io.to(`room:${r}`).emit('room:emoji', payload);
-        io.to(`room:${r}`).emit('emoji_received', payload);
-        io.to(`room:${r}`).emit('room:reaction', payload);
-      } else if (socket.to) {
-        socket.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
-        socket.to(`room:${r}`).emit('room:emoji', payload);
+    const targetChannels = Array.from(targetRoomIds).map((r) => `room:${r}`);
+    if (io) {
+      let broadcast = io;
+      for (const ch of targetChannels) {
+        broadcast = broadcast.to(ch);
       }
+      broadcast.emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
+      broadcast.emit('room:emoji_received', payload);
+      broadcast.emit('room:emoji', payload);
+      broadcast.emit('emoji_received', payload);
+      broadcast.emit('room:reaction', payload);
+    } else if (socket.to) {
+      let broadcast = socket.to(targetChannels);
+      broadcast.emit(SOCKET_EVENTS.ROOM_EMOJI_RECEIVED, payload);
+      broadcast.emit('room:emoji', payload);
     }
 
     if (socket && typeof socket.emit === 'function') {
@@ -1989,35 +2040,103 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
     } catch (_) {}
 
     if (room && room.status && !['LIVE', 'ACTIVE', 'OPEN'].includes(String(room.status).toUpperCase())) {
-      const err = {
-        success: false,
-        error: {
-          code: SOCKET_ERRORS.ROOM_NOT_LIVE,
-          message: 'Room session has ended or is not active',
-        },
-      };
-      if (typeof callback === 'function') return callback(err);
-      return socket.emit(SOCKET_EVENTS.ERROR, err);
+      const statusUpper = String(room.status).toUpperCase();
+      if (statusUpper === 'CLOSED_BY_ADMIN' || statusUpper === 'HOST_KICKED') {
+        const err = {
+          success: false,
+          error: {
+            code: 'ROOM_RESTRICTED',
+            message: 'Room has been closed by moderation and cannot receive chat messages',
+            recoverable: false,
+          },
+        };
+        if (typeof callback === 'function') return callback(err);
+        return socket.emit(SOCKET_EVENTS.ERROR, err);
+      }
+
+      // If room is ENDED, do not independently wake the room.
+      // Check if an in-progress wake or activation already completed in database
+      const refreshed = await (roomRepository.findRoomById
+        ? roomRepository.findRoomById(canonicalRoomId, db || prisma)
+        : null).catch(() => null);
+      if (refreshed && ['LIVE', 'ACTIVE', 'OPEN'].includes(String(refreshed.status).toUpperCase())) {
+        room = refreshed;
+      } else {
+        const err = {
+          success: false,
+          error: {
+            code: SOCKET_ERRORS.ROOM_NOT_LIVE,
+            message: 'Room session is currently inactive or waking up. Please wait for room to reopen.',
+            recoverable: true,
+            retryable: true,
+          },
+        };
+        if (typeof callback === 'function') return callback(err);
+        return socket.emit(SOCKET_EVENTS.ERROR, err);
+      }
     }
 
     // Check active chat mute or kick moderation in this room
     if (canonicalRoomId && senderId && !String(senderId).startsWith('guest_')) {
       try {
+        const now = new Date();
         const activeMod = await (db || prisma).roomModeration?.findFirst?.({
           where: {
             roomId: canonicalRoomId,
             targetUserId: String(senderId),
-            actionType: { in: ['KICK', 'MUTE_MIC', 'BAN_ROOM'] },
+            actionType: { in: ['KICK', 'BAN_ROOM', 'RESTRICT_FEATURE'] },
+            AND: [
+              {
+                OR: [
+                  { expiresAt: null },
+                  { expiresAt: { gt: now } },
+                ],
+              },
+            ],
           },
         });
         if (activeMod) {
+          const isRemoval = activeMod.actionType === 'KICK' || activeMod.actionType === 'BAN_ROOM';
           const err = {
             success: false,
             error: {
-              code: activeMod.actionType === 'KICK' || activeMod.actionType === 'BAN_ROOM' ? 'ROOM_KICKED' : 'CHAT_MUTED',
-              message: activeMod.actionType === 'KICK' || activeMod.actionType === 'BAN_ROOM'
+              code: isRemoval ? 'ROOM_KICKED' : 'CHAT_MUTED',
+              message: isRemoval
                 ? 'You have been removed from this room session'
                 : 'You are muted from chatting in this room',
+            },
+          };
+          if (typeof callback === 'function') return callback(err);
+          return socket.emit(SOCKET_EVENTS.ERROR, err);
+        }
+
+        // Also check account-level restrictions (CHAT_BLOCK, COMMENT_BLOCK, MUTE, BAN)
+        const activeUserRestriction = await (db || prisma).restriction?.findFirst?.({
+          where: {
+            OR: [
+              { userId: String(senderId) },
+              { targetId: String(senderId) },
+            ],
+            type: { in: ['CHAT_BLOCK', 'COMMENT_BLOCK', 'MUTE', 'BAN'] },
+            status: 'ACTIVE',
+            startsAt: { lte: now },
+            AND: [
+              {
+                OR: [
+                  { expiresAt: null },
+                  { expiresAt: { gt: now } },
+                ],
+              },
+            ],
+          },
+        });
+        if (activeUserRestriction) {
+          const isBan = activeUserRestriction.type === 'BAN';
+          const err = {
+            success: false,
+            error: {
+              code: isBan ? 'USER_BANNED' : 'CHAT_MUTED',
+              message: activeUserRestriction.reason || 'You are restricted from chatting',
             },
           };
           if (typeof callback === 'function') return callback(err);
@@ -2184,19 +2303,23 @@ export async function onSendRoomChat(arg1, arg2, arg3, arg4, arg5) {
       }
     } catch (_) {}
 
-    for (const r of targetRoomIds) {
-      if (io) {
-        io.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
-        io.to(`room:${r}`).emit('room:chat_message', payload);
-        io.to(`room:${r}`).emit('room_chat_message', payload);
-        io.to(`room:${r}`).emit('chat_message', payload);
-        io.to(`room:${r}`).emit('room:chat', payload);
-        io.to(`room:${r}`).emit('room:comment', payload);
-      } else if (socket.to) {
-        socket.to(`room:${r}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
-        socket.to(`room:${r}`).emit('room:chat_message', payload);
-        socket.to(`room:${r}`).emit('room:chat', payload);
+    const targetChannels = Array.from(targetRoomIds).map((r) => `room:${r}`);
+    if (io) {
+      let broadcast = io;
+      for (const ch of targetChannels) {
+        broadcast = broadcast.to(ch);
       }
+      broadcast.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
+      broadcast.emit('room:chat_message', payload);
+      broadcast.emit('room_chat_message', payload);
+      broadcast.emit('chat_message', payload);
+      broadcast.emit('room:chat', payload);
+      broadcast.emit('room:comment', payload);
+    } else if (socket.to) {
+      let broadcast = socket.to(targetChannels);
+      broadcast.emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, payload);
+      broadcast.emit('room:chat_message', payload);
+      broadcast.emit('room:chat', payload);
     }
 
     if (socket && typeof socket.emit === 'function') {
