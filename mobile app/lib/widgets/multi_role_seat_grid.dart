@@ -141,33 +141,42 @@ class MultiRoleSeatGrid extends StatelessWidget {
     final effectiveCapacity = [8, 10, 12, 15, 20, 30].contains(capacity) ? capacity : (capacity <= 8 ? 8 : (capacity <= 12 ? 12 : 10));
     final scale = _getPresetScale();
 
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.topCenter,
-      child: SizedBox(
-        width: MediaQuery.of(context).size.width,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: _buildSeatRows(context, effectiveCapacity, scale),
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth.isFinite && constraints.maxWidth > 0
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width;
+
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.topCenter,
+          child: SizedBox(
+            width: availableWidth,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: _buildSeatRows(context, effectiveCapacity, scale, availableWidth),
+            ),
+          ),
+        );
+      },
     );
   }
 
-  List<Widget> _buildSeatRows(BuildContext context, int totalSeats, double scale) {
+  List<Widget> _buildSeatRows(BuildContext context, int totalSeats, double scale, double availableWidth) {
     final hostRad = 28.0 * scale;
     final seatRad = 24.0 * scale;
 
     if (totalSeats <= 8) {
+      final slotWidth = availableWidth / 3;
       return [
         // Row 1: Host & Co-Host
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildSeat(context, 0, 'Host', hostRad, true),
-              _buildSeat(context, 1, 'Co-Host', hostRad, true),
+              _buildSeat(context, 0, 'Host', hostRad, true, maxSlotWidth: availableWidth * 0.4),
+              _buildSeat(context, 1, 'Co-Host', hostRad, true, maxSlotWidth: availableWidth * 0.4),
             ],
           ),
         ),
@@ -175,29 +184,42 @@ class MultiRoleSeatGrid extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(3, (i) => _buildSeat(context, i + 2, '${i + 1}', seatRad, false)),
+            children: List.generate(
+              3,
+              (i) => Expanded(
+                child: Center(
+                  child: _buildSeat(context, i + 2, '${i + 1}', seatRad, false, maxSlotWidth: slotWidth),
+                ),
+              ),
+            ),
           ),
         ),
         // Row 3: 3 Seats (4 to 6)
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(3, (i) => _buildSeat(context, i + 5, '${i + 4}', seatRad, false)),
+            children: List.generate(
+              3,
+              (i) => Expanded(
+                child: Center(
+                  child: _buildSeat(context, i + 5, '${i + 4}', seatRad, false, maxSlotWidth: slotWidth),
+                ),
+              ),
+            ),
           ),
         ),
       ];
     } else if (totalSeats <= 10) {
+      final slotWidth = availableWidth / 4;
       return [
         // Row 1: Host & Co-Host
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildSeat(context, 0, 'Host', hostRad, true),
-              _buildSeat(context, 1, 'Co-Host', hostRad, true),
+              _buildSeat(context, 0, 'Host', hostRad, true, maxSlotWidth: availableWidth * 0.4),
+              _buildSeat(context, 1, 'Co-Host', hostRad, true, maxSlotWidth: availableWidth * 0.4),
             ],
           ),
         ),
@@ -205,29 +227,43 @@ class MultiRoleSeatGrid extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(4, (i) => _buildSeat(context, i + 2, '${i + 1}', seatRad, false)),
+            children: List.generate(
+              4,
+              (i) => Expanded(
+                child: Center(
+                  child: _buildSeat(context, i + 2, '${i + 1}', seatRad, false, maxSlotWidth: slotWidth),
+                ),
+              ),
+            ),
           ),
         ),
         // Row 3: 4 Seats (5 to 8)
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(4, (i) => _buildSeat(context, i + 6, '${i + 5}', seatRad, false)),
+            children: List.generate(
+              4,
+              (i) => Expanded(
+                child: Center(
+                  child: _buildSeat(context, i + 6, '${i + 5}', seatRad, false, maxSlotWidth: slotWidth),
+                ),
+              ),
+            ),
           ),
         ),
       ];
     } else if (totalSeats <= 12) {
+      final slotWidth = availableWidth / 5;
+      final rad12 = 22.0 * scale;
       return [
         // Row 1: Host & Co-Host
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildSeat(context, 0, 'Host', hostRad, true),
-              _buildSeat(context, 1, 'Co-Host', hostRad, true),
+              _buildSeat(context, 0, 'Host', hostRad, true, maxSlotWidth: availableWidth * 0.4),
+              _buildSeat(context, 1, 'Co-Host', hostRad, true, maxSlotWidth: availableWidth * 0.4),
             ],
           ),
         ),
@@ -235,30 +271,55 @@ class MultiRoleSeatGrid extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(5, (i) => _buildSeat(context, i + 2, '${i + 1}', 22.0 * scale, false)),
+            children: List.generate(
+              5,
+              (i) => Expanded(
+                child: Center(
+                  child: _buildSeat(context, i + 2, '${i + 1}', rad12, false, maxSlotWidth: slotWidth),
+                ),
+              ),
+            ),
           ),
         ),
         // Row 3: 5 Seats (6 to 10)
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 4),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(5, (i) => _buildSeat(context, i + 7, '${i + 6}', 22.0 * scale, false)),
+            children: List.generate(
+              5,
+              (i) => Expanded(
+                child: Center(
+                  child: _buildSeat(context, i + 7, '${i + 6}', rad12, false, maxSlotWidth: slotWidth),
+                ),
+              ),
+            ),
           ),
         ),
       ];
     } else if (totalSeats <= 15) {
+      final slotWidthTop = availableWidth / 3;
+      final slotWidth = availableWidth / 4;
       return [
         // Row 1: 3 Top Stage Seats
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildSeat(context, 0, 'Host', 26 * scale, true),
-              _buildSeat(context, 1, 'Co-Host', 26 * scale, true),
-              _buildSeat(context, 2, 'VIP', 26 * scale, false),
+              Expanded(
+                child: Center(
+                  child: _buildSeat(context, 0, 'Host', 26 * scale, true, maxSlotWidth: slotWidthTop),
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: _buildSeat(context, 1, 'Co-Host', 26 * scale, true, maxSlotWidth: slotWidthTop),
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: _buildSeat(context, 2, 'VIP', 26 * scale, false, maxSlotWidth: slotWidthTop),
+                ),
+              ),
             ],
           ),
         ),
@@ -268,15 +329,19 @@ class MultiRoleSeatGrid extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: List.generate(
                 4,
-                (colIdx) => _buildSeat(
-                  context,
-                  startIdx + colIdx,
-                  '${startIdx + colIdx - 2}',
-                  21 * scale,
-                  false,
+                (colIdx) => Expanded(
+                  child: Center(
+                    child: _buildSeat(
+                      context,
+                      startIdx + colIdx,
+                      '${startIdx + colIdx - 2}',
+                      21 * scale,
+                      false,
+                      maxSlotWidth: slotWidth,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -284,15 +349,16 @@ class MultiRoleSeatGrid extends StatelessWidget {
         }),
       ];
     } else if (totalSeats <= 20) {
+      final slotWidth = availableWidth / 6;
       return [
         // Row 1: 2 Host Seats
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 5),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildSeat(context, 0, 'Host', 25 * scale, true),
-              _buildSeat(context, 1, 'Co-Host', 25 * scale, true),
+              _buildSeat(context, 0, 'Host', 25 * scale, true, maxSlotWidth: availableWidth * 0.4),
+              _buildSeat(context, 1, 'Co-Host', 25 * scale, true, maxSlotWidth: availableWidth * 0.4),
             ],
           ),
         ),
@@ -302,13 +368,16 @@ class MultiRoleSeatGrid extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 2.5),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: List.generate(
                 6,
                 (colIdx) {
                   int idx = startIdx + colIdx;
-                  if (idx >= 20) return const SizedBox();
-                  return _buildSeat(context, idx, '${idx - 1}', 18.5 * scale, false);
+                  if (idx >= 20) return const Expanded(child: SizedBox());
+                  return Expanded(
+                    child: Center(
+                      child: _buildSeat(context, idx, '${idx - 1}', 18.5 * scale, false, maxSlotWidth: slotWidth),
+                    ),
+                  );
                 },
               ),
             ),
@@ -317,15 +386,16 @@ class MultiRoleSeatGrid extends StatelessWidget {
       ];
     } else {
       // 30 Seats Layout
+      final slotWidth = availableWidth / 7;
       return [
         // Row 1: 2 Host Seats
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 35, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 4),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildSeat(context, 0, 'Host', 23 * scale, true),
-              _buildSeat(context, 1, 'Co-Host', 23 * scale, true),
+              _buildSeat(context, 0, 'Host', 23 * scale, true, maxSlotWidth: availableWidth * 0.4),
+              _buildSeat(context, 1, 'Co-Host', 23 * scale, true, maxSlotWidth: availableWidth * 0.4),
             ],
           ),
         ),
@@ -335,13 +405,16 @@ class MultiRoleSeatGrid extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: List.generate(
                 7,
                 (colIdx) {
                   int idx = startIdx + colIdx;
-                  if (idx >= 30) return const SizedBox();
-                  return _buildSeat(context, idx, '${idx - 1}', 17 * scale, false);
+                  if (idx >= 30) return const Expanded(child: SizedBox());
+                  return Expanded(
+                    child: Center(
+                      child: _buildSeat(context, idx, '${idx - 1}', 17 * scale, false, maxSlotWidth: slotWidth),
+                    ),
+                  );
                 },
               ),
             ),
@@ -351,7 +424,21 @@ class MultiRoleSeatGrid extends StatelessWidget {
     }
   }
 
-  Widget _buildSeat(BuildContext context, int seatIndex, String label, double radius, bool isHostRow) {
+  Widget _buildSeat(
+    BuildContext context,
+    int seatIndex,
+    String label,
+    double radius,
+    bool isHostRow, {
+    double? maxSlotWidth,
+  }) {
+    final effectiveRadius = maxSlotWidth != null
+        ? radius.clamp(10.0, (maxSlotWidth - 6) / 2)
+        : radius;
+    final nameWidth = maxSlotWidth != null
+        ? (maxSlotWidth - 4).clamp(effectiveRadius * 1.5, effectiveRadius * 3.4)
+        : effectiveRadius * 3.4;
+
     final participant = participants.where((p) => p.seatNumber == seatIndex).firstOrNull;
     final isLocked = lockedSeats.contains(seatIndex);
 
@@ -406,7 +493,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                     ? PulseGlowAvatar(
                         imageUrl: effectiveUser.avatarUrl,
                         name: effectiveUser.name,
-                        radius: radius + 1,
+                        radius: effectiveRadius + 1,
                         glowColor: isHostUser ? Colors.amber : const Color(0xFF00E676),
                         frameAsset: effectiveFrame,
                       )
@@ -429,7 +516,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                         child: UserAvatar(
                           imageUrl: effectiveUser.avatarUrl,
                           name: effectiveUser.name,
-                          radius: radius,
+                          radius: effectiveRadius,
                           frameAsset: effectiveFrame,
                         ),
                       ),
@@ -472,7 +559,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                         return InternalVoiceMicBadge(
                           isMuted: isMuted,
                           volume: vol,
-                          size: radius * 0.38,
+                          size: effectiveRadius * 0.38,
                         );
                       },
                     ),
@@ -482,7 +569,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
             ),
             const SizedBox(height: 3),
             SizedBox(
-              width: radius * 3.4,
+              width: nameWidth,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
@@ -519,8 +606,8 @@ class MultiRoleSeatGrid extends StatelessWidget {
           children: [
             Container(
               key: seatKey,
-              width: radius * 2,
-              height: radius * 2,
+              width: effectiveRadius * 2,
+              height: effectiveRadius * 2,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 gradient: LinearGradient(
@@ -546,7 +633,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
                 child: Icon(
                   Icons.lock_rounded,
                   color: Colors.redAccent.withValues(alpha: 0.9),
-                  size: radius * 0.75,
+                  size: effectiveRadius * 0.75,
                 ),
               ),
             ),
@@ -558,6 +645,8 @@ class MultiRoleSeatGrid extends StatelessWidget {
                 fontSize: isHostRow ? 10 : 9,
                 fontWeight: FontWeight.bold,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -572,8 +661,8 @@ class MultiRoleSeatGrid extends StatelessWidget {
         children: [
           Container(
             key: seatKey,
-            width: radius * 2,
-            height: radius * 2,
+            width: effectiveRadius * 2,
+            height: effectiveRadius * 2,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(
@@ -600,7 +689,7 @@ class MultiRoleSeatGrid extends StatelessWidget {
               child: Icon(
                 Icons.weekend_rounded,
                 color: Colors.white.withValues(alpha: 0.55),
-                size: radius * 0.9,
+                size: effectiveRadius * 0.9,
               ),
             ),
           ),
@@ -612,6 +701,8 @@ class MultiRoleSeatGrid extends StatelessWidget {
               fontSize: isHostRow ? 10 : 9.5,
               fontWeight: FontWeight.w600,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

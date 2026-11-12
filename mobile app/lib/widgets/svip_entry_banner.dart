@@ -157,13 +157,12 @@ class _SvipEntryBannerState extends State<SvipEntryBanner> with TickerProviderSt
         effect?['iconUrl']?.toString() ??
         effect?['animationUrl']?.toString();
 
-    final nobleTitle = user.nobleTitle;
+    final nobleTitle = (user.nobleTitle != null && user.nobleTitle!.isNotEmpty) ? user.nobleTitle : null;
     final vipLevel = (user.vipLevel.isNotEmpty && user.vipLevel != 'None')
         ? user.vipLevel
         : null;
-    final nobleOrVip = nobleTitle ?? vipLevel ?? (user.isVip ? 'Baron' : null);
-    final badgeAsset = NobleBadgeHelper.getBadgeAsset(nobleOrVip);
-    final tierLabel = effectName ?? nobleTitle ?? vipLevel ?? 'VIP';
+    final badgeAsset = NobleBadgeHelper.getBadgeAsset(nobleTitle ?? vipLevel);
+    final tierLabel = effectName ?? nobleTitle ?? vipLevel ?? (user.isVip ? 'VIP' : 'Member');
 
     return IgnorePointer(
       child: SlideTransition(

@@ -19,7 +19,7 @@ class AristocracyCenterScreen extends StatefulWidget {
 
 class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
   late PageController _cardPageController;
-  int _selectedRankIndex = 3; // Default to Marquis (matches screenshot)
+  int _selectedRankIndex = 0; // Default to Baron (first rank)
 
   final List<Map<String, dynamic>> _displayRanks = [
     {
@@ -48,7 +48,7 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
       'renewalCost': 50000,
       'rebatePercentage': 100,
       'duration': '30 days',
-      'status': 'Expired',
+      'status': 'Not activated',
       'themeColors': [const Color(0xFF1B2A38), const Color(0xFF243B50), const Color(0xFF101B24)],
       'cardGradient': [const Color(0xFF2A4863), const Color(0xFF182D40)],
       'badgeAsset': 'assets/nobles/viscount_badge.webp',
@@ -89,7 +89,7 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
       'renewalCost': 180000,
       'rebatePercentage': 100,
       'duration': '30 days',
-      'status': 'Experience until 2026.10.08',
+      'status': 'Not activated',
       'hasDiscount': true,
       'discountText': '60% off',
       'themeColors': [const Color(0xFF2C0710), const Color(0xFF4A0C1C), const Color(0xFF180309)],
@@ -114,7 +114,7 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
       'renewalCost': 640000,
       'rebatePercentage': 80,
       'duration': '30 days',
-      'status': 'Expired',
+      'status': 'Not activated',
       'themeColors': [const Color(0xFF230836), const Color(0xFF3B1059), const Color(0xFF13041E)],
       'cardGradient': [const Color(0xFF5C1B8A), const Color(0xFF380E56)],
       'badgeAsset': 'assets/nobles/duke_badge.webp',
@@ -138,7 +138,7 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
       'renewalCost': 1200000,
       'rebatePercentage': 80,
       'duration': '30 days',
-      'status': 'Expired',
+      'status': 'Not activated',
       'themeColors': [const Color(0xFF2E1C0C), const Color(0xFF4A3015), const Color(0xFF1A0F06)],
       'cardGradient': [const Color(0xFF7C5428), const Color(0xFF4D3216)],
       'badgeAsset': 'assets/nobles/ZP-037_tier-6-king_badge.webp',
@@ -200,12 +200,18 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
     _cardPageController = PageController(viewportFraction: 0.84, initialPage: _selectedRankIndex);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final noble = context.read<NobleProvider>();
+      final auth = context.read<AuthProvider>();
       noble.fetchNobleData();
-      final activeIndex = _displayRanks.indexWhere((r) => r['id'] == noble.activeRankId);
-      if (activeIndex != -1 && mounted) {
-        setState(() => _selectedRankIndex = activeIndex);
-        if (_cardPageController.hasClients) {
-          _cardPageController.jumpToPage(activeIndex);
+      final userRankId = noble.isNobleActive
+          ? noble.activeRankId
+          : (auth.currentUser.hasActiveNoble ? auth.currentUser.nobleTitle?.toLowerCase() : null);
+      if (userRankId != null && userRankId.isNotEmpty) {
+        final activeIndex = _displayRanks.indexWhere((r) => r['id'] == userRankId);
+        if (activeIndex != -1 && mounted) {
+          setState(() => _selectedRankIndex = activeIndex);
+          if (_cardPageController.hasClients) {
+            _cardPageController.jumpToPage(activeIndex);
+          }
         }
       }
     });
@@ -955,9 +961,29 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
             color: Colors.black.withValues(alpha: 0.25),
             borderRadius: BorderRadius.circular(12.r),
           ),
-          child: Text(
-            activeRank['status'] ?? 'Not activated',
-            style: TextStyle(color: Colors.white70, fontSize: 11.sp, fontWeight: FontWeight.w500),
+          child: Builder(
+            builder: (context) {
+              final authUser = context.watch<AuthProvider>().currentUser;
+              final noble = context.watch<NobleProvider>();
+              final isNobleActive = noble.isNobleActive || authUser.hasActiveNoble;
+              final userNobleId = noble.isNobleActive
+                  ? noble.activeRankId
+                  : (authUser.hasActiveNoble ? authUser.nobleTitle?.toLowerCase() : null);
+              final isUserRankActive = isNobleActive && userNobleId != null && userNobleId == activeRank['id'];
+              String displayStatus = 'Not activated';
+              if (isUserRankActive) {
+                if (noble.expiryDate != null) {
+                  final exp = noble.expiryDate!;
+                  displayStatus = 'Valid until ${exp.year}.${exp.month.toString().padLeft(2, '0')}.${exp.day.toString().padLeft(2, '0')}';
+                } else {
+                  displayStatus = 'Active';
+                }
+              }
+              return Text(
+                displayStatus,
+                style: TextStyle(color: Colors.white70, fontSize: 11.sp, fontWeight: FontWeight.w500),
+              );
+            },
           ),
         ),
       ],

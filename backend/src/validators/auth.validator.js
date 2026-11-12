@@ -49,8 +49,6 @@ export const syncUserSchema = z.object({
   gender: z.string().optional().nullable(),
   dob: z.string().optional().nullable(),
   countryCode: z.string().optional().nullable(),
-  coins: z.number().optional().nullable(),
-  diamonds: z.number().optional().nullable(),
   isSignup: z.boolean().optional().default(false),
   device: z
     .object({

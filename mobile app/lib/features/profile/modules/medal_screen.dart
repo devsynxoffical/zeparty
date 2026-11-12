@@ -5,6 +5,7 @@ import '../../../../core/repositories/social_repository.dart';
 import '../../../../models/medal_model.dart';
 import '../../../../models/user_asset_model.dart';
 import '../../../../providers/auth_provider.dart';
+import '../../../../providers/noble_provider.dart';
 
 class MedalScreen extends StatefulWidget {
   const MedalScreen({super.key});
@@ -34,12 +35,15 @@ class _MedalScreenState extends State<MedalScreen> {
 
     final hasSaved = await MedalManager.hasSavedEquippedMedals(user.id);
     final equippedIds = await MedalManager.getEquippedMedalIds(user.id);
+    final noble = Provider.of<NobleProvider>(context, listen: false);
 
     final realMedals = MedalModel.resolveUserMedals(
       user,
       honorAssets: honorAssets,
       equippedMedalIds: equippedIds,
       hasExplicitEquippedSelection: hasSaved,
+      isNobleActive: noble.isNobleActive,
+      nobleExpiryDate: noble.expiryDate,
     );
     if (mounted) {
       setState(() {

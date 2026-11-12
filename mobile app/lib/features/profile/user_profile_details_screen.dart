@@ -16,6 +16,7 @@ import '../../models/medal_model.dart';
 import '../../models/user_asset_model.dart';
 import '../../providers/backpack_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/noble_provider.dart';
 import '../../providers/svip_provider.dart';
 import '../../providers/social_provider.dart';
 import '../../providers/live_party_provider.dart';
@@ -1517,7 +1518,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                                     _user!.avatarFrame.isNotEmpty &&
                                     _user!.avatarFrame != 'none'
                                 ? _user!.avatarFrame
-                                : (_user?.nobleTitle != null
+                                : (_user != null && _user!.hasActiveNoble
                                       ? NobleBadgeHelper.getFrameAsset(
                                           _user!.nobleTitle,
                                         )
@@ -2142,7 +2143,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
     final gameLvl = _user?.computedGameLevel ?? 0;
     final accountLvl = _user?.computedAccountLevel ?? 0;
     final hasNobleTitle =
-        _user?.nobleTitle != null && _user!.nobleTitle!.isNotEmpty;
+        _user != null && _user!.hasActiveNoble && _user!.nobleTitle != null && _user!.nobleTitle!.isNotEmpty;
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -2388,11 +2389,18 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
   Widget _buildMedalGallery(bool isDark) {
     final primaryText = AppColors.getTextPrimary(isDark);
     final targetUser = _user ?? context.read<AuthProvider>().currentUser;
+    final noble = context.read<NobleProvider>();
+    final isMe = _user == null || _user!.id == context.read<AuthProvider>().currentUser.id;
+    final isNobleActive = isMe ? noble.isNobleActive : targetUser.hasActiveNoble;
+    final nobleExpiry = isMe ? noble.expiryDate : targetUser.nobleExpiresAt;
+
     final allResolvedMedals = MedalModel.resolveUserMedals(
       targetUser,
       honorAssets: _honorAssets,
       equippedMedalIds: _equippedMedalIds,
       hasExplicitEquippedSelection: _hasExplicitMedalSelection,
+      isNobleActive: isNobleActive,
+      nobleExpiryDate: nobleExpiry,
     );
     // ON PROFILE SCREEN ONLY EQUIPPED MEDALS SHOW
     final equippedMedals = allResolvedMedals.where((m) => m.isEarned && m.isEquipped).toList();
@@ -2573,7 +2581,7 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
         });
       }
 
-      if (_user!.nobleTitle != null && _user!.nobleTitle!.isNotEmpty) {
+      if (_user!.hasActiveNoble && _user!.nobleTitle != null && _user!.nobleTitle!.isNotEmpty) {
         final nobleBadge = NobleBadgeHelper.getBadgeAsset(_user!.nobleTitle);
         if (nobleBadge != null) {
           activeBadges.add({
@@ -2851,7 +2859,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           'assets/nobles/emperor_frame.webp',
                           const Color(0xFFFFD700),
                           isUnlocked:
-                              _user?.nobleTitle?.toLowerCase().contains(
+                              _user != null &&
+                              _user!.hasActiveNoble &&
+                              _user!.nobleTitle?.toLowerCase().contains(
                                 'emperor',
                               ) ==
                               true,
@@ -2862,7 +2872,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           'assets/nobles/king_frame.webp',
                           const Color(0xFFD4AF37),
                           isUnlocked:
-                              _user?.nobleTitle?.toLowerCase().contains(
+                              _user != null &&
+                              _user!.hasActiveNoble &&
+                              _user!.nobleTitle?.toLowerCase().contains(
                                 'king',
                               ) ==
                               true,
@@ -2873,7 +2885,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           'assets/nobles/duke_frame.webp',
                           const Color(0xFF8E24AA),
                           isUnlocked:
-                              _user?.nobleTitle?.toLowerCase().contains(
+                              _user != null &&
+                              _user!.hasActiveNoble &&
+                              _user!.nobleTitle?.toLowerCase().contains(
                                 'duke',
                               ) ==
                               true,
@@ -2884,7 +2898,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           'assets/nobles/marquis_frame.webp',
                           const Color(0xFFC2185B),
                           isUnlocked:
-                              _user?.nobleTitle?.toLowerCase().contains(
+                              _user != null &&
+                              _user!.hasActiveNoble &&
+                              _user!.nobleTitle?.toLowerCase().contains(
                                 'marquis',
                               ) ==
                               true,
@@ -2895,7 +2911,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           'assets/nobles/count_frame.webp',
                           const Color(0xFF1E88E5),
                           isUnlocked:
-                              _user?.nobleTitle?.toLowerCase().contains(
+                              _user != null &&
+                              _user!.hasActiveNoble &&
+                              _user!.nobleTitle?.toLowerCase().contains(
                                 'count',
                               ) ==
                               true,
@@ -2906,7 +2924,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           'assets/nobles/viscount_frame.webp',
                           const Color(0xFFFB8C00),
                           isUnlocked:
-                              _user?.nobleTitle?.toLowerCase().contains(
+                              _user != null &&
+                              _user!.hasActiveNoble &&
+                              _user!.nobleTitle?.toLowerCase().contains(
                                 'viscount',
                               ) ==
                               true,
@@ -2917,7 +2937,9 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                           'assets/nobles/baron_frame.webp',
                           const Color(0xFF78909C),
                           isUnlocked:
-                              _user?.nobleTitle?.toLowerCase().contains(
+                              _user != null &&
+                              _user!.hasActiveNoble &&
+                              _user!.nobleTitle?.toLowerCase().contains(
                                 'baron',
                               ) ==
                               true,

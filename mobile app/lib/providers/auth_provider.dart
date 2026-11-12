@@ -528,8 +528,6 @@ class AuthProvider extends ChangeNotifier {
           phone: phone,
           displayName: cleanName,
           username: finalUsername,
-          coins: 1000,
-          diamonds: 100,
           isSignup: true,
         );
         _currentUser = authRes.user;
@@ -659,8 +657,6 @@ class AuthProvider extends ChangeNotifier {
           displayName: cleanName,
           username: baseUsername,
           avatarUrl: photoUrl,
-          coins: 1000,
-          diamonds: 100,
           isSignup: false,
         );
         _isNewUser = authRes.isNewUser;

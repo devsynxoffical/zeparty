@@ -279,11 +279,11 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               if (isVip || nobleLevel != null) ...[
-                                if (NobleBadgeHelper.getBadgeAsset(nobleLevel ?? (isVip ? 'Baron' : null)) != null)
+                                if (NobleBadgeHelper.getBadgeAsset(nobleLevel) != null)
                                   Padding(
                                     padding: const EdgeInsets.only(right: 3),
                                     child: Image.asset(
-                                      NobleBadgeHelper.getBadgeAsset(nobleLevel ?? (isVip ? 'Baron' : null))!,
+                                      NobleBadgeHelper.getBadgeAsset(nobleLevel)!,
                                       height: 12,
                                       fit: BoxFit.contain,
                                       errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),

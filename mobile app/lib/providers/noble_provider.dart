@@ -15,6 +15,14 @@ class NobleProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   List<NobleAuditRecord> get auditHistory => List.unmodifiable(_auditHistory);
 
+  bool get isNobleActive {
+    if (_activeRankId == null || _activeRankId!.trim().isEmpty) return false;
+    final lower = _activeRankId!.trim().toLowerCase();
+    if (lower == 'none' || lower == 'null' || lower == 'non-noble' || lower == 'non noble') return false;
+    if (_expiryDate != null && DateTime.now().isAfter(_expiryDate!)) return false;
+    return true;
+  }
+
   static const List<NoblePrivilege> _basePrivileges = [
     NoblePrivilege(id: 'np_entry', name: 'Entrance Effect', icon: Icons.flash_on_rounded, description: 'Grand entry wave and broadcast', category: 'display'),
     NoblePrivilege(id: 'np_card', name: 'Profile Card', icon: Icons.badge_rounded, description: 'Exclusive animated VIP profile card', category: 'display'),
@@ -180,8 +188,12 @@ class NobleProvider extends ChangeNotifier {
   List<NobleRank> get ranks => List.unmodifiable(_ranks);
 
   NobleRank? get currentActiveRank {
-    if (_activeRankId == null) return null;
-    return _ranks.firstWhere((r) => r.id == _activeRankId, orElse: () => _ranks.first);
+    if (!isNobleActive) return null;
+    try {
+      return _ranks.firstWhere((r) => r.id == _activeRankId);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> fetchNobleData() async {

@@ -61,6 +61,7 @@ class UserModel {
 
   // Noble Title (Addendum 32)
   final String? nobleTitle;
+  final DateTime? nobleExpiresAt;
   
   // Custom assigned visual titles (Requirement 10)
   final List<String> customTitles;
@@ -73,6 +74,14 @@ class UserModel {
   final String? profileSkinUrl;
 
   bool get isInRoom => (isLive && liveRoomId != null && liveRoomId!.isNotEmpty) || (status == 'IN_ROOM');
+
+  bool get hasActiveNoble {
+    if (nobleTitle == null || nobleTitle!.trim().isEmpty) return false;
+    final lower = nobleTitle!.trim().toLowerCase();
+    if (lower == 'none' || lower == 'null' || lower == 'non-noble' || lower == 'non noble') return false;
+    if (nobleExpiresAt != null && DateTime.now().isAfter(nobleExpiresAt!)) return false;
+    return true;
+  }
   String? get currentRoomId => liveRoomId;
   bool get online => isOnline;
   Map<String, dynamic>? get currentRoom => (liveRoomId != null && liveRoomId!.isNotEmpty) ? {'id': liveRoomId} : null;
@@ -213,6 +222,7 @@ class UserModel {
     this.cpPoints = 0,
     this.pendingCpRequests = const [],
     this.nobleTitle,
+    this.nobleExpiresAt,
     this.status = 'ACTIVE',
     this.likesReceived = 0,
     this.isCountryLocked = false,
@@ -496,6 +506,35 @@ class UserModel {
 
     final parsedAvatarFrame = resolveAvatarFrame(json, profile);
 
+    final parsedNobleExpiresAt = json['nobleExpiresAt'] != null
+        ? DateTime.tryParse(json['nobleExpiresAt'].toString())
+        : (profile['nobleExpiresAt'] != null
+            ? DateTime.tryParse(profile['nobleExpiresAt'].toString())
+            : (json['activeNoble'] is Map && json['activeNoble']['expiresAt'] != null
+                ? DateTime.tryParse(json['activeNoble']['expiresAt'].toString())
+                : (profile['activeNoble'] is Map && profile['activeNoble']['expiresAt'] != null
+                    ? DateTime.tryParse(profile['activeNoble']['expiresAt'].toString())
+                    : null)));
+
+    final rawNobleTitle = json['nobleTitle']?.toString() ??
+        profile['nobleRank']?.toString() ??
+        profile['nobleTitle']?.toString() ??
+        json['nobleRank']?.toString() ??
+        json['nobleLevel']?.toString() ??
+        profile['nobleLevel']?.toString() ??
+        json['noble']?.toString() ??
+        profile['noble']?.toString() ??
+        (json['activeNoble'] is Map ? (json['activeNoble']['title']?.toString() ?? json['activeNoble']['rank']?.toString()) : json['activeNoble']?.toString());
+
+    String? sanitizedNobleTitle;
+    if (rawNobleTitle != null) {
+      final clean = rawNobleTitle.trim();
+      final lower = clean.toLowerCase();
+      if (clean.isNotEmpty && lower != 'none' && lower != 'null' && lower != 'non-noble' && lower != 'non noble') {
+        sanitizedNobleTitle = clean;
+      }
+    }
+
     return UserModel(
       id: id,
       username: username,
@@ -565,15 +604,8 @@ class UserModel {
       accountLevel: parsedAccountLevel,
       accountXp: parsedAccountXp,
       cpPartnerId: json['cpPartnerId']?.toString(),
-      nobleTitle: json['nobleTitle']?.toString() ??
-          profile['nobleRank']?.toString() ??
-          profile['nobleTitle']?.toString() ??
-          json['nobleRank']?.toString() ??
-          json['nobleLevel']?.toString() ??
-          profile['nobleLevel']?.toString() ??
-          json['noble']?.toString() ??
-          profile['noble']?.toString() ??
-          (json['activeNoble'] is Map ? (json['activeNoble']['title']?.toString() ?? json['activeNoble']['rank']?.toString()) : json['activeNoble']?.toString()),
+      nobleTitle: sanitizedNobleTitle,
+      nobleExpiresAt: parsedNobleExpiresAt,
       status: json['status']?.toString() ?? 'ACTIVE',
       likesReceived: profile['likesReceived'] is int
           ? profile['likesReceived'] as int
@@ -808,6 +840,7 @@ class UserModel {
     int? cpPoints,
     List<String>? pendingCpRequests,
     String? nobleTitle,
+    DateTime? nobleExpiresAt,
     String? status,
     int? likesReceived,
     bool? isCountryLocked,
@@ -867,6 +900,7 @@ class UserModel {
       cpPoints: cpPoints ?? this.cpPoints,
       pendingCpRequests: pendingCpRequests ?? this.pendingCpRequests,
       nobleTitle: nobleTitle ?? this.nobleTitle,
+      nobleExpiresAt: nobleExpiresAt ?? this.nobleExpiresAt,
       status: status ?? this.status,
       likesReceived: likesReceived ?? this.likesReceived,
       isCountryLocked: isCountryLocked ?? this.isCountryLocked,

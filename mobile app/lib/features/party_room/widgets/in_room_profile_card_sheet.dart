@@ -219,7 +219,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
 
     // Medals assigned (Real count, 0 artwork when 0 assigned)
     final assignedMedals = <String>[];
-    if (user.nobleTitle != null && user.nobleTitle!.isNotEmpty) {
+    if (user.hasActiveNoble && user.nobleTitle != null && user.nobleTitle!.isNotEmpty) {
       assignedMedals.add(user.nobleTitle!);
     }
     for (final title in user.customTitles) {
@@ -336,8 +336,9 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                                 frameAsset: (user.avatarFrame.isNotEmpty && user.avatarFrame != 'none')
                                     ? user.avatarFrame
                                     : NobleBadgeHelper.getFrameAsset(
-                                        user.nobleTitle ??
-                                            (user.svipLevel > 0
+                                        user.hasActiveNoble
+                                            ? user.nobleTitle
+                                            : (user.svipLevel > 0
                                                 ? 'SVIP ${user.svipLevel}'
                                                 : user.role.name),
                                       ),
@@ -354,7 +355,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                             Flexible(
                               child: NobleBadgeHelper.buildStyledUsername(
                                 text: user.displayName,
-                                nobleTitle: user.nobleTitle,
+                                nobleTitle: user.hasActiveNoble ? user.nobleTitle : null,
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -447,7 +448,7 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
                         ),
 
                         // Assigned Tags (Show ONLY if assigned)
-                        if (user.nobleTitle != null && user.nobleTitle!.isNotEmpty) ...[
+                        if (user.hasActiveNoble && user.nobleTitle != null && user.nobleTitle!.isNotEmpty) ...[
                           const SizedBox(height: 6),
                           NobleTagChip(user: user, height: 18),
                         ],

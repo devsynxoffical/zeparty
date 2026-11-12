@@ -410,14 +410,12 @@ class NobleBadgeChip extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    String? title = nobleTitleOverride ?? user.nobleTitle;
+    String? title = nobleTitleOverride ?? (user.hasActiveNoble ? user.nobleTitle : null);
     if (title == null || title.isEmpty) {
       if (user.svipLevel > 0) {
         title = 'SVIP ${user.svipLevel}';
       } else if (user.role != UserRole.user) {
         title = user.role.name;
-      } else if (user.isVip) {
-        title = 'Baron';
       }
     }
 
@@ -441,7 +439,7 @@ class NobleBadgeChip extends StatelessWidget {
   Widget _buildFallbackChip(BuildContext context, String? title) {
     final tier = NobleBadgeHelper.getTierFromTitle(title);
 
-    if (tier == NobleTier.none && title == null) {
+    if (tier == NobleTier.none) {
       return const SizedBox.shrink();
     }
 
@@ -501,7 +499,7 @@ class NobleTagChip extends StatelessWidget {
         title = 'seller';
       } else if (user.svipLevel > 0) {
         title = 'SVIP ${user.svipLevel}';
-      } else if (user.nobleTitle != null && user.nobleTitle!.isNotEmpty) {
+      } else if (user.hasActiveNoble && user.nobleTitle != null && user.nobleTitle!.isNotEmpty) {
         title = user.nobleTitle;
       }
     }

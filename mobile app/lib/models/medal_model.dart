@@ -195,38 +195,46 @@ class MedalModel {
     List<UserAssetModel>? honorAssets,
     Set<String>? equippedMedalIds,
     bool hasExplicitEquippedSelection = false,
+    bool isNobleActive = true,
+    DateTime? nobleExpiryDate,
   }) {
-    final nobleTitle = user.nobleTitle?.toLowerCase().trim() ?? '';
-    final isKing = nobleTitle.contains('king');
-    final isEmperor = nobleTitle.contains('emperor');
-    final isDuke = nobleTitle.contains('duke');
-    final isMarquis = nobleTitle.contains('marquis');
-    final isCount = nobleTitle.contains('count');
-    final isViscount = nobleTitle.contains('viscount');
-    final isBaron = nobleTitle.contains('baron');
+    final bool hasValidNoble = user.hasActiveNoble &&
+        isNobleActive &&
+        (nobleExpiryDate == null || !DateTime.now().isAfter(nobleExpiryDate));
+
+    final nobleTitle = hasValidNoble ? (user.nobleTitle?.toLowerCase().trim() ?? '') : '';
+    final isKing = hasValidNoble && nobleTitle.contains('king');
+    final isEmperor = hasValidNoble && (nobleTitle.contains('emperor') || nobleTitle.contains('imperial'));
+    final isDuke = hasValidNoble && nobleTitle.contains('duke');
+    final isMarquis = hasValidNoble && nobleTitle.contains('marquis');
+    final isCount = hasValidNoble && (nobleTitle.contains('count') || nobleTitle.contains('earl'));
+    final isViscount = hasValidNoble && nobleTitle.contains('viscount');
+    final isBaron = hasValidNoble && (nobleTitle.contains('baron') || nobleTitle.contains('knight'));
     final isMerchant = user.isMerchant;
     final isSeller = user.isSeller;
     final isBd = user.isBd;
     final isHost = user.isHost;
-    final isSvip = user.svipLevel > 0 || user.isVip;
+    final isSvip = user.svipLevel > 0;
 
     // If user has not explicitly configured equipped medals, default their active noble medal as equipped
     String? defaultEquippedId;
     if (!hasExplicitEquippedSelection && (equippedMedalIds == null || equippedMedalIds.isEmpty)) {
-      if (isKing) {
-        defaultEquippedId = 'noble_king';
-      } else if (isEmperor) {
-        defaultEquippedId = 'noble_emperor';
-      } else if (isDuke) {
-        defaultEquippedId = 'noble_duke';
-      } else if (isMarquis) {
-        defaultEquippedId = 'noble_marquis';
-      } else if (isCount) {
-        defaultEquippedId = 'noble_count';
-      } else if (isViscount) {
-        defaultEquippedId = 'noble_viscount';
-      } else if (isBaron) {
-        defaultEquippedId = 'noble_baron';
+      if (hasValidNoble) {
+        if (isKing) {
+          defaultEquippedId = 'noble_king';
+        } else if (isEmperor) {
+          defaultEquippedId = 'noble_emperor';
+        } else if (isDuke) {
+          defaultEquippedId = 'noble_duke';
+        } else if (isMarquis) {
+          defaultEquippedId = 'noble_marquis';
+        } else if (isCount) {
+          defaultEquippedId = 'noble_count';
+        } else if (isViscount) {
+          defaultEquippedId = 'noble_viscount';
+        } else if (isBaron) {
+          defaultEquippedId = 'noble_baron';
+        }
       } else if (isMerchant) {
         defaultEquippedId = 'role_merchant';
       } else if (isSeller) {

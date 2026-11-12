@@ -107,7 +107,7 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
       final senderAccent = _getSenderColor(widget.senderId);
       final isEntered = widget.text.contains('entered the room');
       final badgeAsset = NobleBadgeHelper.getBadgeAsset(
-        widget.nobleTitle ?? (widget.isVip ? 'Baron' : null),
+        widget.nobleTitle,
       );
       final hasAvatar = widget.avatarUrl != null &&
           widget.avatarUrl!.isNotEmpty &&
@@ -238,7 +238,7 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                         ? widget.avatarFrame
                         : (widget.nobleTitle != null && widget.nobleTitle!.isNotEmpty
                             ? NobleBadgeHelper.getFrameAsset(widget.nobleTitle)
-                            : (widget.isVip ? NobleBadgeHelper.getFrameAsset('Baron') : null)),
+                            : null),
                   ),
                 ),
                 Flexible(
@@ -339,14 +339,14 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                               ),
                             ),
 
-                          // Real Noble/SVIP/Role PNG Badge Asset
-                          if (NobleBadgeHelper.getBadgeAsset(widget.nobleTitle ?? (widget.isVip ? 'Baron' : (widget.isHost ? 'Host' : (widget.isMod ? 'Admin' : null)))) != null)
+                          // Real Noble/Role PNG Badge Asset
+                          if (NobleBadgeHelper.getBadgeAsset(widget.nobleTitle ?? (widget.isHost ? 'Host' : (widget.isMod ? 'Admin' : null))) != null)
                             WidgetSpan(
                               alignment: PlaceholderAlignment.middle,
                               child: Padding(
                                 padding: const EdgeInsets.only(right: 4),
                                 child: Image.asset(
-                                  NobleBadgeHelper.getBadgeAsset(widget.nobleTitle ?? (widget.isVip ? 'Baron' : (widget.isHost ? 'Host' : (widget.isMod ? 'Admin' : null))))!,
+                                  NobleBadgeHelper.getBadgeAsset(widget.nobleTitle ?? (widget.isHost ? 'Host' : (widget.isMod ? 'Admin' : null)))!,
                                   height: 16,
                                   fit: BoxFit.contain,
                                   errorBuilder: (_, _, _) => const SizedBox.shrink(),

@@ -402,8 +402,6 @@ export async function syncUserFromApp({
   dob,
   countryCode,
   phone,
-  coins = 0,
-  diamonds = 0,
   isSignup = false,
   device = {},
   headers = {},
@@ -515,8 +513,10 @@ export async function syncUserFromApp({
       status: 'ACTIVE',
       userType: 'USER',
       countryCode: resolvedCountryCode,
-      coinBalance: coins || 0,
-      diamondBalance: diamonds || 0,
+      // Security: Genuinely new user wallet balances must strictly initialize to 0 on the server.
+      // Client supplied coins/diamonds are never trusted.
+      coinBalance: 0,
+      diamondBalance: 0,
     });
     isNewUser = true;
   } else {
@@ -619,8 +619,10 @@ export async function syncUserFromApp({
         status: 'ACTIVE',
         userType: 'USER',
         countryCode: resolvedCountryCode,
-        coinBalance: coins || 0,
-        diamondBalance: diamonds || 0,
+        // Security: Genuinely new user wallet balances must strictly initialize to 0 on the server.
+        // Client supplied coins/diamonds are never trusted.
+        coinBalance: 0,
+        diamondBalance: 0,
       });
       isNewUser = true;
     }
