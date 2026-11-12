@@ -159,6 +159,15 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
       if (!user && lookupEmail && typeof customUserLookup.findByEmail === 'function') {
         user = await customUserLookup.findByEmail(lookupEmail).catch(() => null);
       }
+
+      if (!user && typeof customUserLookup.findByUsername === 'function') {
+        const usernameCandidate = (typeof decoded.username === 'string' && decoded.username.trim())
+          ? decoded.username.trim()
+          : (typeof lookupId === 'string' ? lookupId.trim() : null);
+        if (usernameCandidate) {
+          user = await customUserLookup.findByUsername(usernameCandidate).catch(() => null);
+        }
+      }
     } else {
       const lookupFn = userRepository.findByIdForIdentity || userRepository.findById || userRepository.findUserById;
       user = await lookupFn(lookupId).catch(() => null);
@@ -169,6 +178,15 @@ export async function socketAuthMiddleware(socket, next, customUserLookup = null
 
       if (!user && lookupEmail && userRepository.findByEmail) {
         user = await userRepository.findByEmail(lookupEmail).catch(() => null);
+      }
+
+      if (!user && userRepository.findByUsername) {
+        const usernameCandidate = (typeof decoded.username === 'string' && decoded.username.trim())
+          ? decoded.username.trim()
+          : (typeof lookupId === 'string' ? lookupId.trim() : null);
+        if (usernameCandidate) {
+          user = await userRepository.findByUsername(usernameCandidate).catch(() => null);
+        }
       }
     }
 
