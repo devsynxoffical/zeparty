@@ -236,6 +236,70 @@ export async function ensureDatabaseSchema(db = prisma) {
     }
   }
 
+  // 4.2 Ensure PKMatch & Real-time Foreign Key Constraints Cascade safely on User/Room deletion
+  try {
+    await db.$executeRawUnsafe(`
+      UPDATE "RoomSeat" SET "occupiedUserId" = NULL 
+      WHERE "occupiedUserId" IS NOT NULL 
+        AND NOT EXISTS (SELECT 1 FROM "User" u WHERE u."id" = "RoomSeat"."occupiedUserId");
+    `);
+
+    await db.$executeRawUnsafe(`
+      DO $$
+      BEGIN
+        -- PKMatch hostAUserId CASCADE
+        IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'PKMatch_hostAUserId_fkey') THEN
+          ALTER TABLE "PKMatch" DROP CONSTRAINT "PKMatch_hostAUserId_fkey";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'PKMatch') THEN
+          ALTER TABLE "PKMatch" ADD CONSTRAINT "PKMatch_hostAUserId_fkey" FOREIGN KEY ("hostAUserId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+
+        -- PKMatch hostBUserId CASCADE
+        IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'PKMatch_hostBUserId_fkey') THEN
+          ALTER TABLE "PKMatch" DROP CONSTRAINT "PKMatch_hostBUserId_fkey";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'PKMatch') THEN
+          ALTER TABLE "PKMatch" ADD CONSTRAINT "PKMatch_hostBUserId_fkey" FOREIGN KEY ("hostBUserId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+
+        -- PKMatch roomAId CASCADE
+        IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'PKMatch_roomAId_fkey') THEN
+          ALTER TABLE "PKMatch" DROP CONSTRAINT "PKMatch_roomAId_fkey";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'PKMatch') THEN
+          ALTER TABLE "PKMatch" ADD CONSTRAINT "PKMatch_roomAId_fkey" FOREIGN KEY ("roomAId") REFERENCES "Room"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+
+        -- PKMatch roomBId CASCADE
+        IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'PKMatch_roomBId_fkey') THEN
+          ALTER TABLE "PKMatch" DROP CONSTRAINT "PKMatch_roomBId_fkey";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'PKMatch') THEN
+          ALTER TABLE "PKMatch" ADD CONSTRAINT "PKMatch_roomBId_fkey" FOREIGN KEY ("roomBId") REFERENCES "Room"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+
+        -- RoomSeat occupiedUserId SET NULL
+        IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'RoomSeat_occupiedUserId_fkey') THEN
+          ALTER TABLE "RoomSeat" DROP CONSTRAINT "RoomSeat_occupiedUserId_fkey";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'RoomSeat') THEN
+          ALTER TABLE "RoomSeat" ADD CONSTRAINT "RoomSeat_occupiedUserId_fkey" FOREIGN KEY ("occupiedUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+        END IF;
+
+        -- AgencyApplication applicantId CASCADE & ON UPDATE CASCADE
+        IF EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'AgencyApplication_applicantId_fkey') THEN
+          ALTER TABLE "AgencyApplication" DROP CONSTRAINT "AgencyApplication_applicantId_fkey";
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'AgencyApplication') THEN
+          ALTER TABLE "AgencyApplication" ADD CONSTRAINT "AgencyApplication_applicantId_fkey" FOREIGN KEY ("applicantId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+        END IF;
+      END $$;
+    `);
+  } catch (err) {
+    console.warn('PKMatch FK CASCADE DDL note:', err.message);
+  }
+
   // 5. Ensure User table columns
   try {
     await db.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "scheduledPermanentDeletionAt" TIMESTAMP(3);`);

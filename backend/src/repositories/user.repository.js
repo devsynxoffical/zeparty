@@ -577,18 +577,101 @@ export async function findPublicProfileById(id, db = prisma) {
 export async function deleteUserById(id, db = prisma) {
   if (!id) return null;
 
-  // 1. Clean up GiftTransactions sent or received
+  // 1. Gather all rooms created by this user
+  let roomIds = [];
   try {
-    if (db.giftTransaction?.deleteMany) {
-      await db.giftTransaction.deleteMany({
+    const userRooms = await db.room?.findMany?.({
+      where: { creatorUserId: id },
+      select: { id: true },
+    });
+    if (userRooms && userRooms.length > 0) {
+      roomIds = userRooms.map((r) => r.id);
+    }
+  } catch (_) {}
+
+  // 2. Clean up PKMatches (and child tables: contributions, lifecycle audits, invitations)
+  // This cleans up foreign keys PKMatch_hostAUserId_fkey, PKMatch_hostBUserId_fkey, PKMatch_roomAId_fkey, PKMatch_roomBId_fkey
+  try {
+    const pkMatches = await db.pKMatch?.findMany?.({
+      where: {
+        OR: [
+          { hostAUserId: id },
+          { hostBUserId: id },
+          ...(roomIds.length > 0 ? [{ roomAId: { in: roomIds } }, { roomBId: { in: roomIds } }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (pkMatches && pkMatches.length > 0) {
+      const matchIds = pkMatches.map((m) => m.id);
+      if (db.pKGiftContribution?.deleteMany) {
+        await db.pKGiftContribution.deleteMany({ where: { matchId: { in: matchIds } } });
+      }
+      if (db.pKLifecycleAudit?.deleteMany) {
+        await db.pKLifecycleAudit.deleteMany({ where: { matchId: { in: matchIds } } });
+      }
+      if (db.pKInvitation?.deleteMany) {
+        await db.pKInvitation.deleteMany({ where: { matchId: { in: matchIds } } });
+      }
+      await db.pKMatch.deleteMany({ where: { id: { in: matchIds } } });
+    }
+
+    // Clean up any standalone PK records referencing this user
+    if (db.pKGiftContribution?.deleteMany) {
+      await db.pKGiftContribution.deleteMany({
+        where: { OR: [{ senderUserId: id }, { recipientUserId: id }] },
+      });
+    }
+    if (db.pKInvitation?.deleteMany) {
+      await db.pKInvitation.deleteMany({
+        where: { OR: [{ inviterUserId: id }, { targetHostUserId: id }, { responderUserId: id }] },
+      });
+    }
+    if (db.pKRestriction?.deleteMany) {
+      await db.pKRestriction.deleteMany({
         where: {
-          OR: [{ senderUserId: id }, { recipientUserId: id }],
+          OR: [
+            { targetId: id },
+            ...(roomIds.length > 0 ? [{ targetId: { in: roomIds } }] : []),
+          ],
         },
       });
     }
   } catch (_) {}
 
-  // 2. Clean up P2P Escrow Orders
+  // 3. Clean up PK Events if host profile exists or user's rooms were in PKEvent
+  try {
+    const host = await db.hostProfile?.findUnique?.({ where: { userId: id }, select: { id: true } });
+    if (db.pKEvent?.deleteMany) {
+      await db.pKEvent.deleteMany({
+        where: {
+          OR: [
+            { initiatorUserId: id },
+            ...(host ? [{ hostAUserId: host.id }, { hostBUserId: host.id }] : []),
+            ...(roomIds.length > 0 ? [{ roomAId: { in: roomIds } }, { roomBId: { in: roomIds } }] : []),
+          ],
+        },
+      });
+    }
+  } catch (_) {}
+
+  // 4. Clean up GiftTransactions sent, received, or inside user's rooms
+  try {
+    if (db.giftTransaction?.deleteMany) {
+      await db.giftTransaction.deleteMany({
+        where: {
+          OR: [
+            { senderUserId: id },
+            { recipientUserId: id },
+            ...(roomIds.length > 0 ? [{ roomId: { in: roomIds } }] : []),
+          ],
+        },
+      });
+    }
+  } catch (_) {}
+
+  // 5. Clean up P2P Escrow Orders
   try {
     if (db.p2PEscrowOrder?.deleteMany) {
       await db.p2PEscrowOrder.deleteMany({
@@ -599,19 +682,55 @@ export async function deleteUserById(id, db = prisma) {
     }
   } catch (_) {}
 
-  // 3. Clean up PK Events if host profile exists
+  // 6. Clean up Room Seats (unseat user from any room, delete seats of user's own rooms)
   try {
-    const host = await db.hostProfile?.findUnique?.({ where: { userId: id }, select: { id: true } });
-    if (host && db.pKEvent?.deleteMany) {
-      await db.pKEvent.deleteMany({
-        where: {
-          OR: [{ hostAUserId: host.id }, { hostBUserId: host.id }],
+    if (db.roomSeat?.updateMany) {
+      await db.roomSeat.updateMany({
+        where: { occupiedUserId: id },
+        data: {
+          occupiedUserId: null,
+          isMuted: false,
+          isMutedByModerator: false,
         },
+      });
+    }
+    if (roomIds.length > 0 && db.roomSeat?.deleteMany) {
+      await db.roomSeat.deleteMany({
+        where: { roomId: { in: roomIds } },
       });
     }
   } catch (_) {}
 
-  // 4. Clean up Agencies owned by this user
+  // 7. Clean up Room Moderations, Members, and Rooms created by this user
+  try {
+    if (db.roomModeration?.deleteMany) {
+      await db.roomModeration.deleteMany({
+        where: {
+          OR: [
+            { targetUserId: id },
+            ...(roomIds.length > 0 ? [{ roomId: { in: roomIds } }] : []),
+          ],
+        },
+      });
+    }
+    if (db.roomMember?.deleteMany) {
+      await db.roomMember.deleteMany({
+        where: {
+          OR: [
+            { userId: id },
+            ...(roomIds.length > 0 ? [{ roomId: { in: roomIds } }] : []),
+          ],
+        },
+      });
+    }
+    if (roomIds.length > 0 && db.room?.deleteMany) {
+      await db.room.deleteMany({
+        where: { id: { in: roomIds } },
+      });
+    }
+  } catch (_) {}
+
+  // 8. Clean up Agencies owned by this user & applications/memberships
   try {
     const ownedAgencies = await db.agency?.findMany?.({
       where: { ownerUserId: id },
@@ -625,6 +744,11 @@ export async function deleteUserById(id, db = prisma) {
           data: { agencyId: null },
         });
       }
+      if (db.agencyApplication?.deleteMany) {
+        await db.agencyApplication.deleteMany({
+          where: { createdAgencyId: { in: agencyIds } },
+        });
+      }
       if (db.agencyMember?.deleteMany) {
         await db.agencyMember.deleteMany({
           where: { agencyId: { in: agencyIds } },
@@ -636,9 +760,15 @@ export async function deleteUserById(id, db = prisma) {
         });
       }
     }
+    if (db.agencyApplication?.deleteMany) {
+      await db.agencyApplication.deleteMany({ where: { applicantId: id } });
+    }
+    if (db.agencyMember?.deleteMany) {
+      await db.agencyMember.deleteMany({ where: { userId: id } });
+    }
   } catch (_) {}
 
-  // 5. Clean up BDCenters managed by this user
+  // 9. Clean up BDCenters managed by this user & invites
   try {
     const managedBDs = await db.bDCenter?.findMany?.({
       where: { managerUserId: id },
@@ -669,122 +799,73 @@ export async function deleteUserById(id, db = prisma) {
         });
       }
     }
+    if (db.bDInvite?.deleteMany) {
+      await db.bDInvite.deleteMany({ where: { targetUserId: id } });
+    }
   } catch (_) {}
 
-  // 6. Clean up Rooms created by this user
+  // 10. Clean up Social: Likes, Comments, Posts, Follows, ProfileVisits, Messages, Notifications, Blocks
   try {
-    const userRooms = await db.room?.findMany?.({
-      where: { creatorUserId: id },
-      select: { id: true },
-    });
-    if (userRooms && userRooms.length > 0) {
-      const roomIds = userRooms.map((r) => r.id);
-      if (db.giftTransaction?.deleteMany) {
-        await db.giftTransaction.deleteMany({
-          where: { roomId: { in: roomIds } },
-        });
+    const postCleanup = async () => {
+      const userPosts = await db.post?.findMany?.({ where: { userId: id }, select: { id: true } });
+      if (userPosts && userPosts.length > 0) {
+        const pIds = userPosts.map((p) => p.id);
+        if (db.like?.deleteMany) await db.like.deleteMany({ where: { postId: { in: pIds } } });
+        if (db.comment?.deleteMany) await db.comment.deleteMany({ where: { postId: { in: pIds } } });
+        if (db.post?.deleteMany) await db.post.deleteMany({ where: { id: { in: pIds } } });
       }
-      if (db.roomModerationAction?.deleteMany) {
-        await db.roomModerationAction.deleteMany({
-          where: { roomId: { in: roomIds } },
-        });
-      }
-      if (db.roomMember?.deleteMany) {
-        await db.roomMember.deleteMany({
-          where: { roomId: { in: roomIds } },
-        });
-      }
-      if (db.roomSeat?.deleteMany) {
-        await db.roomSeat.deleteMany({
-          where: { roomId: { in: roomIds } },
-        });
-      }
-      if (db.room?.deleteMany) {
-        await db.room.deleteMany({
-          where: { id: { in: roomIds } },
-        });
-      }
-    }
+    };
+
+    await Promise.allSettled([
+      db.like?.deleteMany ? db.like.deleteMany({ where: { userId: id } }) : null,
+      db.comment?.deleteMany ? db.comment.deleteMany({ where: { userId: id } }) : null,
+      postCleanup(),
+      db.follow?.deleteMany ? db.follow.deleteMany({ where: { OR: [{ followerId: id }, { followingId: id }] } }) : null,
+      db.profileVisit?.deleteMany ? db.profileVisit.deleteMany({ where: { OR: [{ visitorId: id }, { visitedId: id }] } }) : null,
+      db.message?.deleteMany ? db.message.deleteMany({ where: { OR: [{ senderId: id }, { recipientId: id }] } }) : null,
+      db.notification?.deleteMany ? db.notification.deleteMany({ where: { userId: id } }) : null,
+      db.notificationPreference?.deleteMany ? db.notificationPreference.deleteMany({ where: { userId: id } }) : null,
+      db.userBlock?.deleteMany ? db.userBlock.deleteMany({ where: { OR: [{ blockerId: id }, { blockedId: id }] } }) : null,
+    ]);
   } catch (_) {}
 
-  // 7. Clean up Social, Likes, Comments, Posts, Follows, Messages
+  // 11. Clean up Reports, Restrictions, Support Tickets
   try {
-    if (db.like?.deleteMany) {
-      await db.like.deleteMany({ where: { userId: id } });
-    }
-    if (db.comment?.deleteMany) {
-      await db.comment.deleteMany({ where: { userId: id } });
-    }
-    const userPosts = await db.post?.findMany?.({ where: { userId: id }, select: { id: true } });
-    if (userPosts && userPosts.length > 0) {
-      const pIds = userPosts.map((p) => p.id);
-      if (db.like?.deleteMany) await db.like.deleteMany({ where: { postId: { in: pIds } } });
-      if (db.comment?.deleteMany) await db.comment.deleteMany({ where: { postId: { in: pIds } } });
-      if (db.post?.deleteMany) await db.post.deleteMany({ where: { id: { in: pIds } } });
-    }
-    if (db.follow?.deleteMany) {
-      await db.follow.deleteMany({
-        where: { OR: [{ followerId: id }, { followingId: id }] },
-      });
-    }
-    if (db.message?.deleteMany) {
-      await db.message.deleteMany({
-        where: { OR: [{ senderUserId: id }, { recipientUserId: id }] },
-      });
-    }
-    if (db.notification?.deleteMany) {
-      await db.notification.deleteMany({ where: { userId: id } });
-    }
-    if (db.notificationPreference?.deleteMany) {
-      await db.notificationPreference.deleteMany({ where: { userId: id } });
-    }
+    await Promise.allSettled([
+      db.report?.deleteMany ? db.report.deleteMany({ where: { OR: [{ reporterUserId: id }, { reportedUserId: id }] } }) : null,
+      db.restriction?.deleteMany ? db.restriction.deleteMany({ where: { userId: id } }) : null,
+      db.moderationAction?.deleteMany ? db.moderationAction.deleteMany({ where: { targetId: id } }) : null,
+      db.supportTicketMessage?.deleteMany ? db.supportTicketMessage.deleteMany({ where: { senderId: id } }) : null,
+      db.supportTicket?.deleteMany ? db.supportTicket.deleteMany({ where: { userId: id } }) : null,
+    ]);
   } catch (_) {}
 
-  // 8. Clean up Reports, Moderation, Support Tickets, Restrictions, Transactions
+  // 12. Clean up Financials, Transactions, Assets, Profiles & Wallets in parallel
   try {
-    if (db.report?.deleteMany) {
-      await db.report.deleteMany({
-        where: {
-          OR: [{ reporterUserId: id }, { reportedUserId: id }],
-        },
-      });
-    }
-    if (db.restriction?.deleteMany) {
-      await db.restriction.deleteMany({ where: { userId: id } });
-    }
-    if (db.moderationAction?.deleteMany) {
-      await db.moderationAction.deleteMany({ where: { targetId: id } });
-    }
-    if (db.supportTicket?.deleteMany) {
-      await db.supportTicket.deleteMany({ where: { userId: id } });
-    }
-    if (db.userBlock?.deleteMany) {
-      await db.userBlock.deleteMany({
-        where: { OR: [{ blockerId: id }, { blockedId: id }] },
-      });
-    }
-    if (db.onlineRecharge?.deleteMany) await db.onlineRecharge.deleteMany({ where: { userId: id } });
-    if (db.offlineRecharge?.deleteMany) await db.offlineRecharge.deleteMany({ where: { userId: id } });
-    if (db.withdrawalRequest?.deleteMany) await db.withdrawalRequest.deleteMany({ where: { userId: id } });
-    if (db.coinRefund?.deleteMany) await db.coinRefund.deleteMany({ where: { userId: id } });
-    if (db.chargeback?.deleteMany) await db.chargeback.deleteMany({ where: { userId: id } });
-    if (db.userAsset?.deleteMany) await db.userAsset.deleteMany({ where: { userId: id } });
-    if (db.gameTransaction?.deleteMany) await db.gameTransaction.deleteMany({ where: { userId: id } });
-    if (db.settlementRecord?.deleteMany) await db.settlementRecord.deleteMany({ where: { userId: id } });
-    if (db.settlementAdjustment?.deleteMany) await db.settlementAdjustment.deleteMany({ where: { userId: id } });
-    if (db.hostApplication?.deleteMany) await db.hostApplication.deleteMany({ where: { userId: id } });
-    if (db.coinSeller?.deleteMany) await db.coinSeller.deleteMany({ where: { userId: id } });
-    if (db.merchant?.deleteMany) await db.merchant.deleteMany({ where: { userId: id } });
-    if (db.roomMember?.deleteMany) await db.roomMember.deleteMany({ where: { userId: id } });
-    if (db.roomSeat?.deleteMany) await db.roomSeat.deleteMany({ where: { userId: id } });
-    if (db.userSession?.deleteMany) await db.userSession.deleteMany({ where: { userId: id } });
-    if (db.userDevice?.deleteMany) await db.userDevice.deleteMany({ where: { userId: id } });
-    if (db.hostProfile?.deleteMany) await db.hostProfile.deleteMany({ where: { userId: id } });
-    if (db.userProfile?.deleteMany) await db.userProfile.deleteMany({ where: { userId: id } });
-    if (db.wallet?.deleteMany) await db.wallet.deleteMany({ where: { userId: id } });
+    await Promise.allSettled([
+      db.onlineRecharge?.deleteMany ? db.onlineRecharge.deleteMany({ where: { userId: id } }) : null,
+      db.offlineRecharge?.deleteMany ? db.offlineRecharge.deleteMany({ where: { userId: id } }) : null,
+      db.withdrawalRequest?.deleteMany ? db.withdrawalRequest.deleteMany({ where: { userId: id } }) : null,
+      db.coinRefund?.deleteMany ? db.coinRefund.deleteMany({ where: { userId: id } }) : null,
+      db.chargeback?.deleteMany ? db.chargeback.deleteMany({ where: { userId: id } }) : null,
+      db.userAsset?.deleteMany ? db.userAsset.deleteMany({ where: { userId: id } }) : null,
+      db.gameTransaction?.deleteMany ? db.gameTransaction.deleteMany({ where: { userId: id } }) : null,
+      db.settlementRecord?.deleteMany ? db.settlementRecord.deleteMany({ where: { userId: id } }) : null,
+      db.settlementAdjustment?.deleteMany ? db.settlementAdjustment.deleteMany({ where: { userId: id } }) : null,
+      db.userMilestoneClaim?.deleteMany ? db.userMilestoneClaim.deleteMany({ where: { userId: id } }) : null,
+      db.userNobleEntitlement?.deleteMany ? db.userNobleEntitlement.deleteMany({ where: { userId: id } }) : null,
+      db.hostApplication?.deleteMany ? db.hostApplication.deleteMany({ where: { userId: id } }) : null,
+      db.coinSeller?.deleteMany ? db.coinSeller.deleteMany({ where: { userId: id } }) : null,
+      db.merchant?.deleteMany ? db.merchant.deleteMany({ where: { userId: id } }) : null,
+      db.userSession?.deleteMany ? db.userSession.deleteMany({ where: { userId: id } }) : null,
+      db.userDevice?.deleteMany ? db.userDevice.deleteMany({ where: { userId: id } }) : null,
+      db.hostProfile?.deleteMany ? db.hostProfile.deleteMany({ where: { userId: id } }) : null,
+      db.userProfile?.deleteMany ? db.userProfile.deleteMany({ where: { userId: id } }) : null,
+      db.wallet?.deleteMany ? db.wallet.deleteMany({ where: { userId: id } }) : null,
+    ]);
   } catch (_) {}
 
-  // 9. Delete the user safely from PostgreSQL
+  // 13. Delete the user safely from PostgreSQL
   return await db.user.delete({
     where: { id },
   });
@@ -927,11 +1008,16 @@ export async function purgeExpiredDeletedUsers(db = prisma) {
     select: { id: true },
   });
   if (!expired.length) return 0;
-  const ids = expired.map((u) => u.id);
-  const result = await db.user.deleteMany({
-    where: { id: { in: ids } },
-  });
-  return result.count;
+  let count = 0;
+  for (const u of expired) {
+    try {
+      await deleteUserById(u.id, db);
+      count++;
+    } catch (err) {
+      console.warn(`Failed to auto-purge expired user ${u.id}:`, err.message);
+    }
+  }
+  return count;
 }
 
 export async function findUsersByIds(ids, db = prisma) {

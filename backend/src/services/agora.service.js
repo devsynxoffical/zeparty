@@ -121,11 +121,20 @@ export async function issueRoomAgoraToken({ roomId, userId }, db = prisma) {
   }
 
   // Check if user was kicked from this room session
+  const now = new Date();
   const isKicked = await db.roomModeration.findFirst({
     where: {
       roomId: room.id,
       targetUserId: userId,
       actionType: 'KICK',
+      AND: [
+        {
+          OR: [
+            { expiresAt: null },
+            { expiresAt: { gt: now } },
+          ],
+        },
+      ],
     },
   });
   if (isKicked) {
