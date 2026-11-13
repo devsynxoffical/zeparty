@@ -93,6 +93,17 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
       final bool suppressAnimation = data['suppressAnimation'] == true ||
           data['isDebouncedReconnect'] == true;
 
+      final entryUserKey = (userId.isNotEmpty ? userId : displayName).trim().toLowerCase();
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (entryUserKey.isNotEmpty && _lastShownUserTimestamp.containsKey(entryUserKey)) {
+        if (now - _lastShownUserTimestamp[entryUserKey]! < _dedupWindowMs) {
+          return; // Ignore duplicate join banner for the same user within 8s window
+        }
+      }
+      if (entryUserKey.isNotEmpty) {
+        _lastShownUserTimestamp[entryUserKey] = now;
+      }
+
       // If user is VIP, Noble, or has equipped an Entry Effect / Ride
       if (isVip || (nobleLevel != null && nobleLevel.isNotEmpty) || (vipLevel != null && vipLevel.isNotEmpty) || entryEffect != null) {
         if (suppressAnimation) return;

@@ -688,8 +688,21 @@ export async function findActiveRooms(
     };
   });
 
+  const uniqueRooms = [];
+  const seenIds = new Set();
+  const seenCreators = new Set();
+  for (const r of rooms) {
+    if (seenIds.has(r.id)) continue;
+    if (hasSearch && r.creatorUserId && seenCreators.has(r.creatorUserId)) {
+      continue;
+    }
+    seenIds.add(r.id);
+    if (r.creatorUserId) seenCreators.add(r.creatorUserId);
+    uniqueRooms.push(r);
+  }
+
   return {
-    rooms,
+    rooms: uniqueRooms,
     pagination: {
       page: parsedPage,
       limit: parsedLimit,

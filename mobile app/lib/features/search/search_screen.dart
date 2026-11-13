@@ -230,22 +230,37 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       );
       final rawRooms = res.data?['data'];
       final List<LiveRoomModel> loadedRooms = [];
+      final Set<String> seenRoomIds = {};
+      final Set<String> seenHostIds = {};
+
       if (rawRooms is List) {
         for (final item in rawRooms) {
           if (item is Map<String, dynamic>) {
-            loadedRooms.add(LiveRoomModel.fromJson(item));
+            final model = LiveRoomModel.fromJson(item);
+            final rId = model.id.trim().toLowerCase();
+            final hId = model.host.id.trim().toLowerCase();
+            if (rId.isNotEmpty && seenRoomIds.add(rId)) {
+              if (hId.isNotEmpty) seenHostIds.add(hId);
+              loadedRooms.add(model);
+            }
           }
         }
       }
 
       // Exact Room ID & Sleeping Party Room Fallback:
-      // If user typed a room ID (or prefix), query /v1/rooms/:id so sleeping persistent rooms can be woken by search
-      final cleanQ = query.trim();
-      if (cleanQ.isNotEmpty && !loadedRooms.any((r) => r.id.toLowerCase() == cleanQ.toLowerCase())) {
+      // If user typed a room ID (or host ID), only query /v1/rooms/:id if neither the room ID nor the host ID was already found
+      final cleanQ = query.trim().toLowerCase();
+      if (cleanQ.isNotEmpty && !seenRoomIds.contains(cleanQ) && !seenHostIds.contains(cleanQ)) {
         try {
-          final exactRoom = await RoomRepository.instance.getRoomById(cleanQ);
+          final exactRoom = await RoomRepository.instance.getRoomById(query.trim());
           if (exactRoom != null) {
-            loadedRooms.insert(0, exactRoom);
+            final exactRoomId = exactRoom.id.trim().toLowerCase();
+            final exactHostId = exactRoom.host.id.trim().toLowerCase();
+            if (!seenRoomIds.contains(exactRoomId) && (exactHostId.isEmpty || !seenHostIds.contains(exactHostId))) {
+              seenRoomIds.add(exactRoomId);
+              if (exactHostId.isNotEmpty) seenHostIds.add(exactHostId);
+              loadedRooms.insert(0, exactRoom);
+            }
           }
         } catch (_) {}
       }
@@ -728,6 +743,9 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         return matchId || matchTitle || matchHost;
       }).toList();
     }
+
+    final seenListIds = <String>{};
+    filtered = filtered.where((r) => seenListIds.add(r.id.trim().toLowerCase())).toList();
 
     if (filtered.isEmpty) {
       return EmptyStateWidget(

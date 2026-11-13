@@ -568,15 +568,16 @@ class SocketService {
       if (data != null) {
         final map = safeMap(data);
         final userObj = map['user'] is Map ? map['user'] as Map : map;
-        final uid = map['userId'] ?? map['id'] ?? userObj['id'] ?? userObj['username'] ?? '';
-        final key = '${map['roomId']}_$uid';
+        final uid = (map['userId'] ?? map['id'] ?? userObj['id'] ?? userObj['username'] ?? '').toString().trim().toLowerCase();
         final now = DateTime.now().millisecondsSinceEpoch;
-        if (uid.toString().isNotEmpty && recentJoins.containsKey(key)) {
-          if (now - recentJoins[key]! < 4000) {
-            return; // Ignore duplicate alias emissions within 4 seconds
+        if (uid.isNotEmpty && recentJoins.containsKey(uid)) {
+          if (now - recentJoins[uid]! < 5000) {
+            return; // Ignore duplicate alias emissions within 5 seconds
           }
         }
-        recentJoins[key] = now;
+        if (uid.isNotEmpty) {
+          recentJoins[uid] = now;
+        }
         _logDiag('RECV_USER_JOINED', 'room: ${map['roomId']}, user: $uid, name: ${userObj['name'] ?? userObj['displayName']}');
         _userJoinedController.add(map);
       }

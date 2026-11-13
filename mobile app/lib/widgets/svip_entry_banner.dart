@@ -65,16 +65,14 @@ class SvipEntryManager {
     final now = DateTime.now().millisecondsSinceEpoch;
     _lastShownEntryTimestamp.removeWhere((_, ts) => now - ts > 30000);
 
-    final key = (dedupKey != null && dedupKey.isNotEmpty)
-        ? dedupKey.trim().toLowerCase()
-        : (user.id.isNotEmpty ? user.id.trim().toLowerCase() : user.name.trim().toLowerCase());
-    if (key.isNotEmpty) {
-      if (_lastShownEntryTimestamp.containsKey(key)) {
-        if (now - _lastShownEntryTimestamp[key]! < _dedupWindowMs) {
+    final userKey = user.id.isNotEmpty ? user.id.trim().toLowerCase() : user.name.trim().toLowerCase();
+    if (userKey.isNotEmpty) {
+      if (_lastShownEntryTimestamp.containsKey(userKey)) {
+        if (now - _lastShownEntryTimestamp[userKey]! < _dedupWindowMs) {
           return; // Suppress duplicate banner during reconnection or rapid events
         }
       }
-      _lastShownEntryTimestamp[key] = now;
+      _lastShownEntryTimestamp[userKey] = now;
     }
 
     _eventController.add(SvipEntryEvent(

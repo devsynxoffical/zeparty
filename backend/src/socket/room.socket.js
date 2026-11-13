@@ -921,14 +921,12 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       timestamp: entryTimestamp,
     };
 
-    for (const rid of targetRoomIds) {
-      if (io) {
-        io.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
-        io.to(`room:${rid}`).emit('room:viewer_count', viewerPayload);
-        io.to(`room:${rid}`).emit('viewer_count_changed', viewerPayload);
-      } else if (socket.to) {
-        socket.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
-      }
+    if (io) {
+      io.to(roomChannelNames).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
+      io.to(roomChannelNames).emit('room:viewer_count', viewerPayload);
+      io.to(roomChannelNames).emit('viewer_count_changed', viewerPayload);
+    } else if (socket.to) {
+      socket.to(roomChannelNames).emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
     }
     if (socket && typeof socket.emit === 'function') {
       socket.emit(SOCKET_EVENTS.ROOM_VIEWER_COUNT_CHANGED, viewerPayload);
@@ -1044,15 +1042,11 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       };
 
       if (!isStealthEntry) {
-        for (const rid of targetRoomIds) {
-          if (io) {
-            io.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
-            io.to(`room:${rid}`).emit('user_joined', userPayload);
-            io.to(`room:${rid}`).emit('user:joined', userPayload);
-            io.to(`room:${rid}`).emit('room_user_joined', userPayload);
-          } else if (socket.to) {
-            socket.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
-          }
+        if (io) {
+          io.to(roomChannelNames).emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
+          io.to(roomChannelNames).emit('user_joined', userPayload);
+        } else if (socket.to) {
+          socket.to(roomChannelNames).emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
         }
       }
 
@@ -1107,15 +1101,11 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       };
 
       if (!isStealthEntry) {
-        for (const rid of targetRoomIds) {
-          if (io) {
-            io.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
-            io.to(`room:${rid}`).emit('room:chat', chatPayload);
-            io.to(`room:${rid}`).emit('chat_message', chatPayload);
-            io.to(`room:${rid}`).emit('room_chat_message', chatPayload);
-          } else if (socket.to) {
-            socket.to(`room:${rid}`).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
-          }
+        if (io) {
+          io.to(roomChannelNames).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
+          io.to(roomChannelNames).emit('room:chat', chatPayload);
+        } else if (socket.to) {
+          socket.to(roomChannelNames).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
         }
       }
 
