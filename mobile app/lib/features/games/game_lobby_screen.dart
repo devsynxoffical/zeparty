@@ -33,7 +33,7 @@ class _GameLobbyScreenState extends State<GameLobbyScreen> with AutomaticKeepAli
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final auth = context.watch<AuthProvider>();
+    final auth = Provider.of<AuthProvider>(context);
     final userId = auth.isAuthenticated ? auth.currentUser.id : '';
     if (userId != _sessionUserId) {
       _sessionUserId = userId;

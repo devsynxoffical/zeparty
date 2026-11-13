@@ -315,88 +315,102 @@ class GiftAnimationOverlayState extends State<GiftAnimationOverlay>
 
             // Top-Floating Luxury Gift Banner
             Positioned(
-              top: MediaQuery.of(context).padding.top + 75,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF8E24AA), Color(0xFFFF1744), Color(0xFFFF8F00)],
+              top: MediaQuery.of(context).padding.top + 64,
+              left: 12,
+              right: 12,
+              child: Center(
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: (MediaQuery.of(context).size.width - 24).clamp(240.0, 360.0),
                   ),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: const Color(0xFFFFD700), width: 1.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFFF1744).withValues(alpha: 0.6),
-                      blurRadius: 16,
-                      spreadRadius: 2,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF8E24AA), Color(0xFFFF1744), Color(0xFFFF8F00)],
                     ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: const Color(0xFFFFD700).withValues(alpha: 0.8), width: 1.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.3),
-                            blurRadius: 4,
-                          ),
-                        ],
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: const Color(0xFFFFD700), width: 1.2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFF1744).withValues(alpha: 0.45),
+                        blurRadius: 8,
+                        spreadRadius: 1,
                       ),
-                      child: ClipOval(
-                        child: ColorFiltered(
-                          colorFilter: const ColorFilter.matrix(_blackBackgroundFilterMatrix),
-                          child: _currentGift!.icon.startsWith('assets/')
-                              ? Image.asset(
-                                  _currentGift!.icon,
-                                  width: 38,
-                                  height: 38,
-                                  fit: BoxFit.contain,
-                                )
-                              : (_currentGift!.icon.startsWith('http')
-                                  ? Image.network(
-                                      _currentGift!.icon,
-                                      width: 38,
-                                      height: 38,
-                                      fit: BoxFit.contain,
-                                    )
-                                  : Center(child: Text(_currentGift!.icon, style: const TextStyle(fontSize: 20)))),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFFFFD700).withValues(alpha: 0.8), width: 1.0),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.25),
+                              blurRadius: 3,
+                            ),
+                          ],
+                        ),
+                        child: ClipOval(
+                          child: ColorFiltered(
+                            colorFilter: const ColorFilter.matrix(_blackBackgroundFilterMatrix),
+                            child: _currentGift!.icon.startsWith('assets/')
+                                ? Image.asset(
+                                    _currentGift!.icon,
+                                    width: 26,
+                                    height: 26,
+                                    fit: BoxFit.contain,
+                                  )
+                                : (_currentGift!.icon.startsWith('http')
+                                    ? Image.network(
+                                        _currentGift!.icon,
+                                        width: 26,
+                                        height: 26,
+                                        fit: BoxFit.contain,
+                                      )
+                                    : Center(child: Text(_currentGift!.icon, style: const TextStyle(fontSize: 14)))),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _giftSenderName.isNotEmpty
-                              ? '$_giftSenderName sent $_giftQuantity × ${_currentGift!.name}'
-                              : 'SPECIAL GIFT: ${_currentGift!.name}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 13,
-                            letterSpacing: 0.8,
-                          ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _giftSenderName.isNotEmpty
+                                  ? '$_giftSenderName sent $_giftQuantity × ${_currentGift!.name}'
+                                  : 'SPECIAL GIFT: ${_currentGift!.name}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                                letterSpacing: 0.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              '$totalCoins Coins 🪙',
+                              style: const TextStyle(
+                                color: Color(0xFFFFD700),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                        Text(
-                          '$totalCoins Coins 🪙',
-                          style: const TextStyle(
-                            color: Color(0xFFFFD700),
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

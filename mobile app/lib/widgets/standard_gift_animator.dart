@@ -170,48 +170,59 @@ class _StandardGiftAnimatorState extends State<StandardGiftAnimator>
             // 3. Bottom Neon Banner ("Sana sent Rose x1")
             Positioned(
               bottom: size.height * 0.28,
-              child: Opacity(
-                opacity: bannerOp,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF8E24AA), Color(0xFFD81B60)],
+              left: 16,
+              right: 16,
+              child: Center(
+                child: Opacity(
+                  opacity: bannerOp,
+                  child: Container(
+                    constraints: BoxConstraints(
+                      maxWidth: (size.width - 32).clamp(200.0, 340.0),
                     ),
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 1.5),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFD81B60).withValues(alpha: 0.6),
-                        blurRadius: 16,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF8E24AA), Color(0xFFD81B60)],
                       ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (widget.event.giftIcon.startsWith('assets/')) ...[
-                        Image.asset(
-                          widget.event.giftIcon,
-                          width: 22,
-                          height: 22,
-                          fit: BoxFit.contain,
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.6), width: 1.2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFD81B60).withValues(alpha: 0.5),
+                          blurRadius: 10,
                         ),
-                        const SizedBox(width: 8),
-                      ] else if (!widget.event.giftIcon.startsWith('http')) ...[
-                        Text(widget.event.giftIcon, style: const TextStyle(fontSize: 16)),
-                        const SizedBox(width: 8),
                       ],
-                      Text(
-                        '${widget.event.senderName} sent ${widget.event.giftName} ${widget.event.comboCount > 1 ? "x${widget.event.comboCount}" : ""}'.trim(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 14,
-                          letterSpacing: 0.8,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.event.giftIcon.startsWith('assets/')) ...[
+                          Image.asset(
+                            widget.event.giftIcon,
+                            width: 18,
+                            height: 18,
+                            fit: BoxFit.contain,
+                          ),
+                          const SizedBox(width: 6),
+                        ] else if (!widget.event.giftIcon.startsWith('http')) ...[
+                          Text(widget.event.giftIcon, style: const TextStyle(fontSize: 14)),
+                          const SizedBox(width: 6),
+                        ],
+                        Flexible(
+                          child: Text(
+                            '${widget.event.senderName} sent ${widget.event.giftName} ${widget.event.comboCount > 1 ? "x${widget.event.comboCount}" : ""}'.trim(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12,
+                              letterSpacing: 0.4,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

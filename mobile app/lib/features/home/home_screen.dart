@@ -180,50 +180,52 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   const SizedBox(width: 8),
                 ],
               ),
-              if (_tabController.index != 3)
-                SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Module 09: Party Top Banner Carousel
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8, bottom: 8),
-                        child: BannerCarouselWidget(
-                          isDark: isDark,
-                          onPartyTap: () => _tabController.animateTo(1),
-                          onLiveTap: () => _tabController.animateTo(2),
-                        ),
-                      ),
-                      
-                      // RECOMMEND & COUNTRY PICKER ROW
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
+              SliverToBoxAdapter(
+                key: const ValueKey('home_header_banner_sliver'),
+                child: _tabController.index == 3
+                    ? const SizedBox.shrink()
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Module 09: Party Top Banner Carousel
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8, bottom: 8),
+                            child: BannerCarouselWidget(
+                              isDark: isDark,
+                              onPartyTap: () => _tabController.animateTo(1),
+                              onLiveTap: () => _tabController.animateTo(2),
+                            ),
+                          ),
+                          
+                          // RECOMMEND & COUNTRY PICKER ROW
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                const Icon(Icons.star_rounded, color: AppColors.gold, size: 20),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Recommend',
-                                  style: TextStyle(
-                                    color: AppColors.getTextSecondary(isDark),
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.star_rounded, color: AppColors.gold, size: 20),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Recommend',
+                                      style: TextStyle(
+                                        color: AppColors.getTextSecondary(isDark),
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
                                 ),
+                                CountryPickerWidget(isDark: isDark),
                               ],
                             ),
-                            CountryPickerWidget(isDark: isDark),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(height: 4),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                    ],
-                  ),
-                ),
+              ),
             ];
           },
           body: TabBarView(

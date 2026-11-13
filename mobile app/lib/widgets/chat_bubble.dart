@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:provider/provider.dart';
@@ -10,6 +11,7 @@ import '../features/social/short_videos_screen.dart';
 import '../providers/backpack_provider.dart';
 import '../models/gift_model.dart';
 import '../core/constants/animated_gifts_catalog.dart';
+import '../core/constants/chat_bubble_config.dart';
 
 class ChatBubble extends StatefulWidget {
   final MessageModel message;
@@ -178,6 +180,26 @@ class _ChatBubbleState extends State<ChatBubble> {
     );
   }
 
+  String _formatVoiceLabel() {
+    if (_isPlayingVoice) {
+      return 'Playing (${(_playbackProgress * 100).toInt()}%)';
+    }
+    final durSec = widget.message.durationSeconds;
+    if (durSec != null && durSec > 0) {
+      final mins = (durSec ~/ 60).toString().padLeft(2, '0');
+      final secs = (durSec % 60).toString().padLeft(2, '0');
+      return 'Voice Note • $mins:$secs';
+    }
+    final match = RegExp(r'\((\d+:\d+)\)').firstMatch(widget.message.text);
+    if (match != null) {
+      return 'Voice Note • ${match.group(1)}';
+    }
+    if (widget.message.text.contains('Voice Note')) {
+      return widget.message.text.replaceAll('🎤', '').trim();
+    }
+    return 'Voice Note • Play';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -207,29 +229,94 @@ class _ChatBubbleState extends State<ChatBubble> {
         : (backpack.equippedBubbleUrl);
     final hasCustomBubble = equippedBubble != null && equippedBubble.isNotEmpty && equippedBubble != 'none';
 
+    // Look up individual safe area configuration for this equipped bubble design
+    final bubbleSpec = ChatBubbleConfig.getSpec(equippedBubble);
+    final safeInsets = hasCustomBubble
+        ? bubbleSpec.getInsets(isMe: widget.isMe)
+        : (widget.isMe
+            ? const EdgeInsets.fromLTRB(14, 10, 14, 8)
+            : const EdgeInsets.fromLTRB(14, 10, 14, 8));
+
     final bubbleColor = widget.isMe
         ? primaryColor
         : Theme.of(context).colorScheme.surfaceContainerHighest;
 
     final textColor = hasCustomBubble
-        ? Colors.white
+        ? bubbleSpec.textColor
         : (widget.isMe ? onPrimary : Theme.of(context).textTheme.bodyLarge?.color);
+
+    // Responsive constraints based on device screen width
+    final screenWidth = MediaQuery.of(context).size.width;
+    final maxBubbleWidth = screenWidth * 0.78;
+
+    // Dynamic measurement using Flutter Text Layout engine (TextPainter)
+    double? measuredBubbleWidth;
+    final bool isStandardText = !isGift &&
+        !isImage &&
+        !isVoice &&
+        !widget.message.text.contains('zeparty.app/short/') &&
+        !widget.message.text.contains('Replied to story') &&
+        !widget.message.text.startsWith('📸');
+
+    final messageTextStyle = TextStyle(
+      color: textColor,
+      fontSize: 14,
+      fontWeight: hasCustomBubble ? FontWeight.w600 : FontWeight.normal,
+      shadows: hasCustomBubble
+          ? [const Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1))]
+          : null,
+    );
+
+    // Detect RTL (Urdu / Arabic) vs LTR
+    final isRTL = RegExp(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]')
+        .hasMatch(widget.message.text);
+
+    if (isStandardText) {
+      final maxContentWidth = math.max(0.0, maxBubbleWidth - safeInsets.horizontal);
+
+      final textPainter = TextPainter(
+        text: TextSpan(text: widget.message.text, style: messageTextStyle),
+        textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout(maxWidth: maxContentWidth);
+
+      // Measure timestamp and read receipt row
+      final timeStr = AppFormatters.formatTimeAgo(widget.message.timestamp);
+      final timePainter = TextPainter(
+        text: TextSpan(
+          text: timeStr,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: hasCustomBubble ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout();
+
+      // Timestamp row width: text + spacing + status tick icon
+      final timestampRowWidth = timePainter.width + (widget.isMe ? 22.0 : 0.0);
+      final neededContentWidth = math.max(textPainter.width, timestampRowWidth);
+      final totalNeededWidth = neededContentWidth + safeInsets.horizontal;
+
+      final minW = hasCustomBubble ? bubbleSpec.minWidth : 0.0;
+      measuredBubbleWidth = totalNeededWidth.clamp(minW, maxBubbleWidth);
+    }
 
     return Align(
       alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
-        padding: isImage
-            ? const EdgeInsets.all(4)
-            : (hasCustomBubble
-                ? (widget.isMe
-                    ? const EdgeInsets.fromLTRB(26, 12, 28, 10)
-                    : const EdgeInsets.fromLTRB(28, 12, 26, 10))
-                : const EdgeInsets.symmetric(horizontal: 14, vertical: 10)),
+        padding: isImage ? const EdgeInsets.all(4) : safeInsets,
+        width: measuredBubbleWidth,
         constraints: BoxConstraints(
-          minWidth: hasCustomBubble ? 130 : 0,
-          minHeight: hasCustomBubble ? 48 : 0,
-          maxWidth: MediaQuery.of(context).size.width * 0.82,
+          minWidth: hasCustomBubble
+              ? (isVoice ? bubbleSpec.minVoiceWidth : bubbleSpec.minWidth)
+              : 0,
+          minHeight: hasCustomBubble
+              ? (isVoice ? bubbleSpec.minVoiceHeight : bubbleSpec.minHeight)
+              : 0,
+          maxWidth: maxBubbleWidth,
         ),
         decoration: BoxDecoration(
           color: hasCustomBubble
@@ -471,7 +558,8 @@ class _ChatBubbleState extends State<ChatBubble> {
                   GestureDetector(
                     onTap: _toggleVoicePlayback,
                     child: Container(
-                      padding: const EdgeInsets.all(8),
+                      width: 34,
+                      height: 34,
                       decoration: BoxDecoration(
                         color: isExpired
                             ? Colors.grey.withValues(alpha: 0.3)
@@ -483,59 +571,69 @@ class _ChatBubbleState extends State<ChatBubble> {
                             ? Icons.timer_off_outlined
                             : (_isPlayingVoice ? Icons.pause_rounded : Icons.play_arrow_rounded),
                         color: isExpired ? Colors.white60 : textColor,
-                        size: 22,
+                        size: 20,
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (!isExpired) ...[
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: List.generate(10, (index) {
-                            final barHeight = (index % 3 == 0 ? 12 : (index % 2 == 0 ? 8 : 16)).toDouble();
-                            final isActive = (index / 10) <= _playbackProgress;
-                            return Container(
-                              width: 2.5,
-                              height: barHeight,
-                              margin: const EdgeInsets.symmetric(horizontal: 1.2),
-                              decoration: BoxDecoration(
-                                color: isActive
-                                    ? (hasCustomBubble ? Colors.white : (widget.isMe ? Colors.white : primaryColor))
-                                    : (hasCustomBubble ? Colors.white.withValues(alpha: 0.5) : (widget.isMe ? Colors.white38 : Colors.grey.shade400)),
-                                borderRadius: BorderRadius.circular(2),
-                              ),
-                            );
-                          }),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          _isPlayingVoice
-                              ? 'Playing voice note (${(_playbackProgress * 100).toInt()}%)'
-                              : widget.message.text.contains('Voice Note')
-                                  ? widget.message.text
-                                  : 'Voice Note • Play',
-                          style: TextStyle(
-                            color: textColor?.withValues(alpha: 0.9),
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            shadows: hasCustomBubble ? [const Shadow(color: Colors.black54, blurRadius: 3)] : null,
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!isExpired) ...[
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: List.generate(10, (index) {
+                              final barHeight = (index % 4 == 0 ? 14 : (index % 3 == 0 ? 10 : (index % 2 == 0 ? 7 : 12))).toDouble();
+                              final isActive = (index / 10) <= _playbackProgress;
+                              return Container(
+                                width: 2.5,
+                                height: barHeight,
+                                margin: const EdgeInsets.symmetric(horizontal: 1.0),
+                                decoration: BoxDecoration(
+                                  color: isActive
+                                      ? (hasCustomBubble ? Colors.white : (widget.isMe ? Colors.white : primaryColor))
+                                      : (hasCustomBubble ? Colors.white.withValues(alpha: 0.45) : (widget.isMe ? Colors.white38 : Colors.grey.shade400)),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              );
+                            }),
                           ),
-                        ),
-                      ] else ...[
-                        Text(
-                          'Media not available',
-                          style: TextStyle(color: textColor ?? Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Expired after 1 month to reduce storage',
-                          style: TextStyle(color: textColor?.withValues(alpha: 0.65) ?? Colors.white60, fontSize: 10),
-                        ),
+                          const SizedBox(height: 3),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.mic_rounded, size: 12, color: textColor?.withValues(alpha: 0.8) ?? Colors.white70),
+                              const SizedBox(width: 3),
+                              Flexible(
+                                child: Text(
+                                  _formatVoiceLabel(),
+                                  style: TextStyle(
+                                    color: textColor?.withValues(alpha: 0.95),
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                    shadows: hasCustomBubble ? [const Shadow(color: Colors.black54, blurRadius: 3)] : null,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          Text(
+                            'Media not available',
+                            style: TextStyle(color: textColor ?? Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Expired after 1 month to reduce storage',
+                            style: TextStyle(color: textColor?.withValues(alpha: 0.65) ?? Colors.white60, fontSize: 10),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -602,9 +700,9 @@ class _ChatBubbleState extends State<ChatBubble> {
                   return Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.2),
+                      color: Colors.black.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.amber.withOpacity(0.4)),
+                      border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -614,7 +712,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                             Container(
                               padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
-                                color: Colors.amber.withOpacity(0.2),
+                                color: Colors.amber.withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Icon(Icons.auto_stories_rounded, color: Colors.amber, size: 20),
@@ -631,7 +729,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                                   if (storyId != null && storyId.isNotEmpty)
                                     Text(
                                       'Story #$storyId',
-                                      style: TextStyle(color: textColor?.withOpacity(0.7) ?? Colors.white70, fontSize: 10),
+                                      style: TextStyle(color: textColor?.withValues(alpha: 0.7) ?? Colors.white70, fontSize: 10),
                                     ),
                                 ],
                               ),
@@ -655,14 +753,8 @@ class _ChatBubbleState extends State<ChatBubble> {
             ] else ...[
               Text(
                 widget.message.text,
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: 14,
-                  fontWeight: hasCustomBubble ? FontWeight.w600 : FontWeight.normal,
-                  shadows: hasCustomBubble
-                      ? [const Shadow(color: Colors.black45, blurRadius: 4, offset: Offset(0, 1))]
-                      : null,
-                ),
+                textDirection: isRTL ? TextDirection.rtl : TextDirection.ltr,
+                style: messageTextStyle,
               ),
             ],
             const SizedBox(height: 4),

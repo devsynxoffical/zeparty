@@ -191,29 +191,39 @@ class _LegendaryGiftAnimatorState extends State<LegendaryGiftAnimator>
             // 4. Bottom Neon Banner ("Mehak sent King Crown 👑")
             Positioned(
               bottom: size.height * 0.22,
-              child: Opacity(
-                opacity: cardsOp,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFD81B60), Color(0xFF8E24AA), Color(0xFFD81B60)],
+              left: 16,
+              right: 16,
+              child: Center(
+                child: Opacity(
+                  opacity: cardsOp,
+                  child: Container(
+                    constraints: BoxConstraints(
+                      maxWidth: (size.width - 32).clamp(200.0, 360.0),
                     ),
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: const Color(0xFFFFD700), width: 1.8),
-                    boxShadow: [
-                      BoxShadow(color: const Color(0xFFD81B60).withValues(alpha: 0.7), blurRadius: 20),
-                    ],
-                  ),
-                  child: Text(
-                    (widget.event.giftIcon.startsWith('assets/') || widget.event.giftIcon.startsWith('http'))
-                        ? '${widget.event.senderName} sent ${widget.event.giftName} 👑'
-                        : '${widget.event.senderName} sent ${widget.event.giftName} ${widget.event.giftIcon}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
-                      letterSpacing: 1.0,
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFD81B60), Color(0xFF8E24AA), Color(0xFFD81B60)],
+                      ),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xFFFFD700), width: 1.5),
+                      boxShadow: [
+                        BoxShadow(color: const Color(0xFFD81B60).withValues(alpha: 0.6), blurRadius: 14),
+                      ],
+                    ),
+                    child: Text(
+                      (widget.event.giftIcon.startsWith('assets/') || widget.event.giftIcon.startsWith('http'))
+                          ? '${widget.event.senderName} sent ${widget.event.giftName} 👑'
+                          : '${widget.event.senderName} sent ${widget.event.giftName} ${widget.event.giftIcon}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 13,
+                        letterSpacing: 0.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
