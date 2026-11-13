@@ -870,8 +870,10 @@ class LiveProvider extends ChangeNotifier {
           int.tryParse(data['totalLikes']?.toString() ?? '') ??
           int.tryParse(data['likesCount']?.toString() ?? '');
 
-      if (incomingTotal != null && incomingTotal > _likeCount) {
-        _likeCount = incomingTotal;
+      if (incomingTotal != null) {
+        if (incomingTotal > _likeCount) {
+          _likeCount = incomingTotal;
+        }
       } else if (senderId != currentUser?.id) {
         _likeCount += addedLikes;
       }
@@ -1277,10 +1279,14 @@ class LiveProvider extends ChangeNotifier {
             (_activeRoom!.host.id == currentUser?.id ||
                 _activeRoom!.creatorUserId == currentUser?.id);
         if (isHost) {
-          PKRepository.instance.setOperatorReady(
-            matchId: pk.id,
-            mediaPrepared: true,
-          );
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (_activePkBattle?.id == pk.id) {
+              PKRepository.instance.setOperatorReady(
+                matchId: pk.id,
+                mediaPrepared: true,
+              );
+            }
+          });
         }
       } catch (e) {
         debugPrint('[LiveProvider] PK preparing error: $e');
@@ -1715,7 +1721,10 @@ class LiveProvider extends ChangeNotifier {
     _activePkBattle = pk;
     _pkTimer?.cancel();
     if (pk.isStarted && !pk.isEnded) {
-      _pkTimeRemainingSeconds = pk.calculateRemainingSeconds();
+      final computedRemaining = pk.calculateRemainingSeconds();
+      _pkTimeRemainingSeconds = (computedRemaining > 0 && computedRemaining <= pk.durationSeconds)
+          ? computedRemaining
+          : pk.durationSeconds;
       if (_pkTimeRemainingSeconds > 0) {
         _pkTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
           if (_pkTimeRemainingSeconds > 0) {
@@ -1806,12 +1815,15 @@ class LiveProvider extends ChangeNotifier {
         return pk;
       } catch (e) {
         debugPrint('[LiveProvider] startHostPKBattle remote error: $e');
-        final active = _activePkBattle!.copyWith(
-          status: 'STARTED',
-          startedAt: DateTime.now(),
-        );
-        setPkBattle(active);
-        return active;
+        try {
+          final serverPk = await PKRepository.instance.getMatchSnapshot(_activePkBattle!.id);
+          if (serverPk != null) {
+            setPkBattle(serverPk);
+            return serverPk;
+          }
+        } catch (_) {
+          return _activePkBattle;
+        }
       }
     }
 

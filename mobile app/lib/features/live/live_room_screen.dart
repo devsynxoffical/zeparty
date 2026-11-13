@@ -20,6 +20,7 @@ import '../../widgets/gift_animation_overlay.dart';
 import '../pk_battle/pk_match_screen.dart';
 import '../pk_battle/pk_battle_screen.dart';
 import '../../models/pk_battle_model.dart';
+import '../../core/repositories/pk_repository.dart';
 import '../../core/services/api_client.dart';
 import '../../core/services/socket_service.dart';
 import '../party_room/widgets/lucky_bag_sheet.dart';
@@ -4178,13 +4179,21 @@ class _LiveRoomScreenState extends State<LiveRoomScreen>
                             ),
                           );
                           if (result != null && mounted) {
+                            final matchId = (result is Map) ? result['matchId']?.toString() : null;
                             UserModel? opponent;
                             if (result is Map &&
                                 result['opponent'] is UserModel) {
                               opponent = result['opponent'] as UserModel;
                             }
-                            if (opponent != null) {
-                              final liveProv = context.read<LiveProvider>();
+                            final liveProv = context.read<LiveProvider>();
+                            if (matchId != null && matchId.isNotEmpty) {
+                              try {
+                                final serverPk = await PKRepository.instance.getMatchSnapshot(matchId);
+                                if (serverPk != null) {
+                                  liveProv.setPkBattle(serverPk);
+                                }
+                              } catch (_) {}
+                            } else if (opponent != null) {
                               if (liveProv.activePkBattle == null) {
                                 liveProv.startHostPKBattle(
                                   currentHost: widget.room.host,

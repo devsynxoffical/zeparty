@@ -583,12 +583,27 @@ class PKBattleModel {
   String get hostAConnectionStatus => sideA?.connectionStatus ?? 'CONNECTED';
   String get hostBConnectionStatus => sideB?.connectionStatus ?? 'CONNECTED';
 
-  /// Calculates authoritative remaining seconds based on server startedAt or remainingSeconds
+  /// Calculates authoritative remaining seconds based on server endAt, remainingSeconds, or startedAt
   int calculateRemainingSeconds() {
     if (isEnded) return 0;
-    if (!isStarted || startedAt == null) return durationSeconds;
-    final elapsed = DateTime.now().difference(startedAt!).inSeconds;
-    final remaining = durationSeconds - elapsed;
+    if (!isStarted) return durationSeconds;
+
+    if (endedAt != null) {
+      final diff = endedAt!.toUtc().difference(DateTime.now().toUtc()).inSeconds;
+      if (diff >= 0 && diff <= durationSeconds) {
+        return diff;
+      }
+    }
+
+    if (remainingSeconds > 0 && remainingSeconds <= durationSeconds) {
+      return remainingSeconds;
+    }
+
+    if (startedAt == null) return durationSeconds;
+    final nowUtc = DateTime.now().toUtc();
+    final startUtc = startedAt!.toUtc();
+    final elapsed = nowUtc.difference(startUtc).inSeconds;
+    final remaining = durationSeconds - (elapsed > 0 ? elapsed : 0);
     return remaining > 0 ? remaining : 0;
   }
 

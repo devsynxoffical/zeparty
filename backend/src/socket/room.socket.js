@@ -2666,9 +2666,6 @@ export async function onSendRoomLike(arg1, arg2, arg3, arg4, arg5) {
     const channelNames = targetRooms.map((r) => `room:${r}`);
     const broadcastTarget = socket.to ? socket.to(channelNames) : (io ? io.to(channelNames) : socket);
     broadcastTarget.emit('room:like', payload);
-    broadcastTarget.emit('room:like_sent', payload);
-    broadcastTarget.emit('room_like', payload);
-    broadcastTarget.emit('like_sent', payload);
 
     if (typeof callback === 'function') {
       return callback({ ok: true, success: true, data: payload });

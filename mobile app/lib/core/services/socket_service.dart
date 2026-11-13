@@ -610,10 +610,8 @@ class SocketService {
     void handleRoomLike(dynamic data) {
       if (data != null) _roomLikeController.add(safeMap(data));
     }
+    _socket!.off('room:like');
     _socket!.on('room:like', handleRoomLike);
-    _socket!.on('room:like_sent', handleRoomLike);
-    _socket!.on('room_like', handleRoomLike);
-    _socket!.on('like_sent', handleRoomLike);
 
     void handleSnapshot(dynamic data) {
       if (data != null) _roomSnapshotController.add(safeMap(data));

@@ -2782,7 +2782,12 @@ class LivePartyProvider extends ChangeNotifier {
         _isPkActive = true;
         notifyListeners();
         if (isHost && _activePkBattle != null) {
-          PKRepository.instance.setOperatorReady(matchId: _activePkBattle!.id, mediaPrepared: true);
+          final mId = _activePkBattle!.id;
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (_activePkBattle?.id == mId) {
+              PKRepository.instance.setOperatorReady(matchId: mId, mediaPrepared: true);
+            }
+          });
         }
       } catch (_) {}
     });
@@ -2816,7 +2821,7 @@ class LivePartyProvider extends ChangeNotifier {
         _isPkOpponentDisconnected = false;
         _pkScoreA = _activePkBattle!.scoreA;
         _pkScoreB = _activePkBattle!.scoreB;
-        _pkTimerRemaining = _activePkBattle!.remainingSeconds;
+        _pkTimerRemaining = _activePkBattle!.calculateRemainingSeconds();
 
         _setupAudioPkRelay(_activePkBattle!);
         _startPkAuthoritativeTimer();
@@ -2834,7 +2839,7 @@ class LivePartyProvider extends ChangeNotifier {
         _isPkOpponentDisconnected = false;
         _pkScoreA = _activePkBattle!.scoreA;
         _pkScoreB = _activePkBattle!.scoreB;
-        _pkTimerRemaining = _activePkBattle!.remainingSeconds;
+        _pkTimerRemaining = _activePkBattle!.calculateRemainingSeconds();
 
         _setupAudioPkRelay(_activePkBattle!);
         _startPkAuthoritativeTimer();
@@ -4200,11 +4205,28 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void startPk(UserModel opponent, {String? matchId}) {
+  Future<void> startPk(UserModel opponent, {String? matchId}) async {
     _pkOpponent = opponent;
     _isPkActive = true;
     _pkScoreA = 0;
     _pkScoreB = 0;
+
+    if (matchId != null && matchId.isNotEmpty) {
+      try {
+        final serverPk = await PKRepository.instance.getMatchSnapshot(matchId);
+        if (serverPk != null) {
+          _activePkBattle = serverPk;
+          _pkTimerRemaining = serverPk.calculateRemainingSeconds();
+          _setupAudioPkRelay(serverPk);
+          _startPkAuthoritativeTimer();
+          notifyListeners();
+          return;
+        }
+      } catch (e) {
+        debugPrint('[LivePartyProvider] fetch match snapshot failed: $e');
+      }
+    }
+
     _pkTimerRemaining = 300;
     _startPkAuthoritativeTimer();
 
