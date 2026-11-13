@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -116,6 +117,20 @@ class ApiClient {
                 return handler.reject(error);
               }
             } catch (refreshErr) {
+              await clearTokens();
+              _unauthorizedController.add(null);
+              return handler.reject(error);
+            }
+          }
+
+          // Handle 403 Forbidden for Banned / Suspended accounts
+          if (error.response?.statusCode == 403) {
+            final data = error.response?.data;
+            final errorCode = (data is Map)
+                ? (data['error']?['code']?.toString() ?? data['code']?.toString() ?? '')
+                : '';
+            if (errorCode == 'ACCOUNT_BANNED' || errorCode == 'ACCOUNT_SUSPENDED') {
+              debugPrint('[ApiClient] User account is restricted ($errorCode). Terminating session.');
               await clearTokens();
               _unauthorizedController.add(null);
               return handler.reject(error);

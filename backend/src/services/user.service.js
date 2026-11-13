@@ -172,13 +172,39 @@ export async function updateUserStatusByAdmin(
     db
   );
 
-  // Notify active sockets of this user so their mobile app immediately updates profile details
+  const normalizedStatus = String(status || '').toUpperCase();
+
+  // If status is restricted (BANNED, SUSPENDED, DELETED), immediately purge sessions and clear presence
+  if (['BANNED', 'SUSPENDED', 'DELETED'].includes(normalizedStatus)) {
+    await db.userSession.deleteMany({ where: { userId } }).catch(() => {});
+    try {
+      await presenceService.leaveRoomPresence(userId, null, db);
+    } catch (_) {}
+  }
+
+  // Notify active sockets of this user so their mobile app immediately updates profile details or terminates session
   try {
     const { getIO } = await import('../socket/index.js');
     const io = getIO();
     if (io) {
-      io.to(`user:${userId}`).emit('user:role_updated', { userId });
-      io.to(`user:${userId}`).emit('user:status_updated', { userId, status: normalizedStatus });
+      if (['BANNED', 'SUSPENDED', 'DELETED'].includes(normalizedStatus)) {
+        io.to(`user:${userId}`).emit('auth:purged', {
+          userId,
+          status: normalizedStatus,
+          reason: reason || `Account ${normalizedStatus.toLowerCase()} by administrator.`,
+        });
+        io.to(`user:${userId}`).emit('moderation:ban', {
+          userId,
+          status: normalizedStatus,
+          reason: reason || `Account ${normalizedStatus.toLowerCase()} by administrator.`,
+        });
+        io.to(`user:${userId}`).emit('user:status_updated', { userId, status: normalizedStatus });
+        io.in(`user:${userId}`).disconnectSockets(true);
+      } else {
+        io.to(`user:${userId}`).emit('moderation:unban', { userId });
+        io.to(`user:${userId}`).emit('user:status_updated', { userId, status: 'ACTIVE' });
+        io.to(`user:${userId}`).emit('user:role_updated', { userId });
+      }
     }
   } catch (_) {}
 
@@ -2661,7 +2687,35 @@ export async function banUserByAdmin(
 
   if (isBanned) {
     await db.userSession.deleteMany({ where: { userId } }).catch(() => {});
+    try {
+      await presenceService.leaveRoomPresence(userId, null, db);
+    } catch (_) {}
   }
+
+  try {
+    const { getIO } = await import('../socket/index.js');
+    const io = getIO();
+    if (io) {
+      if (isBanned) {
+        io.to(`user:${userId}`).emit('auth:purged', {
+          userId,
+          status: 'BANNED',
+          reason: reason || 'Account banned by Administrator',
+        });
+        io.to(`user:${userId}`).emit('moderation:ban', {
+          userId,
+          status: 'BANNED',
+          reason: reason || 'Account banned by Administrator',
+        });
+        io.to(`user:${userId}`).emit('user:status_updated', { userId, status: 'BANNED' });
+        io.in(`user:${userId}`).disconnectSockets(true);
+      } else {
+        io.to(`user:${userId}`).emit('moderation:unban', { userId });
+        io.to(`user:${userId}`).emit('user:status_updated', { userId, status: 'ACTIVE' });
+        io.to(`user:${userId}`).emit('user:role_updated', { userId });
+      }
+    }
+  } catch (_) {}
 
   await logAudit(
     {
@@ -2708,6 +2762,38 @@ export async function freezeUserByAdmin(
       deletionReason: isFrozen ? reason : null,
     },
   });
+
+  if (isFrozen) {
+    await db.userSession.deleteMany({ where: { userId } }).catch(() => {});
+    try {
+      await presenceService.leaveRoomPresence(userId, null, db);
+    } catch (_) {}
+  }
+
+  try {
+    const { getIO } = await import('../socket/index.js');
+    const io = getIO();
+    if (io) {
+      if (isFrozen) {
+        io.to(`user:${userId}`).emit('auth:purged', {
+          userId,
+          status: 'SUSPENDED',
+          reason: reason || 'Account temporarily frozen by Administrator',
+        });
+        io.to(`user:${userId}`).emit('moderation:ban', {
+          userId,
+          status: 'SUSPENDED',
+          reason: reason || 'Account temporarily frozen by Administrator',
+        });
+        io.to(`user:${userId}`).emit('user:status_updated', { userId, status: 'SUSPENDED' });
+        io.in(`user:${userId}`).disconnectSockets(true);
+      } else {
+        io.to(`user:${userId}`).emit('moderation:unban', { userId });
+        io.to(`user:${userId}`).emit('user:status_updated', { userId, status: 'ACTIVE' });
+        io.to(`user:${userId}`).emit('user:role_updated', { userId });
+      }
+    }
+  } catch (_) {}
 
   await logAudit(
     {

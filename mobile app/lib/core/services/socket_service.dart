@@ -552,6 +552,16 @@ class SocketService {
       ApiClient.instance.triggerUnauthorized();
     });
 
+    _socket!.on('user:status_updated', (data) {
+      debugPrint('[SocketService] Received user:status_updated realtime event: $data');
+      if (data is Map) {
+        final status = (data['status'] ?? '').toString().toUpperCase();
+        if (status == 'BANNED' || status == 'SUSPENDED' || status == 'DELETED') {
+          ApiClient.instance.triggerUnauthorized();
+        }
+      }
+    });
+
     _socket!.on('user:profile_updated', (data) {
       debugPrint('[SocketService] Received user:profile_updated realtime event: $data');
       if (data != null && data is Map) {
