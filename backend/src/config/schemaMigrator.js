@@ -307,6 +307,12 @@ export async function ensureDatabaseSchema(db = prisma) {
   try {
     await db.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "deletionReason" TEXT;`);
   } catch {}
+  try {
+    await db.$executeRawUnsafe(`ALTER TABLE "User" ALTER COLUMN "countryCode" DROP DEFAULT;`);
+  } catch {}
+  try {
+    await db.$executeRawUnsafe(`ALTER TABLE "User" ALTER COLUMN "countryCode" DROP NOT NULL;`);
+  } catch {}
 
   // 6. Ensure Message table columns
   const messageColumns = [

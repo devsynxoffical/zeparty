@@ -902,6 +902,8 @@ class SocketService {
     }
     _socket!.off('user:role_updated');
     _socket!.on('user:role_updated', handleRoleUpdate);
+    _socket!.off('user:profile_updated');
+    _socket!.on('user:profile_updated', handleRoleUpdate);
     _socket!.off('seller:status_updated');
     _socket!.on('seller:status_updated', handleRoleUpdate);
     _socket!.off('seller:revoked');

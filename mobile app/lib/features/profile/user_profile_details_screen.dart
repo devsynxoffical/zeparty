@@ -2085,11 +2085,13 @@ class _UserProfileDetailsScreenState extends State<UserProfileDetailsScreen>
                       size: 14,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _user!.countryFlag,
-                    style: const TextStyle(fontSize: 15),
-                  ), // Country Flag
+                  if (_user!.countryFlag.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      _user!.countryFlag,
+                      style: const TextStyle(fontSize: 15),
+                    ), // Country Flag
+                  ],
 
                   const SizedBox(width: 8),
 

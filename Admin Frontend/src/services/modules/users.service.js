@@ -22,8 +22,10 @@ function formatUserRecord(u) {
     displayName: cleanDisplayName,
     email: u.email || '',
     phone: u.phone || '',
-    country: u.countryCode || 'PK',
-    region: u.countryCode === 'PK' ? 'South Asia' : 'Global',
+    country: u.countryCode || '',
+    countryCode: u.countryCode || '',
+    region: u.countryCode === 'PK' ? 'South Asia' : (u.countryCode ? 'Global' : ''),
+    isCountryLocked: Boolean(u.isCountryLocked),
     status: (u.status || 'ACTIVE').toLowerCase(),
     coins: Number(wallet.coinBalance || u.coins || 0),
     diamonds: Number(wallet.diamondBalance || u.diamonds || 0),
@@ -233,6 +235,20 @@ export async function updateUser(id, payload) {
   }
 }
 
+export async function changeUserCountry(id, countryCode, reason = '') {
+  try {
+    const res = await apiClient.post(`/v1/admin/users/${id}/change-country`, {
+      countryCode,
+      country: countryCode,
+      region: countryCode,
+      reason,
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(err.response?.data?.message || err.message || 'Failed to change user country on backend.');
+  }
+}
+
 export async function deleteUser(id, reason = '') {
   try {
     const res = await apiClient.delete(`/v1/admin/users/${id}`, { data: { reason } });
@@ -309,6 +325,7 @@ export default {
   getUserById,
   createUser,
   updateUser,
+  changeUserCountry,
   deleteUser,
   restoreUser,
   purgeUser,

@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui' as ui;
 import '../services/api_client.dart';
 import '../../models/user_model.dart';
 
@@ -103,15 +102,9 @@ class AuthRepository {
     final platformName = Platform.isAndroid ? 'ANDROID' : (Platform.isIOS ? 'IOS' : 'FLUTTER');
     final cleanPhone = phone?.replaceAll(' ', '');
 
-    String? effectiveCountry = countryCode;
-    if (effectiveCountry == null || effectiveCountry.isEmpty) {
-      try {
-        final loc = ui.PlatformDispatcher.instance.locale;
-        if (loc.countryCode != null && loc.countryCode!.isNotEmpty) {
-          effectiveCountry = loc.countryCode!.toUpperCase();
-        }
-      } catch (_) {}
-    }
+    final String? effectiveCountry = (countryCode != null && countryCode.trim().isNotEmpty && countryCode.trim() != 'GLOBAL')
+        ? countryCode.trim().toUpperCase()
+        : null;
 
     final response = await _apiClient.post(
       '/v1/auth/sync',

@@ -12,6 +12,7 @@ class UserModel {
   final String bio;
   final String gender;
   final String region;
+  final String? countryCode;
   final DateTime? dateOfBirth;
   final bool profileCompleted;
   final int followers;
@@ -168,6 +169,8 @@ class UserModel {
     isPrivate: false,
     lastActiveAt: null,
     customTitles: [],
+    countryCode: null,
+    region: '',
   );
 
   const UserModel({
@@ -180,7 +183,8 @@ class UserModel {
     this.coverUrl,
     this.bio = '',
     this.gender = 'Not Specified',
-    this.region = '🇵🇰 Pakistan',
+    this.region = '',
+    this.countryCode,
     this.dateOfBirth,
     this.profileCompleted = true,
     this.followers = 0,
@@ -304,7 +308,25 @@ class UserModel {
     final avatarUrl = profile['avatarUrl']?.toString() ?? json['avatarUrl']?.toString() ?? profile['avatar']?.toString() ?? json['avatar']?.toString() ?? '';
     final bio = profile['bio']?.toString() ?? json['bio']?.toString() ?? '';
     final gender = profile['gender']?.toString() ?? json['gender']?.toString() ?? 'Not Specified';
-    final region = profile['region']?.toString() ?? profile['countryCode']?.toString() ?? json['region']?.toString() ?? 'Global';
+
+    final rawCountryCode = json['countryCode']?.toString() ??
+        json['country']?.toString() ??
+        profile['countryCode']?.toString() ??
+        profile['country']?.toString();
+    final countryCode = (rawCountryCode != null &&
+            rawCountryCode.isNotEmpty &&
+            rawCountryCode != 'null' &&
+            rawCountryCode != 'GLOBAL')
+        ? rawCountryCode.trim().toUpperCase()
+        : null;
+
+    final rawRegion = json['region']?.toString() ??
+        profile['region']?.toString() ??
+        countryCode ??
+        '';
+    final region = (rawRegion.isNotEmpty && rawRegion != 'null' && rawRegion != 'Global' && rawRegion != 'GLOBAL')
+        ? rawRegion
+        : (countryCode ?? '');
     
     DateTime? dob;
     if (json['dob'] != null) {
@@ -539,6 +561,7 @@ class UserModel {
       bio: bio,
       gender: gender,
       region: region,
+      countryCode: countryCode,
       dateOfBirth: dob,
       profileCompleted: json['profileCompleted'] == true ||
           (profile['displayName'] != null && profile['displayName'].toString().trim().isNotEmpty) ||
@@ -625,14 +648,24 @@ class UserModel {
 
   /// Extracts or computes country flag for display on user ID and profile
   String get countryFlag {
-    if (region.isEmpty) return '🇵🇰';
+    final code = (countryCode != null && countryCode!.isNotEmpty) ? countryCode! : region;
+    if (code.isEmpty || code == 'null' || code == 'Global' || code == 'GLOBAL') return '';
 
-    // 1. Extract emoji flag directly if present in region string
+    // 1. Extract emoji flag directly if present in string
     final emojiRegExp = RegExp(r'[\u{1F1E6}-\u{1F1FF}]{2}', unicode: true);
-    final match = emojiRegExp.firstMatch(region);
+    final match = emojiRegExp.firstMatch(code);
     if (match != null) return match.group(0)!;
 
-    final lower = region.toLowerCase().trim();
+    // 2. Convert standard 2-letter ISO country code into emoji flag
+    final upper = code.trim().toUpperCase();
+    if (upper.length == 2 && RegExp(r'^[A-Z]{2}$').hasMatch(upper)) {
+      final int firstChar = upper.codeUnitAt(0) - 0x41 + 0x1F1E6;
+      final int secondChar = upper.codeUnitAt(1) - 0x41 + 0x1F1E6;
+      return String.fromCharCode(firstChar) + String.fromCharCode(secondChar);
+    }
+
+    // 3. Fallback dictionary for common country names
+    final lower = code.toLowerCase().trim();
     if (lower.contains('pakistan') || lower == 'pk') return '🇵🇰';
     if (lower.contains('united states') || lower.contains('usa') || lower == 'us') return '🇺🇸';
     if (lower.contains('united kingdom') || lower.contains('uk') || lower == 'gb') return '🇬🇧';
@@ -657,12 +690,13 @@ class UserModel {
     if (lower.contains('oman') || lower == 'om') return '🇴🇲';
     if (lower.contains('bahrain') || lower == 'bh') return '🇧🇭';
 
-    return '🇵🇰';
+    return '';
   }
 
   /// Clean country name without flag emoji prefix
   String get cleanCountryName {
-    return region.replaceAll(RegExp(r'[\u{1F1E6}-\u{1F1FF}]{2}', unicode: true), '').trim();
+    final raw = region.isNotEmpty ? region : (countryCode ?? '');
+    return raw.replaceAll(RegExp(r'[\u{1F1E6}-\u{1F1FF}]{2}', unicode: true), '').trim();
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -734,6 +768,7 @@ class UserModel {
       'bio': bio,
       'gender': gender,
       'region': region,
+      'countryCode': countryCode,
       'dateOfBirth': dateOfBirth?.toIso8601String(),
       'profileCompleted': profileCompleted,
       'followers': followers,
@@ -792,6 +827,7 @@ class UserModel {
     String? bio,
     String? gender,
     String? region,
+    String? countryCode,
     DateTime? dateOfBirth,
     bool? profileCompleted,
     int? followers,
@@ -852,6 +888,7 @@ class UserModel {
       bio: bio ?? this.bio,
       gender: gender ?? this.gender,
       region: region ?? this.region,
+      countryCode: countryCode ?? this.countryCode,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       profileCompleted: profileCompleted ?? this.profileCompleted,
       followers: followers ?? this.followers,

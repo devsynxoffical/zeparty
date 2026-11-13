@@ -172,6 +172,16 @@ export async function updateUserStatusByAdmin(
     db
   );
 
+  // Notify active sockets of this user so their mobile app immediately updates profile details
+  try {
+    const { getIO } = await import('../socket/index.js');
+    const io = getIO();
+    if (io) {
+      io.to(`user:${userId}`).emit('user:role_updated', { userId });
+      io.to(`user:${userId}`).emit('user:status_updated', { userId, status: normalizedStatus });
+    }
+  } catch (_) {}
+
   return updatedUser;
 }
 
@@ -1187,7 +1197,14 @@ export async function updateUserByAdmin(
   const userUpdate = {};
   if (phone !== undefined) userUpdate.phone = phone || null;
   if (email !== undefined) userUpdate.email = email || null;
-  if (countryCode !== undefined) userUpdate.countryCode = countryCode;
+  if (countryCode !== undefined) {
+    const norm = (countryCode && countryCode.trim().length > 0 && countryCode !== 'GLOBAL')
+      ? countryCode.trim().toUpperCase()
+      : null;
+    userUpdate.countryCode = norm;
+    userUpdate.region = norm;
+    userUpdate.isCountryLocked = true;
+  }
   if (status !== undefined) userUpdate.status = status;
   if (userType !== undefined) userUpdate.userType = userType;
   if (avatarUrl !== undefined) userUpdate.avatarUrl = avatarUrl || null;
@@ -1242,6 +1259,20 @@ export async function updateUserByAdmin(
     },
     db
   );
+
+  // Notify active sockets of this user so their mobile app immediately updates profile details
+  try {
+    const { getIO } = await import('../socket/index.js');
+    const io = getIO();
+    if (io) {
+      io.to(`user:${userId}`).emit('user:role_updated', { userId });
+      io.to(`user:${userId}`).emit('user:profile_updated', {
+        userId,
+        countryCode: userUpdate.countryCode,
+        region: userUpdate.region,
+      });
+    }
+  } catch (_) {}
 
   return updatedUser;
 }
@@ -1456,8 +1487,10 @@ export async function changeUserCountryByAdmin(
     throw error;
   }
 
-  const normalizedCountry = (countryCode || 'GLOBAL').toUpperCase();
-  const normalizedRegion = region || 'DEFAULT';
+  const normalizedCountry = (countryCode && countryCode.trim().length > 0 && countryCode !== 'GLOBAL')
+    ? countryCode.trim().toUpperCase()
+    : null;
+  const normalizedRegion = region || normalizedCountry || null;
 
   const beforeState = {
     id: existingUser.id,
@@ -1470,6 +1503,8 @@ export async function changeUserCountryByAdmin(
     where: { id: userId },
     data: {
       countryCode: normalizedCountry,
+      region: normalizedRegion,
+      isCountryLocked: true,
     },
     include: {
       profile: true,
@@ -1498,6 +1533,20 @@ export async function changeUserCountryByAdmin(
     },
     db
   );
+
+  // Notify active sockets of this user so their mobile app immediately updates profile details
+  try {
+    const { getIO } = await import('../socket/index.js');
+    const io = getIO();
+    if (io) {
+      io.to(`user:${userId}`).emit('user:role_updated', { userId });
+      io.to(`user:${userId}`).emit('user:profile_updated', {
+        userId,
+        countryCode: normalizedCountry,
+        region: normalizedRegion,
+      });
+    }
+  } catch (_) {}
 
   return {
     user: updatedUser,

@@ -118,7 +118,7 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
         avatarUrl: formData.avatarUrl.trim() || undefined,
         phone: formattedPhone,
         email: formData.email.trim() || undefined,
-        countryCode: formData.countryCode.trim().toUpperCase() || 'PK',
+        countryCode: formData.countryCode ? formData.countryCode.trim().toUpperCase() : null,
         status: formData.status,
         coins: Number(formData.coins) || 0,
         diamonds: Number(formData.diamonds) || 0,
@@ -299,8 +299,8 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
     if (isOpen && user) {
       setDisplayName(user.displayName || '');
       setAvatarUrl(user.avatarUrl || '');
-      let rawCountry = (user.countryCode || user.country || 'PK').toUpperCase();
-      if (!COUNTRY_PHONE_CONFIG[rawCountry]) {
+      let rawCountry = (user.countryCode || user.country || '').toUpperCase();
+      if (rawCountry && !COUNTRY_PHONE_CONFIG[rawCountry]) {
         const rawPhone = user.phone || '';
         let matched = null;
         for (const [code, cfg] of Object.entries(COUNTRY_PHONE_CONFIG)) {
@@ -309,16 +309,16 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
             break;
           }
         }
-        rawCountry = matched || 'PK';
+        rawCountry = matched || '';
       }
       setCountryCode(rawCountry);
       // Clean up phone if it includes country dial code
       let rawPhone = user.phone || '';
-      const cfg = getPhoneConfig(rawCountry);
+      const cfg = getPhoneConfig(rawCountry || 'PK');
       if (rawPhone.startsWith(cfg.dialCode)) {
         rawPhone = rawPhone.slice(cfg.dialCode.length);
       }
-      setPhone(formatLocalPhoneNumber(rawPhone, rawCountry));
+      setPhone(rawCountry ? formatLocalPhoneNumber(rawPhone, rawCountry) : rawPhone);
       setEmail(user.email || '');
       setError('');
     }
@@ -326,12 +326,14 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
 
   function handleCountryChange(newCode) {
     setCountryCode(newCode);
-    setPhone((prev) => formatLocalPhoneNumber(prev, newCode));
+    if (newCode) {
+      setPhone((prev) => formatLocalPhoneNumber(prev, newCode));
+    }
   }
 
   function handlePhoneChange(e) {
     const rawVal = e.target.value;
-    const formatted = formatLocalPhoneNumber(rawVal, countryCode);
+    const formatted = countryCode ? formatLocalPhoneNumber(rawVal, countryCode) : rawVal;
     setPhone(formatted);
     setError('');
   }
@@ -342,7 +344,7 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
     setError('');
     try {
       const formattedPhone = phone.trim()
-        ? toE164(phone.trim(), countryCode)
+        ? toE164(phone.trim(), countryCode || 'PK')
         : undefined;
 
       await onConfirm(user.id, {
@@ -350,7 +352,7 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
         avatarUrl: avatarUrl.trim() || undefined,
         phone: formattedPhone,
         email: email.trim() || undefined,
-        countryCode: countryCode.trim().toUpperCase() || 'PK',
+        countryCode: countryCode ? countryCode.trim().toUpperCase() : null,
       });
       onClose();
     } catch (err) {
@@ -392,6 +394,9 @@ function EditUserModal({ isOpen, onClose, user, onConfirm }) {
               onChange={(e) => handleCountryChange(e.target.value)}
               className="w-full h-9 rounded-lg bg-slate-900 border border-slate-700 text-white text-xs pl-9 pr-8 appearance-none focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
             >
+              <option value="" className="bg-slate-900 text-slate-400">
+                -- No Country Set --
+              </option>
               {allCountryList.map((c) => (
                 <option key={c.code} value={c.code} className="bg-slate-900 text-white">
                   {c.name} ({c.dialCode})

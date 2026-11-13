@@ -521,7 +521,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         color: AppColors.getTextSecondary(isDark),
                       ),
                     ),
-                    Text(user.countryFlag, style: const TextStyle(fontSize: 13)),
+                    if (user.countryFlag.isNotEmpty)
+                      Text(user.countryFlag, style: const TextStyle(fontSize: 13)),
                     GestureDetector(
                       onTap: () {
                         Clipboard.setData(ClipboardData(text: user.id));

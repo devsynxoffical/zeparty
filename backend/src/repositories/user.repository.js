@@ -89,7 +89,7 @@ export async function createUserWithProfile(
     coverUrl = null,
     status = 'ACTIVE',
     userType = 'USER',
-    countryCode = 'US',
+    countryCode = null,
     coinBalance = 0,
     diamondBalance = 0,
   },
@@ -108,6 +108,9 @@ export async function createUserWithProfile(
   if (!finalId) {
     finalId = await generate7DigitUserId(db);
   }
+  const normCountry = (countryCode && typeof countryCode === 'string' && countryCode !== 'GLOBAL')
+    ? countryCode.trim().toUpperCase()
+    : null;
   const data = {
     id: finalId,
     firebaseUid: firebaseUid || (id && !/^[1-9]\d{6}$/.test(String(id)) ? String(id) : null),
@@ -116,7 +119,8 @@ export async function createUserWithProfile(
     username,
     status,
     userType,
-    countryCode: countryCode || 'US',
+    countryCode: normCountry,
+    region: normCountry,
     avatarUrl: avatarUrl || null,
     coverUrl: coverUrl || null,
     profile: {
@@ -444,8 +448,19 @@ export async function updateUserProfile(
   
   if (avatarUrl !== undefined) userUpdateData.avatarUrl = avatarUrl;
   if (coverUrl !== undefined && coverUrl !== null) userUpdateData.coverUrl = coverUrl;
-  if (countryCode !== undefined) userUpdateData.countryCode = countryCode;
-  if (region !== undefined && region !== null && region.trim().length > 0) userUpdateData.region = region.trim();
+  
+  if (countryCode !== undefined || region !== undefined) {
+    const existing = await db.user.findUnique({ where: { id: userId }, select: { isCountryLocked: true } });
+    if (!existing?.isCountryLocked) {
+      if (countryCode !== undefined) {
+        userUpdateData.countryCode = (countryCode && countryCode !== 'GLOBAL') ? countryCode.trim().toUpperCase() : null;
+        userUpdateData.region = userUpdateData.countryCode;
+      }
+      if (region !== undefined && region !== null && region.trim().length > 0) {
+        userUpdateData.region = region.trim();
+      }
+    }
+  }
   if (isCountryLocked !== undefined) userUpdateData.isCountryLocked = isCountryLocked;
 
   const profileUpdateData = {};

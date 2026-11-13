@@ -332,7 +332,7 @@ model User {
   passwordHash      String?
   status            UserStatus @default(ACTIVE)
   userType          UserType   @default(USER)
-  countryCode       String     @default("US")
+  countryCode       String?
   dob               DateTime?
   gender            String?
   bio               String?

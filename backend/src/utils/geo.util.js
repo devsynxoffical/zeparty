@@ -81,25 +81,16 @@ export function resolveCountryFromPhone(phone) {
 export function resolveCountryFromHeaders(headers = {}) {
   if (!headers) return null;
   
-  // Cloudflare Header
+  // Cloudflare Geolocation Header (accurate real network country from edge IP)
   const cfCountry = headers['cf-ipcountry'] || headers['CF-IPCountry'];
   if (cfCountry && typeof cfCountry === 'string' && cfCountry.length === 2 && cfCountry !== 'XX' && cfCountry !== 'T1') {
     return cfCountry.toUpperCase();
   }
 
-  // Custom App Headers
+  // Custom App Headers (explicit client location payload)
   const appCountry = headers['x-country-code'] || headers['x-app-country'] || headers['x-country'];
-  if (appCountry && typeof appCountry === 'string' && appCountry.trim().length === 2) {
+  if (appCountry && typeof appCountry === 'string' && appCountry.trim().length === 2 && appCountry.toUpperCase() !== 'XX') {
     return appCountry.trim().toUpperCase();
-  }
-
-  // Accept-Language fallback (e.g. "ur-PK", "en-US", "ar-SA")
-  const acceptLang = headers['accept-language'] || headers['Accept-Language'];
-  if (acceptLang && typeof acceptLang === 'string') {
-    const match = acceptLang.match(/[a-z]{2}-([A-Z]{2})/);
-    if (match && match[1]) {
-      return match[1];
-    }
   }
 
   return null;
@@ -109,23 +100,23 @@ export function resolveEffectiveCountryCode({ countryCode, phone, headers = {} }
   // 1. If explicit valid 2-letter countryCode provided and not empty
   if (countryCode && typeof countryCode === 'string') {
     const trimmed = countryCode.trim().toUpperCase();
-    if (trimmed.length === 2 && trimmed !== 'XX') {
+    if (trimmed.length === 2 && trimmed !== 'XX' && trimmed !== 'GLOBAL') {
       return trimmed;
     }
   }
 
-  // 2. Resolve from phone number dialing prefix
+  // 2. Resolve from phone number dialing prefix (accurate country of mobile carrier)
   if (phone) {
     const phoneCountry = resolveCountryFromPhone(phone);
     if (phoneCountry) return phoneCountry;
   }
 
-  // 3. Resolve from request headers (Cloudflare, App, Accept-Language)
+  // 3. Resolve from request headers (Cloudflare IP geolocation or App header)
   const headerCountry = resolveCountryFromHeaders(headers);
   if (headerCountry) return headerCountry;
 
-  // 4. Default to GLOBAL
-  return 'GLOBAL';
+  // 4. Default to null if accurate country cannot be determined (never assign random country)
+  return null;
 }
 
 export default {
