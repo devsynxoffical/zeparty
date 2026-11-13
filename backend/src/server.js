@@ -23,6 +23,7 @@ import {
   stopAutoRestoreScheduler,
 } from './jobs/autoRestore.job.js';
 import roomService from './services/room.service.js';
+import * as userRepository from './repositories/user.repository.js';
 
 // Ensure BigInt values serialize cleanly to JSON across all API endpoints
 BigInt.prototype.toJSON = function () {
@@ -79,11 +80,14 @@ async function startServer() {
         await runStartupRecoverySweep().catch((e) => console.warn('Recovery sweep warning:', e.message));
         // Run stale and orphaned rooms recovery sweep
         await roomService.cleanupStaleRooms().catch((e) => console.warn('Room cleanup warning:', e.message));
+        // Run expired deleted users purge sweep
+        await userRepository.purgeExpiredDeletedUsers().catch((e) => console.warn('User purge sweep warning:', e.message));
         // Start Phase 7 Recurring Auto-Restore Scheduler
         startAutoRestoreScheduler({ intervalMs: 60000 });
-        // Periodically cleanup stale and test rooms every 10 minutes
+        // Periodically cleanup stale rooms and purge expired deleted users every 10 minutes
         setInterval(() => {
           roomService.cleanupStaleRooms().catch((e) => console.warn('[RoomCleanup] Periodic error:', e.message));
+          userRepository.purgeExpiredDeletedUsers().catch((e) => console.warn('[UserPurge] Periodic error:', e.message));
         }, 10 * 60 * 1000);
       })
       .catch((err) => {
