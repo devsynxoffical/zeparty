@@ -36,6 +36,15 @@ class ApiClient {
   String _baseUrl = 'https://zeparty-backend-production.up.railway.app/api';
 
   Completer<String?>? _refreshCompleter;
+  final StreamController<void> _unauthorizedController = StreamController<void>.broadcast();
+
+  /// Broadcast stream emitted when an authenticated session is terminated or purged on server
+  Stream<void> get onUnauthorized => _unauthorizedController.stream;
+
+  /// Trigger unauthorized event across the application
+  void triggerUnauthorized() {
+    _unauthorizedController.add(null);
+  }
 
   ApiClient._internal() {
     dio = Dio(
@@ -96,20 +105,26 @@ class ApiClient {
             final requestPath = error.requestOptions.path;
             if (requestPath.contains('/auth/refresh') || requestPath.contains('/auth/login')) {
               await clearTokens();
+              _unauthorizedController.add(null);
               return handler.reject(error);
             }
 
             try {
               final newAccessToken = await _performTokenRefresh();
-              if (newAccessToken != null) {
+              if (newAccessToken != null && newAccessToken.isNotEmpty) {
                 // Retry the original request with the new access token
                 final options = error.requestOptions;
                 options.headers['Authorization'] = 'Bearer $newAccessToken';
                 final response = await dio.fetch(options);
                 return handler.resolve(response);
+              } else {
+                await clearTokens();
+                _unauthorizedController.add(null);
+                return handler.reject(error);
               }
             } catch (refreshErr) {
-              // Only reject error; do not destroy persistent user credentials on transient issues
+              await clearTokens();
+              _unauthorizedController.add(null);
               return handler.reject(error);
             }
           }

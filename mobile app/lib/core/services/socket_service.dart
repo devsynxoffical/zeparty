@@ -511,9 +511,13 @@ class SocketService {
             disconnect(clearRoom: false);
             connect(token: refreshedToken, user: _cachedUserData);
             return;
+          } else {
+            debugPrint('[SocketService] Token refresh returned null. User account purged or session revoked. Triggering unauthorized logout.');
+            ApiClient.instance.triggerUnauthorized();
           }
         } catch (refreshErr) {
           debugPrint('[SocketService] Token refresh failed: $refreshErr');
+          ApiClient.instance.triggerUnauthorized();
         } finally {
           _isRefreshingToken = false;
         }
@@ -535,6 +539,11 @@ class SocketService {
 
     _socket!.on('error', (err) {
       debugPrint('[SocketService] Application error: $err');
+    });
+
+    _socket!.on('auth:purged', (data) {
+      debugPrint('[SocketService] Received auth:purged realtime event from server: $data. Terminating session.');
+      ApiClient.instance.triggerUnauthorized();
     });
 
     // Helper for recursive safe string-key mapping

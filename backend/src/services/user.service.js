@@ -1270,6 +1270,18 @@ export async function deleteSelfAccount(
     where: { userId },
   }).catch(() => {});
 
+  try {
+    const { getIO } = await import('../socket/index.js');
+    const io = getIO();
+    if (io) {
+      io.to(`user:${userId}`).emit('auth:purged', {
+        userId,
+        reason: 'Account self-deleted.',
+      });
+      io.in(`user:${userId}`).disconnectSockets(true);
+    }
+  } catch (_) {}
+
   return deletedUser;
 }
 
@@ -1346,7 +1358,22 @@ export async function permanentlyPurgeUserByAdmin(
     db
   );
 
-  return await userRepository.deleteUserById(userId, db);
+  const deleted = await userRepository.deleteUserById(userId, db);
+
+  // Notify active sockets of this user and forcefully disconnect them immediately
+  try {
+    const { getIO } = await import('../socket/index.js');
+    const io = getIO();
+    if (io) {
+      io.to(`user:${userId}`).emit('auth:purged', {
+        userId,
+        reason: reason || 'Account has been permanently deleted from database.',
+      });
+      io.in(`user:${userId}`).disconnectSockets(true);
+    }
+  } catch (_) {}
+
+  return deleted;
 }
 
 export async function deleteUserByAdmin(
@@ -1371,6 +1398,19 @@ export async function deleteUserByAdmin(
     reason: reason || 'Deleted by Administrator',
     deletionPeriodDays: 3,
   }, db);
+
+  // Notify active sockets of this user and forcefully disconnect them immediately
+  try {
+    const { getIO } = await import('../socket/index.js');
+    const io = getIO();
+    if (io) {
+      io.to(`user:${userId}`).emit('auth:purged', {
+        userId,
+        reason: reason || 'Account has been removed by administrator.',
+      });
+      io.in(`user:${userId}`).disconnectSockets(true);
+    }
+  } catch (_) {}
 
   await logAudit(
     {

@@ -14,6 +14,8 @@ import '../core/repositories/backend_repository.dart';
 import '../core/services/media_upload_service.dart';
 import '../core/utils/firebase_auth_errors.dart';
 import '../core/utils/wealth_level_helper.dart';
+import 'room_overlay_provider.dart';
+import '../features/auth/auth_screen.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthRepository _authRepository = AuthRepository.instance;
@@ -26,6 +28,7 @@ class AuthProvider extends ChangeNotifier {
   bool _isNewUser = false;
   String? _errorMessage;
   StreamSubscription<User?>? _authStateSubscription;
+  StreamSubscription<void>? _unauthorizedSubscription;
   StreamSubscription<Map<String, dynamic>>? _banSubscription;
   StreamSubscription<Map<String, dynamic>>? _restrictionSubscription;
   StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
@@ -96,6 +99,13 @@ class AuthProvider extends ChangeNotifier {
         refreshCurrentUser();
       }
     });
+
+    _unauthorizedSubscription = ApiClient.instance.onUnauthorized.listen((_) {
+      if (_isAuthenticated) {
+        debugPrint('[AuthProvider] onUnauthorized signal received. Forcing immediate logout for purged/invalid account.');
+        forceLogout();
+      }
+    });
   }
 
   void updateAvatarFrame(String frame) {
@@ -153,6 +163,7 @@ class AuthProvider extends ChangeNotifier {
   @override
   void dispose() {
     _authStateSubscription?.cancel();
+    _unauthorizedSubscription?.cancel();
     _banSubscription?.cancel();
     _restrictionSubscription?.cancel();
     _notificationSubscription?.cancel();
@@ -303,6 +314,14 @@ class AuthProvider extends ChangeNotifier {
       await _saveUserLocalSession(_currentUser!);
       notifyListeners();
       return _currentUser;
+    } on ApiException catch (e) {
+      debugPrint('[AuthProvider] refreshCurrentUser ApiException: ${e.statusCode} ${e.message} ${e.code}');
+      if (e.statusCode == 401 || e.statusCode == 404 || e.code == 'USER_NOT_FOUND' || e.code == 'UNAUTHORIZED') {
+        debugPrint('[AuthProvider] User deleted or session invalid. Triggering forceLogout.');
+        await forceLogout();
+        return null;
+      }
+      return _currentUser;
     } catch (e) {
       debugPrint('[AuthProvider] refreshCurrentUser error: $e');
       return _currentUser;
@@ -316,13 +335,15 @@ class AuthProvider extends ChangeNotifier {
           .timeout(const Duration(seconds: 4), onTimeout: () => false);
       if (hasToken && _currentUser != null && !_isGuest) {
         try {
-          await refreshCurrentUser();
+          final updated = await refreshCurrentUser();
+          if (updated == null) {
+            return;
+          }
           FcmService.instance.registerWithBackend();
           syncFollowingList();
         } on ApiException catch (e) {
-          if (e.statusCode == 401) {
-            await _clearUserLocalSession();
-            notifyListeners();
+          if (e.statusCode == 401 || e.statusCode == 404 || e.code == 'USER_NOT_FOUND' || e.code == 'UNAUTHORIZED') {
+            await forceLogout();
           }
         } catch (e) {
           debugPrint('Backend sync during restore session fallback: $e');
@@ -891,17 +912,72 @@ class AuthProvider extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    await FcmService.instance.unregisterOnLogout();
+    try {
+      await FcmService.instance.unregisterOnLogout().catchError((_) {});
+    } catch (_) {}
+    try {
+      SocketService.instance.disconnect(clearRoom: true);
+    } catch (_) {}
     await _clearUserLocalSession();
     try {
       await FirebaseAuth.instance.signOut();
     } catch (_) {}
+    try {
+      final googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
+        serverClientId: '13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com',
+      );
+      await googleSignIn.signOut();
+    } catch (_) {
+      try {
+        await GoogleSignIn().signOut();
+      } catch (_) {}
+    }
 
     _isAuthenticated = false;
     _isGuest = false;
     _currentUser = null;
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// Force immediate logout when account is purged, deleted, or unauthorized
+  Future<void> forceLogout() async {
+    try {
+      await FcmService.instance.unregisterOnLogout().catchError((_) {});
+    } catch (_) {}
+    try {
+      SocketService.instance.disconnect(clearRoom: true);
+    } catch (_) {}
+    await _clearUserLocalSession();
+    try {
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {}
+    try {
+      final googleSignIn = GoogleSignIn(
+        scopes: ['email', 'profile'],
+        serverClientId: '13274132785-ehr0tv2vf8tuvkqdbojmt8bjtcmctt9a.apps.googleusercontent.com',
+      );
+      await googleSignIn.signOut();
+    } catch (_) {
+      try {
+        await GoogleSignIn().signOut();
+      } catch (_) {}
+    }
+
+    _isAuthenticated = false;
+    _isGuest = false;
+    _currentUser = null;
+    notifyListeners();
+
+    try {
+      RoomOverlayProvider.navigatorKey.currentState?.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthScreen(initialMode: AuthMode.login)),
+        (route) => false,
+      );
+    } catch (e) {
+      debugPrint('[AuthProvider] Navigation to AuthScreen failed: $e');
+    }
   }
 
   /// Update Profile Details on Server
