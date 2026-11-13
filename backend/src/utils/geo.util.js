@@ -1,5 +1,58 @@
 // Country code resolver utility from phone prefixes, HTTP headers, and locales
 
+const COUNTRY_NAMES = {
+  PK: 'Pakistan',
+  US: 'United States',
+  GB: 'United Kingdom',
+  SA: 'Saudi Arabia',
+  AE: 'United Arab Emirates',
+  IN: 'India',
+  BD: 'Bangladesh',
+  CA: 'Canada',
+  AU: 'Australia',
+  DE: 'Germany',
+  FR: 'France',
+  TR: 'Turkey',
+  EG: 'Egypt',
+  ID: 'Indonesia',
+  MY: 'Malaysia',
+  PH: 'Philippines',
+  BR: 'Brazil',
+  CN: 'China',
+  JP: 'Japan',
+  KR: 'South Korea',
+  RU: 'Russia',
+  IT: 'Italy',
+  ES: 'Spain',
+  NL: 'Netherlands',
+  SE: 'Sweden',
+  CH: 'Switzerland',
+  QA: 'Qatar',
+  KW: 'Kuwait',
+  OM: 'Oman',
+  BH: 'Bahrain',
+  IQ: 'Iraq',
+  JO: 'Jordan',
+  LB: 'Lebanon',
+  AF: 'Afghanistan',
+  ZA: 'South Africa',
+  NG: 'Nigeria',
+  KE: 'Kenya',
+  GH: 'Ghana',
+  MX: 'Mexico',
+  AR: 'Argentina',
+  CL: 'Chile',
+  CO: 'Colombia',
+  SG: 'Singapore',
+  TH: 'Thailand',
+  VN: 'Vietnam',
+  NZ: 'New Zealand',
+  NO: 'Norway',
+  DK: 'Denmark',
+  FI: 'Finland',
+  PL: 'Poland',
+};
+
 const PHONE_DIAL_PREFIX_MAP = [
   { prefix: '+92', country: 'PK' },
   { prefix: '+966', country: 'SA' },
@@ -65,6 +118,68 @@ const PHONE_DIAL_PREFIX_MAP = [
   { prefix: '+65', country: 'SG' },
 ];
 
+export function countryCodeToEmoji(code) {
+  if (!code || typeof code !== 'string') return '';
+  const clean = code.trim().toUpperCase();
+  if (clean.length !== 2) return '';
+  const c1 = clean.charCodeAt(0) - 65 + 0x1F1E6;
+  const c2 = clean.charCodeAt(1) - 65 + 0x1F1E6;
+  if (c1 < 0x1F1E6 || c1 > 0x1F1FF || c2 < 0x1F1E6 || c2 > 0x1F1FF) return '';
+  return String.fromCodePoint(c1, c2);
+}
+
+export function emojiToCountryCode(str) {
+  if (!str || typeof str !== 'string') return null;
+  const match = str.match(/[\uD83C][\uDDE6-\uDDFF][\uD83C][\uDDE6-\uDDFF]/);
+  if (match) {
+    const f = match[0];
+    const c1 = String.fromCharCode(f.codePointAt(0) - 0x1F1E6 + 65);
+    const c2 = String.fromCharCode(f.codePointAt(2) - 0x1F1E6 + 65);
+    return (c1 + c2).toUpperCase();
+  }
+  return null;
+}
+
+export function getCountryName(code) {
+  if (!code || typeof code !== 'string') return '';
+  return COUNTRY_NAMES[code.trim().toUpperCase()] || code.trim().toUpperCase();
+}
+
+export function formatRegionString(code) {
+  if (!code || typeof code !== 'string') return null;
+  const clean = code.trim().toUpperCase();
+  if (clean.length !== 2) return clean;
+  const emoji = countryCodeToEmoji(clean);
+  const name = getCountryName(clean);
+  return emoji ? `${emoji} ${name}` : name;
+}
+
+export function resolveCountryCodeFromAny(input) {
+  if (!input || typeof input !== 'string') return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  // 1. Check if input is a 2-letter ISO code
+  if (/^[A-Za-z]{2}$/.test(trimmed)) {
+    const upper = trimmed.toUpperCase();
+    if (upper !== 'XX' && upper !== 'GLOBAL') return upper;
+  }
+
+  // 2. Check if input contains an emoji flag
+  const emojiCode = emojiToCountryCode(trimmed);
+  if (emojiCode) return emojiCode;
+
+  // 3. Match country name against COUNTRY_NAMES dictionary
+  const lower = trimmed.toLowerCase();
+  for (const [c, name] of Object.entries(COUNTRY_NAMES)) {
+    if (lower.includes(name.toLowerCase())) {
+      return c;
+    }
+  }
+
+  return null;
+}
+
 export function resolveCountryFromPhone(phone) {
   if (!phone || typeof phone !== 'string') return null;
   const clean = phone.trim().replace(/[^\d+]/g, '');
@@ -87,12 +202,6 @@ export function resolveCountryFromHeaders(headers = {}) {
     return cfCountry.toUpperCase();
   }
 
-  // Custom App Headers (explicit client location payload)
-  const appCountry = headers['x-country-code'] || headers['x-app-country'] || headers['x-country'];
-  if (appCountry && typeof appCountry === 'string' && appCountry.trim().length === 2 && appCountry.toUpperCase() !== 'XX') {
-    return appCountry.trim().toUpperCase();
-  }
-
   return null;
 }
 
@@ -111,7 +220,7 @@ export function resolveEffectiveCountryCode({ countryCode, phone, headers = {} }
     if (phoneCountry) return phoneCountry;
   }
 
-  // 3. Resolve from request headers (Cloudflare IP geolocation or App header)
+  // 3. Resolve from request headers (Cloudflare IP geolocation)
   const headerCountry = resolveCountryFromHeaders(headers);
   if (headerCountry) return headerCountry;
 
@@ -120,6 +229,12 @@ export function resolveEffectiveCountryCode({ countryCode, phone, headers = {} }
 }
 
 export default {
+  COUNTRY_NAMES,
+  countryCodeToEmoji,
+  emojiToCountryCode,
+  getCountryName,
+  formatRegionString,
+  resolveCountryCodeFromAny,
   resolveCountryFromPhone,
   resolveCountryFromHeaders,
   resolveEffectiveCountryCode,

@@ -208,6 +208,10 @@ class SocketService {
   final _userRoleUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onUserRoleUpdated => _userRoleUpdatedController.stream;
 
+  // Real-time Profile Updated Stream (Admin <-> Mobile sync)
+  final _userProfileUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onUserProfileUpdated => _userProfileUpdatedController.stream;
+
   // User Noble Title Updated Stream (Issue 26)
   final _userNobleUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onUserNobleUpdated => _userNobleUpdatedController.stream;
@@ -546,6 +550,13 @@ class SocketService {
     _socket!.on('auth:purged', (data) {
       debugPrint('[SocketService] Received auth:purged realtime event from server: $data. Terminating session.');
       ApiClient.instance.triggerUnauthorized();
+    });
+
+    _socket!.on('user:profile_updated', (data) {
+      debugPrint('[SocketService] Received user:profile_updated realtime event: $data');
+      if (data != null && data is Map) {
+        _userProfileUpdatedController.add(Map<String, dynamic>.from(data));
+      }
     });
 
     // Helper for recursive safe string-key mapping

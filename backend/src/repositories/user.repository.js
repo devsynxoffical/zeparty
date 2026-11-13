@@ -1,5 +1,6 @@
 import prisma from '../config/database.js';
 import { generate7DigitUserId } from '../utils/idGenerator.util.js';
+import geoUtil from '../utils/geo.util.js';
 
 const standardUserInclude = {
   profile: true,
@@ -120,7 +121,7 @@ export async function createUserWithProfile(
     status,
     userType,
     countryCode: normCountry,
-    region: normCountry,
+    region: normCountry ? geoUtil.formatRegionString(normCountry) : null,
     avatarUrl: avatarUrl || null,
     coverUrl: coverUrl || null,
     profile: {
@@ -450,16 +451,19 @@ export async function updateUserProfile(
   if (coverUrl !== undefined && coverUrl !== null) userUpdateData.coverUrl = coverUrl;
   
   if (countryCode !== undefined || region !== undefined) {
-    const existing = await db.user.findUnique({ where: { id: userId }, select: { isCountryLocked: true } });
-    if (!existing?.isCountryLocked) {
-      if (countryCode !== undefined) {
-        userUpdateData.countryCode = (countryCode && countryCode !== 'GLOBAL') ? countryCode.trim().toUpperCase() : null;
-        userUpdateData.region = userUpdateData.countryCode;
-      }
-      if (region !== undefined && region !== null && region.trim().length > 0) {
-        userUpdateData.region = region.trim();
-      }
+    let resolvedCode = (countryCode && countryCode !== 'GLOBAL') ? countryCode.trim().toUpperCase() : null;
+    let resolvedRegion = (region && region.trim().length > 0) ? region.trim() : null;
+
+    if (!resolvedCode && resolvedRegion) {
+      resolvedCode = geoUtil.resolveCountryCodeFromAny(resolvedRegion);
     }
+    if (resolvedCode && (!resolvedRegion || resolvedRegion === resolvedCode)) {
+      resolvedRegion = geoUtil.formatRegionString(resolvedCode);
+    }
+
+    userUpdateData.countryCode = resolvedCode;
+    userUpdateData.region = resolvedRegion || resolvedCode;
+    userUpdateData.isCountryLocked = false;
   }
   if (isCountryLocked !== undefined) userUpdateData.isCountryLocked = isCountryLocked;
 

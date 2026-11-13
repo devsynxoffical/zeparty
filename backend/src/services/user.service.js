@@ -3,7 +3,7 @@ import nobleService from './noble.service.js';
 import prisma from '../config/database.js';
 import userRepository from '../repositories/user.repository.js';
 import userAssetRepository from '../repositories/userAsset.repository.js';
-import { resolveEffectiveCountryCode } from '../utils/geo.util.js';
+import geoUtil, { resolveEffectiveCountryCode } from '../utils/geo.util.js';
 import { hashPassword } from '../utils/crypto.util.js';
 import { sanitizeFinancial } from '../utils/bigint.util.js';
 import presenceService from '../socket/presence.service.js';
@@ -1202,8 +1202,8 @@ export async function updateUserByAdmin(
       ? countryCode.trim().toUpperCase()
       : null;
     userUpdate.countryCode = norm;
-    userUpdate.region = norm;
-    userUpdate.isCountryLocked = true;
+    userUpdate.region = norm ? geoUtil.formatRegionString(norm) : null;
+    userUpdate.isCountryLocked = false;
   }
   if (status !== undefined) userUpdate.status = status;
   if (userType !== undefined) userUpdate.userType = userType;
@@ -1490,7 +1490,7 @@ export async function changeUserCountryByAdmin(
   const normalizedCountry = (countryCode && countryCode.trim().length > 0 && countryCode !== 'GLOBAL')
     ? countryCode.trim().toUpperCase()
     : null;
-  const normalizedRegion = region || normalizedCountry || null;
+  const normalizedRegion = region || (normalizedCountry ? geoUtil.formatRegionString(normalizedCountry) : null);
 
   const beforeState = {
     id: existingUser.id,
@@ -1504,13 +1504,25 @@ export async function changeUserCountryByAdmin(
     data: {
       countryCode: normalizedCountry,
       region: normalizedRegion,
-      isCountryLocked: true,
+      isCountryLocked: false,
     },
     include: {
       profile: true,
       wallet: true,
     },
   });
+
+  try {
+    const { getIO } = await import('../socket/index.js');
+    const io = getIO();
+    if (io) {
+      io.to(`user:${userId}`).emit('user:profile_updated', {
+        userId,
+        countryCode: normalizedCountry,
+        region: normalizedRegion,
+      });
+    }
+  } catch (_) {}
 
   const afterState = {
     id: updatedUser.id,

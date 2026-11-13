@@ -23,6 +23,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _regionController;
 
   String _selectedGender = 'Not Specified';
+  String? _selectedCountryCode;
   DateTime? _selectedBirthday;
   String? _coverImagePath;
   String? _avatarImagePath;
@@ -32,6 +33,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late String _initialBio;
   late String _initialRegion;
   late String _initialGender;
+  String? _initialCountryCode;
   DateTime? _initialBirthday;
 
   final List<String> _selectedTags = [];
@@ -86,6 +88,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
     _initialRegion = initialCountryStr;
     _initialGender = user.gender.isEmpty ? 'Not Specified' : user.gender;
+    _initialCountryCode = user.countryCode;
+    _selectedCountryCode = user.countryCode;
+
+    if ((_selectedCountryCode == null || _selectedCountryCode!.isEmpty) && initialCountryStr.isNotEmpty) {
+      for (final c in CountryPickerSheet.allCountries) {
+        if (initialCountryStr.contains(c.flag) || initialCountryStr.contains(c.name)) {
+          _selectedCountryCode = c.code;
+          _initialCountryCode = c.code;
+          break;
+        }
+      }
+    }
 
     _nameController = TextEditingController(text: _initialName);
     _bioController = TextEditingController(text: _initialBio);
@@ -100,19 +114,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _regionController.addListener(_onFieldChanged);
   }
 
-  bool _pendingCountryLock = false;
-
   void _onFieldChanged() {
     if (mounted) setState(() {});
   }
 
   void _showCountrySelectionDialog(BuildContext context, bool isDark) {
-    final user = context.read<AuthProvider>().currentUser;
     CountryPickerSheet.show(
       context,
-      initialCode: user.countryFlag,
+      initialCode: _selectedCountryCode,
       onSelect: (country) {
         setState(() {
+          _selectedCountryCode = country.code;
           _regionController.text = '${country.flag} ${country.name}';
         });
         ScaffoldMessenger.of(context).showSnackBar(
@@ -137,6 +149,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return _nameController.text.trim() != _initialName.trim() ||
         _bioController.text.trim() != _initialBio.trim() ||
         _regionController.text.trim() != _initialRegion.trim() ||
+        _selectedCountryCode != _initialCountryCode ||
         _selectedGender != _initialGender ||
         _selectedBirthday != _initialBirthday ||
         _coverImagePath != null ||
@@ -372,17 +385,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     final auth = context.read<AuthProvider>();
 
-    final user = auth.currentUser;
+    String? effectiveCountryCode = _selectedCountryCode;
+    final regText = region.trim();
+    if (effectiveCountryCode == null || effectiveCountryCode.isEmpty) {
+      for (final c in CountryPickerSheet.allCountries) {
+        if (regText.contains(c.flag) || regText.contains(c.name)) {
+          effectiveCountryCode = c.code;
+          break;
+        }
+      }
+    }
+
     final success = await auth.updateProfile(
       name: name,
       username: null,
       bio: bio,
       gender: _selectedGender,
-      region: region.isEmpty ? '🇵🇰 Pakistan' : region,
+      countryCode: effectiveCountryCode,
+      region: regText.isNotEmpty ? regText : (effectiveCountryCode != null ? '🇵🇰 Pakistan' : null),
       birthDate: _selectedBirthday,
       avatarUrl: _avatarImagePath,
       coverUrl: _coverImagePath,
-      isCountryLocked: _pendingCountryLock || user.isCountryLocked,
+      isCountryLocked: false,
     );
 
     if (!mounted) return;
@@ -706,10 +730,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 12),
 
-              // Region / Country (1-time change flag-based searchable picker)
+              // Region / Country (flag-based searchable picker)
               Consumer<AuthProvider>(
                 builder: (context, authProv, _) {
-                  final isLocked = authProv.currentUser.isCountryLocked || _pendingCountryLock;
                   final currentFlag = RegExp(r'[\u{1F1E6}-\u{1F1FF}]{2}', unicode: true).firstMatch(_regionController.text)?.group(0) ?? authProv.currentUser.countryFlag;
 
                   return Column(
@@ -730,12 +753,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                 child: Text(currentFlag, style: const TextStyle(fontSize: 22)),
                               ),
                               suffixIcon: Icon(
-                                isLocked ? Icons.lock_rounded : Icons.arrow_drop_down,
-                                color: isLocked ? Colors.amberAccent : AppColors.getTextSecondary(isDark),
+                                Icons.arrow_drop_down,
+                                color: AppColors.getTextSecondary(isDark),
                               ),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                              filled: isLocked,
-                              fillColor: isLocked ? (isDark ? Colors.black26 : Colors.grey.shade100) : null,
                             ),
                           ),
                         ),
@@ -744,13 +765,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       Padding(
                         padding: const EdgeInsets.only(left: 4),
                         child: Text(
-                          isLocked
-                              ? '🔒 Permanent Account Country (1-time change limit reached)'
-                              : 'Region changes follow product account policy (1-time permanent change limit)',
+                          'Tap to choose your country or region',
                           style: TextStyle(
                             fontSize: 11,
-                            color: isLocked ? Colors.amber.shade700 : AppColors.getTextSecondary(isDark),
-                            fontWeight: isLocked ? FontWeight.bold : FontWeight.normal,
+                            color: AppColors.getTextSecondary(isDark),
                           ),
                         ),
                       ),

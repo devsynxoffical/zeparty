@@ -34,6 +34,7 @@ class AuthProvider extends ChangeNotifier {
   StreamSubscription<Map<String, dynamic>>? _notificationSubscription;
   StreamSubscription<Map<String, dynamic>>? _nobleSubscription;
   StreamSubscription<Map<String, dynamic>>? _roleSubscription;
+  StreamSubscription<Map<String, dynamic>>? _profileSubscription;
 
   late final Future<void> _initFuture;
 
@@ -96,6 +97,14 @@ class AuthProvider extends ChangeNotifier {
     _roleSubscription = SocketService.instance.onUserRoleUpdated.listen((data) {
       final targetUserId = data['userId']?.toString();
       if (_currentUser != null && (_currentUser!.id == targetUserId || targetUserId == null)) {
+        refreshCurrentUser();
+      }
+    });
+
+    _profileSubscription = SocketService.instance.onUserProfileUpdated.listen((data) {
+      final targetUserId = data['userId']?.toString();
+      if (_currentUser != null && (_currentUser!.id == targetUserId || targetUserId == null)) {
+        debugPrint('[AuthProvider] Received real-time profile update from socket, refreshing profile...');
         refreshCurrentUser();
       }
     });
@@ -169,6 +178,7 @@ class AuthProvider extends ChangeNotifier {
     _notificationSubscription?.cancel();
     _nobleSubscription?.cancel();
     _roleSubscription?.cancel();
+    _profileSubscription?.cancel();
     super.dispose();
   }
 
@@ -989,6 +999,7 @@ class AuthProvider extends ChangeNotifier {
     String? username,
     String? bio,
     String? gender,
+    String? countryCode,
     String? region,
     DateTime? birthDate,
     String? avatarUrl,
@@ -1007,6 +1018,7 @@ class AuthProvider extends ChangeNotifier {
       username: finalUsername,
       bio: (bio != null && bio.trim().isNotEmpty) ? bio.trim() : currentUser.bio,
       gender: gender ?? currentUser.gender,
+      countryCode: countryCode ?? currentUser.countryCode,
       region: region ?? currentUser.region,
       dateOfBirth: birthDate ?? currentUser.dateOfBirth,
       avatarUrl: (avatarUrl != null && avatarUrl.isNotEmpty) ? avatarUrl : currentUser.avatarUrl,
@@ -1063,6 +1075,7 @@ class AuthProvider extends ChangeNotifier {
             displayName: finalName,
             bio: bio,
             gender: gender,
+            countryCode: countryCode,
             region: region,
             birthDate: birthDate,
             avatarUrl: remoteAvatarUrl,
@@ -1071,6 +1084,7 @@ class AuthProvider extends ChangeNotifier {
           _currentUser = updated.copyWith(
             username: finalUsername,
             name: finalName,
+            countryCode: countryCode ?? updated.countryCode,
             region: region ?? updated.region,
             isCountryLocked: isCountryLocked ?? updated.isCountryLocked,
             avatarUrl: remoteAvatarUrl ?? updated.avatarUrl,

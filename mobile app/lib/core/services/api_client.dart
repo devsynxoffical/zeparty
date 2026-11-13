@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -90,12 +89,6 @@ class ApiClient {
           if (token != null && token.isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
           }
-          try {
-            final countryCode = ui.PlatformDispatcher.instance.locale.countryCode;
-            if (countryCode != null && countryCode.isNotEmpty) {
-              options.headers['x-country-code'] = countryCode.toUpperCase();
-            }
-          } catch (_) {}
           return handler.next(options);
         },
         onError: (DioException error, handler) async {
