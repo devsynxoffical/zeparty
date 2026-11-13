@@ -582,11 +582,13 @@ class LiveProvider extends ChangeNotifier {
           if (_processedGiftTxIds.contains(txId) ||
               _messages.any(
                 (m) => m.id == 'snap_$txId' || m.id == 'gift_$txId',
-              ))
+              )) {
             continue;
+          }
           _processedGiftTxIds.add(txId);
-          if (_processedGiftTxIds.length > 500)
+          if (_processedGiftTxIds.length > 500) {
             _processedGiftTxIds.remove(_processedGiftTxIds.first);
+          }
         }
         final giftMap = gMap['gift'] is Map
             ? Map<String, dynamic>.from(gMap['gift'])
@@ -871,9 +873,7 @@ class LiveProvider extends ChangeNotifier {
           int.tryParse(data['likesCount']?.toString() ?? '');
 
       if (incomingTotal != null) {
-        if (incomingTotal > _likeCount) {
-          _likeCount = incomingTotal;
-        }
+        _likeCount = incomingTotal;
       } else if (senderId != currentUser?.id) {
         _likeCount += addedLikes;
       }
@@ -1363,10 +1363,21 @@ class LiveProvider extends ChangeNotifier {
                   '',
             ) ??
             _activePkBattle!.scoreB;
+        final remaining = int.tryParse(data['remainingSeconds']?.toString() ?? '');
+        final sTime = data['serverTime'] != null
+            ? DateTime.tryParse(data['serverTime'].toString())
+            : null;
         _activePkBattle = _activePkBattle!.copyWith(
           scoreA: scoreA,
           scoreB: scoreB,
+          remainingSeconds: remaining,
+          serverTime: sTime,
         );
+        if (remaining != null && remaining > 0 && remaining <= _activePkBattle!.durationSeconds) {
+          if ((_pkTimeRemainingSeconds - remaining).abs() > 2) {
+            _pkTimeRemainingSeconds = remaining;
+          }
+        }
         notifyListeners();
       }
     });

@@ -320,6 +320,8 @@ class PKBattleModel {
   final List<PKSupporterModel> topSupportersA;
   final List<PKSupporterModel> topSupportersB;
   final PKAgoraRelayModel? agoraRelay;
+  final DateTime localReceivedAt;
+  final DateTime? serverTime;
 
   PKBattleModel({
     required this.id,
@@ -345,11 +347,14 @@ class PKBattleModel {
     this.topSupportersA = const [],
     this.topSupportersB = const [],
     this.agoraRelay,
+    DateTime? localReceivedAt,
+    this.serverTime,
     UserModel? hostA,
     UserModel? hostB,
     int? scoreA,
     int? scoreB,
-  })  : durationSeconds = durationSeconds ?? 300,
+  })  : localReceivedAt = localReceivedAt ?? DateTime.now(),
+        durationSeconds = durationSeconds ?? 300,
         remainingSeconds = remainingSeconds ?? (durationSeconds ?? 300),
         participants = participants ??
             [
@@ -525,6 +530,10 @@ class PKBattleModel {
       parsedEndedAt = DateTime.tryParse((json['endAt'] ?? json['endedAt']).toString());
     }
 
+    final serverTimeVal = json['serverTime'] != null
+        ? DateTime.tryParse(json['serverTime'].toString())
+        : null;
+
     final winnerIdVal = json['winnerHostId']?.toString() ?? json['winnerUserId']?.toString() ?? json['winnerHostUserId']?.toString();
 
     return PKBattleModel(
@@ -551,6 +560,8 @@ class PKBattleModel {
       topSupportersA: parsedSupportersA,
       topSupportersB: parsedSupportersB,
       agoraRelay: parsedRelay,
+      localReceivedAt: DateTime.now(),
+      serverTime: serverTimeVal,
     );
   }
 
@@ -583,28 +594,43 @@ class PKBattleModel {
   String get hostAConnectionStatus => sideA?.connectionStatus ?? 'CONNECTED';
   String get hostBConnectionStatus => sideB?.connectionStatus ?? 'CONNECTED';
 
-  /// Calculates authoritative remaining seconds based on server endAt, remainingSeconds, or startedAt
+  /// Calculates authoritative remaining seconds based on server time, remainingSeconds, or duration.
+  /// Note: Device clock (DateTime.now()) is NEVER directly compared to server timestamps (endAt/startedAt)
+  /// because mobile client clocks often have drift or manual differences. Only monotonic local delta is used.
   int calculateRemainingSeconds() {
     if (isEnded) return 0;
     if (!isStarted) return durationSeconds;
 
-    if (endedAt != null) {
-      final diff = endedAt!.toUtc().difference(DateTime.now().toUtc()).inSeconds;
-      if (diff >= 0 && diff <= durationSeconds) {
-        return diff;
+    // Elapsed seconds locally on this device since this model snapshot was received
+    final elapsedLocally = DateTime.now().difference(localReceivedAt).inSeconds;
+    final safeLocalElapsed = elapsedLocally > 0 ? elapsedLocally : 0;
+
+    // 1. Authoritative: If server provided serverTime and endedAt, both are on the server's clock!
+    if (serverTime != null && endedAt != null) {
+      final serverRemaining = endedAt!.toUtc().difference(serverTime!.toUtc()).inSeconds;
+      final currentRemaining = serverRemaining - safeLocalElapsed;
+      if (currentRemaining >= 0 && currentRemaining <= durationSeconds) {
+        return currentRemaining;
       }
     }
 
+    // 2. Authoritative: If server provided remainingSeconds (> 0)
     if (remainingSeconds > 0 && remainingSeconds <= durationSeconds) {
-      return remainingSeconds;
+      final currentRemaining = remainingSeconds - safeLocalElapsed;
+      return currentRemaining > 0 ? currentRemaining : 0;
     }
 
-    if (startedAt == null) return durationSeconds;
-    final nowUtc = DateTime.now().toUtc();
-    final startUtc = startedAt!.toUtc();
-    final elapsed = nowUtc.difference(startUtc).inSeconds;
-    final remaining = durationSeconds - (elapsed > 0 ? elapsed : 0);
-    return remaining > 0 ? remaining : 0;
+    // 3. If server provided serverTime and startedAt
+    if (serverTime != null && startedAt != null) {
+      final serverElapsed = serverTime!.toUtc().difference(startedAt!.toUtc()).inSeconds;
+      final totalElapsed = (serverElapsed > 0 ? serverElapsed : 0) + safeLocalElapsed;
+      final remaining = durationSeconds - totalElapsed;
+      return remaining > 0 ? remaining : 0;
+    }
+
+    // 4. Fallback: durationSeconds minus local elapsed
+    final fallback = durationSeconds - safeLocalElapsed;
+    return fallback > 0 ? fallback : 0;
   }
 
   Duration get remainingTime => Duration(seconds: calculateRemainingSeconds());
@@ -633,6 +659,8 @@ class PKBattleModel {
     List<PKSupporterModel>? topSupportersA,
     List<PKSupporterModel>? topSupportersB,
     PKAgoraRelayModel? agoraRelay,
+    DateTime? localReceivedAt,
+    DateTime? serverTime,
     int? scoreA,
     int? scoreB,
     bool? isEnded,
@@ -682,6 +710,8 @@ class PKBattleModel {
       topSupportersA: topSupportersA ?? this.topSupportersA,
       topSupportersB: topSupportersB ?? this.topSupportersB,
       agoraRelay: agoraRelay ?? this.agoraRelay,
+      localReceivedAt: remainingSeconds != null ? DateTime.now() : (localReceivedAt ?? this.localReceivedAt),
+      serverTime: serverTime ?? this.serverTime,
     );
   }
 }

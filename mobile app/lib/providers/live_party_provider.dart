@@ -2854,8 +2854,22 @@ class LivePartyProvider extends ChangeNotifier {
       final sB = int.tryParse(data['scoreB']?.toString() ?? '') ?? _pkScoreB;
       _pkScoreA = sA;
       _pkScoreB = sB;
+      final remaining = int.tryParse(data['remainingSeconds']?.toString() ?? '');
+      final sTime = data['serverTime'] != null
+          ? DateTime.tryParse(data['serverTime'].toString())
+          : null;
       if (_activePkBattle != null) {
-        _activePkBattle = _activePkBattle!.copyWith(scoreA: sA, scoreB: sB);
+        _activePkBattle = _activePkBattle!.copyWith(
+          scoreA: sA,
+          scoreB: sB,
+          remainingSeconds: remaining,
+          serverTime: sTime,
+        );
+        if (remaining != null && remaining > 0 && remaining <= _activePkBattle!.durationSeconds) {
+          if ((_pkTimerRemaining - remaining).abs() > 2) {
+            _pkTimerRemaining = remaining;
+          }
+        }
       }
       notifyListeners();
     });

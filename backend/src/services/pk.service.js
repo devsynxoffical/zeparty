@@ -331,6 +331,8 @@ export class PKService {
         stateVersion: updated.stateVersion,
         countdownSeconds: 3,
         countdownStartAt: updated.countdownStartAt?.toISOString(),
+        serverTime: new Date().toISOString(),
+        serverTimestamp: Date.now(),
       };
 
       socketEmitter.emitToRoom(updated.roomAId, 'pk:countdown_started', countdownPayload);
@@ -426,6 +428,9 @@ export class PKService {
       stateVersion: result.match.stateVersion,
       scoreA: snapshot.scoreA,
       scoreB: snapshot.scoreB,
+      remainingSeconds: snapshot.remainingSeconds,
+      serverTime: new Date().toISOString(),
+      serverTimestamp: Date.now(),
       recentGift: {
         scoredSide: result.side,
         coins: Number(coins),

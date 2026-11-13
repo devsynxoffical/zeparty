@@ -1115,6 +1115,8 @@ export class PKRepository {
       region: match.region,
       durationSeconds: match.durationSeconds,
       remainingSeconds,
+      serverTime: new Date().toISOString(),
+      serverTimestamp: Date.now(),
       startAt: match.startAt ? match.startAt.toISOString() : null,
       endAt: match.endAt ? match.endAt.toISOString() : null,
       scoreA: match.scoreA.toString(),
