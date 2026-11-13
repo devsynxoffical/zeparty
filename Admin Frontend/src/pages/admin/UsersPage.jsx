@@ -1239,7 +1239,7 @@ export function UsersPage() {
                 <span className="h-1.5 w-1.5 rounded-full bg-purple-400 animate-pulse" />
                 <span>In Room</span>
               </span>
-            ) : row.presenceStatus === 'ONLINE' ? (
+            ) : (row.presenceStatus === 'ONLINE' || row.isOnline) ? (
               <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 <span>Online</span>

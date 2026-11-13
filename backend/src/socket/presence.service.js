@@ -163,7 +163,21 @@ export async function hasActiveSocket(userId) {
   }
 
   const socketSet = memoryUserSockets.get(uId);
-  return Boolean(socketSet && socketSet.size > 0);
+  if (socketSet && socketSet.size > 0) return true;
+
+  try {
+    const { getIO } = await import('./index.js');
+    const io = getIO();
+    if (io && io.sockets && io.sockets.sockets) {
+      for (const [, sock] of io.sockets.sockets) {
+        if (sock.userId === uId || sock.user?.id === uId) {
+          return true;
+        }
+      }
+    }
+  } catch (_) {}
+
+  return false;
 }
 
 export async function getUserSocketCount(userId) {

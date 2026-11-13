@@ -665,7 +665,7 @@ export function UserDetailPage() {
                     <span className="h-2 w-2 rounded-full bg-purple-400 animate-pulse" />
                     <span>In Room: {user.currentRoomTitle || user.presence?.currentRoomTitle || user.currentRoomId || 'Party Room'}</span>
                   </Badge>
-                ) : user.presenceStatus === 'ONLINE' ? (
+                ) : (user.presenceStatus === 'ONLINE' || user.isOnline) ? (
                   <Badge variant="success" className="flex items-center gap-1.5 px-2.5 py-0.5">
                     <span className="h-2 w-2 rounded-full bg-emerald-400" />
                     <span>Online</span>
