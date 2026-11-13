@@ -2057,6 +2057,14 @@ class _SocketLifecycleHook extends WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       SocketService.instance._userDisconnected = false;
       onResume();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      // When app is backgrounded or closed, and user is not in a live room,
+      // cleanly disconnect socket so server-side presence immediately registers OFFLINE.
+      if (SocketService.instance._currentRoomId == null) {
+        try {
+          SocketService.instance._socket?.disconnect();
+        } catch (_) {}
+      }
     }
   }
 }

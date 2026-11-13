@@ -926,9 +926,25 @@ export function UsersPage() {
     }
   };
 
-  // Reload on page, pageSize, search or status change
+  // Reload on page, pageSize, search or status change + 15s real-time presence poll
   useEffect(() => {
     loadUsers();
+    const interval = setInterval(() => {
+      getUsers({
+        page: currentPage,
+        limit: pageSize,
+        ...(search.trim() ? { search: search.trim() } : {}),
+        ...(statusFilter !== 'all' ? { status: statusFilter.toUpperCase() } : {}),
+      })
+        .then((res) => {
+          if (res && res.users) {
+            setUsers(res.users);
+            setTotalUsers(res.pagination?.total || res.users.length);
+          }
+        })
+        .catch(() => {});
+    }, 15000);
+    return () => clearInterval(interval);
   }, [currentPage, pageSize, search, statusFilter]);
 
   // Selection handlers
@@ -1397,15 +1413,28 @@ export function UsersPage() {
             Manage platform users, balances, and account statuses with PostgreSQL persistence.
           </p>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          className="flex items-center gap-2"
-          onClick={() => setCreateModalOpen(true)}
-        >
-          <Plus className="h-4 w-4" />
-          Create User
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-1.5"
+            onClick={loadUsers}
+            disabled={isLoading}
+            title="Refresh Users & Live Presence"
+          >
+            <RotateCcw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            className="flex items-center gap-2"
+            onClick={() => setCreateModalOpen(true)}
+          >
+            <Plus className="h-4 w-4" />
+            Create User
+          </Button>
+        </div>
       </div>
 
       {/* Floating In-App Toast Notification */}

@@ -155,27 +155,81 @@ export async function hasActiveSocket(userId) {
   const uId = String(userId);
   const redisKey = `presence:user:${uId}:sockets`;
 
+  // 1. Primary Authoritative Verification against Live Socket.IO Server
+  try {
+    const { getIO } = await import('./index.js');
+    const io = getIO();
+    if (io) {
+      // Check active room for this user in Socket.IO
+      const roomSockets = io.sockets?.adapter?.rooms?.get(`user:${uId}`);
+      if (roomSockets && roomSockets.size > 0) {
+        for (const sId of roomSockets) {
+          const s = io.sockets?.sockets?.get(sId);
+          if (s && s.connected) {
+            return true;
+          }
+        }
+      }
+
+      // Check all active connected sockets on this server instance
+      if (io.sockets?.sockets) {
+        for (const [, sock] of io.sockets.sockets) {
+          if ((sock.userId === uId || sock.user?.id === uId) && sock.connected) {
+            return true;
+          }
+        }
+      }
+
+      // In cluster / adapter mode, fetchSockets verifies live connections
+      if (typeof io.in === 'function') {
+        const liveSockets = await io.in(`user:${uId}`).fetchSockets().catch(() => []);
+        if (liveSockets && liveSockets.length > 0) {
+          return true;
+        }
+      }
+
+      // If Socket.IO is initialized and confirms ZERO live sockets for this user,
+      // any socket IDs remaining in Redis or memory are STALE orphans. Prune them!
+      if (redisClient.isOpen) {
+        try {
+          await redisClient.del(redisKey);
+        } catch (_) {}
+      }
+      memoryUserSockets.delete(uId);
+      return false;
+    }
+  } catch (_) {}
+
+  // 2. Fallback only if getIO() failed or is not available yet
   if (redisClient.isOpen) {
     try {
       const count = await redisClient.sCard(redisKey);
-      if (count > 0) return true;
+      if (count > 0) {
+        const lastSeen = await redisClient.get(`presence:user:${uId}:last_seen`);
+        if (lastSeen) {
+          const diffMs = Date.now() - new Date(lastSeen).getTime();
+          if (diffMs > 120000) {
+            await redisClient.del(redisKey);
+            return false;
+          }
+        }
+        return true;
+      }
     } catch (_) {}
   }
 
   const socketSet = memoryUserSockets.get(uId);
-  if (socketSet && socketSet.size > 0) return true;
-
-  try {
-    const { getIO } = await import('./index.js');
-    const io = getIO();
-    if (io && io.sockets && io.sockets.sockets) {
-      for (const [, sock] of io.sockets.sockets) {
-        if (sock.userId === uId || sock.user?.id === uId) {
-          return true;
-        }
+  if (socketSet && socketSet.size > 0) {
+    const lastSeen = memoryUserLastSeen.get(uId);
+    if (lastSeen) {
+      const diffMs = Date.now() - new Date(lastSeen).getTime();
+      if (diffMs > 120000) {
+        memoryUserSockets.delete(uId);
+        return false;
       }
     }
-  } catch (_) {}
+    return true;
+  }
 
   return false;
 }
@@ -480,6 +534,7 @@ export async function getUserPresence(userId, db = prisma) {
     const isConnected = await hasActiveSocket(uId);
 
     if (!isConnected) {
+      await clearUserActiveRoom(uId);
       const lastSeenAt = await getUserLastSeen(uId, db);
       return {
         userId: uId,
