@@ -15,7 +15,6 @@ import 'pk_battle/pk_battle_screen.dart';
 import 'profile/profile_screen.dart';
 import 'messages/inbox_screen.dart';
 import 'auth/under_age_screen.dart';
-import 'live_host/apply_live_host_screen.dart';
 import '../providers/live_host_provider.dart';
 import '../providers/auth_provider.dart';
 
@@ -41,31 +40,6 @@ class _MainLayoutState extends State<MainLayout> {
         Provider.of<LiveHostProvider>(context, listen: false).fetchHostProfile(authProv.currentUser.id);
       }
     });
-  }
-
-  Future<bool> _verifyHostEligibility(BuildContext context) async {
-    final authProv = Provider.of<AuthProvider>(context, listen: false);
-    final liveHostProv = Provider.of<LiveHostProvider>(context, listen: false);
-    final user = authProv.currentUser;
-
-    if (user.isHost || user.hasLiveHostAccess || (liveHostProv.activeLiveHost?.status == 'Active')) {
-      return true;
-    }
-
-    try {
-      final refreshed = await authProv.refreshCurrentUser();
-      if (refreshed != null && (refreshed.isHost || refreshed.hasLiveHostAccess)) {
-        return true;
-      }
-      if (user.id.isNotEmpty) {
-        await liveHostProv.fetchHostProfile(user.id);
-        if (liveHostProv.activeLiveHost?.status == 'Active') {
-          return true;
-        }
-      }
-    } catch (_) {}
-
-    return false;
   }
 
   void _onTabSelected(int index) {
@@ -183,20 +157,13 @@ class _MainLayoutState extends State<MainLayout> {
                     icon: Icons.sensors_rounded,
                     label: 'Go Live',
                     color: AppColors.liveRed,
-                    onTap: () async {
+                    onTap: () {
                       Navigator.pop(ctx);
                       if (!currentUser.isAgeEligible) {
                         Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => const UnderAgeScreen()),
                         );
-                        return;
-                      }
-                      
-                      final isHost = await _verifyHostEligibility(context);
-                      if (!context.mounted) return;
-                      if (!isHost) {
-                        _showHostRequiredSheet(context, hostType: 'LIVE_HOST', featureName: 'Live Video Broadcasting');
                         return;
                       }
 
@@ -211,20 +178,13 @@ class _MainLayoutState extends State<MainLayout> {
                     icon: Icons.groups_rounded,
                     label: 'Party',
                     color: AppColors.getPrimary(isDark),
-                    onTap: () async {
+                    onTap: () {
                       Navigator.pop(ctx);
                       if (!currentUser.isAgeEligible) {
                         Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => const UnderAgeScreen()),
                         );
-                        return;
-                      }
-
-                      final isHost = await _verifyHostEligibility(context);
-                      if (!context.mounted) return;
-                      if (!isHost) {
-                        _showHostRequiredSheet(context, hostType: 'AUDIO_HOST', featureName: 'Audio Party Rooms');
                         return;
                       }
 
@@ -241,20 +201,13 @@ class _MainLayoutState extends State<MainLayout> {
                     icon: Icons.flash_on_rounded,
                     label: 'Start PK',
                     color: AppColors.getPrimary(isDark),
-                    onTap: () async {
+                    onTap: () {
                       Navigator.pop(ctx);
                       if (!currentUser.isAgeEligible) {
                         Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => const UnderAgeScreen()),
                         );
-                        return;
-                      }
-
-                      final isHost = await _verifyHostEligibility(context);
-                      if (!context.mounted) return;
-                      if (!isHost) {
-                        _showHostRequiredSheet(context, hostType: 'LIVE_HOST', featureName: 'PK Battles');
                         return;
                       }
 
@@ -273,94 +226,6 @@ class _MainLayoutState extends State<MainLayout> {
           ),
         );
       },
-    );
-  }
-
-  void _showHostRequiredSheet(BuildContext context, {required String hostType, required String featureName}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: isDark ? const Color(0xFF181528) : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetCtx) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)]),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.verified_user_rounded, color: Colors.white, size: 36),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Host Verification Required',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.getTextPrimary(isDark),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'To access $featureName, you must be a registered & verified ZeParty Host. Apply once to unlock streaming, audio lounges, and PK battles.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 13,
-                color: AppColors.getTextSecondary(isDark),
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 22),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.getPrimary(isDark),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                ),
-                onPressed: () {
-                  Navigator.pop(sheetCtx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ApplyLiveHostScreen(initialHostType: hostType),
-                    ),
-                  );
-                },
-                child: const Text(
-                  'Apply to Become a Host',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => Navigator.pop(sheetCtx),
-              child: Text(
-                'Cancel',
-                style: TextStyle(color: AppColors.getTextSecondary(isDark)),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
