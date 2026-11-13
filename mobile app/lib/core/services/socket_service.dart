@@ -7,7 +7,9 @@ import 'api_client.dart';
 
 class SocketService {
   static final SocketService instance = SocketService._internal();
-  SocketService._internal();
+  SocketService._internal() {
+    _ensureWatchdog();
+  }
 
   IO.Socket? _socket;
   bool _isConnected = false;
@@ -1987,7 +1989,13 @@ class SocketService {
   void _checkConnection(String trigger) {
     if (_userDisconnected) return;
     final sock = _socket;
-    if (sock == null) return;
+    if (sock == null) {
+      if (_cachedUserData != null) {
+        debugPrint('[SocketService] $trigger: socket was null with cached user, reconnecting...');
+        connect(user: _cachedUserData);
+      }
+      return;
+    }
     if (sock.connected) {
       // Connected but not subscribed to the room we are supposed to be in: re-join.
       if (_currentRoomId != null && _lastJoinedRoomKey == null) {
@@ -2024,6 +2032,9 @@ class _SocketLifecycleHook extends WidgetsBindingObserver {
   final VoidCallback onResume;
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) onResume();
+    if (state == AppLifecycleState.resumed) {
+      SocketService.instance._userDisconnected = false;
+      onResume();
+    }
   }
 }

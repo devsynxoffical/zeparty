@@ -238,6 +238,8 @@ class AuthProvider extends ChangeNotifier {
             _currentUser = restored;
             _isAuthenticated = true;
             _isGuest = false;
+            // Connect realtime socket immediately on session restore so user presence is active
+            SocketService.instance.connect(user: _currentUser!.toJson());
           } else {
             await prefs.remove(_userSessionKey);
           }
@@ -339,6 +341,7 @@ class AuthProvider extends ChangeNotifier {
           if (updated == null) {
             return;
           }
+          SocketService.instance.connect(user: updated.toJson());
           FcmService.instance.registerWithBackend();
           syncFollowingList();
         } on ApiException catch (e) {

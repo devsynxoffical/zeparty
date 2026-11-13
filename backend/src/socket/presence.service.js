@@ -158,7 +158,7 @@ export async function hasActiveSocket(userId) {
   if (redisClient.isOpen) {
     try {
       const count = await redisClient.sCard(redisKey);
-      return count > 0;
+      if (count > 0) return true;
     } catch (_) {}
   }
 
