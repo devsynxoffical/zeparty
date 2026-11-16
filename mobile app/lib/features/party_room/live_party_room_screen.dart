@@ -49,6 +49,7 @@ import '../../widgets/room_emoji_bottom_sheet.dart';
 import '../../core/constants/room_emoji_catalog.dart';
 import '../../widgets/multi_role_seat_grid.dart';
 import '../../widgets/svip_entry_banner.dart';
+import '../../widgets/svip_vehicle_entry_overlay.dart';
 import '../live/widgets/high_value_announcement.dart';
 import '../../widgets/animated_live_comment_item.dart';
 import '../../widgets/emoji_reaction_overlay.dart';
@@ -1340,6 +1341,11 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
             key: _giftOverlayKey,
             roomId: widget.room.id,
             alternativeIds: _roomAlternativeIds,
+          ),
+
+          // VIP Vehicle Video & Entry Animation Overlay (ZP-BUG-014)
+          SvipVehicleEntryOverlay(
+            roomId: provider.activeRoom?.id ?? widget.room.id,
           ),
 
           // PK 3-Second Countdown Overlay (Section 1)
