@@ -259,6 +259,7 @@ class LivePartyProvider extends ChangeNotifier {
   StreamSubscription? _socketRoomHostReturnedSub;
   StreamSubscription? _socketPkActiveSub;
   StreamSubscription? _socketConnectionSub;
+  StreamSubscription? _socketUserFrameSub;
 
   bool get isSocketConnected => _socketService.isConnected;
 
@@ -608,14 +609,14 @@ class LivePartyProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void ensureSocketSubscribed(UserModel user, {String? roomId}) {
+  void ensureSocketSubscribed(UserModel user, {String? roomId, bool isRestore = false}) {
     _currentUser = user;
     if (roomId != null && roomId.isNotEmpty) {
       _initialRoomId = roomId;
     }
     final targetId = _activeRoom?.id ?? _initialRoomId ?? roomId;
     if (targetId != null && targetId.isNotEmpty) {
-      _socketService.joinRoom(targetId, user: user.toJson());
+      _socketService.joinRoom(targetId, user: user.toJson(), isRestore: isRestore, isExpand: isRestore);
       _setupSocketSubscriptions(user);
       if (_activePkBattle != null && isHost) {
         _socketService.emitPkHostReconnect(roomId: targetId, matchId: _activePkBattle!.id);
@@ -2215,10 +2216,9 @@ class LivePartyProvider extends ChangeNotifier {
           final alreadyShown = _messages.any((m) =>
               m.isSystemMessage &&
               (m.text.contains(senderName) || (senderUsername.isNotEmpty && m.text.contains(senderUsername))) &&
-              (m.text.contains('joined') || m.text.contains('entered') || m.text.contains('Welcome')) &&
-              DateTime.now().difference(m.timestamp).inSeconds < 6);
-          if (alreadyShown) {
-            return; // Suppress duplicate join message
+              (m.text.contains('joined') || m.text.contains('entered') || m.text.contains('Welcome')));
+          if (alreadyShown || data['isRestore'] == true || data['isExpand'] == true) {
+            return; // Suppress duplicate join message for the same room session
           }
         }
 
@@ -2435,6 +2435,16 @@ class LivePartyProvider extends ChangeNotifier {
           sendSystemMessage('⭐ Role updated for ${_participants[idx].user.name}: $newRoleStr');
           notifyListeners();
         }
+      }
+    });
+
+    // Realtime User Frame / Outfit Synchronization (Issue 006)
+    _socketUserFrameSub?.cancel();
+    _socketUserFrameSub = _socketService.onUserFrameUpdated.listen((data) {
+      final targetUserId = data['userId']?.toString();
+      final frame = data['avatarFrame']?.toString() ?? data['equippedFrame']?.toString() ?? (data['action'] == 'UNEQUIP' ? 'none' : '');
+      if (targetUserId != null) {
+        syncUserFrame(targetUserId, frame.isEmpty ? 'none' : frame);
       }
     });
 
@@ -3049,6 +3059,7 @@ class LivePartyProvider extends ChangeNotifier {
     _socketRoomMutedSub?.cancel();
     _socketRoomUserMutedSub?.cancel();
     _socketRoleUpdatedSub?.cancel();
+    _socketUserFrameSub?.cancel();
     _socketMicInviteSub?.cancel();
     _socketMicInviteResponseSub?.cancel();
     _socketCoHostInviteSub?.cancel();

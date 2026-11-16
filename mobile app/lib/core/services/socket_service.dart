@@ -212,6 +212,10 @@ class SocketService {
   final _userProfileUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onUserProfileUpdated => _userProfileUpdatedController.stream;
 
+  // Real-time User Frame / Outfit Stream (Issue 006 Sync)
+  final _userFrameUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onUserFrameUpdated => _userFrameUpdatedController.stream;
+
   // User Noble Title Updated Stream (Issue 26)
   final _userNobleUpdatedController = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onUserNobleUpdated => _userNobleUpdatedController.stream;
@@ -566,6 +570,20 @@ class SocketService {
       debugPrint('[SocketService] Received user:profile_updated realtime event: $data');
       if (data != null && data is Map) {
         _userProfileUpdatedController.add(Map<String, dynamic>.from(data));
+      }
+    });
+
+    _socket!.on('room:user_frame_updated', (data) {
+      debugPrint('[SocketService] Received room:user_frame_updated realtime event: $data');
+      if (data != null && data is Map) {
+        _userFrameUpdatedController.add(Map<String, dynamic>.from(data));
+      }
+    });
+
+    _socket!.on('user:outfit_updated', (data) {
+      debugPrint('[SocketService] Received user:outfit_updated realtime event: $data');
+      if (data != null && data is Map) {
+        _userFrameUpdatedController.add(Map<String, dynamic>.from(data));
       }
     });
 
@@ -1335,7 +1353,7 @@ class SocketService {
   }
 
   /// Subscribe to room channel on server
-  void joinRoomSubscription(String roomId, {Map<String, dynamic>? user}) {
+  void joinRoomSubscription(String roomId, {Map<String, dynamic>? user, bool isRestore = false, bool isExpand = false}) {
     _currentRoomId = roomId;
     if (user != null) _cachedUserData = user;
     final targetUser = user ?? _cachedUserData;
@@ -1345,6 +1363,8 @@ class SocketService {
       if (targetUser != null) 'user': targetUser,
       if (targetUser != null && (targetUser['id'] != null || targetUser['_id'] != null))
         'userId': targetUser['id'] ?? targetUser['_id'],
+      if (isRestore) 'isRestore': true,
+      if (isExpand) 'isExpand': true,
     };
 
     void doEmitJoin() {
@@ -1374,7 +1394,8 @@ class SocketService {
     }
   }
 
-  void joinRoom(String roomId, {Map<String, dynamic>? user}) => joinRoomSubscription(roomId, user: user);
+  void joinRoom(String roomId, {Map<String, dynamic>? user, bool isRestore = false, bool isExpand = false}) =>
+      joinRoomSubscription(roomId, user: user, isRestore: isRestore, isExpand: isExpand);
 
   /// Unsubscribe from room channel on server
   void leaveRoomSubscription(String roomId) {

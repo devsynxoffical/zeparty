@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/backpack_provider.dart';
 import '../../providers/noble_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../models/noble_model.dart';
@@ -265,6 +266,11 @@ class _AristocracyCenterScreenState extends State<AristocracyCenterScreen> {
     if (mounted) Navigator.pop(context);
 
     if (success && mounted) {
+      try {
+        context.read<AuthProvider>().refreshCurrentUser();
+        context.read<BackpackProvider>().fetchBackpack(refresh: true);
+      } catch (_) {}
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('🎉 Successfully activated ${rankData['name']} Aristocracy!'),

@@ -90,8 +90,19 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
           ? Map<String, dynamic>.from(data['entryEffect'] as Map)
           : ((data['equippedRide'] is Map) ? Map<String, dynamic>.from(data['equippedRide'] as Map) : null);
       final dedupKey = data['dedupKey']?.toString() ?? data['eventId']?.toString() ?? data['entryEventId']?.toString();
+      final bool isRestoreOrExpand = data['isRestore'] == true || data['isExpand'] == true;
       final bool suppressAnimation = data['suppressAnimation'] == true ||
-          data['isDebouncedReconnect'] == true;
+          data['isDebouncedReconnect'] == true ||
+          isRestoreOrExpand;
+
+      if (suppressAnimation) return;
+
+      final currentRoomId = data['roomId']?.toString() ?? data['clientRoomId']?.toString() ?? '';
+      if (currentRoomId.isNotEmpty && userId.isNotEmpty) {
+        if (SvipEntryManager().hasPlayedForSession(currentRoomId, userId)) {
+          return; // Never replay arrival vehicle banner for the same user in active room session
+        }
+      }
 
       final entryUserKey = (userId.isNotEmpty ? userId : displayName).trim().toLowerCase();
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -102,6 +113,10 @@ class _TikTokUserJoinBannerState extends State<TikTokUserJoinBanner> with Single
       }
       if (entryUserKey.isNotEmpty) {
         _lastShownUserTimestamp[entryUserKey] = now;
+      }
+
+      if (currentRoomId.isNotEmpty && userId.isNotEmpty) {
+        SvipEntryManager().markPlayedForSession(currentRoomId, userId);
       }
 
       // If user is VIP, Noble, or has equipped an Entry Effect / Ride

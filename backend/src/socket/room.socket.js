@@ -156,16 +156,18 @@ export async function resolveUserRoomEntryEffect(userId, prismaInstance = prisma
  */
 export function resolveUserAvatarFrame(user) {
   if (!user) return null;
-  if (user.avatarFrame && user.avatarFrame !== 'none') return user.avatarFrame;
-  if (user.equippedFrame && user.equippedFrame !== 'none') return user.equippedFrame;
-  if (user.profile?.avatarFrame && user.profile.avatarFrame !== 'none') return user.profile.avatarFrame;
-  if (user.profile?.equippedFrame && user.profile.equippedFrame !== 'none') return user.profile.equippedFrame;
+  if (user.avatarFrame === 'none' || user.equippedFrame === 'none') return null;
+  if (user.profile?.avatarFrame === 'none' || user.profile?.equippedFrame === 'none') return null;
+  if (user.avatarFrame) return user.avatarFrame;
+  if (user.equippedFrame) return user.equippedFrame;
+  if (user.profile?.avatarFrame) return user.profile.avatarFrame;
+  if (user.profile?.equippedFrame) return user.profile.equippedFrame;
   if (Array.isArray(user.userAssets)) {
     for (const ua of user.userAssets) {
       const asset = ua.asset;
       if (!asset) continue;
       const type = (asset.assetType || '').toUpperCase();
-      if (type === 'FRAME' && ua.isEquipped !== false) {
+      if (type === 'FRAME' && ua.isEquipped === true) {
         return asset.thumbnailUrl || asset.staticFileUrl || asset.animationFileUrl || asset.name || null;
       }
     }
@@ -173,7 +175,7 @@ export function resolveUserAvatarFrame(user) {
   if (Array.isArray(user.equippedAssets)) {
     for (const eq of user.equippedAssets) {
       const type = (eq.assetType || '').toUpperCase();
-      if (type === 'FRAME') {
+      if (type === 'FRAME' && eq.isEquipped !== false) {
         return eq.imageUrl || eq.name || null;
       }
     }
@@ -959,7 +961,8 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         }
       }
 
-      // Reconnect Debounce Check (10-second cooldown window to prevent animation/audio spam on socket reconnect)
+      // Minimize/Expand / Restore & Reconnect Debounce Check
+      const isRestoreOrExpand = Boolean(data?.isRestore || data?.isExpand || data?.isMinimizedRestore);
       let isDebouncedReconnect = false;
       if (effectiveJoinedId && room.id) {
         const debounceKey = `presence:entry_debounced:${room.id}:${effectiveJoinedId}`;
@@ -970,14 +973,14 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
             if (debounced) {
               isDebouncedReconnect = true;
             } else {
-              await client.set(debounceKey, '1', { EX: 10 });
+              await client.set(debounceKey, '1', { EX: 15 });
             }
           }
         } catch (_) {}
       }
 
-      const suppressAnimation = Boolean(isDebouncedReconnect);
-      const activeEntryEffect = equippedEntryEffect ? {
+      const suppressAnimation = Boolean(isDebouncedReconnect || isRestoreOrExpand);
+      const activeEntryEffect = (equippedEntryEffect && !isRestoreOrExpand) ? {
         ...equippedEntryEffect,
         suppressAnimation,
         isDebouncedReconnect,
@@ -1030,6 +1033,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         nobleStyle: getNobleStyle(effectiveJoinedNoble),
         suppressAnimation,
         isDebouncedReconnect,
+        isRestoreOrExpand,
         entryEffect: activeEntryEffect,
         equippedRide: activeEntryEffect,
         entryEffectId: activeEntryEffect?.id || null,
@@ -1041,7 +1045,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         isStealth: isStealthEntry,
       };
 
-      if (!isStealthEntry) {
+      if (!isStealthEntry && !isRestoreOrExpand) {
         if (io) {
           io.to(roomChannelNames).emit(SOCKET_EVENTS.ROOM_USER_JOINED, userPayload);
           io.to(roomChannelNames).emit('user_joined', userPayload);
@@ -1051,6 +1055,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
       }
 
       // 7. Broadcast system chat announcement so all room participants see "[User] has joined the party"
+      // Suppress when expanding/restoring from minimized floating window
       const entryText = `${effectiveJoinedName} has joined the party 🎉`;
       const chatPayload = {
         id: entryEventId,
@@ -1089,6 +1094,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         dedupKey: `${room.id}:${effectiveJoinedId}:${entryEventId}`,
         suppressAnimation,
         isDebouncedReconnect,
+        isRestoreOrExpand,
         entryEffect: activeEntryEffect,
         equippedRide: activeEntryEffect,
         entryEffectId: activeEntryEffect?.id || null,
@@ -1100,7 +1106,7 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         timestamp: entryTimestamp,
       };
 
-      if (!isStealthEntry) {
+      if (!isStealthEntry && !isRestoreOrExpand) {
         if (io) {
           io.to(roomChannelNames).emit(SOCKET_EVENTS.ROOM_CHAT_MESSAGE, chatPayload);
           io.to(roomChannelNames).emit('room:chat', chatPayload);
@@ -1109,8 +1115,8 @@ export async function onJoinRoom(arg1, arg2, arg3, arg4, arg5) {
         }
       }
 
-      // Ensure the entering user socket receives both events reliably if room broadcast didn't include socket
-      if (socket && typeof socket.emit === 'function') {
+      // Ensure the entering user socket receives snapshot/viewer count without replaying arrival animation on restore
+      if (socket && typeof socket.emit === 'function' && !isRestoreOrExpand) {
         const socketInRoom = socket.rooms && typeof socket.rooms.has === 'function' &&
           (socket.rooms.has(`room:${room.id}`) || socket.rooms.has(`room:${roomId}`));
         if (!io || !socketInRoom) {

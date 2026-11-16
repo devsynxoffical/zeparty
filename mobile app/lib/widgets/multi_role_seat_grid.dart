@@ -471,13 +471,15 @@ class MultiRoleSeatGrid extends StatelessWidget {
               participant.user.username.toLowerCase() == authUser.username.toLowerCase());
       final effectiveUser = isSelf ? authUser : participant.user;
 
-      final effectiveFrame = (effectiveUser.avatarFrame.isNotEmpty && effectiveUser.avatarFrame != 'none')
-          ? effectiveUser.avatarFrame
-          : (effectiveUser.nobleTitle != null && effectiveUser.nobleTitle!.isNotEmpty
-              ? NobleBadgeHelper.getFrameAsset(effectiveUser.nobleTitle)
-              : (effectiveUser.svipLevel > 0
-                  ? NobleBadgeHelper.getFrameAsset('SVIP ${effectiveUser.svipLevel}')
-                  : null));
+      final effectiveFrame = (effectiveUser.avatarFrame == 'none')
+          ? null
+          : (effectiveUser.avatarFrame.isNotEmpty
+              ? effectiveUser.avatarFrame
+              : (effectiveUser.nobleTitle != null && effectiveUser.nobleTitle!.isNotEmpty
+                  ? NobleBadgeHelper.getFrameAsset(effectiveUser.nobleTitle)
+                  : (effectiveUser.svipLevel > 0
+                      ? NobleBadgeHelper.getFrameAsset('SVIP ${effectiveUser.svipLevel}')
+                      : null)));
 
       return GestureDetector(
         onTap: () => onParticipantTap(participant),

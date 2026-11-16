@@ -2,7 +2,7 @@ import prisma from '../config/database.js';
 import assetRepository from '../repositories/asset.repository.js';
 import userAssetRepository from '../repositories/userAsset.repository.js';
 import redisProxy from '../config/redis.js';
-import { emitToUser } from '../socket/socket.emitter.js';
+import { emitToUser, broadcastGlobal } from '../socket/socket.emitter.js';
 import {
   isRestrictedSpecialAsset,
   isPublicStoreItem,
@@ -533,6 +533,14 @@ export async function getUserBackpack(userId, db = prisma) {
 
     const svipLvl = Number(user.profile?.svipLevel || 0);
 
+    let isFrameUnequipped = false;
+    try {
+      if (redisProxy.isOpen && user.id) {
+        const unequipped = await redisProxy.get(`user:unequipped:FRAME:${user.id}`);
+        if (unequipped === '1') isFrameUnequipped = true;
+      }
+    } catch (_) {}
+
     // Add eligible role/noble/SVIP frames if user qualifies (SVIP frames require SVIP 6+)
     for (const f of ALL_AVAILABLE_FRAMES) {
       const isRoleQualified = (defaultFrameKey === f.key);
@@ -551,7 +559,7 @@ export async function getUserBackpack(userId, db = prisma) {
           id: `assigned-frame-${f.key}-${user.id}`,
           userId: user.id,
           assetId: `assigned-asset-${f.key}-frame`,
-          isEquipped: !serialized.some((s) => s.isEquipped && s.asset?.assetType === 'FRAME') && (f.key === `svip${svipLvl}` || isRoleQualified),
+          isEquipped: !isFrameUnequipped && !serialized.some((s) => s.isEquipped && s.asset?.assetType === 'FRAME') && (f.key === `svip${svipLvl}` || isRoleQualified),
           expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
           isExpired: false,
           asset: {
@@ -743,19 +751,28 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
       });
     }
 
-    // Invalidate profile cache in Redis
+    // Invalidate profile cache in Redis and remove unequipped flag
     try {
       if (redisProxy.isOpen && userId) {
+        await redisProxy.del(`user:unequipped:${itemType}:${userId}`);
         await redisProxy.del(`user:profile:${userId}`);
       }
     } catch (_) {}
 
-    emitToUser(userId, 'user:outfit_updated', {
+    const assignedOutfitPayload = {
       userId,
       assetType: itemType,
       assetUrl: matchedItem.asset,
+      equippedFrame: itemType === 'FRAME' ? matchedItem.asset : undefined,
+      avatarFrame: itemType === 'FRAME' ? matchedItem.asset : undefined,
       isEquipped: true,
-    });
+      action: 'EQUIP',
+      timestamp: new Date().toISOString(),
+    };
+    emitToUser(userId, 'user:outfit_updated', assignedOutfitPayload);
+    if (itemType === 'FRAME') {
+      broadcastGlobal('room:user_frame_updated', assignedOutfitPayload);
+    }
 
     return serializeUserAsset(userAsset);
   }
@@ -827,6 +844,7 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
   // Invalidate user profile cache in Redis
   try {
     if (redisProxy.isOpen && userId) {
+      await redisProxy.del(`user:unequipped:${assetType}:${userId}`);
       await redisProxy.del(`user:profile:${userId}`);
     }
   } catch (_) {}
@@ -835,7 +853,7 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
   try {
     if (userId) {
       const frameUrl = userAsset.asset?.thumbnailUrl || userAsset.asset?.staticFileUrl || userAsset.asset?.animationFileUrl || userAsset.asset?.name || null;
-      emitToUser(userId, 'user:outfit_updated', {
+      const outfitPayload = {
         userId,
         assetType,
         assetId: userAsset.assetId,
@@ -843,7 +861,11 @@ export async function equipAsset(userId, userAssetId, { ipAddress } = {}, db = p
         avatarFrame: assetType === 'FRAME' ? frameUrl : undefined,
         action: 'EQUIP',
         timestamp: new Date().toISOString(),
-      });
+      };
+      emitToUser(userId, 'user:outfit_updated', outfitPayload);
+      if (assetType === 'FRAME') {
+        broadcastGlobal('room:user_frame_updated', outfitPayload);
+      }
     }
   } catch (_) {}
 
@@ -856,68 +878,82 @@ export async function unequipAsset(userId, userAssetId, { ipAddress } = {}, db =
     userAsset = await userAssetRepository.findActiveUserAssetByAssetId(userId, userAssetId, db);
   }
 
-  if (!userAsset) {
-    const error = new Error('User asset not found in your backpack');
-    error.statusCode = 404;
-    error.code = 'USER_ASSET_NOT_FOUND';
-    throw error;
+  const idStr = String(userAssetId || '').toLowerCase();
+  let assetType = userAsset?.asset?.assetType;
+  if (!assetType) {
+    if (idStr.includes('frame')) assetType = 'FRAME';
+    else if (idStr.includes('bubble')) assetType = 'CHAT_BUBBLE';
+    else if (idStr.includes('vehicle') || idStr.includes('ride')) assetType = 'VEHICLE';
+    else if (idStr.includes('effect') || idStr.includes('entry')) assetType = 'ENTRY_EFFECT';
+    else assetType = 'FRAME';
   }
 
-  // Enforce IDOR protection
-  if (userAsset.userId !== userId) {
-    const error = new Error('You are not authorized to unequip this asset');
-    error.statusCode = 403;
-    error.code = 'FORBIDDEN_ASSET_ACCESS';
-    throw error;
+  if (userAsset) {
+    // Enforce IDOR protection
+    if (userAsset.userId !== userId) {
+      const error = new Error('You are not authorized to unequip this asset');
+      error.statusCode = 403;
+      error.code = 'FORBIDDEN_ASSET_ACCESS';
+      throw error;
+    }
+
+    await userAssetRepository.updateUserAsset(
+      userAsset.id,
+      { isEquipped: false },
+      db
+    );
   }
 
-  const updated = await userAssetRepository.updateUserAsset(
-    userAsset.id,
-    { isEquipped: false },
-    db
-  );
-
-  const assetType = userAsset.asset?.assetType || 'FRAME';
+  // Ensure all assets of this type are unequipped in database
+  if (assetType) {
+    await userAssetRepository.unequipAssetsByType(userId, assetType, db);
+  }
 
   await logAudit({
     adminId: null,
     adminName: 'User Action',
     action: 'USER_ASSET_UNEQUIPPED',
     targetEntity: 'UserAsset',
-    targetEntityId: userAsset.id,
+    targetEntityId: userAsset?.id || userAssetId,
     afterStateJson: {
       userId,
-      userAssetId: userAsset.id,
-      assetId: userAsset.assetId,
-      assetName: userAsset.asset?.name,
+      userAssetId: userAsset?.id || userAssetId,
+      assetId: userAsset?.assetId || userAssetId,
+      assetName: userAsset?.asset?.name || userAssetId,
       assetType,
     },
     ipAddress,
   }, db);
 
-  // Invalidate user profile cache in Redis
+  // Invalidate user profile cache in Redis and persist unequipped sentinel
   try {
     if (redisProxy.isOpen && userId) {
+      await redisProxy.set(`user:unequipped:${assetType}:${userId}`, '1', 'EX', 30 * 86400);
       await redisProxy.del(`user:profile:${userId}`);
     }
   } catch (_) {}
 
   // Publish realtime outfit unequip update
+  const unequipPayload = {
+    userId,
+    assetType,
+    assetId: userAsset?.assetId || userAssetId,
+    equippedFrame: assetType === 'FRAME' ? 'none' : undefined,
+    avatarFrame: assetType === 'FRAME' ? 'none' : undefined,
+    action: 'UNEQUIP',
+    timestamp: new Date().toISOString(),
+  };
+
   try {
     if (userId) {
-      emitToUser(userId, 'user:outfit_updated', {
-        userId,
-        assetType,
-        assetId: userAsset.assetId,
-        equippedFrame: assetType === 'FRAME' ? null : undefined,
-        avatarFrame: assetType === 'FRAME' ? null : undefined,
-        action: 'UNEQUIP',
-        timestamp: new Date().toISOString(),
-      });
+      emitToUser(userId, 'user:outfit_updated', unequipPayload);
+      if (assetType === 'FRAME') {
+        broadcastGlobal('room:user_frame_updated', unequipPayload);
+      }
     }
   } catch (_) {}
 
-  return serializeUserAsset(updated);
+  return userAsset ? serializeUserAsset(userAsset) : { id: userAssetId, userId, isEquipped: false };
 }
 
 export default {

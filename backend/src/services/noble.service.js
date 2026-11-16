@@ -47,6 +47,16 @@ export const CANONICAL_NOBLE_TIERS = [
   'EMPEROR',
 ];
 
+export const NOBLE_TIER_COSTS = {
+  baron: 10000,
+  viscount: 50000,
+  count: 100000,
+  marquis: 300000,
+  duke: 800000,
+  king: 1500000,
+  emperor: 3000000,
+};
+
 export const NOBLE_TIER_ALIASES = {
   KNIGHT: 'BARON',
   EARL: 'COUNT',
@@ -332,6 +342,40 @@ export async function activateNobleTier(
   }
 
   const result = await db.$transaction(async (tx) => {
+    // 0. If user-initiated activation, verify and debit wallet coins atomically
+    if (grantType === 'USER_ACTIVATION') {
+      const cost = NOBLE_TIER_COSTS[canonicalTier.toLowerCase()] || 10000;
+      const wallet = await tx.wallet.findUnique({ where: { userId } });
+      if (!wallet || BigInt(wallet.coinBalance) < BigInt(cost)) {
+        const error = new Error(`Insufficient coin balance to activate ${displayTitle} Aristocracy. Required: ${cost.toLocaleString()} coins.`);
+        error.statusCode = 400;
+        error.code = 'INSUFFICIENT_COINS';
+        throw error;
+      }
+
+      const balBefore = String(wallet.coinBalance);
+      const balAfter = String(BigInt(wallet.coinBalance) - BigInt(cost));
+
+      await tx.wallet.update({
+        where: { userId },
+        data: {
+          coinBalance: { decrement: BigInt(cost) },
+        },
+      });
+
+      await tx.walletLedger.create({
+        data: {
+          walletId: wallet.id,
+          transactionType: 'SWAP',
+          coinDelta: -BigInt(cost),
+          balanceBefore: { coinBalance: balBefore },
+          balanceAfter: { coinBalance: balAfter },
+          reason: `Noble rank activation: ${displayTitle}`,
+          metadata: { nobleTier: canonicalTier, cost, durationDays },
+        },
+      });
+    }
+
     // 1. Deactivate any previously active noble entitlement
     const previousActive = await tx.userNobleEntitlement.findMany({
       where: { userId, isActive: true },
@@ -435,6 +479,9 @@ export async function activateNobleTier(
       };
       socketEmitter.emitToUser(userId, 'user:noble_updated', payload);
       socketEmitter.emitToUser(userId, 'user:profile_updated', { userId, profile: payload });
+      if (typeof socketEmitter.broadcastGlobal === 'function') {
+        socketEmitter.broadcastGlobal('room:user_noble_updated', payload);
+      }
     }
   } catch (_) {}
 
@@ -515,6 +562,9 @@ export async function revokeActiveNoble(
       };
       socketEmitter.emitToUser(userId, 'user:noble_updated', payload);
       socketEmitter.emitToUser(userId, 'user:profile_updated', { userId, profile: payload });
+      if (typeof socketEmitter.broadcastGlobal === 'function') {
+        socketEmitter.broadcastGlobal('room:user_noble_updated', payload);
+      }
     }
   } catch (_) {}
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/services/api_client.dart';
 import '../models/noble_model.dart';
 import 'wallet_provider.dart';
 
@@ -205,12 +206,42 @@ class NobleProvider extends ChangeNotifier {
   }
 
   Future<bool> activateRank(NobleRank rank, WalletProvider wallet) async {
-    // Direct Noble rank purchase via wallet coins is blocked until backend exposes dedicated noble activation API.
-    // Aristocracy/Noble rank is authoritatively assigned by backend policies / BD management.
-    if (wallet.coins < rank.firstMonthCost) {
-      return false;
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final res = await ApiClient.instance.post(
+        '/v1/users/noble/activate',
+        data: {
+          'nobleTier': rank.name,
+          'durationDays': rank.durationDays > 0 ? rank.durationDays : 30,
+        },
+      );
+
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        _activeRankId = rank.id;
+        _expiryDate = DateTime.now().add(Duration(days: rank.durationDays > 0 ? rank.durationDays : 30));
+        await wallet.fetchWallet();
+
+        _auditHistory.insert(0, NobleAuditRecord(
+          id: 'aud_${DateTime.now().millisecondsSinceEpoch}',
+          rankId: rank.id,
+          type: 'purchase',
+          timestamp: DateTime.now(),
+          note: 'Activated ${rank.name} Aristocracy',
+        ));
+
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      debugPrint('[NobleProvider] Error activating noble rank: $e');
     }
+
     await wallet.fetchWallet();
+    _isLoading = false;
+    notifyListeners();
     return false;
   }
 

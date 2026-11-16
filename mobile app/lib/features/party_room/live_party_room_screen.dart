@@ -412,7 +412,7 @@ class _LivePartyRoomScreenState extends State<LivePartyRoomScreen> {
       if (partyProv.activeRoom?.id != widget.room.id) {
         attemptRoomEntry();
       } else {
-        partyProv.ensureSocketSubscribed(user, roomId: widget.room.id);
+        partyProv.ensureSocketSubscribed(user, roomId: widget.room.id, isRestore: true);
       }
       Provider.of<EmojiReactionProvider>(context, listen: false).setActiveRoom(widget.room.id);
       Provider.of<LiveGiftProvider>(context, listen: false).setActiveRoom(widget.room.id, alternativeIds: _roomAlternativeIds);

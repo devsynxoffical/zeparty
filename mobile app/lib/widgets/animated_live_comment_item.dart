@@ -1,4 +1,6 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../core/constants/chat_bubble_config.dart';
 import '../core/constants/room_emoji_catalog.dart';
 import '../core/constants/animated_gifts_catalog.dart';
 import '../models/gift_model.dart';
@@ -212,6 +214,18 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
     final avatarToUse = (widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty) ? widget.avatarUrl! : defaultAvatar;
 
     final hasCustomBubble = widget.chatBubble != null && widget.chatBubble!.isNotEmpty && widget.chatBubble != 'none';
+    final bubbleSpec = hasCustomBubble ? ChatBubbleConfig.getSpec(widget.chatBubble) : null;
+    final safePadding = hasCustomBubble
+        ? EdgeInsets.fromLTRB(
+            math.max(26.0, (bubbleSpec?.incomingInsets.left ?? 25.0) + 3.0),
+            math.max(16.0, (bubbleSpec?.incomingInsets.top ?? 15.0) + 2.0),
+            math.max(26.0, (bubbleSpec?.incomingInsets.right ?? 25.0) + 3.0),
+            math.max(16.0, (bubbleSpec?.incomingInsets.bottom ?? 13.0) + 3.0),
+          )
+        : const EdgeInsets.symmetric(horizontal: 10, vertical: 5);
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final maxBubbleWidth = screenWidth * 0.82;
 
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -234,21 +248,22 @@ class _AnimatedLiveCommentItemState extends State<AnimatedLiveCommentItem> with 
                     name: widget.senderName,
                     radius: 14,
                     showVipFrame: widget.isVip,
-                    frameAsset: (widget.avatarFrame != null && widget.avatarFrame!.isNotEmpty && widget.avatarFrame != 'none')
-                        ? widget.avatarFrame
-                        : (widget.nobleTitle != null && widget.nobleTitle!.isNotEmpty
-                            ? NobleBadgeHelper.getFrameAsset(widget.nobleTitle)
-                            : null),
+                    frameAsset: (widget.avatarFrame == 'none')
+                        ? null
+                        : (widget.avatarFrame != null && widget.avatarFrame!.isNotEmpty
+                            ? widget.avatarFrame
+                            : (widget.nobleTitle != null && widget.nobleTitle!.isNotEmpty
+                                ? NobleBadgeHelper.getFrameAsset(widget.nobleTitle)
+                                : null)),
                   ),
                 ),
                 Flexible(
                   child: Container(
-                    padding: hasCustomBubble
-                        ? const EdgeInsets.fromLTRB(26, 11, 26, 12)
-                        : const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: safePadding,
                     constraints: BoxConstraints(
-                      minHeight: hasCustomBubble ? 44 : 0,
-                      minWidth: hasCustomBubble ? 100 : 0,
+                      minHeight: hasCustomBubble ? math.max(48.0, bubbleSpec?.minHeight ?? 50.0) : 0,
+                      minWidth: hasCustomBubble ? math.max(110.0, bubbleSpec?.minWidth ?? 135.0) : 0,
+                      maxWidth: maxBubbleWidth,
                     ),
                     decoration: BoxDecoration(
                       image: hasCustomBubble
