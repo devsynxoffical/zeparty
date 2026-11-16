@@ -231,41 +231,97 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
     final giftWallCount = user.likesReceived > 0 ? user.likesReceived.clamp(0, 23) : 0;
     final outfitCount = user.customTitles.length;
 
-    final skinUrl = user.profileSkinUrl;
-    final hasSkin = skinUrl != null && skinUrl.isNotEmpty;
+    // Resolve Profile Card (SVIP Profile Card, noble card, or custom skinUrl)
+    String? cardAssetPath;
+    String? cardNetworkUrl;
+
+    if (user.profileSkinUrl != null && user.profileSkinUrl!.isNotEmpty) {
+      if (user.profileSkinUrl!.startsWith('http://') || user.profileSkinUrl!.startsWith('https://')) {
+        cardNetworkUrl = user.profileSkinUrl;
+      } else {
+        cardAssetPath = user.profileSkinUrl;
+      }
+    }
+
+    if (cardAssetPath == null && cardNetworkUrl == null) {
+      final svipLvl = user.svipLevel;
+      if (svipLvl >= 3) {
+        cardAssetPath = _resolveSvipProfileCardAsset(svipLvl);
+      }
+    }
+
+    if (cardAssetPath == null && cardNetworkUrl == null && user.hasActiveNoble) {
+      cardAssetPath = _resolveNobleProfileCardAsset(user.nobleTitle);
+    }
+
+    final hasCard = cardAssetPath != null || cardNetworkUrl != null;
 
     return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF141024),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        boxShadow: const [
+      decoration: const BoxDecoration(
+        color: Color(0xFF141024),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        boxShadow: [
           BoxShadow(color: Colors.black87, blurRadius: 30, spreadRadius: 5),
         ],
-        image: hasSkin
-            ? DecorationImage(
-                image: (skinUrl.startsWith('http://') || skinUrl.startsWith('https://'))
-                    ? NetworkImage(skinUrl)
-                    : AssetImage(skinUrl) as ImageProvider,
-                fit: BoxFit.cover,
-                colorFilter: ColorFilter.mode(
-                  Colors.black.withValues(alpha: 0.45),
-                  BlendMode.darken,
-                ),
-              )
-            : null,
       ),
-      child: SafeArea(
-        top: false,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.58,
-          ),
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Top Bar with 3-dot overflow menu & grabber bar
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        child: Stack(
+          children: [
+            // BOTTOM LAYER: SVIP Profile Card / Noble Background
+            if (hasCard) ...[
+              Positioned.fill(
+                child: cardNetworkUrl != null
+                    ? Image.network(
+                        cardNetworkUrl,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.topCenter,
+                        errorBuilder: (_, _, _) => Container(
+                          color: const Color(0xFF141024),
+                        ),
+                      )
+                    : Image.asset(
+                        cardAssetPath!,
+                        fit: BoxFit.cover,
+                        alignment: Alignment.topCenter,
+                        errorBuilder: (_, _, _) => Container(
+                          color: const Color(0xFF141024),
+                        ),
+                      ),
+              ),
+              // MIDDLE LAYER: Subtle readability overlay to ensure crisp text contrast
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.12),
+                        Colors.black.withValues(alpha: 0.35),
+                        Colors.black.withValues(alpha: 0.65),
+                        Colors.black.withValues(alpha: 0.88),
+                      ],
+                      stops: const [0.0, 0.22, 0.55, 1.0],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+
+            // TOP LAYER: Room Mini Profile Content
+            SafeArea(
+              top: false,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.58,
+                ),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Top Bar with 3-dot overflow menu & grabber bar
                 Padding(
                   padding: const EdgeInsets.only(top: 4, left: 12, right: 12, bottom: 2),
                   child: Row(
@@ -1038,8 +1094,32 @@ class _InRoomProfileCardSheetState extends State<InRoomProfileCardSheet> {
         ),
       ),
     ),
-  ),
-);
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String? _resolveSvipProfileCardAsset(int level) {
+    if (level < 3) return null;
+    final clamped = level.clamp(3, 16);
+    if (clamped >= 3 && clamped <= 5) {
+      return 'assets/svip/svip-$clamped_profilecard.webp';
+    }
+    return 'assets/svip/svip${clamped}_profilecard.webp';
+  }
+
+  static String? _resolveNobleProfileCardAsset(String? title) {
+    if (title == null || title.isEmpty) return null;
+    final t = title.toLowerCase();
+    if (t.contains('emperor')) return 'assets/nobles/tier-7-emperor_profilecard.webp';
+    if (t.contains('duke')) return 'assets/nobles/tier-5-duke_profilecard.webp';
+    if (t.contains('marquis')) return 'assets/nobles/tier-4-marquis_profilecard.webp';
+    if (t.contains('king')) return 'assets/nobles/king_card.webp';
+    if (t.contains('count')) return 'assets/nobles/count_card.webp';
+    if (t.contains('viscount')) return 'assets/nobles/viscount_card.webp';
+    return null;
   }
 
   /// Moderation Action Button
